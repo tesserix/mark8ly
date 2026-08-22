@@ -8,7 +8,7 @@
 # differ.
 
 # ─── deps ──────────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-node-builder-22:latest AS deps
+FROM ghcr.io/tesserix/base-node-builder-22@sha256:6259770f19c5acc512f638abd60444013df2cb731c82d5a29903bb18b49362ea AS deps
 USER 0:0
 WORKDIR /src
 
@@ -26,38 +26,39 @@ COPY packages/ui/package.json ./packages/ui/
 # The token is mounted as a BuildKit secret so it never lands in an
 # image layer; npm reads it via the NODE_AUTH_TOKEN variable already
 # interpolated into the root .npmrc.
-RUN --mount=type=secret,id=NODE_AUTH_TOKEN \
-    NODE_AUTH_TOKEN="$(cat /run/secrets/NODE_AUTH_TOKEN)" \
+RUN --mount=type=secret,id=PACKAGE_READ_TOKEN \
+    NODE_AUTH_TOKEN="$(cat /run/secrets/PACKAGE_READ_TOKEN)" \
     npm ci --no-audit --no-fund --legacy-peer-deps
 
 # ─── builder ───────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-node-builder-22:latest AS builder
+FROM ghcr.io/tesserix/base-node-builder-22@sha256:6259770f19c5acc512f638abd60444013df2cb731c82d5a29903bb18b49362ea AS builder
 USER 0:0
 WORKDIR /src
 COPY --from=deps /src/node_modules ./node_modules
 COPY . .
 
 # Public Next.js env vars inlined at build time.
-ARG NEXT_PUBLIC_GIP_PROJECT_ID=""
-ARG NEXT_PUBLIC_GIP_TENANT_ID=""
-ARG NEXT_PUBLIC_GIP_API_KEY=""
-ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=""
-ARG NEXT_PUBLIC_MARKETING_URL=""
-ARG NEXT_PUBLIC_ADMIN_URL_TEMPLATE=""
-ARG NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_1=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_2=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_3=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_4=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_5=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_6=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_7=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_8=""
 # Apple Services ID (web client). Empty => the Sign in with Apple button
 # stays hidden (appleSignInEnabled in lib/config.ts). Set only once the
 # Apple Developer Services ID exists AND its client secret is configured
 # on the GIP apple.com provider — a button that 404s at Apple is worse
 # than no button.
 ARG NEXT_PUBLIC_APPLE_SERVICES_ID=""
-ENV NEXT_PUBLIC_GIP_PROJECT_ID=$NEXT_PUBLIC_GIP_PROJECT_ID \
-    NEXT_PUBLIC_GIP_TENANT_ID=$NEXT_PUBLIC_GIP_TENANT_ID \
-    NEXT_PUBLIC_GIP_API_KEY=$NEXT_PUBLIC_GIP_API_KEY \
-    NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID \
-    NEXT_PUBLIC_MARKETING_URL=$NEXT_PUBLIC_MARKETING_URL \
-    NEXT_PUBLIC_ADMIN_URL_TEMPLATE=$NEXT_PUBLIC_ADMIN_URL_TEMPLATE \
-    NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN=$NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN \
+ENV NEXT_PUBLIC_GIP_PROJECT_ID=$REUSABLE_PUBLIC_BUILD_ARG_1 \
+    NEXT_PUBLIC_GIP_TENANT_ID=$REUSABLE_PUBLIC_BUILD_ARG_2 \
+    NEXT_PUBLIC_GIP_API_KEY=$REUSABLE_PUBLIC_BUILD_ARG_3 \
+    NEXT_PUBLIC_GOOGLE_CLIENT_ID=$REUSABLE_PUBLIC_BUILD_ARG_4 \
+    NEXT_PUBLIC_MARKETING_URL=$REUSABLE_PUBLIC_BUILD_ARG_6 \
+    NEXT_PUBLIC_ADMIN_URL_TEMPLATE=$REUSABLE_PUBLIC_BUILD_ARG_7 \
+    NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN=$REUSABLE_PUBLIC_BUILD_ARG_8 \
     NEXT_PUBLIC_APPLE_SERVICES_ID=$NEXT_PUBLIC_APPLE_SERVICES_ID \
     NEXT_TELEMETRY_DISABLED=1
 
@@ -78,9 +79,10 @@ ENV NEXT_PUBLIC_GIP_PROJECT_ID=$NEXT_PUBLIC_GIP_PROJECT_ID \
 # land in this layer's cache key: BuildKit excludes secret CONTENTS from
 # the cache key, so without this a rotated key would hit the cached build
 # and keep baking the old one. Never the key itself — just a hash of it.
-ARG SERVER_ACTIONS_KEY_FP=""
-RUN --mount=type=secret,id=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY \
-    NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/NEXT_SERVER_ACTIONS_ENCRYPTION_KEY 2>/dev/null || true)"; \
+ARG REUSABLE_BUILD_CACHE_FP=""
+RUN --mount=type=secret,id=APPLICATION_BUILD_SECRET \
+    : "$REUSABLE_BUILD_CACHE_FP"; \
+    NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/APPLICATION_BUILD_SECRET 2>/dev/null || true)"; \
     if [ -z "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" ]; then \
       echo "WARNING: NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is empty — Next.js"; \
       echo "will use a RANDOM per-build key, so Server Action IDs churn on"; \
@@ -92,7 +94,7 @@ RUN --mount=type=secret,id=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY \
 
 # ─── runtime ───────────────────────────────────────────────────────────
 # base-node-runtime-22: libc6-compat, tini PID 1, USER 10001 (nextjs).
-FROM ghcr.io/tesserix/base-node-runtime-22:latest AS runtime
+FROM ghcr.io/tesserix/base-node-runtime-22@sha256:9a36aed7bef521cc497431f7653e20143749b9882b03d79b7a2a58f20ed20ef8 AS runtime
 WORKDIR /app
 
 ENV PORT=4202

@@ -1,44 +1,22 @@
-name: Base Image Refresh
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-
-# Fired by tesserix/base-docker-images when a weekly rebuild publishes
-# new tesserix base images (repository_dispatch event
-# `tesserix-base-images-updated`). Rebuilds all mark8ly images against
-# the refreshed bases so CVE fixes at the base layer propagate here
-# without any per-service PRs.
-#
-# Manual trigger (workflow_dispatch) is kept for operators who want to
-# force a rebuild outside the weekly cadence.
+name: Base Image Update Guard
 
 on:
   repository_dispatch:
-    # base-docker-images sends `base-image-refresh`; the older name is kept
-    # so an in-flight dispatch from a not-yet-updated sender still lands.
     types: [base-image-refresh, tesserix-base-images-updated]
   workflow_dispatch:
 
 permissions:
-  actions: write
   contents: read
 
 jobs:
-  rebuild:
-    name: Rebuild mark8ly on new base images
+  digest-policy:
+    name: Verify pinned base update path
     runs-on: ubuntu-latest
     steps:
-      - name: Log trigger context
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Validate immutable bases and Dependabot coverage
+        run: python3 .github/scripts/test-ci-contract.py
+      - name: Explain update ownership
         run: |
-          echo "Trigger: ${{ github.event_name }}"
-          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            echo "Dispatched from base-docker-images weekly rebuild."
-            echo "Client payload: ${{ toJson(github.event.client_payload) }}"
-          fi
-
-      - name: Dispatch mark8ly CI workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh workflow run ci.yml --repo ${{ github.repository }} --ref main
-          echo "Dispatched ci.yml on main — all mark8ly apps and services will rebuild."
+          echo "::notice::Base images remain pinned until the Docker Dependabot update PR passes CI."
+          echo "::notice::The upstream dispatch contains no digests and cannot safely mutate Dockerfiles."

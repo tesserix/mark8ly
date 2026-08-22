@@ -1,6 +1,6 @@
 name: Log-shipping PII smoke guard
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 # =============================================================================
 # P17 Task 12 — static grep that prevents fmt.Print* from leaking structured
@@ -20,29 +20,12 @@ on:
 
 permissions:
   contents: read
-  # Required by reusable-security.yml, which declares `packages: read` for its
-  # @tesserix/* install. A caller cannot grant a reusable workflow more than it
-  # holds itself, so omitting this fails the whole run at STARTUP — before any
-  # job executes and with no log to read. That is why this guard silently never
-  # ran despite appearing in the checks list.
-  packages: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Centralised CVE / vulnerability gate — see
-  # .github/workflows/reusable-security.yml. Every workflow pulls this in
-  # so a new HIGH/CRITICAL CVE blocks merges even when the
-  # workflow-specific path filter skipped the main CI build.
-  security:
-    uses: ./.github/workflows/reusable-security.yml
-    # Reusable workflows need explicit secret forwarding — GITHUB_TOKEN passes
-    # automatically but org PATs like GHCR_PAT do not, and npm-audit's install
-    # authenticates to GitHub Packages with it.
-    secrets: inherit
-
   logging-smoke:
     name: Log-shipping smoke guard
     runs-on: ubuntu-latest

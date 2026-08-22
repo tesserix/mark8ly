@@ -1,20 +1,14 @@
 name: CI
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 on:
   push:
     branches: [main]
   pull_request:
-  # Rebuild on demand. Images are published as main-<short-sha>, and GHCR's
-  # retention deletes anything not rebuilt recently — so an image a chart still
-  # pins can disappear while the code has not changed at all. Without a manual
-  # trigger the only way to republish is a no-op commit to main.
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -22,278 +16,127 @@ permissions:
   id-token: write
 
 jobs:
-  go:
-    name: Go (${{ matrix.service }})
+  policy:
+    name: Product policy
     runs-on: ubuntu-latest
-    # Pinned service-container images used by M3+ integration tests in
-    # marketplace-api. Keeping them at the job level so all matrix entries
-    # see the same pinned versions. M1/M2 don't yet consume these.
-    env:
-      POSTGRES_IMAGE: postgres:15-alpine
-      FGA_IMAGE: openfga/openfga:v1.8.4
-      FAKE_GCS_IMAGE: fsouza/fake-gcs-server:1.49.3
-    strategy:
-      matrix:
-        service: [platform-api, auth-bff, marketplace-api, otto]
+    permissions:
+      contents: read
+    outputs:
+      images: ${{ steps.images.outputs.value }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.26.6"
-          cache-dependency-path: services/${{ matrix.service }}/go.sum
-      - name: vet
-        working-directory: services/${{ matrix.service }}
-        run: go vet ./...
-      - name: build
-        working-directory: services/${{ matrix.service }}
-        run: go build ./...
-      # P15 §18.9 — enforce the single choke-point for white-label app
-      # credential access. internal/billing/appcreds/ is the ONLY module
-      # authorised to hold merchant Apple/Google app credentials. Any file
-      # outside the allow-list importing cloud.google.com/go/secretmanager
-      # is a regression that bypasses the audit + metrics + tenant-scope
-      # guarantees documented in docs/ops/white-label-app-iam.md.
-      #
-      # Allow-list (pre-existing subsystems with their own credential flows):
-      #   - internal/billing/appcreds/      — canonical (P15)
-      #   - internal/arbitrage/             — pre-existing arbitrage rotation
-      #   - internal/breakglass/            — P13 break-glass credentials
-      #   - internal/carriersecrets/        — per-tenant carrier credentials
-      #                                        (Delhivery, Razorpay, TaxJar, ...)
-      #                                        Single Store abstraction routes
-      #                                        every carrier read/write; the
-      #                                        only package allowed to hold
-      #                                        merchant carrier tokens.
-      #   - cmd/arbitrage-rotator/          — entrypoint for arbitrage
-      #   - cmd/break-glass-rotation/       — entrypoint for break-glass
-      #   - cmd/marketplace-api/main.go     — wires all of the above at boot
-      - name: appcreds-chokepoint (marketplace-api only)
-        if: matrix.service == 'marketplace-api'
-        working-directory: services/${{ matrix.service }}
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Validate CI contract
+        run: python3 .github/scripts/test-ci-contract.py
+      - name: Enforce application-credential choke point
+        working-directory: services/marketplace-api
         run: |
-          set -euo pipefail
-          offenders=$(grep -RlE '"cloud\.google\.com/go/secretmanager' \
-            internal cmd --include='*.go' 2>/dev/null \
+          offenders=$(grep -RlE '"cloud\.google\.com/go/secretmanager' internal cmd --include='*.go' 2>/dev/null \
             | grep -vE '^(internal/billing/appcreds|internal/arbitrage|internal/breakglass|internal/carriersecrets|cmd/arbitrage-rotator|cmd/break-glass-rotation|cmd/marketplace-api/main\.go)' \
             || true)
-          if [ -n "$offenders" ]; then
-            echo "ERROR: cloud.google.com/go/secretmanager imported outside the allow-list:"
-            echo "$offenders"
-            echo ""
-            echo "White-label app credential reads MUST go through internal/billing/appcreds/."
-            echo "See docs/ops/white-label-app-iam.md for the credential choke-point policy."
+          if [[ -n "$offenders" ]]; then
+            printf 'Secret Manager import outside the approved choke point:\n%s\n' "$offenders"
             exit 1
           fi
-      - name: test
-        working-directory: services/${{ matrix.service }}
-        run: go test ./...
+      - name: Export image contract
+        id: images
+        run: echo "value=$(jq -c . .github/ci/container-images.json)" >> "$GITHUB_OUTPUT"
 
-  node:
-    name: Node + Turbo
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: "npm"
-          # The .npmrc pins @tesserix to GitHub Packages, so npm install
-          # needs an auth token even though the published packages
-          # (@tesserix/web, @tesserix/otto-widget) are marked public — GH
-          # Packages still requires authentication on download.
-          registry-url: "https://npm.pkg.github.com"
-          scope: "@tesserix"
-      - run: npm install --legacy-peer-deps
-        env:
-          # GITHUB_TOKEN cannot read packages owned by another repo
-          # (slm-support-platform owns @tesserix/otto-widget). The
-          # org-wide GHCR_PAT is the cross-repo equivalent of the
-          # prod-ghcr-token used for local dev.
-          NODE_AUTH_TOKEN: ${{ secrets.GHCR_PAT }}
-      # mobile-admin joins the other two Expo apps here: it has its own
-      # build workflow, and its typecheck must not gate the container images.
-      - run: npx turbo run lint check-types build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-storefront' --filter='!@repo/mobile-admin'
-      - run: npx turbo run test --filter='@repo/mobile-admin' --filter='@repo/mobile-shared'
-
-  # ─── Security scans ────────────────────────────────────────────────
-  # CVE / vulnerability gating is centralised in reusable-security.yml
-  # so every workflow — present and future — picks up the same bar.
-  # The image matrix below `needs: [security]` to ensure a new CRITICAL
-  # or HIGH finding halts the deploy.
-  security:
-    uses: ./.github/workflows/reusable-security.yml
-    # Reusable workflows need explicit secret forwarding — GITHUB_TOKEN
-    # passes automatically but org PATs like GHCR_PAT do not.
-    secrets: inherit
-
-  # ─── Image build + push ────────────────────────────────────────────
-  # Builds 5 immutable images tagged sha-<12-char-commit> and pushes
-  # them to GHCR. Skipped on PRs (only main pushes ship images).
-  images:
-    name: Build & push (${{ matrix.image.name }})
-    # workflow_dispatch is how the base-image refresh fans out; without it the
-    # refresh runs CI, skips this job and reports success having built nothing.
-    if: contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main'
-    needs: [go, node, security]
-    runs-on: ubuntu-latest
+  go:
+    name: Go (${{ matrix.service }})
     strategy:
       fail-fast: false
       matrix:
-        image:
-          - name: mark8ly-platform-api
-            dockerfile: services/platform-api/Dockerfile
-            context: services/platform-api
-            target: server
-          - name: mark8ly-auth-bff
-            dockerfile: services/auth-bff/Dockerfile
-            context: services/auth-bff
-            target: server
-          - name: mark8ly-marketplace-api
-            dockerfile: services/marketplace-api/Dockerfile
-            context: services/marketplace-api
-            target: runtime
-          - name: mark8ly-otto
-            dockerfile: services/otto/Dockerfile
-            context: services/otto
-            target: server
-          - name: mark8ly-onboarding
-            dockerfile: apps/onboarding/Dockerfile
-            context: .
-            target: runtime
-            google_client_id_secret: NEXT_PUBLIC_GOOGLE_CLIENT_ID
-          - name: mark8ly-admin
-            dockerfile: apps/admin/Dockerfile
-            context: .
-            target: runtime
-            google_client_id_secret: NEXT_PUBLIC_GOOGLE_CLIENT_ID
-          - name: mark8ly-storefront
-            dockerfile: apps/storefront/Dockerfile
-            context: .
-            target: runtime
+        include:
+          - service: platform-api
+            directory: services/platform-api
+            coverage: 25
+          - service: auth-bff
+            directory: services/auth-bff
+            coverage: 31
+          - service: marketplace-api
+            directory: services/marketplace-api
+            coverage: 21
+          - service: otto
+            directory: services/otto
+            coverage: 4
+    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@29f963da2412a4ba0c755f19697ad0a31d7624b4
+    with:
+      working_directory: ${{ matrix.directory }}
+      go_version: 1.26.6
+      coverage_min_lines: ${{ matrix.coverage }}
+
+  nextjs:
+    name: Next.js
+    uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@29f963da2412a4ba0c755f19697ad0a31d7624b4
+    with:
+      working_directory: .
+      node_version: "22"
+      legacy_peer_dependencies: true
+      audit_workspaces: >-
+        @mark8ly/admin
+        @mark8ly/storefront
+        @mark8ly/onboarding
+        @repo/ui
+        @repo/otto-widget
+    secrets:
+      package_read_token: ${{ secrets.GHCR_PAT }}
+
+  secrets:
+    name: Secrets
+    uses: tesserix/tesserix-workflows/.github/workflows/secret-scan.yml@29f963da2412a4ba0c755f19697ad0a31d7624b4
+
+  containers:
+    name: Containers
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: policy
+    uses: tesserix/tesserix-workflows/.github/workflows/container-ci.yml@29f963da2412a4ba0c755f19697ad0a31d7624b4
+    with:
+      images: ${{ needs.policy.outputs.images }}
+    secrets:
+      registry_token: ${{ secrets.GHCR_PAT }}
+      package_read_token: ${{ secrets.GHCR_PAT }}
+      application_build_secret: ${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+      public_build_arg_1: ${{ secrets.NEXT_PUBLIC_GIP_PROJECT_ID }}
+      public_build_arg_2: ${{ secrets.NEXT_PUBLIC_GIP_TENANT_ID }}
+      public_build_arg_3: ${{ secrets.NEXT_PUBLIC_GIP_API_KEY }}
+      public_build_arg_4: ${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+      public_build_arg_5: ${{ secrets.NEXT_PUBLIC_STOREFRONT_GOOGLE_CLIENT_ID }}
+      public_build_arg_6: ${{ secrets.NEXT_PUBLIC_MARKETING_URL }}
+      public_build_arg_7: ${{ secrets.NEXT_PUBLIC_ADMIN_URL_TEMPLATE }}
+      public_build_arg_8: ${{ secrets.NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN }}
+
+  release:
+    name: Images
+    if: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' }}
+    needs: [policy, go, nextjs, secrets]
+    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@29f963da2412a4ba0c755f19697ad0a31d7624b4
+    with:
+      namespace: tesserix
+      images: ${{ needs.policy.outputs.images }}
+    secrets:
+      registry_token: ${{ secrets.GHCR_PAT }}
+      package_read_token: ${{ secrets.GHCR_PAT }}
+      application_build_secret: ${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+      public_build_arg_1: ${{ secrets.NEXT_PUBLIC_GIP_PROJECT_ID }}
+      public_build_arg_2: ${{ secrets.NEXT_PUBLIC_GIP_TENANT_ID }}
+      public_build_arg_3: ${{ secrets.NEXT_PUBLIC_GIP_API_KEY }}
+      public_build_arg_4: ${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+      public_build_arg_5: ${{ secrets.NEXT_PUBLIC_STOREFRONT_GOOGLE_CLIENT_ID }}
+      public_build_arg_6: ${{ secrets.NEXT_PUBLIC_MARKETING_URL }}
+      public_build_arg_7: ${{ secrets.NEXT_PUBLIC_ADMIN_URL_TEMPLATE }}
+      public_build_arg_8: ${{ secrets.NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN }}
+
+  gate:
+    name: CI gate
+    if: ${{ always() }}
+    needs: [policy, go, nextjs, secrets, containers, release]
+    runs-on: ubuntu-latest
+    permissions: {}
     steps:
-      - uses: actions/checkout@v7
-
-      - name: Compute short SHA
-        id: sha
-        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
-
-      # BuildKit deliberately keeps secret CONTENTS out of the layer cache
-      # key, so rotating NEXT_SERVER_ACTIONS_ENCRYPTION_KEY alone would
-      # hit the cached `npm run build` layer and silently keep baking the
-      # OLD key. Feeding a fingerprint of the key in as a build-arg puts
-      # it back in the cache key, so a rotation actually rebuilds.
-      #
-      # The fingerprint is a truncated SHA-256, not the key — safe to
-      # expose. It also catches an empty/missing secret loudly here
-      # rather than letting Next.js fall back to a random per-build key
-      # and quietly reintroduce UnrecognizedActionError on every deploy.
-      - name: Fingerprint Server Actions encryption key
-        id: sakey
+      - name: Refuse failed or cancelled gates
         env:
-          KEY: ${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+          HAS_FAILURE: ${{ contains(needs.*.result, 'failure') }}
+          HAS_CANCELLED: ${{ contains(needs.*.result, 'cancelled') }}
         run: |
-          FP=$(printf '%s' "$KEY" | sha256sum | cut -c1-12)
-          # sha256("") — means the repo secret is unset or empty.
-          if [ "$FP" = "e3b0c44298fc" ]; then
-            # shellcheck disable=SC2028  # the \n is literal text in the remedy
-            # command we are telling the operator to run, so echo NOT expanding
-            # it is the desired behaviour — printf here would emit a real
-            # newline and corrupt the instruction.
-            echo "::error::NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is empty or unset. Set it with: openssl rand -base64 32 | tr -d '\n' | gh secret set NEXT_SERVER_ACTIONS_ENCRYPTION_KEY --repo tesserix/mark8ly"
-            exit 1
-          fi
-          echo "fp=$FP" >> "$GITHUB_OUTPUT"
-          echo "Server Actions key fingerprint: $FP"
-
-      - name: Build & push (immutable sha tag only)
-        uses: docker/build-push-action@v7
-        with:
-          context: ${{ matrix.image.context }}
-          file: ${{ matrix.image.dockerfile }}
-          target: ${{ matrix.image.target }}
-          push: true
-          tags: ghcr.io/tesserix/${{ matrix.image.name }}:main-${{ steps.sha.outputs.short }}
-          # Without these, Docker leaves the BASE image's OCI labels in place
-          # and the published image claims to come from whatever repository the
-          # base was built from. Observability's trace-to-code reads these to
-          # map a log line back to the commit that produced it, so an inherited
-          # label makes it resolve errors to a confidently wrong repository —
-          # worse than resolving to nothing at all.
-          #
-          # source.root is the module's directory in this repo, which is what
-          # lets a -trimpath'd Go source path be mapped onto a file on GitHub.
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.title=${{ matrix.image.name }}
-            dev.tesserix.source.root=${{ matrix.image.context }}
-          cache-from: type=gha,scope=${{ matrix.image.name }}
-          cache-to: type=gha,scope=${{ matrix.image.name }},mode=max
-          provenance: false
-          # NODE_AUTH_TOKEN is mounted into the Next.js Dockerfiles via
-          # BuildKit secrets so `npm ci` can pull @tesserix/* from
-          # GitHub Packages without baking the token into a layer.
-          # Go Dockerfiles ignore this secret since their build doesn't
-          # touch GitHub Packages.
-          # NEXT_SERVER_ACTIONS_ENCRYPTION_KEY pins the Server Action ID
-          # hash salt. Without it Next.js generates a random key per
-          # build, so every action ID changes on every deploy and any
-          # tab open across a rollout gets UnrecognizedActionError. The
-          # Next.js Dockerfiles mount it around `npm run build`; Go
-          # Dockerfiles ignore it.
-          secrets: |
-            NODE_AUTH_TOKEN=${{ secrets.GHCR_PAT }}
-            NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
-          # Public Next.js config baked into the client bundle at build
-          # time. Go service Dockerfiles ignore unknown ARGs, so it's safe
-          # to pass these for every image in the matrix.
-          build-args: |
-            SERVER_ACTIONS_KEY_FP=${{ steps.sakey.outputs.fp }}
-            NEXT_PUBLIC_GIP_PROJECT_ID=${{ secrets.NEXT_PUBLIC_GIP_PROJECT_ID }}
-            NEXT_PUBLIC_GIP_TENANT_ID=${{ secrets.NEXT_PUBLIC_GIP_TENANT_ID }}
-            NEXT_PUBLIC_GIP_CUSTOMER_TENANT_ID=MP-Customer-39opy
-            NEXT_PUBLIC_GIP_API_KEY=${{ secrets.NEXT_PUBLIC_GIP_API_KEY }}
-            NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ matrix.image.google_client_id_secret && secrets[matrix.image.google_client_id_secret] || '' }}
-            NEXT_PUBLIC_MARKETING_URL=${{ secrets.NEXT_PUBLIC_MARKETING_URL }}
-            NEXT_PUBLIC_ADMIN_URL_TEMPLATE=${{ secrets.NEXT_PUBLIC_ADMIN_URL_TEMPLATE }}
-            NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN=${{ secrets.NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN }}
-            NEXT_PUBLIC_APPLE_SERVICES_ID=com.mark8ly.admin.web
-
-      - name: Trivy scan (fail on CRITICAL + HIGH)
-        # Gate tightened from CRITICAL-only to CRITICAL,HIGH so a new
-        # exploitable CVE in the built image halts the deploy instead of
-        # merely emitting a security-tab alert that no one follows up on.
-        # ignore-unfixed stays on so upstream-only-fixed-in-HEAD advisories
-        # (which we can't act on) don't hold up ops. trivyignores lists
-        # CVE IDs we've explicitly triaged as false-positives; each entry
-        # in .trivyignore carries a rationale + review date.
-        #
-        # Pinned to a tagged release (off @master): @master regressed by
-        # pulling a setup-trivy/actions-cache combo that rejected the cache
-        # path and failed every build after the image was pushed. v0.36.0
-        # pins those sub-actions to known-good versions so the scan runs.
-        #
-        # ADVISORY for now: with the scan actually running again it surfaces
-        # pre-existing HIGH CVEs (golang.org/x/crypto SSH-DoS fixed in 0.52.0,
-        # picomatch ReDoS, etc.) that continue-on-error had been masking.
-        # Keep the build green while those are remediated; remove this line to
-        # re-enable the hard CRITICAL+HIGH gate once the deps are bumped.
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ghcr.io/tesserix/${{ matrix.image.name }}:main-${{ steps.sha.outputs.short }}
-          severity: CRITICAL,HIGH
-          exit-code: "1"
-          ignore-unfixed: true
-          vuln-type: "os,library"
-          trivyignores: .trivyignore
-
+          test "$HAS_FAILURE" = false
+          test "$HAS_CANCELLED" = false

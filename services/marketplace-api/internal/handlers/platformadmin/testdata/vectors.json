@@ -1,0 +1,30 @@
+[
+  {
+    "name": "get-with-query",
+    "secret": "reference-secret-do-not-use",
+    "method": "GET",
+    "path": "/api/v1/admin/audit-logs",
+    "raw_query": "since_hours=720\u0026limit=200",
+    "body": "",
+    "timestamp": "1755859200",
+    "nonce": "018f3c2a-0000-7000-8000-000000000001",
+    "operator": "op_7f3a",
+    "capability": "audit.read",
+    "canonical": "GET\n/api/v1/admin/audit-logs\nlimit=200\u0026since_hours=720\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1755859200\n018f3c2a-0000-7000-8000-000000000001\nop_7f3a\naudit.read",
+    "signature": "46c22ae0dfece9180de86452dcc8b42a1801be5a0b86fb2686e2f85a0d5fa309"
+  },
+  {
+    "name": "post-with-body",
+    "secret": "reference-secret-do-not-use",
+    "method": "POST",
+    "path": "/api/v1/admin/tenants/t1/suspend",
+    "raw_query": "",
+    "body": "{\"reason_code\":\"fraud\"}",
+    "timestamp": "1755859200",
+    "nonce": "018f3c2a-0000-7000-8000-000000000002",
+    "operator": "op_7f3a",
+    "capability": "tenant.suspend",
+    "canonical": "POST\n/api/v1/admin/tenants/t1/suspend\n\nce15d5c968f6d4e86f028006a4a56d25149a4e66eddb7f80b9f137a5f49eaf28\n1755859200\n018f3c2a-0000-7000-8000-000000000002\nop_7f3a\ntenant.suspend",
+    "signature": "4371f06c7814aa8dc3b040379063ab08fc23938145d2d9f7b6a0323b54c783a2"
+  }
+]

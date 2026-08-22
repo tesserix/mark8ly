@@ -14,8 +14,9 @@ import (
 )
 
 // Event is the input to Emitter.Emit. Required fields are validated by
-// the emitter; missing tenant or store causes the event to be dropped
-// with a warning rather than written as an unscoped row.
+// the emitter; a missing tenant causes the event to be dropped with a
+// warning rather than written as a tenant-unscoped row. Store is optional
+// — platform-originated writes are tenant-scoped only.
 type Event struct {
 	Action       string         // "order.cancelled", "product.updated", ...
 	ResourceType string         // "order" | "product" | "domain" | ...
@@ -28,7 +29,10 @@ type Event struct {
 	// (set by HeaderTrustAuth + the :storeId path param). Storefront
 	// routes don't carry either — they use :storeSlug and resolve the
 	// store via middleware — so storefront callers populate these
-	// explicitly. When set, these win over context lookup.
+	// explicitly. When set, these win over context lookup. StoreID is
+	// optional: leave it uuid.Nil for tenant-scoped platform writes
+	// (tenant suspend, trial extend, purge) that have no store — the
+	// resulting audit row gets a nil store_id rather than being dropped.
 	TenantID uuid.UUID
 	StoreID  uuid.UUID
 
@@ -103,7 +107,8 @@ func (e *Emitter) Emit(c *gin.Context, ev Event) {
 
 	entry := buildEntry(c, ev)
 	if entry == nil {
-		// buildEntry already logged the reason (missing tenant/store).
+		// buildEntry returns nil silently (no log) when the request is
+		// missing a tenant — there's nothing scoped to write.
 		return
 	}
 
@@ -174,10 +179,10 @@ func (e *Emitter) write(entry Entry) {
 	}
 }
 
-// buildEntry assembles a row from the gin context + event. Returns nil
-// (with a logged warning) when the request is missing a tenant — audit
-// must never write a tenant-unscoped row. Store is optional: platform
-// writes are tenant-scoped only. See resolveScope.
+// buildEntry assembles a row from the gin context + event. Returns nil,
+// silently (no log), when the request is missing a tenant — audit must
+// never write a tenant-unscoped row. Store is optional: platform writes
+// are tenant-scoped only. See resolveScope.
 func buildEntry(c *gin.Context, ev Event) *Entry {
 	tenantID, storeID, ok := resolveScope(c, ev)
 	if !ok {

@@ -120,6 +120,9 @@ func (gormRepository) Create(ctx context.Context, db *gorm.DB, e *Entry) error {
 	if e.TenantID == uuid.Nil {
 		return fmt.Errorf("audit create: tenant_id is required")
 	}
+	if e.StoreID != nil && *e.StoreID == uuid.Nil {
+		return fmt.Errorf("audit create: store_id must be nil or a real store")
+	}
 	if err := db.WithContext(ctx).Create(e).Error; err != nil {
 		return fmt.Errorf("audit create: %w", err)
 	}

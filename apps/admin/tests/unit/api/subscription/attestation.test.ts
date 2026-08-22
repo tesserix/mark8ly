@@ -31,7 +31,7 @@ afterAll(() => server.close())
 // ---------------------------------------------------------------------------
 
 const STORE_ID = 'b2c3d4e5-f6a7-8901-bcde-f12345678901'
-const ATTESTATION_PATH = `/api/admin/stores/${STORE_ID}/tax/attestation`
+const ATTESTATION_PATH = `/api/v1/admin/stores/${STORE_ID}/tax/attestation`
 
 const US_BODY = {
   country: 'US' as const,

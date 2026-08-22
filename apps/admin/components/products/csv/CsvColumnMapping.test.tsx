@@ -50,7 +50,8 @@ describe("CsvColumnMapping", () => {
     );
 
     const select = screen.getByRole("combobox");
-    await user.selectOptions(select, "description");
+    await user.click(select);
+    await user.click(screen.getByRole("option", { name: "description" }));
     expect(onChange).toHaveBeenCalledWith({ colour: "description" });
   });
 

@@ -59,7 +59,7 @@ jobs:
           - service: otto
             directory: services/otto
             coverage: 4
-    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@29f963da2412a4ba0c755f19697ad0a31d7624b4
+    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@v2.1.0
     with:
       working_directory: ${{ matrix.directory }}
       go_version: 1.26.6
@@ -67,7 +67,7 @@ jobs:
 
   nextjs:
     name: Next.js
-    uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@29f963da2412a4ba0c755f19697ad0a31d7624b4
+    uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@v2.1.0
     with:
       working_directory: .
       node_version: "22"
@@ -83,13 +83,13 @@ jobs:
 
   secrets:
     name: Secrets
-    uses: tesserix/tesserix-workflows/.github/workflows/secret-scan.yml@29f963da2412a4ba0c755f19697ad0a31d7624b4
+    uses: tesserix/tesserix-workflows/.github/workflows/secret-scan.yml@v2.1.0
 
   containers:
     name: Containers
     if: ${{ github.event_name == 'pull_request' }}
     needs: policy
-    uses: tesserix/tesserix-workflows/.github/workflows/container-ci.yml@29f963da2412a4ba0c755f19697ad0a31d7624b4
+    uses: tesserix/tesserix-workflows/.github/workflows/container-ci.yml@v2.1.0
     with:
       images: ${{ needs.policy.outputs.images }}
     secrets:
@@ -109,7 +109,7 @@ jobs:
     name: Images
     if: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' }}
     needs: [policy, go, nextjs, secrets]
-    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@29f963da2412a4ba0c755f19697ad0a31d7624b4
+    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@v2.1.0
     with:
       namespace: tesserix
       images: ${{ needs.policy.outputs.images }}

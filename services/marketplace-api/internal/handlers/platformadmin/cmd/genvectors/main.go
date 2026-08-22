@@ -16,9 +16,9 @@ import (
 )
 
 type vector struct {
-	Name       string `json:"name"`
-	Secret     string `json:"secret"`
-	Method     string `json:"method"`
+	Name   string `json:"name"`
+	Secret string `json:"secret"`
+	Method string `json:"method"`
 	// RequestTarget is the raw wire path+query — shown for illustration
 	// only. It is NOT what gets signed.
 	RequestTarget string `json:"request_target"`
@@ -104,12 +104,12 @@ func main() {
 	for _, item := range inputs {
 		canonical, err := platformadmin.CanonicalString(item.in)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "canonical:", err)
+			fmt.Fprintln(os.Stderr, "canonical:", err) //nolint:logging-smoke // dev-only CLI: human-readable error to stderr before exit
 			os.Exit(1)
 		}
 		sig, err := platformadmin.Sign(secret, item.in)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "sign:", err)
+			fmt.Fprintln(os.Stderr, "sign:", err) //nolint:logging-smoke // dev-only CLI: human-readable error to stderr before exit
 			os.Exit(1)
 		}
 		out = append(out, vector{
@@ -130,7 +130,7 @@ func main() {
 	// query string out of the document while chasing a signature mismatch.
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(out); err != nil {
-		fmt.Fprintln(os.Stderr, "encode:", err)
+		fmt.Fprintln(os.Stderr, "encode:", err) //nolint:logging-smoke // dev-only CLI: human-readable error to stderr before exit
 		os.Exit(1)
 	}
 	os.Stdout.Write(buf.Bytes())

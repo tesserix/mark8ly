@@ -51,15 +51,14 @@ test-int: ## Run integration tests against the running `make dev` stack
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/auth_bff?sslmode=disable' \
 	  go test -tags=integration ./...
 	@echo "▶ marketplace-api integration"
-	@# Scoped to ./internal/audit/... only (not ./...): this task's plan only added
-	@# integration tests under internal/audit. internal/subscription/dunning has 16
-	@# integration tests that fail on a pre-existing missing "stores" seed row gap
-	@# in the local stack (unrelated to this task — parked/escalated separately).
-	@# Once that seed gap is closed, widen this to ./... and add
-	@# ./internal/handlers/platformadmin/... once that package exists (a later task).
+	@# Scoped to ./internal/audit/... and ./internal/handlers/platformadmin/...
+	@# (not ./...): internal/subscription/dunning has 16 integration tests that
+	@# fail on a pre-existing missing "stores" seed row gap in the local stack
+	@# (unrelated to this task — parked/escalated separately). Once that seed
+	@# gap is closed, widen this target to ./...
 	@cd services/marketplace-api && \
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable' \
-	  go test -tags=integration ./internal/audit/...
+	  go test -tags=integration ./internal/audit/... ./internal/handlers/platformadmin/...
 
 cover: ## Coverage report for both Go services
 	@cd services/platform-api && go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -5

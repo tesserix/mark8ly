@@ -36,14 +36,17 @@ func TestBuildEntryAttributesOperator(t *testing.T) {
 	require.Nil(t, entry.StoreID)
 }
 
-// An operator claim must not be mistaken for a mark8ly user.
+// Pins ActorType exclusivity: "platform_operator_id" and "user_id" are
+// distinct context keys, so an operator claim is classified as
+// ActorOperator and never reaches the "user_id" parse path, regardless of
+// whether the operator id happens to be a well-formed UUID.
 func TestOperatorDoesNotPopulateActorUserID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request, _ = http.NewRequest(http.MethodPost, "/", nil)
 	c.Set("tenant_id", uuid.New().String())
-	c.Set("platform_operator_id", uuid.New().String()) // operator id that parses as a UUID
+	c.Set("platform_operator_id", uuid.New().String()) // well-formed UUID, but read via a different context key than "user_id"
 	c.Set("platform_capability", "audit.read")
 
 	entry := audit.BuildEntryForTest(c, audit.Event{Action: "x", ResourceType: "y"})

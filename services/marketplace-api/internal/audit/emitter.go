@@ -107,8 +107,9 @@ func (e *Emitter) Emit(c *gin.Context, ev Event) {
 
 	entry := buildEntry(c, ev)
 	if entry == nil {
-		// buildEntry returns nil silently (no log) when the request is
-		// missing a tenant — there's nothing scoped to write.
+		e.logger.Warn("audit.Emit: dropping event, no tenant in scope",
+			"action", ev.Action,
+			"resource_type", ev.ResourceType)
 		return
 	}
 
@@ -179,10 +180,10 @@ func (e *Emitter) write(entry Entry) {
 	}
 }
 
-// buildEntry assembles a row from the gin context + event. Returns nil,
-// silently (no log), when the request is missing a tenant — audit must
-// never write a tenant-unscoped row. Store is optional: platform writes
-// are tenant-scoped only. See resolveScope.
+// buildEntry assembles a row from the gin context + event. Returns nil
+// when the request is missing a tenant — audit must never write a
+// tenant-unscoped row. Emit logs a warning when this happens. Store is
+// optional: platform writes are tenant-scoped only. See resolveScope.
 func buildEntry(c *gin.Context, ev Event) *Entry {
 	tenantID, storeID, ok := resolveScope(c, ev)
 	if !ok {

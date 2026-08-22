@@ -141,8 +141,13 @@ Two layers:
 
 1. A ±300 second timestamp window.
 2. A `platform_request_nonces` table with a unique constraint on the nonce.
-   The insert failing on duplicate *is* the replay check. Rows are swept on
-   the existing nightly cleanup schedule.
+   The insert failing on duplicate *is* the replay check. There was no
+   existing nightly cleanup schedule to piggyback on, so rows are swept by a
+   dedicated cron, `platformadmin.SweepSpec` (`45 9 * * *`, daily at 09:45
+   UTC), registered in `cmd/marketplace-api/main.go` alongside the service's
+   other scheduled jobs. It is only registered when the platform admin
+   secret is configured — an unconfigured deploy is refusing all `/admin/*`
+   traffic, so there is nothing accumulating in the table yet to sweep.
 
 The window alone is insufficient. An in-memory nonce cache would also be
 insufficient: mark8ly runs on Knative at 0–5 replicas, so a replay routed to a
@@ -168,6 +173,7 @@ Machine-readable and stable, per the contract:
 | condition | status | `error` |
 |---|---|---|
 | secret not configured | 503 | `not_configured` |
+| request body could not be read | 400 | `invalid_request` |
 | signature absent or malformed | 401 | `unauthenticated` |
 | signature mismatch | 401 | `unauthenticated` |
 | timestamp outside window | 401 | `unauthenticated` |
@@ -178,6 +184,12 @@ Machine-readable and stable, per the contract:
 Signature, timestamp and nonce failures deliberately share one code and one
 message. Distinguishing them tells an attacker which half of the check they
 passed.
+
+`invalid_request` is returned before any auth check runs — the middleware
+reads the request body to compute its hash, and a transport-level read
+failure there is reported as a bad request rather than a signature failure.
+It is reachable only on transport errors (a client disconnecting mid-upload,
+for example), not by anything an attacker can trigger deliberately.
 
 ## Component: audit attribution
 
@@ -226,6 +238,9 @@ ALTER TABLE audit_logs ADD COLUMN capability text;
 CREATE INDEX idx_audit_logs_actor_operator_id ON audit_logs (actor_operator_id)
   WHERE actor_operator_id IS NOT NULL;
 
+-- Cross-store platform reads (#276) order by created_at across all stores.
+CREATE INDEX idx_audit_logs_created_at ON audit_logs (created_at DESC);
+
 CREATE TABLE platform_request_nonces (
   nonce      uuid PRIMARY KEY,
   seen_at    timestamptz NOT NULL DEFAULT now(),
@@ -233,11 +248,26 @@ CREATE TABLE platform_request_nonces (
 );
 CREATE INDEX idx_platform_request_nonces_expires_at
   ON platform_request_nonces (expires_at);
+
+-- Widen the actor_type check to admit platform console operators.
+ALTER TABLE audit_logs DROP CONSTRAINT audit_logs_actor_type_chk;
+ALTER TABLE audit_logs ADD CONSTRAINT audit_logs_actor_type_chk
+    CHECK (actor_type IN ('user', 'system', 'api', 'operator'));
 ```
 
-Dropping `NOT NULL` is a catalogue-only change in Postgres: no table rewrite,
-no significant lock. It is forward-compatible — every existing writer supplies
-a store and continues to work unchanged.
+Dropping `NOT NULL` is, by itself, a catalogue-only change in Postgres: no
+table rewrite. But it is one statement in a migration that also validates a
+new `CHECK` constraint and builds a non-concurrent index, and those are the
+statements that actually dominate the lock window. Measured on a 200k-row
+copy of `audit_logs`: `DROP NOT NULL` 0.68ms; the two `ADD COLUMN`s 1.9ms and
+0.2ms; the partial index on `actor_operator_id` 11.5ms; `idx_audit_logs_created_at`
+20.7ms; the nonce table + its index 3.4ms; `DROP`/`ADD CONSTRAINT` 0.4ms and
+8.6ms — roughly 48ms of `ACCESS EXCLUSIVE` time in total. The window is real,
+but sub-100ms at that table size. This is a statement about *this* migration
+at *this* scale, not a categorical claim that schema changes of this shape
+are always cheap — a larger `audit_logs` or a slower index build would move
+the number, and the reasoning should be re-checked against the table's
+current size before repeating this pattern.
 
 The down migration fails loudly if any row has a null `store_id`. It does not
 delete rows to make itself possible. Losing audit rows to a rollback is worse
@@ -384,16 +414,32 @@ uniqueness constraint and the cross-store query.
 
 ## Rollout
 
-Each step is independently revertible. Steps 1–3 are unobservable from outside
-the cluster.
+The branch ships the migration, the middleware/handler, and the route mount
+together — `platformadmin.Register` is called unconditionally from
+`cmd/marketplace-api/main.go`. There is no separate "route not mounted" step
+before the secret exists; instead, the surface relies on
+`RequirePlatformAuth` failing closed:
 
-1. **Migration** — nullable `store_id`, new columns, nonce table. Inert;
-   nothing reads them.
-2. **Middleware and handler merged, route not mounted.** Dead code, live tests.
-3. **Populate the secret** in Secret Manager, and the console's copy.
-4. **Mount the route.** The first moment behaviour changes in production. One
-   line, one revert.
-5. **Verify against a demo tenant**, then report live on #276.
+1. **Migration** — nullable `store_id`, new columns, nonce table, widened
+   `actor_type` check. Inert; nothing reads them until the code below ships.
+2. **Middleware, handler and route mount ship together.** `Register` mounts
+   `/admin/*` behind `RequirePlatformAuth` in the same deploy as the
+   migration. `Deps.Secret` is read from `MARKETPLACE_PLATFORM_ADMIN_SECRET`;
+   when it is empty, every request to the mounted route answers `503
+   not_configured` — this is what keeps the surface inert in a deploy that
+   ships ahead of the secret, and it is what the enforcement table above
+   documents as the `secret unset` row. The nonce-sweep cron
+   (`platformadmin.SweepSpec`) is also only registered once the secret is
+   set, so nothing accumulates in `platform_request_nonces` while the
+   surface is inert.
+3. **Populate the secret** in Secret Manager, and the console's copy. This is
+   the moment behaviour changes in production: `/admin/*` starts answering
+   real traffic instead of `503`.
+4. **Verify against a demo tenant**, then report live on #276.
+
+The property that matters is explicit regardless of how the steps are
+sequenced: **the surface is inert until `MARKETPLACE_PLATFORM_ADMIN_SECRET`
+is populated**, whether or not the route is physically mounted in the binary.
 
 Mark8ly is in production with demo accounts only. That makes the blast radius
 small, and it also means production will not surface a contract defect on its

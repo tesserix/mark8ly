@@ -115,7 +115,7 @@ type Response struct {
 	ID           string         `json:"id"`
 	Timestamp    string         `json:"timestamp"`
 	UserEmail    string         `json:"user_email"`
-	ActorType    string         `json:"actor_type"` // "user" | "system" | "api" — UI labels system events
+	ActorType    string         `json:"actor_type"` // "user" | "system" | "api" | "operator" — UI labels system events
 	Action       string         `json:"action"`
 	ResourceType string         `json:"resource_type"`
 	ResourceID   string         `json:"resource_id"`

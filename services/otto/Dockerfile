@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
-FROM ghcr.io/tesserix/base-distroless-static@sha256:12c4a0a01927b1bd443d69f56923ec493d45cca2979a40d6aab8c255811d50c5 AS server
+FROM ghcr.io/tesserix/base-distroless-static@sha256:c36e43e12e6d6a9536487ab95cad7050073a38182eb29e69c98f8e469ae17f91 AS server
 COPY --from=build --chown=10001:10001 /out/server /server
 EXPOSE 8089
 CMD ["/server"]

@@ -26,7 +26,7 @@ RUN go build -trimpath -ldflags="-s -w" \
 
 # ─── migrate ────────────────────────────────────────────────────────────
 # Standalone image used by the K8s Job pattern.
-FROM ghcr.io/tesserix/base-distroless-static@sha256:12c4a0a01927b1bd443d69f56923ec493d45cca2979a40d6aab8c255811d50c5 AS migrate
+FROM ghcr.io/tesserix/base-distroless-static@sha256:c36e43e12e6d6a9536487ab95cad7050073a38182eb29e69c98f8e469ae17f91 AS migrate
 COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
 CMD ["/usr/local/bin/migrate"]
 
@@ -36,7 +36,7 @@ CMD ["/usr/local/bin/migrate"]
 # /usr/local/bin/refund-sweep-cron — so the Helm init container and the
 # refund-sweep CronJob can override ENTRYPOINT to run migrations / the
 # stuck-refund sweeper from the same image.
-FROM ghcr.io/tesserix/base-distroless-static@sha256:12c4a0a01927b1bd443d69f56923ec493d45cca2979a40d6aab8c255811d50c5 AS runtime
+FROM ghcr.io/tesserix/base-distroless-static@sha256:c36e43e12e6d6a9536487ab95cad7050073a38182eb29e69c98f8e469ae17f91 AS runtime
 COPY --from=builder --chown=10001:10001 /out/marketplace-api /usr/local/bin/marketplace-api
 COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
 COPY --from=builder --chown=10001:10001 /out/refund-sweep-cron /usr/local/bin/refund-sweep-cron

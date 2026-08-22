@@ -48,6 +48,7 @@ function baseInput() {
     status: "draft" as const,
     price: "19.99",
     inventoryQuantity: "0",
+    alwaysInStock: false,
     sku: "",
     categoryIds: [],
     options: [

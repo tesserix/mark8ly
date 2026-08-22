@@ -52,7 +52,7 @@ describe("BulkDeleteConfirmDialog", () => {
     );
 
     expect(screen.getByText(/5 products/)).toBeInTheDocument();
-    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument();
+    expect(screen.getByText(/can't be undone/i)).toBeInTheDocument();
   });
 
   it("calls onConfirm when confirm button is clicked", async () => {

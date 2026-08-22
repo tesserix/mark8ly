@@ -139,6 +139,12 @@ vi.mock('@/lib/api/subscription/hooks/useBilling', () => ({
     isLoading: false,
   })),
   useOpenPortal: vi.fn(() => ({ mutate: mockOpenPortalMutate, isPending: false })),
+  useInvoices: vi.fn(() => ({
+    data: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  })),
 }))
 
 // -- Trial hooks

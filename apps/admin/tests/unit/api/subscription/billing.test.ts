@@ -35,8 +35,8 @@ afterAll(() => server.close())
 // ---------------------------------------------------------------------------
 
 const STORE_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-const SUBSCRIPTION_PATH = `/api/v1/admin/stores/${STORE_ID}/subscription`
-const PORTAL_PATH = `/api/v1/admin/stores/${STORE_ID}/subscription/portal`
+const SUBSCRIPTION_PATH = `/api/admin/stores/${STORE_ID}/subscription`
+const PORTAL_PATH = `/api/admin/stores/${STORE_ID}/subscription/portal`
 
 const SUBSCRIPTION_FIXTURE = {
   id: 'sub_1',

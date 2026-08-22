@@ -36,8 +36,8 @@ afterAll(() => server.close())
 // ---------------------------------------------------------------------------
 
 const STORE_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-const PREFLIGHT_PATH = `/api/v1/admin/stores/${STORE_ID}/subscription/change-plan/preflight`
-const APPLY_PATH = `/api/v1/admin/stores/${STORE_ID}/subscription/change-plan`
+const PREFLIGHT_PATH = `/api/admin/stores/${STORE_ID}/subscription/change-plan/preflight`
+const APPLY_PATH = `/api/admin/stores/${STORE_ID}/subscription/change-plan`
 
 const PLAN_DIFF_FIXTURE = {
   stores_delta: 1,

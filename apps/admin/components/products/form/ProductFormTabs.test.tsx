@@ -48,15 +48,14 @@ describe("ProductFormTabs", () => {
     fireEvent.keyDown(general, { key: "ArrowRight" });
     expect(onChange).toHaveBeenLastCalledWith("media");
     fireEvent.keyDown(general, { key: "ArrowLeft" });
-    // wraps to variants (disabled) -> ignored
-    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith("tax");
     fireEvent.keyDown(general, { key: "End" });
-    expect(onChange).toHaveBeenLastCalledWith("variants");
+    expect(onChange).toHaveBeenLastCalledWith("tax");
     fireEvent.keyDown(general, { key: "Home" });
     expect(onChange).toHaveBeenLastCalledWith("general");
     // unknown key is no-op
     fireEvent.keyDown(general, { key: "Space" });
-    expect(onChange).toHaveBeenCalledTimes(3);
+    expect(onChange).toHaveBeenCalledTimes(4);
     rerender(<ProductFormTabs active="options" onChange={onChange} />);
     fireEvent.keyDown(screen.getByRole("tab", { name: /options/i }), { key: "ArrowLeft" });
     expect(onChange).toHaveBeenLastCalledWith("media");

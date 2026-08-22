@@ -34,7 +34,7 @@ afterAll(() => server.close())
 // ---------------------------------------------------------------------------
 
 const STORE_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-const PURCHASE_PATH = `/api/v1/admin/stores/${STORE_ID}/subscription/add-on/white-label-app`
+const PURCHASE_PATH = `/api/admin/stores/${STORE_ID}/subscription/add-on/white-label-app`
 
 const VALID_REQUEST = {
   apple_4_2_6_acknowledged: true as const,

@@ -21,8 +21,10 @@ import { InvoicesList } from '@/app/(admin)/settings/billing/InvoicesList'
 
 const mockMutate = vi.fn()
 const mockUseOpenPortal = vi.fn()
+const mockUseInvoices = vi.fn()
 
 vi.mock('@/lib/api/subscription/hooks/useBilling', () => ({
+  useInvoices: () => mockUseInvoices(),
   useOpenPortal: () => mockUseOpenPortal(),
 }))
 
@@ -50,6 +52,12 @@ function pendingPortal() {
 describe('InvoicesList', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockUseInvoices.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    })
     mockUseOpenPortal.mockReturnValue(idlePortal())
   })
 
@@ -60,23 +68,23 @@ describe('InvoicesList', () => {
     ).toBeInTheDocument()
   })
 
-  it('renders the portal description paragraph', () => {
+  it('renders the empty invoice state', () => {
     render(<InvoicesList storeId="store_1" />)
     expect(
-      screen.getByText(/Open the Stripe billing portal/i),
+      screen.getByText(/No invoices yet/i),
     ).toBeInTheDocument()
   })
 
-  it('renders the "Open billing portal" CTA button', () => {
+  it('renders the billing portal CTA button', () => {
     render(<InvoicesList storeId="store_1" />)
     expect(
-      screen.getByRole('button', { name: /Open billing portal/i }),
+      screen.getByRole('button', { name: /Manage in portal/i }),
     ).toBeInTheDocument()
   })
 
   it('clicking the portal button triggers the mutation', () => {
     render(<InvoicesList storeId="store_1" />)
-    fireEvent.click(screen.getByRole('button', { name: /Open billing portal/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Manage in portal/i }))
     expect(mockMutate).toHaveBeenCalledOnce()
   })
 

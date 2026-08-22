@@ -210,10 +210,33 @@ func buildEntry(c *gin.Context, ev Event) *Entry {
 	}
 
 	if c != nil {
-		// Don't infer a user actor when the caller explicitly forced a
-		// system/api classification — storefront events should stay as
-		// system even though the request carries a customer session.
-		if ev.ForceActorType == "" {
+		// Context keys "platform_operator_id" / "platform_capability" are
+		// set by Task 6's platform-admin middleware. They mirror the
+		// exported constants platformadmin.CtxOperatorID / CtxCapability
+		// defined there; audit intentionally does not import that package
+		// (it's an HTTP handler package), so the literals are duplicated
+		// here — keep both sides greppable if either changes.
+		operatorID := strings.TrimSpace(c.GetString("platform_operator_id"))
+		capability := strings.TrimSpace(c.GetString("platform_capability"))
+
+		switch {
+		case operatorID != "":
+			// A platform console operator. The id is opaque and belongs to
+			// the console — it must never be written to actor_user_id, even
+			// when it happens to parse as a UUID. This case is evaluated
+			// before, and (via switch's implicit no-fallthrough) mutually
+			// exclusive with, the user-actor case below — an operator claim
+			// can never fall through into ActorUserID.
+			entry.ActorType = ActorOperator
+			entry.ActorOperatorID = &operatorID
+			if capability != "" {
+				entry.Capability = &capability
+			}
+
+		case ev.ForceActorType == "":
+			// Don't infer a user actor when the caller explicitly forced a
+			// system/api classification — storefront events should stay as
+			// system even though the request carries a customer session.
 			if uid := strings.TrimSpace(c.GetString("user_id")); uid != "" {
 				if parsed, err := uuid.Parse(uid); err == nil {
 					entry.ActorUserID = &parsed
@@ -225,6 +248,7 @@ func buildEntry(c *gin.Context, ev Event) *Entry {
 				entry.ActorEmail = &v
 			}
 		}
+
 		if ip := clientIP(c); ip != "" {
 			v := ip
 			entry.IPAddress = &v

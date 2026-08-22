@@ -118,10 +118,10 @@ type PaymentRecordedPayload struct {
 // RefundedPayload is written alongside the atomic refunded_amount update.
 // Amount is a decimal string (matches the DB column type).
 type RefundedPayload struct {
-	Amount           string `json:"amount"`
-	TotalRefunded    string `json:"total_refunded_after"`
-	PaymentStatusTo  string `json:"payment_status_to"`
-	Reason           string `json:"reason,omitempty"`
+	Amount          string `json:"amount"`
+	TotalRefunded   string `json:"total_refunded_after"`
+	PaymentStatusTo string `json:"payment_status_to"`
+	Reason          string `json:"reason,omitempty"`
 }
 
 // ReturnEventPayload covers all return_*_requested|approved|received|refunded|rejected

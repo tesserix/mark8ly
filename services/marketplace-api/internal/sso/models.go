@@ -35,14 +35,14 @@ func (p Provider) Valid() bool { return p == ProviderSAML || p == ProviderOIDC }
 // Plaintext secrets NEVER live in metadata — client_secret_ref points
 // at a Secret Manager path.
 type Config struct {
-	TenantID      uuid.UUID          `gorm:"column:tenant_id;type:uuid;primaryKey"`
-	Provider      Provider           `gorm:"column:provider;type:sso_provider_kind;not null"`
-	Metadata      datatypes.JSONMap  `gorm:"column:metadata;type:jsonb;not null"`
-	AttrMapping   datatypes.JSONMap  `gorm:"column:attr_mapping;type:jsonb;not null;default:'{}'::jsonb"`
-	GIPProviderID *string            `gorm:"column:gip_provider_id"`
-	Enabled       bool               `gorm:"column:enabled;not null;default:false"`
-	CreatedAt     time.Time          `gorm:"column:created_at;not null;autoCreateTime"`
-	UpdatedAt     time.Time          `gorm:"column:updated_at;not null;autoUpdateTime"`
+	TenantID      uuid.UUID         `gorm:"column:tenant_id;type:uuid;primaryKey"`
+	Provider      Provider          `gorm:"column:provider;type:sso_provider_kind;not null"`
+	Metadata      datatypes.JSONMap `gorm:"column:metadata;type:jsonb;not null"`
+	AttrMapping   datatypes.JSONMap `gorm:"column:attr_mapping;type:jsonb;not null;default:'{}'::jsonb"`
+	GIPProviderID *string           `gorm:"column:gip_provider_id"`
+	Enabled       bool              `gorm:"column:enabled;not null;default:false"`
+	CreatedAt     time.Time         `gorm:"column:created_at;not null;autoCreateTime"`
+	UpdatedAt     time.Time         `gorm:"column:updated_at;not null;autoUpdateTime"`
 }
 
 // TableName pins the Postgres table name.

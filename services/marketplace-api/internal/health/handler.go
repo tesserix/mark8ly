@@ -2,8 +2,9 @@
 //
 // /health  — liveness. Returns 200 if the process is up. No DB check.
 // /ready   — readiness. Returns 200 only when the DB is reachable via a
-//             cheap `SELECT 1`. Used by Knative and the dev docker-compose
-//             healthcheck.
+//
+//	cheap `SELECT 1`. Used by Knative and the dev docker-compose
+//	healthcheck.
 package health
 
 import (

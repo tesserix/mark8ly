@@ -17,20 +17,20 @@ import (
 // Deps groups every dependency the storefront route registrar needs.
 // Constructed in cmd/marketplace-api/main.go.
 type Deps struct {
-	Handler              *StorefrontHandler
-	CheckoutHandler      *CheckoutHandler
-	CheckoutExtHandler   *CheckoutExtHandler
-	PaymentMethodsHandler *PaymentMethodsHandler
+	Handler                *StorefrontHandler
+	CheckoutHandler        *CheckoutHandler
+	CheckoutExtHandler     *CheckoutExtHandler
+	PaymentMethodsHandler  *PaymentMethodsHandler
 	ShippingRatesHandler   *ShippingRatesHandler
 	ShippingOptionsHandler *ShippingOptionsHandler
-	WebhookHandler        *WebhookHandler
-	OrderDetailHandler    *OrderDetailHandler
-	CouponValidateHandler *CouponValidateHandler
-	GiftCardHandler       *GiftCardStorefrontHandler
-	LoyaltyHandler        *LoyaltyHandler
-	SlugCache             *stores.SlugCache
-	StorefrontKey        string
-	CountryHandler       CountryLister // optional — set when country handler is wired
+	WebhookHandler         *WebhookHandler
+	OrderDetailHandler     *OrderDetailHandler
+	CouponValidateHandler  *CouponValidateHandler
+	GiftCardHandler        *GiftCardStorefrontHandler
+	LoyaltyHandler         *LoyaltyHandler
+	SlugCache              *stores.SlugCache
+	StorefrontKey          string
+	CountryHandler         CountryLister // optional — set when country handler is wired
 	// C1 customer auth.
 	CustomerAccountHandler *CustomerAccountHandler
 	CustomerService        *customer.Service

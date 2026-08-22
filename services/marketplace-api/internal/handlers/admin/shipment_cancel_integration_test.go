@@ -58,7 +58,7 @@ func (r *recordingCarrier) CreateShipment(context.Context, shipping.ShipmentRequ
 func (r *recordingCarrier) GetTracking(context.Context, string) (*shipping.Tracking, error) {
 	return nil, nil
 }
-func (r *recordingCarrier) ProviderName() string        { return "delhivery" }
+func (r *recordingCarrier) ProviderName() string         { return "delhivery" }
 func (r *recordingCarrier) SupportedCountries() []string { return []string{"IN"} }
 
 // seedShipmentWithStatus inserts a delhivery shipment for the order in the

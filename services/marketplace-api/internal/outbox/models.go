@@ -30,12 +30,12 @@ func (OutboxEvent) TableName() string { return "outbox_events" }
 
 // Aggregate constants used by producers.
 const (
-	AggregateProduct        = "product"
-	AggregateCategory       = "category"
-	AggregateMedia          = "media"
-	AggregateOrder          = "order"
-	AggregateReturn         = "return"
-	AggregateAbandonedCart  = "abandoned_cart"
+	AggregateProduct       = "product"
+	AggregateCategory      = "category"
+	AggregateMedia         = "media"
+	AggregateOrder         = "order"
+	AggregateReturn        = "return"
+	AggregateAbandonedCart = "abandoned_cart"
 )
 
 // EventType constants.
@@ -48,16 +48,16 @@ const (
 	EventCategoryDeleted = "category.deleted"
 
 	// Orders slice 1.
-	EventOrderPlaced               = "order.placed"
-	EventOrderConfirmed            = "order.confirmed"
-	EventOrderFulfilled            = "order.fulfilled"
-	EventOrderCancelled            = "order.cancelled"
-	EventOrderRefunded             = "order.refunded"
-	EventReturnRequested           = "return.requested"
-	EventReturnApproved            = "return.approved"
-	EventReturnReceived            = "return.received"
-	EventReturnRefunded            = "return.refunded"
-	EventReturnRejected            = "return.rejected"
+	EventOrderPlaced                = "order.placed"
+	EventOrderConfirmed             = "order.confirmed"
+	EventOrderFulfilled             = "order.fulfilled"
+	EventOrderCancelled             = "order.cancelled"
+	EventOrderRefunded              = "order.refunded"
+	EventReturnRequested            = "return.requested"
+	EventReturnApproved             = "return.approved"
+	EventReturnReceived             = "return.received"
+	EventReturnRefunded             = "return.refunded"
+	EventReturnRejected             = "return.rejected"
 	EventAbandonedCartRecoveryEmail = "abandoned_cart.recovery_email"
 )
 

@@ -25,8 +25,8 @@ type providersResponse struct {
 // gipLookupResponse mirrors the Identity Toolkit accounts:lookup response.
 type gipLookupResponse struct {
 	Users []struct {
-		Email        string `json:"email"`
-		PasswordHash string `json:"passwordHash"`
+		Email            string `json:"email"`
+		PasswordHash     string `json:"passwordHash"`
 		ProviderUserInfo []struct {
 			ProviderID string `json:"providerId"`
 			Email      string `json:"email"`

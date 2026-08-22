@@ -181,11 +181,11 @@ func (h *TicketsHandler) Create(c *gin.Context) {
 			ResourceType:   "ticket",
 			ResourceID:     t.ID.String(),
 			Metadata: map[string]any{
-				"ticket_number":  t.TicketNumber,
-				"subject":        t.Subject,
-				"priority":       string(t.Priority),
-				"source":         "storefront",
-				"submitter_name": name,
+				"ticket_number":   t.TicketNumber,
+				"subject":         t.Subject,
+				"priority":        string(t.Priority),
+				"source":          "storefront",
+				"submitter_name":  name,
 				"submitter_email": email,
 			},
 		})
@@ -623,10 +623,10 @@ func (h *TicketsHandler) UpdateMyStatus(c *gin.Context) {
 			ResourceType:   "ticket",
 			ResourceID:     t.ID.String(),
 			Metadata: map[string]any{
-				"ticket_number":  t.TicketNumber,
-				"new_status":     string(t.Status),
-				"actor_email":    profile.Email,
-				"source":         "storefront",
+				"ticket_number": t.TicketNumber,
+				"new_status":    string(t.Status),
+				"actor_email":   profile.Email,
+				"source":        "storefront",
 			},
 		})
 	}

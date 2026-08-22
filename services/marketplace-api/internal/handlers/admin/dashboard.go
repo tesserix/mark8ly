@@ -20,18 +20,18 @@ import (
 
 // DashboardStats holds the top-level numeric indicators.
 type DashboardStats struct {
-	RevenueToday        float64   `json:"revenue_today"`
-	RevenueWeek         float64   `json:"revenue_week"`
-	RevenueMonth        float64   `json:"revenue_month"`
-	RevenueChangePct    float64   `json:"revenue_change_pct"`
-	RevenueTrend        []float64 `json:"revenue_trend"`
-	OrdersToday         int64     `json:"orders_today"`
-	OrdersPending       int64     `json:"orders_pending"`
-	OrdersFulfilled     int64     `json:"orders_fulfilled"`
-	OrdersCancelled     int64     `json:"orders_cancelled"`
-	CustomersTotal      int64     `json:"customers_total"`
-	CustomersNewThisWeek int64    `json:"customers_new_this_week"`
-	PendingReviews      int64     `json:"pending_reviews"`
+	RevenueToday         float64   `json:"revenue_today"`
+	RevenueWeek          float64   `json:"revenue_week"`
+	RevenueMonth         float64   `json:"revenue_month"`
+	RevenueChangePct     float64   `json:"revenue_change_pct"`
+	RevenueTrend         []float64 `json:"revenue_trend"`
+	OrdersToday          int64     `json:"orders_today"`
+	OrdersPending        int64     `json:"orders_pending"`
+	OrdersFulfilled      int64     `json:"orders_fulfilled"`
+	OrdersCancelled      int64     `json:"orders_cancelled"`
+	CustomersTotal       int64     `json:"customers_total"`
+	CustomersNewThisWeek int64     `json:"customers_new_this_week"`
+	PendingReviews       int64     `json:"pending_reviews"`
 }
 
 // RecentOrder is a summary row for a recent order.

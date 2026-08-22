@@ -58,7 +58,7 @@ func (f *fakeCarrier) CreateShipment(context.Context, shipping.ShipmentRequest) 
 func (f *fakeCarrier) GetTracking(context.Context, string) (*shipping.Tracking, error) {
 	return nil, nil
 }
-func (f *fakeCarrier) ProviderName() string        { return "delhivery" }
+func (f *fakeCarrier) ProviderName() string         { return "delhivery" }
 func (f *fakeCarrier) SupportedCountries() []string { return []string{"IN"} }
 
 func resolverFor(cr shipping.Carrier) CarrierResolver {

@@ -236,7 +236,7 @@ func TestIntegration_ProductService_Create_HandleCollision_ReturnsHandleTaken(t 
 	err := withSavepoint(t, tx, func() error {
 		_, e := svc.Create(ctx, product.CreateRequest{
 			StoreID: storeID, TenantID: tenantID, Title: "Linen Shirt",
-			Handle: "linen-shirt",
+			Handle:   "linen-shirt",
 			Variants: []product.VariantInput{{SKU: "L-2", Price: decimal.NewFromInt(1), CurrencyCode: "USD"}},
 		})
 		return e

@@ -10,7 +10,7 @@ import (
 
 // Coupon is our sanitised representation of a Stripe Coupon object.
 type Coupon struct {
-	ID               string `json:"id"`
+	ID               string   `json:"id"`
 	PercentOff       *float64 `json:"percent_off,omitempty"`
 	AmountOff        *int64   `json:"amount_off,omitempty"`
 	Currency         string   `json:"currency,omitempty"`

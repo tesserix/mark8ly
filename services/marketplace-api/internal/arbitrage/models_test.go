@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSubscriptionArbitrageAudit_NoRawIPColumn(t *testing.T) {

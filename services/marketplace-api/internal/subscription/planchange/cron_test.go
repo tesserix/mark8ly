@@ -31,10 +31,10 @@ type cronFakeSubRepo struct {
 	pendingRowsErr error
 
 	// Call records.
-	commitDowngradeCalled   bool
-	commitDowngradePlan     subscription.SubscriptionPlan
-	commitDowngradePeriod   subscription.SubscriptionPeriod
-	clearPendingCalled      bool
+	commitDowngradeCalled bool
+	commitDowngradePlan   subscription.SubscriptionPlan
+	commitDowngradePeriod subscription.SubscriptionPeriod
+	clearPendingCalled    bool
 }
 
 func (r *cronFakeSubRepo) GetByStoreID(_ context.Context, _ *gorm.DB, _, _ uuid.UUID) (*subscription.StoreSubscription, error) {
@@ -87,9 +87,9 @@ func (r *recordingStripe) UpdateSubscription(_ context.Context, p billingstripe.
 
 // fakeNotifier records NotifyDowngradeBlocked invocations.
 type fakeNotifier struct {
-	called       int
-	lastReason   string
-	lastDetails  map[string]any
+	called      int
+	lastReason  string
+	lastDetails map[string]any
 }
 
 func (n *fakeNotifier) NotifyDowngradeBlocked(_ context.Context, _, _ uuid.UUID, reason string, details map[string]any) error {

@@ -1,10 +1,10 @@
 // Package cfclient is a small Cloudflare API v4 client scoped to the
 // operations the custom-domain "Cloudflare (auto)" flow needs:
 //
-//   1. Find the zone for a merchant's domain (Zone:Read).
-//   2. Upsert a CNAME pointing the domain at our edge (DNS:Edit).
-//   3. Verify the record still exists / read its current target.
-//   4. Delete the record on takedown.
+//  1. Find the zone for a merchant's domain (Zone:Read).
+//  2. Upsert a CNAME pointing the domain at our edge (DNS:Edit).
+//  3. Verify the record still exists / read its current target.
+//  4. Delete the record on takedown.
 //
 // Tokens come from the merchant — we do not hold a platform-wide CF
 // token. The token is supplied per call so that all operations the

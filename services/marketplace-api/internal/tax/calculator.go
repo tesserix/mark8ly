@@ -76,7 +76,7 @@ type TaxBreakdown struct {
 
 // TaxLine is a single tax line item (one per jurisdiction/tax type).
 type TaxLine struct {
-	Description  string          // "VAT 20%", "CGST 9%", "CA State Tax"
+	Description  string // "VAT 20%", "CGST 9%", "CA State Tax"
 	Rate         decimal.Decimal
 	Amount       decimal.Decimal
 	Jurisdiction string // "Maharashtra", "CA-Los Angeles", "" for flat

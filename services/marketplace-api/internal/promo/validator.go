@@ -37,14 +37,14 @@ type ValidationInput struct {
 type ValidationRejectReason string
 
 const (
-	RejectReasonNotFound            ValidationRejectReason = "not_found"
-	RejectReasonExpired             ValidationRejectReason = "expired"
-	RejectReasonMaxRedemptions      ValidationRejectReason = "max_redemptions_reached"
-	RejectReasonMaxPerEmail         ValidationRejectReason = "max_per_email_reached"
-	RejectReasonWrongPlan           ValidationRejectReason = "wrong_plan"
-	RejectReasonAnnualOnly          ValidationRejectReason = "annual_only"
-	RejectReasonBelowFloor          ValidationRejectReason = "below_absolute_floor"
-	RejectReasonCurrencyNotCovered  ValidationRejectReason = "currency_not_covered"
+	RejectReasonNotFound           ValidationRejectReason = "not_found"
+	RejectReasonExpired            ValidationRejectReason = "expired"
+	RejectReasonMaxRedemptions     ValidationRejectReason = "max_redemptions_reached"
+	RejectReasonMaxPerEmail        ValidationRejectReason = "max_per_email_reached"
+	RejectReasonWrongPlan          ValidationRejectReason = "wrong_plan"
+	RejectReasonAnnualOnly         ValidationRejectReason = "annual_only"
+	RejectReasonBelowFloor         ValidationRejectReason = "below_absolute_floor"
+	RejectReasonCurrencyNotCovered ValidationRejectReason = "currency_not_covered"
 )
 
 // ValidationResult is returned by Validate. On success Accepted is true and

@@ -42,12 +42,12 @@ type createAPIKeyBody struct {
 }
 
 type apiKeyResponse struct {
-	ID              uuid.UUID `json:"id"`
-	Label           string    `json:"label"`
-	KeyPrefix       string    `json:"key_prefix"`
-	Scopes          []string  `json:"scopes"`
-	RateLimitPerMin int       `json:"rate_limit_per_min"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              uuid.UUID  `json:"id"`
+	Label           string     `json:"label"`
+	KeyPrefix       string     `json:"key_prefix"`
+	Scopes          []string   `json:"scopes"`
+	RateLimitPerMin int        `json:"rate_limit_per_min"`
+	CreatedAt       time.Time  `json:"created_at"`
 	RevokedAt       *time.Time `json:"revoked_at,omitempty"`
 	LastUsedAt      *time.Time `json:"last_used_at,omitempty"`
 }
@@ -99,10 +99,10 @@ func (h *APIKeysHandler) Create(c *gin.Context) {
 	case err == nil:
 		c.JSON(http.StatusCreated, gin.H{
 			"data": gin.H{
-				"id":              out.ID,
-				"plaintext":       out.Plaintext,
-				"display":         out.Display,
-				"warning":         "Store this key now — it will not be shown again.",
+				"id":        out.ID,
+				"plaintext": out.Plaintext,
+				"display":   out.Display,
+				"warning":   "Store this key now — it will not be shown again.",
 			},
 			"error": nil,
 		})

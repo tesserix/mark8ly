@@ -22,8 +22,8 @@ type fakeGIPAdminClient struct {
 	UpsertOIDCCallCount int
 	DeleteCallCount     int
 
-	LastPoolID     string
-	LastProviderID string
+	LastPoolID      string
+	LastProviderID  string
 	LastSAMLPayload sso.SAMLProviderPayload
 	LastOIDCPayload sso.OIDCProviderPayload
 

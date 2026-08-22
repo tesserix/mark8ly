@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStripeWebhookEvent_InsertOnConflictNoop(t *testing.T) {

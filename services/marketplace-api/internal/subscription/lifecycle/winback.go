@@ -30,10 +30,10 @@ const TemplateWinBack email.TemplateID = "win_back_day30"
 // Until P10 is wired this cron sends only the notification email via the
 // email.NoOpClient facade established in P6.
 type WinBackCron struct {
-	db      *gorm.DB
-	mailer  email.Client
-	logger  *slog.Logger
-	clock   func() time.Time
+	db     *gorm.DB
+	mailer email.Client
+	logger *slog.Logger
+	clock  func() time.Time
 }
 
 // NewWinBackCron constructs a WinBackCron.
@@ -74,10 +74,10 @@ func (c *WinBackCron) sendOne(ctx context.Context, row *subscription.StoreSubscr
 	// is not on StoreSubscription (deferred per P6 comment); the NoOpClient
 	// logs the intent and the real adapter will resolve it via Stripe customer lookup.
 	err := c.mailer.Send(ctx, TemplateWinBack, row.StripeCustomerID, map[string]any{
-		"store_id":     row.StoreID.String(),
-		"tenant_id":    row.TenantID.String(),
-		"promo":        "20%-off-6-months",
-		"note":         "email resolved by adapter from stripe_customer_id",
+		"store_id":  row.StoreID.String(),
+		"tenant_id": row.TenantID.String(),
+		"promo":     "20%-off-6-months",
+		"note":      "email resolved by adapter from stripe_customer_id",
 	})
 	if err != nil {
 		c.logger.Error("lifecycle: win-back email failed",

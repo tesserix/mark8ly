@@ -483,4 +483,3 @@ func extractCustomerID(raw []byte) (string, error) {
 	}
 	return e.Data.Object.Customer, nil
 }
-

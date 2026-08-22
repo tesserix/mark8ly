@@ -11,23 +11,23 @@ import (
 // DB layer means an order with any return cannot be hard-deleted — soft delete
 // via Order.DeletedAt is the only delete path in slice 1.
 type Return struct {
-	ID           uuid.UUID        `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	TenantID     uuid.UUID        `gorm:"column:tenant_id;type:uuid;not null"`
-	StoreID      uuid.UUID        `gorm:"column:store_id;type:uuid;not null"`
-	OrderID      uuid.UUID        `gorm:"column:order_id;type:uuid;not null"`
-	ReturnNumber string           `gorm:"column:return_number;type:varchar(40);not null"`
+	ID           uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID     uuid.UUID `gorm:"column:tenant_id;type:uuid;not null"`
+	StoreID      uuid.UUID `gorm:"column:store_id;type:uuid;not null"`
+	OrderID      uuid.UUID `gorm:"column:order_id;type:uuid;not null"`
+	ReturnNumber string    `gorm:"column:return_number;type:varchar(40);not null"`
 	// Type distinguishes a refund-only return from a replacement request.
 	// Both use the same status lifecycle; replace skips the refund step
 	// and the admin fills PickupDetails with the replacement shipment's
 	// logistics so the customer knows what to expect.
-	Type         string           `gorm:"column:type;type:varchar(20);not null;default:return"`
-	Status       string           `gorm:"column:status;type:varchar(20);not null;default:requested"`
-	Reason       *string          `gorm:"column:reason;type:varchar(80)"`
-	Notes        *string          `gorm:"column:notes;type:text"`
+	Type   string  `gorm:"column:type;type:varchar(20);not null;default:return"`
+	Status string  `gorm:"column:status;type:varchar(20);not null;default:requested"`
+	Reason *string `gorm:"column:reason;type:varchar(80)"`
+	Notes  *string `gorm:"column:notes;type:text"`
 	// PickupDetails is the free-text box the admin fills after Approve —
 	// carrier, pickup window, replacement tracking, whatever the customer
 	// needs to read on their order page next.
-	PickupDetails *string         `gorm:"column:pickup_details;type:text"`
+	PickupDetails *string `gorm:"column:pickup_details;type:text"`
 	// RejectReason is shown to the customer when Reject is called.
 	RejectReason *string          `gorm:"column:reject_reason;type:varchar(200)"`
 	RefundAmount *decimal.Decimal `gorm:"column:refund_amount;type:numeric(12,2)"`

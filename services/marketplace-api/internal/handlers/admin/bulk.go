@@ -31,8 +31,8 @@ func NewBulkHandler(svc *product.Service, authzCheck authz.Client, logger *slog.
 
 // BulkProductRequest is the wire body for POST /products/bulk.
 type BulkProductRequest struct {
-	Action     string   `json:"action" binding:"required"`
-	ProductIDs []string `json:"product_ids" binding:"required,min=1"`
+	Action     string      `json:"action" binding:"required"`
+	ProductIDs []string    `json:"product_ids" binding:"required,min=1"`
 	Params     *BulkParams `json:"params,omitempty"`
 }
 

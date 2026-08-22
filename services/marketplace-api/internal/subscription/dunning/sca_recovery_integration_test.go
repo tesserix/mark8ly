@@ -55,7 +55,7 @@ func TestSCARecovery_WebhookPaymentActionRequired_SCAReminders_InvoicePaidClears
 	parPayload, err := json.Marshal(map[string]any{
 		"data": map[string]any{
 			"object": map[string]any{
-				"customer":          stripeCustomerID,
+				"customer":           stripeCustomerID,
 				"hosted_invoice_url": hostedURL,
 			},
 		},

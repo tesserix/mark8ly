@@ -34,10 +34,10 @@ func Wrap(err error, status int, code, msg string) *AppError {
 }
 
 // Common helpers.
-func NotFound(code, msg string) *AppError    { return New(http.StatusNotFound, code, msg) }
-func BadRequest(code, msg string) *AppError  { return New(http.StatusBadRequest, code, msg) }
-func Conflict(code, msg string) *AppError    { return New(http.StatusConflict, code, msg) }
-func Internal(code, msg string) *AppError    { return New(http.StatusInternalServerError, code, msg) }
+func NotFound(code, msg string) *AppError   { return New(http.StatusNotFound, code, msg) }
+func BadRequest(code, msg string) *AppError { return New(http.StatusBadRequest, code, msg) }
+func Conflict(code, msg string) *AppError   { return New(http.StatusConflict, code, msg) }
+func Internal(code, msg string) *AppError   { return New(http.StatusInternalServerError, code, msg) }
 func Unauthorized(code, msg string) *AppError {
 	return New(http.StatusUnauthorized, code, msg)
 }

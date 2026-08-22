@@ -35,12 +35,12 @@ import (
 
 // Sentinel errors surfaced to callers.
 var (
-	ErrUserNotFound     = errors.New("gipadmin: user not found")
-	ErrInvalidOobCode   = errors.New("gipadmin: invalid or expired oob code")
-	ErrWeakPassword     = errors.New("gipadmin: password does not meet complexity rules")
-	ErrUnauthenticated  = errors.New("gipadmin: admin credentials unavailable")
-	ErrTooManyAttempts  = errors.New("gipadmin: too many attempts, try again later")
-	ErrUnavailable      = errors.New("gipadmin: upstream unavailable")
+	ErrUserNotFound    = errors.New("gipadmin: user not found")
+	ErrInvalidOobCode  = errors.New("gipadmin: invalid or expired oob code")
+	ErrWeakPassword    = errors.New("gipadmin: password does not meet complexity rules")
+	ErrUnauthenticated = errors.New("gipadmin: admin credentials unavailable")
+	ErrTooManyAttempts = errors.New("gipadmin: too many attempts, try again later")
+	ErrUnavailable     = errors.New("gipadmin: upstream unavailable")
 )
 
 // Config holds the values needed to construct an AdminClient.

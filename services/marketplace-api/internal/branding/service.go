@@ -61,35 +61,35 @@ func (s *Service) GetByStoreID(ctx context.Context, storeID uuid.UUID) (*StoreBr
 
 // UpdateInput holds the fields that can be set on a branding update.
 type UpdateInput struct {
-	TenantID         uuid.UUID
-	StoreID          uuid.UUID
-	LogoURL          *string
-	FaviconURL       *string
-	Tagline          *string
-	ColorBackground  *string
-	ColorText        *string
-	ColorAccent      *string
-	ColorButtonBg    *string
-	ColorButtonText  *string
-	HeadingFont      *string
-	BodyFont         *string
-	LayoutVariant    *string
-	HeroImageURL     *string
-	AnnouncementText *string
-	AnnouncementLink *string
-	AnnouncementBg   *string
-	AnnouncementActive *bool
-	FooterTagline    *string
-	FooterCopyright  *string
-	FooterSections   *[]FooterSection
-	HomepageContent  *json.RawMessage // nil = leave unchanged; non-nil (even empty) = write this blob
-	SocialInstagram  *string
-	SocialTwitter    *string
-	SocialFacebook   *string
-	SocialTiktok     *string
-	SocialYoutube    *string
-	CustomCSS        *string
-	ShowPoweredBy    *bool
+	TenantID              uuid.UUID
+	StoreID               uuid.UUID
+	LogoURL               *string
+	FaviconURL            *string
+	Tagline               *string
+	ColorBackground       *string
+	ColorText             *string
+	ColorAccent           *string
+	ColorButtonBg         *string
+	ColorButtonText       *string
+	HeadingFont           *string
+	BodyFont              *string
+	LayoutVariant         *string
+	HeroImageURL          *string
+	AnnouncementText      *string
+	AnnouncementLink      *string
+	AnnouncementBg        *string
+	AnnouncementActive    *bool
+	FooterTagline         *string
+	FooterCopyright       *string
+	FooterSections        *[]FooterSection
+	HomepageContent       *json.RawMessage // nil = leave unchanged; non-nil (even empty) = write this blob
+	SocialInstagram       *string
+	SocialTwitter         *string
+	SocialFacebook        *string
+	SocialTiktok          *string
+	SocialYoutube         *string
+	CustomCSS             *string
+	ShowPoweredBy         *bool
 	SeoTitleTemplate      *string
 	SeoDefaultDescription *string
 	SeoOgImageURL         *string

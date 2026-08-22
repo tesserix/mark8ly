@@ -152,8 +152,8 @@ func TestFlatRate_Exempt_Excluded(t *testing.T) {
 
 func TestFlatRate_MixedRates_ProduceDistinctLines(t *testing.T) {
 	calc := NewFlatCalculator(decimal.RequireFromString("0.20"), "VAT")
-	standard := item("100", 1)                               // 20% default → 20
-	reduced := item("100", 1)                                // override 5% → 5
+	standard := item("100", 1) // 20% default → 20
+	reduced := item("100", 1)  // override 5% → 5
 	reduced.TaxRate = decimal.RequireFromString("0.05")
 
 	got, err := calc.Calculate(context.Background(), TaxRequest{

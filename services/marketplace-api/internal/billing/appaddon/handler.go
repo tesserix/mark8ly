@@ -43,10 +43,10 @@ type subscriptionLookup interface {
 // Pro-gated. Records the Apple 4.2.6 attestation at purchase time
 // (not at invoice.paid) so abandoned Stripe flows still capture the ack.
 type Handler struct {
-	db       *gorm.DB
-	stripe   InvoiceAPI
-	subRepo  subscriptionLookup
-	clock    func() time.Time
+	db      *gorm.DB
+	stripe  InvoiceAPI
+	subRepo subscriptionLookup
+	clock   func() time.Time
 }
 
 // Config groups Handler construction params.
@@ -159,9 +159,9 @@ func (h *Handler) Purchase(c *gin.Context) {
 		AmountCents: amountCents,
 		Description: "White-label mobile app add-on (prorated + $2000 setup)",
 		Metadata: map[string]string{
-			"kind":       "white_label_app_add_on",
-			"tenant_id":  tenantID.String(),
-			"store_id":   storeID.String(),
+			"kind":      "white_label_app_add_on",
+			"tenant_id": tenantID.String(),
+			"store_id":  storeID.String(),
 		},
 		IdempotencyKey: idem,
 	})

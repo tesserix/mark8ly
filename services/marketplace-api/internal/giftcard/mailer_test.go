@@ -28,7 +28,7 @@ func sampleDeliveryInput() DeliveryInput {
 			RecipientName:  &recipient,
 			Message:        &msg,
 		},
-		Theme: GiftCardEmailTheme{StoreName: "Acme Store"},
+		Theme:         GiftCardEmailTheme{StoreName: "Acme Store"},
 		StorefrontURL: "https://acme.example",
 	}
 }

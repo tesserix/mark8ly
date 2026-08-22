@@ -26,7 +26,7 @@ func newTestService(t *testing.T) (*apikeys.Service, *gorm.DB) {
 func validProInput() apikeys.CreateInput {
 	return apikeys.CreateInput{
 		TenantID: uuid.New(), StoreID: uuid.New(), CreatedBy: uuid.New(),
-		Scopes: []string{"products:read", "products:write"},
+		Scopes:          []string{"products:read", "products:write"},
 		RateLimitPerMin: 500, Label: "Integration A",
 		Plan: subscription.PlanPro,
 	}
@@ -51,7 +51,7 @@ func TestService_Create_StudioCannotCreateWriteScope(t *testing.T) {
 	svc, _ := newTestService(t)
 	in := apikeys.CreateInput{
 		TenantID: uuid.New(), StoreID: uuid.New(), CreatedBy: uuid.New(),
-		Scopes: []string{"products:read", "products:write"},
+		Scopes:          []string{"products:read", "products:write"},
 		RateLimitPerMin: 100, Label: "X",
 		Plan: subscription.PlanStudio,
 	}

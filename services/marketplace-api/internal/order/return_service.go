@@ -425,4 +425,3 @@ func derefString(p *string) string {
 	}
 	return *p
 }
-

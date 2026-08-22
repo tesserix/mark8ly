@@ -233,9 +233,9 @@ func (c *Cron) unpublishAfter14Days(ctx context.Context, tx *gorm.DB) error {
 			ResourceID:   "",
 			Severity:     audit.SeverityWarning,
 			Metadata: map[string]any{
-				"reason":      "tax_revalidation_failed",
-				"row_count":   r.RowsAffected,
-				"actor":       "system:cron:tax_revalidation",
+				"reason":    "tax_revalidation_failed",
+				"row_count": r.RowsAffected,
+				"actor":     "system:cron:tax_revalidation",
 			},
 		})
 	}

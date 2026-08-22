@@ -24,13 +24,13 @@ import (
 //
 // Domain events are written to two places inside the same tx as the
 // mutation that triggers them:
-//   1. order_events — append-only audit log scoped to the order itself.
-//   2. outbox_events — products-owned shared table, picked up by
-//      internal/outbox.Publisher and used to bump store_watermarks.orders_updated_at.
+//  1. order_events — append-only audit log scoped to the order itself.
+//  2. outbox_events — products-owned shared table, picked up by
+//     internal/outbox.Publisher and used to bump store_watermarks.orders_updated_at.
 type Service struct {
-	db      *gorm.DB
-	repo    Repository
-	outbox  outbox.Repository
+	db     *gorm.DB
+	repo   Repository
+	outbox outbox.Repository
 }
 
 // NewService constructs a Service. The db is used both for opening fresh
@@ -82,8 +82,8 @@ type CreateInput struct {
 	// of a hardcoded fallback.
 	ShippingService *string
 	ShippingCarrier *string
-	Notes          *string
-	PlacedAt       time.Time
+	Notes           *string
+	PlacedAt        time.Time
 
 	// WithinTx, when set, runs inside the SAME transaction that inserts the
 	// order, after the order aggregate and its outbox row are written. It
@@ -385,11 +385,11 @@ func (s *Service) RecordRefund(ctx context.Context, tx *gorm.DB, orderID uuid.UU
 			return err
 		}
 		return s.enqueueOutbox(ctx, tx, o.TenantID, outbox.AggregateOrder, orderID, outbox.EventOrderRefunded, map[string]any{
-			"store_id":         o.StoreID.String(),
-			"order_id":         orderID.String(),
-			"amount":           amount.String(),
-			"refunded_total":   newRefunded.String(),
-			"payment_status":   string(paymentStatusTarget),
+			"store_id":       o.StoreID.String(),
+			"order_id":       orderID.String(),
+			"amount":         amount.String(),
+			"refunded_total": newRefunded.String(),
+			"payment_status": string(paymentStatusTarget),
 		})
 	})
 }

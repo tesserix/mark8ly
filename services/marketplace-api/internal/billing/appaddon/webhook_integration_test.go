@@ -20,7 +20,7 @@ func seedProSub(t *testing.T, tenantID, storeID uuid.UUID, plan subscription.Sub
 	sub := &subscription.StoreSubscription{
 		ID: uuid.New(), TenantID: tenantID, StoreID: storeID,
 		StripeCustomerID: "cus_" + storeID.String()[:8],
-		Plan: plan, Status: subscription.StatusActive,
+		Plan:             plan, Status: subscription.StatusActive,
 	}
 	require.NoError(t, db.Create(sub).Error)
 	return sub

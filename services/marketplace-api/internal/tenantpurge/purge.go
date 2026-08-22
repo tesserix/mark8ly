@@ -139,14 +139,14 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 	// scoped table is stripe_webhook_events (000043).
 	// ------------------------------------------------------------------
 	steps = append(steps,
-		tenantScoped("refund_audit", tenantID),               // 000062: tenant_id, store_id
-		tenantScoped("refund_transactions", tenantID),         // 000008+000092-094: tenant_id
-		tenantScoped("platform_fee_ledger", tenantID),         // 000008: tenant_id, store_id
+		tenantScoped("refund_audit", tenantID),        // 000062: tenant_id, store_id
+		tenantScoped("refund_transactions", tenantID), // 000008+000092-094: tenant_id
+		tenantScoped("platform_fee_ledger", tenantID), // 000008: tenant_id, store_id
 		subquery("order_tax_lines", "order_id", "orders", tenantID),
-		tenantScoped("coupon_usage", tenantID),                // 000009: tenant_id
-		tenantScoped("stripe_webhook_events", tenantID),       // 000043: tenant_id (nullable)
-		tenantScoped("payment_transactions", tenantID),        // 000008: tenant_id, store_id
-		tenantScoped("shipments", tenantID),                   // 000008: tenant_id, store_id
+		tenantScoped("coupon_usage", tenantID),          // 000009: tenant_id
+		tenantScoped("stripe_webhook_events", tenantID), // 000043: tenant_id (nullable)
+		tenantScoped("payment_transactions", tenantID),  // 000008: tenant_id, store_id
+		tenantScoped("shipments", tenantID),             // 000008: tenant_id, store_id
 	)
 
 	// ------------------------------------------------------------------
@@ -168,7 +168,7 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		subquery("order_events", "order_id", "orders", tenantID),
 		subquery("order_addresses", "order_id", "orders", tenantID),
 		subquery("order_items", "order_id", "orders", tenantID),
-		tenantScoped("orders", tenantID),         // 000002: tenant_id, store_id
+		tenantScoped("orders", tenantID),          // 000002: tenant_id, store_id
 		tenantScoped("abandoned_carts", tenantID), // 000002: tenant_id, store_id
 		storeScoped("csv_import_jobs", storeIDs),  // 000007: store_id only, no tenant_id
 	)
@@ -194,11 +194,11 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		subquery("review_reactions", "review_id", "reviews", tenantID),
 		subquery("review_replies", "review_id", "reviews", tenantID),
 		subquery("review_media", "review_id", "reviews", tenantID),
-		tenantScoped("reviews", tenantID),                    // 000017: tenant_id, store_id
-		tenantScoped("wishlists", tenantID),                  // 000018: tenant_id, store_id
+		tenantScoped("reviews", tenantID),                      // 000017: tenant_id, store_id
+		tenantScoped("wishlists", tenantID),                    // 000018: tenant_id, store_id
 		tenantScoped("product_notify_subscriptions", tenantID), // 000023: tenant_id
-		tenantScoped("products", tenantID),                   // 000001: tenant_id, store_id
-		tenantScoped("categories", tenantID),                 // 000001: tenant_id, store_id
+		tenantScoped("products", tenantID),                     // 000001: tenant_id, store_id
+		tenantScoped("categories", tenantID),                   // 000001: tenant_id, store_id
 	)
 
 	// ------------------------------------------------------------------
@@ -233,28 +233,28 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		// (self-expiring via locked_until) — safe to retain. See protectedTables
 		// in purge_test.go. break_glass_accounts (below) IS owned by marketplace_api
 		// and is still purged.
-		tenantScoped("break_glass_accounts", tenantID),     // 000072: tenant_id (PK)
-		tenantScoped("enterprise_api_keys", tenantID),      // 000068: tenant_id, store_id
-		tenantScoped("audit_logs", tenantID),               // 000035ish: tenant_id, store_id
+		tenantScoped("break_glass_accounts", tenantID), // 000072: tenant_id (PK)
+		tenantScoped("enterprise_api_keys", tenantID),  // 000068: tenant_id, store_id
+		tenantScoped("audit_logs", tenantID),           // 000035ish: tenant_id, store_id
 		subquery("payment_action_reminders", "subscription_id", "store_subscriptions", tenantID),
-		tenantScoped("trial_reminders", tenantID),          // 000088: tenant_id, store_id
-		tenantScoped("warehouses", tenantID),                // 000095: tenant_id, store_id
-		tenantScoped("white_label_app_lifecycle", tenantID), // 000048ish: tenant_id, store_id
-		tenantScoped("white_label_app_state", tenantID),     // 000076: tenant_id, store_id
-		tenantScoped("referrals", tenantID),                 // 000011: tenant_id, store_id — before customer_loyalties
-		tenantScoped("customer_loyalties", tenantID),        // 000011: tenant_id, store_id
-		tenantScoped("sea_manual_review_queue", tenantID),   // 000065: tenant_id, store_id
-		tenantScoped("tax_validation_outage_log", tenantID), // 000066: tenant_id (nullable)
+		tenantScoped("trial_reminders", tenantID),             // 000088: tenant_id, store_id
+		tenantScoped("warehouses", tenantID),                  // 000095: tenant_id, store_id
+		tenantScoped("white_label_app_lifecycle", tenantID),   // 000048ish: tenant_id, store_id
+		tenantScoped("white_label_app_state", tenantID),       // 000076: tenant_id, store_id
+		tenantScoped("referrals", tenantID),                   // 000011: tenant_id, store_id — before customer_loyalties
+		tenantScoped("customer_loyalties", tenantID),          // 000011: tenant_id, store_id
+		tenantScoped("sea_manual_review_queue", tenantID),     // 000065: tenant_id, store_id
+		tenantScoped("tax_validation_outage_log", tenantID),   // 000066: tenant_id (nullable)
 		tenantScoped("migration_fast_path_reviews", tenantID), // 000051: tenant_id, store_id
 		tenantScoped("customer_erasure_requests", tenantID),   // 000059: tenant_id, store_id
 		storeScoped("promo_redemptions", storeIDs),            // 000061: store_id only, no tenant_id
 		storeScoped("campaign_email_budget", storeIDs),        // 000047ish: store_id only, no tenant_id
 		storeScoped("store_transactional_counter", storeIDs),  // 000064: store_id only, no tenant_id
-		tenantScoped("notifications", tenantID),                // 000016: tenant_id, store_id — NOT cascade-linked to stores
-		tenantScoped("pages", tenantID),                         // 000028ish: tenant_id, store_id — NOT cascade-linked to stores
-		tenantScoped("support_tickets", tenantID),               // 000089: tenant_id, store_id (support_ticket_replies CASCADEs from it)
-		tenantScoped("outbox_events", tenantID),                 // 000001: tenant_id
-		tenantScoped("idempotency_keys", tenantID),              // 000001: tenant_id
+		tenantScoped("notifications", tenantID),               // 000016: tenant_id, store_id — NOT cascade-linked to stores
+		tenantScoped("pages", tenantID),                       // 000028ish: tenant_id, store_id — NOT cascade-linked to stores
+		tenantScoped("support_tickets", tenantID),             // 000089: tenant_id, store_id (support_ticket_replies CASCADEs from it)
+		tenantScoped("outbox_events", tenantID),               // 000001: tenant_id
+		tenantScoped("idempotency_keys", tenantID),            // 000001: tenant_id
 	)
 
 	// ------------------------------------------------------------------

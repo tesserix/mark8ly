@@ -2,8 +2,8 @@ package csvjob_test
 
 import (
 	"context"
-	"testing"
 	"log/slog"
+	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -12,11 +12,11 @@ import (
 )
 
 // TestCrashRecovery_OrphanedJobPausedAndResumed simulates a worker crash:
-// 1. Create a job with status='running' and stale heartbeat (30 min ago).
-// 2. Run the recovery scan → assert job moves to 'paused'.
-// 3. Resume the job → assert it goes back to 'queued'.
-// 4. Run the worker with a fresh CSV → assert it resumes from
-//    last_processed_row and produces no duplicate products.
+//  1. Create a job with status='running' and stale heartbeat (30 min ago).
+//  2. Run the recovery scan → assert job moves to 'paused'.
+//  3. Resume the job → assert it goes back to 'queued'.
+//  4. Run the worker with a fresh CSV → assert it resumes from
+//     last_processed_row and produces no duplicate products.
 func TestCrashRecovery_OrphanedJobPausedAndResumed(t *testing.T) {
 	repo := newFakeRepo()
 	ctx := context.Background()

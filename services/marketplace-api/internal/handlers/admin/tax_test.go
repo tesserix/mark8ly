@@ -22,9 +22,9 @@ func init() {
 
 // fakeSubmitService captures Submit calls and returns a configured error.
 type fakeSubmitService struct {
-	err     error
-	lastIn  tax.SubmitInput
-	calls   int
+	err    error
+	lastIn tax.SubmitInput
+	calls  int
 }
 
 func (f *fakeSubmitService) Submit(_ context.Context, in tax.SubmitInput) error {

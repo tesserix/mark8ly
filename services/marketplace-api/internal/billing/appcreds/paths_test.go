@@ -10,9 +10,9 @@ func TestPath_MatchesSpec18_9(t *testing.T) {
 	project := "tesserix-prod"
 
 	cases := []struct {
-		name  string
-		cred  CredType
-		want  string
+		name string
+		cred CredType
+		want string
 	}{
 		{"apple_p8", CredTypeAppleP8,
 			"projects/tesserix-prod/secrets/merchant_11111111-1111-1111-1111-111111111111_apple-asc-api-key"},

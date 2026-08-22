@@ -41,7 +41,7 @@ func TestDelhivery_CreateShipment_SendsTokenAsBearer(t *testing.T) {
 	}
 
 	sh, err := c.CreateShipment(context.Background(), ShipmentRequest{
-		OrderID:  "ORD-1",
+		OrderID: "ORD-1",
 		FromAddress: Address{
 			Name: "Warehouse A", Line1: "1 Store Rd", City: "Bengaluru",
 			Region: "Karnataka", PostalCode: "560001", CountryCode: "IN", Phone: "9000000000",

@@ -227,9 +227,9 @@ func TestStorefrontCheckout_LinksAbandonedCart(t *testing.T) {
 	}
 
 	body := map[string]any{
-		"idempotency_key":  "link-" + uuid.NewString(),
-		"cart_session_id":  cartSessionID,
-		"customer_email":   "linker@example.com",
+		"idempotency_key": "link-" + uuid.NewString(),
+		"cart_session_id": cartSessionID,
+		"customer_email":  "linker@example.com",
 		"items": []map[string]any{
 			{
 				"title_snapshot": "Widget",

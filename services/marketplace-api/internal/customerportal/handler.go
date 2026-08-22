@@ -38,12 +38,12 @@ func NewHandler(db *gorm.DB, logger *slog.Logger) *Handler {
 
 // orderSummary is the public view of an order returned by the portal.
 type orderSummary struct {
-	ID            string `json:"id"`
-	OrderNumber   string `json:"order_number"`
-	Status        string `json:"status"`
-	GrandTotal    string `json:"grand_total"`
-	CurrencyCode  string `json:"currency_code"`
-	CreatedAt     string `json:"created_at"`
+	ID           string `json:"id"`
+	OrderNumber  string `json:"order_number"`
+	Status       string `json:"status"`
+	GrandTotal   string `json:"grand_total"`
+	CurrencyCode string `json:"currency_code"`
+	CreatedAt    string `json:"created_at"`
 }
 
 // MyOrders handles GET /storefront/stores/:storeSlug/my-orders/:email/:order_token.

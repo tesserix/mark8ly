@@ -19,8 +19,8 @@ import (
 
 // fakeOrch is a test double for changePlanOrchestrator.
 type fakeOrch struct {
-	executeOut planchange.Output
-	executeErr error
+	executeOut   planchange.Output
+	executeErr   error
 	preflightOut planchange.PreflightReport
 	preflightErr error
 }

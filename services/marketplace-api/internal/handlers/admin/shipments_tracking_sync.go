@@ -70,14 +70,14 @@ type SyncSummary struct {
 // we pull for the sync loop. Flat-struct GORM scan keeps the query to
 // one round-trip.
 type openShipment struct {
-	ID              uuid.UUID `gorm:"column:id"`
-	TenantID        uuid.UUID `gorm:"column:tenant_id"`
-	StoreID         uuid.UUID `gorm:"column:store_id"`
-	OrderID         uuid.UUID `gorm:"column:order_id"`
-	Carrier         string    `gorm:"column:carrier"`
-	TrackingNumber  string    `gorm:"column:tracking_number"`
-	Status          string    `gorm:"column:status"`
-	CurrencyCode    string    `gorm:"column:currency_code"`
+	ID             uuid.UUID `gorm:"column:id"`
+	TenantID       uuid.UUID `gorm:"column:tenant_id"`
+	StoreID        uuid.UUID `gorm:"column:store_id"`
+	OrderID        uuid.UUID `gorm:"column:order_id"`
+	Carrier        string    `gorm:"column:carrier"`
+	TrackingNumber string    `gorm:"column:tracking_number"`
+	Status         string    `gorm:"column:status"`
+	CurrencyCode   string    `gorm:"column:currency_code"`
 }
 
 // SyncAllOpenShipments handles POST /internal/shipments/tracking/sync.

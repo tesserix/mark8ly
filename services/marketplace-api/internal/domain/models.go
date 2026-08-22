@@ -53,17 +53,17 @@ type CustomDomain struct {
 	// (cf_api_token_encrypted) is preserved so we don't need a schema
 	// migration; HybridStore.Get accepts gsm://, aes:/noop: and bare
 	// plaintext, so any pre-existing rows keep working.
-	CFAPITokenRef         string       `gorm:"column:cf_api_token_encrypted;type:text;default:''"`
-	SSLStatus             SSLStatus    `gorm:"column:ssl_status;type:varchar(20);not null;default:pending"`
-	VerifiedAt            *time.Time   `gorm:"column:verified_at"`
-	ErrorMessage          *string      `gorm:"column:error_message;type:text"`
+	CFAPITokenRef string     `gorm:"column:cf_api_token_encrypted;type:text;default:''"`
+	SSLStatus     SSLStatus  `gorm:"column:ssl_status;type:varchar(20);not null;default:pending"`
+	VerifiedAt    *time.Time `gorm:"column:verified_at"`
+	ErrorMessage  *string    `gorm:"column:error_message;type:text"`
 	// Cert provisioning state. Populated when k8sprov creates a
 	// cert-manager Certificate resource for the domain.
-	CertStatus     string  `gorm:"column:cert_status;type:varchar(20);not null;default:pending"`
-	CertSecretName *string `gorm:"column:cert_secret_name;type:varchar(253)"`
-	CertError      *string `gorm:"column:cert_error;type:text"`
-	CreatedAt             time.Time    `gorm:"column:created_at;not null;default:now()"`
-	UpdatedAt             time.Time    `gorm:"column:updated_at;not null;default:now()"`
+	CertStatus     string    `gorm:"column:cert_status;type:varchar(20);not null;default:pending"`
+	CertSecretName *string   `gorm:"column:cert_secret_name;type:varchar(253)"`
+	CertError      *string   `gorm:"column:cert_error;type:text"`
+	CreatedAt      time.Time `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt      time.Time `gorm:"column:updated_at;not null;default:now()"`
 }
 
 func (CustomDomain) TableName() string { return "custom_domains" }

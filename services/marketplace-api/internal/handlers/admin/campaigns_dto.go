@@ -11,7 +11,7 @@ import (
 // CreateCampaignRequest is the JSON body for POST /campaigns.
 type CreateCampaignRequest struct {
 	Name               string  `json:"name" binding:"required"`
-	Type               string  `json:"type"`      // defaults to "email"
+	Type               string  `json:"type"` // defaults to "email"
 	Subject            string  `json:"subject"`
 	Content            string  `json:"content"`
 	SegmentID          *string `json:"segment_id"`
@@ -42,23 +42,23 @@ type ScheduleCampaignRequest struct {
 
 // CampaignResponse is the JSON response for a campaign.
 type CampaignResponse struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	Type            string  `json:"type"`
-	Status          string  `json:"status"`
-	Subject         *string `json:"subject"`
-	Content         *string `json:"content"`
-	SegmentID       *string `json:"segment_id"`
-	CouponID        *string `json:"coupon_id"`
-	ScheduledAt     *string `json:"scheduled_at"`
-	SentAt          *string `json:"sent_at"`
-	TotalRecipients int     `json:"total_recipients"`
-	Delivered       int     `json:"delivered"`
-	Opened          int     `json:"opened"`
-	Clicked         int     `json:"clicked"`
-	Converted       int     `json:"converted"`
-	Unsubscribed    int     `json:"unsubscribed"`
-	Failed          int     `json:"failed"`
+	ID                 string  `json:"id"`
+	Name               string  `json:"name"`
+	Type               string  `json:"type"`
+	Status             string  `json:"status"`
+	Subject            *string `json:"subject"`
+	Content            *string `json:"content"`
+	SegmentID          *string `json:"segment_id"`
+	CouponID           *string `json:"coupon_id"`
+	ScheduledAt        *string `json:"scheduled_at"`
+	SentAt             *string `json:"sent_at"`
+	TotalRecipients    int     `json:"total_recipients"`
+	Delivered          int     `json:"delivered"`
+	Opened             int     `json:"opened"`
+	Clicked            int     `json:"clicked"`
+	Converted          int     `json:"converted"`
+	Unsubscribed       int     `json:"unsubscribed"`
+	Failed             int     `json:"failed"`
 	Revenue            string  `json:"revenue"`
 	ShowOnStorefront   bool    `json:"show_on_storefront"`
 	StorefrontLabel    *string `json:"storefront_label,omitempty"`
@@ -70,19 +70,19 @@ type CampaignResponse struct {
 // ToCampaignResponse maps a domain Campaign to its response DTO.
 func ToCampaignResponse(c *campaign.Campaign) CampaignResponse {
 	resp := CampaignResponse{
-		ID:              c.ID.String(),
-		Name:            c.Name,
-		Type:            c.Type,
-		Status:          c.Status,
-		Subject:         c.Subject,
-		Content:         c.Content,
-		TotalRecipients: c.TotalRecipients,
-		Delivered:       c.Delivered,
-		Opened:          c.Opened,
-		Clicked:         c.Clicked,
-		Converted:       c.Converted,
-		Unsubscribed:    c.Unsubscribed,
-		Failed:          c.Failed,
+		ID:                 c.ID.String(),
+		Name:               c.Name,
+		Type:               c.Type,
+		Status:             c.Status,
+		Subject:            c.Subject,
+		Content:            c.Content,
+		TotalRecipients:    c.TotalRecipients,
+		Delivered:          c.Delivered,
+		Opened:             c.Opened,
+		Clicked:            c.Clicked,
+		Converted:          c.Converted,
+		Unsubscribed:       c.Unsubscribed,
+		Failed:             c.Failed,
 		Revenue:            c.Revenue.StringFixed(2),
 		ShowOnStorefront:   c.ShowOnStorefront,
 		StorefrontLabel:    c.StorefrontLabel,

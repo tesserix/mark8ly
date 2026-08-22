@@ -126,13 +126,13 @@ func (s *AbandonedCartService) TriggerRecoveryEmail(ctx context.Context, cartID 
 			return err
 		}
 		payload := map[string]any{
-			"store_id":         c.StoreID.String(),
+			"store_id":          c.StoreID.String(),
 			"abandoned_cart_id": cartID.String(),
-			"customer_email":   derefString(c.CustomerEmail),
-			"recovery_url":     derefString(c.RecoveryURL),
-			"item_count":       c.ItemCount,
-			"subtotal":         c.Subtotal.String(),
-			"currency":         c.CurrencyCode,
+			"customer_email":    derefString(c.CustomerEmail),
+			"recovery_url":      derefString(c.RecoveryURL),
+			"item_count":        c.ItemCount,
+			"subtotal":          c.Subtotal.String(),
+			"currency":          c.CurrencyCode,
 		}
 		b, err := json.Marshal(payload)
 		if err != nil {

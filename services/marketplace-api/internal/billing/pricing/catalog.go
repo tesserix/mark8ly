@@ -171,10 +171,10 @@ type pppKey struct {
 var pppAmounts = map[pppKey]Amount{
 	// --- Starter monthly PPP ---
 	// Spec §4.1.1: ₹999, RM59, ฿499, ₱749, Rp199,000, ₫329,000
-	{PlanStarter, PeriodMonthly, "inr"}: {Currency: "inr", UnitAmountMinor: 99900},   // 999.00 INR
-	{PlanStarter, PeriodMonthly, "myr"}: {Currency: "myr", UnitAmountMinor: 5900},    // 59.00 MYR
-	{PlanStarter, PeriodMonthly, "thb"}: {Currency: "thb", UnitAmountMinor: 49900},   // 499.00 THB
-	{PlanStarter, PeriodMonthly, "php"}: {Currency: "php", UnitAmountMinor: 74900},   // 749.00 PHP
+	{PlanStarter, PeriodMonthly, "inr"}: {Currency: "inr", UnitAmountMinor: 99900},    // 999.00 INR
+	{PlanStarter, PeriodMonthly, "myr"}: {Currency: "myr", UnitAmountMinor: 5900},     // 59.00 MYR
+	{PlanStarter, PeriodMonthly, "thb"}: {Currency: "thb", UnitAmountMinor: 49900},    // 499.00 THB
+	{PlanStarter, PeriodMonthly, "php"}: {Currency: "php", UnitAmountMinor: 74900},    // 749.00 PHP
 	{PlanStarter, PeriodMonthly, "idr"}: {Currency: "idr", UnitAmountMinor: 19900000}, // 199,000 IDR (zero-decimal ×100)
 	{PlanStarter, PeriodMonthly, "vnd"}: {Currency: "vnd", UnitAmountMinor: 32900000}, // 329,000 VND (zero-decimal ×100)
 
@@ -198,21 +198,21 @@ var pppAmounts = map[pppKey]Amount{
 
 	// --- Studio annual PPP ---
 	// Spec §4.1.1: ₹23,999, RM1,429, ฿11,519, ₱18,239, Rp4,799,000, ₫7,699,000
-	{PlanStudio, PeriodAnnual, "inr"}: {Currency: "inr", UnitAmountMinor: 2399900},    // 23,999.00 INR
-	{PlanStudio, PeriodAnnual, "myr"}: {Currency: "myr", UnitAmountMinor: 142900},     // 1,429.00 MYR
-	{PlanStudio, PeriodAnnual, "thb"}: {Currency: "thb", UnitAmountMinor: 1151900},    // 11,519.00 THB
-	{PlanStudio, PeriodAnnual, "php"}: {Currency: "php", UnitAmountMinor: 1823900},    // 18,239.00 PHP
-	{PlanStudio, PeriodAnnual, "idr"}: {Currency: "idr", UnitAmountMinor: 479900000},  // 4,799,000 IDR (zero-decimal ×100)
-	{PlanStudio, PeriodAnnual, "vnd"}: {Currency: "vnd", UnitAmountMinor: 769900000},  // 7,699,000 VND (zero-decimal ×100)
+	{PlanStudio, PeriodAnnual, "inr"}: {Currency: "inr", UnitAmountMinor: 2399900},   // 23,999.00 INR
+	{PlanStudio, PeriodAnnual, "myr"}: {Currency: "myr", UnitAmountMinor: 142900},    // 1,429.00 MYR
+	{PlanStudio, PeriodAnnual, "thb"}: {Currency: "thb", UnitAmountMinor: 1151900},   // 11,519.00 THB
+	{PlanStudio, PeriodAnnual, "php"}: {Currency: "php", UnitAmountMinor: 1823900},   // 18,239.00 PHP
+	{PlanStudio, PeriodAnnual, "idr"}: {Currency: "idr", UnitAmountMinor: 479900000}, // 4,799,000 IDR (zero-decimal ×100)
+	{PlanStudio, PeriodAnnual, "vnd"}: {Currency: "vnd", UnitAmountMinor: 769900000}, // 7,699,000 VND (zero-decimal ×100)
 
 	// --- Pro annual PPP ---
 	// Spec §4.1.1: ₹65,999/yr, RM3,588/yr, ฿28,788/yr, ₱45,588/yr, Rp11,988,000/yr, ₫19,788,000/yr
-	{PlanPro, PeriodAnnual, "inr"}: {Currency: "inr", UnitAmountMinor: 6599900},     // 65,999.00 INR
-	{PlanPro, PeriodAnnual, "myr"}: {Currency: "myr", UnitAmountMinor: 358800},      // 3,588.00 MYR
-	{PlanPro, PeriodAnnual, "thb"}: {Currency: "thb", UnitAmountMinor: 2878800},     // 28,788.00 THB
-	{PlanPro, PeriodAnnual, "php"}: {Currency: "php", UnitAmountMinor: 4558800},     // 45,588.00 PHP
-	{PlanPro, PeriodAnnual, "idr"}: {Currency: "idr", UnitAmountMinor: 1198800000},  // 11,988,000 IDR (zero-decimal ×100)
-	{PlanPro, PeriodAnnual, "vnd"}: {Currency: "vnd", UnitAmountMinor: 1978800000},  // 19,788,000 VND (zero-decimal ×100)
+	{PlanPro, PeriodAnnual, "inr"}: {Currency: "inr", UnitAmountMinor: 6599900},    // 65,999.00 INR
+	{PlanPro, PeriodAnnual, "myr"}: {Currency: "myr", UnitAmountMinor: 358800},     // 3,588.00 MYR
+	{PlanPro, PeriodAnnual, "thb"}: {Currency: "thb", UnitAmountMinor: 2878800},    // 28,788.00 THB
+	{PlanPro, PeriodAnnual, "php"}: {Currency: "php", UnitAmountMinor: 4558800},    // 45,588.00 PHP
+	{PlanPro, PeriodAnnual, "idr"}: {Currency: "idr", UnitAmountMinor: 1198800000}, // 11,988,000 IDR (zero-decimal ×100)
+	{PlanPro, PeriodAnnual, "vnd"}: {Currency: "vnd", UnitAmountMinor: 1978800000}, // 19,788,000 VND (zero-decimal ×100)
 
 	// --- Pro monthly PPP ---
 	// Spec §4.1.1 lists only the annual Pro PPP figure for India (₹65,999/yr, ₹5,499/mo eq).
@@ -223,12 +223,12 @@ var pppAmounts = map[pppKey]Amount{
 	//   PHP: ₱45,588/12=3799 × 1.20 = ₱4,558.80 → ₱4,559
 	//   IDR: Rp11,988,000/12=999,000 × 1.20 = Rp1,198,800 → Rp1,198,800
 	//   VND: ₫19,788,000/12=1,649,000 × 1.20 = ₫1,978,800 → ₫1,978,800
-	{PlanPro, PeriodMonthly, "inr"}: {Currency: "inr", UnitAmountMinor: 659900},     // 6,599.00 INR
-	{PlanPro, PeriodMonthly, "myr"}: {Currency: "myr", UnitAmountMinor: 35900},      // 359.00 MYR
-	{PlanPro, PeriodMonthly, "thb"}: {Currency: "thb", UnitAmountMinor: 287900},     // 2,879.00 THB
-	{PlanPro, PeriodMonthly, "php"}: {Currency: "php", UnitAmountMinor: 455900},     // 4,559.00 PHP
-	{PlanPro, PeriodMonthly, "idr"}: {Currency: "idr", UnitAmountMinor: 119880000},  // 1,198,800 IDR (zero-decimal ×100)
-	{PlanPro, PeriodMonthly, "vnd"}: {Currency: "vnd", UnitAmountMinor: 197880000},  // 1,978,800 VND (zero-decimal ×100)
+	{PlanPro, PeriodMonthly, "inr"}: {Currency: "inr", UnitAmountMinor: 659900},    // 6,599.00 INR
+	{PlanPro, PeriodMonthly, "myr"}: {Currency: "myr", UnitAmountMinor: 35900},     // 359.00 MYR
+	{PlanPro, PeriodMonthly, "thb"}: {Currency: "thb", UnitAmountMinor: 287900},    // 2,879.00 THB
+	{PlanPro, PeriodMonthly, "php"}: {Currency: "php", UnitAmountMinor: 455900},    // 4,559.00 PHP
+	{PlanPro, PeriodMonthly, "idr"}: {Currency: "idr", UnitAmountMinor: 119880000}, // 1,198,800 IDR (zero-decimal ×100)
+	{PlanPro, PeriodMonthly, "vnd"}: {Currency: "vnd", UnitAmountMinor: 197880000}, // 1,978,800 VND (zero-decimal ×100)
 }
 
 // pppLookupKey returns the canonical Stripe lookup_key for a PPP-tier descriptor.

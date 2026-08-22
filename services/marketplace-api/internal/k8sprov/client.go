@@ -23,16 +23,16 @@ import (
 )
 
 const (
-	istioIngressNS         = "istio-ingress"
-	storefrontNS           = "mark8ly"
-	storefrontService      = "mark8ly-storefront.mark8ly.svc.cluster.local"
-	storefrontPort         = 4203
-	adminService           = "mark8ly-admin.mark8ly.svc.cluster.local"
-	adminPort              = 4202
-	clusterIssuer          = "letsencrypt-custom-domain"
-	istioGatewaySelector   = "custom-ingressgateway"
-	managedByLabel         = "mark8ly-marketplace-api"
-	customDomainLabel      = "custom-domain"
+	istioIngressNS       = "istio-ingress"
+	storefrontNS         = "mark8ly"
+	storefrontService    = "mark8ly-storefront.mark8ly.svc.cluster.local"
+	storefrontPort       = 4203
+	adminService         = "mark8ly-admin.mark8ly.svc.cluster.local"
+	adminPort            = 4202
+	clusterIssuer        = "letsencrypt-custom-domain"
+	istioGatewaySelector = "custom-ingressgateway"
+	managedByLabel       = "mark8ly-marketplace-api"
+	customDomainLabel    = "custom-domain"
 )
 
 var (

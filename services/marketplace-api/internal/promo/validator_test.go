@@ -19,8 +19,8 @@ var now = time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
 
 func TestValidate(t *testing.T) {
 	tests := []struct {
-		name        string
-		in          ValidationInput
+		name         string
+		in           ValidationInput
 		wantAccepted bool
 		wantReason   ValidationRejectReason
 	}{

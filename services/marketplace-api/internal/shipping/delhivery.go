@@ -66,9 +66,9 @@ type dlRateRequest struct {
 	OriginPin string  `json:"o_pin"`
 	DestPin   string  `json:"d_pin"`
 	WeightKg  float64 `json:"cgm"`
-	Mode      string  `json:"md"`  // "S" for surface, "E" for express
-	Service   string  `json:"ss"`  // e.g. "Delhivery"
-	PayType   string  `json:"pt"`  // "Pre-paid" or "COD"
+	Mode      string  `json:"md"` // "S" for surface, "E" for express
+	Service   string  `json:"ss"` // e.g. "Delhivery"
+	PayType   string  `json:"pt"` // "Pre-paid" or "COD"
 }
 
 type dlRateResponse struct {
@@ -77,37 +77,37 @@ type dlRateResponse struct {
 }
 
 type dlCreateRequest struct {
-	Format      string `json:"format"`
-	Data        string `json:"data"`
-	PickupTime  string `json:"pickup_time,omitempty"`
+	Format     string `json:"format"`
+	Data       string `json:"data"`
+	PickupTime string `json:"pickup_time,omitempty"`
 }
 
 type dlShipmentData struct {
-	Shipments []dlShipmentEntry `json:"shipments"`
+	Shipments      []dlShipmentEntry `json:"shipments"`
 	PickupLocation struct {
-		Name        string `json:"name"`
-		AddLine1    string `json:"add"`
-		City        string `json:"city"`
-		PinCode     string `json:"pin_code"`
-		Country     string `json:"country"`
-		Phone       string `json:"phone"`
-		State       string `json:"state"`
+		Name     string `json:"name"`
+		AddLine1 string `json:"add"`
+		City     string `json:"city"`
+		PinCode  string `json:"pin_code"`
+		Country  string `json:"country"`
+		Phone    string `json:"phone"`
+		State    string `json:"state"`
 	} `json:"pickup_location"`
 }
 
 type dlShipmentEntry struct {
-	Name          string  `json:"name"`
-	Add           string  `json:"add"`
-	City          string  `json:"city"`
-	Pin           string  `json:"pin"`
-	State         string  `json:"state"`
-	Country       string  `json:"country"`
-	Phone         string  `json:"phone"`
-	OrderID       string  `json:"order"`
-	PaymentMode   string  `json:"payment_mode"`
-	ProductDesc   string  `json:"products_desc"`
-	Weight        float64 `json:"weight"` // grams
-	TotalAmount   float64 `json:"total_amount"`
+	Name        string  `json:"name"`
+	Add         string  `json:"add"`
+	City        string  `json:"city"`
+	Pin         string  `json:"pin"`
+	State       string  `json:"state"`
+	Country     string  `json:"country"`
+	Phone       string  `json:"phone"`
+	OrderID     string  `json:"order"`
+	PaymentMode string  `json:"payment_mode"`
+	ProductDesc string  `json:"products_desc"`
+	Weight      float64 `json:"weight"` // grams
+	TotalAmount float64 `json:"total_amount"`
 	// Reverse-pickup only (payment_mode:"Pickup"). Omitted on forward shipments.
 	ReturnName    string `json:"return_name,omitempty"`
 	ReturnAdd     string `json:"return_add,omitempty"`
@@ -156,8 +156,8 @@ type dlTrackingResponse struct {
 	ShipmentData []struct {
 		Shipment struct {
 			Status struct {
-				Status      string `json:"Status"`
-				StatusType  string `json:"StatusType"`
+				Status     string `json:"Status"`
+				StatusType string `json:"StatusType"`
 			} `json:"Status"`
 			Scans []struct {
 				ScanDetail struct {
@@ -438,6 +438,7 @@ func joinRemarks(rs []string) string {
 //     merchant side (enable the route on one.delhivery.com → Pricing
 //     / Services) or use a destination pincode they already serve.
 //  5. Anything else — bubble the remarks verbatim so ops can triage.
+//
 // WarehouseNotRegisteredError is returned when Delhivery rejects a shipment
 // because the pickup location named in the request doesn't exist on the
 // merchant's Delhivery account. The label path catches this with errors.As
@@ -897,6 +898,7 @@ func (c *DelhiveryCarrier) doWarehouseRequest(ctx context.Context, path string, 
 // this at least three different ways depending on endpoint:
 //   - create shipment (JSON): "ClientWarehouse matching query does not exist."
 //   - edit warehouse (XML):   "<message>warehouse does not exists</message>"
+//
 // so match on the stable core ("warehouse" + "does not exist") rather than
 // one exact phrasing. This was a live bug: the edit/ 400 above wasn't
 // recognised as "missing", so create/ never ran and the pickup location was
@@ -930,8 +932,8 @@ func delhiveryWarehouseMissing(body string) bool {
 //     success with unknown-id metadata.
 //  4. Wallet / token failures: surface verbatim so the operator can
 //     self-diagnose. Observed shapes:
-//       {"prepaid":"Client wallet balance is 298.48 which is less than 500.0"}
-//       {"detail":"Invalid token"}
+//     {"prepaid":"Client wallet balance is 298.48 which is less than 500.0"}
+//     {"detail":"Invalid token"}
 //
 // ExpectedPackageCount defaults to max(1, req.ExpectedPackageCount)
 // because the endpoint rejects 0 with "expected_package_count must be

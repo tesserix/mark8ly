@@ -277,13 +277,13 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Aggregate, er
 			StorageKey:      m.StorageKey,
 			GcsPathOriginal: m.StorageKey,
 			URL:             m.URL,
-			Alt:        m.Alt,
-			Position:   m.Position,
-			MediaType:  defaultMediaType(m.MediaType),
-			VariantID:  m.VariantID,
-			Width:      m.Width,
-			Height:     m.Height,
-			Bytes:      m.Bytes,
+			Alt:             m.Alt,
+			Position:        m.Position,
+			MediaType:       defaultMediaType(m.MediaType),
+			VariantID:       m.VariantID,
+			Width:           m.Width,
+			Height:          m.Height,
+			Bytes:           m.Bytes,
 		})
 	}
 
@@ -468,13 +468,13 @@ func (s *Service) ReplaceMedia(ctx context.Context, productID, storeID, tenantID
 			StorageKey:      m.StorageKey,
 			GcsPathOriginal: m.StorageKey,
 			URL:             m.URL,
-			Alt:        m.Alt,
-			Position:   m.Position,
-			MediaType:  defaultMediaType(m.MediaType),
-			VariantID:  m.VariantID,
-			Width:      m.Width,
-			Height:     m.Height,
-			Bytes:      m.Bytes,
+			Alt:             m.Alt,
+			Position:        m.Position,
+			MediaType:       defaultMediaType(m.MediaType),
+			VariantID:       m.VariantID,
+			Width:           m.Width,
+			Height:          m.Height,
+			Bytes:           m.Bytes,
 		})
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

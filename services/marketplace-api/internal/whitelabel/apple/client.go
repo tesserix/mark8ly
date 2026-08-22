@@ -64,10 +64,10 @@ type Client struct {
 
 // Config groups Client construction params.
 type Config struct {
-	BaseURL       string                                            // default: https://api.appstoreconnect.apple.com
-	HTTP          *http.Client                                      // default: http.Client{Timeout: 30s}
-	CredsFetcher  func(ctx context.Context) (Credentials, error)    // required
-	TokenLifetime time.Duration                                     // default: 15 * time.Minute (Apple caps at 20)
+	BaseURL       string                                         // default: https://api.appstoreconnect.apple.com
+	HTTP          *http.Client                                   // default: http.Client{Timeout: 30s}
+	CredsFetcher  func(ctx context.Context) (Credentials, error) // required
+	TokenLifetime time.Duration                                  // default: 15 * time.Minute (Apple caps at 20)
 }
 
 // New constructs a production Client. The CredsFetcher is required;

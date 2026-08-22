@@ -36,12 +36,12 @@ func NewHandler(svc *Service, fga authz.Client) *Handler {
 // Public routes:
 //   - GET /slug-available?slug=...  used by onboarding wizard
 //   - GET /tenants/by-owner?uid=... used by the returning-user sign-in
-//                                   server action to map a GIP UID to its
-//                                   workspace_tenant before calling auth-bff
+//     server action to map a GIP UID to its
+//     workspace_tenant before calling auth-bff
 //
 // Internal routes (callable by other services / auth-bff):
 //   - GET /internal/tenants/:id     used by auth-bff to look up a tenant
-//                                   when minting a session post-auto-login
+//     when minting a session post-auto-login
 func (h *Handler) Register(public *gin.RouterGroup, internal *gin.RouterGroup) {
 	t := public.Group("/tenants")
 	{

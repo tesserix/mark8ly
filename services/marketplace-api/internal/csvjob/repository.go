@@ -188,4 +188,3 @@ func (r *gormRepository) SetStatusFields(ctx context.Context, id string, fields 
 	}
 	return nil
 }
-

@@ -96,23 +96,23 @@ type shippingRateResponse struct {
 // and we know which row to UPDATE when we rewrite a legacy inline
 // reference to a gsm:// reference.
 type carrierConfigRow struct {
-	ID                string          `gorm:"column:id"`
-	TenantID          string          `gorm:"column:tenant_id"`
-	Provider          string          `gorm:"column:provider"`
-	APIKey            string          `gorm:"column:api_key_encrypted"`
-	SecretKey         string          `gorm:"column:secret_key_encrypted"`
-	Mode              string          `gorm:"column:mode"`
-	HandlingFee       decimal.Decimal `gorm:"column:handling_fee"`
-	FreeShippingMin   *decimal.Decimal `gorm:"column:free_shipping_min"`
-	IsActive          bool            `gorm:"column:is_active"`
-	WarehouseName     *string         `gorm:"column:warehouse_name"`
-	WarehouseLine1    *string         `gorm:"column:warehouse_line1"`
-	WarehouseLine2    *string         `gorm:"column:warehouse_line2"`
-	WarehouseCity     *string         `gorm:"column:warehouse_city"`
-	WarehouseRegion   *string         `gorm:"column:warehouse_region"`
-	WarehousePostal   *string         `gorm:"column:warehouse_postal"`
-	WarehouseCountry  *string         `gorm:"column:warehouse_country"`
-	WarehousePhone    *string         `gorm:"column:warehouse_phone"`
+	ID               string           `gorm:"column:id"`
+	TenantID         string           `gorm:"column:tenant_id"`
+	Provider         string           `gorm:"column:provider"`
+	APIKey           string           `gorm:"column:api_key_encrypted"`
+	SecretKey        string           `gorm:"column:secret_key_encrypted"`
+	Mode             string           `gorm:"column:mode"`
+	HandlingFee      decimal.Decimal  `gorm:"column:handling_fee"`
+	FreeShippingMin  *decimal.Decimal `gorm:"column:free_shipping_min"`
+	IsActive         bool             `gorm:"column:is_active"`
+	WarehouseName    *string          `gorm:"column:warehouse_name"`
+	WarehouseLine1   *string          `gorm:"column:warehouse_line1"`
+	WarehouseLine2   *string          `gorm:"column:warehouse_line2"`
+	WarehouseCity    *string          `gorm:"column:warehouse_city"`
+	WarehouseRegion  *string          `gorm:"column:warehouse_region"`
+	WarehousePostal  *string          `gorm:"column:warehouse_postal"`
+	WarehouseCountry *string          `gorm:"column:warehouse_country"`
+	WarehousePhone   *string          `gorm:"column:warehouse_phone"`
 }
 
 func (carrierConfigRow) TableName() string { return "shipping_carrier_configs" }

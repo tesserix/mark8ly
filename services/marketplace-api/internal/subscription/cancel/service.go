@@ -36,8 +36,8 @@ type Input struct {
 
 // Output reports what happened.
 type Output struct {
-	Status       string `json:"status"`        // "cancel_scheduled" | "active" (save-offer accepted)
-	CancelsAt    string `json:"cancels_at"`    // RFC3339 of current_period_end; "" when save offer accepted
+	Status       string `json:"status"`                   // "cancel_scheduled" | "active" (save-offer accepted)
+	CancelsAt    string `json:"cancels_at"`               // RFC3339 of current_period_end; "" when save offer accepted
 	SaveOfferMsg string `json:"save_offer_msg,omitempty"` // set when save offer was accepted
 }
 
@@ -92,14 +92,14 @@ func (s *Service) scheduleCancellation(ctx context.Context, in Input, sub *subsc
 	}
 
 	err := statemachine.Transition(ctx, statemachine.TransitionInput{
-		DB:      s.db,
-		Emitter: s.emitter,
+		DB:       s.db,
+		Emitter:  s.emitter,
 		TenantID: in.TenantID,
 		StoreID:  in.StoreID,
-		From:    sub.Status,
-		To:      subscription.StatusCancelScheduled,
-		Actor:   in.Actor,
-		Reason:  reasonLabel("merchant_cancelled", in.SurveyReason),
+		From:     sub.Status,
+		To:       subscription.StatusCancelScheduled,
+		Actor:    in.Actor,
+		Reason:   reasonLabel("merchant_cancelled", in.SurveyReason),
 	})
 	if err != nil {
 		return Output{}, fmt.Errorf("cancel: transition: %w", err)
@@ -129,14 +129,14 @@ func (s *Service) acceptSaveOffer(ctx context.Context, in Input, sub *subscripti
 	}
 
 	err := statemachine.Transition(ctx, statemachine.TransitionInput{
-		DB:      s.db,
-		Emitter: s.emitter,
+		DB:       s.db,
+		Emitter:  s.emitter,
 		TenantID: in.TenantID,
 		StoreID:  in.StoreID,
-		From:    subscription.StatusCancelScheduled,
-		To:      subscription.StatusActive,
-		Actor:   in.Actor,
-		Reason:  "save_offer_accepted",
+		From:     subscription.StatusCancelScheduled,
+		To:       subscription.StatusActive,
+		Actor:    in.Actor,
+		Reason:   "save_offer_accepted",
 	})
 	if err != nil {
 		return Output{}, fmt.Errorf("cancel: save-offer transition: %w", err)

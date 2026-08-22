@@ -43,11 +43,11 @@ func (Account) TableName() string { return "break_glass_accounts" }
 // and process restarts. `IPHash` is an HMAC-SHA256 of the client IP —
 // raw IPs must never be stored on this table.
 type Lockout struct {
-	IPHash      []byte    `gorm:"column:ip_hash;type:bytea;primaryKey"`
+	IPHash      []byte     `gorm:"column:ip_hash;type:bytea;primaryKey"`
 	TenantID    *uuid.UUID `gorm:"column:tenant_id;type:uuid"`
-	LockedUntil time.Time `gorm:"column:locked_until;not null;primaryKey"`
-	Reason      string    `gorm:"column:reason;not null"`
-	CreatedAt   time.Time `gorm:"column:created_at;not null;autoCreateTime"`
+	LockedUntil time.Time  `gorm:"column:locked_until;not null;primaryKey"`
+	Reason      string     `gorm:"column:reason;not null"`
+	CreatedAt   time.Time  `gorm:"column:created_at;not null;autoCreateTime"`
 }
 
 // TableName pins the Postgres table name.

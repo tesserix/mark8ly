@@ -17,9 +17,9 @@ import (
 // shipments.dispatched_email_sent_at column.
 //
 // Two paths can transition a shipment to in_transit:
-//   1. admin manually marks shipped via PATCH .../shipments/:id/status
-//   2. unified AdvanceShipmentFromTracking helper invoked by the
-//      2-min carrier sync loop AND the public Delhivery webhook handler
+//  1. admin manually marks shipped via PATCH .../shipments/:id/status
+//  2. unified AdvanceShipmentFromTracking helper invoked by the
+//     2-min carrier sync loop AND the public Delhivery webhook handler
 //
 // Without a dedup column, both paths firing in quick succession would
 // email the customer twice. dispatchShipmentDispatchedEmail gates on a

@@ -22,14 +22,14 @@ const BreakGlassSessionTTL = 2 * time.Hour
 
 // BreakGlassDeps groups every dependency the login handler needs.
 type BreakGlassDeps struct {
-	Repo         *breakglass.Repository
-	Secrets      *breakglass.SecretManager
-	Audit        *breakglass.AuditEmitter
-	Slack        *breakglass.SlackClient
-	RateLimiter  *breakglass.LoginRateLimiter
-	IPHMACKey    breakglass.HMACKey
-	Sessions     authbffclient.SessionIssuer
-	Logger       *slog.Logger
+	Repo        *breakglass.Repository
+	Secrets     *breakglass.SecretManager
+	Audit       *breakglass.AuditEmitter
+	Slack       *breakglass.SlackClient
+	RateLimiter *breakglass.LoginRateLimiter
+	IPHMACKey   breakglass.HMACKey
+	Sessions    authbffclient.SessionIssuer
+	Logger      *slog.Logger
 }
 
 // BreakGlassLoginHandler answers POST /admin/break-glass/login.

@@ -168,7 +168,7 @@ type seShipment struct {
 	// though we did pass a valid code in the request — they just looked
 	// for it in the wrong place. Empty on rate-quote bodies (where it
 	// is omitted by `omitempty`) so /v1/rates still works.
-	ServiceCode string      `json:"service_code,omitempty"`
+	ServiceCode string `json:"service_code,omitempty"`
 	// ShipDate is the preferred pickup date in YYYY-MM-DD form. Aramex AU
 	// (and most non-postal carriers) reject same-day pickup outside their
 	// service window — without an explicit date ShipEngine sends "today"
@@ -199,8 +199,8 @@ type seRateErr struct {
 }
 
 type seRate struct {
-	ServiceCode   string `json:"service_code"`
-	CarrierCode   string `json:"carrier_code"`
+	ServiceCode    string `json:"service_code"`
+	CarrierCode    string `json:"carrier_code"`
 	ShippingAmount struct {
 		Currency string  `json:"currency"`
 		Amount   float64 `json:"amount"`
@@ -229,11 +229,11 @@ type seTrackingResponse struct {
 }
 
 type seEvent struct {
-	Description    string    `json:"description"`
-	CityLocality   string    `json:"city_locality"`
-	StateProvince  string    `json:"state_province"`
-	OccurredAt     time.Time `json:"occurred_at"`
-	StatusCode     string    `json:"status_code"`
+	Description   string    `json:"description"`
+	CityLocality  string    `json:"city_locality"`
+	StateProvince string    `json:"state_province"`
+	OccurredAt    time.Time `json:"occurred_at"`
+	StatusCode    string    `json:"status_code"`
 }
 
 // --- Carrier interface methods ---
@@ -261,9 +261,9 @@ func (c *ShipEngineCarrier) GetRates(ctx context.Context, in RateRequest) ([]Rat
 			ShipTo:   toSEAddress(in.ToAddress),
 			Packages: []sePackage{
 				{
-				Weight:     seWeight{Value: float64(totalWeightGrams) / 1000.0, Unit: "kilogram"},
-				Dimensions: resolvePackageDimensions(in.Items),
-			},
+					Weight:     seWeight{Value: float64(totalWeightGrams) / 1000.0, Unit: "kilogram"},
+					Dimensions: resolvePackageDimensions(in.Items),
+				},
 			},
 		},
 	}

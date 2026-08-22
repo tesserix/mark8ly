@@ -31,9 +31,9 @@ func googleOIDCVerifier(ctx context.Context, token, audience string) (string, er
 
 // PubsubPushConfig configures the OIDC-gated merchant-push delivery endpoint.
 type PubsubPushConfig struct {
-	Sender         *Sender
-	Repo           *Repository
-	Logger         *slog.Logger
+	Sender *Sender
+	Repo   *Repository
+	Logger *slog.Logger
 	// Audience is the OIDC aud claim the push subscription stamps (the public
 	// endpoint URL). Empty skips the aud check — local/dev only, never prod.
 	Audience string

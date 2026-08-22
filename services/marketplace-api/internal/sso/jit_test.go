@@ -72,9 +72,9 @@ type mappingKey struct {
 }
 
 type fakeMappingsRepo struct {
-	mu       sync.Mutex
-	byKey    map[mappingKey]*sso.UserMapping
-	byEmail  map[string]*sso.UserMapping // key = tenantID.String()+":"+email
+	mu      sync.Mutex
+	byKey   map[mappingKey]*sso.UserMapping
+	byEmail map[string]*sso.UserMapping // key = tenantID.String()+":"+email
 }
 
 func newFakeMappingsRepo() *fakeMappingsRepo {

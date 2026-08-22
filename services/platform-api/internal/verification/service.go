@@ -35,15 +35,15 @@ type TokenRecorder interface {
 //
 // Why SHA-256 instead of bcrypt:
 //
-//   The token is 32 bytes from crypto/rand → 256 bits of entropy. There is
-//   no brute-force vector because the input space is too large for any
-//   adversary to enumerate. Bcrypt's slow-by-design property exists to
-//   protect LOW-entropy inputs (passwords); for HIGH-entropy random tokens
-//   it's the wrong tool. SHA-256 also lets us index the column directly
-//   so we can look the token up by hash without scanning every row.
+//	The token is 32 bytes from crypto/rand → 256 bits of entropy. There is
+//	no brute-force vector because the input space is too large for any
+//	adversary to enumerate. Bcrypt's slow-by-design property exists to
+//	protect LOW-entropy inputs (passwords); for HIGH-entropy random tokens
+//	it's the wrong tool. SHA-256 also lets us index the column directly
+//	so we can look the token up by hash without scanning every row.
 //
-//   Same approach used by: Stripe webhook secrets, GitHub PATs, AWS API
-//   keys, Slack webhook URLs.
+//	Same approach used by: Stripe webhook secrets, GitHub PATs, AWS API
+//	keys, Slack webhook URLs.
 type Service struct {
 	repo          Repository
 	sender        notification.Sender
@@ -56,7 +56,7 @@ type Service struct {
 
 // Config holds Service dependencies.
 type Config struct {
-	Sender       notification.Sender
+	Sender notification.Sender
 	// Loader is the DB-backed template loader (embedded fallback).
 	// May be nil during boot races; nil falls through to embedded.
 	Loader       *notification.Loader

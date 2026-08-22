@@ -62,26 +62,26 @@ func (CustomerSegment) TableName() string { return "customer_segments" }
 
 // Campaign is the root aggregate for email campaigns.
 type Campaign struct {
-	ID              uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	TenantID        uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null"`
-	StoreID         uuid.UUID       `gorm:"column:store_id;type:uuid;not null"`
-	Name            string          `gorm:"column:name;type:varchar(200);not null"`
-	Type            string          `gorm:"column:type;type:varchar(20);not null;default:email"`
-	Status          string          `gorm:"column:status;type:varchar(20);not null;default:draft"`
-	Subject         *string         `gorm:"column:subject;type:varchar(300)"`
-	Content         *string         `gorm:"column:content;type:text"`
-	SegmentID       *uuid.UUID      `gorm:"column:segment_id;type:uuid"`
-	CouponID        *uuid.UUID      `gorm:"column:coupon_id;type:uuid"`
-	ScheduledAt     *time.Time      `gorm:"column:scheduled_at"`
-	SentAt          *time.Time      `gorm:"column:sent_at"`
-	HeartbeatAt     *time.Time      `gorm:"column:heartbeat_at"`
-	TotalRecipients int             `gorm:"column:total_recipients;not null;default:0"`
-	Delivered       int             `gorm:"column:delivered;not null;default:0"`
-	Opened          int             `gorm:"column:opened;not null;default:0"`
-	Clicked         int             `gorm:"column:clicked;not null;default:0"`
-	Converted       int             `gorm:"column:converted;not null;default:0"`
-	Unsubscribed    int             `gorm:"column:unsubscribed;not null;default:0"`
-	Failed          int             `gorm:"column:failed;not null;default:0"`
+	ID                 uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID           uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null"`
+	StoreID            uuid.UUID       `gorm:"column:store_id;type:uuid;not null"`
+	Name               string          `gorm:"column:name;type:varchar(200);not null"`
+	Type               string          `gorm:"column:type;type:varchar(20);not null;default:email"`
+	Status             string          `gorm:"column:status;type:varchar(20);not null;default:draft"`
+	Subject            *string         `gorm:"column:subject;type:varchar(300)"`
+	Content            *string         `gorm:"column:content;type:text"`
+	SegmentID          *uuid.UUID      `gorm:"column:segment_id;type:uuid"`
+	CouponID           *uuid.UUID      `gorm:"column:coupon_id;type:uuid"`
+	ScheduledAt        *time.Time      `gorm:"column:scheduled_at"`
+	SentAt             *time.Time      `gorm:"column:sent_at"`
+	HeartbeatAt        *time.Time      `gorm:"column:heartbeat_at"`
+	TotalRecipients    int             `gorm:"column:total_recipients;not null;default:0"`
+	Delivered          int             `gorm:"column:delivered;not null;default:0"`
+	Opened             int             `gorm:"column:opened;not null;default:0"`
+	Clicked            int             `gorm:"column:clicked;not null;default:0"`
+	Converted          int             `gorm:"column:converted;not null;default:0"`
+	Unsubscribed       int             `gorm:"column:unsubscribed;not null;default:0"`
+	Failed             int             `gorm:"column:failed;not null;default:0"`
 	Revenue            decimal.Decimal `gorm:"column:revenue;type:numeric(12,2);not null;default:0"`
 	ShowOnStorefront   bool            `gorm:"column:show_on_storefront;not null;default:false"`
 	StorefrontLabel    *string         `gorm:"column:storefront_label;type:varchar(120)"`

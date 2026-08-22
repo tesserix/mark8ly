@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
 	"github.com/mark8ly/marketplace-api/internal/attestation"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBusinessEntityAttestation_RoundTrip(t *testing.T) {

@@ -41,72 +41,72 @@ type ActivePromotionResponse struct {
 // PublicBrandingResponse is the public wire DTO — excludes custom_css
 // and admin-only fields.
 type PublicBrandingResponse struct {
-	LogoURL            *string `json:"logo_url,omitempty"`
-	FaviconURL         *string `json:"favicon_url,omitempty"`
-	Tagline            *string `json:"tagline,omitempty"`
-	ColorBackground    string  `json:"color_background"`
-	ColorText          string  `json:"color_text"`
-	ColorAccent        string  `json:"color_accent"`
-	ColorButtonBg      string  `json:"color_button_bg"`
-	ColorButtonText    string  `json:"color_button_text"`
-	HeadingFont        string  `json:"heading_font"`
-	BodyFont           string  `json:"body_font"`
-	LayoutVariant      string  `json:"layout_variant"`
-	HeroImageURL       *string `json:"hero_image_url,omitempty"`
-	AnnouncementText   *string `json:"announcement_text,omitempty"`
-	AnnouncementLink   *string `json:"announcement_link,omitempty"`
-	AnnouncementBg     *string `json:"announcement_bg,omitempty"`
-	AnnouncementActive bool    `json:"announcement_active"`
+	LogoURL            *string                  `json:"logo_url,omitempty"`
+	FaviconURL         *string                  `json:"favicon_url,omitempty"`
+	Tagline            *string                  `json:"tagline,omitempty"`
+	ColorBackground    string                   `json:"color_background"`
+	ColorText          string                   `json:"color_text"`
+	ColorAccent        string                   `json:"color_accent"`
+	ColorButtonBg      string                   `json:"color_button_bg"`
+	ColorButtonText    string                   `json:"color_button_text"`
+	HeadingFont        string                   `json:"heading_font"`
+	BodyFont           string                   `json:"body_font"`
+	LayoutVariant      string                   `json:"layout_variant"`
+	HeroImageURL       *string                  `json:"hero_image_url,omitempty"`
+	AnnouncementText   *string                  `json:"announcement_text,omitempty"`
+	AnnouncementLink   *string                  `json:"announcement_link,omitempty"`
+	AnnouncementBg     *string                  `json:"announcement_bg,omitempty"`
+	AnnouncementActive bool                     `json:"announcement_active"`
 	FooterTagline      *string                  `json:"footer_tagline,omitempty"`
 	FooterCopyright    *string                  `json:"footer_copyright,omitempty"`
 	FooterSections     []branding.FooterSection `json:"footer_sections,omitempty"`
 	SocialInstagram    *string                  `json:"social_instagram,omitempty"`
-	SocialTwitter      *string `json:"social_twitter,omitempty"`
-	SocialFacebook     *string `json:"social_facebook,omitempty"`
-	SocialTiktok       *string `json:"social_tiktok,omitempty"`
-	SocialYoutube      *string `json:"social_youtube,omitempty"`
-	CustomCSS          *string         `json:"custom_css,omitempty"`
-	ShowPoweredBy      bool            `json:"show_powered_by"`
+	SocialTwitter      *string                  `json:"social_twitter,omitempty"`
+	SocialFacebook     *string                  `json:"social_facebook,omitempty"`
+	SocialTiktok       *string                  `json:"social_tiktok,omitempty"`
+	SocialYoutube      *string                  `json:"social_youtube,omitempty"`
+	CustomCSS          *string                  `json:"custom_css,omitempty"`
+	ShowPoweredBy      bool                     `json:"show_powered_by"`
 	// SEO + AI SEO (public — storefront needs these for metadata emission).
-	SeoTitleTemplate      *string `json:"seo_title_template,omitempty"`
-	SeoDefaultDescription *string `json:"seo_default_description,omitempty"`
-	SeoOgImageURL         *string `json:"seo_og_image_url,omitempty"`
-	SeoTwitterHandle      *string `json:"seo_twitter_handle,omitempty"`
-	SeoGoogleVerification *string `json:"seo_google_verification,omitempty"`
-	SeoBingVerification   *string `json:"seo_bing_verification,omitempty"`
-	SeoJsonLd             *string `json:"seo_json_ld,omitempty"`
-	SeoAiPolicy           string  `json:"seo_ai_policy"`
-	SeoLlmsTxt            *string `json:"seo_llms_txt,omitempty"`
-	HomepageContent    json.RawMessage `json:"homepage_content"`
+	SeoTitleTemplate      *string         `json:"seo_title_template,omitempty"`
+	SeoDefaultDescription *string         `json:"seo_default_description,omitempty"`
+	SeoOgImageURL         *string         `json:"seo_og_image_url,omitempty"`
+	SeoTwitterHandle      *string         `json:"seo_twitter_handle,omitempty"`
+	SeoGoogleVerification *string         `json:"seo_google_verification,omitempty"`
+	SeoBingVerification   *string         `json:"seo_bing_verification,omitempty"`
+	SeoJsonLd             *string         `json:"seo_json_ld,omitempty"`
+	SeoAiPolicy           string          `json:"seo_ai_policy"`
+	SeoLlmsTxt            *string         `json:"seo_llms_txt,omitempty"`
+	HomepageContent       json.RawMessage `json:"homepage_content"`
 }
 
 func toPublicBrandingResponse(b branding.StoreBranding) PublicBrandingResponse {
 	resp := PublicBrandingResponse{
-		LogoURL:            b.LogoURL,
-		FaviconURL:         b.FaviconURL,
-		Tagline:            b.Tagline,
-		ColorBackground:    b.ColorBackground,
-		ColorText:          b.ColorText,
-		ColorAccent:        b.ColorAccent,
-		ColorButtonBg:      b.ColorButtonBg,
-		ColorButtonText:    b.ColorButtonText,
-		HeadingFont:        b.HeadingFont,
-		BodyFont:           b.BodyFont,
-		LayoutVariant:      b.LayoutVariant,
-		HeroImageURL:       b.HeroImageURL,
-		AnnouncementText:   b.AnnouncementText,
-		AnnouncementLink:   b.AnnouncementLink,
-		AnnouncementBg:     b.AnnouncementBg,
-		AnnouncementActive: b.AnnouncementActive,
-		FooterTagline:      b.FooterTagline,
-		FooterCopyright:    b.FooterCopyright,
-		SocialInstagram:    b.SocialInstagram,
-		SocialTwitter:      b.SocialTwitter,
-		SocialFacebook:     b.SocialFacebook,
-		SocialTiktok:       b.SocialTiktok,
-		SocialYoutube:      b.SocialYoutube,
-		CustomCSS:          b.CustomCSS,
-		ShowPoweredBy:      b.ShowPoweredBy,
+		LogoURL:               b.LogoURL,
+		FaviconURL:            b.FaviconURL,
+		Tagline:               b.Tagline,
+		ColorBackground:       b.ColorBackground,
+		ColorText:             b.ColorText,
+		ColorAccent:           b.ColorAccent,
+		ColorButtonBg:         b.ColorButtonBg,
+		ColorButtonText:       b.ColorButtonText,
+		HeadingFont:           b.HeadingFont,
+		BodyFont:              b.BodyFont,
+		LayoutVariant:         b.LayoutVariant,
+		HeroImageURL:          b.HeroImageURL,
+		AnnouncementText:      b.AnnouncementText,
+		AnnouncementLink:      b.AnnouncementLink,
+		AnnouncementBg:        b.AnnouncementBg,
+		AnnouncementActive:    b.AnnouncementActive,
+		FooterTagline:         b.FooterTagline,
+		FooterCopyright:       b.FooterCopyright,
+		SocialInstagram:       b.SocialInstagram,
+		SocialTwitter:         b.SocialTwitter,
+		SocialFacebook:        b.SocialFacebook,
+		SocialTiktok:          b.SocialTiktok,
+		SocialYoutube:         b.SocialYoutube,
+		CustomCSS:             b.CustomCSS,
+		ShowPoweredBy:         b.ShowPoweredBy,
 		SeoTitleTemplate:      b.SeoTitleTemplate,
 		SeoDefaultDescription: b.SeoDefaultDescription,
 		SeoOgImageURL:         b.SeoOgImageURL,

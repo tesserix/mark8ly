@@ -32,20 +32,20 @@ import (
 type OrderDetailHandler struct {
 	db         *gorm.DB
 	orderRepo  order.Repository
-	orderSvc   *order.Service      // optional — when nil, /cancel returns 503
+	orderSvc   *order.Service       // optional — when nil, /cancel returns 503
 	returnSvc  *order.ReturnService // optional — when nil, /returns returns 503
 	returnRepo order.ReturnRepository
-	docMailer  *orderdoc.Service   // optional — when nil, the cancel email is skipped
+	docMailer  *orderdoc.Service // optional — when nil, the cancel email is skipped
 	// notify is an optional notification service. When set, customer-
 	// initiated return requests emit notification.TypeReturnRequested so
 	// admins see them in their bell just like admin-initiated ones.
-	notify     *notification.Service
+	notify *notification.Service
 	// refunds is an optional refund coordinator. When set, a paid order
 	// is auto-refunded on customer self-cancel (spec §4). Nil-safe —
 	// without it, self-cancel simply skips the refund step (pre-existing
 	// behavior).
-	refunds    *orderrefund.Coordinator
-	logger     *slog.Logger
+	refunds *orderrefund.Coordinator
+	logger  *slog.Logger
 }
 
 // NewOrderDetailHandler constructs an OrderDetailHandler. orderSvc,
@@ -81,42 +81,42 @@ func (h *OrderDetailHandler) WithRefunds(c *orderrefund.Coordinator) *OrderDetai
 
 // storefrontOrderResponse is the customer-facing DTO.
 type storefrontOrderResponse struct {
-	ID              string                       `json:"id"`
-	OrderNumber     string                       `json:"order_number"`
-	Status          string                       `json:"status"`
-	PaymentStatus   string                       `json:"payment_status"`
+	ID            string `json:"id"`
+	OrderNumber   string `json:"order_number"`
+	Status        string `json:"status"`
+	PaymentStatus string `json:"payment_status"`
 	// CustomerEmail is the email captured at checkout. Surfaced so the
 	// invoice/receipt PDF (rendered by Next.js on the storefront) can
 	// show the buyer's contact line in the bill-to block. Earlier this
 	// field was never returned, leaving customer-rendered PDFs without
 	// a contact email.
-	CustomerEmail   string                       `json:"customer_email"`
-	CustomerName    string                       `json:"customer_name,omitempty"`
-	Subtotal        string                       `json:"subtotal"`
-	ShippingTotal   string                       `json:"shipping_total"`
-	TaxTotal        string                       `json:"tax_total"`
+	CustomerEmail string `json:"customer_email"`
+	CustomerName  string `json:"customer_name,omitempty"`
+	Subtotal      string `json:"subtotal"`
+	ShippingTotal string `json:"shipping_total"`
+	TaxTotal      string `json:"tax_total"`
 	// DiscountTotal is the sum of coupon + loyalty + manual discounts on
 	// the order. Surfaced so customer-rendered PDFs can show the
 	// discount line in the totals block (admin-rendered ones already
 	// do via AdminOrder.discount_total).
-	DiscountTotal   string                       `json:"discount_total"`
-	GrandTotal      string                       `json:"grand_total"`
+	DiscountTotal string `json:"discount_total"`
+	GrandTotal    string `json:"grand_total"`
 	// RefundedAmount surfaces partial + full refunds on the customer
 	// account page. Always present (zero-value "0.00" when no refunds).
-	RefundedAmount  string                       `json:"refunded_amount"`
+	RefundedAmount string `json:"refunded_amount"`
 	// TaxLines is the per-jurisdiction breakdown of the tax_total.
 	// India GST splits into CGST + SGST (intra-state) or IGST (inter-
 	// state); flat-rate countries get a single VAT/GST line; TaxJar
 	// returns state + county + city + special breakdowns. Empty when
 	// the order pre-dates the persistence wiring.
-	TaxLines        []storefrontTaxLineResponse  `json:"tax_lines"`
-	CurrencyCode    string                       `json:"currency_code"`
+	TaxLines        []storefrontTaxLineResponse   `json:"tax_lines"`
+	CurrencyCode    string                        `json:"currency_code"`
 	Items           []storefrontOrderItemResponse `json:"items"`
 	ShippingAddress *storefrontAddressResponse    `json:"shipping_address"`
 	BillingAddress  *storefrontAddressResponse    `json:"billing_address,omitempty"`
 	Shipment        *storefrontShipmentResponse   `json:"shipment,omitempty"`
 	Timeline        []storefrontTimelineEntry     `json:"timeline"`
-	PlacedAt        string                       `json:"placed_at"`
+	PlacedAt        string                        `json:"placed_at"`
 }
 
 // storefrontTaxLineResponse is the public view of one persisted
@@ -323,7 +323,7 @@ func (h *OrderDetailHandler) loadShipment(ctx context.Context, orderID uuid.UUID
 		return nil
 	}
 	resp := &storefrontShipmentResponse{
-		Carrier:        row.Carrier,
+		Carrier: row.Carrier,
 		// Service level isn't persisted, so we leave it empty on the
 		// public DTO — the customer card already reads "Standard delivery"
 		// from the order's chosen shipping_service.

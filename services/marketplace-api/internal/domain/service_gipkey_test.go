@@ -42,8 +42,8 @@ func (s *spyGIPKey) RemoveDomain(_ context.Context, d string) error {
 // Delete. The rest panics so an accidental call is loud rather than
 // silent.
 type memRepo struct {
-	mu      sync.Mutex
-	rows    map[uuid.UUID]*CustomDomain
+	mu   sync.Mutex
+	rows map[uuid.UUID]*CustomDomain
 }
 
 func newMemRepo(d *CustomDomain) *memRepo {

@@ -129,11 +129,11 @@ type StoreSubscription struct {
 	TaxIDWindowShortenedAt *time.Time `gorm:"column:tax_id_window_shortened_at"`
 
 	// P7 — storefront publish gate + quarterly revalidation (migration 067, §5.3, §19.5).
-	StorefrontPublished        bool       `gorm:"column:storefront_published;not null;default:false"`
-	StorefrontUnpublishedAt    *time.Time `gorm:"column:storefront_unpublished_at"`
-	StorefrontUnpublishReason  *string    `gorm:"column:storefront_unpublish_reason;type:varchar(40)"`
-	RevalidationAttemptedAt    *time.Time `gorm:"column:revalidation_attempted_at"`
-	TaxRevalidationStartedAt   *time.Time `gorm:"column:tax_revalidation_started_at"`
+	StorefrontPublished       bool       `gorm:"column:storefront_published;not null;default:false"`
+	StorefrontUnpublishedAt   *time.Time `gorm:"column:storefront_unpublished_at"`
+	StorefrontUnpublishReason *string    `gorm:"column:storefront_unpublish_reason;type:varchar(40)"`
+	RevalidationAttemptedAt   *time.Time `gorm:"column:revalidation_attempted_at"`
+	TaxRevalidationStartedAt  *time.Time `gorm:"column:tax_revalidation_started_at"`
 
 	CreatedAt time.Time `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt time.Time `gorm:"column:updated_at;not null;default:now()"`

@@ -67,8 +67,8 @@ type Config struct {
 	StoreRepo  store.Repository
 	Sender     notification.Sender
 	// Loader is the DB-backed template loader (embedded fallback).
-	Loader     *notification.Loader
-	EmailFrom  string
+	Loader    *notification.Loader
+	EmailFrom string
 	// AdminURLTemplate is a template like "https://%s-admin.mark8ly.com"
 	// for building the welcome email's admin link. Supports both the
 	// per-slug shape (contains %s) and flat-host shape (no %s → used

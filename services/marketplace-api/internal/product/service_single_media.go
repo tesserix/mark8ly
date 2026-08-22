@@ -102,14 +102,14 @@ func (s *Service) AddMedia(ctx context.Context, req AddMediaRequest) (*Media, er
 		ProductID:       req.ProductID,
 		StorageKey:      req.StorageKey,
 		GcsPathOriginal: req.StorageKey,
-		URL:        persistedURL,
-		Alt:        req.Alt,
-		Position:   req.Position,
-		MediaType:  defaultMediaType(req.MediaType),
-		VariantID:  req.VariantID,
-		Width:      req.Width,
-		Height:     req.Height,
-		Bytes:      req.Bytes,
+		URL:             persistedURL,
+		Alt:             req.Alt,
+		Position:        req.Position,
+		MediaType:       defaultMediaType(req.MediaType),
+		VariantID:       req.VariantID,
+		Width:           req.Width,
+		Height:          req.Height,
+		Bytes:           req.Bytes,
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

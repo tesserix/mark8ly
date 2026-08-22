@@ -238,9 +238,9 @@ func (s *Service) IsEnabled(ctx context.Context, userID string) (bool, error) {
 // drop straight into an <img src>. OtpauthURL is the raw URI in case
 // a client wants to render its own QR.
 type EnrollResult struct {
-	QRDataURL   string
-	OtpauthURL  string
-	Secret      string // base32 — shown as a fallback for manual entry
+	QRDataURL  string
+	OtpauthURL string
+	Secret     string // base32 — shown as a fallback for manual entry
 }
 
 // Enroll generates a fresh TOTP secret for the user, stores it

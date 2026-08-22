@@ -45,11 +45,11 @@ func TestSyntax_Rejections(t *testing.T) {
 
 func TestSyntax_HappyPath(t *testing.T) {
 	cases := map[string]string{
-		"example.com":           "example.com",
-		"  Shop.Example.Com  ":  "shop.example.com",
-		"shop.example.com.":     "shop.example.com",
-		"deep.sub.example.com":  "deep.sub.example.com",
-		"AbCdEf.example.co.uk":  "abcdef.example.co.uk",
+		"example.com":          "example.com",
+		"  Shop.Example.Com  ": "shop.example.com",
+		"shop.example.com.":    "shop.example.com",
+		"deep.sub.example.com": "deep.sub.example.com",
+		"AbCdEf.example.co.uk": "abcdef.example.co.uk",
 	}
 	for in, want := range cases {
 		got, err := checkSyntax(in)

@@ -157,8 +157,8 @@ func zeroFilledSeries(
 // SalesMetricsResponse powers the "Sales" analytics tab.
 type SalesMetricsResponse struct {
 	Range               string            `json:"range"`
-	RevenueSeries       []TimeSeriesPoint `json:"revenue_series"`         // gross
-	NetRevenueSeries    []TimeSeriesPoint `json:"net_revenue_series"`     // gross - refunded
+	RevenueSeries       []TimeSeriesPoint `json:"revenue_series"`     // gross
+	NetRevenueSeries    []TimeSeriesPoint `json:"net_revenue_series"` // gross - refunded
 	GrossRevenue        float64           `json:"gross_revenue"`
 	TotalRefunded       float64           `json:"total_refunded"`
 	NetRevenue          float64           `json:"net_revenue"`
@@ -302,14 +302,14 @@ type OrderStatusSeriesPoint struct {
 
 // OrdersMetricsResponse powers the "Orders" analytics tab.
 type OrdersMetricsResponse struct {
-	Range            string                   `json:"range"`
-	OrdersSeries     []TimeSeriesPoint        `json:"orders_series"`
-	StatusSeries     []OrderStatusSeriesPoint `json:"status_series"`
-	StatusTotals     OrderStatusBreakdown     `json:"status_totals"`
-	AvgHoursFulfill  *float64                 `json:"avg_hours_to_fulfill"` // nil when no fulfilled orders
-	FulfillmentRate  float64                  `json:"fulfillment_rate"`     // 0..1
-	CancelRate       float64                  `json:"cancel_rate"`          // 0..1
-	TotalOrders      int64                    `json:"total_orders"`
+	Range           string                   `json:"range"`
+	OrdersSeries    []TimeSeriesPoint        `json:"orders_series"`
+	StatusSeries    []OrderStatusSeriesPoint `json:"status_series"`
+	StatusTotals    OrderStatusBreakdown     `json:"status_totals"`
+	AvgHoursFulfill *float64                 `json:"avg_hours_to_fulfill"` // nil when no fulfilled orders
+	FulfillmentRate float64                  `json:"fulfillment_rate"`     // 0..1
+	CancelRate      float64                  `json:"cancel_rate"`          // 0..1
+	TotalOrders     int64                    `json:"total_orders"`
 }
 
 // GetOrdersMetrics handles GET /admin/stores/:storeId/dashboard/metrics/orders.
@@ -463,12 +463,12 @@ type TopCustomer struct {
 
 // CustomersMetricsResponse powers the "Customers" analytics tab.
 type CustomersMetricsResponse struct {
-	Range            string                 `json:"range"`
-	Series           []CustomerSegmentPoint `json:"series"`
-	NewTotal         int64                  `json:"new_total"`
-	ReturningTotal   int64                  `json:"returning_total"`
-	UniqueBuyers     int64                  `json:"unique_buyers"`
-	TopCustomers     []TopCustomer          `json:"top_customers"`
+	Range          string                 `json:"range"`
+	Series         []CustomerSegmentPoint `json:"series"`
+	NewTotal       int64                  `json:"new_total"`
+	ReturningTotal int64                  `json:"returning_total"`
+	UniqueBuyers   int64                  `json:"unique_buyers"`
+	TopCustomers   []TopCustomer          `json:"top_customers"`
 }
 
 // GetCustomersMetrics handles GET /admin/stores/:storeId/dashboard/metrics/customers.
@@ -499,9 +499,9 @@ func (h *DashboardHandler) GetCustomersMetrics(c *gin.Context) {
 	// returning. The outer query trims to the requested window.
 	lastDay := win.end.Add(-24 * time.Hour)
 	var rows []struct {
-		Day       time.Time
-		NewCnt    int64
-		RetCnt    int64
+		Day    time.Time
+		NewCnt int64
+		RetCnt int64
 	}
 	db.WithContext(ctx).Raw(`
 		SELECT day, new_cnt, ret_cnt FROM (
@@ -688,4 +688,3 @@ func (h *DashboardHandler) GetReviewsMetrics(c *gin.Context) {
 	h.setCachedMetrics(key, resp)
 	c.JSON(http.StatusOK, resp)
 }
-

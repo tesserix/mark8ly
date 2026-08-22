@@ -21,9 +21,9 @@ import (
 const (
 	passwordLen = 20
 
-	upperPool  = "ABCDEFGHJKLMNPQRSTUVWXYZ"       // no I, O
-	lowerPool  = "abcdefghijkmnpqrstuvwxyz"       // no l, o
-	digitPool  = "23456789"                       // no 0, 1
+	upperPool  = "ABCDEFGHJKLMNPQRSTUVWXYZ" // no I, O
+	lowerPool  = "abcdefghijkmnpqrstuvwxyz" // no l, o
+	digitPool  = "23456789"                 // no 0, 1
 	symbolPool = "!#$%&*+-=?@^_~"
 )
 

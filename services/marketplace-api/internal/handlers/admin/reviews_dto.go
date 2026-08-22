@@ -15,24 +15,24 @@ type AdminReviewListQuery struct {
 
 // AdminReviewResponse is the wire shape for a review in the admin list.
 type AdminReviewResponse struct {
-	ID                string                   `json:"id"`
-	ProductID         string                   `json:"product_id"`
-	CustomerProfileID string                   `json:"customer_profile_id,omitempty"`
-	CustomerName      string                   `json:"customer_name"`
-	CustomerEmail     string                   `json:"customer_email"`
-	Rating            int                      `json:"rating"`
-	Title             string                   `json:"title,omitempty"`
-	Content           string                   `json:"content"`
-	Status            string                   `json:"status"`
-	VerifiedPurchase  bool                     `json:"verified_purchase"`
-	Featured          bool                     `json:"featured"`
-	HelpfulCount      int                      `json:"helpful_count"`
-	NotHelpfulCount   int                      `json:"not_helpful_count"`
-	PublishedAt       string                   `json:"published_at,omitempty"`
-	CreatedAt         string                   `json:"created_at"`
-	UpdatedAt         string                   `json:"updated_at"`
-	Media             []AdminReviewMediaDTO    `json:"media"`
-	Replies           []AdminReviewReplyDTO    `json:"replies"`
+	ID                string                `json:"id"`
+	ProductID         string                `json:"product_id"`
+	CustomerProfileID string                `json:"customer_profile_id,omitempty"`
+	CustomerName      string                `json:"customer_name"`
+	CustomerEmail     string                `json:"customer_email"`
+	Rating            int                   `json:"rating"`
+	Title             string                `json:"title,omitempty"`
+	Content           string                `json:"content"`
+	Status            string                `json:"status"`
+	VerifiedPurchase  bool                  `json:"verified_purchase"`
+	Featured          bool                  `json:"featured"`
+	HelpfulCount      int                   `json:"helpful_count"`
+	NotHelpfulCount   int                   `json:"not_helpful_count"`
+	PublishedAt       string                `json:"published_at,omitempty"`
+	CreatedAt         string                `json:"created_at"`
+	UpdatedAt         string                `json:"updated_at"`
+	Media             []AdminReviewMediaDTO `json:"media"`
+	Replies           []AdminReviewReplyDTO `json:"replies"`
 }
 
 // AdminReviewMediaDTO is the wire shape for review media.

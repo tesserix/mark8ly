@@ -119,7 +119,7 @@ func TestHandlePaymentSucceeded_PersistsProviderPaymentID(t *testing.T) {
 }
 
 // TestHandlePaymentSucceeded_PreservesExistingProviderPaymentIDWhenEventLacksOne
-// covers the COALESCE(NULLIF(?, ''), provider_payment_id) branch: an event
+// covers the COALESCE(NULLIF(?, ”), provider_payment_id) branch: an event
 // with an empty ProviderPaymentID (e.g. a retried/duplicate webhook, or a
 // provider that doesn't carry one on every event) must not clobber a value
 // already persisted from an earlier capture.

@@ -59,6 +59,45 @@ updates:
       - dependency-name: expo-*
       - dependency-name: react-native
 
+  # ── Pinned container bases ─────────────────────────────────────────
+  # The upstream base-image dispatch is only a notification. Dependabot
+  # resolves each new immutable digest and opens the auditable update PR.
+  - package-ecosystem: docker
+    directory: /services/platform-api
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: docker
+    directory: /services/auth-bff
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: docker
+    directory: /services/marketplace-api
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: docker
+    directory: /services/otto
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: docker
+    directory: /apps/onboarding
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: docker
+    directory: /apps/admin
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: docker
+    directory: /apps/storefront
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+
   # ── Workflow actions ───────────────────────────────────────────────
   - package-ecosystem: github-actions
     directory: /

@@ -32,9 +32,9 @@ var fixedNow = time.Unix(1_712_000_000, 0)
 func newHandler(t *testing.T, db *gorm.DB, dispatch webhooks.DispatchFunc) *webhooks.StripeHandler {
 	t.Helper()
 	return webhooks.NewStripeHandler(webhooks.StripeHandlerConfig{
-		DB:     db,
-		Secret: testSecret,
-		Repo:   webhookevents.NewRepository(),
+		DB:       db,
+		Secret:   testSecret,
+		Repo:     webhookevents.NewRepository(),
 		Dispatch: dispatch,
 		AllowedTypes: map[string]bool{
 			"customer.subscription.updated": true,

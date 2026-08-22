@@ -139,7 +139,7 @@ func TestToStorefrontProductResponse_OmitsAuditFields(t *testing.T) {
 	a := &product.Aggregate{
 		Product: product.Product{
 			ID: "p1", Handle: "h", Title: "t",
-			TenantID: "tenant-xyz",
+			TenantID:    "tenant-xyz",
 			PublishedAt: &now,
 		},
 		Variants: []product.Variant{

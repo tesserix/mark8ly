@@ -31,7 +31,7 @@ afterAll(() => server.close())
 // ---------------------------------------------------------------------------
 
 const STORE_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-const ENDPOINT = `/api/v1/admin/stores/${STORE_ID}/subscription/pro-contact`
+const ENDPOINT = `/api/admin/stores/${STORE_ID}/subscription/pro-contact`
 
 const VALID_REQUEST: ProContactRequest = {
   company_name: 'Acme Ltd',

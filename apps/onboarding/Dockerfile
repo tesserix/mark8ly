@@ -11,7 +11,7 @@
 # the repo root.
 
 # ─── deps ──────────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-node-builder-22:latest AS deps
+FROM ghcr.io/tesserix/base-node-builder-22@sha256:ac0254526efbc5bd4079193a010e9087ea722eada2f4bede2db1817b900b7a01 AS deps
 USER 0:0
 WORKDIR /src
 
@@ -28,12 +28,12 @@ COPY packages/ui/package.json ./packages/ui/
 # Root npm ci resolves the entire workspace tree, which now includes
 # @tesserix/otto-widget under admin/storefront. The token is mounted as
 # a BuildKit secret so it never lands in a layer.
-RUN --mount=type=secret,id=NODE_AUTH_TOKEN \
-    NODE_AUTH_TOKEN="$(cat /run/secrets/NODE_AUTH_TOKEN)" \
+RUN --mount=type=secret,id=PACKAGE_READ_TOKEN \
+    NODE_AUTH_TOKEN="$(cat /run/secrets/PACKAGE_READ_TOKEN)" \
     npm ci --no-audit --no-fund --legacy-peer-deps
 
 # ─── builder ───────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-node-builder-22:latest AS builder
+FROM ghcr.io/tesserix/base-node-builder-22@sha256:ac0254526efbc5bd4079193a010e9087ea722eada2f4bede2db1817b900b7a01 AS builder
 USER 0:0
 WORKDIR /src
 COPY --from=deps /src/node_modules ./node_modules
@@ -44,29 +44,32 @@ COPY . .
 # NEXT_PUBLIC_* — the bundle is already frozen. CI passes these via
 # `docker buildx build --build-arg NEXT_PUBLIC_*=...` from GH Actions
 # secrets so the baked bundle has the real values.
-ARG NEXT_PUBLIC_GIP_PROJECT_ID=""
-ARG NEXT_PUBLIC_GIP_TENANT_ID=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_1=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_2=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_3=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_4=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_5=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_6=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_7=""
+ARG REUSABLE_PUBLIC_BUILD_ARG_8=""
 ARG NEXT_PUBLIC_GIP_CUSTOMER_TENANT_ID=""
-ARG NEXT_PUBLIC_GIP_API_KEY=""
-ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=""
-ARG NEXT_PUBLIC_MARKETING_URL=""
-ARG NEXT_PUBLIC_ADMIN_URL_TEMPLATE=""
-ENV NEXT_PUBLIC_GIP_PROJECT_ID=$NEXT_PUBLIC_GIP_PROJECT_ID \
-    NEXT_PUBLIC_GIP_TENANT_ID=$NEXT_PUBLIC_GIP_TENANT_ID \
+ENV NEXT_PUBLIC_GIP_PROJECT_ID=$REUSABLE_PUBLIC_BUILD_ARG_1 \
+    NEXT_PUBLIC_GIP_TENANT_ID=$REUSABLE_PUBLIC_BUILD_ARG_2 \
     NEXT_PUBLIC_GIP_CUSTOMER_TENANT_ID=$NEXT_PUBLIC_GIP_CUSTOMER_TENANT_ID \
-    NEXT_PUBLIC_GIP_API_KEY=$NEXT_PUBLIC_GIP_API_KEY \
-    NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID \
-    NEXT_PUBLIC_MARKETING_URL=$NEXT_PUBLIC_MARKETING_URL \
-    NEXT_PUBLIC_ADMIN_URL_TEMPLATE=$NEXT_PUBLIC_ADMIN_URL_TEMPLATE \
+    NEXT_PUBLIC_GIP_API_KEY=$REUSABLE_PUBLIC_BUILD_ARG_3 \
+    NEXT_PUBLIC_GOOGLE_CLIENT_ID=$REUSABLE_PUBLIC_BUILD_ARG_4 \
+    NEXT_PUBLIC_MARKETING_URL=$REUSABLE_PUBLIC_BUILD_ARG_6 \
+    NEXT_PUBLIC_ADMIN_URL_TEMPLATE=$REUSABLE_PUBLIC_BUILD_ARG_7 \
     NEXT_TELEMETRY_DISABLED=1
 
 # Pins the Server Action ID hash salt so action IDs stay stable across
 # builds. See apps/admin/Dockerfile for the full rationale and the
 # rotation/cache caveat.
 # Cache-key carrier for the encryption key — see apps/admin/Dockerfile.
-ARG SERVER_ACTIONS_KEY_FP=""
-RUN --mount=type=secret,id=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY \
-    NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/NEXT_SERVER_ACTIONS_ENCRYPTION_KEY 2>/dev/null || true)"; \
+ARG REUSABLE_BUILD_CACHE_FP=""
+RUN --mount=type=secret,id=APPLICATION_BUILD_SECRET \
+    : "$REUSABLE_BUILD_CACHE_FP"; \
+    NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$(cat /run/secrets/APPLICATION_BUILD_SECRET 2>/dev/null || true)"; \
     if [ -z "$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY" ]; then \
       echo "WARNING: NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is empty — Next.js"; \
       echo "will use a RANDOM per-build key, so Server Action IDs churn on"; \
@@ -80,7 +83,7 @@ RUN --mount=type=secret,id=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY \
 # Next.js standalone output for a workspace ends up at
 # apps/onboarding/.next/standalone/ with the monorepo directory layout
 # preserved, so the entrypoint is apps/onboarding/server.js.
-FROM ghcr.io/tesserix/base-node-runtime-22:latest AS runtime
+FROM ghcr.io/tesserix/base-node-runtime-22@sha256:41ad466bd1f42a02eca0a3d8c7022d2a42438b9bba31c59f65001af283feb330 AS runtime
 WORKDIR /app
 
 ENV PORT=4201

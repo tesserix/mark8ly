@@ -174,11 +174,11 @@ type UpdatePreferencesRequest struct {
 // the UI must not be able to silence them. Keep in sync with
 // apps/admin/components/settings/NotificationSettingsClient.tsx.
 var allowedPreferenceKeys = map[string]struct{}{
-	"new_order":         {},
-	"low_stock":         {},
-	"return_requested":  {},
-	"payment_received":  {},
-	"review_submitted":  {},
+	"new_order":        {},
+	"low_stock":        {},
+	"return_requested": {},
+	"payment_received": {},
+	"review_submitted": {},
 }
 
 // validatePreferences rejects unknown keys and non-boolean values. Returns

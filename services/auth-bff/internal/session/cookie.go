@@ -39,9 +39,9 @@ import (
 
 // Session is the validated payload of a session cookie.
 type Session struct {
-	UID       string    `json:"uid"`
-	Email     string    `json:"email"`
-	TenantID  string    `json:"tenant_id"` // mark8ly workspace tenant
+	UID      string `json:"uid"`
+	Email    string `json:"email"`
+	TenantID string `json:"tenant_id"` // mark8ly workspace tenant
 	// StoreID is the currently active store under TenantID. Phase
 	// Q.2 introduced this alongside `/auth/switch-store` so a
 	// merchant with multiple stores can switch without leaving

@@ -114,9 +114,9 @@ func (h *Handler) enable(c *gin.Context) {
 		"data": gin.H{
 			// qr_code_url is named so the admin UI can swap its
 			// <img src={qr_code_url}> without a client-side change.
-			"qr_code_url":  res.QRDataURL,
-			"otpauth_url":  res.OtpauthURL,
-			"secret":       res.Secret,
+			"qr_code_url": res.QRDataURL,
+			"otpauth_url": res.OtpauthURL,
+			"secret":      res.Secret,
 		},
 	})
 }

@@ -30,8 +30,8 @@ import (
 
 // Session is one in-progress onboarding flow.
 type Session struct {
-	ID              string          `gorm:"primaryKey;column:id;type:uuid;default:gen_random_uuid()" json:"id"`
-	Email           string          `gorm:"column:email;type:varchar(320);not null;index"            json:"email"`
+	ID    string `gorm:"primaryKey;column:id;type:uuid;default:gen_random_uuid()" json:"id"`
+	Email string `gorm:"column:email;type:varchar(320);not null;index"            json:"email"`
 	// Draft holds whatever the wizard has collected so far. JSON shape is
 	// not enforced at the DB layer — the handler validates per-step.
 	Draft           json.RawMessage `gorm:"column:draft;type:jsonb;not null;default:'{}'::jsonb"     json:"draft"`

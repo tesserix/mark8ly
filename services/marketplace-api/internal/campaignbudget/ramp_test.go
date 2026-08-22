@@ -15,12 +15,12 @@ func TestComputeRampDay_Boundaries(t *testing.T) {
 		now  time.Time
 		want int
 	}{
-		{time.Date(2026, 4, 1, 23, 59, 0, 0, time.UTC), 1},  // still day 1
-		{time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC), 2},    // rollover
+		{time.Date(2026, 4, 1, 23, 59, 0, 0, time.UTC), 1}, // still day 1
+		{time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC), 2},   // rollover
 		{time.Date(2026, 4, 3, 5, 0, 0, 0, time.UTC), 3},
-		{time.Date(2026, 4, 4, 5, 0, 0, 0, time.UTC), 4},    // transition 3→4
+		{time.Date(2026, 4, 4, 5, 0, 0, 0, time.UTC), 4}, // transition 3→4
 		{time.Date(2026, 4, 7, 23, 0, 0, 0, time.UTC), 7},
-		{time.Date(2026, 4, 8, 0, 5, 0, 0, time.UTC), 8},    // transition 7→8
+		{time.Date(2026, 4, 8, 0, 5, 0, 0, time.UTC), 8}, // transition 7→8
 		{time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), 31},
 	}
 	for _, tc := range cases {

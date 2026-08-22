@@ -128,7 +128,6 @@ func NewSubscriptionCollectors(reg prometheus.Registerer) *SubscriptionCollector
 				Help:      "Count of billing archive rows created on store hard-delete events.",
 			},
 		),
-
 	}
 
 	reg.MustRegister(

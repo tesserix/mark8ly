@@ -1,6 +1,38 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ChangeEvent, ReactNode } from "react";
+
+vi.mock("@tesserix/web", () => ({
+  Select: ({
+    value,
+    onValueChange,
+    children,
+  }: {
+    value: string;
+    onValueChange: (value: string) => void;
+    children: ReactNode;
+  }) => (
+    <select
+      value={value}
+      onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+        onValueChange(event.target.value)
+      }
+    >
+      {children}
+    </select>
+  ),
+  SelectTrigger: () => null,
+  SelectValue: () => null,
+  SelectContent: ({ children }: { children: ReactNode }) => <>{children}</>,
+  SelectItem: ({
+    value,
+    children,
+  }: {
+    value: string;
+    children: ReactNode;
+  }) => <option value={value}>{children}</option>,
+}));
 
 import { CsvColumnMapping, PRODUCT_FIELDS } from "./CsvColumnMapping";
 

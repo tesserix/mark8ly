@@ -18,7 +18,7 @@ import (
 // Profile is the GORM model for user_profiles. Keep in sync with
 // migrations/000036_user_profiles.up.sql.
 //
-// Every column is NOT NULL DEFAULT '' in the schema, so the Go zero
+// Every column is NOT NULL DEFAULT ” in the schema, so the Go zero
 // value round-trips cleanly and no field needs to be a pointer.
 type Profile struct {
 	UserID      string    `gorm:"column:user_id;primaryKey"`

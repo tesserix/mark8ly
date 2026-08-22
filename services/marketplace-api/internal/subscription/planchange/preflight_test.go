@@ -114,7 +114,7 @@ func TestPreflight_PeriodSwitch(t *testing.T) {
 	report, err := o.Preflight(context.Background(), planchange.Input{
 		TenantID:     sub.TenantID,
 		StoreID:      sub.StoreID,
-		TargetPlan:   subscription.PlanStarter, // same plan
+		TargetPlan:   subscription.PlanStarter,  // same plan
 		TargetPeriod: subscription.PeriodAnnual, // period switch
 	})
 
@@ -130,7 +130,7 @@ func TestPreflight_NoChange(t *testing.T) {
 	report, err := o.Preflight(context.Background(), planchange.Input{
 		TenantID:     sub.TenantID,
 		StoreID:      sub.StoreID,
-		TargetPlan:   subscription.PlanStarter,  // identical
+		TargetPlan:   subscription.PlanStarter,   // identical
 		TargetPeriod: subscription.PeriodMonthly, // identical
 	})
 

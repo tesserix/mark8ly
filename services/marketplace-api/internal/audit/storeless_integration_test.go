@@ -62,4 +62,3 @@ func TestCreateRejectsZeroValueStorePointer(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "store_id must be nil or a real store")
 }
-

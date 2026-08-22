@@ -194,14 +194,14 @@ func (s *Service) CreatePortalSession(ctx context.Context, tenantID, storeID uui
 
 // WebhookEvent represents a parsed Stripe webhook event.
 type WebhookEvent struct {
-	Type               string
-	StripeCustomerID   string
+	Type                 string
+	StripeCustomerID     string
 	StripeSubscriptionID string
-	Plan               string
-	Status             string
-	CurrentPeriodStart *time.Time
-	CurrentPeriodEnd   *time.Time
-	CancelAtPeriodEnd  bool
+	Plan                 string
+	Status               string
+	CurrentPeriodStart   *time.Time
+	CurrentPeriodEnd     *time.Time
+	CancelAtPeriodEnd    bool
 }
 
 // HandleWebhookEvent processes a Stripe billing webhook event and updates

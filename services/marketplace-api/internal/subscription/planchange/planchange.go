@@ -242,10 +242,10 @@ func (o *Orchestrator) executeInitialSubscription(ctx context.Context, tx *gorm.
 	if err := tx.Model(&subscription.StoreSubscription{}).
 		Where("tenant_id = ? AND store_id = ?", in.TenantID, in.StoreID).
 		Updates(map[string]any{
-			"stripe_subscription_id": stripeSub.ID,
-			"plan":                   in.TargetPlan,
-			"subscription_period":    in.TargetPeriod,
-			"last_plan_change_at":    in.Now,
+			"stripe_subscription_id":  stripeSub.ID,
+			"plan":                    in.TargetPlan,
+			"subscription_period":     in.TargetPeriod,
+			"last_plan_change_at":     in.Now,
 			"last_plan_change_reason": "initial_selection",
 		}).Error; err != nil {
 		return Output{}, fmt.Errorf("planchange: persist initial subscription: %w", err)
@@ -392,4 +392,3 @@ func (o *Orchestrator) executeUpgrade(ctx context.Context, tx *gorm.DB, in Input
 		StripeUpdated: true,
 	}, nil
 }
-

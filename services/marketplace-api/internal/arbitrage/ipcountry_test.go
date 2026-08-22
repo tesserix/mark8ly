@@ -25,7 +25,7 @@ func newGinCtx(headers map[string]string, remoteAddr string) *gin.Context {
 
 func TestCFIPCountryFromGin_TrustsHeader(t *testing.T) {
 	c := newGinCtx(map[string]string{
-		"CF-IPCountry":    "US",
+		"CF-IPCountry":     "US",
 		"CF-Connecting-IP": "203.0.113.42",
 	}, "10.0.0.1:54321")
 
@@ -52,7 +52,7 @@ func TestCFIPCountryFromGin_MissingHeader(t *testing.T) {
 
 func TestCFIPCountryFromGin_NormalizesCase(t *testing.T) {
 	c := newGinCtx(map[string]string{
-		"CF-IPCountry":    "us",
+		"CF-IPCountry":     "us",
 		"CF-Connecting-IP": "1.2.3.4",
 	}, "")
 

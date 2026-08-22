@@ -115,11 +115,11 @@ func (r *PlanResolver) ResolveByTenant(ctx context.Context, tenantID uuid.UUID) 
 		Table("store_subscriptions").
 		Select("plan").
 		Where("tenant_id = ?", tenantID).
-		Order("CASE plan "+
-			"WHEN 'marketplace' THEN 4 "+
-			"WHEN 'pro' THEN 3 "+
-			"WHEN 'studio' THEN 2 "+
-			"WHEN 'starter' THEN 1 "+
+		Order("CASE plan " +
+			"WHEN 'marketplace' THEN 4 " +
+			"WHEN 'pro' THEN 3 " +
+			"WHEN 'studio' THEN 2 " +
+			"WHEN 'starter' THEN 1 " +
 			"ELSE 0 END DESC").
 		Limit(1).
 		Scan(&plan).Error

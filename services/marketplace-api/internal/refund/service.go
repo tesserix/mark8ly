@@ -19,8 +19,8 @@ const coolingOffWindow = 14 * 24 * time.Hour
 
 // IssueInput holds the parameters for Service.IssueRefund.
 type IssueInput struct {
-	TenantID  uuid.UUID
-	StoreID   uuid.UUID
+	TenantID uuid.UUID
+	StoreID  uuid.UUID
 	// StripeChargeID is the Stripe charge to validate the 14-day gate against
 	// and to issue the refund on. Must be non-empty.
 	StripeChargeID       string
@@ -43,11 +43,11 @@ type IssueOutput struct {
 
 // Service orchestrates the 14-day cooling-off refund flow (§8).
 type Service struct {
-	db     *gorm.DB
-	repo   Repository
+	db      *gorm.DB
+	repo    Repository
 	subRepo subscription.Repository
-	stripe *billingstripe.Client
-	logger *slog.Logger
+	stripe  *billingstripe.Client
+	logger  *slog.Logger
 }
 
 // NewService constructs a Service.

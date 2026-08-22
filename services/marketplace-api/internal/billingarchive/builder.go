@@ -23,8 +23,8 @@ const (
 
 // BuildInput contains all the data needed to build and persist a billing archive.
 type BuildInput struct {
-	TenantID  uuid.UUID
-	StoreID   uuid.UUID
+	TenantID uuid.UUID
+	StoreID  uuid.UUID
 	// HardDeletedAt is the time the store was hard-deleted (anchors the retention clock).
 	HardDeletedAt time.Time
 }

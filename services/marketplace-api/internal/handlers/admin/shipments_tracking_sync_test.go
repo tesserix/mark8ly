@@ -55,7 +55,7 @@ func (c *scriptedCarrier) CreateShipment(context.Context, shipping.ShipmentReque
 func (c *scriptedCarrier) CancelShipment(context.Context, string) error {
 	return fmt.Errorf("not implemented")
 }
-func (c *scriptedCarrier) ProviderName() string        { return "delhivery" }
+func (c *scriptedCarrier) ProviderName() string         { return "delhivery" }
 func (c *scriptedCarrier) SupportedCountries() []string { return []string{"IN"} }
 
 func (c *scriptedCarrier) GetTracking(_ context.Context, trackingNumber string) (*shipping.Tracking, error) {

@@ -27,10 +27,10 @@ import (
 // seededTenant holds the ids used to seed one tenant's worth of rows across
 // every purgePlan group, so assertions can address them by name.
 type seededTenant struct {
-	tenantID string
-	storeID  string
-	orderID  string
-	returnID string
+	tenantID  string
+	storeID   string
+	orderID   string
+	returnID  string
 	productID string
 	reviewID  string
 	vendorID  string

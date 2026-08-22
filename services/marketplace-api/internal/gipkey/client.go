@@ -33,10 +33,10 @@ func (Noop) RemoveDomain(_ context.Context, _ string) error { return nil }
 // patches its browserKeyRestrictions.allowedReferrers, and retries on
 // the optimistic-concurrency 409 a concurrent verify could provoke.
 type googleClient struct {
-	svc          *apikeys.Service
-	keyResource  string // projects/<num>/locations/global/keys/<uid>
-	maxRetry     int
-	logger       *slog.Logger
+	svc         *apikeys.Service
+	keyResource string // projects/<num>/locations/global/keys/<uid>
+	maxRetry    int
+	logger      *slog.Logger
 }
 
 // New constructs a Client that targets keyResource (the full

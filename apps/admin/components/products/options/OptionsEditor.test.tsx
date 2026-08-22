@@ -37,7 +37,7 @@ describe("OptionsEditor", () => {
   it("pressing Enter in add-value input appends a new value", () => {
     const onChange = vi.fn();
     render(<OptionsEditor value={sample()} onChange={onChange} />);
-    const addInputs = screen.getAllByPlaceholderText(/add a value/i);
+    const addInputs = screen.getAllByPlaceholderText(/add another/i);
     const target = addInputs[1]!;
     fireEvent.change(target, { target: { value: "Blue" } });
     fireEvent.keyDown(target, { key: "Enter", code: "Enter" });
@@ -61,7 +61,7 @@ describe("OptionsEditor", () => {
   it("pressing Enter with empty/whitespace value is a no-op", () => {
     const onChange = vi.fn();
     render(<OptionsEditor value={sample()} onChange={onChange} />);
-    const addInputs = screen.getAllByPlaceholderText(/add a value/i);
+    const addInputs = screen.getAllByPlaceholderText(/add another/i);
     fireEvent.change(addInputs[0]!, { target: { value: "   " } });
     fireEvent.keyDown(addInputs[0]!, { key: "Enter" });
     // Non-Enter keydown also covered — no effect

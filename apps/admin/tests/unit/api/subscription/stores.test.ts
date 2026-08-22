@@ -39,10 +39,10 @@ const STORE_ID = 'a1b2c3d4-0000-4000-8000-000000000001'
 const STORE_ID_2 = 'a1b2c3d4-0000-4000-8000-000000000002'
 const STORE_ID_3 = 'a1b2c3d4-0000-4000-8000-000000000003'
 
-const PREFLIGHT_PATH = `/api/v1/admin/stores/${STORE_ID}/subscription/downgrade-preflight`
-const STORES_LIST_PATH = '/api/v1/admin/stores'
-const CLOSE_PATH = `/api/v1/admin/stores/${STORE_ID}/close`
-const DELETE_PATH = `/api/v1/admin/stores/${STORE_ID}`
+const PREFLIGHT_PATH = `/api/admin/stores/${STORE_ID}/subscription/downgrade-preflight`
+const STORES_LIST_PATH = '/api/admin/stores'
+const CLOSE_PATH = `/api/admin/stores/${STORE_ID}/close`
+const DELETE_PATH = `/api/admin/stores/${STORE_ID}`
 
 const BLOCK_LIST_FIXTURE = {
   stores: [

@@ -91,7 +91,7 @@ func (r *gormRepo) UpsertProfile(ctx context.Context, p *CustomerProfile) (*Cust
 	// session carried.
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "store_id"}, {Name: "email"}},
+			Columns:   []clause.Column{{Name: "store_id"}, {Name: "email"}},
 			DoUpdates: clause.AssignmentColumns([]string{"gip_uid", "updated_at"}),
 		}).
 		Create(p).Error

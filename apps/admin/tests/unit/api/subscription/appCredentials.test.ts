@@ -44,8 +44,8 @@ afterAll(() => server.close())
 // ---------------------------------------------------------------------------
 
 const STORE_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-const APPLE_PATH = `/api/v1/admin/stores/${STORE_ID}/app-credentials/apple`
-const GOOGLE_PATH = `/api/v1/admin/stores/${STORE_ID}/app-credentials/google`
+const APPLE_PATH = `/api/admin/stores/${STORE_ID}/app-credentials/apple`
+const GOOGLE_PATH = `/api/admin/stores/${STORE_ID}/app-credentials/google`
 
 const APPLE_FIXTURE = {
   key_id: 'ABCDE12345',

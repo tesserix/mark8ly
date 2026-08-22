@@ -222,10 +222,10 @@ func toServiceAddMedia(req CreateMediaRequest, productID, storeID, tenantID stri
 // UpdateMediaRequest.
 func toServiceUpdateMedia(req UpdateMediaWireRequest, productID, mediaID, storeID, tenantID string) product.UpdateMediaRequest {
 	return product.UpdateMediaRequest{
-		ProductID: productID,
-		MediaID:   mediaID,
-		StoreID:   storeID,
-		TenantID:  tenantID,
+		ProductID:  productID,
+		MediaID:    mediaID,
+		StoreID:    storeID,
+		TenantID:   tenantID,
 		Alt:        req.Alt,
 		Position:   req.Position,
 		URL:        req.URL,
@@ -236,14 +236,14 @@ func toServiceUpdateMedia(req UpdateMediaWireRequest, productID, mediaID, storeI
 
 // CreateProductRequest is the wire body for POST admin create.
 type CreateProductRequest struct {
-	Handle            string                      `json:"handle"`
-	Title             string                      `json:"title" binding:"required,max=300"`
-	Description       *string                     `json:"description,omitempty"`
-	Status            string                      `json:"status" binding:"omitempty,oneof=draft active archived"`
-	Tags              []string                    `json:"tags"`
-	SEOTitle          *string                     `json:"seo_title,omitempty"`
-	SEODescription    *string                     `json:"seo_description,omitempty"`
-	PrimaryCategoryID *string                     `json:"primary_category_id,omitempty"`
+	Handle            string   `json:"handle"`
+	Title             string   `json:"title" binding:"required,max=300"`
+	Description       *string  `json:"description,omitempty"`
+	Status            string   `json:"status" binding:"omitempty,oneof=draft active archived"`
+	Tags              []string `json:"tags"`
+	SEOTitle          *string  `json:"seo_title,omitempty"`
+	SEODescription    *string  `json:"seo_description,omitempty"`
+	PrimaryCategoryID *string  `json:"primary_category_id,omitempty"`
 	// Tax classification. Strategy-specific interpretation — see
 	// product.Product field comments.
 	TaxCode         *string                     `json:"tax_code,omitempty" binding:"omitempty,max=32"`

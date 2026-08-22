@@ -23,11 +23,11 @@ const (
 	FeatureTransactionalEmails    Feature = "transactional_emails"
 
 	// Storefront.
-	FeatureCustomDomain        Feature = "custom_domain"
-	FeatureFullColorPalette    Feature = "full_color_palette"
-	FeatureAnnouncementBar     Feature = "announcement_bar"
-	FeatureRemovePoweredBy     Feature = "remove_powered_by"
-	FeatureCustomCSS Feature = "custom_css"
+	FeatureCustomDomain     Feature = "custom_domain"
+	FeatureFullColorPalette Feature = "full_color_palette"
+	FeatureAnnouncementBar  Feature = "announcement_bar"
+	FeatureRemovePoweredBy  Feature = "remove_powered_by"
+	FeatureCustomCSS        Feature = "custom_css"
 	// FeatureCustomCodeInjection — reserved for the future head/body
 	// script-injection surface. No handler accepts arbitrary <script>
 	// payloads today, so the gate is a forward-compat hedge. When the

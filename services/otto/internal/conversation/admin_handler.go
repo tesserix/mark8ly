@@ -463,6 +463,7 @@ func (h *AdminHandler) setAvailability(c *gin.Context) {
 //   - staff must be marked available
 //   - staff must have no case in flight (CurrentCaseID empty)
 //   - a pending case must exist
+//
 // We reserve the slot on the staff row first, then do the
 // findOneAndUpdate on the conversation. If the second step fails we
 // roll back the staff row so we never lock a staff to a non-existent

@@ -8,14 +8,14 @@
 // This is the bug-fix landing point for auth-bug #2 (FGA tuple race) on
 // the auth-bff side. The full fix has two halves:
 //
-//   1. platform-api writes the tenant + outbox row in one tx, then the
-//      drainer ships the FGA tuple. (See platform-api's outbox + onboarding
-//      packages.)
+//  1. platform-api writes the tenant + outbox row in one tx, then the
+//     drainer ships the FGA tuple. (See platform-api's outbox + onboarding
+//     packages.)
 //
-//   2. auth-bff's autologin does CheckMembership with retry-on-not-found
-//      so the user can't get a session before the tuple is visible. The
-//      retry waits up to ~2 seconds, which is plenty for the drainer to
-//      catch up in normal operation.
+//  2. auth-bff's autologin does CheckMembership with retry-on-not-found
+//     so the user can't get a session before the tuple is visible. The
+//     retry waits up to ~2 seconds, which is plenty for the drainer to
+//     catch up in normal operation.
 //
 // Together they close the race from both ends.
 package authz

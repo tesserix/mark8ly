@@ -244,16 +244,16 @@ func (h *Handler) mfaChallenge(c *gin.Context) {
 	h.mgr.ClearPending(c.Writer)
 
 	h.audit.EmitAsync(audit.Event{
-		TenantID:    pending.TenantID,
-		Action:      "user.signed_in",
+		TenantID:     pending.TenantID,
+		Action:       "user.signed_in",
 		ResourceType: "user",
-		ResourceID:  pending.UID,
-		ActorType:   "user",
-		ActorUserID: pending.UID,
-		ActorEmail:  pending.Email,
-		IPAddress:   c.ClientIP(),
-		UserAgent:   c.Request.UserAgent(),
-		Metadata:    map[string]any{"method": "mfa_challenge"},
+		ResourceID:   pending.UID,
+		ActorType:    "user",
+		ActorUserID:  pending.UID,
+		ActorEmail:   pending.Email,
+		IPAddress:    c.ClientIP(),
+		UserAgent:    c.Request.UserAgent(),
+		Metadata:     map[string]any{"method": "mfa_challenge"},
 	})
 
 	c.JSON(http.StatusOK, gin.H{
@@ -291,15 +291,15 @@ func (h *Handler) logout(c *gin.Context) {
 
 	if existingTenant != "" {
 		h.audit.EmitAsync(audit.Event{
-			TenantID:    existingTenant,
-			Action:      "user.signed_out",
+			TenantID:     existingTenant,
+			Action:       "user.signed_out",
 			ResourceType: "user",
-			ResourceID:  existingUID,
-			ActorType:   "user",
-			ActorUserID: existingUID,
-			ActorEmail:  existingEmail,
-			IPAddress:   c.ClientIP(),
-			UserAgent:   c.Request.UserAgent(),
+			ResourceID:   existingUID,
+			ActorType:    "user",
+			ActorUserID:  existingUID,
+			ActorEmail:   existingEmail,
+			IPAddress:    c.ClientIP(),
+			UserAgent:    c.Request.UserAgent(),
 		})
 	}
 

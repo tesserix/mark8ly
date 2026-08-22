@@ -29,10 +29,10 @@ func TestDelhivery_CreateShipment_TopLevelRmkIsClassified(t *testing.T) {
 	c := &DelhiveryCarrier{apiKey: "tok", mode: "test", baseURL: srv.URL, client: srv.Client()}
 
 	_, err := c.CreateShipment(context.Background(), ShipmentRequest{
-		OrderID: "ORD-RMK",
+		OrderID:     "ORD-RMK",
 		FromAddress: Address{Name: "My Warehouse", Line1: "1 Rd", City: "Bengaluru", Region: "KA", PostalCode: "560076", CountryCode: "IN", Phone: "9000000000"},
-		ToAddress: Address{Name: "Buyer", Line1: "2 Rd", City: "Bengaluru", Region: "KA", PostalCode: "560001", CountryCode: "IN", Phone: "9876543210"},
-		Items: []ParcelItem{{Title: "Item", Quantity: 1, WeightGrams: 500}},
+		ToAddress:   Address{Name: "Buyer", Line1: "2 Rd", City: "Bengaluru", Region: "KA", PostalCode: "560001", CountryCode: "IN", Phone: "9876543210"},
+		Items:       []ParcelItem{{Title: "Item", Quantity: 1, WeightGrams: 500}},
 	})
 	if err == nil {
 		t.Fatal("expected an error")

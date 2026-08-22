@@ -186,12 +186,12 @@ func (w *Worker) Run(ctx context.Context, job CsvImportJob) {
 		}
 
 		_, createErr := w.productSvc.Create(ctx, product.CreateRequest{
-			StoreID:  w.storeID,
-			TenantID: w.tenantID,
-			Handle:   draft.Handle,
-			Title:    draft.Title,
+			StoreID:     w.storeID,
+			TenantID:    w.tenantID,
+			Handle:      draft.Handle,
+			Title:       draft.Title,
 			Description: draft.Description,
-			Status:   draft.Status,
+			Status:      draft.Status,
 			Variants: []product.VariantInput{{
 				SKU:          draft.SKU,
 				Price:        draft.BasePrice,

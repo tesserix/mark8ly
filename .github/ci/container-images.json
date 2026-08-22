@@ -1,0 +1,88 @@
+{
+  "include": [
+    {
+      "name": "mark8ly-platform-api",
+      "context": "services/platform-api",
+      "dockerfile": "services/platform-api/Dockerfile",
+      "target": "server",
+      "source_root": "services/platform-api",
+      "build_args": "",
+      "requires_application_build_secret": false,
+      "trivy_ignore_file": ".trivyignore",
+      "smoke_port": 0,
+      "smoke_path": "/health"
+    },
+    {
+      "name": "mark8ly-auth-bff",
+      "context": "services/auth-bff",
+      "dockerfile": "services/auth-bff/Dockerfile",
+      "target": "server",
+      "source_root": "services/auth-bff",
+      "build_args": "",
+      "requires_application_build_secret": false,
+      "trivy_ignore_file": ".trivyignore",
+      "smoke_port": 0,
+      "smoke_path": "/health"
+    },
+    {
+      "name": "mark8ly-marketplace-api",
+      "context": "services/marketplace-api",
+      "dockerfile": "services/marketplace-api/Dockerfile",
+      "target": "runtime",
+      "source_root": "services/marketplace-api",
+      "build_args": "",
+      "requires_application_build_secret": false,
+      "trivy_ignore_file": ".trivyignore",
+      "smoke_port": 0,
+      "smoke_path": "/health"
+    },
+    {
+      "name": "mark8ly-otto",
+      "context": "services/otto",
+      "dockerfile": "services/otto/Dockerfile",
+      "target": "server",
+      "source_root": "services/otto",
+      "build_args": "",
+      "requires_application_build_secret": false,
+      "trivy_ignore_file": ".trivyignore",
+      "smoke_port": 0,
+      "smoke_path": "/health"
+    },
+    {
+      "name": "mark8ly-onboarding",
+      "context": ".",
+      "dockerfile": "apps/onboarding/Dockerfile",
+      "target": "runtime",
+      "source_root": "apps/onboarding",
+      "build_args": "NEXT_PUBLIC_GIP_CUSTOMER_TENANT_ID=MP-Customer-39opy",
+      "requires_application_build_secret": true,
+      "trivy_ignore_file": ".trivyignore",
+      "smoke_port": 4201,
+      "smoke_path": "/api/health"
+    },
+    {
+      "name": "mark8ly-admin",
+      "context": ".",
+      "dockerfile": "apps/admin/Dockerfile",
+      "target": "runtime",
+      "source_root": "apps/admin",
+      "build_args": "NEXT_PUBLIC_APPLE_SERVICES_ID=com.mark8ly.admin.web",
+      "requires_application_build_secret": true,
+      "trivy_ignore_file": ".trivyignore",
+      "smoke_port": 4202,
+      "smoke_path": "/api/health"
+    },
+    {
+      "name": "mark8ly-storefront",
+      "context": ".",
+      "dockerfile": "apps/storefront/Dockerfile",
+      "target": "runtime",
+      "source_root": "apps/storefront",
+      "build_args": "",
+      "requires_application_build_secret": true,
+      "trivy_ignore_file": ".trivyignore",
+      "smoke_port": 4203,
+      "smoke_path": "/api/health"
+    }
+  ]
+}

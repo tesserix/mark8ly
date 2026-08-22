@@ -121,12 +121,12 @@ func (r *Repository) GetForCustomer(ctx context.Context, tenantID, storeID, id, 
 // ListInbox returns conversations for a staff inbox, filtered by status and
 // optionally by assignee. Always scoped to tenant+store.
 type ListInboxParams struct {
-	TenantID        string
-	StoreID         string
-	Status          Status // empty = all
-	AssigneeUserID  string // empty = any assignee
-	OnlyUnassigned  bool
-	Limit           int64
+	TenantID       string
+	StoreID        string
+	Status         Status // empty = all
+	AssigneeUserID string // empty = any assignee
+	OnlyUnassigned bool
+	Limit          int64
 }
 
 func (r *Repository) ListInbox(ctx context.Context, p ListInboxParams) ([]Conversation, error) {

@@ -258,9 +258,9 @@ func (s *Service) GetForCustomer(ctx context.Context, storeID, id uuid.UUID, ema
 
 // CustomerAllowedStatusTransition returns true if a signed-in shopper
 // is allowed to drive the ticket from `from` to `to`. The shopper can:
-//   • mark an open/in-progress ticket as resolved when they're happy,
-//   • close a ticket once it's resolved (archive it),
-//   • reopen a resolved ticket back to open (e.g. issue came back).
+//   - mark an open/in-progress ticket as resolved when they're happy,
+//   - close a ticket once it's resolved (archive it),
+//   - reopen a resolved ticket back to open (e.g. issue came back).
 //
 // The shopper can NOT set `in_progress` (that signals merchant pickup)
 // nor revive a closed ticket (terminal — they must open a fresh one).

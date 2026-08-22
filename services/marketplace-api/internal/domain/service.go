@@ -53,11 +53,11 @@ type SecretStore interface {
 
 // ServiceConfig groups dependencies for the domain service.
 type ServiceConfig struct {
-	DB     *gorm.DB
-	Repo   Repository
+	DB          *gorm.DB
+	Repo        Repository
 	CF          CloudflareClient
 	Provisioner Provisioner
-	Secrets     SecretStore // optional — falls back to inline-token storage if nil.
+	Secrets     SecretStore             // optional — falls back to inline-token storage if nil.
 	Resolver    domainvalidate.Resolver // optional — net.DefaultResolver when nil.
 	// GIPKey, when non-nil, gets the merchant's FQDN added to the GIP
 	// browser API key allowlist on markVerified and stripped on Remove.
@@ -65,8 +65,8 @@ type ServiceConfig struct {
 	// API_KEY_HTTP_REFERRER_BLOCKED on signInWithPassword. main.go
 	// constructs the real client only when GIP_WEB_API_KEY_RESOURCE_NAME
 	// is configured; tests and local dev get gipkey.Noop.
-	GIPKey      gipkey.Client
-	Logger      *slog.Logger
+	GIPKey gipkey.Client
+	Logger *slog.Logger
 }
 
 // Provisioner is the k8s provisioning interface consumed by Service.

@@ -7,14 +7,14 @@ import (
 
 // PromoApplied carries parameters for the subscription.promo_applied audit event.
 type PromoApplied struct {
-	TenantID     uuid.UUID
-	StoreID      uuid.UUID
-	Code         string
-	Actor        string
+	TenantID uuid.UUID
+	StoreID  uuid.UUID
+	Code     string
+	Actor    string
 	// RejectReason is the internal reason (never sent to the HTTP client).
 	RejectReason string
 	// Accepted indicates whether the promo was successfully applied.
-	Accepted     bool
+	Accepted bool
 }
 
 // EmitPromoApplied emits a subscription.promo_applied audit event.

@@ -1,42 +1,6 @@
 name: Mobile Admin - EAS Build
 
-# Cloud-builds the Expo app apps/mobile-admin on Expo's EAS Build service.
-# The mobile app is NOT a Docker image — it ships as a native iOS/Android
-# binary built by EAS, so this is a separate path from the GHCR/ArgoCD
-# web + marketplace-api workflows.
-#
-# Manual-only (workflow_dispatch) on purpose: native builds consume EAS
-# minutes, so we never auto-build on push. Pick platform + profile + submit at
-# run time. Builds are queued with --no-wait (the runner returns immediately;
-# track progress at https://expo.dev/accounts/tesserix-org/projects/mark8ly-admin).
-#
-# Requires the EXPO_TOKEN repo secret — an Expo access token for the
-# tesserix-org account that owns the @tesserix-org/mark8ly-admin EAS project.
-# Create one at https://expo.dev/accounts/tesserix-org/settings/access-tokens
-# then add it:  gh secret set EXPO_TOKEN --repo tesserix/mark8ly
-#
-# submit=true (always true for tag pushes) appends --auto-submit, which after
-# the build uploads to TestFlight + the Play internal track using
-# submit.production in eas.json. For that to run non-interactively in CI, the
-# EAS project must already hold credentials for BOTH platforms — set them up
-# ONCE locally:
-#   cd apps/mobile-admin
-#   eas credentials     # iOS → Distribution cert + provisioning profile (needs an Apple login)
-#   eas credentials     # iOS → App Store Connect API Key (for submit)
-#   eas credentials     # Android → upload/release keystore (needs a Google login)
-#   eas secret:create --scope project --type file \
-#     --name PLAY_SERVICE_ACCOUNT_KEY --value ./play-service-account.json
-# eas.json's submit.production.android.serviceAccountKeyPath references that
-# secret as @secret:PLAY_SERVICE_ACCOUNT_KEY — see docs/superpowers/plans/
-# 2026-07-29-android-release-parity.md for the full setup checklist.
-# After that one-time setup, this workflow builds + submits with no GitHub
-# secrets beyond EXPO_TOKEN (and GHCR_PAT for the @tesserix registry install).
-
 on:
-  # Push a release tag to build + ship to both stores automatically, e.g.:
-  #   git tag mobile-admin-v1.0.0 && git push origin mobile-admin-v1.0.0
-  # Tag builds are always all platforms (iOS + Android) / production /
-  # --auto-submit (TestFlight + Play internal track).
   push:
     tags:
       - "mobile-admin-v*"
@@ -48,12 +12,12 @@ on:
         options: [ios, android, all]
         default: ios
       profile:
-        description: EAS build profile (from eas.json)
+        description: EAS build profile
         type: choice
         options: [preview, production, development]
         default: production
       submit:
-        description: Submit to TestFlight / Play internal after build
+        description: Submit the completed build to the configured store
         type: boolean
         default: false
 
@@ -67,64 +31,17 @@ concurrency:
 jobs:
   build:
     name: EAS build (mobile-admin)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          # The root .npmrc pins @tesserix/* to GitHub Packages, so the install
-          # needs an authed registry to pull the design system.
-          registry-url: "https://npm.pkg.github.com"
-
-      - name: Verify EXPO_TOKEN is configured
-        run: |
-          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
-            echo "::error::EXPO_TOKEN secret is not set. Add it with: gh secret set EXPO_TOKEN --repo tesserix/mark8ly"
-            exit 1
-          fi
-
-      - name: Install dependencies
-        # eas build evaluates app.config.js + Expo config plugins on the runner
-        # before queuing the cloud build, so node_modules must be present.
-        # `npm ci` installs exactly from the lockfile (no drift) and runs the
-        # mobile-admin postinstall (nativewind/tailwind link).
-        run: npm ci --legacy-peer-deps
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GHCR_PAT }}
-
-      - name: Set up EAS CLI
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Queue EAS build
-        working-directory: apps/mobile-admin
-        # Tag pushes → always all / production / --auto-submit (TestFlight +
-        # Play internal). `inputs.platform` only exists on workflow_dispatch
-        # (where its choice input always carries a value), so this fallback
-        # only ever applies to tag pushes; manual runs are unaffected.
-        run: |
-          eas build \
-            --platform "${{ inputs.platform || 'all' }}" \
-            --profile "${{ inputs.profile || 'production' }}" \
-            --non-interactive \
-            --no-wait \
-            ${{ (github.event_name == 'push' || inputs.submit) && '--auto-submit' || '' }}
-
-      - name: Summary
-        if: always()
-        run: |
-          {
-            echo "## EAS build queued"
-            echo ""
-            echo "- **App:** mobile-admin"
-            echo "- **Platform:** ${{ inputs.platform }}"
-            echo "- **Profile:** ${{ inputs.profile }}"
-            echo "- **Submit to TestFlight:** ${{ inputs.submit }}"
-            echo "- Track builds: https://expo.dev/accounts/tesserix-org/projects/mark8ly-admin"
-          } >> "$GITHUB_STEP_SUMMARY"
+    uses: tesserix/tesserix-workflows/.github/workflows/expo-eas-build.yml@v2.1.0
+    with:
+      working_directory: apps/mobile-admin
+      install_directory: .
+      lockfile_path: package-lock.json
+      node_version: "22"
+      legacy_peer_dependencies: true
+      platform: ${{ inputs.platform || 'all' }}
+      profile: ${{ inputs.profile || 'production' }}
+      no_wait: true
+      auto_submit: ${{ github.event_name == 'push' || inputs.submit }}
+    secrets:
+      expo_token: ${{ secrets.EXPO_TOKEN }}
+      package_read_token: ${{ secrets.GHCR_PAT }}

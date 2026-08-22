@@ -9,8 +9,8 @@ import (
 // Handler exposes e2e test helper endpoints. Only mounted when cfg.Env
 // != "prod" (see cmd/server/main.go).
 type Handler struct {
-	recorder       *TokenRecorder
-	invitationRec  *InvitationTokenRecorder
+	recorder      *TokenRecorder
+	invitationRec *InvitationTokenRecorder
 }
 
 // NewHandler constructs a Handler over the given recorders. Both may

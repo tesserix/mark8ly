@@ -93,12 +93,12 @@ type nvAddress struct {
 }
 
 type nvOrderRequest struct {
-	ServiceType    string    `json:"service_type"`
-	ServiceLevel   string    `json:"service_level"`
-	From           nvAddress `json:"from"`
-	To             nvAddress `json:"to"`
-	ParcelJob      nvParcel  `json:"parcel_job"`
-	RequestedTrackingNumber string `json:"requested_tracking_number,omitempty"`
+	ServiceType             string    `json:"service_type"`
+	ServiceLevel            string    `json:"service_level"`
+	From                    nvAddress `json:"from"`
+	To                      nvAddress `json:"to"`
+	ParcelJob               nvParcel  `json:"parcel_job"`
+	RequestedTrackingNumber string    `json:"requested_tracking_number,omitempty"`
 }
 
 type nvParcel struct {

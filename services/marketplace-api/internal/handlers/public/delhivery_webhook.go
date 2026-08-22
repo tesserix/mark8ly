@@ -113,10 +113,10 @@ type dlWebhookBody struct {
 	Shipment struct {
 		AWB    string `json:"AWB"`
 		Status struct {
-			Status       string `json:"Status"`
-			StatusType   string `json:"StatusType"`
+			Status         string `json:"Status"`
+			StatusType     string `json:"StatusType"`
 			StatusDateTime string `json:"StatusDateTime"`
-			Instructions string `json:"Instructions"`
+			Instructions   string `json:"Instructions"`
 		} `json:"Status"`
 		// Delhivery's newer payload carries scans nested the same
 		// way the tracking API does. Older payloads omit it

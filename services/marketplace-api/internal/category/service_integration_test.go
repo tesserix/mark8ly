@@ -293,4 +293,3 @@ func TestIntegration_CategoryService_Update_ChangesName_EnqueuesOutbox(t *testin
 		t.Fatalf("expected 1 updated outbox row, got %d", n)
 	}
 }
-

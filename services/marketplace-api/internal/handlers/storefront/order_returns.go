@@ -29,14 +29,14 @@ type StorefrontReturnItemRequest struct {
 // /storefront/stores/:storeSlug/orders/:id/returns.
 type StorefrontReturnRequest struct {
 	// Type is "return" (refund-only, default) or "replace" (exchange).
-	Type   string                         `json:"type"`
-	Reason *string                        `json:"reason"`
-	Notes  *string                        `json:"notes"`
+	Type   string  `json:"type"`
+	Reason *string `json:"reason"`
+	Notes  *string `json:"notes"`
 	// Items is optional — when absent we default to requesting the full
 	// ordered quantity of every line on the order. This is the common
 	// case (customer wants to return "everything") and keeps the widget
 	// simple.
-	Items  []StorefrontReturnItemRequest `json:"items"`
+	Items []StorefrontReturnItemRequest `json:"items"`
 }
 
 // StorefrontReturnResponse is the customer-facing wire shape.

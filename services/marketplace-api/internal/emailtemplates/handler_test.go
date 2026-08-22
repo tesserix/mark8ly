@@ -133,7 +133,7 @@ func TestHandler_TestSend_MissingTo(t *testing.T) {
 func TestHandler_TestSend_NoSender(t *testing.T) {
 	loader := NewLoader(nil)
 	loader.Register("welcome", EmbeddedFallback{
-		Subject:  "s", HTMLBody: "<p>h</p>", TextBody: "t",
+		Subject: "s", HTMLBody: "<p>h</p>", TextBody: "t",
 	})
 	r := newTestRouter(loader, nil)
 

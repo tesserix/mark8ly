@@ -48,16 +48,16 @@ func (c *TaxJarCalculator) ProviderName() string { return "taxjar" }
 // ── TaxJar request / response shapes ────────────────────────────────────────
 
 type taxjarRequest struct {
-	FromCountry string            `json:"from_country"`
-	FromZip     string            `json:"from_zip"`
-	FromState   string            `json:"from_state"`
-	FromCity    string            `json:"from_city"`
-	ToCountry   string            `json:"to_country"`
-	ToZip       string            `json:"to_zip"`
-	ToState     string            `json:"to_state"`
-	ToCity      string            `json:"to_city"`
-	Shipping    float64           `json:"shipping"`
-	LineItems   []taxjarLineItem  `json:"line_items"`
+	FromCountry string           `json:"from_country"`
+	FromZip     string           `json:"from_zip"`
+	FromState   string           `json:"from_state"`
+	FromCity    string           `json:"from_city"`
+	ToCountry   string           `json:"to_country"`
+	ToZip       string           `json:"to_zip"`
+	ToState     string           `json:"to_state"`
+	ToCity      string           `json:"to_city"`
+	Shipping    float64          `json:"shipping"`
+	LineItems   []taxjarLineItem `json:"line_items"`
 }
 
 type taxjarLineItem struct {
@@ -72,9 +72,9 @@ type taxjarResponse struct {
 }
 
 type taxjarTax struct {
-	AmountToCollect float64              `json:"amount_to_collect"`
-	Shipping        taxjarShippingTax    `json:"shipping"`
-	Breakdown       taxjarBreakdown      `json:"breakdown"`
+	AmountToCollect float64           `json:"amount_to_collect"`
+	Shipping        taxjarShippingTax `json:"shipping"`
+	Breakdown       taxjarBreakdown   `json:"breakdown"`
 }
 
 type taxjarShippingTax struct {
@@ -84,34 +84,34 @@ type taxjarShippingTax struct {
 }
 
 type taxjarBreakdown struct {
-	TaxableAmount       float64                    `json:"taxable_amount"`
-	TaxCollectable      float64                    `json:"tax_collectable"`
-	CombinedTaxRate     float64                    `json:"combined_tax_rate"`
-	StateTaxableAmount  float64                    `json:"state_taxable_amount"`
-	StateTaxRate        float64                    `json:"state_tax_rate"`
-	StateTaxCollectable float64                    `json:"state_amount"`
-	CountyTaxableAmount float64                    `json:"county_taxable_amount"`
-	CountyTaxRate       float64                    `json:"county_tax_rate"`
-	CountyTaxCollectable float64                   `json:"county_amount"`
-	CityTaxableAmount   float64                    `json:"city_taxable_amount"`
-	CityTaxRate         float64                    `json:"city_tax_rate"`
-	CityTaxCollectable  float64                    `json:"city_amount"`
+	TaxableAmount         float64                  `json:"taxable_amount"`
+	TaxCollectable        float64                  `json:"tax_collectable"`
+	CombinedTaxRate       float64                  `json:"combined_tax_rate"`
+	StateTaxableAmount    float64                  `json:"state_taxable_amount"`
+	StateTaxRate          float64                  `json:"state_tax_rate"`
+	StateTaxCollectable   float64                  `json:"state_amount"`
+	CountyTaxableAmount   float64                  `json:"county_taxable_amount"`
+	CountyTaxRate         float64                  `json:"county_tax_rate"`
+	CountyTaxCollectable  float64                  `json:"county_amount"`
+	CityTaxableAmount     float64                  `json:"city_taxable_amount"`
+	CityTaxRate           float64                  `json:"city_tax_rate"`
+	CityTaxCollectable    float64                  `json:"city_amount"`
 	SpecialTaxRate        float64                  `json:"special_tax_rate"`
 	SpecialTaxCollectable float64                  `json:"special_district_tax_collected"`
-	Shipping            *taxjarShippingBreakdown   `json:"shipping,omitempty"`
+	Shipping              *taxjarShippingBreakdown `json:"shipping,omitempty"`
 }
 
 type taxjarShippingBreakdown struct {
-	TaxableAmount       float64 `json:"taxable_amount"`
-	TaxCollectable      float64 `json:"tax_collectable"`
-	StateTaxRate        float64 `json:"state_sales_tax_rate"`
-	StateAmount         float64 `json:"state_amount"`
-	CountyTaxRate       float64 `json:"county_tax_rate"`
-	CountyAmount        float64 `json:"county_amount"`
-	CityTaxRate         float64 `json:"city_tax_rate"`
-	CityAmount          float64 `json:"city_amount"`
-	SpecialTaxRate      float64 `json:"special_district_tax_rate"`
-	SpecialAmount       float64 `json:"special_tax_amount"`
+	TaxableAmount  float64 `json:"taxable_amount"`
+	TaxCollectable float64 `json:"tax_collectable"`
+	StateTaxRate   float64 `json:"state_sales_tax_rate"`
+	StateAmount    float64 `json:"state_amount"`
+	CountyTaxRate  float64 `json:"county_tax_rate"`
+	CountyAmount   float64 `json:"county_amount"`
+	CityTaxRate    float64 `json:"city_tax_rate"`
+	CityAmount     float64 `json:"city_amount"`
+	SpecialTaxRate float64 `json:"special_district_tax_rate"`
+	SpecialAmount  float64 `json:"special_tax_amount"`
 }
 
 type taxjarErrorResponse struct {

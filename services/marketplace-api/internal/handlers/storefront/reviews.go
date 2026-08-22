@@ -503,25 +503,25 @@ func buildCustomerName(p *customer.CustomerProfile) string {
 // --- DTOs ---
 
 type storefrontReviewResponse struct {
-	ID               string                        `json:"id"`
-	Rating           int                           `json:"rating"`
-	Title            string                        `json:"title,omitempty"`
-	Content          string                        `json:"content"`
-	CustomerName     string                        `json:"customer_name"`
-	VerifiedPurchase bool                          `json:"verified_purchase"`
-	Featured         bool                          `json:"featured"`
-	HelpfulCount     int                           `json:"helpful_count"`
-	NotHelpfulCount  int                           `json:"not_helpful_count"`
-	UsefulCount      int                           `json:"useful_count"`
+	ID               string `json:"id"`
+	Rating           int    `json:"rating"`
+	Title            string `json:"title,omitempty"`
+	Content          string `json:"content"`
+	CustomerName     string `json:"customer_name"`
+	VerifiedPurchase bool   `json:"verified_purchase"`
+	Featured         bool   `json:"featured"`
+	HelpfulCount     int    `json:"helpful_count"`
+	NotHelpfulCount  int    `json:"not_helpful_count"`
+	UsefulCount      int    `json:"useful_count"`
 	// ViewerReaction: the reaction the caller themselves picked on this
 	// review ("" = none). Lets the UI highlight the active button
 	// without a separate round-trip. Only populated when we have a
 	// customer profile in context (authenticated path).
-	ViewerReaction   string                        `json:"viewer_reaction,omitempty"`
-	PublishedAt      string                        `json:"published_at,omitempty"`
-	CreatedAt        string                        `json:"created_at"`
-	Media            []storefrontReviewMediaDTO    `json:"media"`
-	Replies          []storefrontReviewReplyDTO    `json:"replies"`
+	ViewerReaction string                     `json:"viewer_reaction,omitempty"`
+	PublishedAt    string                     `json:"published_at,omitempty"`
+	CreatedAt      string                     `json:"created_at"`
+	Media          []storefrontReviewMediaDTO `json:"media"`
+	Replies        []storefrontReviewReplyDTO `json:"replies"`
 }
 
 type storefrontReviewMediaDTO struct {

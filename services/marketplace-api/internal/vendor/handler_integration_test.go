@@ -67,7 +67,9 @@ func TestHandler_EnsureSelfVendor_Idempotent(t *testing.T) {
 	second := do()
 	require.Equal(t, http.StatusOK, second.Code)
 
-	var f, s struct{ Data Vendor `json:"data"` }
+	var f, s struct {
+		Data Vendor `json:"data"`
+	}
 	require.NoError(t, json.Unmarshal(first.Body.Bytes(), &f))
 	require.NoError(t, json.Unmarshal(second.Body.Bytes(), &s))
 	require.Equal(t, f.Data.ID, s.Data.ID, "idempotent ensure returns the same vendor")

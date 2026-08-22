@@ -66,7 +66,7 @@ func TestPeriodSwitch_MonthlyToAnnual_Pro_CommitsImmediately(t *testing.T) {
 	out, err := o.Execute(ctx, planchange.Input{
 		TenantID:          tenantID,
 		StoreID:           storeID,
-		TargetPlan:        subscription.PlanPro,    // same plan — period switch only
+		TargetPlan:        subscription.PlanPro, // same plan — period switch only
 		TargetPeriod:      subscription.PeriodAnnual,
 		RequestedCurrency: "USD",
 		Actor:             "user:merchant",

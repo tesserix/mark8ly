@@ -19,12 +19,12 @@ type Status = subscription.WhiteLabelAppStatus
 
 // Re-export canonical status constants for advancer convenience.
 const (
-	StatusActive             = subscription.AppStatusActive
-	StatusSunsetScheduled    = subscription.AppStatusSunsetScheduled
-	StatusDownloadsBlocked   = subscription.AppStatusDownloadsBlocked
-	StatusPulled             = subscription.AppStatusPulled
-	StatusFirebaseArchived   = subscription.AppStatusFirebaseArchived
-	StatusCredentialsPurged  = subscription.AppStatusCredentialsPurged
+	StatusActive            = subscription.AppStatusActive
+	StatusSunsetScheduled   = subscription.AppStatusSunsetScheduled
+	StatusDownloadsBlocked  = subscription.AppStatusDownloadsBlocked
+	StatusPulled            = subscription.AppStatusPulled
+	StatusFirebaseArchived  = subscription.AppStatusFirebaseArchived
+	StatusCredentialsPurged = subscription.AppStatusCredentialsPurged
 )
 
 // Row is the GORM model for the white_label_app_state table (migration

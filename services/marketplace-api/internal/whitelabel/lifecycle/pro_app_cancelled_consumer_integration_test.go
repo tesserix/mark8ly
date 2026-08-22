@@ -21,9 +21,9 @@ func TestConsumer_GracefulPath_SeedsSunsetScheduled(t *testing.T) {
 
 	tenantID, storeID := uuid.New(), uuid.New()
 	err := c.Handle(context.Background(), lifecycle.ProAppCancelledEvent{
-		TenantID:      tenantID,
-		StoreID:       storeID,
-		AppleAppID:    "a1", GooglePackage: "com.x", FirebaseProjectID: "fb-x",
+		TenantID:   tenantID,
+		StoreID:    storeID,
+		AppleAppID: "a1", GooglePackage: "com.x", FirebaseProjectID: "fb-x",
 		MerchantInitiatedImmediate: false,
 	})
 	require.NoError(t, err)

@@ -118,8 +118,8 @@ func makeWebhookHandler(t *testing.T, secret string) (*DelhiveryWebhookHandler, 
 	var calls atomic.Int32
 	var records []advanceRecord
 	advance := func(_ context.Context, rec *shipping.ShipmentRecord, tr *shipping.Tracking) (bool, error) {
-		calls.Add(1)
 		records = append(records, advanceRecord{rec: *rec, tracking: *tr})
+		calls.Add(1)
 		return tr.Status != rec.Status, nil
 	}
 

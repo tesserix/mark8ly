@@ -21,41 +21,41 @@ import (
 // Deps groups every dependency the admin route registrar needs.
 // Constructed in cmd/marketplace-api/main.go.
 type Deps struct {
-	ProductHandler        *ProductHandler
-	CategoryHandler       *CategoryHandler
-	VariantHandler        *VariantHandler
-	MediaHandler          *MediaHandler
-	OrdersHandler         *OrdersHandler
-	ReturnsHandler        *ReturnsHandler
-	AbandonedCartsHandler *AbandonedCartsHandler
-	StoresHandler            *StoresHandler
-	BulkHandler              *BulkHandler
-	CSVImportsHandler        *CSVImportsHandler
-	PaymentSettingsHandler   *PaymentSettingsHandler
-	ShippingSettingsHandler  *ShippingSettingsHandler
-	TaxSettingsHandler       *TaxSettingsHandler
-	SettingsMetaHandler      *SettingsMetaHandler
-	CouponHandler            *CouponHandler
-	GiftCardHandler          *GiftCardHandler
-	LoyaltyHandler           *LoyaltyHandler
-	CampaignHandler          *CampaignHandler
-	SegmentHandler           *SegmentHandler
-	CustomersHandler         *CustomersHandler
-	ReviewsHandler           *ReviewsHandler
-	AccountHandler           *AccountHandler
-	DomainsHandler           *DomainsHandler
-	SubscriptionHandler      *SubscriptionHandler
-	ChangePlanHandler        *ChangePlanHandler
-	CompleteActionHandler    *CompleteActionHandler
-	TrialBillingHandler      *TrialBillingHandler
+	ProductHandler          *ProductHandler
+	CategoryHandler         *CategoryHandler
+	VariantHandler          *VariantHandler
+	MediaHandler            *MediaHandler
+	OrdersHandler           *OrdersHandler
+	ReturnsHandler          *ReturnsHandler
+	AbandonedCartsHandler   *AbandonedCartsHandler
+	StoresHandler           *StoresHandler
+	BulkHandler             *BulkHandler
+	CSVImportsHandler       *CSVImportsHandler
+	PaymentSettingsHandler  *PaymentSettingsHandler
+	ShippingSettingsHandler *ShippingSettingsHandler
+	TaxSettingsHandler      *TaxSettingsHandler
+	SettingsMetaHandler     *SettingsMetaHandler
+	CouponHandler           *CouponHandler
+	GiftCardHandler         *GiftCardHandler
+	LoyaltyHandler          *LoyaltyHandler
+	CampaignHandler         *CampaignHandler
+	SegmentHandler          *SegmentHandler
+	CustomersHandler        *CustomersHandler
+	ReviewsHandler          *ReviewsHandler
+	AccountHandler          *AccountHandler
+	DomainsHandler          *DomainsHandler
+	SubscriptionHandler     *SubscriptionHandler
+	ChangePlanHandler       *ChangePlanHandler
+	CompleteActionHandler   *CompleteActionHandler
+	TrialBillingHandler     *TrialBillingHandler
 	// P10 — promo-code engine (§7) + 14-day cooling-off refund (§8).
 	PromoHandler  *PromoHandler
 	RefundHandler *RefundHandler
 	// P11 — merchant-initiated cancellation + save-offer (§15).
 	CancelHandler *cancel.Handler
 	// P8 — geo-pricing arbitrage appeal (§18.8.1).
-	ArbitrageAppealHandler *ArbitrageAppealHandler
-	MigrationFastPathHandler   *migration.Handler
+	ArbitrageAppealHandler   *ArbitrageAppealHandler
+	MigrationFastPathHandler *migration.Handler
 	// P7 — tax-ID submit + US/CA attestation (§19.3, §19.3.1).
 	TaxHandler *TaxHandler
 	// P14 — enterprise API keys (§18.4).
@@ -72,7 +72,7 @@ type Deps struct {
 	// P13 — break-glass emergency admin login (§12.4). Mounted OUTSIDE
 	// the store-scoped + RequireActive group: this is the recovery
 	// path, it must survive read-only / store_closed states.
-	BreakGlassLoginHandler *BreakGlassLoginHandler
+	BreakGlassLoginHandler   *BreakGlassLoginHandler
 	AuditLogsHandler         *AuditLogsHandler
 	NotificationsHandler     *NotificationsHandler
 	DashboardHandler         *DashboardHandler

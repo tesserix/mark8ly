@@ -108,13 +108,13 @@ func (r *gormRepository) ReplaceMediaInTx(ctx context.Context, tx *gorm.DB, prod
 			if err := tx.Model(&Media{}).
 				Where("id = ?", ex.ID).
 				Updates(map[string]any{
-					"url":       in.URL,
-					"alt":       in.Alt,
-					"position":  in.Position,
+					"url":        in.URL,
+					"alt":        in.Alt,
+					"position":   in.Position,
 					"media_type": in.MediaType,
-					"width":     in.Width,
-					"height":    in.Height,
-					"bytes":     in.Bytes,
+					"width":      in.Width,
+					"height":     in.Height,
+					"bytes":      in.Bytes,
 					"variant_id": in.VariantID,
 				}).Error; err != nil {
 				return fmt.Errorf("product: update preserved media: %w", err)

@@ -237,8 +237,8 @@ func (h *CampaignHandler) Delete(c *gin.Context) {
 
 // Send handles POST /admin/stores/:storeId/campaigns/:id/send.
 // When P9 budget gate is wired (h.budget != nil), the handler enforces:
-//   1. Max 3 concurrent sends per store via h.slots.AcquireSlot → 429
-//   2. Monthly campaign email budget via h.budget.Reserve → 403
+//  1. Max 3 concurrent sends per store via h.slots.AcquireSlot → 429
+//  2. Monthly campaign email budget via h.budget.Reserve → 403
 func (h *CampaignHandler) Send(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

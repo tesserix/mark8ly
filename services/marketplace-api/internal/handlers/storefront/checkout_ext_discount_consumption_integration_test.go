@@ -198,7 +198,7 @@ func TestStorefrontCheckout_GiftCardDebitFailure_RollsBackOrder(t *testing.T) {
 	r := gin.New()
 	storefront.RegisterStorefront(r.Group("/api/v1"), storefront.Deps{
 		CheckoutExtHandler: checkoutExtHandler,
-		SlugCache: stores.NewSlugCache(stores.NewRepository(db), fakeStoresClient{}, &singleflight.Group{}, 5*time.Minute),
+		SlugCache:          stores.NewSlugCache(stores.NewRepository(db), fakeStoresClient{}, &singleflight.Group{}, 5*time.Minute),
 	})
 
 	// Seed an active, funded gift card covering the whole order.
@@ -283,7 +283,7 @@ func TestStorefrontCheckout_CouponApplyFailure_RollsBackOrder(t *testing.T) {
 	r := gin.New()
 	storefront.RegisterStorefront(r.Group("/api/v1"), storefront.Deps{
 		CheckoutExtHandler: checkoutExtHandler,
-		SlugCache: stores.NewSlugCache(stores.NewRepository(db), fakeStoresClient{}, &singleflight.Group{}, 5*time.Minute),
+		SlugCache:          stores.NewSlugCache(stores.NewRepository(db), fakeStoresClient{}, &singleflight.Group{}, 5*time.Minute),
 	})
 
 	storeUUID := uuid.MustParse(store.ID)

@@ -638,65 +638,65 @@ type shippingConfigResponse struct {
 	AutoSchedulePickup     bool   `json:"auto_schedule_pickup"`
 	DefaultPickupSlotStart string `json:"default_pickup_slot_start,omitempty"`
 	DefaultPickupSlotEnd   string `json:"default_pickup_slot_end,omitempty"`
-	CreatedAt             string `json:"created_at"`
-	UpdatedAt             string `json:"updated_at"`
+	CreatedAt              string `json:"created_at"`
+	UpdatedAt              string `json:"updated_at"`
 }
 
 // ShippingCarrierConfigRow matches the shipping_carrier_configs table with all
 // columns including warehouse fields. The shipping.CarrierConfig model is
 // already available but we define a local view to cover all DB columns.
 type ShippingCarrierConfigRow struct {
-	ID                    uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	TenantID              uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null"`
-	StoreID               uuid.UUID       `gorm:"column:store_id;type:uuid;not null"`
-	Provider              string          `gorm:"column:provider;type:varchar(20);not null"`
-	APIKeyEncrypted       string          `gorm:"column:api_key_encrypted;type:text;not null"`
-	SecretKeyEncrypted    string          `gorm:"column:secret_key_encrypted;type:text"`
-	Mode                  string          `gorm:"column:mode;type:varchar(10);not null;default:test"`
-	IsActive              bool            `gorm:"column:is_active;type:boolean;not null;default:false"`
-	WarehouseName         string          `gorm:"column:warehouse_name;type:varchar(200)"`
-	WarehouseLine1        string          `gorm:"column:warehouse_line1;type:varchar(300)"`
-	WarehouseLine2        string          `gorm:"column:warehouse_line2;type:varchar(300)"`
-	WarehouseCity         string          `gorm:"column:warehouse_city;type:varchar(200)"`
-	WarehouseRegion       string          `gorm:"column:warehouse_region;type:varchar(200)"`
-	WarehousePostal       string          `gorm:"column:warehouse_postal;type:varchar(40)"`
-	WarehouseCountry      string          `gorm:"column:warehouse_country;type:char(2)"`
-	WarehousePhone        string          `gorm:"column:warehouse_phone;type:varchar(40)"`
-	HandlingFee           decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
-	FreeShippingMin       decimal.Decimal `gorm:"column:free_shipping_min;type:numeric(12,2)"`
+	ID                 uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID           uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null"`
+	StoreID            uuid.UUID       `gorm:"column:store_id;type:uuid;not null"`
+	Provider           string          `gorm:"column:provider;type:varchar(20);not null"`
+	APIKeyEncrypted    string          `gorm:"column:api_key_encrypted;type:text;not null"`
+	SecretKeyEncrypted string          `gorm:"column:secret_key_encrypted;type:text"`
+	Mode               string          `gorm:"column:mode;type:varchar(10);not null;default:test"`
+	IsActive           bool            `gorm:"column:is_active;type:boolean;not null;default:false"`
+	WarehouseName      string          `gorm:"column:warehouse_name;type:varchar(200)"`
+	WarehouseLine1     string          `gorm:"column:warehouse_line1;type:varchar(300)"`
+	WarehouseLine2     string          `gorm:"column:warehouse_line2;type:varchar(300)"`
+	WarehouseCity      string          `gorm:"column:warehouse_city;type:varchar(200)"`
+	WarehouseRegion    string          `gorm:"column:warehouse_region;type:varchar(200)"`
+	WarehousePostal    string          `gorm:"column:warehouse_postal;type:varchar(40)"`
+	WarehouseCountry   string          `gorm:"column:warehouse_country;type:char(2)"`
+	WarehousePhone     string          `gorm:"column:warehouse_phone;type:varchar(40)"`
+	HandlingFee        decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
+	FreeShippingMin    decimal.Decimal `gorm:"column:free_shipping_min;type:numeric(12,2)"`
 	// Pickup automation. See shipping.CarrierConfig for the rationale.
-	AutoSchedulePickup     bool   `gorm:"column:auto_schedule_pickup;type:boolean;not null;default:true"`
-	DefaultPickupSlotStart string `gorm:"column:default_pickup_slot_start;type:varchar(8);default:14:00:00"`
-	DefaultPickupSlotEnd   string `gorm:"column:default_pickup_slot_end;type:varchar(8);default:18:00:00"`
-	CreatedAt             time.Time       `gorm:"column:created_at;not null;default:now()"`
-	UpdatedAt             time.Time       `gorm:"column:updated_at;not null;default:now()"`
+	AutoSchedulePickup     bool      `gorm:"column:auto_schedule_pickup;type:boolean;not null;default:true"`
+	DefaultPickupSlotStart string    `gorm:"column:default_pickup_slot_start;type:varchar(8);default:14:00:00"`
+	DefaultPickupSlotEnd   string    `gorm:"column:default_pickup_slot_end;type:varchar(8);default:18:00:00"`
+	CreatedAt              time.Time `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt              time.Time `gorm:"column:updated_at;not null;default:now()"`
 }
 
 func (ShippingCarrierConfigRow) TableName() string { return "shipping_carrier_configs" }
 
 func (h *ShippingSettingsHandler) toShippingResponse(ctx context.Context, cfg ShippingCarrierConfigRow) shippingConfigResponse {
 	return shippingConfigResponse{
-		ID:                    cfg.ID.String(),
-		Provider:              cfg.Provider,
-		APIKey:                h.maskKeyField(ctx, cfg.APIKeyEncrypted),
-		SecretKey:             h.maskKeyField(ctx, cfg.SecretKeyEncrypted),
-		Mode:                  cfg.Mode,
-		Enabled:               cfg.IsActive,
-		HandlingFee:           cfg.HandlingFee.String(),
-		FreeShippingThreshold: cfg.FreeShippingMin.String(),
-		WarehouseName:         cfg.WarehouseName,
-		WarehouseLine1:        cfg.WarehouseLine1,
-		WarehouseLine2:        cfg.WarehouseLine2,
-		WarehouseCity:         cfg.WarehouseCity,
-		WarehouseRegion:       cfg.WarehouseRegion,
-		WarehousePostal:       cfg.WarehousePostal,
-		WarehouseCountry:      cfg.WarehouseCountry,
-		WarehousePhone:        cfg.WarehousePhone,
+		ID:                     cfg.ID.String(),
+		Provider:               cfg.Provider,
+		APIKey:                 h.maskKeyField(ctx, cfg.APIKeyEncrypted),
+		SecretKey:              h.maskKeyField(ctx, cfg.SecretKeyEncrypted),
+		Mode:                   cfg.Mode,
+		Enabled:                cfg.IsActive,
+		HandlingFee:            cfg.HandlingFee.String(),
+		FreeShippingThreshold:  cfg.FreeShippingMin.String(),
+		WarehouseName:          cfg.WarehouseName,
+		WarehouseLine1:         cfg.WarehouseLine1,
+		WarehouseLine2:         cfg.WarehouseLine2,
+		WarehouseCity:          cfg.WarehouseCity,
+		WarehouseRegion:        cfg.WarehouseRegion,
+		WarehousePostal:        cfg.WarehousePostal,
+		WarehouseCountry:       cfg.WarehouseCountry,
+		WarehousePhone:         cfg.WarehousePhone,
 		AutoSchedulePickup:     cfg.AutoSchedulePickup,
 		DefaultPickupSlotStart: cfg.DefaultPickupSlotStart,
 		DefaultPickupSlotEnd:   cfg.DefaultPickupSlotEnd,
-		CreatedAt:             cfg.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:             cfg.UpdatedAt.Format(time.RFC3339),
+		CreatedAt:              cfg.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:              cfg.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -737,20 +737,20 @@ func (h *ShippingSettingsHandler) List(c *gin.Context) {
 // keeps the previously-encrypted value. A blank submit on a new row (no
 // existing row) still fails — validated after the lookup below.
 type shippingUpsertRequest struct {
-	APIKey            string  `json:"api_key"`
-	SecretKey         string  `json:"secret_key"`
-	Mode              string  `json:"mode"       binding:"required,oneof=test live"`
-	IsActive          bool    `json:"is_active"`
-	HandlingFee       float64 `json:"handling_fee"`
-	FreeShippingMin   float64 `json:"free_shipping_min"`
-	WarehouseName     string  `json:"warehouse_name"`
-	WarehouseLine1    string  `json:"warehouse_line1"`
-	WarehouseLine2    string  `json:"warehouse_line2"`
-	WarehouseCity     string  `json:"warehouse_city"`
-	WarehouseRegion   string  `json:"warehouse_region"`
-	WarehousePostal   string  `json:"warehouse_postal"`
-	WarehouseCountry  string  `json:"warehouse_country"`
-	WarehousePhone    string  `json:"warehouse_phone"`
+	APIKey           string  `json:"api_key"`
+	SecretKey        string  `json:"secret_key"`
+	Mode             string  `json:"mode"       binding:"required,oneof=test live"`
+	IsActive         bool    `json:"is_active"`
+	HandlingFee      float64 `json:"handling_fee"`
+	FreeShippingMin  float64 `json:"free_shipping_min"`
+	WarehouseName    string  `json:"warehouse_name"`
+	WarehouseLine1   string  `json:"warehouse_line1"`
+	WarehouseLine2   string  `json:"warehouse_line2"`
+	WarehouseCity    string  `json:"warehouse_city"`
+	WarehouseRegion  string  `json:"warehouse_region"`
+	WarehousePostal  string  `json:"warehouse_postal"`
+	WarehouseCountry string  `json:"warehouse_country"`
+	WarehousePhone   string  `json:"warehouse_phone"`
 	// Pickup automation. AutoSchedulePickup is a *bool so zero-value
 	// (JSON omitted) keeps the DB default instead of forcing false
 	// on every save — we don't want the checkbox to flip itself off
@@ -886,23 +886,23 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 	}
 
 	cfg := ShippingCarrierConfigRow{
-		TenantID:           tenantUUID,
-		StoreID:            storeUUID,
-		Provider:           provider,
-		APIKeyEncrypted:    apiKeyEnc,
-		SecretKeyEncrypted: secretKeyEnc,
-		Mode:               req.Mode,
-		IsActive:           req.IsActive,
-		HandlingFee:        decimal.NewFromFloat(req.HandlingFee),
-		FreeShippingMin:    decimal.NewFromFloat(req.FreeShippingMin),
-		WarehouseName:      req.WarehouseName,
-		WarehouseLine1:     req.WarehouseLine1,
-		WarehouseLine2:     req.WarehouseLine2,
-		WarehouseCity:      req.WarehouseCity,
-		WarehouseRegion:    req.WarehouseRegion,
-		WarehousePostal:    req.WarehousePostal,
-		WarehouseCountry:   req.WarehouseCountry,
-		WarehousePhone:     req.WarehousePhone,
+		TenantID:               tenantUUID,
+		StoreID:                storeUUID,
+		Provider:               provider,
+		APIKeyEncrypted:        apiKeyEnc,
+		SecretKeyEncrypted:     secretKeyEnc,
+		Mode:                   req.Mode,
+		IsActive:               req.IsActive,
+		HandlingFee:            decimal.NewFromFloat(req.HandlingFee),
+		FreeShippingMin:        decimal.NewFromFloat(req.FreeShippingMin),
+		WarehouseName:          req.WarehouseName,
+		WarehouseLine1:         req.WarehouseLine1,
+		WarehouseLine2:         req.WarehouseLine2,
+		WarehouseCity:          req.WarehouseCity,
+		WarehouseRegion:        req.WarehouseRegion,
+		WarehousePostal:        req.WarehousePostal,
+		WarehouseCountry:       req.WarehouseCountry,
+		WarehousePhone:         req.WarehousePhone,
 		AutoSchedulePickup:     autoSchedule,
 		DefaultPickupSlotStart: slotStart,
 		DefaultPickupSlotEnd:   slotEnd,
@@ -1166,10 +1166,10 @@ func (TaxProviderConfigRow) TableName() string { return "tax_provider_configs" }
 
 // taxSettingsResponse is the composite tax configuration view for a store.
 type taxSettingsResponse struct {
-	Strategy  string   `json:"strategy"`
-	Rate      *float64 `json:"rate,omitempty"`
-	TaxJar    *taxJarStatus `json:"taxjar,omitempty"`
-	IndiaGST  *indiaGSTInfo `json:"india_gst,omitempty"`
+	Strategy string        `json:"strategy"`
+	Rate     *float64      `json:"rate,omitempty"`
+	TaxJar   *taxJarStatus `json:"taxjar,omitempty"`
+	IndiaGST *indiaGSTInfo `json:"india_gst,omitempty"`
 }
 
 type taxJarStatus struct {

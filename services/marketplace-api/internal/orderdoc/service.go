@@ -289,7 +289,7 @@ func (s *Service) lookupDeliveredAt(ctx context.Context, orderID uuid.UUID, fall
 // the order_number. Mirrors apps/admin/lib/invoices/numbering.ts so the
 // email and the PDF show identical IDs for the same order.
 //
-//   M-PLA-260417-01154 → INV-PLA-260417-01154 / RCP-PLA-260417-01154
+//	M-PLA-260417-01154 → INV-PLA-260417-01154 / RCP-PLA-260417-01154
 func documentNumber(receipt bool, orderNumber string) string {
 	prefix := "INV-"
 	if receipt {

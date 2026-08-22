@@ -31,8 +31,8 @@ func TestCreateCheckoutSession_PassesCurrencyAndIdempotency(t *testing.T) {
 
 	sess, err := billingstripe.CreateCheckoutSession(context.Background(), c, billingstripe.CheckoutInput{
 		StoreID: "store-1", TenantID: "tenant-1", CustomerID: "cus_1",
-		PriceID:    "price_starter_monthly",
-		Currency:   "AUD", Plan: "starter", Period: "monthly",
+		PriceID:  "price_starter_monthly",
+		Currency: "AUD", Plan: "starter", Period: "monthly",
 		SuccessURL: "https://admin.example/success",
 		CancelURL:  "https://admin.example/cancel",
 		Now:        time.Unix(1_712_000_000, 0),

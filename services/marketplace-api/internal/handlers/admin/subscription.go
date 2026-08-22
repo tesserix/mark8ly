@@ -25,8 +25,8 @@ import (
 // SubscriptionHandler handles /admin/stores/:storeId/subscription endpoints.
 type SubscriptionHandler struct {
 	svc       *subscription.Service
-	audit     *audit.Emitter // optional — nil-safe
-	db        *gorm.DB       // optional — nil skips arbitrage audit enrichment
+	audit     *audit.Emitter        // optional — nil-safe
+	db        *gorm.DB              // optional — nil skips arbitrage audit enrichment
 	stripe    *billingstripe.Client // optional — nil skips payment method enrichment
 	piiLogger arbitrage.PIILogger
 	logger    *slog.Logger
@@ -528,4 +528,3 @@ func (h *SubscriptionHandler) CreatePortal(c *gin.Context) {
 	})
 	c.JSON(http.StatusOK, gin.H{"url": url})
 }
-

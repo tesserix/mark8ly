@@ -14,7 +14,8 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
-func seedFlaggedAuditRow(t *testing.T, db interface{ /* *gorm.DB — resolved at integration build time */ },
+func seedFlaggedAuditRow(t *testing.T, db interface { /* *gorm.DB — resolved at integration build time */
+},
 	tenantID, storeID, subID uuid.UUID, ageDays int) arbitrage.SubscriptionArbitrageAudit {
 	t.Helper()
 	// This helper is used only in integration tests where db is *gorm.DB.

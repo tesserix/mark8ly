@@ -27,20 +27,20 @@ import (
 // struct for the handler's response shape, but they're explicitly marked
 // `gorm:"-"` so the ORM never sends them to the DB.
 type ShipmentRecord struct {
-	ID                 uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	TenantID           uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null;index"`
-	StoreID            uuid.UUID       `gorm:"column:store_id;type:uuid;not null;index"`
-	OrderID            uuid.UUID       `gorm:"column:order_id;type:uuid;not null;index"`
-	Carrier            string          `gorm:"column:carrier;type:varchar(20);not null"`
-	TrackingNumber     string          `gorm:"column:tracking_number;type:varchar(100)"`
-	LabelURL           string          `gorm:"column:label_url;type:text"`
-	Status             string          `gorm:"column:status;type:varchar(20);not null;default:pending"`
-	ShipFrom           datatypes.JSON  `gorm:"column:ship_from;type:jsonb;not null"`
-	ShipTo             datatypes.JSON  `gorm:"column:ship_to;type:jsonb;not null"`
-	HandlingFee        decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
-	TotalCost          decimal.Decimal `gorm:"column:total_cost;type:numeric(12,2)"`
-	CurrencyCode       string          `gorm:"column:currency_code;type:char(3);not null"`
-	EstimatedDelivery  *time.Time      `gorm:"column:estimated_delivery"`
+	ID                uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID          uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null;index"`
+	StoreID           uuid.UUID       `gorm:"column:store_id;type:uuid;not null;index"`
+	OrderID           uuid.UUID       `gorm:"column:order_id;type:uuid;not null;index"`
+	Carrier           string          `gorm:"column:carrier;type:varchar(20);not null"`
+	TrackingNumber    string          `gorm:"column:tracking_number;type:varchar(100)"`
+	LabelURL          string          `gorm:"column:label_url;type:text"`
+	Status            string          `gorm:"column:status;type:varchar(20);not null;default:pending"`
+	ShipFrom          datatypes.JSON  `gorm:"column:ship_from;type:jsonb;not null"`
+	ShipTo            datatypes.JSON  `gorm:"column:ship_to;type:jsonb;not null"`
+	HandlingFee       decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
+	TotalCost         decimal.Decimal `gorm:"column:total_cost;type:numeric(12,2)"`
+	CurrencyCode      string          `gorm:"column:currency_code;type:char(3);not null"`
+	EstimatedDelivery *time.Time      `gorm:"column:estimated_delivery"`
 	// ShippedAt + DeliveredAt are stamped by the admin status update
 	// handler when the row transitions into the corresponding state.
 	// They lived in the schema (migration 000008) for a long time but
@@ -48,10 +48,10 @@ type ShipmentRecord struct {
 	// Go and consumers had to hit the table directly. Surfacing them
 	// here lets the receipt PDF stamp the real delivery moment instead
 	// of falling back to order.updated_at as a proxy.
-	ShippedAt          *time.Time      `gorm:"column:shipped_at"`
-	DeliveredAt        *time.Time      `gorm:"column:delivered_at"`
-	CreatedAt          time.Time       `gorm:"column:created_at;not null;default:now()"`
-	UpdatedAt          time.Time       `gorm:"column:updated_at;not null;default:now()"`
+	ShippedAt   *time.Time `gorm:"column:shipped_at"`
+	DeliveredAt *time.Time `gorm:"column:delivered_at"`
+	CreatedAt   time.Time  `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt   time.Time  `gorm:"column:updated_at;not null;default:now()"`
 
 	// Pickup scheduling (Delhivery). PickupRequestID carries either the
 	// carrier's numeric pr_id (stringified) or the sentinel
@@ -110,11 +110,11 @@ type CarrierConfig struct {
 	// is UI-only ("Pickup: 14:00 – 18:00"). Keeping the slot columns
 	// as VARCHAR(8) mirrors Delhivery's HH:MM:SS wire format — we
 	// never do arithmetic on them server-side.
-	AutoSchedulePickup     bool   `gorm:"column:auto_schedule_pickup;type:boolean;not null;default:true"`
-	DefaultPickupSlotStart string `gorm:"column:default_pickup_slot_start;type:varchar(8);default:14:00:00"`
-	DefaultPickupSlotEnd   string `gorm:"column:default_pickup_slot_end;type:varchar(8);default:18:00:00"`
-	CreatedAt             time.Time       `gorm:"column:created_at;not null;default:now()"`
-	UpdatedAt             time.Time       `gorm:"column:updated_at;not null;default:now()"`
+	AutoSchedulePickup     bool      `gorm:"column:auto_schedule_pickup;type:boolean;not null;default:true"`
+	DefaultPickupSlotStart string    `gorm:"column:default_pickup_slot_start;type:varchar(8);default:14:00:00"`
+	DefaultPickupSlotEnd   string    `gorm:"column:default_pickup_slot_end;type:varchar(8);default:18:00:00"`
+	CreatedAt              time.Time `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt              time.Time `gorm:"column:updated_at;not null;default:now()"`
 }
 
 func (CarrierConfig) TableName() string { return "shipping_carrier_configs" }

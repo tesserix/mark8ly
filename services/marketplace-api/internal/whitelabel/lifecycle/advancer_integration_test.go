@@ -50,7 +50,7 @@ func newAdvancer(t *testing.T, fakes struct {
 	return lifecycle.NewAdvancer(lifecycle.Config{
 		DB: db, Apple: fakes.Apple, Google: fakes.Google,
 		Firebase: fakes.Firebase, Creds: fakes.Creds,
-		Clock: func() time.Time { return time.Now().UTC() },
+		Clock:  func() time.Time { return time.Now().UTC() },
 		Logger: slog.Default(),
 	})
 }

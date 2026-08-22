@@ -27,10 +27,10 @@ type SessionMinter interface {
 
 // Config bundles the handler's dependencies.
 type Config struct {
-	HMACKey  string         // SESSION_ENCRYPT_KEY — same key the session manager uses
-	FGA      FGAChecker     // membership gate; required in prod
-	Sessions SessionMinter  // Mint target
-	Logger   *slog.Logger   // optional
+	HMACKey  string        // SESSION_ENCRYPT_KEY — same key the session manager uses
+	FGA      FGAChecker    // membership gate; required in prod
+	Sessions SessionMinter // Mint target
+	Logger   *slog.Logger  // optional
 }
 
 // Handler exposes POST /auth/mint-from-admin-handoff.
@@ -133,11 +133,11 @@ func (h *Handler) mint(c *gin.Context) {
 
 	now := time.Now()
 	s := session.Session{
-		UID:       claims.UID,
-		Email:     claims.Email,
-		TenantID:  claims.TenantID,
-		StoreID:   claims.StoreID,
-		IssuedAt:  now,
+		UID:      claims.UID,
+		Email:    claims.Email,
+		TenantID: claims.TenantID,
+		StoreID:  claims.StoreID,
+		IssuedAt: now,
 		// Empty ExpiresAt → Manager applies its configured maxAge.
 	}
 	if err := h.cfg.Sessions.MintWithDomain(c.Writer, s, claims.TargetHost); err != nil {

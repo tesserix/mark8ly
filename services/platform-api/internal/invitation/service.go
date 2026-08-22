@@ -456,10 +456,10 @@ func (s *Service) Accept(ctx context.Context, in AcceptInput) (*AcceptResult, er
 
 // UpdateMemberRoleInput is the request for the role-change endpoint.
 type UpdateMemberRoleInput struct {
-	TenantID   string
+	TenantID    string
 	TargetEmail string
-	NewRole    string
-	ActorUID   string
+	NewRole     string
+	ActorUID    string
 }
 
 // UpdateMemberRoleResult is what the handler returns to the caller.

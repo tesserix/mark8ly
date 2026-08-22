@@ -56,16 +56,16 @@ func (h *CheckoutHandler) WithNotifier(n *notification.Service) *CheckoutHandler
 
 // CheckoutItemRequest is one cart line in a CheckoutRequest.
 type CheckoutItemRequest struct {
-	ProductID     *string          `json:"product_id"`
-	VariantID     *string          `json:"variant_id"`
-	TitleSnapshot string           `json:"title_snapshot" binding:"required"`
-	SKUSnapshot   string           `json:"sku_snapshot"   binding:"required"`
-	OptionSummary *string          `json:"option_summary"`
-	UnitPrice     decimal.Decimal  `json:"unit_price"     binding:"required"`
-	Quantity      int              `json:"quantity"       binding:"required,min=1"`
-	LineTotal     decimal.Decimal  `json:"line_total"     binding:"required"`
-	CurrencyCode  string           `json:"currency_code"  binding:"required,len=3"`
-	ImageURL      *string          `json:"image_url"`
+	ProductID     *string         `json:"product_id"`
+	VariantID     *string         `json:"variant_id"`
+	TitleSnapshot string          `json:"title_snapshot" binding:"required"`
+	SKUSnapshot   string          `json:"sku_snapshot"   binding:"required"`
+	OptionSummary *string         `json:"option_summary"`
+	UnitPrice     decimal.Decimal `json:"unit_price"     binding:"required"`
+	Quantity      int             `json:"quantity"       binding:"required,min=1"`
+	LineTotal     decimal.Decimal `json:"line_total"     binding:"required"`
+	CurrencyCode  string          `json:"currency_code"  binding:"required,len=3"`
+	ImageURL      *string         `json:"image_url"`
 	// Tax classification copied from the product. Interpretation depends
 	// on the store's country tax strategy (india_gst / flat_rate / taxjar).
 	TaxCode         *string          `json:"tax_code"`
@@ -92,18 +92,18 @@ type CheckoutAddressRequest struct {
 // present and matching an open abandoned_carts row, the row's
 // converted_order_id is set in the same tx as the order create.
 type CheckoutRequest struct {
-	IdempotencyKey string                  `json:"idempotency_key" binding:"required"`
-	CartSessionID  *string                 `json:"cart_session_id"`
-	CustomerEmail  string                  `json:"customer_email"  binding:"required,email"`
-	CustomerName   *string                 `json:"customer_name"`
-	Items          []CheckoutItemRequest   `json:"items"           binding:"required,min=1"`
-	Shipping       CheckoutAddressRequest  `json:"shipping"        binding:"required"`
-	Billing        CheckoutAddressRequest  `json:"billing"         binding:"required"`
-	Subtotal       decimal.Decimal         `json:"subtotal"        binding:"required"`
-	ShippingTotal  decimal.Decimal         `json:"shipping_total"`
-	TaxTotal       decimal.Decimal         `json:"tax_total"`
-	DiscountTotal  decimal.Decimal         `json:"discount_total"`
-	GrandTotal     decimal.Decimal         `json:"grand_total"     binding:"required"`
+	IdempotencyKey string                 `json:"idempotency_key" binding:"required"`
+	CartSessionID  *string                `json:"cart_session_id"`
+	CustomerEmail  string                 `json:"customer_email"  binding:"required,email"`
+	CustomerName   *string                `json:"customer_name"`
+	Items          []CheckoutItemRequest  `json:"items"           binding:"required,min=1"`
+	Shipping       CheckoutAddressRequest `json:"shipping"        binding:"required"`
+	Billing        CheckoutAddressRequest `json:"billing"         binding:"required"`
+	Subtotal       decimal.Decimal        `json:"subtotal"        binding:"required"`
+	ShippingTotal  decimal.Decimal        `json:"shipping_total"`
+	TaxTotal       decimal.Decimal        `json:"tax_total"`
+	DiscountTotal  decimal.Decimal        `json:"discount_total"`
+	GrandTotal     decimal.Decimal        `json:"grand_total"     binding:"required"`
 }
 
 // CheckoutResponse is the storefront-safe order projection. Deliberately

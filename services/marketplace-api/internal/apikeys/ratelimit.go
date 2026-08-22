@@ -17,11 +17,11 @@ import (
 // >1 replica should swap this for a Redis-backed implementation; the rate
 // shape (requests/min) is the same.
 type RateLimiter struct {
-	mu          sync.Mutex
-	buckets     map[string]*entry
-	evictAfter  time.Duration
-	now         func() time.Time
-	stop        chan struct{}
+	mu         sync.Mutex
+	buckets    map[string]*entry
+	evictAfter time.Duration
+	now        func() time.Time
+	stop       chan struct{}
 }
 
 type entry struct {

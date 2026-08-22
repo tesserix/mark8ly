@@ -4,19 +4,19 @@
 // text + exposed Firebase action URL) and into our own branded flow.
 //
 // The flow is:
-//   1. Admin app POSTs to /internal/auth/password-reset/request with
-//      an email.
-//   2. Service asks the GIP admin API for an oob code with
-//      returnOobLink=true (so GIP does not send its own email).
-//   3. Service renders the password_reset HTML/text template with a
-//      link to {admin}/reset-password?oobCode=... and dispatches via
-//      the shared SendGrid sender.
-//   4. User clicks the link, lands in the admin app, types a new
-//      password, and the admin POSTs to /internal/auth/password-reset/
-//      confirm with the oob code and new password.
-//   5. Service calls the public resetPassword Identity Toolkit endpoint
-//      with the oob code and new password. The oob code itself is
-//      proof-of-possession, so no admin token is required for confirm.
+//  1. Admin app POSTs to /internal/auth/password-reset/request with
+//     an email.
+//  2. Service asks the GIP admin API for an oob code with
+//     returnOobLink=true (so GIP does not send its own email).
+//  3. Service renders the password_reset HTML/text template with a
+//     link to {admin}/reset-password?oobCode=... and dispatches via
+//     the shared SendGrid sender.
+//  4. User clicks the link, lands in the admin app, types a new
+//     password, and the admin POSTs to /internal/auth/password-reset/
+//     confirm with the oob code and new password.
+//  5. Service calls the public resetPassword Identity Toolkit endpoint
+//     with the oob code and new password. The oob code itself is
+//     proof-of-possession, so no admin token is required for confirm.
 package auth
 
 import (
@@ -32,8 +32,8 @@ import (
 
 // Config bundles the dependencies and tunables for Service.
 type Config struct {
-	Admin        *gipadmin.AdminClient
-	Sender       notification.Sender
+	Admin  *gipadmin.AdminClient
+	Sender notification.Sender
 	// Loader is the DB-backed template loader (embedded fallback). May
 	// be nil during boot races; nil falls through to embedded rendering.
 	Loader       *notification.Loader

@@ -55,11 +55,11 @@ func openAPISpec() gin.H {
 			},
 		},
 		"paths": gin.H{
-			"/storefront/stores/{storeSlug}/products":                        listProductsOp(),
-			"/storefront/stores/{storeSlug}/products/{handle}":               getProductOp(),
-			"/storefront/stores/{storeSlug}/categories":                      listCategoriesOp(),
-			"/storefront/stores/{storeSlug}/categories/{slug}/products":      listByCategoryOp(),
-			"/storefront/stores/{storeSlug}/branding":                        getBrandingOp(),
+			"/storefront/stores/{storeSlug}/products":                   listProductsOp(),
+			"/storefront/stores/{storeSlug}/products/{handle}":          getProductOp(),
+			"/storefront/stores/{storeSlug}/categories":                 listCategoriesOp(),
+			"/storefront/stores/{storeSlug}/categories/{slug}/products": listByCategoryOp(),
+			"/storefront/stores/{storeSlug}/branding":                   getBrandingOp(),
 		},
 	}
 }
@@ -81,10 +81,10 @@ func storeSlugPathParam() gin.H {
 func listProductsOp() gin.H {
 	return gin.H{
 		"get": gin.H{
-			"operationId":   "listStoreProducts",
-			"x-mcp-expose":  MCPExposureLevel,
-			"summary":       "List the published products in a store.",
-			"description":   "Paginated list of products available for purchase. Use the `limit` and `offset` query parameters to page. Returns title, handle, price, and a short description per product.",
+			"operationId":  "listStoreProducts",
+			"x-mcp-expose": MCPExposureLevel,
+			"summary":      "List the published products in a store.",
+			"description":  "Paginated list of products available for purchase. Use the `limit` and `offset` query parameters to page. Returns title, handle, price, and a short description per product.",
 			"parameters": []gin.H{
 				storeSlugPathParam(),
 				{

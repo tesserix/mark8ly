@@ -21,21 +21,21 @@ import (
 // recipient + sender display info + personal message, and the buyer's
 // own name/email (who is paying).
 type PurchaseInput struct {
-	TenantID         uuid.UUID
-	StoreID          uuid.UUID
-	InitialBalance   decimal.Decimal
-	CurrencyCode     string
-	SenderName       *string
-	SenderEmail      *string
-	RecipientName    *string
-	RecipientEmail   *string
-	Message          *string
-	ExpiresAt        *time.Time
-	PurchaserName    string
-	PurchaserEmail   string
-	PaymentProvider  string // "stripe" (only supported provider for hosted checkout right now)
-	SuccessURL       string // where the provider redirects after payment success
-	CancelURL        string // where the provider redirects on cancel/decline
+	TenantID        uuid.UUID
+	StoreID         uuid.UUID
+	InitialBalance  decimal.Decimal
+	CurrencyCode    string
+	SenderName      *string
+	SenderEmail     *string
+	RecipientName   *string
+	RecipientEmail  *string
+	Message         *string
+	ExpiresAt       *time.Time
+	PurchaserName   string
+	PurchaserEmail  string
+	PaymentProvider string // "stripe" (only supported provider for hosted checkout right now)
+	SuccessURL      string // where the provider redirects after payment success
+	CancelURL       string // where the provider redirects on cancel/decline
 }
 
 // PurchaseResult is what the storefront purchase endpoint returns.

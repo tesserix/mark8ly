@@ -11,7 +11,8 @@ import (
 // this value after all promotions (§7.4, Council finding #5).
 //
 // Values: Starter $12 USD / Studio $30 USD / Pro $75 USD;
-//         Starter ₹800 INR / Studio ₹1,800 INR / Pro ₹4,200 INR.
+//
+//	Starter ₹800 INR / Studio ₹1,800 INR / Pro ₹4,200 INR.
 //
 // Currency codes are lower-cased for lookup normalisation. Plans not in this
 // map (trial, marketplace) have no floor — they are not publicly purchasable.

@@ -58,7 +58,7 @@ func matchOrigin(origin string, allowed []string) bool {
 		}
 		// Wildcard subdomain match: "https://*.mark8ly.com"
 		if strings.HasPrefix(a, "https://*.") {
-			suffix := a[len("https://*"):]                  // ".mark8ly.com"
+			suffix := a[len("https://*"):] // ".mark8ly.com"
 			if strings.HasPrefix(origin, "https://") &&
 				strings.HasSuffix(origin, suffix) &&
 				len(origin) > len("https://")+len(suffix) {

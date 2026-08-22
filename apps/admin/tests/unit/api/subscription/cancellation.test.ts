@@ -33,7 +33,7 @@ afterAll(() => server.close())
 // ---------------------------------------------------------------------------
 
 const STORE_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-const CANCEL_PATH = `/api/v1/admin/stores/${STORE_ID}/subscription/cancel`
+const CANCEL_PATH = `/api/admin/stores/${STORE_ID}/subscription/cancel`
 
 const CANCEL_SCHEDULED_FIXTURE = {
   status: 'cancel_scheduled',

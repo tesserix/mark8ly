@@ -326,4 +326,3 @@ func (c *DowngradeRecheckCron) blockAndNotify(
 	}
 	return nil
 }
-

@@ -120,9 +120,9 @@ type Drainer struct {
 
 // Config holds drainer tuning knobs. All have sensible defaults.
 type Config struct {
-	PollInterval time.Duration                // default 1s
-	BatchSize    int                          // default 50
-	MaxAttempts  int                          // default 10
+	PollInterval time.Duration                    // default 1s
+	BatchSize    int                              // default 50
+	MaxAttempts  int                              // default 10
 	Backoff      func(attempts int) time.Duration // default exponential 1s..5min
 }
 
@@ -319,7 +319,8 @@ func (d *Drainer) markDead(ctx context.Context, evt Event, reason string) {
 }
 
 // defaultBackoff is exponential with a 5-minute cap.
-//   1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, 300s, 300s, ...
+//
+//	1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, 300s, 300s, ...
 func defaultBackoff(attempts int) time.Duration {
 	if attempts < 1 {
 		attempts = 1

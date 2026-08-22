@@ -11,10 +11,10 @@ import (
 
 // fxRate is the GORM model for the fx_rates table (migration 063).
 type fxRate struct {
-	Currency    string          `gorm:"column:currency;primaryKey"`
-	USDMidRate  decimal.Decimal `gorm:"column:usd_mid_rate;type:numeric(18,10)"`
-	FetchedAt   time.Time       `gorm:"column:fetched_at"`
-	Source      string          `gorm:"column:source"`
+	Currency   string          `gorm:"column:currency;primaryKey"`
+	USDMidRate decimal.Decimal `gorm:"column:usd_mid_rate;type:numeric(18,10)"`
+	FetchedAt  time.Time       `gorm:"column:fetched_at"`
+	Source     string          `gorm:"column:source"`
 }
 
 func (fxRate) TableName() string { return "fx_rates" }

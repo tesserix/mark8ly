@@ -10,6 +10,11 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     include: ["**/*.{test,spec}.{ts,tsx}", "../../packages/ui/src/**/*.test.{ts,tsx}"],
     exclude: ["**/node_modules/**", "**/tests/e2e/**", "**/.next/**"],
+    server: {
+      deps: {
+        inline: ["@tesserix/web"],
+      },
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "text-summary"],
@@ -40,8 +45,10 @@ export default defineConfig({
       // @repo/ui sub-path exports — vitest needs explicit aliases because
       // it does not process package.json "exports" maps at test time.
       "@repo/ui/subscription": path.resolve(__dirname, "../../packages/ui/src/subscription/index.ts"),
+      "@repo/ui/price-display": path.resolve(__dirname, "../../packages/ui/src/price-display.tsx"),
       "@repo/ui/role-badge": path.resolve(__dirname, "../../packages/ui/src/role-badge.tsx"),
       "@repo/ui/app-store-badges": path.resolve(__dirname, "../../packages/ui/src/app-store-badges.tsx"),
+      "@repo/ui/status-dot": path.resolve(__dirname, "../../packages/ui/src/status-dot.tsx"),
       "@repo/ui": path.resolve(__dirname, "../../packages/ui/src/index.ts"),
       react: path.resolve(__dirname, "../../node_modules/react"),
       "react-dom": path.resolve(__dirname, "../../node_modules/react-dom"),

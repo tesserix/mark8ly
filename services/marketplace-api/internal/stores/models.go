@@ -32,8 +32,8 @@ func (Store) TableName() string { return "stores" }
 // from this table, not from stores itself — the separation eliminates
 // the hot-row lock on the authoritative store row (spec §14.1).
 type StoreWatermark struct {
-	StoreID            string    `gorm:"primaryKey;column:store_id;type:uuid"             json:"store_id"`
-	ProductsUpdatedAt  time.Time `gorm:"column:products_updated_at;not null;default:now()" json:"products_updated_at"`
+	StoreID           string    `gorm:"primaryKey;column:store_id;type:uuid"             json:"store_id"`
+	ProductsUpdatedAt time.Time `gorm:"column:products_updated_at;not null;default:now()" json:"products_updated_at"`
 }
 
 func (StoreWatermark) TableName() string { return "store_watermarks" }

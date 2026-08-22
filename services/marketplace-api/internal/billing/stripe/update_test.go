@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/mark8ly/marketplace-api/internal/subscription"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
 // subJSON returns a minimal Stripe subscription JSON with one item.
@@ -37,8 +37,8 @@ func TestUpdateSubscription_SendsProrationAndIdempotency(t *testing.T) {
 	)
 
 	var (
-		postBody url.Values
-		getCount int
+		postBody  url.Values
+		getCount  int
 		postCount int
 	)
 

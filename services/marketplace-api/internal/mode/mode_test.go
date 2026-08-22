@@ -14,7 +14,7 @@ func TestParse(t *testing.T) {
 		{"admin", Admin, false},
 		{"storefront", Storefront, false},
 		{"both", Both, false},
-		{"Admin", "", true},      // case-sensitive
+		{"Admin", "", true}, // case-sensitive
 		{"nonsense", "", true},
 	}
 	for _, tt := range tests {
@@ -32,8 +32,8 @@ func TestParse(t *testing.T) {
 
 func TestRunsAdminAndStorefront(t *testing.T) {
 	tests := []struct {
-		m            Mode
-		runsAdmin    bool
+		m              Mode
+		runsAdmin      bool
 		runsStorefront bool
 	}{
 		{Admin, true, false},

@@ -83,10 +83,10 @@ func TestRevalidation_GoneInvalid_FlipsAndNotifies_KeepsBilling(t *testing.T) {
 	require.NoError(t, c.Run(context.Background()))
 
 	var (
-		validated   bool
-		started     *time.Time
-		published   bool
-		statusStr   string
+		validated bool
+		started   *time.Time
+		published bool
+		statusStr string
 	)
 	require.NoError(t, db.Raw(`
 		SELECT tax_id_validated, tax_revalidation_started_at, storefront_published, status

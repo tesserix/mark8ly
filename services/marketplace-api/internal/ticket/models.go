@@ -76,16 +76,16 @@ func ValidateAuthorType(a string) bool {
 
 // Ticket is the GORM model for the tickets table.
 type Ticket struct {
-	ID               uuid.UUID    `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	TenantID         uuid.UUID    `gorm:"column:tenant_id;type:uuid;not null"`
-	StoreID          uuid.UUID    `gorm:"column:store_id;type:uuid;not null"`
-	TicketNumber     string       `gorm:"column:ticket_number;type:varchar(20);not null"`
-	Subject          string       `gorm:"column:subject;type:varchar(300);not null"`
-	Description      string       `gorm:"column:description;type:text;not null"`
-	Status           TicketStatus `gorm:"column:status;type:varchar(20);not null;default:open"`
+	ID               uuid.UUID      `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID         uuid.UUID      `gorm:"column:tenant_id;type:uuid;not null"`
+	StoreID          uuid.UUID      `gorm:"column:store_id;type:uuid;not null"`
+	TicketNumber     string         `gorm:"column:ticket_number;type:varchar(20);not null"`
+	Subject          string         `gorm:"column:subject;type:varchar(300);not null"`
+	Description      string         `gorm:"column:description;type:text;not null"`
+	Status           TicketStatus   `gorm:"column:status;type:varchar(20);not null;default:open"`
 	Priority         TicketPriority `gorm:"column:priority;type:varchar(10);not null;default:medium"`
-	SubmittedByName  string       `gorm:"column:submitted_by_name;type:varchar(200);not null"`
-	SubmittedByEmail string       `gorm:"column:submitted_by_email;type:varchar(300);not null"`
+	SubmittedByName  string         `gorm:"column:submitted_by_name;type:varchar(200);not null"`
+	SubmittedByEmail string         `gorm:"column:submitted_by_email;type:varchar(300);not null"`
 	// ConversationID links a ticket back to the Otto chat that
 	// spawned it. Optional: tickets opened manually by a merchant
 	// from the admin UI have no conversation. When set, the admin

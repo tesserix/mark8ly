@@ -118,8 +118,8 @@ func TestSubmit_Success_Returns200_WithReviewID(t *testing.T) {
 	}
 	r := newSubmitRouter(store, nil, true)
 	w := doPost(t, r, "/admin/stores/"+validStoreID+"/migration-fast-path/submit", map[string]any{
-		"evidence_type": "platform_screenshot",
-		"evidence_url":  "https://example.com/screenshot.png",
+		"evidence_type":  "platform_screenshot",
+		"evidence_url":   "https://example.com/screenshot.png",
 		"prior_platform": "shopify",
 	})
 

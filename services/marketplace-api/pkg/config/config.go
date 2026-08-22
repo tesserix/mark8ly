@@ -110,6 +110,14 @@ type Config struct {
 	// changes to enable safely).
 	AuditIngestSecret string `envconfig:"AUDIT_INGEST_SECRET" default:""`
 
+	// PlatformAdminSecret is the HMAC key for the Tesserix platform console's
+	// signed /admin/* calls (#275). Separate from InternalAuthSecret and
+	// AuditIngestSecret: different caller, different blast radius.
+	//
+	// Unlike those, an empty value does NOT no-op the check — the platform
+	// admin surface fails closed and answers 503 until this is populated.
+	PlatformAdminSecret string `envconfig:"MARKETPLACE_PLATFORM_ADMIN_SECRET" default:""`
+
 	// P0 — CORS allowed origins (comma-separated, storefront engine only).
 	CORSAllowedOrigins string `envconfig:"CORS_ALLOWED_ORIGINS" default:"https://*.mark8ly.com"`
 	// P0 — Encryption mode: "aes" for AES-256-GCM, "noop" for base64 dev stub.
@@ -253,6 +261,7 @@ func Load() (*Config, error) {
 	cfg.InternalAuthSecret = strings.TrimSpace(cfg.InternalAuthSecret)
 	cfg.PlatformAPISecret = strings.TrimSpace(cfg.PlatformAPISecret)
 	cfg.AuditIngestSecret = strings.TrimSpace(cfg.AuditIngestSecret)
+	cfg.PlatformAdminSecret = strings.TrimSpace(cfg.PlatformAdminSecret)
 	// Provider API keys go straight into Authorization headers — a
 	// trailing LF from GCP SM would make net/http reject every request
 	// with "invalid header field value".

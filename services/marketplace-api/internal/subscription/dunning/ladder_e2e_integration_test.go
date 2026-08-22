@@ -84,7 +84,7 @@ func TestE2E_FullLadder_PastDueToPendingDelete(t *testing.T) {
 	auditPastDue := audit.Entry{
 		ID:           uuid.New(),
 		TenantID:     tenantID,
-		StoreID:      storeID,
+		StoreID:      &storeID,
 		ActorType:    audit.ActorSystem,
 		Action:       "subscription.state_transition",
 		ResourceType: "subscription",
@@ -216,7 +216,7 @@ func TestE2E_RefundWindow_BlocksPastDueToExpired(t *testing.T) {
 	auditEntry := audit.Entry{
 		ID:           uuid.New(),
 		TenantID:     tenantID,
-		StoreID:      storeID,
+		StoreID:      &storeID,
 		ActorType:    audit.ActorSystem,
 		Action:       "subscription.state_transition",
 		ResourceType: "subscription",

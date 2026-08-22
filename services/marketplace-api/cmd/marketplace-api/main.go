@@ -73,6 +73,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/gipuser"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/handlers/internalsvc"
+	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 	"github.com/mark8ly/marketplace-api/internal/handlers/public"
 	"github.com/mark8ly/marketplace-api/internal/handlers/storefront"
 	"github.com/mark8ly/marketplace-api/internal/handlers/testroutes"
@@ -1652,6 +1653,24 @@ func main() {
 		log.Error("register audit prune cron", "err", err)
 	}
 
+	// Platform admin nonce sweep — daily at 09:45 UTC, deletes
+	// platform_request_nonces rows past expires_at. Only registered when the
+	// platform admin secret is configured: an unconfigured deploy is
+	// refusing all /admin/* traffic (see platformadmin.Register), so there
+	// is nothing accumulating in the table yet to sweep.
+	if cfg.PlatformAdminSecret != "" {
+		if _, err := trialScheduler.AddFunc(platformadmin.SweepSpec, func() {
+			deleted, err := platformadmin.SweepExpiredNonces(workerCtx, conn)
+			if err != nil {
+				log.Error("platform admin nonce sweep failed", "err", err)
+				return
+			}
+			log.Info("platform admin nonce sweep complete", "rows_deleted", deleted)
+		}); err != nil {
+			log.Error("register platform admin nonce sweep cron", "err", err)
+		}
+	}
+
 	trialScheduler.Start()
 	defer trialScheduler.Stop()
 	log.Info("P5 crons started", "count", 4)
@@ -1891,6 +1910,12 @@ func main() {
 		healthHandler.Register(r)
 		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
 		admin.RegisterAdminMobile(r.Group("/api/v1"), mobileDeps)
+		platformadmin.Register(r.Group("/api/v1"), platformadmin.Deps{
+			DB:     conn,
+			Repo:   auditRepo,
+			Logger: log,
+			Secret: cfg.PlatformAdminSecret,
+		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
 		public.RegisterPublic(r.Group("/api/v1"), public.PublicDeps{
@@ -1968,6 +1993,12 @@ func main() {
 		if m == mode.Admin {
 			admin.RegisterAdmin(engine.Group("/api/v1"), adminDeps)
 			admin.RegisterAdminMobile(engine.Group("/api/v1"), mobileDeps)
+			platformadmin.Register(engine.Group("/api/v1"), platformadmin.Deps{
+				DB:     conn,
+				Repo:   auditRepo,
+				Logger: log,
+				Secret: cfg.PlatformAdminSecret,
+			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the
 			// admin hostname (playwrite-test-admin.mark8ly.com) and the

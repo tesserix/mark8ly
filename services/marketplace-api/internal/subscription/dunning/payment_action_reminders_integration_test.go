@@ -54,7 +54,7 @@ func TestSCAReminders_SendsAtT14T7T1(t *testing.T) {
 		auditEntry := audit.Entry{
 			ID:           uuid.New(),
 			TenantID:     tenantID,
-			StoreID:      storeID,
+			StoreID:      &storeID,
 			ActorType:    audit.ActorSystem,
 			Action:       "subscription.state_transition",
 			ResourceType: "subscription",
@@ -106,7 +106,7 @@ func TestSCAReminders_Idempotent_OnConflict(t *testing.T) {
 	auditEntry := audit.Entry{
 		ID:           uuid.New(),
 		TenantID:     tenantID,
-		StoreID:      storeID,
+		StoreID:      &storeID,
 		ActorType:    audit.ActorSystem,
 		Action:       "subscription.state_transition",
 		ResourceType: "subscription",
@@ -165,7 +165,7 @@ func TestSCAReminders_SkipsSubsWithoutHostedInvoiceURL(t *testing.T) {
 	auditEntry := audit.Entry{
 		ID:           uuid.New(),
 		TenantID:     tenantID,
-		StoreID:      storeID,
+		StoreID:      &storeID,
 		ActorType:    audit.ActorSystem,
 		Action:       "subscription.state_transition",
 		ResourceType: "subscription",

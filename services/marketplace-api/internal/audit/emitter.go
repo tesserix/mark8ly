@@ -14,8 +14,9 @@ import (
 )
 
 // Event is the input to Emitter.Emit. Required fields are validated by
-// the emitter; missing tenant or store causes the event to be dropped
-// with a warning rather than written as an unscoped row.
+// the emitter; a missing tenant causes the event to be dropped with a
+// warning rather than written as a tenant-unscoped row. Store is optional
+// — platform-originated writes are tenant-scoped only.
 type Event struct {
 	Action       string         // "order.cancelled", "product.updated", ...
 	ResourceType string         // "order" | "product" | "domain" | ...
@@ -28,7 +29,10 @@ type Event struct {
 	// (set by HeaderTrustAuth + the :storeId path param). Storefront
 	// routes don't carry either — they use :storeSlug and resolve the
 	// store via middleware — so storefront callers populate these
-	// explicitly. When set, these win over context lookup.
+	// explicitly. When set, these win over context lookup. StoreID is
+	// optional: leave it uuid.Nil for tenant-scoped platform writes
+	// (tenant suspend, trial extend, purge) that have no store — the
+	// resulting audit row gets a nil store_id rather than being dropped.
 	TenantID uuid.UUID
 	StoreID  uuid.UUID
 
@@ -103,7 +107,9 @@ func (e *Emitter) Emit(c *gin.Context, ev Event) {
 
 	entry := buildEntry(c, ev)
 	if entry == nil {
-		// buildEntry already logged the reason (missing tenant/store).
+		e.logger.Warn("audit.Emit: dropping event, no tenant in scope",
+			"action", ev.Action,
+			"resource_type", ev.ResourceType)
 		return
 	}
 
@@ -170,13 +176,14 @@ func (e *Emitter) write(entry Entry) {
 			"action", entry.Action,
 			"resource_type", entry.ResourceType,
 			"tenant_id", entry.TenantID,
-			"store_id", entry.StoreID)
+			"store_id", storeIDForLog(entry.StoreID))
 	}
 }
 
 // buildEntry assembles a row from the gin context + event. Returns nil
-// (with a logged warning) when the request is missing tenant/store —
-// audit must never write an unscoped row.
+// when the request is missing a tenant — audit must never write a
+// tenant-unscoped row. Emit logs a warning when this happens. Store is
+// optional: platform writes are tenant-scoped only. See resolveScope.
 func buildEntry(c *gin.Context, ev Event) *Entry {
 	tenantID, storeID, ok := resolveScope(c, ev)
 	if !ok {
@@ -204,10 +211,33 @@ func buildEntry(c *gin.Context, ev Event) *Entry {
 	}
 
 	if c != nil {
-		// Don't infer a user actor when the caller explicitly forced a
-		// system/api classification — storefront events should stay as
-		// system even though the request carries a customer session.
-		if ev.ForceActorType == "" {
+		// Context keys "platform_operator_id" / "platform_capability" are
+		// set by Task 6's platform-admin middleware. They mirror the
+		// exported constants platformadmin.CtxOperatorID / CtxCapability
+		// defined there; audit intentionally does not import that package
+		// (it's an HTTP handler package), so the literals are duplicated
+		// here — keep both sides greppable if either changes.
+		operatorID := strings.TrimSpace(c.GetString("platform_operator_id"))
+		capability := strings.TrimSpace(c.GetString("platform_capability"))
+
+		switch {
+		case operatorID != "":
+			// A platform console operator. The id is opaque and belongs to
+			// the console — it must never be written to actor_user_id, even
+			// when it happens to parse as a UUID. This case is evaluated
+			// before, and (via switch's implicit no-fallthrough) mutually
+			// exclusive with, the user-actor case below — an operator claim
+			// can never fall through into ActorUserID.
+			entry.ActorType = ActorOperator
+			entry.ActorOperatorID = &operatorID
+			if capability != "" {
+				entry.Capability = &capability
+			}
+
+		case ev.ForceActorType == "":
+			// Don't infer a user actor when the caller explicitly forced a
+			// system/api classification — storefront events should stay as
+			// system even though the request carries a customer session.
 			if uid := strings.TrimSpace(c.GetString("user_id")); uid != "" {
 				if parsed, err := uuid.Parse(uid); err == nil {
 					entry.ActorUserID = &parsed
@@ -219,6 +249,7 @@ func buildEntry(c *gin.Context, ev Event) *Entry {
 				entry.ActorEmail = &v
 			}
 		}
+
 		if ip := clientIP(c); ip != "" {
 			v := ip
 			entry.IPAddress = &v
@@ -233,27 +264,38 @@ func buildEntry(c *gin.Context, ev Event) *Entry {
 }
 
 // resolveScope picks tenant + store IDs from the explicit Event fields
-// first, then falls back to the gin context. Both must end up non-zero
-// or the event is dropped.
-func resolveScope(c *gin.Context, ev Event) (tenantID, storeID uuid.UUID, ok bool) {
+// first, then falls back to the gin context. The tenant must resolve;
+// the store is optional and nil for tenant-scoped platform events.
+func resolveScope(c *gin.Context, ev Event) (tenantID uuid.UUID, storeID *uuid.UUID, ok bool) {
 	tenantID = ev.TenantID
-	storeID = ev.StoreID
+	var store uuid.UUID = ev.StoreID
 	if c != nil {
 		if tenantID == uuid.Nil {
 			if tid, err := uuid.Parse(c.GetString("tenant_id")); err == nil {
 				tenantID = tid
 			}
 		}
-		if storeID == uuid.Nil {
+		if store == uuid.Nil {
 			if sid, err := uuid.Parse(c.Param("storeId")); err == nil {
-				storeID = sid
+				store = sid
 			}
 		}
 	}
-	if tenantID == uuid.Nil || storeID == uuid.Nil {
-		return uuid.Nil, uuid.Nil, false
+	if tenantID == uuid.Nil {
+		return uuid.Nil, nil, false
 	}
-	return tenantID, storeID, true
+	if store == uuid.Nil {
+		return tenantID, nil, true
+	}
+	return tenantID, &store, true
+}
+
+// storeIDForLog renders a nil store as "-" rather than a pointer address.
+func storeIDForLog(id *uuid.UUID) string {
+	if id == nil {
+		return "-"
+	}
+	return id.String()
 }
 
 func defaultStatus(s Status) Status {

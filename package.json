@@ -5,7 +5,7 @@
     "build": "turbo run build --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-storefront' --filter='!@repo/mobile-admin'",
     "dev": "turbo run dev",
     "lint": "turbo run lint --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-storefront' --filter='!@repo/mobile-admin'",
-    "test": "turbo run test --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-storefront'",
+    "test": "turbo run test --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-storefront' --filter='!@repo/mobile-admin'",
     "check-types": "turbo run check-types --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/storefront-mobile' --filter='!@repo/mobile-storefront' --filter='!@repo/mobile-admin'",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "format:check": "prettier --check \"package*.json\" \".github/**/*.{yml,yaml,json}\" \"docs/ci.md\""

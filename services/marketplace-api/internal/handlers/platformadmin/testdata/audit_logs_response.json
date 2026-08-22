@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+      "actor": "merchant@example.com",
+      "action": "product.deleted",
+      "timestamp": "2026-08-22T10:00:00Z",
+      "target": "prod_123"
+    },
+    {
+      "id": "3f2504e0-4f89-11d3-9a0c-0305e82c3302",
+      "actor": "op_7f3a",
+      "action": "tenant.suspended",
+      "timestamp": "2026-08-22T09:00:00Z",
+      "target": "tenant"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 200,
+    "total": 2
+  }
+}

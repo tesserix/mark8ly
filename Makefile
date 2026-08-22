@@ -50,6 +50,10 @@ test-int: ## Run integration tests against the running `make dev` stack
 	@cd services/auth-bff && \
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/auth_bff?sslmode=disable' \
 	  go test -tags=integration ./...
+	@echo "▶ marketplace-api integration"
+	@cd services/marketplace-api && \
+	  TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:5432/marketplace_db?sslmode=disable' \
+	  go test -tags=integration ./...
 
 cover: ## Coverage report for both Go services
 	@cd services/platform-api && go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -5

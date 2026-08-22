@@ -170,13 +170,14 @@ func (e *Emitter) write(entry Entry) {
 			"action", entry.Action,
 			"resource_type", entry.ResourceType,
 			"tenant_id", entry.TenantID,
-			"store_id", entry.StoreID)
+			"store_id", storeIDForLog(entry.StoreID))
 	}
 }
 
 // buildEntry assembles a row from the gin context + event. Returns nil
-// (with a logged warning) when the request is missing tenant/store —
-// audit must never write an unscoped row.
+// (with a logged warning) when the request is missing a tenant — audit
+// must never write a tenant-unscoped row. Store is optional: platform
+// writes are tenant-scoped only. See resolveScope.
 func buildEntry(c *gin.Context, ev Event) *Entry {
 	tenantID, storeID, ok := resolveScope(c, ev)
 	if !ok {
@@ -233,27 +234,38 @@ func buildEntry(c *gin.Context, ev Event) *Entry {
 }
 
 // resolveScope picks tenant + store IDs from the explicit Event fields
-// first, then falls back to the gin context. Both must end up non-zero
-// or the event is dropped.
-func resolveScope(c *gin.Context, ev Event) (tenantID, storeID uuid.UUID, ok bool) {
+// first, then falls back to the gin context. The tenant must resolve;
+// the store is optional and nil for tenant-scoped platform events.
+func resolveScope(c *gin.Context, ev Event) (tenantID uuid.UUID, storeID *uuid.UUID, ok bool) {
 	tenantID = ev.TenantID
-	storeID = ev.StoreID
+	var store uuid.UUID = ev.StoreID
 	if c != nil {
 		if tenantID == uuid.Nil {
 			if tid, err := uuid.Parse(c.GetString("tenant_id")); err == nil {
 				tenantID = tid
 			}
 		}
-		if storeID == uuid.Nil {
+		if store == uuid.Nil {
 			if sid, err := uuid.Parse(c.Param("storeId")); err == nil {
-				storeID = sid
+				store = sid
 			}
 		}
 	}
-	if tenantID == uuid.Nil || storeID == uuid.Nil {
-		return uuid.Nil, uuid.Nil, false
+	if tenantID == uuid.Nil {
+		return uuid.Nil, nil, false
 	}
-	return tenantID, storeID, true
+	if store == uuid.Nil {
+		return tenantID, nil, true
+	}
+	return tenantID, &store, true
+}
+
+// storeIDForLog renders a nil store as "-" rather than a pointer address.
+func storeIDForLog(id *uuid.UUID) string {
+	if id == nil {
+		return "-"
+	}
+	return id.String()
 }
 
 func defaultStatus(s Status) Status {

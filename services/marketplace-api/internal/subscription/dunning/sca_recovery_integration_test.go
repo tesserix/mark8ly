@@ -91,7 +91,7 @@ func TestSCARecovery_WebhookPaymentActionRequired_SCAReminders_InvoicePaidClears
 	auditPAR := audit.Entry{
 		ID:           uuid.New(),
 		TenantID:     tenantID,
-		StoreID:      storeID,
+		StoreID:      &storeID,
 		ActorType:    audit.ActorSystem,
 		Action:       "subscription.state_transition",
 		ResourceType: "subscription",

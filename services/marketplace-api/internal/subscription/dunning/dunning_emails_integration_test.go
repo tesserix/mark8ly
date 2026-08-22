@@ -69,7 +69,7 @@ func TestSendDunningEmails_SendsOnDay5AndDay7(t *testing.T) {
 	auditA := audit.Entry{
 		ID:           uuid.New(),
 		TenantID:     tenantA,
-		StoreID:      storeA,
+		StoreID:      &storeA,
 		ActorType:    audit.ActorSystem,
 		Action:       "subscription.state_transition",
 		ResourceType: "subscription",
@@ -99,7 +99,7 @@ func TestSendDunningEmails_SendsOnDay5AndDay7(t *testing.T) {
 	auditB := audit.Entry{
 		ID:           uuid.New(),
 		TenantID:     tenantB,
-		StoreID:      storeB,
+		StoreID:      &storeB,
 		ActorType:    audit.ActorSystem,
 		Action:       "subscription.state_transition",
 		ResourceType: "subscription",
@@ -147,7 +147,7 @@ func TestSendDunningEmails_NoEmailIfSubNoLongerPastDue(t *testing.T) {
 	auditEntry := audit.Entry{
 		ID:           uuid.New(),
 		TenantID:     tenantID,
-		StoreID:      storeID,
+		StoreID:      &storeID,
 		ActorType:    audit.ActorSystem,
 		Action:       "subscription.state_transition",
 		ResourceType: "subscription",

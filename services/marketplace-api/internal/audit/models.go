@@ -20,6 +20,10 @@ const (
 	ActorUser   ActorType = "user"
 	ActorSystem ActorType = "system"
 	ActorAPI    ActorType = "api"
+	// ActorOperator is a platform console operator acting through the
+	// signed /admin/* surface. Distinct from ActorUser: the id is opaque
+	// and belongs to the console, not to a mark8ly user row.
+	ActorOperator ActorType = "operator"
 )
 
 // Status is the outcome of the audited action.
@@ -78,9 +82,11 @@ func (m *Metadata) Scan(src any) error {
 // pointers so we can write SQL NULL — important for ip_address which
 // is an INET column and rejects empty strings.
 type Entry struct {
-	ID           uuid.UUID  `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	TenantID     uuid.UUID  `gorm:"column:tenant_id;type:uuid;not null"`
-	StoreID      uuid.UUID  `gorm:"column:store_id;type:uuid;not null"`
+	ID       uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID uuid.UUID `gorm:"column:tenant_id;type:uuid;not null"`
+	// StoreID is nil for tenant-scoped events with no store — every
+	// platform-originated write is one. See migration 000101.
+	StoreID      *uuid.UUID `gorm:"column:store_id;type:uuid"`
 	ActorUserID  *uuid.UUID `gorm:"column:actor_user_id;type:uuid"`
 	ActorEmail   *string    `gorm:"column:actor_email;type:text"`
 	ActorType    ActorType  `gorm:"column:actor_type;type:varchar(16);not null"`
@@ -93,6 +99,10 @@ type Entry struct {
 	UserAgent    *string    `gorm:"column:user_agent;type:text"`
 	Metadata     Metadata   `gorm:"column:metadata;type:jsonb;not null;default:'{}'::jsonb"`
 	CreatedAt    time.Time  `gorm:"column:created_at;not null;default:now()"`
+
+	// ActorOperatorID and Capability are set only for ActorOperator rows.
+	ActorOperatorID *string `gorm:"column:actor_operator_id;type:text"`
+	Capability      *string `gorm:"column:capability;type:text"`
 }
 
 // TableName pins the Postgres table name so GORM's pluralizer can't drift.

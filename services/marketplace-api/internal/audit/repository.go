@@ -117,8 +117,8 @@ func (gormRepository) List(ctx context.Context, db *gorm.DB, f ListFilter) (List
 }
 
 func (gormRepository) Create(ctx context.Context, db *gorm.DB, e *Entry) error {
-	if e.TenantID == uuid.Nil || e.StoreID == uuid.Nil {
-		return fmt.Errorf("audit create: tenant_id and store_id are required")
+	if e.TenantID == uuid.Nil {
+		return fmt.Errorf("audit create: tenant_id is required")
 	}
 	if err := db.WithContext(ctx).Create(e).Error; err != nil {
 		return fmt.Errorf("audit create: %w", err)

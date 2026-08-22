@@ -54,7 +54,7 @@ func TestCriterion38_DunningLeavesPaymentActionRequiredAlone(t *testing.T) {
 	auditPAR := audit.Entry{
 		ID:           uuid.New(),
 		TenantID:     tenantID,
-		StoreID:      storeID,
+		StoreID:      &storeID,
 		ActorType:    audit.ActorSystem,
 		Action:       "subscription.state_transition",
 		ResourceType: "subscription",

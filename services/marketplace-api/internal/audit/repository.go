@@ -46,6 +46,10 @@ type Repository interface {
 	// order, ignoring pagination. Used by ExportCSV. Caller's fn must
 	// not retain the *Entry across calls.
 	Stream(ctx context.Context, db *gorm.DB, f ListFilter, fn func(*Entry) error) error
+
+	// ListPlatform returns a page of entries across every store, for the
+	// platform console. StoreID in the filter narrows rather than scopes.
+	ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter) (ListResult, error)
 }
 
 type gormRepository struct{}
@@ -150,4 +154,80 @@ func (gormRepository) Stream(ctx context.Context, db *gorm.DB, f ListFilter, fn 
 		}
 	}
 	return rows.Err()
+}
+
+// MaxPlatformPageSize caps a platform page. Set by the platform API's 1 MiB
+// response read limit, past which a body truncates mid-JSON and surfaces to
+// operators as "invalid response" rather than "too large".
+const MaxPlatformPageSize = 500
+
+// DefaultPlatformPageSize applies when the caller sends no limit. The contract
+// says a missing parameter takes our default and is never an error.
+const DefaultPlatformPageSize = 50
+
+// PlatformListFilter narrows a cross-store audit query for the platform
+// console (#276). Unlike ListFilter, every field is optional: this is the
+// platform's estate-wide view, and StoreID is a narrowing filter rather than
+// a required scope.
+type PlatformListFilter struct {
+	TenantID     uuid.UUID
+	StoreID      uuid.UUID
+	Actor        string    // partial match on actor_email or actor_operator_id
+	Action       string    // exact match
+	ResourceType string    // exact match
+	DateFrom     time.Time // inclusive lower bound on created_at
+	DateTo       time.Time // inclusive upper bound on created_at
+	Page         int       // 1-based; defaults to 1
+	Limit        int       // defaults to 50, clamped to 500
+}
+
+func applyPlatformScope(q *gorm.DB, f PlatformListFilter) *gorm.DB {
+	if f.TenantID != uuid.Nil {
+		q = q.Where("tenant_id = ?", f.TenantID)
+	}
+	if f.StoreID != uuid.Nil {
+		q = q.Where("store_id = ?", f.StoreID)
+	}
+	if f.Actor != "" {
+		like := "%" + f.Actor + "%"
+		q = q.Where("COALESCE(actor_email,'') ILIKE ? OR COALESCE(actor_operator_id,'') ILIKE ?", like, like)
+	}
+	if f.Action != "" {
+		q = q.Where("action = ?", f.Action)
+	}
+	if f.ResourceType != "" {
+		q = q.Where("resource_type = ?", f.ResourceType)
+	}
+	if !f.DateFrom.IsZero() {
+		q = q.Where("created_at >= ?", f.DateFrom)
+	}
+	if !f.DateTo.IsZero() {
+		q = q.Where("created_at <= ?", f.DateTo)
+	}
+	return q
+}
+
+func (gormRepository) ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter) (ListResult, error) {
+	var result ListResult
+	q := applyPlatformScope(db.WithContext(ctx).Model(&Entry{}), f)
+
+	if err := q.Count(&result.Total).Error; err != nil {
+		return result, fmt.Errorf("audit platform list count: %w", err)
+	}
+
+	page := max(f.Page, 1)
+	limit := f.Limit
+	switch {
+	case limit <= 0:
+		limit = DefaultPlatformPageSize
+	case limit > MaxPlatformPageSize:
+		limit = MaxPlatformPageSize
+	}
+	offset := (page - 1) * limit
+
+	result.Entries = make([]Entry, 0, limit)
+	if err := q.Order("created_at DESC").Offset(offset).Limit(limit).Find(&result.Entries).Error; err != nil {
+		return result, fmt.Errorf("audit platform list: %w", err)
+	}
+	return result, nil
 }

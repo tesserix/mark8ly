@@ -34,6 +34,10 @@ func (stubAuditRepository) Stream(_ context.Context, _ *gorm.DB, _ audit.ListFil
 	return nil
 }
 
+func (stubAuditRepository) ListPlatform(_ context.Context, _ *gorm.DB, _ audit.PlatformListFilter) (audit.ListResult, error) {
+	return audit.ListResult{}, nil
+}
+
 // The merchant Settings -> Audit Logs page consumes the exact envelope shape
 // produced by admin.AuditLogsHandler.List via
 // apps/admin/lib/api/settings-tier2-api.ts. The platform console requires a

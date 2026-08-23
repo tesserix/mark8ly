@@ -161,3 +161,61 @@ func TestFindByOwnerEmailTransportFailureIsUnavailable(t *testing.T) {
 		FindByOwnerEmail(context.Background(), "a@example.com")
 	require.ErrorIs(t, err, tenantdirectory.ErrUnavailable)
 }
+
+// TestListSendsIDs asserts ListParams.IDs is joined and sent as a single
+// comma-separated `ids` query parameter, so #285's trials endpoint can
+// resolve a page of tenants in one batch call.
+func TestListSendsIDs(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"limit":50,"total":0}}`))
+	}))
+	defer srv.Close()
+
+	c := tenantdirectory.NewClient(srv.URL, "s", srv.Client())
+	_, err := c.List(context.Background(), tenantdirectory.ListParams{IDs: []string{"a", "b"}})
+	require.NoError(t, err)
+	require.Contains(t, gotQuery, "ids=a%2Cb")
+}
+
+// TestListOmitsIDsWhenEmpty is the negative counterpart to TestListSendsIDs:
+// an empty (or nil) ListParams.IDs must never put "ids=" on the wire.
+// Symmetric with how Q/Status are conditionally set. An "ids=" reaching the
+// server hits its own guard, but the client should never emit it in the
+// first place.
+func TestListOmitsIDsWhenEmpty(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"limit":50,"total":0}}`))
+	}))
+	defer srv.Close()
+
+	c := tenantdirectory.NewClient(srv.URL, "s", srv.Client())
+	_, err := c.List(context.Background(), tenantdirectory.ListParams{})
+	require.NoError(t, err)
+	require.NotContains(t, gotQuery, "ids=")
+}
+
+// TestListOmitsIDsWhenEmptyNonNilSlice guards the guard itself: passing an
+// empty but non-nil []string{} must also omit "ids=" from the wire. A
+// `p.IDs != nil` check (weaker than `len(p.IDs) > 0`) would pass
+// TestListOmitsIDsWhenEmpty above (nil IDs) but wrongly send "ids=" for
+// this case, since a non-nil empty slice is not nil.
+func TestListOmitsIDsWhenEmptyNonNilSlice(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"limit":50,"total":0}}`))
+	}))
+	defer srv.Close()
+
+	c := tenantdirectory.NewClient(srv.URL, "s", srv.Client())
+	_, err := c.List(context.Background(), tenantdirectory.ListParams{IDs: []string{}})
+	require.NoError(t, err)
+	require.NotContains(t, gotQuery, "ids=")
+}

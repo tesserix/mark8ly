@@ -1,0 +1,32 @@
+{
+  "data": [
+    {
+      "tenant_id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+      "tenant_name": "Acme Trading",
+      "store_id": "aaaaaaaa-4f89-11d3-9a0c-0305e82c3301",
+      "trial_ends_at": "2026-08-27T09:14:02Z",
+      "days_remaining": 3,
+      "plan": "trial",
+      "period": "monthly",
+      "billing_currency": "GBP",
+      "payment_method_on_file": false,
+      "status": "trialing"
+    },
+    {
+      "tenant_id": "3f2504e0-4f89-11d3-9a0c-0305e82c3302",
+      "tenant_name": "Beta Goods",
+      "store_id": "bbbbbbbb-4f89-11d3-9a0c-0305e82c3302",
+      "trial_ends_at": "2026-08-30T09:14:02Z",
+      "days_remaining": 6,
+      "plan": "trial",
+      "period": "annual",
+      "payment_method_on_file": true,
+      "status": "trialing"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 50,
+    "total": 2
+  }
+}

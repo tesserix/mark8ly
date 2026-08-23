@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/estatecounts"
 	"github.com/mark8ly/marketplace-api/internal/onboardingfunnel"
 )
@@ -27,7 +28,17 @@ type EstateCounts interface {
 // Subscriptions is the subset of subscription.Repository this handler
 // needs. Narrowed to one method for the same reason as EstateCounts above.
 type Subscriptions interface {
-	CountTrialsExpiring(ctx context.Context, db *gorm.DB, asOf time.Time) (int64, error)
+	CountExpiring(ctx context.Context, db *gorm.DB, asOf time.Time, window time.Duration) (int64, error)
+}
+
+// SubscriptionsFunc adapts a bare function — such as trial.CountExpiring —
+// to the Subscriptions interface, so callers can wire the package function
+// directly without hand-writing a wrapper type.
+type SubscriptionsFunc func(ctx context.Context, db *gorm.DB, asOf time.Time, window time.Duration) (int64, error)
+
+// CountExpiring implements Subscriptions by delegating to the wrapped func.
+func (f SubscriptionsFunc) CountExpiring(ctx context.Context, db *gorm.DB, asOf time.Time, window time.Duration) (int64, error) {
+	return f(ctx, db, asOf, window)
 }
 
 // kpiKey is one metric the console may ask for.
@@ -165,7 +176,7 @@ func (h *KPIsHandler) kpis(c *gin.Context) {
 		return
 	}
 
-	trialsExpiring, err := h.subs.CountTrialsExpiring(ctx, h.db, h.now())
+	trialsExpiring, err := h.subs.CountExpiring(ctx, h.db, h.now(), trial.DefaultExpiryWindow)
 	if err != nil {
 		h.respondErr(c, "subscription", err)
 		return

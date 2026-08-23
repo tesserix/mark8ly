@@ -328,3 +328,86 @@ func TestIntegration_GetByOwnerEmail_EmptyAndWhitespaceOnly(t *testing.T) {
 		}
 	}
 }
+
+// TestListDirectory_FiltersByIDs seeds three tenants and filters by two of
+// their ids: exactly those two must come back, not the third.
+func TestListDirectory_FiltersByIDs(t *testing.T) {
+	db := testdb.NewTx(t)
+	repo := NewRepository(db)
+
+	a := seedTenantWithStore(t, db, "IDs Co A", "ids-a@example.com", StatusActive, "ids-a")
+	b := seedTenantWithStore(t, db, "IDs Co B", "ids-b@example.com", StatusActive, "ids-b")
+	_ = seedTenantWithStore(t, db, "IDs Co C", "ids-c@example.com", StatusActive, "ids-c")
+
+	got, err := repo.ListDirectory(context.Background(), DirectoryFilter{IDs: []string{a, b}, Limit: 50})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), got.Total)
+
+	ids := map[string]bool{}
+	for _, tn := range got.Tenants {
+		ids[tn.ID] = true
+	}
+	require.True(t, ids[a])
+	require.True(t, ids[b])
+	require.Len(t, got.Tenants, 2)
+}
+
+// TestListDirectory_UnknownIDIsIgnored asserts an id that matches nothing
+// is silently dropped, not an error, and the known ids still return.
+func TestListDirectory_UnknownIDIsIgnored(t *testing.T) {
+	db := testdb.NewTx(t)
+	repo := NewRepository(db)
+
+	a := seedTenantWithStore(t, db, "Known Co", "known@example.com", StatusActive, "known-slug")
+
+	got, err := repo.ListDirectory(context.Background(), DirectoryFilter{
+		IDs:   []string{a, uuid.NewString()},
+		Limit: 50,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), got.Total)
+	require.Len(t, got.Tenants, 1)
+	require.Equal(t, a, got.Tenants[0].ID)
+}
+
+// TestListDirectory_EmptyIDsReturnsEverything is the guard against the
+// silently-empty-result regression: len(f.IDs) == 0 must add no clause.
+func TestListDirectory_EmptyIDsReturnsEverything(t *testing.T) {
+	db := testdb.NewTx(t)
+	repo := NewRepository(db)
+
+	a := seedTenantWithStore(t, db, "Guard Co A", "guard-a@example.com", StatusActive, "guard-a")
+	b := seedTenantWithStore(t, db, "Guard Co B", "guard-b@example.com", StatusActive, "guard-b")
+
+	got, err := repo.ListDirectory(context.Background(), DirectoryFilter{Q: "Guard Co", IDs: []string{}, Limit: 50})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), got.Total)
+
+	ids := map[string]bool{}
+	for _, tn := range got.Tenants {
+		ids[tn.ID] = true
+	}
+	require.True(t, ids[a])
+	require.True(t, ids[b])
+}
+
+// TestListDirectory_IDsCombinesWithStatus asserts ids narrows within the
+// status filter rather than replacing it: an id whose tenant doesn't match
+// the status must not come back.
+func TestListDirectory_IDsCombinesWithStatus(t *testing.T) {
+	db := testdb.NewTx(t)
+	repo := NewRepository(db)
+
+	active := seedTenantWithStore(t, db, "Combo Active Co", "combo-active@example.com", StatusActive, "combo-active")
+	suspended := seedTenantWithStore(t, db, "Combo Suspended Co", "combo-susp@example.com", StatusSuspended, "combo-susp")
+
+	got, err := repo.ListDirectory(context.Background(), DirectoryFilter{
+		IDs:    []string{active, suspended},
+		Status: StatusActive,
+		Limit:  50,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), got.Total)
+	require.Len(t, got.Tenants, 1)
+	require.Equal(t, active, got.Tenants[0].ID)
+}

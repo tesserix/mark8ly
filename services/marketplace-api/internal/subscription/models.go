@@ -43,14 +43,6 @@ const (
 	StatusHardDeleted           SubscriptionStatus = "hard_deleted"
 )
 
-// TrialExpiryHorizon is how far ahead a trial counts as "expiring" for the
-// platform console's KPI tile (#282).
-//
-// SHARED, deliberately: #285 (GET /admin/billing/trials) needs the same
-// notion of "expiring". If it declares its own, the console shows two
-// different numbers for the same word on two screens. Reuse this constant.
-const TrialExpiryHorizon = 7 * 24 * time.Hour
-
 // PriceTier encodes whether the merchant is billed at the developed-market
 // list price or a purchasing-power-parity (PPP) discounted tier.
 type PriceTier string

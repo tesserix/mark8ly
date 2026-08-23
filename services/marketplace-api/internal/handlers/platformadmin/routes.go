@@ -38,6 +38,12 @@ type Deps struct {
 	// mount — a partial KPI handler is worse than no handler at all.
 	EstateCounts  EstateCounts
 	Subscriptions Subscriptions
+
+	// Trials serves /admin/billing/trials (#285), alongside TenantDirectory
+	// above for the tenant-name lookup. Both must be non-nil for that route
+	// to mount, matching the EstateCounts/Subscriptions/OnboardingFunnel
+	// pattern above.
+	Trials TrialLister
 }
 
 // Register mounts the platform console's /admin/* surface behind
@@ -92,5 +98,9 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.EstateCounts != nil && deps.OnboardingFunnel != nil && deps.Subscriptions != nil {
 		NewKPIsHandler(deps.EstateCounts, deps.OnboardingFunnel, deps.Subscriptions, deps.DB, deps.Logger).Register(group)
+	}
+
+	if deps.Trials != nil && deps.TenantDirectory != nil {
+		NewBillingTrialsHandler(deps.Trials, deps.TenantDirectory, deps.DB, nil, deps.Logger).Register(group)
 	}
 }

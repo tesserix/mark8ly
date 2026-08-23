@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/estatecounts"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 	"github.com/mark8ly/marketplace-api/internal/onboardingfunnel"
@@ -40,13 +41,15 @@ func (s *stubEstateCounts) Get(_ context.Context) (*estatecounts.Counts, error) 
 // stubSubscriptions is a canned subscription.Repository stand-in, narrowed
 // to the one method the kpis handler calls.
 type stubSubscriptions struct {
-	count   int64
-	err     error
-	gotAsOf time.Time
+	count     int64
+	err       error
+	gotAsOf   time.Time
+	gotWindow time.Duration
 }
 
-func (s *stubSubscriptions) CountTrialsExpiring(_ context.Context, _ *gorm.DB, asOf time.Time) (int64, error) {
+func (s *stubSubscriptions) CountExpiring(_ context.Context, _ *gorm.DB, asOf time.Time, window time.Duration) (int64, error) {
 	s.gotAsOf = asOf
+	s.gotWindow = window
 	if s.err != nil {
 		return 0, s.err
 	}
@@ -257,6 +260,51 @@ func TestKPIsOnboardingInFlightMatchesFunnelStubExactly(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, wantInFlight, body.Data.OnboardingInFlight)
 	require.Equal(t, funnel.funnel.InFlight, body.Data.OnboardingInFlight)
+}
+
+// Anti-drift: trials_expiring must equal the count the Subscriptions stub
+// reports, from the SAME distinct, non-zero stub value used to build the
+// stub — so a wiring regression that silently drops the source (and falls
+// back to Go's zero value) fails this test. This handler shipped exactly
+// that fabricated-zero bug once; this pins the wiring against a repeat.
+//
+// It also pins the *window* the handler passes to CountExpiring against
+// trial.DefaultExpiryWindow specifically — not merely "non-zero". A
+// plausible-but-wrong horizon (e.g. a reviewer hardcoding 48*time.Hour) is
+// exactly the class of bug this counter has already shipped once, for a
+// different argument (querying the wrong column). asOf is checked for
+// recency: the handler wires h.now() (time.Now, not injectable through
+// NewKPIsHandler) straight through, so this proves it is not the zero
+// time.Time{} and was captured at call time, without pinning an exact
+// instant the handler cannot be made to produce deterministically.
+func TestKPIsTrialsExpiringMatchesSubscriptionsStubExactly(t *testing.T) {
+	const wantTrialsExpiring = int64(23)
+	estate := &stubEstateCounts{counts: &estatecounts.Counts{TenantsActive: 1, StoresActive: 1}}
+	funnel := &stubFunnelClient{funnel: &onboardingfunnel.FunnelStats{
+		FunnelCounts: onboardingfunnel.FunnelCounts{InFlight: 1},
+	}}
+	subs := &stubSubscriptions{count: wantTrialsExpiring}
+
+	before := time.Now()
+	rec := httptest.NewRecorder()
+	kpisRouter(t, estate, funnel, subs).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/kpis", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Data struct {
+			TrialsExpiring int64 `json:"trials_expiring"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, wantTrialsExpiring, body.Data.TrialsExpiring)
+	require.Equal(t, subs.count, body.Data.TrialsExpiring)
+
+	require.Equal(t, trial.DefaultExpiryWindow, subs.gotWindow,
+		"handler must pass trial.DefaultExpiryWindow to CountExpiring, not a hardcoded or otherwise-derived horizon")
+	require.WithinRange(t, subs.gotAsOf, before, time.Now(),
+		"handler must pass a live now() to CountExpiring, not a zero-value time.Time")
 }
 
 // counterKeyNames lists every JSON key that could carry a real counter

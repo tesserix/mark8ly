@@ -162,6 +162,24 @@ func (c *PruneCron) pruneBucket(ctx context.Context, plans []subscription.Subscr
 		default:
 		}
 
+		// #311: tenant-scoped platform operator audit rows (store_id IS
+		// NULL — suspend/unsuspend/purge/trial-extend, possible since
+		// migration 000101) are never pruned on this timer. They're rare,
+		// individually consequential integrity records of privileged
+		// actions against a customer's tenant ("who suspended this tenant,
+		// and why"), unlike the high-volume, low-consequence merchant
+		// activity this retention policy targets. The INNER JOIN below
+		// already excludes them (it can't match a NULL store_id), but that
+		// exclusion is incidental — the explicit `a.store_id IS NOT NULL`
+		// makes it the policy. DO NOT remove this condition, and DO NOT
+		// change the JOIN to a LEFT JOIN without preserving it, or this
+		// prune will start deleting operator audit history with nothing to
+		// catch it.
+		//
+		// "Never pruned" means never pruned on this timer, not immune to
+		// deletion: internal/tenantpurge/purge.go:238 deletes audit_logs by
+		// tenant_id and still reaches these rows, so GDPR erasure and
+		// tenant deletion are unaffected by this guard.
 		res := c.db.WithContext(ctx).Exec(`
 			DELETE FROM audit_logs
 			WHERE id IN (
@@ -170,6 +188,7 @@ func (c *PruneCron) pruneBucket(ctx context.Context, plans []subscription.Subscr
 				JOIN store_subscriptions s ON s.store_id = a.store_id
 				WHERE s.plan IN ?
 				  AND a.created_at < ?
+				  AND a.store_id IS NOT NULL
 				LIMIT ?
 			)`,
 			planStrings, cutoff, c.batchSize,

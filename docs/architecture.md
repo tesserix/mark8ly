@@ -274,6 +274,32 @@ than provider branching:
 - `OrderStatusGateway` — has no client-side signature, so confirmation
   polls the provider instead (Cashfree).
 
+## Gateway JWT gate (istio-ingress)
+
+The cluster's Istio ingress carries an `AuthorizationPolicy` named
+`require-customer-auth` (namespace `istio-ingress`, repo `tesserix-k8s`) that
+denies any request without a valid JWT to a fixed list of path prefixes,
+including `/api/v1/admin/*`, `/api/v1/staff/*`, `/api/v1/analytics/*`,
+`/api/v1/reports/*`, `/api/v1/orders/*`, `/api/v1/cart/*`,
+`/api/v1/payments/*`, and others. This runs at the mesh, before any
+`marketplace-api` handler sees the request.
+
+Any surface that authenticates by something other than a JWT — e.g.
+`marketplace-api`'s platform-console admin surface
+(`internal/handlers/platformadmin/`), which is HMAC-signed — must be mounted
+outside those prefixes, or the mesh rejects it with `403` and body
+`RBAC: access denied` before the app-level auth even runs. This is why that
+surface is mounted at `/api/v1/platform/...` rather than `/api/v1/admin/...`
+(see `internal/handlers/platformadmin/routes.go`).
+
+The failure only reproduces against the deployed cluster — Istio isn't part
+of local dev or CI, so a caller signing correctly against a JWT-gated prefix
+sees a `403` that looks like an auth bug on their end. If you hit a `403`
+with `RBAC: access denied` from `marketplace-api`, check whether the route
+is inside one of `require-customer-auth`'s prefixes before debugging the
+request signature — the policy itself lives in `tesserix-k8s`, not this
+repo.
+
 ## What's deliberately NOT here (yet)
 
 This slice ends at the welcome page. Everything below is next-phase

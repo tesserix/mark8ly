@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -89,10 +90,30 @@ func kpiErrorMessage(t *testing.T, rec *httptest.ResponseRecorder) string {
 	return body.Message
 }
 
+// wantKPIValue maps a fixture key to the distinct, non-zero value
+// kpisFixture() reports for it, so the assertion below can check the exact
+// value carried through the payload rather than merely the key's presence.
+// A missing entry here for a key that IS instrumented is itself a test bug
+// (see the require.Contains fallthrough below), which is intentional: this
+// map must be kept in lockstep with kpisFixture.
+var wantKPIValue = map[string]int64{
+	"tenants_active":       42,
+	"stores_active":        57,
+	"onboarding_in_flight": 34,
+	"trials_expiring":      9,
+}
+
 // Registry-driven completeness: iterate KPIRegistry so a future key added
 // there without handler support fails this test. Every instrumented key
-// must appear in the 200 payload when requested alone; every uninstrumented
-// key must 501 when requested by name.
+// must appear in the 200 payload, WITH THE EXACT VALUE the stub reports for
+// it, when requested alone; every uninstrumented key must 501 when
+// requested by name.
+//
+// Asserting only presence (as this test used to) lets a registry key with
+// no handler support through: Go's zero value for an unpopulated map entry
+// is 0, and 0 satisfies "key is present" every time. Asserting the exact,
+// distinct, non-zero fixture value closes that gap — a fabricated 0 now
+// fails on the value.
 func TestKPIsRegistryDrivenCompleteness(t *testing.T) {
 	for _, key := range platformadmin.KPIRegistry {
 		t.Run(key.Name, func(t *testing.T) {
@@ -108,8 +129,13 @@ func TestKPIsRegistryDrivenCompleteness(t *testing.T) {
 					Data map[string]json.RawMessage `json:"data"`
 				}
 				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-				_, ok := body.Data[key.Name]
+				raw, ok := body.Data[key.Name]
 				require.True(t, ok, "instrumented key %q missing from 200 payload", key.Name)
+
+				want, known := wantKPIValue[key.Name]
+				require.True(t, known, "test bug: wantKPIValue has no entry for instrumented key %q — add one alongside kpisFixture", key.Name)
+				require.JSONEq(t, fmt.Sprintf("%d", want), string(raw),
+					"kpi %q carried the wrong value — a fabricated zero would also pass a presence-only check", key.Name)
 			} else {
 				require.Equal(t, http.StatusNotImplemented, rec.Code)
 				require.Equal(t, key.Name, kpiErrorKey(t, rec))
@@ -145,7 +171,14 @@ func TestKPIsKnownUninstrumentedKeyIs501KnownButNotInstrumented(t *testing.T) {
 }
 
 // The two 501 messages are the only thing distinguishing the cases for a
-// human reading logs — assert they actually differ.
+// human reading logs. Comparing the two raw messages for inequality does
+// NOT prove that: both messages interpolate their own key name
+// ("not_a_real_kpi" vs "gmv_today"), so they differ no matter what the
+// surrounding template text says — even if a reviewer made both templates
+// byte-for-byte identical, the strings would still differ on the key alone
+// and this test would still pass. Assert each message's distinguishing
+// phrase directly instead, so deleting either phrase from its template
+// fails this test.
 func TestKPIs501MessagesDifferBetweenUnknownAndUninstrumented(t *testing.T) {
 	estate, funnel, subs := kpisFixture()
 	router := kpisRouter(t, estate, funnel, subs)
@@ -156,7 +189,14 @@ func TestKPIs501MessagesDifferBetweenUnknownAndUninstrumented(t *testing.T) {
 	uninstrumentedRec := httptest.NewRecorder()
 	router.ServeHTTP(uninstrumentedRec, httptest.NewRequest(http.MethodGet, "/admin/kpis?keys=gmv_today", nil))
 
-	require.NotEqual(t, kpiErrorMessage(t, unknownRec), kpiErrorMessage(t, uninstrumentedRec))
+	unknownMsg := kpiErrorMessage(t, unknownRec)
+	uninstrumentedMsg := kpiErrorMessage(t, uninstrumentedRec)
+
+	require.Contains(t, unknownMsg, "not a recognised key")
+	require.NotContains(t, unknownMsg, "known but not instrumented")
+
+	require.Contains(t, uninstrumentedMsg, "known but not instrumented")
+	require.NotContains(t, uninstrumentedMsg, "not a recognised key")
 }
 
 // A mixed request with one good key and one uninstrumented key must 501 as
@@ -239,7 +279,11 @@ func TestKPIsFunnelUnavailableIs503WithNoPartialBody(t *testing.T) {
 	assertNoCounterKeys(t, rec)
 }
 
-func TestKPIsSubscriptionRepositoryErrorIs503WithNoPartialBody(t *testing.T) {
+// A bare subscription-repository (DB) error wraps neither ErrUnavailable
+// sentinel, so per the spec (binding over the brief, which said 503 for
+// every error) it becomes 500 internal_error, not 503: a DB error means our
+// own service is broken, and 503 would misleadingly suggest retrying helps.
+func TestKPIsSubscriptionRepositoryErrorIs500WithNoPartialBody(t *testing.T) {
 	estate := &stubEstateCounts{counts: &estatecounts.Counts{TenantsActive: 1, StoresActive: 1}}
 	funnel := &stubFunnelClient{funnel: &onboardingfunnel.FunnelStats{}}
 	subs := &stubSubscriptions{err: errors.New("db exploded")}
@@ -248,8 +292,42 @@ func TestKPIsSubscriptionRepositoryErrorIs503WithNoPartialBody(t *testing.T) {
 	kpisRouter(t, estate, funnel, subs).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/kpis", nil))
 
-	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
-	require.Equal(t, "upstream_unavailable", errorCode(t, rec))
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, "internal_error", errorCode(t, rec))
+	assertNoCounterKeys(t, rec)
+}
+
+// A non-404 4xx from platform-api (e.g. a wrong shared secret returning
+// 401/403) wraps neither ErrUnavailable sentinel either, so it takes the
+// same 500 branch: our own configuration is broken, and retrying a wrong
+// secret never helps.
+func TestKPIsEstateNon5xxErrorIs500NotServiceUnavailable(t *testing.T) {
+	estate := &stubEstateCounts{err: errors.New("estatecounts: platform-api 401")}
+	funnel := &stubFunnelClient{funnel: &onboardingfunnel.FunnelStats{}}
+	subs := &stubSubscriptions{count: 1}
+
+	rec := httptest.NewRecorder()
+	kpisRouter(t, estate, funnel, subs).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/kpis", nil))
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, "internal_error", errorCode(t, rec))
+	assertNoCounterKeys(t, rec)
+}
+
+// The funnel client's equivalent non-5xx case takes the same 500 branch,
+// covering both upstreams that can produce a non-404 4xx.
+func TestKPIsFunnelNon5xxErrorIs500NotServiceUnavailable(t *testing.T) {
+	estate := &stubEstateCounts{counts: &estatecounts.Counts{TenantsActive: 1, StoresActive: 1}}
+	funnel := &stubFunnelClient{err: errors.New("onboardingfunnel: platform-api 403")}
+	subs := &stubSubscriptions{count: 1}
+
+	rec := httptest.NewRecorder()
+	kpisRouter(t, estate, funnel, subs).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/kpis", nil))
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, "internal_error", errorCode(t, rec))
 	assertNoCounterKeys(t, rec)
 }
 
@@ -275,6 +353,29 @@ func TestKPIsValuesAreRawIntegersNotFloatsOrStrings(t *testing.T) {
 	for name, raw := range body.Data {
 		require.Truef(t, rawIntegerPattern.MatchString(string(raw)),
 			"kpi %q raw value %q is not a bare JSON integer", name, string(raw))
+	}
+}
+
+// A ?keys= value made only of empty/comma segments (e.g. "?keys=,,") must
+// behave exactly like an absent "keys" param: all instrumented keys, not a
+// 501 for an empty-string key and not an empty payload. See the comment on
+// parseKPIKeys for the documented contract this proves.
+func TestKPIsKeysOnlyEmptySegmentsFallsBackToAllInstrumented(t *testing.T) {
+	estate, funnel, subs := kpisFixture()
+
+	rec := httptest.NewRecorder()
+	kpisRouter(t, estate, funnel, subs).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/kpis?keys=,,", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	for name := range wantKPIValue {
+		_, ok := body.Data[name]
+		require.True(t, ok, "instrumented key %q missing when keys=,, falls back to all instrumented keys", name)
 	}
 }
 

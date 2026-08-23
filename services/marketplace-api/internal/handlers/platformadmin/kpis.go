@@ -2,6 +2,7 @@ package platformadmin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -74,7 +75,12 @@ func defaultKPIKeys() []string {
 }
 
 // parseKPIKeys parses ?keys= as a comma-separated list, trimming each.
-// Empty or absent means "all instrumented keys".
+// Empty or absent means "all instrumented keys". Empty segments produced by
+// stray commas (e.g. "?keys=,," or "?keys=a,,b") are dropped rather than
+// looked up — an empty string is never a valid registry key, so keeping it
+// would only ever 501 with a useless empty key name. If dropping empty
+// segments leaves nothing (e.g. "?keys=,,"), that is treated the same as an
+// absent or empty "keys" param: "all instrumented keys".
 func parseKPIKeys(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -149,19 +155,19 @@ func (h *KPIsHandler) kpis(c *gin.Context) {
 
 	counts, err := h.estate.Get(ctx)
 	if err != nil {
-		h.respondUnavailable(c, "estatecounts", err)
+		h.respondErr(c, "estatecounts", err)
 		return
 	}
 
 	funnelStats, err := h.funnel.GetFunnel(ctx, onboardingfunnel.FunnelParams{})
 	if err != nil {
-		h.respondUnavailable(c, "onboardingfunnel", err)
+		h.respondErr(c, "onboardingfunnel", err)
 		return
 	}
 
 	trialsExpiring, err := h.subs.CountTrialsExpiring(ctx, h.db, h.now())
 	if err != nil {
-		h.respondUnavailable(c, "subscription", err)
+		h.respondErr(c, "subscription", err)
 		return
 	}
 
@@ -174,22 +180,61 @@ func (h *KPIsHandler) kpis(c *gin.Context) {
 
 	data := gin.H{}
 	for _, name := range keys {
-		data[name] = values[name]
+		v, ok := values[name]
+		if !ok {
+			// This means the registry lists `name` as Instrumented but the
+			// gather stage above never populated a value for it — a
+			// programming error (a handler left unwired after a registry
+			// change), not a runtime condition like an unreachable
+			// upstream. Silently falling back to Go's zero value here is
+			// exactly the fabricated-KPI failure mode this endpoint exists
+			// to prevent, so we fail loudly instead of emitting a lying 0.
+			if h.logger != nil {
+				h.logger.Error("kpis registry/values mismatch: instrumented key has no gathered value", "key", name)
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "internal_error",
+				"message": fmt.Sprintf("kpi %q is registered as instrumented but has no gathered value", name),
+				"key":     name,
+			})
+			return
+		}
+		data[name] = v
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": data})
 }
 
-// respondUnavailable answers 503 upstream_unavailable. This is the ONLY
-// error path for the gather stage: an estatecounts/onboardingfunnel
-// ErrUnavailable and a bare subscription-repository error are all treated
-// identically, because a partial KPI object is indistinguishable from a
-// complete one — the very failure mode this endpoint exists to close.
-func (h *KPIsHandler) respondUnavailable(c *gin.Context, source string, err error) {
-	if h.logger != nil {
-		h.logger.Error("kpis upstream unavailable", "source", source, "err", err)
+// respondErr maps a gather-stage error to the surface's stable codes,
+// mirroring respondErr in entities_tenants.go so this surface stays
+// internally consistent.
+//
+// estatecounts.ErrUnavailable / onboardingfunnel.ErrUnavailable (transport
+// failure or a 5xx from platform-api) becomes 503 upstream_unavailable:
+// retrying may help once the dependency recovers.
+//
+// Any other error — including a non-404 4xx from platform-api, and a bare
+// subscription-repository (DB) error, neither of which wraps either
+// sentinel — becomes 500 internal_error. A 4xx from platform-api means
+// mark8ly's own configuration is broken (e.g. a wrong shared secret); a DB
+// error means our own service is broken. Neither is something retrying
+// fixes, so 503 would be misleading here. In both outcomes a partial KPI
+// object is never returned — a partial object is indistinguishable from a
+// complete one, the very failure mode this endpoint exists to close.
+func (h *KPIsHandler) respondErr(c *gin.Context, source string, err error) {
+	if errors.Is(err, estatecounts.ErrUnavailable) || errors.Is(err, onboardingfunnel.ErrUnavailable) {
+		if h.logger != nil {
+			h.logger.Error("kpis upstream unavailable", "source", source, "err", err)
+		}
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "upstream_unavailable", "message": "one or more kpi sources is unavailable",
+		})
+		return
 	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{
-		"error": "upstream_unavailable", "message": "one or more kpi sources is unavailable",
+	if h.logger != nil {
+		h.logger.Error("kpis source error", "source", source, "err", err)
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"error": "internal_error", "message": "could not gather one or more kpi sources",
 	})
 }

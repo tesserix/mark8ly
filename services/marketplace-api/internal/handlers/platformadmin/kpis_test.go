@@ -40,13 +40,15 @@ func (s *stubEstateCounts) Get(_ context.Context) (*estatecounts.Counts, error) 
 // stubSubscriptions is a canned subscription.Repository stand-in, narrowed
 // to the one method the kpis handler calls.
 type stubSubscriptions struct {
-	count   int64
-	err     error
-	gotAsOf time.Time
+	count     int64
+	err       error
+	gotAsOf   time.Time
+	gotWindow time.Duration
 }
 
-func (s *stubSubscriptions) CountTrialsExpiring(_ context.Context, _ *gorm.DB, asOf time.Time) (int64, error) {
+func (s *stubSubscriptions) CountExpiring(_ context.Context, _ *gorm.DB, asOf time.Time, window time.Duration) (int64, error) {
 	s.gotAsOf = asOf
+	s.gotWindow = window
 	if s.err != nil {
 		return 0, s.err
 	}
@@ -257,6 +259,35 @@ func TestKPIsOnboardingInFlightMatchesFunnelStubExactly(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, wantInFlight, body.Data.OnboardingInFlight)
 	require.Equal(t, funnel.funnel.InFlight, body.Data.OnboardingInFlight)
+}
+
+// Anti-drift: trials_expiring must equal the count the Subscriptions stub
+// reports, from the SAME distinct, non-zero stub value used to build the
+// stub — so a wiring regression that silently drops the source (and falls
+// back to Go's zero value) fails this test. This handler shipped exactly
+// that fabricated-zero bug once; this pins the wiring against a repeat.
+func TestKPIsTrialsExpiringMatchesSubscriptionsStubExactly(t *testing.T) {
+	const wantTrialsExpiring = int64(23)
+	estate := &stubEstateCounts{counts: &estatecounts.Counts{TenantsActive: 1, StoresActive: 1}}
+	funnel := &stubFunnelClient{funnel: &onboardingfunnel.FunnelStats{
+		FunnelCounts: onboardingfunnel.FunnelCounts{InFlight: 1},
+	}}
+	subs := &stubSubscriptions{count: wantTrialsExpiring}
+
+	rec := httptest.NewRecorder()
+	kpisRouter(t, estate, funnel, subs).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/kpis", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Data struct {
+			TrialsExpiring int64 `json:"trials_expiring"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, wantTrialsExpiring, body.Data.TrialsExpiring)
+	require.Equal(t, subs.count, body.Data.TrialsExpiring)
 }
 
 // counterKeyNames lists every JSON key that could carry a real counter

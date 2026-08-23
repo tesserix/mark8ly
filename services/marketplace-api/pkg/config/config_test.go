@@ -86,3 +86,71 @@ func TestLoad_LoadsShippingCarrierCredentials(t *testing.T) {
 		t.Errorf("NinjaVanVNClientSecret = %q, want nv-vn-secret", cfg.NinjaVanVNClientSecret)
 	}
 }
+
+// prodEnv sets the minimum env for a non-dev Load, then lets the caller
+// override individual vars to assert each fail-closed check in isolation.
+func prodEnv(t *testing.T) {
+	t.Helper()
+	for k, v := range map[string]string{
+		"DATABASE_URL":                     "postgres://x/y",
+		"MARKETPLACE_FGA_API_URL":          "http://openfga:8080",
+		"ENV":                              "prod",
+		"MARKETPLACE_INTERNAL_AUTH_SECRET": "internal-secret",
+		"CUSTOMER_SESSION_SECRET":          "customer-secret",
+		"ENCRYPTION_MODE":                  "aes",
+		"ENCRYPTION_KEY":                   "0123456789abcdef0123456789abcdef",
+	} {
+		t.Setenv(k, v)
+	}
+}
+
+func TestLoad_ProdRequiresInternalAuthSecret(t *testing.T) {
+	prodEnv(t)
+	t.Setenv("MARKETPLACE_INTERNAL_AUTH_SECRET", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with empty MARKETPLACE_INTERNAL_AUTH_SECRET in prod = nil, want error")
+	}
+}
+
+func TestLoad_ProdRequiresCustomerSessionSecret(t *testing.T) {
+	prodEnv(t)
+	t.Setenv("CUSTOMER_SESSION_SECRET", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with empty CUSTOMER_SESSION_SECRET in prod = nil, want error")
+	}
+}
+
+func TestLoad_ProdRejectsNoopEncryption(t *testing.T) {
+	prodEnv(t)
+	t.Setenv("ENCRYPTION_MODE", "noop")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with ENCRYPTION_MODE=noop in prod = nil, want error")
+	}
+}
+
+func TestLoad_ProdRequiresEncryptionKeyForAES(t *testing.T) {
+	prodEnv(t)
+	t.Setenv("ENCRYPTION_KEY", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with ENCRYPTION_MODE=aes and empty ENCRYPTION_KEY = nil, want error")
+	}
+}
+
+func TestLoad_ProdSucceedsWhenFullyConfigured(t *testing.T) {
+	prodEnv(t)
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load() with a complete prod config: %v", err)
+	}
+}
+
+func TestLoad_DevToleratesEmptySecrets(t *testing.T) {
+	prodEnv(t)
+	t.Setenv("ENV", "dev")
+	t.Setenv("MARKETPLACE_INTERNAL_AUTH_SECRET", "")
+	t.Setenv("CUSTOMER_SESSION_SECRET", "")
+	t.Setenv("ENCRYPTION_MODE", "noop")
+	t.Setenv("ENCRYPTION_KEY", "")
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load() in dev with empty secrets: %v", err)
+	}
+}

@@ -63,10 +63,32 @@ func Check(ctx context.Context, raw string, resolver Resolver) (canonical string
 	if resolver == nil {
 		resolver = net.DefaultResolver
 	}
+	if err := checkNotReserved(canonical); err != nil {
+		return "", err
+	}
 	if err := checkExistence(dnsCtx, canonical, resolver); err != nil {
 		return "", err
 	}
 	return canonical, nil
+}
+
+// reservedZones are the apexes the platform itself serves. Ownership is
+// proved by pointing DNS at edge.mark8ly.com, and every name under these
+// zones already resolves to our own ingress — so a merchant could
+// "verify" admin.mark8ly.com or another tenant's storefront without ever
+// controlling it. Claiming one also burns the UNIQUE(domain) slot, which
+// would deny the real owner their name.
+var reservedZones = []string{"mark8ly.com", "mark8ly.dev"}
+
+// checkNotReserved rejects the platform's own zones and anything beneath
+// them. Suffix matching is label-aware so notmark8ly.com stays valid.
+func checkNotReserved(canonical string) error {
+	for _, zone := range reservedZones {
+		if canonical == zone || strings.HasSuffix(canonical, "."+zone) {
+			return fmt.Errorf("%w: %s is reserved by the platform and cannot be added as a custom domain", ErrInvalidDomain, canonical)
+		}
+	}
+	return nil
 }
 
 // checkSyntax normalises and validates the domain shape. Returns the

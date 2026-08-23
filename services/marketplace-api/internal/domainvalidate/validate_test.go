@@ -109,3 +109,41 @@ func TestCheck_Happy(t *testing.T) {
 		t.Fatalf("canonical: %s", got)
 	}
 }
+
+// A merchant must not be able to claim a platform-owned hostname as a
+// custom domain. Verification accepts an A-record overlap with
+// edge.mark8ly.com, and every *.mark8ly.com name resolves to our own
+// ingress — so without this gate the ownership proof is self-satisfying.
+func TestCheck_RejectsPlatformDomains(t *testing.T) {
+	r := stubResolver{ns: []*net.NS{{Host: "ns1.example.com."}}}
+
+	for _, name := range []string{
+		"mark8ly.com",
+		"MARK8LY.COM",
+		"admin.mark8ly.com",
+		"edge.mark8ly.com",
+		"victim-store.mark8ly.com",
+		"victim-store-admin.mark8ly.com",
+		"api.mark8ly.dev",
+		"deep.nested.mark8ly.com.",
+	} {
+		if _, err := Check(context.Background(), name, r); err == nil {
+			t.Errorf("Check(%q) = nil error, want rejection", name)
+		}
+	}
+}
+
+// Names that merely contain the platform label are ordinary domains.
+func TestCheck_AllowsLookalikeDomains(t *testing.T) {
+	r := stubResolver{ns: []*net.NS{{Host: "ns1.example.com."}}}
+
+	for _, name := range []string{
+		"mark8ly.com.evil.io",
+		"notmark8ly.com",
+		"mark8ly.co",
+	} {
+		if _, err := Check(context.Background(), name, r); err != nil {
+			t.Errorf("Check(%q) = %v, want nil", name, err)
+		}
+	}
+}

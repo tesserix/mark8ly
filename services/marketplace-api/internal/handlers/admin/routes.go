@@ -138,14 +138,22 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 	// RequireFeatureByTenant resolves the plan from the tenant's highest active
 	// store subscription rather than a specific store.
 	if deps.SSOConfigHandler != nil {
-		ssoTenant := router.Group("/admin/tenants/:tenantId",
-			authMW,
+		// Authz runs before the plan gate so a non-member learns nothing
+		// about the tenant's subscription. Writes are owner-only: the IdP
+		// config decides who can authenticate into the whole tenant.
+		ssoTenant := router.Group("/admin/tenants/:tenantId", authMW)
+		ssoRead := ssoTenant.Group("",
+			deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
 			plangate.RequireFeatureByTenant(deps.PlanResolver, plangate.FeatureSSO, deps.APIKeysLogger),
 		)
-		ssoTenant.POST("/sso/config", deps.SSOConfigHandler.Upsert)
-		ssoTenant.GET("/sso/config", deps.SSOConfigHandler.Get)
-		ssoTenant.DELETE("/sso/config", deps.SSOConfigHandler.Delete)
-		ssoTenant.POST("/sso/test", deps.SSOConfigHandler.Test)
+		ssoWrite := ssoTenant.Group("",
+			deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
+			plangate.RequireFeatureByTenant(deps.PlanResolver, plangate.FeatureSSO, deps.APIKeysLogger),
+		)
+		ssoRead.GET("/sso/config", deps.SSOConfigHandler.Get)
+		ssoWrite.POST("/sso/config", deps.SSOConfigHandler.Upsert)
+		ssoWrite.DELETE("/sso/config", deps.SSOConfigHandler.Delete)
+		ssoWrite.POST("/sso/test", deps.SSOConfigHandler.Test)
 	}
 
 	// Tenant-wide admin routes — outside of /stores/:storeId because they

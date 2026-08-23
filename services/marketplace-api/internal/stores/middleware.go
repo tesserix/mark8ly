@@ -54,7 +54,9 @@ func StoreMiddleware(cfg MiddlewareConfig) gin.HandlerFunc {
 			return
 		}
 
-		result, refreshErr, _ := cfg.Flight.Do("store:"+storeID, func() (interface{}, error) {
+		// Key by tenant too: a shared key lets a concurrent request from
+		// another tenant piggyback on this refresh and receive its store.
+		result, refreshErr, _ := cfg.Flight.Do("store:"+tid+":"+storeID, func() (interface{}, error) {
 			return refresh(c.Request.Context(), cfg, storeID, tid)
 		})
 

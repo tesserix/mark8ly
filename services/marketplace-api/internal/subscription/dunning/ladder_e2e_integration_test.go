@@ -73,13 +73,17 @@ func TestE2E_FullLadder_PastDueToPendingDelete(t *testing.T) {
 	// --- Step 1: transition active → past_due, backdate to 9 days ago ---
 	nineDaysAgo := time.Now().UTC().Add(-9 * 24 * time.Hour)
 
-	if err := db.Exec(`
+	res := db.Exec(`
 		UPDATE store_subscriptions
 		SET status = ?, updated_at = ?
 		WHERE store_id = ?`,
 		string(subscription.StatusPastDue), nineDaysAgo, storeID,
-	).Error; err != nil {
-		t.Fatalf("set past_due: %v", err)
+	)
+	if res.Error != nil {
+		t.Fatalf("set past_due: %v", res.Error)
+	}
+	if res.RowsAffected != 1 {
+		t.Fatalf("set past_due: expected 1 row updated, got %d — the seeded sub is missing", res.RowsAffected)
 	}
 
 	auditPastDue := audit.Entry{
@@ -113,17 +117,26 @@ func TestE2E_FullLadder_PastDueToPendingDelete(t *testing.T) {
 		t.Fatalf("step 1: expected expired, got %q", afterStep1.Status)
 	}
 
-	// --- Step 3: backdate the expired audit row to 15 days ago, run ladder → store_closed ---
+	// --- Step 3: seed a backdated "entered expired" audit row (15 days ago), run ladder → store_closed ---
+	// The ladder itself never writes this row (nil emitter, see below), so —
+	// same as step 1 — the test seeds it directly rather than mutating a row
+	// that doesn't exist. db.Exec-ing an UPDATE that matches zero rows does
+	// not error, which is exactly what silently broke this step before.
 	fifteenDaysAgo := now.Add(-15 * 24 * time.Hour)
-	if err := db.Exec(`
-		UPDATE audit_logs
-		SET created_at = ?
-		WHERE store_id = ?
-		  AND action = 'subscription.state_transition'
-		  AND metadata->>'to_status' = 'expired'`,
-		fifteenDaysAgo, storeID,
-	).Error; err != nil {
-		t.Fatalf("backdate expired audit: %v", err)
+	auditExpired := audit.Entry{
+		ID:           uuid.New(),
+		TenantID:     tenantID,
+		StoreID:      &storeID,
+		ActorType:    audit.ActorSystem,
+		Action:       "subscription.state_transition",
+		ResourceType: "subscription",
+		Status:       audit.StatusSuccess,
+		Severity:     audit.SeverityWarning,
+		Metadata:     audit.Metadata{"from_status": "past_due", "to_status": "expired"},
+		CreatedAt:    fifteenDaysAgo,
+	}
+	if err := db.Create(&auditExpired).Error; err != nil {
+		t.Fatalf("seed audit expired: %v", err)
 	}
 
 	ladder2 := dunning.NewStepDailyLadder(db, nil, slog.Default(), nil, fixedClock(now))
@@ -139,17 +152,22 @@ func TestE2E_FullLadder_PastDueToPendingDelete(t *testing.T) {
 		t.Fatalf("step 2: expected store_closed, got %q", afterStep2.Status)
 	}
 
-	// --- Step 4: backdate the store_closed audit row to 91 days ago, run ladder → pending_hard_delete ---
+	// --- Step 4: seed a backdated "entered store_closed" audit row (91 days ago), run ladder → pending_hard_delete ---
 	ninetyOneDaysAgo := now.Add(-91 * 24 * time.Hour)
-	if err := db.Exec(`
-		UPDATE audit_logs
-		SET created_at = ?
-		WHERE store_id = ?
-		  AND action = 'subscription.state_transition'
-		  AND metadata->>'to_status' = 'store_closed'`,
-		ninetyOneDaysAgo, storeID,
-	).Error; err != nil {
-		t.Fatalf("backdate store_closed audit: %v", err)
+	auditStoreClosed := audit.Entry{
+		ID:           uuid.New(),
+		TenantID:     tenantID,
+		StoreID:      &storeID,
+		ActorType:    audit.ActorSystem,
+		Action:       "subscription.state_transition",
+		ResourceType: "subscription",
+		Status:       audit.StatusSuccess,
+		Severity:     audit.SeverityWarning,
+		Metadata:     audit.Metadata{"from_status": "expired", "to_status": "store_closed"},
+		CreatedAt:    ninetyOneDaysAgo,
+	}
+	if err := db.Create(&auditStoreClosed).Error; err != nil {
+		t.Fatalf("seed audit store_closed: %v", err)
 	}
 
 	ladder3 := dunning.NewStepDailyLadder(db, nil, slog.Default(), nil, fixedClock(now))

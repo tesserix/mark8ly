@@ -2,6 +2,7 @@
 package config
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -239,6 +240,19 @@ type Config struct {
 	PushOIDCServiceAccount string `envconfig:"PUSH_OIDC_SERVICE_ACCOUNT" default:""`
 }
 
+// Fail-closed boot errors. Each names a setting whose empty value disables a
+// control rather than breaking a feature, so an unset var must stop the boot.
+var (
+	ErrInternalAuthSecretRequired = errors.New(
+		"marketplace config: MARKETPLACE_INTERNAL_AUTH_SECRET must be set when ENV != \"dev\" (HeaderTrustAuth gates the whole admin surface)")
+	ErrCustomerSessionSecretRequired = errors.New(
+		"marketplace config: CUSTOMER_SESSION_SECRET must be set when ENV != \"dev\" (HMAC key for storefront customer sessions)")
+	ErrEncryptionModeRequired = errors.New(
+		"marketplace config: ENCRYPTION_MODE must be \"aes\" when ENV != \"dev\" (noop stores merchant provider secrets as base64)")
+	ErrEncryptionKeyRequired = errors.New(
+		"marketplace config: ENCRYPTION_KEY must be set when ENCRYPTION_MODE=aes")
+)
+
 // Load reads .env (if present) and binds environment variables into Config.
 func Load() (*Config, error) {
 	_ = godotenv.Load() // .env is optional
@@ -267,6 +281,36 @@ func Load() (*Config, error) {
 	// with "invalid header field value".
 	cfg.SendGridAPIKey = strings.TrimSpace(cfg.SendGridAPIKey)
 	cfg.ResendAPIKey = strings.TrimSpace(cfg.ResendAPIKey)
+	cfg.CustomerSessionSecret = strings.TrimSpace(cfg.CustomerSessionSecret)
+	cfg.EncryptionKey = strings.TrimSpace(cfg.EncryptionKey)
+	cfg.EncryptionMode = strings.ToLower(strings.TrimSpace(cfg.EncryptionMode))
+
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	return &cfg, nil
+}
+
+// Validate refuses to boot outside dev when a security-critical setting is
+// missing. Every one of these silently degrades to "no protection" when
+// empty, so an unset env var would ship an open service rather than a
+// broken one — the failure mode we can least afford to discover in prod.
+func (c *Config) Validate() error {
+	if c.Env == "dev" {
+		return nil
+	}
+	if c.InternalAuthSecret == "" {
+		return ErrInternalAuthSecretRequired
+	}
+	if c.CustomerSessionSecret == "" {
+		return ErrCustomerSessionSecretRequired
+	}
+	if c.EncryptionMode != "aes" {
+		return ErrEncryptionModeRequired
+	}
+	if c.EncryptionKey == "" {
+		return ErrEncryptionKeyRequired
+	}
+	return nil
 }

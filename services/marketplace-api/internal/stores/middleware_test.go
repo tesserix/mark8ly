@@ -351,3 +351,104 @@ func TestMiddleware_SingleflightCoalescing(t *testing.T) {
 		t.Fatalf("singleflight: client calls got %d want 1", got)
 	}
 }
+
+// tenantScopedClient always returns a store owned by ownerTenant, whatever
+// tenant asks for it, and blocks inside GetStore until release is closed so a
+// second request has a window to join the singleflight.
+type tenantScopedClient struct {
+	ownerTenant string
+	entered     chan struct{}
+	release     chan struct{}
+	calls       atomic.Int64
+	once        sync.Once
+}
+
+func (c *tenantScopedClient) GetStore(_ context.Context, _, storeID string) (*stores.Store, error) {
+	c.calls.Add(1)
+	c.once.Do(func() {
+		close(c.entered)
+		<-c.release
+	})
+	s := newFixtureStore(time.Now())
+	s.ID = storeID
+	s.TenantID = c.ownerTenant
+	return s, nil
+}
+
+func (c *tenantScopedClient) GetStoreBySlug(_ context.Context, _ string) (*stores.Store, error) {
+	return nil, stores.ErrPlatformUnavailable
+}
+
+func buildRouterForTenant(cfg stores.MiddlewareConfig, p *probe, tenantID string, onEntry func()) *gin.Engine {
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("tenant_id", tenantID)
+		if onEntry != nil {
+			onEntry()
+		}
+	})
+	r.GET("/stores/:storeId", stores.StoreMiddleware(cfg), func(c *gin.Context) {
+		p.reached = true
+		if v, ok := c.Get("store"); ok {
+			p.store, _ = v.(*stores.Store)
+		}
+		c.String(http.StatusOK, "ok")
+	})
+	return r
+}
+
+// A concurrent request from another tenant must not piggyback on the
+// singleflight refresh of the owning tenant and receive its store.
+func TestStoreMiddleware_ConcurrentRefreshIsTenantScoped(t *testing.T) {
+	const otherTenantID = "33333333-3333-3333-3333-333333333333"
+
+	client := &tenantScopedClient{
+		ownerTenant: testTenantID,
+		entered:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	flight := &singleflight.Group{}
+
+	ownerProbe := &probe{}
+	ownerCfg := baseCfg(newFakeRepo(), client)
+	ownerCfg.Flight = flight
+	ownerRouter := buildRouterForTenant(ownerCfg, ownerProbe, testTenantID, nil)
+
+	otherProbe := &probe{}
+	otherCfg := baseCfg(newFakeRepo(), client)
+	otherCfg.Flight = flight
+	otherEntered := make(chan struct{})
+	otherRouter := buildRouterForTenant(otherCfg, otherProbe, otherTenantID, func() {
+		close(otherEntered)
+	})
+
+	ownerDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() { ownerDone <- doRequest(ownerRouter) }()
+
+	<-client.entered
+
+	otherDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() { otherDone <- doRequest(otherRouter) }()
+
+	<-otherEntered
+	// Give the second request time to reach Flight.Do before the first
+	// refresh completes; without it the singleflight window never opens.
+	time.Sleep(50 * time.Millisecond)
+	close(client.release)
+
+	ownerRes := <-ownerDone
+	otherRes := <-otherDone
+
+	if ownerRes.Code != http.StatusOK {
+		t.Fatalf("owning tenant: got %d, want 200", ownerRes.Code)
+	}
+	if otherRes.Code != http.StatusNotFound {
+		t.Fatalf("foreign tenant: got %d, want 404", otherRes.Code)
+	}
+	if otherProbe.reached {
+		t.Fatal("foreign tenant reached the handler")
+	}
+	if got := client.calls.Load(); got != 2 {
+		t.Fatalf("platform client calls = %d, want 2 (one per tenant)", got)
+	}
+}

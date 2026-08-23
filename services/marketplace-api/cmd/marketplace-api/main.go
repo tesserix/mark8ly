@@ -13,7 +13,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -1977,10 +1976,7 @@ func main() {
 		if stripeBillingWebhookHandler != nil {
 			r.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
 		}
-		srv = &http.Server{
-			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
-			Handler: r,
-		}
+		srv = newHTTPServer(cfg.HTTPPort, r)
 	case mode.Admin, mode.Storefront:
 		e := httpserver.New(cfg.Env, m, log)
 		engine := e.Admin
@@ -2087,10 +2083,7 @@ func main() {
 			internalsvc.NewStoreActiveDomainHandler(conn).
 				Register(engine.Group("/internal"), cfg.AuditIngestSecret)
 		}
-		srv = &http.Server{
-			Addr:    fmt.Sprintf(":%d", cfg.HTTPPort),
-			Handler: engine,
-		}
+		srv = newHTTPServer(cfg.HTTPPort, engine)
 	}
 
 	// Start the server in a goroutine so we can signal-handle on the main.

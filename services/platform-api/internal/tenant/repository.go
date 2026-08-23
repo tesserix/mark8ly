@@ -55,6 +55,11 @@ type Repository interface {
 	// automatically and are not touched here. Returns apperrors.NotFound if
 	// the tenant does not exist. Must run inside the caller's transaction.
 	DeleteInTx(ctx context.Context, tx *gorm.DB, tenantID string) error
+	// ListDirectory returns a page of the platform-wide tenant directory.
+	// NOT caller-scoped — this is the platform operator's view. See #277.
+	ListDirectory(ctx context.Context, f DirectoryFilter) (DirectoryResult, error)
+	// GetWithStores returns a tenant plus its store rollup in one query.
+	GetWithStores(ctx context.Context, id string) (*TenantWithStores, error)
 }
 
 // gormRepository is the GORM-backed implementation.

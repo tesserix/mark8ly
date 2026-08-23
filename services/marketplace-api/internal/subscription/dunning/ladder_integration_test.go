@@ -22,6 +22,7 @@ func TestLadder_PastDue_TransitionsToExpired(t *testing.T) {
 
 	storeID := uuid.New()
 	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 	eighteenDaysAgo := time.Now().UTC().Add(-18 * 24 * time.Hour)
 
 	sub := subscription.StoreSubscription{
@@ -62,6 +63,7 @@ func TestLadder_PastDue_InRefundWindow_NotAdvanced(t *testing.T) {
 
 	storeID := uuid.New()
 	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 	thirtyDaysAgo := time.Now().UTC().Add(-30 * 24 * time.Hour)
 	sevenDaysAgo := time.Now().UTC().Add(-7 * 24 * time.Hour)
 

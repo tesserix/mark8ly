@@ -2,6 +2,7 @@ package dunning
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -193,7 +194,12 @@ func (s *StepDailyLadder) transition(ctx context.Context, tx *gorm.DB, fresh *su
 // Note: the audit emitter stores "to_status" (not "to_state") per
 // audit.EmitStateTransition's metadata keys.
 func statusEnteredAt(ctx context.Context, tx *gorm.DB, storeID any, status subscription.SubscriptionStatus, fallback time.Time) (time.Time, error) {
-	var enteredAt *time.Time
+	// sql.NullTime, not *time.Time: MAX() over zero matching rows returns a
+	// single NULL row rather than no rows, and a plain *time.Time (a
+	// **time.Time destination once you take its address) cannot Scan a SQL
+	// NULL — the driver errors instead of leaving it nil. NullTime is the
+	// only way to let the "no audit row yet" case reach the fallback below.
+	var enteredAt sql.NullTime
 	err := tx.WithContext(ctx).
 		Raw(`
 			SELECT MAX(created_at)
@@ -206,8 +212,8 @@ func statusEnteredAt(ctx context.Context, tx *gorm.DB, storeID any, status subsc
 	if err != nil {
 		return fallback, err
 	}
-	if enteredAt == nil {
+	if !enteredAt.Valid {
 		return fallback, nil
 	}
-	return *enteredAt, nil
+	return enteredAt.Time, nil
 }

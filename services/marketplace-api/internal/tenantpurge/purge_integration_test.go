@@ -76,8 +76,8 @@ func seedTenant(t *testing.T, db *gorm.DB, tenantID string) seededTenant {
 	}
 
 	// stores (group 6 root)
-	exec(`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status)
-	      VALUES (?, ?, ?, 'Seed Store', 'US', 'USD', 'UTC', 'active')`,
+	exec(`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, storefront_customer_portal_secret)
+	      VALUES (?, ?, ?, 'Seed Store', 'US', 'USD', 'UTC', 'active', encode(gen_random_bytes(32), 'hex'))`,
 		s.storeID, s.tenantID, "seed-store-"+s.storeID[:8])
 
 	// group 6 — CASCADE-swept config table (proves stores CASCADE reaches it)
@@ -162,7 +162,13 @@ func TestIntegration_Purge_DeletesTenantLeavesGlobalAndOtherTenantIntact(t *test
 
 	// Ensure at least one row exists in a global table so we can assert it
 	// survives the purge untouched.
-	if err := db.Exec(`INSERT INTO fx_rates (currency, usd_mid_rate, source) VALUES ('SEED', 1.0, 'test') ON CONFLICT (currency) DO NOTHING`).Error; err != nil {
+	//
+	// XTS is the ISO 4217 code officially reserved for testing purposes
+	// (no real currency will ever use it), and fx_rates.currency is
+	// character(3), so it must stay exactly 3 characters — do not swap
+	// this for 'USD' or any other real code, that would risk colliding
+	// with a currency another test cares about.
+	if err := db.Exec(`INSERT INTO fx_rates (currency, usd_mid_rate, source) VALUES ('XTS', 1.0, 'test') ON CONFLICT (currency) DO NOTHING`).Error; err != nil {
 		t.Fatalf("seed fx_rates: %v", err)
 	}
 
@@ -187,7 +193,7 @@ func TestIntegration_Purge_DeletesTenantLeavesGlobalAndOtherTenantIntact(t *test
 
 	// global table untouched.
 	var fxCount int64
-	if err := db.Raw(`SELECT count(*) FROM fx_rates WHERE currency = 'SEED'`).Scan(&fxCount).Error; err != nil {
+	if err := db.Raw(`SELECT count(*) FROM fx_rates WHERE currency = 'XTS'`).Scan(&fxCount).Error; err != nil {
 		t.Fatalf("count fx_rates: %v", err)
 	}
 	if fxCount != 1 {

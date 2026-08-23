@@ -51,14 +51,27 @@ test-int: ## Run integration tests against the running `make dev` stack
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/auth_bff?sslmode=disable' \
 	  go test -tags=integration ./...
 	@echo "▶ marketplace-api integration"
-	@# Scoped to ./internal/audit/... and ./internal/handlers/platformadmin/...
-	@# (not ./...): internal/subscription/dunning has 16 integration tests that
-	@# fail on a pre-existing missing "stores" seed row gap in the local stack
-	@# (unrelated to this task — parked/escalated separately). Once that seed
-	@# gap is closed, widen this target to ./...
+	@# -p 1: these share one local Postgres, and parallel package execution
+	@# exhausts its connection limit ("sorry, too many clients already").
+	@#
+	@# Scoped to the packages whose fixtures are currently correct, NOT ./... —
+	@# the rest fail on schema drift: migrations added NOT NULL columns and FKs
+	@# without updating test fixtures (products.vendor_id, store_subscriptions'
+	@# store FK, stores.storefront_customer_portal_secret, an apikeys varchar(60)
+	@# overflow, orderrefund cleanup deadlocks, and a nil-Repo panic in
+	@# whitelabel/lifecycle). Tracked separately.
+	@#
+	@# Widen this one package at a time as each cluster is fixed. A permanently
+	@# red target is worse than a narrow green one: this suite was dark long
+	@# enough to hide a production dunning bug (see the sql.NullTime fix in
+	@# internal/subscription/dunning/ladder.go).
 	@cd services/marketplace-api && \
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable' \
-	  go test -tags=integration ./internal/audit/... ./internal/handlers/platformadmin/...
+	  go test -tags=integration -p 1 \
+	    ./internal/audit/... \
+	    ./internal/handlers/platformadmin/... \
+	    ./internal/tenantpurge/... \
+	    ./internal/subscription/dunning/...
 
 cover: ## Coverage report for both Go services
 	@cd services/platform-api && go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -5

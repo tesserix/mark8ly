@@ -39,6 +39,7 @@ func TestSCAReminders_SendsAtT14T7T1(t *testing.T) {
 	for _, o := range offsets {
 		storeID := uuid.New()
 		tenantID := uuid.New()
+		seedStore(t, db, tenantID, storeID)
 		sub := subscription.StoreSubscription{
 			ID:               uuid.New(),
 			TenantID:         tenantID,
@@ -89,6 +90,7 @@ func TestSCAReminders_Idempotent_OnConflict(t *testing.T) {
 	hostedURL := "https://invoice.stripe.com/i/idempotency-test"
 	storeID := uuid.New()
 	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 	fourteenDaysAgo := now.AddDate(0, 0, -14)
 
 	sub := subscription.StoreSubscription{
@@ -148,6 +150,7 @@ func TestSCAReminders_SkipsSubsWithoutHostedInvoiceURL(t *testing.T) {
 	now := time.Now().UTC()
 	storeID := uuid.New()
 	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 	fourteenDaysAgo := now.AddDate(0, 0, -14)
 
 	sub := subscription.StoreSubscription{

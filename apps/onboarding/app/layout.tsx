@@ -24,11 +24,13 @@ const sourceSerif = Source_Serif_4({
    overrides these defaults.
    ============================================================ */
 
-const SITE_URL = "https://mark8ly.com";
-const SITE_NAME = "Mark8ly";
-const SITE_TAGLINE = "Quiet commerce for people who make things";
-const SITE_DESCRIPTION =
-  "A modern editorial commerce platform for independent merchants. Launch your store in an afternoon, keep every sale, and look considered from day one.";
+import {
+  SITE_DESCRIPTION,
+  SITE_JSON_LD,
+  SITE_NAME,
+  SITE_TAGLINE,
+  SITE_URL,
+} from "@/lib/seo/site-json-ld";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -100,53 +102,6 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-/* ============================================================
-   JSON-LD structured data. Two graphs injected as a single
-   script tag so Google + LLM crawlers can pick up the
-   organization + website in one pass.
-   ============================================================ */
-
-const jsonLd = {
-  "@context": "https://schema.org",
-  "@graph": [
-    {
-      "@type": "Organization",
-      "@id": `${SITE_URL}#organization`,
-      name: SITE_NAME,
-      legalName: "Tesserix",
-      url: SITE_URL,
-      // A square mark, not the 1200×630 social card. Google's
-      // Organization logo guidance wants a logo image it can crop to
-      // a square; handing it the OG banner gets the logo dropped from
-      // knowledge-panel and AI-answer attribution.
-      logo: `${SITE_URL}/icon-192.png`,
-      description: SITE_DESCRIPTION,
-      email: "hello@mark8ly.com",
-      sameAs: [
-        "https://twitter.com/mark8ly",
-        "https://instagram.com/mark8ly",
-        "https://linkedin.com/company/mark8ly",
-      ],
-      // Tesserix is an Australian entity. No specific locality
-      // is emitted here until the legal registration address is
-      // confirmed — fabricating a city to fill the schema shape is
-      // worse than a narrower-but-accurate address.
-      address: {
-        "@type": "PostalAddress",
-        addressCountry: "AU",
-      },
-    },
-    {
-      "@type": "WebSite",
-      "@id": `${SITE_URL}#website`,
-      url: SITE_URL,
-      name: SITE_NAME,
-      description: SITE_TAGLINE,
-      publisher: { "@id": `${SITE_URL}#organization` },
-      inLanguage: "en",
-    },
-  ],
-};
 
 interface RootLayoutProps {
   children: ReactNode;
@@ -161,7 +116,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <head>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          dangerouslySetInnerHTML={{ __html: SITE_JSON_LD }}
         />
       </head>
       <body>

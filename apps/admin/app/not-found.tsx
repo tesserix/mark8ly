@@ -1,5 +1,9 @@
 import Link from "next/link";
 
+// Rendered per request so Next can stamp the CSP nonce onto its
+// script tags; a prerendered 404 would have them blocked.
+export const dynamic = "force-dynamic";
+
 export default function NotFound() {
   return (
     <div className="grid min-h-screen grid-rows-[1fr_auto] bg-[color:var(--background)]">

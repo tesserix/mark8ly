@@ -22,26 +22,10 @@ const nextConfig: NextConfig = {
             key: "Strict-Transport-Security",
             value: "max-age=31536000; includeSubDomains",
           },
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              // accounts.google.com hosts the GSI client script used by
-              // /auth/google (customer Google sign-in trampoline).
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client https://analytics.tesserix.app",
-              "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
-              "img-src 'self' data: blob: https:",
-              "font-src 'self' data:",
-              "connect-src 'self' https: wss:",
-              "frame-ancestors 'self'",
-              // GSI renders the button + One-Tap UI inside an iframe served
-              // from accounts.google.com/gsi/.
-              "frame-src 'self' https://accounts.google.com/gsi/",
-              "object-src 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join("; "),
-          },
+          // Content-Security-Policy is issued by middleware: the
+          // credential routes get a per-request nonce, which a static
+          // header cannot carry. Two CSP headers would be intersected,
+          // so it must not also live here.
           { key: "Permissions-Policy", value: "geolocation=(), microphone=(), camera=()" },
         ],
       },

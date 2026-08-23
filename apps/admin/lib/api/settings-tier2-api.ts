@@ -297,6 +297,9 @@ export interface CustomDomain {
   domain: string;
   dns_method: DNSMethod;
   cname_target?: string | null;
+  /** TXT ownership proof, returned only while it is still outstanding. */
+  challenge_host?: string | null;
+  challenge_value?: string | null;
   status: "pending" | "verifying" | "active" | "error" | "removing";
   ssl_status: "pending" | "active" | "error";
   verified_at: string | null;

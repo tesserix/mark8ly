@@ -21,6 +21,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { buildCsp } from "../security/csp";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
@@ -58,13 +59,16 @@ function externalScriptHosts(): string[] {
   return [...hosts];
 }
 
+/**
+ * Reads the directive actually emitted, so the guard cannot drift on how
+ * lib/security/csp.ts happens to quote or interpolate it.
+ */
 function scriptSrcDirective(): string {
-  const config = readFileSync(path.join(APP_ROOT, "next.config.ts"), "utf8");
-  const line = config
-    .split("\n")
-    .find((l) => l.includes('"script-src'));
-  if (!line) throw new Error("script-src directive not found in next.config.ts");
-  return line;
+  const directive = buildCsp("test-nonce")
+    .split("; ")
+    .find((d) => d.startsWith("script-src "));
+  if (!directive) throw new Error("script-src directive not found in the CSP");
+  return directive;
 }
 
 /** Mirrors the CSP host-matching rule: exact host, or a *.domain wildcard. */
@@ -87,7 +91,7 @@ describe("CSP script-src covers every external script the app loads", () => {
   it.each(externalScriptHosts())("allows %s", (host) => {
     expect(
       isAllowed(host, scriptSrcDirective()),
-      `${host} is loaded by the app but missing from script-src in next.config.ts — ` +
+      `${host} is loaded by the app but missing from script-src in lib/security/csp.ts — ` +
         `it will be blocked in the browser and the feature will fail silently in prod.`,
     ).toBe(true);
   });

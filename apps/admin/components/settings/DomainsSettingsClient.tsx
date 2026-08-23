@@ -122,7 +122,7 @@ function AddDomainForm() {
         toast.success(
           "Domain added",
           method === "manual"
-            ? "Follow the CNAME instructions, then click Verify."
+            ? "Follow the DNS instructions, then click Verify."
             : "API token securely stored. We're provisioning the DNS record on Cloudflare — this can take a minute.",
         );
         setDomain("");
@@ -503,19 +503,33 @@ function DomainCard({
         </div>
       )}
 
-      {/* Manual DNS instructions — TWO CNAMEs required:
-          1. Main routing CNAME (points requests to our cluster)
-          2. ACME challenge CNAME (delegates SSL cert issuance to us) */}
+      {/* Manual DNS instructions: TXT ownership proof, routing record,
+          ACME delegation, and the optional admin subdomain. */}
       {d.dns_method === "manual" && d.cname_target && (
         <div className="mt-4 rounded-md border border-border bg-background p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-foreground-secondary">
-            DNS setup — add both records
+            DNS setup — add these records
           </p>
 
-          {/* Record 1: routing — two options depending on domain type */}
+          {d.challenge_host && d.challenge_value && (
+            <div className="mt-3 space-y-2 border-l-2 border-[color:var(--moss-700)]/40 pl-3">
+              <p className="text-xs font-medium text-foreground">
+                1. Prove you own this domain
+              </p>
+              <DnsRecord label="Type" value="TXT" />
+              <DnsRecord label="Name" value={d.challenge_host} copyable />
+              <DnsRecord label="Value" value={d.challenge_value} copyable />
+              <p className="text-xs text-foreground-tertiary">
+                Only someone with access to your DNS can publish this, which is
+                how we know the domain is yours. You can delete it after verification.
+              </p>
+            </div>
+          )}
+
+          {/* Routing — two options depending on domain type */}
           <div className="mt-3 space-y-3 border-l-2 border-[color:var(--moss-700)]/40 pl-3">
             <p className="text-xs font-medium text-foreground">
-              1. Route traffic to your storefront
+              2. Route traffic to your storefront
             </p>
             <p className="text-xs text-foreground-secondary">
               Pick ONE: Option A (simpler, works for apex / subdomains) or Option B (cleaner if your DNS supports CNAME here).
@@ -546,7 +560,7 @@ function DomainCard({
           {/* Record 2: ACME delegation */}
           <div className="mt-4 space-y-2 border-l-2 border-[color:var(--moss-700)]/40 pl-3">
             <p className="text-xs font-medium text-foreground">
-              2. Delegate SSL certificate issuance
+              3. Delegate SSL certificate issuance
             </p>
             <DnsRecord label="Type" value="CNAME" />
             <DnsRecord label="Name" value={`_acme-challenge.${d.domain}`} copyable />
@@ -559,7 +573,7 @@ function DomainCard({
           {/* Record 3 (optional): admin subdomain routing */}
           <div className="mt-4 space-y-2 border-l-2 border-[color:var(--moss-700)]/40 pl-3">
             <p className="text-xs font-medium text-foreground">
-              3. Admin panel subdomain (optional)
+              4. Admin panel subdomain (optional)
             </p>
             <p className="text-xs text-foreground-secondary">
               Adds <code>admin.{d.domain}</code> as a branded URL for your admin dashboard. Skip if you&apos;re happy using the default admin URL.
@@ -570,7 +584,7 @@ function DomainCard({
           </div>
 
           <p className="mt-4 text-xs text-foreground-tertiary">
-            DNS changes can take up to 48 hours to propagate. Click &quot;Verify&quot; once both records are live.
+            DNS changes can take up to 48 hours to propagate. Click &quot;Verify&quot; once the records are live.
           </p>
           <p className="mt-2 text-xs text-foreground-tertiary">
             Tip: check propagation with{" "}
@@ -661,6 +675,9 @@ function errorHint(error: string): string {
   const lower = error.toLowerCase();
   if (lower.includes("cname record not found") || lower.includes("no such host")) {
     return "We couldn't find any CNAME record at your domain. Add the CNAME shown above at your DNS provider, then try Verify again.";
+  }
+  if (lower.includes("ownership not proven")) {
+    return "Add the TXT record shown above at your DNS provider. It proves the domain is yours, and routing alone isn't enough.";
   }
   if (lower.includes("points to") && lower.includes("expected")) {
     return "A record exists but isn't pointing to our target. Most likely you added an A record instead of a CNAME, or the CNAME points somewhere else. Replace it with the exact CNAME shown above.";

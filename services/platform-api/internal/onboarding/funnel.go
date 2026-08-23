@@ -29,8 +29,8 @@ const AbandonedAfter = 24 * time.Hour
 // changes the query, since there is only one place the cutoff is written.
 //
 // asOfExpr is the SQL expression to evaluate "now" against — normally the
-// literal "now()", but a test can pass a bound parameter placeholder (see
-// FunnelFilter.AsOf) to pin the evaluation instant exactly.
+// literal "now()", but a test can pin the evaluation instant exactly (see
+// FunnelFilter.AsOf) by rendering an inline timestamptz literal instead.
 func abandonedExpr(asOfExpr string) string {
 	return fmt.Sprintf(
 		"(onboarding_sessions.status <> 'completed' AND onboarding_sessions.last_activity_at <= %s - make_interval(hours => %d))",
@@ -109,9 +109,31 @@ type FunnelCounts struct {
 	Abandoned     int64 `json:"abandoned"`
 }
 
+// FunnelWindow is the effective [from, to] window GetFunnel computed the
+// counters over, echoed back so the console can render what it actually
+// got rather than what it thinks it asked for.
+type FunnelWindow struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// formatWindowBound renders one FunnelFilter window bound the way
+// GetFunnel actually treats it: a zero time.Time means the caller supplied
+// no bound and applyFunnelWindow adds no constraint on that side, so the
+// effective bound is "unbounded" — rendered here as "", not a computed
+// default timestamp. A non-zero bound is exactly the value GetFunnel
+// filtered on, RFC3339 in UTC.
+func formatWindowBound(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
 // FunnelStats is the full funnel response: the windowed counts, the
-// median completion time within that window, and a Last24h count that
-// always covers the trailing 24 hours regardless of the requested window.
+// median completion time within that window, a Last24h count that always
+// covers the trailing 24 hours regardless of the requested window, and the
+// effective Window those counts were computed over.
 type FunnelStats struct {
 	FunnelCounts
 	// MedianCompletionSeconds is nil when no session in the window
@@ -119,6 +141,7 @@ type FunnelStats struct {
 	// silently become 0 ("instant completion").
 	MedianCompletionSeconds *float64     `json:"median_completion_seconds"`
 	Last24h                 FunnelCounts `json:"last_24h"`
+	Window                  FunnelWindow `json:"window"`
 }
 
 // SessionRow is one row of the onboarding sessions list, with Abandoned
@@ -211,7 +234,7 @@ func (r *gormRepository) GetFunnel(ctx context.Context, f FunnelFilter) (*Funnel
 
 	var last24h funnelAggregateRow
 	err = r.db.WithContext(ctx).Table("onboarding_sessions").
-		Where(fmt.Sprintf("created_at > %s - INTERVAL '24 hours'", asOf)).
+		Where(fmt.Sprintf("created_at > %s - INTERVAL '24 hours' AND created_at <= %s", asOf, asOf)).
 		Select(
 			"COUNT(*) AS started",
 			"COUNT(*) FILTER (WHERE email_verified_at IS NOT NULL) AS email_verified",
@@ -238,6 +261,10 @@ func (r *gormRepository) GetFunnel(ctx context.Context, f FunnelFilter) (*Funnel
 			Completed:     last24h.Completed,
 			InFlight:      last24h.InFlight,
 			Abandoned:     last24h.Abandoned,
+		},
+		Window: FunnelWindow{
+			From: formatWindowBound(f.CreatedFrom),
+			To:   formatWindowBound(f.CreatedTo),
 		},
 	}, nil
 }

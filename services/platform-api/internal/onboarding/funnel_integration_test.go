@@ -245,6 +245,17 @@ func TestIntegration_Funnel_Partition(t *testing.T) {
 // TestIntegration_Funnel_CrossEndpointAgreement proves the funnel's
 // abandoned count and ListSessions' abandoned-flagged row count agree over
 // the same window — the point of sharing one predicate.
+//
+// The fixture deliberately includes a session idle ~24.5h — squarely in
+// the 24-25h band. Without a row in that band, GetFunnel's abandoned
+// predicate (built from AbandonedAfter == 24h) and a hand-copied 25h
+// predicate in ListSessions would classify every fixture identically and
+// this test would pass even with the two predicates drifted apart, which
+// is exactly what happened once: a reviewer hand-copied a 25h interval
+// into ListSessions while GetFunnel kept 24h, and this test still passed
+// because the old fixtures idled at 5h/40h/30h/completed — nowhere near
+// the 24-25h band the drift moves. See task-4-report.md for the mutation
+// that proves this row closes the gap.
 func TestIntegration_Funnel_CrossEndpointAgreement(t *testing.T) {
 	repo, db := setupFunnelTest(t)
 	ctx := context.Background()
@@ -253,6 +264,7 @@ func TestIntegration_Funnel_CrossEndpointAgreement(t *testing.T) {
 	seedInFlightOrAbandoned(t, repo, "x-inflight@cross.local", StatusInProgress, now.Add(-5*time.Hour), now.Add(-5*time.Hour))
 	seedInFlightOrAbandoned(t, repo, "x-abandoned-1@cross.local", StatusInProgress, now.Add(-40*time.Hour), now.Add(-40*time.Hour))
 	seedInFlightOrAbandoned(t, repo, "x-abandoned-2@cross.local", StatusVerifying, now.Add(-90*time.Hour), now.Add(-30*time.Hour))
+	seedInFlightOrAbandoned(t, repo, "x-abandoned-3-band@cross.local", StatusInProgress, now.Add(-24*time.Hour-30*time.Minute), now.Add(-24*time.Hour-30*time.Minute))
 	seedCompletedSession(t, repo, db, "x-completed@cross.local", now.Add(-6*time.Hour), 15)
 
 	filter := FunnelFilter{
@@ -400,6 +412,58 @@ func TestIntegration_Funnel_WindowExcludesOutsideSessions(t *testing.T) {
 	}
 }
 
+// TestIntegration_Funnel_WindowKeyReflectsEffectiveBounds proves GetFunnel
+// populates the "window" field with the effective bounds it actually
+// filtered on, RFC3339 in UTC — the field platform-api's real upstream
+// response was missing entirely (marketplace-api's client, wire type and
+// golden fixture all assumed it existed, but nothing populated it, so the
+// console would always have received {"from":"","to":""} in production).
+//
+// Also pins the no-bounds case: when the caller supplies neither
+// CreatedFrom nor CreatedTo, GetFunnel applies no window constraint at
+// all (applyFunnelWindow adds nothing), so the effective bound on that
+// side is "unbounded" and Window renders "" for it — not a computed
+// default timestamp. That is the existing behaviour, described here
+// truthfully rather than inventing new defaulting.
+func TestIntegration_Funnel_WindowKeyReflectsEffectiveBounds(t *testing.T) {
+	repo, _ := setupFunnelTest(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	seedInFlightOrAbandoned(t, repo, "window-key@window.local", StatusInProgress, now.Add(-1*time.Hour), now.Add(-1*time.Hour))
+
+	from := now.Add(-48 * time.Hour)
+	to := now.Add(time.Hour)
+
+	stats, err := repo.GetFunnel(ctx, FunnelFilter{
+		CreatedFrom: from,
+		CreatedTo:   to,
+	})
+	if err != nil {
+		t.Fatalf("GetFunnel: %v", err)
+	}
+	if got, want := stats.Window.From, from.UTC().Format(time.RFC3339); got != want {
+		t.Errorf("Window.From = %q, want %q", got, want)
+	}
+	if got, want := stats.Window.To, to.UTC().Format(time.RFC3339); got != want {
+		t.Errorf("Window.To = %q, want %q", got, want)
+	}
+
+	// No bounds supplied at all: the effective window is unbounded on
+	// both sides, and the field must say so rather than fabricate a
+	// default.
+	unboundedStats, err := repo.GetFunnel(ctx, FunnelFilter{})
+	if err != nil {
+		t.Fatalf("GetFunnel (unbounded): %v", err)
+	}
+	if unboundedStats.Window.From != "" {
+		t.Errorf("Window.From = %q with no CreatedFrom supplied, want \"\"", unboundedStats.Window.From)
+	}
+	if unboundedStats.Window.To != "" {
+		t.Errorf("Window.To = %q with no CreatedTo supplied, want \"\"", unboundedStats.Window.To)
+	}
+}
+
 // TestIntegration_Funnel_Last24hIgnoresWindow verifies last_24h is always
 // computed over the trailing 24h regardless of the requested window — with
 // a window entirely in the past, last_24h.started still counts a session
@@ -428,6 +492,61 @@ func TestIntegration_Funnel_Last24hIgnoresWindow(t *testing.T) {
 	}
 	if stats.Last24h.Started < 1 {
 		t.Errorf("Last24h.Started = %d, want >= 1 (the session created 5 minutes ago)", stats.Last24h.Started)
+	}
+}
+
+// TestIntegration_Funnel_Last24hPinnedToAsOf proves last_24h is computed
+// relative to FunnelFilter.AsOf, not an independently-evaluated now() —
+// the same defect class fc8b4198 fixed for idle_hours, in the last_24h
+// clock instead. Before this test, replacing the shared asOf - INTERVAL
+// '24 hours' expression with a literal now() in GetFunnel's last_24h query
+// survived the entire suite, because every other last_24h assertion used
+// real wall-clock fixtures where a leaked now() looks identical to the
+// pinned AsOf.
+//
+// AsOf is pinned 10 days in the past — clearly historical, and far enough
+// from real time.Now() that every fixture below sits nowhere near a real
+// trailing-24h window. That distance is deliberate: it is what makes the
+// primary assertion (Last24h.Started == 1) actually discriminate against a
+// mutated, independently-evaluated now() rather than passing by
+// coincidence. A 6h-in-the-past AsOf was tried first and rejected — a
+// fixture placed just after such a near AsOf can still land inside the
+// real last-24-real-hours window, so a now()-mutation would count it too
+// and the test would pass either way.
+//
+// Also pins the upper bound: last_24h had no created_at <= asOf clause,
+// so with AsOf pinned in the past a session created between AsOf and the
+// real now() (i.e. "in the future" relative to AsOf) would still be
+// counted. That session must NOT appear in Last24h.Started.
+func TestIntegration_Funnel_Last24hPinnedToAsOf(t *testing.T) {
+	repo, _ := setupFunnelTest(t)
+	ctx := context.Background()
+	asOf := time.Now().Add(-10 * 24 * time.Hour)
+
+	// Within the trailing 24h of asOf: must count. Correct impl: yes
+	// (asOf-23h is within (asOf-24h, asOf]). Mutated impl (real now()):
+	// no — asOf-23h is ~10 days before real now(), nowhere near it.
+	seedInFlightOrAbandoned(t, repo, "within-24h-of-asof@last24hpin.local", StatusInProgress,
+		asOf.Add(-23*time.Hour), asOf.Add(-23*time.Hour))
+	// More than 24h before asOf: must not count under either impl.
+	seedInFlightOrAbandoned(t, repo, "before-24h-of-asof@last24hpin.local", StatusInProgress,
+		asOf.Add(-25*time.Hour), asOf.Add(-25*time.Hour))
+	// Created after asOf (but ~10 days before real now()): must not count
+	// under either impl — this pins the missing-upper-bound nit
+	// independently of the now()-mutation this test is primarily for.
+	seedInFlightOrAbandoned(t, repo, "after-asof@last24hpin.local", StatusInProgress,
+		asOf.Add(1*time.Hour), asOf.Add(1*time.Hour))
+
+	stats, err := repo.GetFunnel(ctx, FunnelFilter{
+		CreatedFrom: asOf.Add(-72 * time.Hour),
+		CreatedTo:   asOf.Add(72 * time.Hour),
+		AsOf:        asOf,
+	})
+	if err != nil {
+		t.Fatalf("GetFunnel: %v", err)
+	}
+	if stats.Last24h.Started != 1 {
+		t.Errorf("Last24h.Started = %d, want 1 (only the session within 24h before AsOf)", stats.Last24h.Started)
 	}
 }
 

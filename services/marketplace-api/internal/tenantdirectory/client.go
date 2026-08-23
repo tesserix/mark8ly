@@ -188,3 +188,21 @@ func (c *Client) Get(ctx context.Context, id string) (*TenantDetail, error) {
 	}
 	return &envelope.Data, nil
 }
+
+// FindByOwnerEmail returns the tenant owned by the given email.
+//
+// ErrNotFound means no tenant owns it — a definite answer, and the caller
+// MUST turn it into a 200 "none" rather than propagating a 404. See #279:
+// a 404 on the wire is indistinguishable from a route that does not exist,
+// so it can never carry "not converted".
+func (c *Client) FindByOwnerEmail(ctx context.Context, email string) (*Tenant, error) {
+	var envelope struct {
+		Data Tenant `json:"data"`
+	}
+	q := url.Values{}
+	q.Set("email", email)
+	if err := c.do(ctx, "/internal/tenants/by-owner-email?"+q.Encode(), &envelope); err != nil {
+		return nil, err
+	}
+	return &envelope.Data, nil
+}

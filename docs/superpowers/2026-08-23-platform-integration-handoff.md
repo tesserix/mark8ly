@@ -15,10 +15,25 @@ cross-database reads** of mark8ly's data onto mark8ly's own HTTP surface. Umbrel
 issue: **#260**. Each endpoint is its own issue.
 
 **Delivered and live in production:** #274 (front door), #275 (auth), #276
-(`/admin/audit-logs`), #277 (`/admin/entities/tenants`).
+(`/admin/audit-logs`), #277 (`/admin/entities/tenants`), #279 (`/admin/conversions`),
+#283 (`/admin/onboarding/funnel` + `/sessions`), #282 (`/admin/kpis`).
 
-**Open in the milestone:** #278–#290, plus #319 (OpenBao credentials, a different
-concern grouped in).
+**Open in the milestone:** #281, #284, #285, #286, #287, #288, #289, plus the blocked
+#278/#280/#290, plus #319 (OpenBao credentials, a different concern grouped in).
+
+**Reusable pieces the next endpoint inherits**, beyond the surface itself:
+
+| package | what it gives you |
+|---|---|
+| `marketplace-api/internal/tenantdirectory` | tenant list/detail/by-owner-email from platform-api |
+| `marketplace-api/internal/onboardingfunnel` | funnel counters + session rows |
+| `marketplace-api/internal/estatecounts` | active tenant/store counts |
+| `platform-api` `strictInternal` group | the fail-closed internal mount (`cmd/server/main.go`) |
+| `subscription.TrialExpiryHorizon` | the shared 7-day "expiring" window — **#285 must reuse it** |
+
+All three clients share one shape (a `do` helper, a `maxBody` cap, `X-Internal-Auth`,
+and an `ErrUnavailable` that must never be conflated with an empty result). Copy the
+nearest one rather than inventing a fourth.
 
 ## Read these first
 
@@ -68,7 +83,7 @@ rows.
   the console because `tenantRow` is a projection. A passthrough leaks every field
   added upstream, silently
 
-## Five traps that each cost real time
+## Six traps that each cost real time
 
 1. **`/api/v1/admin/*` is JWT-gated at the mesh.** An Istio `AuthorizationPolicy`
    (`require-customer-auth`, namespace `istio-ingress`, repo `tesserix-k8s`) denies
@@ -94,6 +109,36 @@ rows.
 5. **`-p 1` on integration runs.** The packages share one local Postgres; parallel
    execution exhausts its connection limit (`FATAL: sorry, too many clients already`)
    and presents as data pollution. It is not.
+6. **The fixture that sits *beside* the property instead of *on* it.** This one hit
+   **seven times across three branches** and was never once caught by reading a diff —
+   only by mutation. The shape is always the same: the assertion names a property, but
+   the test data contains no case where a wrong implementation would give a different
+   answer.
+
+   | what was claimed | the fixture | why it proved nothing |
+   |---|---|---|
+   | exactly 24h idle is abandoned | Go's `now` vs Postgres `now()` | sub-second gap, inside tolerance |
+   | `idle_hours` shares `abandoned`'s instant | `asOf = time.Now()` | shared and independent clocks coincide |
+   | `last_24h` is pinned to `asOf` | a 6h-past `asOf` | still inside the 24h window measured |
+   | the two abandoned predicates are shared | idles of 5h/40h/30h | nothing in the 24–25h band the drift moves |
+   | the trial window is half-open left | `asOf - 1h` | excluded under both `>` and `>=` |
+   | the two 501 messages differ | two *different* keys | interpolation made them differ regardless |
+   | active counts exclude non-active | only `active` + `suspended` seeded | a third status, `archived`, was never tested |
+
+   Two rules that would have caught all seven:
+   - **A test must fail if the property it names is deleted.** If the assertion would
+     still pass with the behaviour removed, it is testing something else. Check by
+     removing it, not by reading it.
+   - **Put the fixture on the exact value where the candidate implementations
+     disagree** — the boundary instant itself, every value of an enum the filter
+     discriminates on, the same key in both messages. "Close to the edge" is not the
+     edge, and an offset that looks historical can still sit inside the window being
+     measured (6 hours did; 10 days was needed).
+
+   Corollary seen twice: **asserting presence when the value is what matters.** A
+   payload assembled by map lookup returns the zero value for a missing key, so a
+   test that checks a key exists passes on a fabricated `0`. Give each stub a
+   distinct non-zero value and assert the values.
 
 ## Environment
 
@@ -149,20 +194,36 @@ Two failure modes seen more than once:
 
 Reads before writes; **#288 (purge) last** — it is irreversible.
 
-Good next candidates: **#283** (onboarding funnel — needs the same `tenantdirectory`
-client shape, scoped so extending is additive) or **#279** (conversions — smallest,
-and its `404`-means-nothing semantics are already specified precisely on the issue).
+Good next candidate: **#285** (expiring trials with dunning state) — `subscription.
+TrialExpiryHorizon` and `CountTrialsExpiring` already exist with pinned semantics, so
+the definition of "expiring" is settled and only the listing plus dunning state is new.
+Note that `subscriptions.store_id` is unique, so trials are **per store, not per
+tenant**; decide explicitly whether the view lists per store or rolls up, because the
+two produce different numbers from identical data.
 
 **#284** carries an open design question the issue itself flags: subscriptions are
 per-store and plans are Go descriptors rather than DB rows, so a cross-tenant view may
 need a projection. Say so on the issue if it does, rather than guessing.
 
+**Write endpoints** (#281, #286, #287, #288) all need `EmitOperatorAction` — see trap
+3. #287 additionally needs trap 2 checked before you touch routing.
+
 ## Known follow-ups outside the milestone
 
-#311 (store-less audit rows unprunable — decided: never pruned, needs the guard made
-deliberate), #312 (gateway policy documentation), #316/#317 (integration fixture drift
-across 17+ packages), #318 (`audit.NewEmitter` accepts a nil `Repo` and panics a
-worker goroutine).
+- **#322** — `onboarding` declares `StatusAbandoned`/`StatusExpired` and its package
+  doc claims a gc, but nothing writes either value and no gc exists. #283 derives
+  abandoned from idle time because of this. Fix the doc at minimum.
+- **#323** — neither service's `main.go` wiring is verified by any test; deleting a
+  wiring site builds clean and passes everything. Confirmed across all three features
+  in this series. The fix is extracting the wiring into a testable function, which
+  also touches shipped code.
+- **#311** (store-less audit rows unprunable — decided: never pruned, needs the guard
+  made deliberate), **#312** (gateway policy documentation), **#316/#317** (integration
+  fixture drift; #317 covers the `store_subscriptions_store_id_fkey` failures you will
+  see in `internal/subscription` — pre-existing, scope your runs with `-run`),
+  **#318** (`audit.NewEmitter` accepts a nil `Repo` and panics a worker goroutine).
+- **Local toolchain drift:** vet/LSP report `go.work requires go >= 1.26.6 (running
+  go 1.26.5)`. Pre-existing, harmless to tests, noisy in diagnostics.
 
 ---
 

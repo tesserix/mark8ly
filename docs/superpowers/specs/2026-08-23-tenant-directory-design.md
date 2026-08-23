@@ -13,7 +13,7 @@ enrichment today.
 
 **In scope**
 
-- `GET /internal/tenants` and `/internal/tenants/:id` in `platform-api`
+- `GET /internal/tenants` and `/internal/tenants/:id/detail` in `platform-api`
 - Client methods in `marketplace-api`
 - `GET /admin/entities/tenants` and `/{id}` on the `platformadmin` surface
 
@@ -87,7 +87,7 @@ surface (#275), same reasoning, one guard.
 console ──signed──> marketplace-api                    platform-api
                      platformadmin/entities_tenants.go
                        └── tenantdirectory client ───> GET /internal/tenants
-                                                       GET /internal/tenants/:id
+                                                       GET /internal/tenants/:id/detail
                                                          └── tenant + store rollup
 ```
 
@@ -104,26 +104,36 @@ Three units, each with one responsibility:
 Query: `q`, `status`, `created_from`, `created_to`, `page`, `limit`.
 
 - `q` — case-insensitive partial match across `tenants.name`,
-  `tenants.owner_email`, and `stores.slug` (join, distinct)
+  `tenants.owner_email`, and `stores.slug` (`EXISTS` subquery against `stores`,
+  not a join). A join duplicates a tenant with two matching stores, forcing a
+  `DISTINCT` that has to be threaded through the count query too; `EXISTS`
+  says "this tenant qualifies" without ever producing more than one row per
+  tenant.
 - `status` — exact, from the existing `tenant.Status*` constants. No second
   vocabulary.
 - `created_from` / `created_to` — inclusive bounds on `tenants.created_at`
 - Ordering: `created_at DESC`
 - **No caller-scoping.** This is the platform view, not "tenants I belong to".
 
-### `GET /internal/tenants/:id`
+### `GET /internal/tenants/:id/detail`
 
 Tenant plus a store rollup: count, and `{id, slug, name, status}` per store.
+`/detail`, not `/:id` — `Handler.Register` already owns `GET /internal/tenants/:id`
+with a different response shape and a live auth-bff caller, so the directory
+detail route needs a distinct path.
 
 **One grouped query, not N+1.** The issue calls this out explicitly ("Detail
 returns stores without a round trip per store").
 
 ### Registration
 
-On the existing `internal` group in `cmd/server/main.go:340`, via
-`tenantHandler.Register(v1, internal)` — the pattern already in place.
-
-The fail-closed guard wraps these two routes only.
+On a second group on the same `/internal` prefix, guarded by
+`middleware.RequireInternalAuthStrict` (`cmd/server/main.go:347`), via
+`tenantHandler.RegisterDirectory(tenantDirectory)`. This is deliberately not
+the existing permissive `internal` group (`cmd/server/main.go:340`) that
+`tenantHandler.Register(v1, internal)` mounts on — the fail-closed guard has
+to apply to these two routes only, and the existing group no-ops when its
+secret is unset.
 
 ## Component: the client
 
@@ -194,8 +204,10 @@ and what a caller would misread as "no tenants".
   reading of the issue would have missed
 - Status and created-range filters
 - Pagination: `total` is the unpaginated count
-- Rollup issues one query, not N+1 — assert via query count or logged SQL, not
-  by reading the code
+- Rollup issues one query, not N+1 — no test was written for this; the check
+  was satisfied by reading the code (`GetWithStores` in
+  `internal/tenant/directory.go`). Outstanding gap: a regression that
+  reintroduces a per-store round trip would not be caught by the suite.
 - A tenant with no stores returns `store_count: 0` and an empty list
 - **No caller-scoping**: a tenant the caller has no membership in still appears
 - **Fail-closed**: unset secret refuses; the other `/internal` routes still

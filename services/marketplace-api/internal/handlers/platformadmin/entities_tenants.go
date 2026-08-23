@@ -20,6 +20,7 @@ import (
 type TenantDirectory interface {
 	List(ctx context.Context, p tenantdirectory.ListParams) (*tenantdirectory.ListResult, error)
 	Get(ctx context.Context, id string) (*tenantdirectory.TenantDetail, error)
+	FindByOwnerEmail(ctx context.Context, email string) (*tenantdirectory.Tenant, error)
 }
 
 // EntitiesTenantsHandler serves the platform console's tenant directory

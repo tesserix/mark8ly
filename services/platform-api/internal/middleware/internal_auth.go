@@ -41,6 +41,40 @@ func RequireInternalAuth(secret string) gin.HandlerFunc {
 	}
 }
 
+// RequireInternalAuthStrict is RequireInternalAuth without the empty-secret
+// escape hatch: an unset secret refuses every request with 503 rather than
+// letting it through.
+//
+// Use this for internal routes whose response is not already scoped by
+// something the caller had to know. RequireInternalAuth's permissive branch
+// is fine for /internal/tenants/{id}/members — a caller needs a tenant id to
+// ask. It is not fine for the tenant DIRECTORY (#277), which returns every
+// tenant on the platform, unscoped: an unconfigured deploy would serve the
+// whole thing to anyone who reached the pod.
+//
+// Deliberately a second function rather than a flag on the first. The
+// existing routes' behaviour must not change, and a boolean at every call
+// site is easy to get backwards.
+func RequireInternalAuthStrict(secret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if secret == "" {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"error":   "not_configured",
+				"message": "internal auth secret is not configured",
+			})
+			return
+		}
+		if !constantTimeEqual(c.GetHeader("X-Internal-Auth"), secret) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error":   "unauthorized",
+				"message": "internal auth required",
+			})
+			return
+		}
+		c.Next()
+	}
+}
+
 func constantTimeEqual(got, want string) bool {
 	if got == "" || want == "" {
 		return false

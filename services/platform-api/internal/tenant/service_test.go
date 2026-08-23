@@ -101,6 +101,21 @@ func (f *fakeRepo) DeleteInTx(ctx context.Context, tx *gorm.DB, tenantID string)
 	return nil
 }
 
+// ListDirectory and GetWithStores are not exercised by these service-level
+// unit tests (covered by directory_integration_test.go against a real DB);
+// these stubs exist only to satisfy the Repository interface.
+func (f *fakeRepo) ListDirectory(ctx context.Context, filter DirectoryFilter) (DirectoryResult, error) {
+	return DirectoryResult{Tenants: []Tenant{}}, nil
+}
+
+func (f *fakeRepo) GetWithStores(ctx context.Context, id string) (*TenantWithStores, error) {
+	t, err := f.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &TenantWithStores{Tenant: *t, Stores: []StoreSummary{}}, nil
+}
+
 func (f *fakeRepo) UpdateEditable(ctx context.Context, id string, patch map[string]any) (*Tenant, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

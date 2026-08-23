@@ -112,6 +112,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription/planchange"
 	"github.com/mark8ly/marketplace-api/internal/subscription/readonly"
 	"github.com/mark8ly/marketplace-api/internal/teamproxy"
+	"github.com/mark8ly/marketplace-api/internal/tenantdirectory"
 	"github.com/mark8ly/marketplace-api/internal/tenantpurge"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/userprofile"
@@ -1913,11 +1914,17 @@ func main() {
 		healthHandler.Register(r)
 		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
 		admin.RegisterAdminMobile(r.Group("/api/v1"), mobileDeps)
+		var tenantDirectoryClient platformadmin.TenantDirectory
+		if cfg.PlatformAPIURL != "" {
+			tenantDirectoryClient = tenantdirectory.NewClient(
+				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+		}
 		platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
-			DB:     conn,
-			Repo:   auditRepo,
-			Logger: log,
-			Secret: cfg.PlatformAdminSecret,
+			DB:              conn,
+			Repo:            auditRepo,
+			Logger:          log,
+			Secret:          cfg.PlatformAdminSecret,
+			TenantDirectory: tenantDirectoryClient,
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -1993,11 +2000,17 @@ func main() {
 		if m == mode.Admin {
 			admin.RegisterAdmin(engine.Group("/api/v1"), adminDeps)
 			admin.RegisterAdminMobile(engine.Group("/api/v1"), mobileDeps)
+			var tenantDirectoryClient platformadmin.TenantDirectory
+			if cfg.PlatformAPIURL != "" {
+				tenantDirectoryClient = tenantdirectory.NewClient(
+					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+			}
 			platformadmin.Register(engine.Group("/api/v1/platform"), platformadmin.Deps{
-				DB:     conn,
-				Repo:   auditRepo,
-				Logger: log,
-				Secret: cfg.PlatformAdminSecret,
+				DB:              conn,
+				Repo:            auditRepo,
+				Logger:          log,
+				Secret:          cfg.PlatformAdminSecret,
+				TenantDirectory: tenantDirectoryClient,
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

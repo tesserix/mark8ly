@@ -176,5 +176,20 @@ func (s *Service) Update(ctx context.Context, id string, in UpdateInput) (*Tenan
 	return s.repo.UpdateEditable(ctx, id, patch)
 }
 
+// ListDirectory returns a page of the platform-wide tenant directory (#277).
+// Deliberately not caller-scoped — see DirectoryFilter doc comment.
+func (s *Service) ListDirectory(ctx context.Context, f DirectoryFilter) (DirectoryResult, error) {
+	return s.repo.ListDirectory(ctx, f)
+}
+
+// GetWithStores returns a tenant plus its store rollup (#277).
+func (s *Service) GetWithStores(ctx context.Context, id string) (*TenantWithStores, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, apperrors.BadRequest("invalid_tenant_id", "tenant id is required")
+	}
+	return s.repo.GetWithStores(ctx, id)
+}
+
 // Phase Q: GetBySlug, IsSlugAvailable, validateSlug and slugPattern
 // moved to the store package — slug is a store-level identifier now.

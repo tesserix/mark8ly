@@ -2,6 +2,9 @@ package tenant
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -227,6 +230,95 @@ func (h *Handler) getTenant(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": t})
+}
+
+// RegisterDirectory mounts the platform-wide tenant directory (#277) on the
+// supplied group. The CALLER is responsible for gating it — main.go wraps it
+// in middleware.RequireInternalAuthStrict, because these routes return every
+// tenant on the platform and must not be reachable on an unconfigured deploy.
+//
+// Deliberately separate from Register: those routes are caller-scoped or
+// id-scoped and keep the permissive auth branch.
+func (h *Handler) RegisterDirectory(g *gin.RouterGroup) {
+	t := g.Group("/tenants")
+	{
+		t.GET("", h.listDirectory)
+		// /detail, not /:id — the internal group already serves GET
+		// /tenants/:id with a different shape, and the admin BFF calls it.
+		t.GET("/:id/detail", h.getTenantDetail)
+	}
+}
+
+func (h *Handler) listDirectory(c *gin.Context) {
+	f := parseDirectoryFilter(c)
+
+	res, err := h.svc.ListDirectory(c.Request.Context(), f)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	if res.Tenants == nil {
+		res.Tenants = []Tenant{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": res.Tenants,
+		"pagination": gin.H{
+			"page":  max(f.Page, 1),
+			"limit": f.Limit,
+			"total": res.Total,
+		},
+	})
+}
+
+func (h *Handler) getTenantDetail(c *gin.Context) {
+	t, err := h.svc.GetWithStores(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": t})
+}
+
+// parseDirectoryFilter never returns an error. A missing or malformed
+// parameter takes the default; an oversized limit clamps. The console is
+// entitled to ask for too much, and a ceiling here is the backstop.
+func parseDirectoryFilter(c *gin.Context) DirectoryFilter {
+	f := DirectoryFilter{
+		Q:      strings.TrimSpace(c.Query("q")),
+		Status: strings.TrimSpace(c.Query("status")),
+		Page:   1,
+		Limit:  DefaultDirectoryPageSize,
+	}
+	if v := strings.TrimSpace(c.Query("page")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			f.Page = n
+		}
+	}
+	if v := strings.TrimSpace(c.Query("limit")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			f.Limit = min(n, MaxDirectoryPageSize)
+		}
+	}
+	if t, ok := parseRFC3339(c.Query("created_from")); ok {
+		f.CreatedFrom = t
+	}
+	if t, ok := parseRFC3339(c.Query("created_to")); ok {
+		f.CreatedTo = t
+	}
+	return f
+}
+
+func parseRFC3339(v string) (time.Time, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
 }
 
 func respondError(c *gin.Context, err error) {

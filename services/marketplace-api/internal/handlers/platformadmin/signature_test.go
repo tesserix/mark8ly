@@ -17,7 +17,7 @@ import (
 func TestCanonicalStringIsExact(t *testing.T) {
 	in := platformadmin.SignatureInput{
 		Method:     "get",
-		Path:       "/api/v1/admin/audit-logs",
+		Path:       "/api/v1/platform/admin/audit-logs",
 		RawQuery:   "since_hours=720&limit=200",
 		Body:       nil,
 		Timestamp:  "1755859200",
@@ -33,7 +33,7 @@ func TestCanonicalStringIsExact(t *testing.T) {
 	const emptyBodyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 	want := "GET\n" +
-		"/api/v1/admin/audit-logs\n" +
+		"/api/v1/platform/admin/audit-logs\n" +
 		"limit=200&since_hours=720\n" +
 		emptyBodyHash + "\n" +
 		"1755859200\n" +
@@ -58,7 +58,7 @@ func TestCanonicalQueryEmpty(t *testing.T) {
 
 func TestVerifyAcceptsOwnSignature(t *testing.T) {
 	in := platformadmin.SignatureInput{
-		Method: "POST", Path: "/api/v1/admin/tenants/t1/suspend",
+		Method: "POST", Path: "/api/v1/platform/admin/tenants/t1/suspend",
 		Body:      []byte(`{"reason_code":"fraud"}`),
 		Timestamp: "1755859200", Nonce: "n1",
 		Operator: "op_7f3a", Capability: "tenant.suspend",
@@ -76,7 +76,7 @@ func TestVerifyAcceptsOwnSignature(t *testing.T) {
 // does not is a component an attacker can swap after signing.
 func TestVerifyRejectsTampering(t *testing.T) {
 	base := platformadmin.SignatureInput{
-		Method: "POST", Path: "/api/v1/admin/tenants/t1/suspend",
+		Method: "POST", Path: "/api/v1/platform/admin/tenants/t1/suspend",
 		Body:      []byte(`{"reason_code":"fraud"}`),
 		Timestamp: "1755859200", Nonce: "n1",
 		Operator: "op_7f3a", Capability: "tenant.suspend",
@@ -86,7 +86,7 @@ func TestVerifyRejectsTampering(t *testing.T) {
 
 	tampered := map[string]func(*platformadmin.SignatureInput){
 		"method":     func(i *platformadmin.SignatureInput) { i.Method = "GET" },
-		"path":       func(i *platformadmin.SignatureInput) { i.Path = "/api/v1/admin/tenants/t2/suspend" },
+		"path":       func(i *platformadmin.SignatureInput) { i.Path = "/api/v1/platform/admin/tenants/t2/suspend" },
 		"query":      func(i *platformadmin.SignatureInput) { i.RawQuery = "force=true" },
 		"body":       func(i *platformadmin.SignatureInput) { i.Body = []byte(`{"reason_code":"other"}`) },
 		"timestamp":  func(i *platformadmin.SignatureInput) { i.Timestamp = "1755859999" },

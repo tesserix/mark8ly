@@ -17,13 +17,13 @@ func TestRegisterMountsBehindAuthAndFailsClosed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	platformadmin.Register(r.Group("/api/v1"), platformadmin.Deps{
+	platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
 		Repo:   &stubRepo{},
 		Secret: "",
 	})
 
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/admin/audit-logs", nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/platform/admin/audit-logs", nil))
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Equal(t, "not_configured", errorCode(t, rec))
@@ -36,10 +36,10 @@ func TestRegisterIsNilSafe(t *testing.T) {
 
 	r := gin.New()
 	require.NotPanics(t, func() {
-		platformadmin.Register(r.Group("/api/v1"), platformadmin.Deps{})
+		platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{})
 	})
 
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/admin/audit-logs", nil))
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/platform/admin/audit-logs", nil))
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }

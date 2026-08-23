@@ -179,3 +179,23 @@ func TestListSendsIDs(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, gotQuery, "ids=a%2Cb")
 }
+
+// TestListOmitsIDsWhenEmpty is the negative counterpart to TestListSendsIDs:
+// an empty (or nil) ListParams.IDs must never put "ids=" on the wire.
+// Symmetric with how Q/Status are conditionally set. An "ids=" reaching the
+// server hits its own guard, but the client should never emit it in the
+// first place.
+func TestListOmitsIDsWhenEmpty(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"limit":50,"total":0}}`))
+	}))
+	defer srv.Close()
+
+	c := tenantdirectory.NewClient(srv.URL, "s", srv.Client())
+	_, err := c.List(context.Background(), tenantdirectory.ListParams{})
+	require.NoError(t, err)
+	require.NotContains(t, gotQuery, "ids=")
+}

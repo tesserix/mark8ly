@@ -94,6 +94,81 @@ func TestDirectoryList_GarbageParamsDoNotError(t *testing.T) {
 	require.Equal(t, 1, repo.got.Page)
 }
 
+// TestDirectoryList_ParsesIDs asserts a comma-separated ids query param is
+// split and trimmed into DirectoryFilter.IDs (#285's batch lookup).
+func TestDirectoryList_ParsesIDs(t *testing.T) {
+	repo := &stubDirRepo{}
+	rec := httptest.NewRecorder()
+	dirRouter(t, repo).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/tenants?ids=a,b", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []string{"a", "b"}, repo.got.IDs)
+}
+
+// TestDirectoryList_AllEmptySegmentsIDsIsAbsent is the handler-level
+// counterpart to applyDirectoryFilter's len() guard: "?ids=,," must never
+// reach the repository as an empty (non-nil) slice, because an empty slice
+// becomes "IN ()" in the query and silently returns zero tenants for the
+// live /admin/entities/tenants estate view. A mutation that emits an empty
+// slice here instead of leaving IDs unset must fail this test.
+func TestDirectoryList_AllEmptySegmentsIDsIsAbsent(t *testing.T) {
+	repo := &stubDirRepo{result: DirectoryResult{Tenants: []Tenant{{ID: "t1"}}, Total: 1}}
+	rec := httptest.NewRecorder()
+	dirRouter(t, repo).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/tenants?ids=,,", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Nil(t, repo.got.IDs)
+
+	var body struct {
+		Data []Tenant `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+}
+
+// TestDirectoryList_BlankIDsIsAbsent asserts a present-but-blank "ids="
+// behaves the same as the parameter being absent entirely.
+func TestDirectoryList_BlankIDsIsAbsent(t *testing.T) {
+	repo := &stubDirRepo{}
+	rec := httptest.NewRecorder()
+	dirRouter(t, repo).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/tenants?ids=", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Nil(t, repo.got.IDs)
+}
+
+// TestDirectoryList_WhitespaceIDsAreTrimmed asserts individual ids are
+// trimmed of surrounding whitespace before reaching the filter.
+func TestDirectoryList_WhitespaceIDsAreTrimmed(t *testing.T) {
+	repo := &stubDirRepo{}
+	rec := httptest.NewRecorder()
+	dirRouter(t, repo).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/tenants?ids=%20a%20,%20b%20", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []string{"a", "b"}, repo.got.IDs)
+}
+
+// TestDirectoryList_NoIDsParamIsAbsent asserts the no-ids-at-all case:
+// IDs stays empty and the full directory is returned.
+func TestDirectoryList_NoIDsParamIsAbsent(t *testing.T) {
+	repo := &stubDirRepo{result: DirectoryResult{Tenants: []Tenant{{ID: "t1"}}, Total: 1}}
+	rec := httptest.NewRecorder()
+	dirRouter(t, repo).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tenants", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Nil(t, repo.got.IDs)
+
+	var body struct {
+		Data []Tenant `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+}
+
 func TestDirectoryList_EmptyIsArrayNotNull(t *testing.T) {
 	repo := &stubDirRepo{result: DirectoryResult{Tenants: nil, Total: 0}}
 	rec := httptest.NewRecorder()

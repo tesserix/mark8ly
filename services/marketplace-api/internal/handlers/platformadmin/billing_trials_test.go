@@ -410,6 +410,75 @@ func TestKPIsTrialsExpiringMatchesBillingTrialsPaginationTotal(t *testing.T) {
 		"kpis trials_expiring and billing-trials pagination.total must agree at the default window")
 }
 
+// TestBillingTrialsDaysRemainingUsesQueryInstantNotWallClock guards against
+// days_remaining being computed from a fresh time.Now() rather than the
+// same asOf instant used for the query (the mutation this project has
+// already shipped once for kpis.go's `now`). This is deliberately NOT a
+// golden-fixture assertion: billingTrialsFixtureAsOf is a fixed calendar
+// instant, so a mutation to time.Now() only fails the golden test while the
+// wall clock happens to land in the narrow window that reproduces the same
+// days_remaining values — that window drifts and eventually closes. Here
+// asOf is captured as time.Now() plus a 500-day offset at the moment the
+// test runs, so the gap between asOf and whatever time.Now() the mutation
+// reads back is always ~500 days, never day-granularity-close, on any
+// calendar date this test executes.
+func TestBillingTrialsDaysRemainingUsesQueryInstantNotWallClock(t *testing.T) {
+	const offset = 500 * 24 * time.Hour
+	asOf := time.Now().Add(offset)
+	trialEndsAt := asOf.Add(3 * 24 * time.Hour)
+
+	rows := []trial.ExpiringRow{
+		{TenantID: "t-1", StoreID: "s-1", TrialEndsAt: trialEndsAt, Plan: "trial", Period: "monthly", Status: "trialing"},
+	}
+	trials := &stubTrialLister{rows: rows, total: 1}
+	dir := &stubBillingDirectory{}
+
+	rec := httptest.NewRecorder()
+	billingTrialsRouterAt(t, trials, dir, asOf).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/billing/trials", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Data []struct {
+			DaysRemaining int `json:"days_remaining"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+	require.Equal(t, 3, body.Data[0].DaysRemaining,
+		"days_remaining must be computed from the query's asOf instant, not a fresh time.Now()")
+}
+
+// TestBillingTrialsDaysRemainingFloorsAtZero covers daysRemaining's d <= 0
+// branch: a trial ending at or before asOf must report 0, never a negative
+// number.
+func TestBillingTrialsDaysRemainingFloorsAtZero(t *testing.T) {
+	asOf := billingTrialsFixtureAsOf
+	rows := []trial.ExpiringRow{
+		{TenantID: "t-1", StoreID: "s-1", TrialEndsAt: asOf, Plan: "trial", Period: "monthly", Status: "trialing"},
+		{TenantID: "t-2", StoreID: "s-2", TrialEndsAt: asOf.Add(-2 * time.Hour), Plan: "trial", Period: "monthly", Status: "trialing"},
+	}
+	trials := &stubTrialLister{rows: rows, total: 2}
+	dir := &stubBillingDirectory{}
+
+	rec := httptest.NewRecorder()
+	billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/billing/trials", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Data []struct {
+			DaysRemaining int `json:"days_remaining"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Data, 2)
+	require.Equal(t, 0, body.Data[0].DaysRemaining, "trial ending exactly at asOf must report 0, not negative")
+	require.Equal(t, 0, body.Data[1].DaysRemaining, "trial ended before asOf must floor at 0, not negative")
+}
+
 // sharedTrialsFixture implements both platformadmin.TrialLister (for the
 // billing-trials endpoint) and platformadmin.Subscriptions (for the kpis
 // endpoint) over the SAME row slice, so the cross-endpoint invariant test

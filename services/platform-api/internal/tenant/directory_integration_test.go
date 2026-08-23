@@ -28,7 +28,7 @@ func seedTenantWithStore(t *testing.T, db *gorm.DB, name, ownerEmail, status, sl
 		require.NoError(t, db.Exec(
 			`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), tenantID, slug, name+" Store", "IE", "EUR", "Europe/Dublin", "active",
+			uuid.NewString(), tenantID, slug, name+" Store", "GB", "GBP", "Europe/London", "active",
 		).Error)
 	}
 	return tenantID
@@ -77,7 +77,7 @@ func TestListDirectory_DeduplicatesAcrossStores(t *testing.T) {
 	require.NoError(t, db.Exec(
 		`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), id, "multi-two", "Second", "IE", "EUR", "Europe/Dublin", "active",
+		uuid.NewString(), id, "multi-two", "Second", "GB", "GBP", "Europe/London", "active",
 	).Error)
 
 	got, err := repo.ListDirectory(context.Background(), DirectoryFilter{Q: "multi", Limit: 50})
@@ -166,7 +166,7 @@ func TestGetWithStores_ReturnsRollup(t *testing.T) {
 	require.NoError(t, db.Exec(
 		`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), id, "rollup-two", "Second", "IE", "EUR", "Europe/Dublin", "suspended",
+		uuid.NewString(), id, "rollup-two", "Second", "GB", "GBP", "Europe/London", "suspended",
 	).Error)
 
 	got, err := repo.GetWithStores(context.Background(), id)

@@ -343,9 +343,12 @@ func main() {
 	// unscoped, so it gets the fail-closed guard rather than the permissive
 	// one above: an unconfigured deploy must refuse, not serve the lot.
 	// Deliberately a different group with different middleware — see
-	// middleware.RequireInternalAuthStrict.
-	tenantDirectory := r.Group("/internal", middleware.RequireInternalAuthStrict(cfg.InternalAuthSecret))
-	tenantHandler.RegisterDirectory(tenantDirectory)
+	// middleware.RequireInternalAuthStrict. The onboarding funnel/sessions
+	// analytics routes (#283) share this guard for the same reason: both
+	// are estate-wide reads with no tenant scoping.
+	strictInternal := r.Group("/internal", middleware.RequireInternalAuthStrict(cfg.InternalAuthSecret))
+	tenantHandler.RegisterDirectory(strictInternal)
+	onboardingHandler.RegisterAnalytics(strictInternal)
 
 	locationHandler.Register(v1)
 	tenantHandler.Register(v1, internal)

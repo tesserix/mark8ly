@@ -27,6 +27,11 @@ type Deps struct {
 	// TenantDirectory serves /admin/entities/tenants (#277). Nil leaves those
 	// routes unmounted, matching the nil-safe pattern used for Repo above.
 	TenantDirectory TenantDirectory
+
+	// OnboardingFunnel serves /admin/onboarding/funnel and /sessions (#283).
+	// Nil leaves those routes unmounted, matching the nil-safe pattern used
+	// for TenantDirectory above.
+	OnboardingFunnel OnboardingFunnel
 }
 
 // Register mounts the platform console's /admin/* surface behind
@@ -73,5 +78,9 @@ func Register(g *gin.RouterGroup, deps Deps) {
 	if deps.TenantDirectory != nil {
 		NewEntitiesTenantsHandler(deps.TenantDirectory, deps.Logger).Register(group)
 		NewConversionsHandler(deps.TenantDirectory, deps.Logger).Register(group)
+	}
+
+	if deps.OnboardingFunnel != nil {
+		NewOnboardingFunnelHandler(deps.OnboardingFunnel, deps.Logger).Register(group)
 	}
 }

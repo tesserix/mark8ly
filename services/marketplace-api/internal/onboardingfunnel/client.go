@@ -35,7 +35,7 @@ type FunnelCounts struct {
 	Abandoned     int64 `json:"abandoned"`
 }
 
-// FunnelWindow is the effective [from, to) window the stats were computed
+// FunnelWindow is the effective [from, to] window the stats were computed
 // over, as returned by platform-api.
 type FunnelWindow struct {
 	From string `json:"from"`

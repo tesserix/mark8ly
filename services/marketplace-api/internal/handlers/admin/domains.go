@@ -36,14 +36,17 @@ type DomainResponse struct {
 	Domain      string  `json:"domain"`
 	DNSMethod   string  `json:"dns_method"`
 	CnameTarget *string `json:"cname_target,omitempty"`
-	Status      string  `json:"status"`
-	SSLStatus   string  `json:"ssl_status"`
-	VerifiedAt  *string `json:"verified_at,omitempty"`
-	Error       *string `json:"error,omitempty"`
-	CreatedAt   string  `json:"created_at"`
+	// The TXT ownership proof, present only while it is outstanding.
+	ChallengeHost  *string `json:"challenge_host,omitempty"`
+	ChallengeValue *string `json:"challenge_value,omitempty"`
+	Status         string  `json:"status"`
+	SSLStatus      string  `json:"ssl_status"`
+	VerifiedAt     *string `json:"verified_at,omitempty"`
+	Error          *string `json:"error,omitempty"`
+	CreatedAt      string  `json:"created_at"`
 }
 
-func toDomainResponse(d domain.CustomDomain) DomainResponse {
+func (h *DomainsHandler) toDomainResponse(d domain.CustomDomain) DomainResponse {
 	resp := DomainResponse{
 		ID:          d.ID.String(),
 		Domain:      d.Domain,
@@ -57,6 +60,10 @@ func toDomainResponse(d domain.CustomDomain) DomainResponse {
 	if d.VerifiedAt != nil {
 		t := d.VerifiedAt.Format("2006-01-02T15:04:05Z")
 		resp.VerifiedAt = &t
+	}
+	if host, token, required := h.svc.Challenge(&d); required {
+		resp.ChallengeHost = &host
+		resp.ChallengeValue = &token
 	}
 	return resp
 }
@@ -76,7 +83,7 @@ func (h *DomainsHandler) List(c *gin.Context) {
 
 	out := make([]DomainResponse, 0, len(domains))
 	for _, d := range domains {
-		out = append(out, toDomainResponse(d))
+		out = append(out, h.toDomainResponse(d))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": out})
@@ -187,7 +194,7 @@ func (h *DomainsHandler) Add(c *gin.Context) {
 			"dns_method": string(d.DNSMethod),
 		},
 	})
-	c.JSON(http.StatusCreated, gin.H{"data": toDomainResponse(*d)})
+	c.JSON(http.StatusCreated, gin.H{"data": h.toDomainResponse(*d)})
 }
 
 func (h *DomainsHandler) Remove(c *gin.Context) {
@@ -243,7 +250,7 @@ func (h *DomainsHandler) Verify(c *gin.Context) {
 			"status": string(d.Status),
 		},
 	})
-	c.JSON(http.StatusOK, gin.H{"data": toDomainResponse(*d)})
+	c.JSON(http.StatusOK, gin.H{"data": h.toDomainResponse(*d)})
 }
 
 // RefreshStatus handles POST /admin/.../domains/:id/refresh-status.
@@ -273,7 +280,7 @@ func (h *DomainsHandler) RefreshStatus(c *gin.Context) {
 			"ssl_status": string(d.SSLStatus),
 		},
 	})
-	c.JSON(http.StatusOK, gin.H{"data": toDomainResponse(*d)})
+	c.JSON(http.StatusOK, gin.H{"data": h.toDomainResponse(*d)})
 }
 
 // ResolveDomain handles GET /storefront/resolve-domain?domain=x — public,

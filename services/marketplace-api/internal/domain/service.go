@@ -51,6 +51,14 @@ type SecretStore interface {
 	Destroy(ctx context.Context, reference string) error
 }
 
+// DNSResolver is the subset of net.Resolver that manual verification
+// needs. Injected so the ownership proof is testable without real DNS.
+type DNSResolver interface {
+	LookupCNAME(ctx context.Context, host string) (string, error)
+	LookupHost(ctx context.Context, host string) ([]string, error)
+	LookupTXT(ctx context.Context, name string) ([]string, error)
+}
+
 // ServiceConfig groups dependencies for the domain service.
 type ServiceConfig struct {
 	DB          *gorm.DB
@@ -59,6 +67,11 @@ type ServiceConfig struct {
 	Provisioner Provisioner
 	Secrets     SecretStore             // optional — falls back to inline-token storage if nil.
 	Resolver    domainvalidate.Resolver // optional — net.DefaultResolver when nil.
+	DNS         DNSResolver             // optional — net.DefaultResolver when nil.
+	// ChallengeSecret keys the per-(tenant, domain) TXT token. Empty
+	// disables the ownership proof, which is what local dev wants and
+	// what config.Validate forbids in prod.
+	ChallengeSecret string
 	// GIPKey, when non-nil, gets the merchant's FQDN added to the GIP
 	// browser API key allowlist on markVerified and stripped on Remove.
 	// Without this, customers visiting the custom domain would hit
@@ -87,14 +100,16 @@ type ProvisionResult struct {
 
 // Service implements custom domain CRUD operations.
 type Service struct {
-	db          *gorm.DB
-	repo        Repository
-	cf          CloudflareClient
-	provisioner Provisioner
-	secrets     SecretStore
-	resolver    domainvalidate.Resolver
-	gipKey      gipkey.Client
-	logger      *slog.Logger
+	db              *gorm.DB
+	repo            Repository
+	cf              CloudflareClient
+	provisioner     Provisioner
+	secrets         SecretStore
+	resolver        domainvalidate.Resolver
+	dns             DNSResolver
+	challengeSecret string
+	gipKey          gipkey.Client
+	logger          *slog.Logger
 }
 
 func NewService(cfg ServiceConfig) *Service {
@@ -102,15 +117,21 @@ func NewService(cfg ServiceConfig) *Service {
 	if gk == nil {
 		gk = gipkey.Noop{}
 	}
+	dns := cfg.DNS
+	if dns == nil {
+		dns = net.DefaultResolver
+	}
 	return &Service{
-		db:          cfg.DB,
-		repo:        cfg.Repo,
-		cf:          cfg.CF,
-		provisioner: cfg.Provisioner,
-		secrets:     cfg.Secrets,
-		resolver:    cfg.Resolver,
-		gipKey:      gk,
-		logger:      cfg.Logger,
+		db:              cfg.DB,
+		repo:            cfg.Repo,
+		cf:              cfg.CF,
+		provisioner:     cfg.Provisioner,
+		secrets:         cfg.Secrets,
+		resolver:        cfg.Resolver,
+		dns:             dns,
+		challengeSecret: cfg.ChallengeSecret,
+		gipKey:          gk,
+		logger:          cfg.Logger,
 	}
 }
 
@@ -408,8 +429,12 @@ func (s *Service) verifyManual(ctx context.Context, d *CustomDomain) (*CustomDom
 		return nil, apperrors.ValidationFailed("domain", "CNAME target not set — domain record is corrupted")
 	}
 
+	if err := s.requireChallenge(ctx, d); err != nil {
+		return s.failVerify(ctx, d, err.Error())
+	}
+
 	target := *d.CnameTarget
-	cname, cnameErr := net.DefaultResolver.LookupCNAME(ctx, d.Domain)
+	cname, cnameErr := s.dns.LookupCNAME(ctx, d.Domain)
 	cname = strings.TrimSuffix(cname, ".")
 
 	// Happy path: a real CNAME that matches target (or resolves via a
@@ -426,8 +451,8 @@ func (s *Service) verifyManual(ctx context.Context, d *CustomDomain) (*CustomDom
 	// domain resolves to is also an IP that the target resolves to,
 	// accept it. We also accept the reverse (target is a subset of
 	// merchant IPs) since CDN edges can return subsets over time.
-	merchantIPs, merchantErr := net.DefaultResolver.LookupHost(ctx, d.Domain)
-	targetIPs, targetErr := net.DefaultResolver.LookupHost(ctx, target)
+	merchantIPs, merchantErr := s.dns.LookupHost(ctx, d.Domain)
+	targetIPs, targetErr := s.dns.LookupHost(ctx, target)
 
 	if merchantErr == nil && targetErr == nil && len(merchantIPs) > 0 && len(targetIPs) > 0 {
 		if ipSetsOverlap(merchantIPs, targetIPs) {
@@ -437,7 +462,6 @@ func (s *Service) verifyManual(ctx context.Context, d *CustomDomain) (*CustomDom
 
 	// Neither CNAME match nor A-record match — produce the most useful
 	// error we can, favouring the CNAME reason when present.
-	d.Status = DomainStatusVerifying
 	var errMsg string
 	switch {
 	case cnameErr != nil && merchantErr != nil:
@@ -449,7 +473,39 @@ func (s *Service) verifyManual(ctx context.Context, d *CustomDomain) (*CustomDom
 	default:
 		errMsg = fmt.Sprintf("DNS not ready yet. Ensure %s points to %s.", d.Domain, target)
 	}
-	d.ErrorMessage = &errMsg
+	return s.failVerify(ctx, d, errMsg)
+}
+
+// Challenge returns the TXT record the merchant must publish to prove
+// ownership, and whether it is still outstanding. Exposed so the admin
+// UI can show the record instead of the merchant guessing.
+func (s *Service) Challenge(d *CustomDomain) (host, token string, required bool) {
+	if s.challengeSecret == "" || d.VerifiedAt != nil {
+		return "", "", false
+	}
+	return ChallengeHost(d.Domain), ChallengeToken(s.challengeSecret, d.TenantID, d.Domain), true
+}
+
+// requireChallenge proves the merchant controls the domain's DNS zone,
+// which routing alone does not: a CNAME to our edge, and especially a
+// shared CDN edge IP, is something anyone can point at us. Domains
+// verified before this check existed are grandfathered so a refresh
+// cannot take a live storefront down.
+func (s *Service) requireChallenge(ctx context.Context, d *CustomDomain) error {
+	host, want, required := s.Challenge(d)
+	if !required {
+		return nil
+	}
+	records, err := s.dns.LookupTXT(ctx, host)
+	if err != nil || !ChallengeMatches(records, want) {
+		return fmt.Errorf("Ownership not proven. Add a TXT record at %s with the value %s, then verify again.", host, want)
+	}
+	return nil
+}
+
+func (s *Service) failVerify(ctx context.Context, d *CustomDomain, msg string) (*CustomDomain, error) {
+	d.Status = DomainStatusVerifying
+	d.ErrorMessage = &msg
 	d.UpdatedAt = time.Now()
 	_ = s.repo.Update(ctx, s.db, d)
 	return d, nil

@@ -415,8 +415,12 @@ func main() {
 		CF:          cfAPIClient,
 		Provisioner: provIface,
 		Secrets:     domainSecretStore,
-		GIPKey:      gipKeyClient,
-		Logger:      log,
+		// Derived from the encryption key rather than a new secret so
+		// there is nothing extra to deploy; rotating it re-issues every
+		// outstanding domain token.
+		ChallengeSecret: cfg.EncryptionKey,
+		GIPKey:          gipKeyClient,
+		Logger:          log,
 	})
 	domainStoresRepo := stores.NewRepository(conn)
 	domainsHandler := admin.NewDomainsHandler(domainSvc, domainStoresRepo, log)

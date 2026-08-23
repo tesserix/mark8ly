@@ -3,6 +3,11 @@ import { BrandBar } from "@repo/ui/brand-bar";
 
 import { ForgotPasswordForm } from "@/components/auth/ForgotPasswordForm";
 
+// The per-request CSP nonce only reaches script tags that are rendered
+// per request; a prerendered page would ship script tags the browser
+// then blocks under 'strict-dynamic'.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Reset password",
   robots: { index: false, follow: false },

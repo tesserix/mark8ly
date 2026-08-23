@@ -30,31 +30,9 @@ const nextConfig: NextConfig = {
           key: "Strict-Transport-Security",
           value: "max-age=31536000; includeSubDomains",
         },
-        {
-          key: "Content-Security-Policy",
-          value: [
-            "default-src 'self'",
-            // accounts.google.com hosts the GSI client script used by
-            // admin's Google sign-in (SignInForm → getGoogleCredential).
-            // appleid.cdn-apple.com hosts the Sign in with Apple JS SDK
-            // (SignInForm → getAppleCredential, lib/gip/apple-js.ts) — without
-            // it the script tag is blocked and Apple sign-in fails with
-            // "apple sdk load failed".
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com/gsi/client https://appleid.cdn-apple.com https://analytics.tesserix.app",
-            "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
-            "img-src 'self' data: blob: https:",
-            "font-src 'self' data:",
-            "connect-src 'self' https: wss:",
-            "frame-ancestors 'self'",
-            // GSI renders the button + One-Tap UI inside an iframe served
-            // from accounts.google.com/gsi/. Apple's JS SDK injects an iframe
-            // from appleid.apple.com to orchestrate the sign-in popup.
-            "frame-src 'self' https://accounts.google.com/gsi/ https://appleid.apple.com",
-            "object-src 'none'",
-            "base-uri 'self'",
-            "form-action 'self'",
-          ].join("; "),
-        },
+        // Content-Security-Policy is issued by middleware, which is the
+        // only place a per-request nonce can be minted. Two CSP headers
+        // would be intersected, so it must not also live here.
         { key: "Permissions-Policy", value: "geolocation=(), microphone=(), camera=()" },
       ],
     },

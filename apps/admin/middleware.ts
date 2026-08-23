@@ -7,6 +7,7 @@ import {
 } from "./lib/auth/host-policy";
 import { platformInternalHeaders } from "./lib/api/server/platformInternal";
 import { isCrossOriginStateChange } from "@repo/ui/auth/csrf";
+import { buildCsp, newNonce } from "./lib/security/csp";
 
 /**
  * Admin middleware — Phase J.
@@ -71,6 +72,29 @@ interface SessionResponse {
 }
 
 export async function middleware(req: NextRequest) {
+  // The nonce is per request, so the CSP can only be issued here — a
+  // static next.config header cannot carry one.
+  const nonce = newNonce();
+  const csp = buildCsp(nonce);
+  const res = await handleRequest(req, nonce, csp);
+  res.headers.set("Content-Security-Policy", csp);
+  return res;
+}
+
+// nonced returns the request headers Next reads to stamp the nonce onto
+// its own script tags, merged with anything the caller already set.
+function nonced(base: Headers, nonce: string, csp: string): Headers {
+  const headers = new Headers(base);
+  headers.set("x-nonce", nonce);
+  headers.set("Content-Security-Policy", csp);
+  return headers;
+}
+
+async function handleRequest(
+  req: NextRequest,
+  nonce: string,
+  csp: string,
+): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
 
   // CSRF: SameSite=Lax stops third-party sites but not sibling tenant
@@ -173,7 +197,9 @@ export async function middleware(req: NextRequest) {
   // Public pricing page — geo-localize currency from CF-IPCountry before RSC
   // render. No auth or tenant extraction needed; the page is unauthenticated.
   if (pathname === "/pricing" || pathname.startsWith("/pricing/")) {
-    const response = NextResponse.next();
+    const response = NextResponse.next({
+      request: { headers: nonced(req.headers, nonce, csp) },
+    });
     applyGeoCookie(req, response);
     return response;
   }
@@ -201,7 +227,9 @@ export async function middleware(req: NextRequest) {
   }
 
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
+    return NextResponse.next({
+      request: { headers: nonced(req.headers, nonce, csp) },
+    });
   }
 
   const cookie = req.cookies.get(SESSION_COOKIE_NAME);
@@ -428,7 +456,7 @@ export async function middleware(req: NextRequest) {
   // Forward the resolved session to the server component via request
   // headers. Headers are the cleanest Next.js-native way to pass
   // per-request data from middleware to pages.
-  const headers = new Headers(req.headers);
+  const headers = nonced(req.headers, nonce, csp);
   headers.set("x-session-user-id", session.user_id);
   headers.set("x-session-email", session.email);
   headers.set("x-session-tenant-id", session.tenant_id);

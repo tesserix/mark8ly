@@ -28,6 +28,26 @@ type Deps struct {
 // Register mounts the platform console's /admin/* surface behind
 // RequirePlatformAuth. A nil Repo leaves everything unmounted, matching the
 // nil-safe pattern used for optional handlers in internal/handlers/admin.
+//
+// Callers always mount this under /api/v1/platform (see cmd/marketplace-api/
+// main.go) — never under /api/v1/admin, deliberately, for two reasons:
+//
+//  1. The mesh. An Istio AuthorizationPolicy in the cluster,
+//     `require-customer-auth` (namespace istio-ingress, repo tesserix-k8s),
+//     denies any request without a valid JWT to a fixed list of prefixes
+//     that includes /api/v1/admin/*. This surface authenticates by HMAC
+//     signature, not JWT, so mounting it under /api/v1/admin/* gets every
+//     request rejected with 403 "RBAC: access denied" at the mesh — before
+//     it ever reaches this package. See docs/architecture.md, "Gateway JWT
+//     gate (istio-ingress)", for the full writeup. This is invisible
+//     locally and in CI since Istio isn't part of either.
+//  2. The router. The merchant admin tree already registers
+//     /admin/tenants/:tenantId/... under a wildcard name that a later
+//     platform endpoint would collide with under a different wildcard name
+//     at the same path position — gin panics at router build time when
+//     that happens.
+//
+// Do not "tidy" this back onto /api/v1/admin.
 func Register(g *gin.RouterGroup, deps Deps) {
 	if deps.Repo == nil {
 		return

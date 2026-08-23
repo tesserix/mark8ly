@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/estatecounts"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 	"github.com/mark8ly/marketplace-api/internal/onboardingfunnel"
@@ -266,6 +267,16 @@ func TestKPIsOnboardingInFlightMatchesFunnelStubExactly(t *testing.T) {
 // stub — so a wiring regression that silently drops the source (and falls
 // back to Go's zero value) fails this test. This handler shipped exactly
 // that fabricated-zero bug once; this pins the wiring against a repeat.
+//
+// It also pins the *window* the handler passes to CountExpiring against
+// trial.DefaultExpiryWindow specifically — not merely "non-zero". A
+// plausible-but-wrong horizon (e.g. a reviewer hardcoding 48*time.Hour) is
+// exactly the class of bug this counter has already shipped once, for a
+// different argument (querying the wrong column). asOf is checked for
+// recency: the handler wires h.now() (time.Now, not injectable through
+// NewKPIsHandler) straight through, so this proves it is not the zero
+// time.Time{} and was captured at call time, without pinning an exact
+// instant the handler cannot be made to produce deterministically.
 func TestKPIsTrialsExpiringMatchesSubscriptionsStubExactly(t *testing.T) {
 	const wantTrialsExpiring = int64(23)
 	estate := &stubEstateCounts{counts: &estatecounts.Counts{TenantsActive: 1, StoresActive: 1}}
@@ -274,6 +285,7 @@ func TestKPIsTrialsExpiringMatchesSubscriptionsStubExactly(t *testing.T) {
 	}}
 	subs := &stubSubscriptions{count: wantTrialsExpiring}
 
+	before := time.Now()
 	rec := httptest.NewRecorder()
 	kpisRouter(t, estate, funnel, subs).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/kpis", nil))
@@ -288,6 +300,11 @@ func TestKPIsTrialsExpiringMatchesSubscriptionsStubExactly(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, wantTrialsExpiring, body.Data.TrialsExpiring)
 	require.Equal(t, subs.count, body.Data.TrialsExpiring)
+
+	require.Equal(t, trial.DefaultExpiryWindow, subs.gotWindow,
+		"handler must pass trial.DefaultExpiryWindow to CountExpiring, not a hardcoded or otherwise-derived horizon")
+	require.WithinRange(t, subs.gotAsOf, before, time.Now(),
+		"handler must pass a live now() to CountExpiring, not a zero-value time.Time")
 }
 
 // counterKeyNames lists every JSON key that could carry a real counter

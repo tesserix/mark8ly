@@ -28,6 +28,7 @@ func TestCriterion38_DunningLeavesPaymentActionRequiredAlone(t *testing.T) {
 
 	storeID := uuid.New()
 	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 	hostedURL := "https://stripe.example/i/criterion38"
 
 	// FirstChargeAt 30 days ago simulates an established sub — well outside the

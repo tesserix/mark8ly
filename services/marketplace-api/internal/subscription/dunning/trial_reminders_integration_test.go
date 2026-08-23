@@ -48,10 +48,13 @@ func TestTrialReminders_SendsAtAllNoPMOffsets(t *testing.T) {
 		// when "now" is itself near midnight UTC.
 		created := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC).
 			AddDate(0, 0, -c.daysSinceSignup)
+		tenantID := uuid.New()
+		storeID := uuid.New()
+		seedStore(t, db, tenantID, storeID)
 		sub := subscription.StoreSubscription{
 			ID:                      uuid.New(),
-			TenantID:                uuid.New(),
-			StoreID:                 uuid.New(),
+			TenantID:                tenantID,
+			StoreID:                 storeID,
 			StripeCustomerID:        "cus_" + c.desc,
 			Plan:                    subscription.PlanTrial,
 			Status:                  subscription.StatusTrialing,
@@ -95,10 +98,13 @@ func TestTrialReminders_HasPMSendsOnlyT1(t *testing.T) {
 	// Sub created 89 days ago with PM on file → only 'has_pm_t_minus_1' fires.
 	created := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC).
 		AddDate(0, 0, -(trial.TrialDays - 1))
+	tenantID := uuid.New()
+	storeID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 	sub := subscription.StoreSubscription{
 		ID:                      uuid.New(),
-		TenantID:                uuid.New(),
-		StoreID:                 uuid.New(),
+		TenantID:                tenantID,
+		StoreID:                 storeID,
 		StripeCustomerID:        "cus_haspm",
 		Plan:                    subscription.PlanStarter,
 		Status:                  subscription.StatusTrialing,
@@ -133,10 +139,13 @@ func TestTrialReminders_Idempotent(t *testing.T) {
 
 	created := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC).
 		AddDate(0, 0, -(trial.TrialDays - 7))
+	tenantID := uuid.New()
+	storeID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 	sub := subscription.StoreSubscription{
 		ID:                      uuid.New(),
-		TenantID:                uuid.New(),
-		StoreID:                 uuid.New(),
+		TenantID:                tenantID,
+		StoreID:                 storeID,
 		StripeCustomerID:        "cus_idem",
 		Plan:                    subscription.PlanTrial,
 		Status:                  subscription.StatusTrialing,
@@ -179,10 +188,13 @@ func TestTrialReminders_TenantIsolation(t *testing.T) {
 		AddDate(0, 0, -(trial.TrialDays - 3))
 
 	for _, suffix := range []string{"a", "b"} {
+		tenantID := uuid.New()
+		storeID := uuid.New()
+		seedStore(t, db, tenantID, storeID)
 		sub := subscription.StoreSubscription{
 			ID:                      uuid.New(),
-			TenantID:                uuid.New(),
-			StoreID:                 uuid.New(),
+			TenantID:                tenantID,
+			StoreID:                 storeID,
 			StripeCustomerID:        "cus_iso_" + suffix,
 			Plan:                    subscription.PlanTrial,
 			Status:                  subscription.StatusTrialing,
@@ -216,10 +228,13 @@ func TestTrialReminders_ExpiredSubsAreSkipped(t *testing.T) {
 
 	created := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC).
 		AddDate(0, 0, -(trial.TrialDays - 1))
+	tenantID := uuid.New()
+	storeID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 	sub := subscription.StoreSubscription{
 		ID:                      uuid.New(),
-		TenantID:                uuid.New(),
-		StoreID:                 uuid.New(),
+		TenantID:                tenantID,
+		StoreID:                 storeID,
 		StripeCustomerID:        "cus_expired",
 		Plan:                    subscription.PlanTrial,
 		Status:                  subscription.StatusExpired,

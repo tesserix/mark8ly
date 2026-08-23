@@ -55,6 +55,7 @@ func TestE2E_FullLadder_PastDueToPendingDelete(t *testing.T) {
 
 	storeID := uuid.New()
 	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 
 	// Seed the subscription as active.
 	sub := subscription.StoreSubscription{
@@ -192,6 +193,7 @@ func TestE2E_RefundWindow_BlocksPastDueToExpired(t *testing.T) {
 
 	storeID := uuid.New()
 	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 
 	// FirstChargeAt is 3 days ago — within the 14-day refund window.
 	threeDaysAgo := time.Now().UTC().Add(-3 * 24 * time.Hour)

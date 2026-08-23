@@ -35,6 +35,7 @@ func TestSCARecovery_WebhookPaymentActionRequired_SCAReminders_InvoicePaidClears
 
 	storeID := uuid.New()
 	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 	stripeCustomerID := "cus_sca_recovery_" + storeID.String()[:8]
 	hostedURL := "https://stripe.example/i/test"
 

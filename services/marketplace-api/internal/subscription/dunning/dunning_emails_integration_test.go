@@ -55,6 +55,7 @@ func TestSendDunningEmails_SendsOnDay5AndDay7(t *testing.T) {
 	// Sub A: entered past_due 5 days ago.
 	storeA := uuid.New()
 	tenantA := uuid.New()
+	seedStore(t, db, tenantA, storeA)
 	subA := subscription.StoreSubscription{
 		ID:               uuid.New(),
 		TenantID:         tenantA,
@@ -85,6 +86,7 @@ func TestSendDunningEmails_SendsOnDay5AndDay7(t *testing.T) {
 	// Sub B: entered past_due 7 days ago.
 	storeB := uuid.New()
 	tenantB := uuid.New()
+	seedStore(t, db, tenantB, storeB)
 	subB := subscription.StoreSubscription{
 		ID:               uuid.New(),
 		TenantID:         tenantB,
@@ -133,6 +135,7 @@ func TestSendDunningEmails_NoEmailIfSubNoLongerPastDue(t *testing.T) {
 
 	storeID := uuid.New()
 	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
 	sub := subscription.StoreSubscription{
 		ID:               uuid.New(),
 		TenantID:         tenantID,

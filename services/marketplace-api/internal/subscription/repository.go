@@ -74,6 +74,18 @@ type Repository interface {
 	// Caller scopes to tenant only — plan slots are tenant-wide. Soft-deleted
 	// stores within the 60-day restorable grace window also count toward the slot.
 	CountStoresForPlanSlot(ctx context.Context, db *gorm.DB, tenantID uuid.UUID) (int, error)
+
+	// CountTrialsExpiring counts trialing subscriptions whose current period
+	// ends within TrialExpiryHorizon of asOf.
+	//
+	// ESTATE-WIDE, deliberately unscoped by tenant: this serves the platform
+	// console's KPI tile, which is HMAC-gated on the platformadmin surface and
+	// has no tenant context at all. DO NOT call it from any tenant-facing
+	// handler — those must stay tenant-scoped like GetByStoreID.
+	//
+	// asOf is a parameter rather than now() so a test can pin the window
+	// boundary exactly; production passes time.Now().
+	CountTrialsExpiring(ctx context.Context, db *gorm.DB, asOf time.Time) (int64, error)
 }
 
 type gormRepository struct{}
@@ -247,4 +259,22 @@ func (gormRepository) CountStoresForPlanSlot(ctx context.Context, db *gorm.DB, t
 		return 0, fmt.Errorf("subscription: count stores for plan slot: %w", err)
 	}
 	return int(count), nil
+}
+
+// CountTrialsExpiring counts trialing subscriptions whose current period end
+// falls within the window (asOf, asOf+TrialExpiryHorizon] — half-open on the
+// left so an already-expired trial does not count as "expiring", inclusive
+// on the right so a trial ending exactly at the horizon does count.
+func (gormRepository) CountTrialsExpiring(ctx context.Context, db *gorm.DB, asOf time.Time) (int64, error) {
+	var n int64
+	err := db.WithContext(ctx).Model(&StoreSubscription{}).
+		Where("status = ?", StatusTrialing).
+		Where("current_period_end IS NOT NULL").
+		Where("current_period_end > ?", asOf).
+		Where("current_period_end <= ?", asOf.Add(TrialExpiryHorizon)).
+		Count(&n).Error
+	if err != nil {
+		return 0, fmt.Errorf("subscription: count trials expiring: %w", err)
+	}
+	return n, nil
 }

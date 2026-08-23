@@ -147,6 +147,65 @@ func TestIntegration_Funnel_BoundaryAbandonment(t *testing.T) {
 	}
 }
 
+// TestIntegration_Funnel_IdleHoursAgreesWithAbandoned proves idle_hours and
+// abandoned can never contradict each other on the same row, because both
+// are computed upstream from the same asOfExpr(f) — never from a caller's
+// own clock. A session idle by exactly AbandonedAfter relative to a fixed
+// AsOf must show abandoned == true AND idle_hours == 24 (within a tiny
+// float epsilon); one idle by AbandonedAfter minus a small delta must show
+// abandoned == false AND idle_hours just under 24.
+//
+// This assertion was impossible before this fix: idle_hours did not exist
+// on SessionRow at all, so there was nothing to freeze against AsOf or
+// compare against abandoned.
+func TestIntegration_Funnel_IdleHoursAgreesWithAbandoned(t *testing.T) {
+	repo, _ := setupFunnelTest(t)
+	ctx := context.Background()
+	asOf := time.Now()
+
+	justUnderCutoff := asOf.Add(-AbandonedAfter + time.Minute)
+	atCutoff := asOf.Add(-AbandonedAfter)
+
+	seedInFlightOrAbandoned(t, repo, "idle-just-under@idlehours.local", StatusInProgress, justUnderCutoff, justUnderCutoff)
+	seedInFlightOrAbandoned(t, repo, "idle-at-cutoff@idlehours.local", StatusInProgress, atCutoff, atCutoff)
+
+	rows, _, err := repo.ListSessions(ctx, FunnelFilter{
+		CreatedFrom: asOf.Add(-48 * time.Hour),
+		CreatedTo:   asOf.Add(time.Hour),
+		AsOf:        asOf,
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+
+	const epsilon = 0.001
+	found := 0
+	for _, r := range rows {
+		switch r.Email {
+		case "idle-at-cutoff@idlehours.local":
+			found++
+			if !r.Abandoned {
+				t.Errorf("session idle exactly AbandonedAfter must be abandoned")
+			}
+			if diff := r.IdleHours - 24; diff < -epsilon || diff > epsilon {
+				t.Errorf("idle_hours = %v, want 24 (within epsilon)", r.IdleHours)
+			}
+		case "idle-just-under@idlehours.local":
+			found++
+			if r.Abandoned {
+				t.Errorf("session idle just under AbandonedAfter must NOT be abandoned")
+			}
+			if r.IdleHours >= 24 {
+				t.Errorf("idle_hours = %v, want just under 24", r.IdleHours)
+			}
+		}
+	}
+	if found != 2 {
+		t.Fatalf("expected to find both fixtures in ListSessions rows, found %d", found)
+	}
+}
+
 // TestIntegration_Funnel_Partition proves completed + in_flight + abandoned
 // == started exactly, over a mixed fixture. email_verified is a subset
 // counter and must never be added into this sum.

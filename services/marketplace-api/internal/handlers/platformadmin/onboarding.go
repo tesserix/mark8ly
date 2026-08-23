@@ -29,19 +29,11 @@ type OnboardingFunnel interface {
 type OnboardingFunnelHandler struct {
 	client OnboardingFunnel
 	logger *slog.Logger
-	// now is injectable for tests, defaulting to time.Now. It backs
-	// idle_hours, which is computed here rather than upstream because
-	// onboardingfunnel.Session does not carry it.
-	now func() time.Time
 }
 
-// NewOnboardingFunnelHandler constructs the handler. logger may be nil; now
-// may be nil (defaults to time.Now).
-func NewOnboardingFunnelHandler(client OnboardingFunnel, logger *slog.Logger, now func() time.Time) *OnboardingFunnelHandler {
-	if now == nil {
-		now = time.Now
-	}
-	return &OnboardingFunnelHandler{client: client, logger: logger, now: now}
+// NewOnboardingFunnelHandler constructs the handler. logger may be nil.
+func NewOnboardingFunnelHandler(client OnboardingFunnel, logger *slog.Logger) *OnboardingFunnelHandler {
+	return &OnboardingFunnelHandler{client: client, logger: logger}
 }
 
 // Register mounts both routes on the supplied group.
@@ -182,7 +174,7 @@ func (h *OnboardingFunnelHandler) toSessionRow(s onboardingfunnel.Session) sessi
 		Status:         s.Status,
 		CreatedAt:      s.CreatedAt.UTC().Format(time.RFC3339),
 		LastActivityAt: s.LastActivityAt.UTC().Format(time.RFC3339),
-		IdleHours:      h.now().Sub(s.LastActivityAt).Hours(),
+		IdleHours:      s.IdleHours,
 		Abandoned:      s.Abandoned,
 	}
 	if s.CompletedAt != nil {

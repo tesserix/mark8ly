@@ -55,6 +55,16 @@ func asOfExpr(f FunnelFilter) string {
 	return fmt.Sprintf("'%s'::timestamptz", f.AsOf.UTC().Format(time.RFC3339Nano))
 }
 
+// idleHoursExpr is the SQL for the number of hours a session has been idle,
+// evaluated against the same asOfExpr the abandoned predicate uses so the
+// two can never disagree about which instant "now" is.
+func idleHoursExpr(asOfExpr string) string {
+	return fmt.Sprintf(
+		"EXTRACT(EPOCH FROM %s - onboarding_sessions.last_activity_at) / 3600",
+		asOfExpr,
+	)
+}
+
 // DefaultFunnelPageSize applies when the caller sends no limit.
 const DefaultFunnelPageSize = 50
 
@@ -124,6 +134,10 @@ type SessionRow struct {
 	LastActivityAt  time.Time  `json:"last_activity_at"`
 	CreatedAt       time.Time  `json:"created_at"`
 	Abandoned       bool       `json:"abandoned"`
+	// IdleHours is computed in SQL from the same asOfExpr the abandoned
+	// predicate uses, so the two fields can never disagree about which
+	// instant "now" is.
+	IdleHours float64 `json:"idle_hours"`
 }
 
 // applyFunnelWindow scopes a query to onboarding_sessions.created_at within
@@ -239,6 +253,7 @@ type sessionRowScan struct {
 	LastActivityAt  time.Time
 	CreatedAt       time.Time
 	Abandoned       bool
+	IdleHours       float64
 }
 
 // ListSessions returns a page of onboarding sessions plus the unpaginated
@@ -246,7 +261,9 @@ type sessionRowScan struct {
 // with GetFunnel so the two queries can never drift apart on which sessions
 // are in scope or which are abandoned.
 func (r *gormRepository) ListSessions(ctx context.Context, f FunnelFilter) ([]SessionRow, int64, error) {
-	abandoned := abandonedExpr(asOfExpr(f))
+	asOf := asOfExpr(f)
+	abandoned := abandonedExpr(asOf)
+	idleHours := idleHoursExpr(asOf)
 
 	countQ := applySessionFilter(r.db.WithContext(ctx).Table("onboarding_sessions"), f)
 	var total int64
@@ -273,6 +290,7 @@ func (r *gormRepository) ListSessions(ctx context.Context, f FunnelFilter) ([]Se
 			"id", "email", "status", "email_verified_at", "tenant_id",
 			"completed_at", "last_activity_at", "created_at",
 			fmt.Sprintf("(%s) AS abandoned", abandoned),
+			fmt.Sprintf("(%s) AS idle_hours", idleHours),
 		).
 		Order("created_at DESC").
 		Offset((page - 1) * limit).
@@ -294,6 +312,7 @@ func (r *gormRepository) ListSessions(ctx context.Context, f FunnelFilter) ([]Se
 			LastActivityAt:  raw.LastActivityAt,
 			CreatedAt:       raw.CreatedAt,
 			Abandoned:       raw.Abandoned,
+			IdleHours:       raw.IdleHours,
 		})
 	}
 	return rows, total, nil

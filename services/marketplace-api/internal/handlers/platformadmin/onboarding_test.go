@@ -54,11 +54,11 @@ func (s *stubFunnelClient) ListSessions(_ context.Context, p onboardingfunnel.Se
 	return s.sessions, nil
 }
 
-func funnelRouter(t *testing.T, client platformadmin.OnboardingFunnel, now func() time.Time) *gin.Engine {
+func funnelRouter(t *testing.T, client platformadmin.OnboardingFunnel) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	platformadmin.NewOnboardingFunnelHandler(client, nil, now).Register(r.Group(""))
+	platformadmin.NewOnboardingFunnelHandler(client, nil).Register(r.Group(""))
 	return r
 }
 
@@ -87,7 +87,7 @@ func TestOnboardingFunnelMatchesContract(t *testing.T) {
 	}}
 
 	rec := httptest.NewRecorder()
-	funnelRouter(t, client, nil).ServeHTTP(rec, httptest.NewRequest(
+	funnelRouter(t, client).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/onboarding/funnel", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -107,7 +107,7 @@ func TestOnboardingFunnelMedianNullWhenNoCompletions(t *testing.T) {
 	}}
 
 	rec := httptest.NewRecorder()
-	funnelRouter(t, client, nil).ServeHTTP(rec, httptest.NewRequest(
+	funnelRouter(t, client).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/onboarding/funnel", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -127,7 +127,7 @@ func TestOnboardingFunnelHasNoPaginationKey(t *testing.T) {
 	client := &stubFunnelClient{funnel: &onboardingfunnel.FunnelStats{}}
 
 	rec := httptest.NewRecorder()
-	funnelRouter(t, client, nil).ServeHTTP(rec, httptest.NewRequest(
+	funnelRouter(t, client).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/onboarding/funnel", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -138,7 +138,7 @@ func TestOnboardingFunnelPassesWindowParams(t *testing.T) {
 	client := &stubFunnelClient{funnel: &onboardingfunnel.FunnelStats{}}
 
 	rec := httptest.NewRecorder()
-	funnelRouter(t, client, nil).ServeHTTP(rec, httptest.NewRequest(
+	funnelRouter(t, client).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/onboarding/funnel?created_from=2026-08-01T00:00:00Z&created_to=2026-08-23T00:00:00Z", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -153,7 +153,7 @@ func TestOnboardingFunnelUpstreamDownIs503(t *testing.T) {
 	client := &stubFunnelClient{err: onboardingfunnel.ErrUnavailable}
 
 	rec := httptest.NewRecorder()
-	funnelRouter(t, client, nil).ServeHTTP(rec, httptest.NewRequest(
+	funnelRouter(t, client).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/onboarding/funnel", nil))
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
@@ -166,7 +166,7 @@ func TestOnboardingFunnelOtherErrorIs500(t *testing.T) {
 	client := &stubFunnelClient{err: errBoom}
 
 	rec := httptest.NewRecorder()
-	funnelRouter(t, client, nil).ServeHTTP(rec, httptest.NewRequest(
+	funnelRouter(t, client).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/onboarding/funnel", nil))
 
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
@@ -174,7 +174,9 @@ func TestOnboardingFunnelOtherErrorIs500(t *testing.T) {
 }
 
 // THE test for sessions. Real handler output compared to the committed
-// contract. The clock is fixed so idle_hours is deterministic.
+// contract. idle_hours comes straight from the upstream Session field —
+// the handler no longer computes it against its own clock — so the stub
+// sets it directly, deterministically.
 func TestOnboardingSessionsMatchesContract(t *testing.T) {
 	completedAt := mustParseTime(t, "2026-08-21T03:00:00Z")
 	tenantID := "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
@@ -189,6 +191,7 @@ func TestOnboardingSessionsMatchesContract(t *testing.T) {
 				CreatedAt:      mustParseTime(t, "2026-08-20T09:00:00Z"),
 				LastActivityAt: mustParseTime(t, "2026-08-21T02:00:00Z"),
 				Abandoned:      true,
+				IdleHours:      32,
 			},
 			{
 				ID:             "9f2504e0-4f89-11d3-9a0c-0305e82c9902",
@@ -199,14 +202,13 @@ func TestOnboardingSessionsMatchesContract(t *testing.T) {
 				CompletedAt:    &completedAt,
 				TenantID:       &tenantID,
 				Abandoned:      false,
+				IdleHours:      73,
 			},
 		},
 	}}
 
-	fixedNow := func() time.Time { return mustParseTime(t, "2026-08-22T10:00:00Z") }
-
 	rec := httptest.NewRecorder()
-	funnelRouter(t, client, fixedNow).ServeHTTP(rec, httptest.NewRequest(
+	funnelRouter(t, client).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/onboarding/sessions", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -237,7 +239,7 @@ func TestOnboardingSessionsDraftAbsentFromRawBody(t *testing.T) {
 	}}
 
 	rec := httptest.NewRecorder()
-	funnelRouter(t, client, nil).ServeHTTP(rec, httptest.NewRequest(
+	funnelRouter(t, client).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/onboarding/sessions", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -247,7 +249,7 @@ func TestOnboardingSessionsDraftAbsentFromRawBody(t *testing.T) {
 
 func TestOnboardingSessionsEmptyIsArray(t *testing.T) {
 	rec := httptest.NewRecorder()
-	funnelRouter(t, &stubFunnelClient{}, nil).ServeHTTP(rec, httptest.NewRequest(
+	funnelRouter(t, &stubFunnelClient{}).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/onboarding/sessions", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -262,7 +264,7 @@ func TestOnboardingSessionsEmptyIsArray(t *testing.T) {
 func TestOnboardingSessionsPassesFilters(t *testing.T) {
 	client := &stubFunnelClient{}
 	rec := httptest.NewRecorder()
-	funnelRouter(t, client, nil).ServeHTTP(rec, httptest.NewRequest(
+	funnelRouter(t, client).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/onboarding/sessions?status=in_progress&abandoned=true&limit=25&page=2", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -281,7 +283,7 @@ func TestOnboardingSessionsPaginationReflectsClientNotRequest(t *testing.T) {
 	}}
 
 	rec := httptest.NewRecorder()
-	funnelRouter(t, client, nil).ServeHTTP(rec, httptest.NewRequest(
+	funnelRouter(t, client).ServeHTTP(rec, httptest.NewRequest(
 		http.MethodGet, "/admin/onboarding/sessions?limit=9999", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -298,7 +300,7 @@ func TestOnboardingSessionsPaginationReflectsClientNotRequest(t *testing.T) {
 // An unreachable upstream must NOT look like an empty session list.
 func TestOnboardingSessionsUpstreamDownIs503(t *testing.T) {
 	rec := httptest.NewRecorder()
-	funnelRouter(t, &stubFunnelClient{err: onboardingfunnel.ErrUnavailable}, nil).
+	funnelRouter(t, &stubFunnelClient{err: onboardingfunnel.ErrUnavailable}).
 		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/onboarding/sessions", nil))
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
@@ -307,7 +309,7 @@ func TestOnboardingSessionsUpstreamDownIs503(t *testing.T) {
 
 func TestOnboardingSessionsOtherErrorIs500(t *testing.T) {
 	rec := httptest.NewRecorder()
-	funnelRouter(t, &stubFunnelClient{err: errBoom}, nil).
+	funnelRouter(t, &stubFunnelClient{err: errBoom}).
 		ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/onboarding/sessions", nil))
 
 	require.Equal(t, http.StatusInternalServerError, rec.Code)

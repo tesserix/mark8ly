@@ -81,6 +81,6 @@ func Register(g *gin.RouterGroup, deps Deps) {
 	}
 
 	if deps.OnboardingFunnel != nil {
-		NewOnboardingFunnelHandler(deps.OnboardingFunnel, deps.Logger, nil).Register(group)
+		NewOnboardingFunnelHandler(deps.OnboardingFunnel, deps.Logger).Register(group)
 	}
 }

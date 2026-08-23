@@ -64,6 +64,7 @@ type Session struct {
 	LastActivityAt  time.Time  `json:"last_activity_at"`
 	CreatedAt       time.Time  `json:"created_at"`
 	Abandoned       bool       `json:"abandoned"`
+	IdleHours       float64    `json:"idle_hours"`
 }
 
 // SessionsResult is a page of sessions plus the unpaginated total.

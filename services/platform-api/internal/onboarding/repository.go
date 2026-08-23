@@ -21,6 +21,12 @@ type Repository interface {
 	// CompleteInTx marks the session completed and links it to a tenant.
 	// Called inside the onboarding completion transaction.
 	CompleteInTx(ctx context.Context, tx *gorm.DB, id, tenantID string) error
+	// GetFunnel returns the onboarding funnel counters for the given
+	// window (see funnel.go).
+	GetFunnel(ctx context.Context, f FunnelFilter) (*FunnelStats, error)
+	// ListSessions returns a page of onboarding sessions for the given
+	// window/filter, plus the unpaginated total (see funnel.go).
+	ListSessions(ctx context.Context, f FunnelFilter) ([]SessionRow, int64, error)
 }
 
 type gormRepository struct {

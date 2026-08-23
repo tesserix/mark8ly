@@ -1,0 +1,8 @@
+{
+  "data": {
+    "tenants_active": 42,
+    "stores_active": 57,
+    "onboarding_in_flight": 34,
+    "trials_expiring": 9
+  }
+}

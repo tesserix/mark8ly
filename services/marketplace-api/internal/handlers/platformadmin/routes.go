@@ -32,6 +32,12 @@ type Deps struct {
 	// Nil leaves those routes unmounted, matching the nil-safe pattern used
 	// for TenantDirectory above.
 	OnboardingFunnel OnboardingFunnel
+
+	// EstateCounts and Subscriptions, together with OnboardingFunnel above,
+	// serve /admin/kpis (#282). All three must be non-nil for that route to
+	// mount — a partial KPI handler is worse than no handler at all.
+	EstateCounts  EstateCounts
+	Subscriptions Subscriptions
 }
 
 // Register mounts the platform console's /admin/* surface behind
@@ -82,5 +88,9 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.OnboardingFunnel != nil {
 		NewOnboardingFunnelHandler(deps.OnboardingFunnel, deps.Logger).Register(group)
+	}
+
+	if deps.EstateCounts != nil && deps.OnboardingFunnel != nil && deps.Subscriptions != nil {
+		NewKPIsHandler(deps.EstateCounts, deps.OnboardingFunnel, deps.Subscriptions, deps.DB, deps.Logger).Register(group)
 	}
 }

@@ -72,6 +72,9 @@ func (r *fakeSubRepo) FindPendingDowngradesReady(_ context.Context, _ *gorm.DB, 
 func (r *fakeSubRepo) CountStoresForPlanSlot(_ context.Context, _ *gorm.DB, _ uuid.UUID) (int, error) {
 	return 0, nil
 }
+func (r *fakeSubRepo) CountTrialsExpiring(_ context.Context, _ *gorm.DB, _ time.Time) (int64, error) {
+	return 0, nil
+}
 
 // fixedClock returns a constant time for deterministic tests.
 type fixedClock struct{ t time.Time }

@@ -23,6 +23,10 @@ type Deps struct {
 
 	// NonceStore is optional; a Postgres-backed one is built from DB when nil.
 	NonceStore NonceStore
+
+	// TenantDirectory serves /admin/entities/tenants (#277). Nil leaves those
+	// routes unmounted, matching the nil-safe pattern used for Repo above.
+	TenantDirectory TenantDirectory
 }
 
 // Register mounts the platform console's /admin/* surface behind
@@ -65,4 +69,8 @@ func Register(g *gin.RouterGroup, deps Deps) {
 	}))
 
 	NewAuditLogsHandler(deps.DB, deps.Repo, deps.Logger).Register(group)
+
+	if deps.TenantDirectory != nil {
+		NewEntitiesTenantsHandler(deps.TenantDirectory, deps.Logger).Register(group)
+	}
 }

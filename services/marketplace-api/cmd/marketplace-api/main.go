@@ -112,6 +112,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription/planchange"
 	"github.com/mark8ly/marketplace-api/internal/subscription/readonly"
 	"github.com/mark8ly/marketplace-api/internal/teamproxy"
+	"github.com/mark8ly/marketplace-api/internal/tenantdirectory"
 	"github.com/mark8ly/marketplace-api/internal/tenantpurge"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/userprofile"
@@ -1918,6 +1919,8 @@ func main() {
 			Repo:   auditRepo,
 			Logger: log,
 			Secret: cfg.PlatformAdminSecret,
+			TenantDirectory: tenantdirectory.NewClient(
+				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil),
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -1998,6 +2001,8 @@ func main() {
 				Repo:   auditRepo,
 				Logger: log,
 				Secret: cfg.PlatformAdminSecret,
+				TenantDirectory: tenantdirectory.NewClient(
+					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil),
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

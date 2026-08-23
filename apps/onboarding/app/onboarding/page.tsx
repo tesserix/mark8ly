@@ -4,6 +4,10 @@ import { locations } from "@/lib/api/platform-api";
 import { OnboardingForm } from "@/components/onboarding/OnboardingForm";
 import { SlimFooter } from "@/components/onboarding/SlimFooter";
 
+// Rendered per request so middleware's CSP nonce reaches the script
+// tags; a prerendered page under that policy would have them blocked.
+export const dynamic = "force-dynamic";
+
 // Funnel entry point — never index (we want search traffic to
 // land on the marketing home, not mid-funnel).
 export const metadata = {

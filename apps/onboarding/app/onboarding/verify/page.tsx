@@ -3,6 +3,10 @@ import { Suspense } from "react";
 import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
 import { VerifyMagicLink } from "@/components/onboarding/VerifyMagicLink";
 
+// Rendered per request so middleware's CSP nonce reaches the script
+// tags; a prerendered page under that policy would have them blocked.
+export const dynamic = "force-dynamic";
+
 // Funnel intermediate — never index.
 export const metadata = {
   title: "Verifying",

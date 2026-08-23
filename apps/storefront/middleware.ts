@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { classifyStorefrontHost } from "./lib/host-policy";
 import { isCrossOriginStateChange } from "@repo/ui/auth/csrf";
+import { buildCsp, newNonce } from "./lib/security/csp";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL || "http://localhost:8080";
@@ -20,6 +21,20 @@ const HOST_GATE_BYPASS = [
 ];
 
 export async function middleware(req: NextRequest) {
+  // The nonce is per request, so the CSP can only be issued here — a
+  // static next.config header cannot carry one.
+  const nonce = newNonce();
+  const csp = buildCsp(nonce);
+  const res = await handleRequest(req, nonce, csp);
+  res.headers.set("Content-Security-Policy", csp);
+  return res;
+}
+
+async function handleRequest(
+  req: NextRequest,
+  nonce: string,
+  csp: string,
+): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
 
   // CSRF: SameSite=Lax stops third-party sites but not sibling tenant
@@ -34,7 +49,7 @@ export async function middleware(req: NextRequest) {
   // Skip the gate for static assets + probes — CDN edges and kubelet
   // hit these on whatever host they were warmed against.
   if (HOST_GATE_BYPASS.some((p) => pathname === p || pathname.startsWith(p))) {
-    return passthrough(req);
+    return passthrough(req, nonce, csp);
   }
 
   const hostHeader = req.headers.get("host") ?? "";
@@ -54,7 +69,7 @@ export async function middleware(req: NextRequest) {
   // drift. 404 cleanly instead of rendering DEFAULT_STORE under the
   // wrong brand.
   if (hostKind.kind === "marketing") {
-    return passthrough(req);
+    return passthrough(req, nonce, csp);
   }
 
   // Tenanted slug or custom domain — verify the slug actually
@@ -87,19 +102,26 @@ export async function middleware(req: NextRequest) {
     // resolved === null → API unreachable; same fail-open behaviour.
   }
 
-  return passthrough(req);
+  return passthrough(req, nonce, csp);
 }
 
 // passthrough preserves the legacy referral-cookie capture while letting
 // the request continue. Captures `?ref=CODE` from any page load and
 // persists it in the `mp_referral` cookie so referral attribution
 // survives the gap between an invite click and signup + enrolment.
-function passthrough(req: NextRequest): NextResponse {
+function passthrough(req: NextRequest, nonce: string, csp: string): NextResponse {
+  // Next reads these request headers to stamp the nonce onto its own
+  // script tags; StructuredData reads x-nonce for the JSON-LD block.
+  const headers = new Headers(req.headers);
+  headers.set("x-nonce", nonce);
+  headers.set("Content-Security-Policy", csp);
+  const init = { request: { headers } };
+
   const ref = req.nextUrl.searchParams.get("ref");
   if (!ref || !/^[A-Z0-9]{4,20}$/.test(ref)) {
-    return NextResponse.next();
+    return NextResponse.next(init);
   }
-  const res = NextResponse.next();
+  const res = NextResponse.next(init);
   res.cookies.set({
     name: "mp_referral",
     value: ref,

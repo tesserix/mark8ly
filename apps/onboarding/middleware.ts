@@ -1,5 +1,13 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { CURRENCY_COOKIE_NAME, countryToCurrency } from '@repo/ui/subscription'
+import { SITE_JSON_LD } from './lib/seo/site-json-ld'
+import {
+  buildCsp,
+  buildStaticCsp,
+  newNonce,
+  sha256Source,
+  usesNonce,
+} from './lib/security/csp'
 
 /**
  * Onboarding middleware — sets the `mk8_currency` cookie on every
@@ -18,8 +26,25 @@ import { CURRENCY_COOKIE_NAME, countryToCurrency } from '@repo/ui/subscription'
  */
 const COOKIE_MAX_AGE = 86_400 // 24 hours
 
-export function middleware(request: NextRequest): NextResponse {
-  const response = NextResponse.next()
+// The layout's JSON-LD is a constant, so its hash is computed once per
+// worker rather than per request.
+const jsonLdHash = sha256Source(SITE_JSON_LD)
+
+export async function middleware(request: NextRequest): Promise<NextResponse> {
+  const nonce = newNonce()
+  const strict = usesNonce(request.nextUrl.pathname)
+  const csp = strict ? buildCsp(nonce, await jsonLdHash) : buildStaticCsp()
+
+  // Next reads these request headers to stamp the nonce onto its own
+  // script tags. Only the per-request routes can use it.
+  const headers = new Headers(request.headers)
+  if (strict) {
+    headers.set('x-nonce', nonce)
+    headers.set('Content-Security-Policy', csp)
+  }
+
+  const response = NextResponse.next({ request: { headers } })
+  response.headers.set('Content-Security-Policy', csp)
   const countryCode = request.headers.get('CF-IPCountry')
   const currency = countryToCurrency(countryCode)
   const isProduction = process.env.NODE_ENV === 'production'

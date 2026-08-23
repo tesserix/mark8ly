@@ -42,6 +42,37 @@ internal endpoints and unwraps its `{data: ...}` envelope, and
 `platform-api/internal/marketplaceapi/vendor_client.go` is the reverse. #277,
 #278 and #283 extend `teamproxy` rather than establishing a new direction.
 
+### The surface mounts under `/api/v1/platform`, not `/api/v1`
+
+`platformadmin.Register` mounts on `/api/v1/platform`, so this component's
+routes resolve at `/api/v1/platform/admin/audit-logs`. The console's base URL
+is `https://<host>/api/v1/platform`; the paths under it stay `/admin/...`.
+
+This is a distinct prefix from the merchant admin API, which legitimately
+lives at `/api/v1/admin/...` on the same engine (`admin.RegisterAdmin`) and
+must not move. Two reasons make sharing `/api/v1/admin` between the two
+surfaces unsafe, not just untidy:
+
+1. **Routing exposure.** The merchant admin API is deliberately not
+   internet-reachable — the admin Next.js app proxies to it in-cluster, and
+   `NEXT_PUBLIC_MARKETPLACE_API_URL` is unset in prod. Any Istio rule broad
+   enough to route this platform surface to the internet would publish the
+   entire merchant admin API as a side effect, since both trees would share
+   the same path prefix. A per-endpoint exact-match rule can work around this
+   for one endpoint; it does not scale to the ~15 endpoints in the #274–#290
+   series.
+2. **A gin router panic.** The merchant tree already registers
+   `/admin/tenants/:tenantId/...` (`internal/handlers/admin/routes.go`, the
+   `ssoTenant` group). A later endpoint in this series adds
+   `/admin/tenants/{id}/suspend` (#287) under a *different* wildcard name. Two
+   different wildcard names at the same path position, on the same gin
+   engine, panic at router build time — the service fails to start. A
+   distinct prefix keeps the two route trees on separate gin groups, so their
+   wildcard names never collide.
+
+Do not "tidy" this back to a shared `/api/v1/admin` prefix — both problems
+above are permanent, not incidental to the current endpoint count.
+
 ### The surface is a new package, not new routes on the existing tree
 
 `marketplace-api/internal/handlers/platformadmin/`.

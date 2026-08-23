@@ -43,9 +43,9 @@ func main() {
 	}{
 		{
 			name:          "get-with-query",
-			requestTarget: "/api/v1/admin/audit-logs?since_hours=720&limit=200",
+			requestTarget: "/api/v1/platform/admin/audit-logs?since_hours=720&limit=200",
 			in: platformadmin.SignatureInput{
-				Method: "GET", Path: "/api/v1/admin/audit-logs",
+				Method: "GET", Path: "/api/v1/platform/admin/audit-logs",
 				RawQuery:  "since_hours=720&limit=200",
 				Timestamp: "1755859200", Nonce: "018f3c2a-0000-7000-8000-000000000001",
 				Operator: "op_7f3a", Capability: "audit.read",
@@ -53,9 +53,9 @@ func main() {
 		},
 		{
 			name:          "post-with-body",
-			requestTarget: "/api/v1/admin/tenants/t1/suspend",
+			requestTarget: "/api/v1/platform/admin/tenants/t1/suspend",
 			in: platformadmin.SignatureInput{
-				Method: "POST", Path: "/api/v1/admin/tenants/t1/suspend",
+				Method: "POST", Path: "/api/v1/platform/admin/tenants/t1/suspend",
 				Body:      []byte(`{"reason_code":"fraud"}`),
 				Timestamp: "1755859200", Nonce: "018f3c2a-0000-7000-8000-000000000002",
 				Operator: "op_7f3a", Capability: "tenant.suspend",
@@ -72,9 +72,9 @@ func main() {
 		//     percent-encoded path. See the package doc on signature.go.
 		{
 			name:          "repeated-query-and-encoded-path",
-			requestTarget: "/api/v1/admin/tenants/t%20one?a=z&a=a&b=2",
+			requestTarget: "/api/v1/platform/admin/tenants/t%20one?a=z&a=a&b=2",
 			in: platformadmin.SignatureInput{
-				Method: "GET", Path: "/api/v1/admin/tenants/t one",
+				Method: "GET", Path: "/api/v1/platform/admin/tenants/t one",
 				RawQuery:  "a=z&a=a&b=2",
 				Timestamp: "1755859200", Nonce: "018f3c2a-0000-7000-8000-000000000003",
 				Operator: "op_7f3a", Capability: "tenant.read",
@@ -88,9 +88,9 @@ func main() {
 		// silently 401s. See the package doc on signature.go.
 		{
 			name:          "query-value-with-space",
-			requestTarget: "/api/v1/admin/audit-logs?actor=Jane%20Smith&action=product.deleted",
+			requestTarget: "/api/v1/platform/admin/audit-logs?actor=Jane%20Smith&action=product.deleted",
 			in: platformadmin.SignatureInput{
-				Method: "GET", Path: "/api/v1/admin/audit-logs",
+				Method: "GET", Path: "/api/v1/platform/admin/audit-logs",
 				RawQuery:  "actor=Jane%20Smith&action=product.deleted",
 				Timestamp: "1755859200", Nonce: "018f3c2a-0000-7000-8000-000000000004",
 				Operator: "op_7f3a", Capability: "audit.read",

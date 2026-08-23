@@ -1910,7 +1910,7 @@ func main() {
 		healthHandler.Register(r)
 		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
 		admin.RegisterAdminMobile(r.Group("/api/v1"), mobileDeps)
-		platformadmin.Register(r.Group("/api/v1"), platformadmin.Deps{
+		platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
 			DB:     conn,
 			Repo:   auditRepo,
 			Logger: log,
@@ -1993,7 +1993,7 @@ func main() {
 		if m == mode.Admin {
 			admin.RegisterAdmin(engine.Group("/api/v1"), adminDeps)
 			admin.RegisterAdminMobile(engine.Group("/api/v1"), mobileDeps)
-			platformadmin.Register(engine.Group("/api/v1"), platformadmin.Deps{
+			platformadmin.Register(engine.Group("/api/v1/platform"), platformadmin.Deps{
 				DB:     conn,
 				Repo:   auditRepo,
 				Logger: log,

@@ -114,6 +114,22 @@ func TestRepository_CountTrialsExpiring_AlreadyExpiredExcluded(t *testing.T) {
 	require.Equal(t, int64(0), got)
 }
 
+// TestRepository_CountTrialsExpiring_LeftEdgeExclusive proves the left edge
+// is strictly exclusive: a trial whose period ends exactly at asOf has
+// already expired and is not "expiring". A fixture an hour away from the
+// boundary (see AlreadyExpiredExcluded above) can't distinguish `>` from
+// `>=`; only current_period_end == asOf can.
+func TestRepository_CountTrialsExpiring_LeftEdgeExclusive(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+	repo := subscription.NewRepository()
+
+	seedSubscription(t, db, uuid.New(), subscription.StatusTrialing, at(0))
+
+	got, err := repo.CountTrialsExpiring(context.Background(), db, kpiTestAsOf)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), got)
+}
+
 // TestRepository_CountTrialsExpiring_OnlyTrialingStatus proves an active
 // subscription ending within the window is not counted — only trialing.
 func TestRepository_CountTrialsExpiring_OnlyTrialingStatus(t *testing.T) {

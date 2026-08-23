@@ -161,7 +161,11 @@ func TestIntegration_Funnel_BoundaryAbandonment(t *testing.T) {
 func TestIntegration_Funnel_IdleHoursAgreesWithAbandoned(t *testing.T) {
 	repo, _ := setupFunnelTest(t)
 	ctx := context.Background()
-	asOf := time.Now()
+	// asOf is pinned to a clearly historical instant (not time.Now()) so
+	// that a mutation using an independent now() for idle_hours can't hide
+	// behind the sub-second gap between Go's clock and Postgres's own now()
+	// at query time.
+	asOf := time.Now().Add(-6 * time.Hour)
 
 	justUnderCutoff := asOf.Add(-AbandonedAfter + time.Minute)
 	atCutoff := asOf.Add(-AbandonedAfter)

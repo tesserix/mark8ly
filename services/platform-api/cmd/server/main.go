@@ -28,6 +28,7 @@ import (
 	"github.com/mark8ly/platform-api/internal/audit"
 	"github.com/mark8ly/platform-api/internal/auth"
 	"github.com/mark8ly/platform-api/internal/authz"
+	"github.com/mark8ly/platform-api/internal/estate"
 	"github.com/mark8ly/platform-api/internal/gipadmin"
 	"github.com/mark8ly/platform-api/internal/invitation"
 	"github.com/mark8ly/platform-api/internal/location"
@@ -345,10 +346,14 @@ func main() {
 	// Deliberately a different group with different middleware — see
 	// middleware.RequireInternalAuthStrict. The onboarding funnel/sessions
 	// analytics routes (#283) share this guard for the same reason: both
-	// are estate-wide reads with no tenant scoping.
+	// are estate-wide reads with no tenant scoping. The estate counts
+	// endpoint (#282) joins them here too — GET /estate/counts reads
+	// across every tenant and store on the platform, same fail-closed
+	// requirement.
 	strictInternal := r.Group("/internal", middleware.RequireInternalAuthStrict(cfg.InternalAuthSecret))
 	tenantHandler.RegisterDirectory(strictInternal)
 	onboardingHandler.RegisterAnalytics(strictInternal)
+	estate.NewHandler(estate.NewRepository(conn)).Register(strictInternal)
 
 	locationHandler.Register(v1)
 	tenantHandler.Register(v1, internal)

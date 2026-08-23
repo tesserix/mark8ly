@@ -339,6 +339,14 @@ func main() {
 	// during the cutover before the secret is provisioned.
 	internal := r.Group("/internal", middleware.RequireInternalAuth(cfg.InternalAuthSecret))
 
+	// The tenant directory (#277) returns EVERY tenant on the platform,
+	// unscoped, so it gets the fail-closed guard rather than the permissive
+	// one above: an unconfigured deploy must refuse, not serve the lot.
+	// Deliberately a different group with different middleware — see
+	// middleware.RequireInternalAuthStrict.
+	tenantDirectory := r.Group("/internal", middleware.RequireInternalAuthStrict(cfg.InternalAuthSecret))
+	tenantHandler.RegisterDirectory(tenantDirectory)
+
 	locationHandler.Register(v1)
 	tenantHandler.Register(v1, internal)
 	storeHandler.Register(v1, internal)

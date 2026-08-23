@@ -86,6 +86,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/mode"
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/observability"
+	"github.com/mark8ly/marketplace-api/internal/onboardingfunnel"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/orderrefund"
@@ -1915,16 +1916,20 @@ func main() {
 		admin.RegisterAdmin(r.Group("/api/v1"), adminDeps)
 		admin.RegisterAdminMobile(r.Group("/api/v1"), mobileDeps)
 		var tenantDirectoryClient platformadmin.TenantDirectory
+		var onboardingFunnelClient platformadmin.OnboardingFunnel
 		if cfg.PlatformAPIURL != "" {
 			tenantDirectoryClient = tenantdirectory.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+			onboardingFunnelClient = onboardingfunnel.NewClient(
+				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 		}
 		platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
-			DB:              conn,
-			Repo:            auditRepo,
-			Logger:          log,
-			Secret:          cfg.PlatformAdminSecret,
-			TenantDirectory: tenantDirectoryClient,
+			DB:               conn,
+			Repo:             auditRepo,
+			Logger:           log,
+			Secret:           cfg.PlatformAdminSecret,
+			TenantDirectory:  tenantDirectoryClient,
+			OnboardingFunnel: onboardingFunnelClient,
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2001,16 +2006,20 @@ func main() {
 			admin.RegisterAdmin(engine.Group("/api/v1"), adminDeps)
 			admin.RegisterAdminMobile(engine.Group("/api/v1"), mobileDeps)
 			var tenantDirectoryClient platformadmin.TenantDirectory
+			var onboardingFunnelClient platformadmin.OnboardingFunnel
 			if cfg.PlatformAPIURL != "" {
 				tenantDirectoryClient = tenantdirectory.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+				onboardingFunnelClient = onboardingfunnel.NewClient(
+					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			}
 			platformadmin.Register(engine.Group("/api/v1/platform"), platformadmin.Deps{
-				DB:              conn,
-				Repo:            auditRepo,
-				Logger:          log,
-				Secret:          cfg.PlatformAdminSecret,
-				TenantDirectory: tenantDirectoryClient,
+				DB:               conn,
+				Repo:             auditRepo,
+				Logger:           log,
+				Secret:           cfg.PlatformAdminSecret,
+				TenantDirectory:  tenantDirectoryClient,
+				OnboardingFunnel: onboardingFunnelClient,
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

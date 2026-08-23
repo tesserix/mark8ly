@@ -27,11 +27,32 @@ const AbandonedAfter = 24 * time.Hour
 // The interval is built from AbandonedAfter (via make_interval, in hours)
 // rather than hardcoded as a second literal — a test changing the constant
 // changes the query, since there is only one place the cutoff is written.
-func abandonedExpr() string {
+//
+// asOfExpr is the SQL expression to evaluate "now" against — normally the
+// literal "now()", but a test can pass a bound parameter placeholder (see
+// FunnelFilter.AsOf) to pin the evaluation instant exactly.
+func abandonedExpr(asOfExpr string) string {
 	return fmt.Sprintf(
-		"(onboarding_sessions.status <> 'completed' AND onboarding_sessions.last_activity_at <= now() - make_interval(hours => %d))",
+		"(onboarding_sessions.status <> 'completed' AND onboarding_sessions.last_activity_at <= %s - make_interval(hours => %d))",
+		asOfExpr,
 		int(AbandonedAfter.Hours()),
 	)
+}
+
+// asOfExpr renders the SQL expression the funnel queries use in place of
+// now(). When f.AsOf is the zero value it returns the literal "now()", so
+// production behaviour is unchanged. When AsOf is set, it renders a
+// timestamptz literal instead, so a test can pin the evaluation instant
+// exactly and place a fixture precisely on the abandoned-cutoff boundary.
+//
+// AsOf is formatted from a Go time.Time via RFC3339Nano, never from
+// unsanitized external input, so building the literal by fmt.Sprintf here
+// carries no injection risk.
+func asOfExpr(f FunnelFilter) string {
+	if f.AsOf.IsZero() {
+		return "now()"
+	}
+	return fmt.Sprintf("'%s'::timestamptz", f.AsOf.UTC().Format(time.RFC3339Nano))
 }
 
 // DefaultFunnelPageSize applies when the caller sends no limit.
@@ -53,6 +74,16 @@ type FunnelFilter struct {
 	Abandoned *bool
 	Page      int
 	Limit     int
+	// AsOf pins the instant the abandoned/in-flight predicates and the
+	// last_24h window evaluate "now" against. Zero value (the default)
+	// means "use the database's now() exactly as before" — production
+	// behaviour is unchanged.
+	//
+	// Internal only. This field exists so tests can freeze time and place
+	// a fixture precisely on the AbandonedAfter boundary; it must NEVER be
+	// exposed as an HTTP query parameter by Task 2's handlers — a console
+	// caller able to set it could time-travel the funnel.
+	AsOf time.Time
 }
 
 // FunnelCounts is one window's worth of funnel aggregates. Completed +
@@ -117,10 +148,11 @@ func applySessionFilter(q *gorm.DB, f FunnelFilter) *gorm.DB {
 		q = q.Where("onboarding_sessions.status = ?", f.Status)
 	}
 	if f.Abandoned != nil {
+		abandoned := abandonedExpr(asOfExpr(f))
 		if *f.Abandoned {
-			q = q.Where(abandonedExpr())
+			q = q.Where(abandoned)
 		} else {
-			q = q.Where("NOT " + abandonedExpr())
+			q = q.Where("NOT " + abandoned)
 		}
 	}
 	return q
@@ -146,7 +178,8 @@ type funnelAggregateRow struct {
 // query that always covers the trailing 24 hours regardless of the
 // requested window).
 func (r *gormRepository) GetFunnel(ctx context.Context, f FunnelFilter) (*FunnelStats, error) {
-	abandoned := abandonedExpr()
+	asOf := asOfExpr(f)
+	abandoned := abandonedExpr(asOf)
 
 	var row funnelAggregateRow
 	q := applyFunnelWindow(r.db.WithContext(ctx).Table("onboarding_sessions"), f)
@@ -164,7 +197,7 @@ func (r *gormRepository) GetFunnel(ctx context.Context, f FunnelFilter) (*Funnel
 
 	var last24h funnelAggregateRow
 	err = r.db.WithContext(ctx).Table("onboarding_sessions").
-		Where("created_at > now() - INTERVAL '24 hours'").
+		Where(fmt.Sprintf("created_at > %s - INTERVAL '24 hours'", asOf)).
 		Select(
 			"COUNT(*) AS started",
 			"COUNT(*) FILTER (WHERE email_verified_at IS NOT NULL) AS email_verified",
@@ -213,7 +246,7 @@ type sessionRowScan struct {
 // with GetFunnel so the two queries can never drift apart on which sessions
 // are in scope or which are abandoned.
 func (r *gormRepository) ListSessions(ctx context.Context, f FunnelFilter) ([]SessionRow, int64, error) {
-	abandoned := abandonedExpr()
+	abandoned := abandonedExpr(asOfExpr(f))
 
 	countQ := applySessionFilter(r.db.WithContext(ctx).Table("onboarding_sessions"), f)
 	var total int64

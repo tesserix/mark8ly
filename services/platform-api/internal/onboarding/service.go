@@ -168,6 +168,19 @@ func (s *Service) Get(ctx context.Context, id string) (*Session, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
+// GetFunnel returns the onboarding funnel counters for the given window
+// (#283). AsOf is deliberately not settable from outside this package —
+// see FunnelFilter's doc comment.
+func (s *Service) GetFunnel(ctx context.Context, f FunnelFilter) (*FunnelStats, error) {
+	return s.repo.GetFunnel(ctx, f)
+}
+
+// ListSessions returns a page of onboarding sessions for the given
+// window/filter, plus the unpaginated total (#283).
+func (s *Service) ListSessions(ctx context.Context, f FunnelFilter) ([]SessionRow, int64, error) {
+	return s.repo.ListSessions(ctx, f)
+}
+
 // SaveDraft replaces the session's draft JSON. The draft is opaque to the
 // backend — the wizard's frontend owns the schema. We only validate that
 // it parses as JSON.

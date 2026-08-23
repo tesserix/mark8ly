@@ -77,37 +77,54 @@ func setupFunnelTest(t *testing.T) (Repository, *gorm.DB) {
 }
 
 // TestIntegration_Funnel_BoundaryAbandonment pins the exactly-24h-idle rule:
-// a session idle for 23h is in flight, one idle for exactly 24h or more is
-// abandoned. This is arbitrary but decided, and must not silently drift.
+// a session idle for AbandonedAfter minus a small delta is in flight, one
+// idle for exactly AbandonedAfter is abandoned. This is arbitrary but
+// decided, and must not silently drift.
+//
+// This pins the rule genuinely, not just apparently: FunnelFilter.AsOf
+// freezes the instant the query evaluates "now" against, so the fixture at
+// exactly asOf-AbandonedAfter lands on the true knife-edge in DB time
+// rather than drifting past it during the query round trip (as it would if
+// the fixture were built from Go's now() and the query used Postgres's
+// independently-evaluated now()).
+//
+// Verified by mutation: changing abandonedExpr's <= to < makes this test
+// fail (the at-cutoff session flips to in-flight) — see task-1-report.md.
 func TestIntegration_Funnel_BoundaryAbandonment(t *testing.T) {
 	repo, _ := setupFunnelTest(t)
 	ctx := context.Background()
-	now := time.Now()
+	asOf := time.Now()
 
-	seedInFlightOrAbandoned(t, repo, "in-flight-23h@boundary.local", StatusInProgress, now.Add(-23*time.Hour), now.Add(-23*time.Hour))
-	seedInFlightOrAbandoned(t, repo, "abandoned-24h@boundary.local", StatusInProgress, now.Add(-24*time.Hour), now.Add(-24*time.Hour))
-	seedInFlightOrAbandoned(t, repo, "abandoned-25h@boundary.local", StatusInProgress, now.Add(-25*time.Hour), now.Add(-25*time.Hour))
+	justUnderCutoff := asOf.Add(-AbandonedAfter + time.Minute)
+	atCutoff := asOf.Add(-AbandonedAfter)
 
-	stats, err := repo.GetFunnel(ctx, FunnelFilter{
-		CreatedFrom: now.Add(-48 * time.Hour),
-		CreatedTo:   now.Add(time.Hour),
-	})
+	seedInFlightOrAbandoned(t, repo, "in-flight-just-under@boundary.local", StatusInProgress, justUnderCutoff, justUnderCutoff)
+	seedInFlightOrAbandoned(t, repo, "abandoned-at-cutoff@boundary.local", StatusInProgress, atCutoff, atCutoff)
+
+	filter := FunnelFilter{
+		CreatedFrom: asOf.Add(-48 * time.Hour),
+		CreatedTo:   asOf.Add(time.Hour),
+		AsOf:        asOf,
+	}
+
+	stats, err := repo.GetFunnel(ctx, filter)
 	if err != nil {
 		t.Fatalf("GetFunnel: %v", err)
 	}
-	if stats.Started != 3 {
-		t.Fatalf("Started = %d, want 3", stats.Started)
+	if stats.Started != 2 {
+		t.Fatalf("Started = %d, want 2", stats.Started)
 	}
 	if stats.InFlight != 1 {
-		t.Errorf("InFlight = %d, want 1 (the 23h session)", stats.InFlight)
+		t.Errorf("InFlight = %d, want 1 (idle AbandonedAfter minus a minute)", stats.InFlight)
 	}
-	if stats.Abandoned != 2 {
-		t.Errorf("Abandoned = %d, want 2 (the 24h and 25h sessions)", stats.Abandoned)
+	if stats.Abandoned != 1 {
+		t.Errorf("Abandoned = %d, want 1 (idle exactly AbandonedAfter)", stats.Abandoned)
 	}
 
 	rows, _, err := repo.ListSessions(ctx, FunnelFilter{
-		CreatedFrom: now.Add(-48 * time.Hour),
-		CreatedTo:   now.Add(time.Hour),
+		CreatedFrom: filter.CreatedFrom,
+		CreatedTo:   filter.CreatedTo,
+		AsOf:        asOf,
 		Limit:       10,
 	})
 	if err != nil {
@@ -115,18 +132,18 @@ func TestIntegration_Funnel_BoundaryAbandonment(t *testing.T) {
 	}
 	abandonedCount := 0
 	for _, r := range rows {
-		if r.Email == "abandoned-24h@boundary.local" && !r.Abandoned {
-			t.Errorf("session idle exactly 24h must be flagged abandoned")
+		if r.Email == "abandoned-at-cutoff@boundary.local" && !r.Abandoned {
+			t.Errorf("session idle exactly AbandonedAfter must be flagged abandoned")
 		}
-		if r.Email == "in-flight-23h@boundary.local" && r.Abandoned {
-			t.Errorf("session idle 23h must NOT be flagged abandoned")
+		if r.Email == "in-flight-just-under@boundary.local" && r.Abandoned {
+			t.Errorf("session idle just under AbandonedAfter must NOT be flagged abandoned")
 		}
 		if r.Abandoned {
 			abandonedCount++
 		}
 	}
-	if abandonedCount != 2 {
-		t.Errorf("ListSessions abandoned rows = %d, want 2", abandonedCount)
+	if abandonedCount != 1 {
+		t.Errorf("ListSessions abandoned rows = %d, want 1", abandonedCount)
 	}
 }
 
@@ -400,19 +417,26 @@ func TestIntegration_Funnel_CompletedNeverAbandoned(t *testing.T) {
 // is not. If the query hardcoded a different interval than the Go
 // constant, this test would catch the drift without needing to touch the
 // constant itself.
+//
+// Uses a fixed AsOf for the same reason TestIntegration_Funnel_
+// BoundaryAbandonment does: without pinning the evaluation instant, the
+// "exactly AbandonedAfter" fixture is evaluated against Postgres's own
+// now(), which has already moved past the fixture's timestamp by the time
+// the query runs, so the boundary is never actually exercised.
 func TestIntegration_Funnel_AbandonedAfterConstantDrivesQuery(t *testing.T) {
 	repo, _ := setupFunnelTest(t)
 	ctx := context.Background()
-	now := time.Now()
+	asOf := time.Now()
 
 	seedInFlightOrAbandoned(t, repo, "just-under-cutoff@constant.local", StatusInProgress,
-		now.Add(-AbandonedAfter+time.Minute), now.Add(-AbandonedAfter+time.Minute))
+		asOf.Add(-AbandonedAfter+time.Minute), asOf.Add(-AbandonedAfter+time.Minute))
 	seedInFlightOrAbandoned(t, repo, "at-cutoff@constant.local", StatusInProgress,
-		now.Add(-AbandonedAfter), now.Add(-AbandonedAfter))
+		asOf.Add(-AbandonedAfter), asOf.Add(-AbandonedAfter))
 
 	stats, err := repo.GetFunnel(ctx, FunnelFilter{
-		CreatedFrom: now.Add(-2 * AbandonedAfter),
-		CreatedTo:   now.Add(time.Hour),
+		CreatedFrom: asOf.Add(-2 * AbandonedAfter),
+		CreatedTo:   asOf.Add(time.Hour),
+		AsOf:        asOf,
 	})
 	if err != nil {
 		t.Fatalf("GetFunnel: %v", err)

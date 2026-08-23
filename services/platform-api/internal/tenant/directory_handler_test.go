@@ -22,9 +22,6 @@ type stubDirRepo struct {
 
 func (s *stubDirRepo) ListDirectory(_ context.Context, f DirectoryFilter) (DirectoryResult, error) {
 	s.got = f
-	if s.result.Tenants == nil {
-		s.result.Tenants = []Tenant{}
-	}
 	return s.result, s.err
 }
 

@@ -257,6 +257,9 @@ func (h *Handler) listDirectory(c *gin.Context) {
 		respondError(c, err)
 		return
 	}
+	if res.Tenants == nil {
+		res.Tenants = []Tenant{}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": res.Tenants,

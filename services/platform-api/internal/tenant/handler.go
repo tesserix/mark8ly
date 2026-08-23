@@ -330,6 +330,21 @@ func parseDirectoryFilter(c *gin.Context) DirectoryFilter {
 	if t, ok := parseRFC3339(c.Query("created_to")); ok {
 		f.CreatedTo = t
 	}
+	if v := strings.TrimSpace(c.Query("ids")); v != "" {
+		ids := make([]string, 0, strings.Count(v, ",")+1)
+		for _, part := range strings.Split(v, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				ids = append(ids, part)
+			}
+		}
+		// If nothing remains after trimming, treat "ids" as absent — an
+		// empty slice must never reach DirectoryFilter.IDs (see the
+		// len() guard in applyDirectoryFilter).
+		if len(ids) > 0 {
+			f.IDs = ids
+		}
+	}
 	return f
 }
 

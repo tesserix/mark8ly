@@ -33,6 +33,11 @@ type DirectoryFilter struct {
 	CreatedTo   time.Time
 	Page        int
 	Limit       int
+	// IDs narrows the directory to a specific set of tenant ids, for a
+	// batch lookup (#285's trials endpoint resolves tenant names for a page
+	// of rows in one call instead of N). A nil or empty slice must add NO
+	// clause — see the len() guard in applyDirectoryFilter.
+	IDs []string
 }
 
 // StoreSummary is the per-store rollup entry on a tenant detail.
@@ -77,6 +82,12 @@ func applyDirectoryFilter(q *gorm.DB, f DirectoryFilter) *gorm.DB {
 	}
 	if !f.CreatedTo.IsZero() {
 		q = q.Where("tenants.created_at <= ?", f.CreatedTo)
+	}
+	// The len() guard is the whole safety property: an empty or nil IDs
+	// slice must add no clause. Without it, `IN ()` matches nothing, and
+	// every unfiltered caller of the directory silently gets zero tenants.
+	if len(f.IDs) > 0 {
+		q = q.Where("tenants.id IN ?", f.IDs)
 	}
 	return q
 }

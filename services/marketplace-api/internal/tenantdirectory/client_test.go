@@ -161,3 +161,21 @@ func TestFindByOwnerEmailTransportFailureIsUnavailable(t *testing.T) {
 		FindByOwnerEmail(context.Background(), "a@example.com")
 	require.ErrorIs(t, err, tenantdirectory.ErrUnavailable)
 }
+
+// TestListSendsIDs asserts ListParams.IDs is joined and sent as a single
+// comma-separated `ids` query parameter, so #285's trials endpoint can
+// resolve a page of tenants in one batch call.
+func TestListSendsIDs(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"limit":50,"total":0}}`))
+	}))
+	defer srv.Close()
+
+	c := tenantdirectory.NewClient(srv.URL, "s", srv.Client())
+	_, err := c.List(context.Background(), tenantdirectory.ListParams{IDs: []string{"a", "b"}})
+	require.NoError(t, err)
+	require.Contains(t, gotQuery, "ids=a%2Cb")
+}

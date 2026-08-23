@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -69,6 +70,10 @@ type ListParams struct {
 	CreatedTo   time.Time
 	Page        int
 	Limit       int
+	// IDs narrows the directory to a specific set of tenant ids, for a
+	// batch lookup (#285). Sent as a single comma-separated `ids` query
+	// parameter when non-empty.
+	IDs []string
 }
 
 // Client calls platform-api's internal tenant-directory endpoints.
@@ -141,6 +146,9 @@ func (c *Client) List(ctx context.Context, p ListParams) (*ListResult, error) {
 	}
 	if p.Limit > 0 {
 		q.Set("limit", strconv.Itoa(p.Limit))
+	}
+	if len(p.IDs) > 0 {
+		q.Set("ids", strings.Join(p.IDs, ","))
 	}
 
 	path := "/internal/tenants"

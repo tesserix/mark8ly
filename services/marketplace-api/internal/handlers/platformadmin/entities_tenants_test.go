@@ -22,6 +22,10 @@ type stubDirectory struct {
 	list      *tenantdirectory.ListResult
 	detail    *tenantdirectory.TenantDetail
 	err       error
+
+	// gotEmail and conversion back FindByOwnerEmail (#279).
+	gotEmail   string
+	conversion *tenantdirectory.Tenant
 }
 
 func (s *stubDirectory) List(_ context.Context, p tenantdirectory.ListParams) (*tenantdirectory.ListResult, error) {
@@ -40,6 +44,14 @@ func (s *stubDirectory) Get(_ context.Context, _ string) (*tenantdirectory.Tenan
 		return nil, s.err
 	}
 	return s.detail, nil
+}
+
+func (s *stubDirectory) FindByOwnerEmail(_ context.Context, email string) (*tenantdirectory.Tenant, error) {
+	s.gotEmail = email
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.conversion, nil
 }
 
 func tenantsRouter(t *testing.T, dir platformadmin.TenantDirectory) *gin.Engine {

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 	"github.com/mark8ly/platform-api/pkg/testdb"
 )
 
@@ -200,4 +201,130 @@ func TestGetWithStores_NotFound(t *testing.T) {
 
 	_, err := repo.GetWithStores(context.Background(), uuid.NewString())
 	require.Error(t, err)
+}
+
+// TestIntegration_GetByOwnerEmail_ExactMatch exercises the happy path for
+// the #279 admin-conversions lookup: an exact owner_email match returns
+// the tenant that owns it.
+func TestIntegration_GetByOwnerEmail_ExactMatch(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := NewRepository(tx)
+	ctx := context.Background()
+
+	seed := newTenant("Acme Co", "uid-owner-1", "founder@acme.example")
+	if err := repo.CreateInTx(ctx, tx, seed); err != nil {
+		t.Fatalf("CreateInTx: %v", err)
+	}
+
+	got, err := repo.GetByOwnerEmail(ctx, "founder@acme.example")
+	if err != nil {
+		t.Fatalf("GetByOwnerEmail: %v", err)
+	}
+	if got.ID != seed.ID {
+		t.Errorf("ID = %q, want %q", got.ID, seed.ID)
+	}
+	if got.Name != "Acme Co" {
+		t.Errorf("Name = %q, want Acme Co", got.Name)
+	}
+}
+
+// TestIntegration_GetByOwnerEmail_CaseInsensitive mirrors the unique index
+// on lower(owner_email) (migration 0014): a differently-cased query must
+// still find the tenant.
+func TestIntegration_GetByOwnerEmail_CaseInsensitive(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := NewRepository(tx)
+	ctx := context.Background()
+
+	seed := newTenant("Acme Co", "uid-owner-2", "founder@acme.example")
+	if err := repo.CreateInTx(ctx, tx, seed); err != nil {
+		t.Fatalf("CreateInTx: %v", err)
+	}
+
+	got, err := repo.GetByOwnerEmail(ctx, "Founder@ACME.example")
+	if err != nil {
+		t.Fatalf("GetByOwnerEmail: %v", err)
+	}
+	if got.ID != seed.ID {
+		t.Errorf("ID = %q, want %q", got.ID, seed.ID)
+	}
+}
+
+// TestIntegration_GetByOwnerEmail_WhitespaceTrimmed asserts surrounding
+// whitespace on the query does not defeat the match.
+func TestIntegration_GetByOwnerEmail_WhitespaceTrimmed(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := NewRepository(tx)
+	ctx := context.Background()
+
+	seed := newTenant("Acme Co", "uid-owner-3", "founder@acme.example")
+	if err := repo.CreateInTx(ctx, tx, seed); err != nil {
+		t.Fatalf("CreateInTx: %v", err)
+	}
+
+	got, err := repo.GetByOwnerEmail(ctx, "  founder@acme.example  ")
+	if err != nil {
+		t.Fatalf("GetByOwnerEmail: %v", err)
+	}
+	if got.ID != seed.ID {
+		t.Errorf("ID = %q, want %q", got.ID, seed.ID)
+	}
+}
+
+// TestIntegration_GetByOwnerEmail_SubstringIsNotAMatch is the regression
+// guard against anyone later "simplifying" this into the directory's
+// ILIKE '%q%' search: a substring of a real owner_email must NOT match.
+func TestIntegration_GetByOwnerEmail_SubstringIsNotAMatch(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := NewRepository(tx)
+	ctx := context.Background()
+
+	seed := newTenant("Bob's Shop", "uid-owner-4", "bob@acme.example")
+	if err := repo.CreateInTx(ctx, tx, seed); err != nil {
+		t.Fatalf("CreateInTx: %v", err)
+	}
+
+	_, err := repo.GetByOwnerEmail(ctx, "ob@acme.example")
+	ae, ok := apperrors.As(err)
+	if !ok || ae.Code != "tenant_not_found" {
+		t.Errorf("expected tenant_not_found for substring query, got %v", err)
+	}
+}
+
+// TestIntegration_GetByOwnerEmail_UnseededEmailNotFound asserts an email
+// nothing owns returns a typed not-found rather than a zero-value Tenant
+// with a nil error.
+func TestIntegration_GetByOwnerEmail_UnseededEmailNotFound(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := NewRepository(tx)
+	ctx := context.Background()
+
+	got, err := repo.GetByOwnerEmail(ctx, "nobody@nowhere.example")
+	if got != nil {
+		t.Errorf("expected nil tenant, got %+v", got)
+	}
+	ae, ok := apperrors.As(err)
+	if !ok || ae.Code != "tenant_not_found" {
+		t.Errorf("expected tenant_not_found, got %v", err)
+	}
+}
+
+// TestIntegration_GetByOwnerEmail_EmptyAndWhitespaceOnly asserts both an
+// empty string and a whitespace-only string short-circuit to not-found
+// without touching the DB.
+func TestIntegration_GetByOwnerEmail_EmptyAndWhitespaceOnly(t *testing.T) {
+	tx := testdb.NewTx(t)
+	repo := NewRepository(tx)
+	ctx := context.Background()
+
+	for _, probe := range []string{"", "   "} {
+		got, err := repo.GetByOwnerEmail(ctx, probe)
+		if got != nil {
+			t.Errorf("GetByOwnerEmail(%q): expected nil tenant, got %+v", probe, got)
+		}
+		ae, ok := apperrors.As(err)
+		if !ok || ae.Code != "tenant_not_found" {
+			t.Errorf("GetByOwnerEmail(%q): expected tenant_not_found, got %v", probe, err)
+		}
+	}
 }

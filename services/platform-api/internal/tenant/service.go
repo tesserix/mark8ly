@@ -191,5 +191,10 @@ func (s *Service) GetWithStores(ctx context.Context, id string) (*TenantWithStor
 	return s.repo.GetWithStores(ctx, id)
 }
 
+// GetByOwnerEmail returns the tenant owned by the given email (#279).
+func (s *Service) GetByOwnerEmail(ctx context.Context, email string) (*Tenant, error) {
+	return s.repo.GetByOwnerEmail(ctx, email)
+}
+
 // Phase Q: GetBySlug, IsSlugAvailable, validateSlug and slugPattern
 // moved to the store package — slug is a store-level identifier now.

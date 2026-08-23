@@ -72,5 +72,6 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.TenantDirectory != nil {
 		NewEntitiesTenantsHandler(deps.TenantDirectory, deps.Logger).Register(group)
+		NewConversionsHandler(deps.TenantDirectory, deps.Logger).Register(group)
 	}
 }

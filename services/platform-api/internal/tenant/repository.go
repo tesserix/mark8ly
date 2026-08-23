@@ -60,6 +60,12 @@ type Repository interface {
 	ListDirectory(ctx context.Context, f DirectoryFilter) (DirectoryResult, error)
 	// GetWithStores returns a tenant plus its store rollup in one query.
 	GetWithStores(ctx context.Context, id string) (*TenantWithStores, error)
+	// GetByOwnerEmail returns the tenant owned by the given email, or
+	// apperrors.NotFound when no tenant is. Comparison is case-insensitive
+	// and trims surrounding whitespace, matching OwnerEmailExists and the
+	// tenants_owner_email_unique index (migration 0014) — which is also why
+	// this returns at most one row rather than a slice.
+	GetByOwnerEmail(ctx context.Context, email string) (*Tenant, error)
 }
 
 // gormRepository is the GORM-backed implementation.

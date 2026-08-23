@@ -116,6 +116,21 @@ func (f *fakeRepo) GetWithStores(ctx context.Context, id string) (*TenantWithSto
 	return &TenantWithStores{Tenant: *t, Stores: []StoreSummary{}}, nil
 }
 
+// GetByOwnerEmail is likewise not exercised by these service-level unit
+// tests (covered by directory_integration_test.go against a real DB);
+// this stub exists only to satisfy the Repository interface.
+func (f *fakeRepo) GetByOwnerEmail(ctx context.Context, email string) (*Tenant, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, t := range f.byID {
+		if strings.EqualFold(strings.TrimSpace(t.OwnerEmail), strings.TrimSpace(email)) {
+			cp := *t
+			return &cp, nil
+		}
+	}
+	return nil, apperrors.NotFound("tenant_not_found", "no tenant owns that email")
+}
+
 func (f *fakeRepo) UpdateEditable(ctx context.Context, id string, patch map[string]any) (*Tenant, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

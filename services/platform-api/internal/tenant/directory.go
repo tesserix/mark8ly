@@ -2,10 +2,14 @@ package tenant
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
+
+	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
 
 // DefaultDirectoryPageSize applies when the caller sends no limit. The
@@ -128,4 +132,26 @@ func (r *gormRepository) GetWithStores(ctx context.Context, id string) (*TenantW
 		return nil, fmt.Errorf("tenant store rollup: %w", err)
 	}
 	return out, nil
+}
+
+// GetByOwnerEmail returns the tenant owned by the given email (#279).
+func (r *gormRepository) GetByOwnerEmail(ctx context.Context, email string) (*Tenant, error) {
+	// Same normalisation as OwnerEmailExists: the unique index is on
+	// lower(owner_email), so anything else silently misses it.
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	if normalized == "" {
+		return nil, apperrors.NotFound("tenant_not_found", "no tenant owns that email")
+	}
+
+	var t Tenant
+	err := r.db.WithContext(ctx).
+		Where("lower(owner_email) = ?", normalized).
+		First(&t).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, apperrors.NotFound("tenant_not_found", "no tenant owns that email")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("tenant: get by owner email: %w", err)
+	}
+	return &t, nil
 }

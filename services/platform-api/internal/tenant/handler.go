@@ -246,7 +246,31 @@ func (h *Handler) RegisterDirectory(g *gin.RouterGroup) {
 		// /detail, not /:id — the internal group already serves GET
 		// /tenants/:id with a different shape, and the admin BFF calls it.
 		t.GET("/:id/detail", h.getTenantDetail)
+		// Static sibling of :id. Verified against gin 1.12 with main.go's
+		// real two-group shape: no router-build panic, and /tenants/:id,
+		// /:id/detail and /:id/members all still resolve to their own
+		// handlers. Path chosen over a filter on the directory list because
+		// that list matches with ILIKE '%q%' — a substring match would
+		// report the wrong lead converted.
+		t.GET("/by-owner-email", h.getTenantByOwnerEmail)
 	}
+}
+
+// getTenantByOwnerEmail serves GET /internal/tenants/by-owner-email?email=...
+// (#279). Used by the marketplace-api console lookup that maps a lead's
+// email to the tenant it converted into. A missing or unowned email comes
+// back 404 — the repository already normalises (trim + lowercase) and
+// reports apperrors.NotFound, which respondError maps here. The 400 the
+// console contract expects for a missing email belongs to marketplace-api,
+// which knows it's serving a console caller; this hop only knows "found"
+// or "not found".
+func (h *Handler) getTenantByOwnerEmail(c *gin.Context) {
+	t, err := h.svc.GetByOwnerEmail(c.Request.Context(), c.Query("email"))
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": t})
 }
 
 func (h *Handler) listDirectory(c *gin.Context) {

@@ -228,3 +228,66 @@ func TestListExpiring_Pagination(t *testing.T) {
 	assert.Equal(t, int64(3), total)
 	assert.Len(t, rows, 1)
 }
+
+// TestListExpiring_MapsAllFields seeds a row with distinct, non-default
+// values for every field ListExpiring maps onto ExpiringRow and asserts
+// each one individually. Without this, a stub-driven handler test cannot
+// catch a broken row-to-struct mapping — nothing else in the suite reads a
+// real row out of the database and checks its fields one by one.
+//
+// HasPaymentMethod is seeded true here even though every row returned by
+// this query has stripe_subscription_id IS NULL (and so is false in
+// practice today, per the spec's "deliberate redundancy" note). Nothing in
+// the schema or expiringScope ties has_default_payment_method to
+// stripe_subscription_id, so seeding it true is exactly what proves the
+// value is READ from the column rather than inferred from the filter
+// (e.g. hardcoded true, or hardcoded false "because these rows never have
+// a card").
+func TestListExpiring_MapsAllFields(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+
+	trialEndsAt := expiringAsOf.Add(3 * 24 * time.Hour)
+	currency := "GBP"
+
+	seeded := seedExpiringRow(t, db, trialEndsAt, func(r *subscription.StoreSubscription) {
+		r.Plan = subscription.PlanStudio
+		r.SubscriptionPeriod = subscription.PeriodAnnual
+		r.BillingCurrency = &currency
+		r.HasDefaultPaymentMethod = true
+	})
+
+	// A second row, seeded HasDefaultPaymentMethod=false at a different
+	// trial end, so a hardcoded-true mapping (as well as a hardcoded-false
+	// one) is caught: the true-seeded row above proves the value is READ
+	// from the column rather than inferred false from the selection filter,
+	// and this row proves it isn't simply hardcoded true either.
+	seededNoPM := seedExpiringRow(t, db, expiringAsOf.Add(5*24*time.Hour), func(r *subscription.StoreSubscription) {
+		r.HasDefaultPaymentMethod = false
+	})
+
+	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	require.Len(t, rows, 2)
+
+	row := rows[0]
+	assert.Equal(t, seeded.TenantID.String(), row.TenantID)
+	assert.Equal(t, seeded.StoreID.String(), row.StoreID)
+	assert.True(t, trialEndsAt.Equal(row.TrialEndsAt),
+		"TrialEndsAt: want %s, got %s", trialEndsAt, row.TrialEndsAt)
+	// Computed independently of the production expression, per the spec:
+	// "trial_ends_at equals created_at + TrialDays".
+	wantTrialEndsAt := seeded.CreatedAt.Add(time.Duration(trial.TrialDays) * 24 * time.Hour)
+	assert.True(t, wantTrialEndsAt.Equal(row.TrialEndsAt),
+		"TrialEndsAt vs created_at+TrialDays: want %s, got %s", wantTrialEndsAt, row.TrialEndsAt)
+	assert.Equal(t, string(subscription.PlanStudio), row.Plan)
+	assert.Equal(t, string(subscription.PeriodAnnual), row.Period)
+	require.NotNil(t, row.BillingCurrency)
+	assert.Equal(t, "GBP", *row.BillingCurrency)
+	assert.True(t, row.HasPaymentMethod)
+	assert.Equal(t, string(subscription.StatusTrialing), row.Status)
+
+	rowNoPM := rows[1]
+	assert.Equal(t, seededNoPM.StoreID.String(), rowNoPM.StoreID)
+	assert.False(t, rowNoPM.HasPaymentMethod)
+}

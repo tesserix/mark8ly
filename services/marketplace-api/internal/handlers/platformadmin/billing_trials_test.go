@@ -494,3 +494,58 @@ func (f *sharedTrialsFixture) ListExpiring(_ context.Context, _ *gorm.DB, _ time
 func (f *sharedTrialsFixture) CountExpiring(_ context.Context, _ *gorm.DB, _ time.Time, _ time.Duration) (int64, error) {
 	return int64(len(f.rows)), nil
 }
+
+// TestBillingTrialsDaysRemainingMatchesMerchantFormula pins the console's
+// days_remaining to the exact formula enrichTrialBanner uses
+// (internal/handlers/admin/subscription.go): floor(hours/24), bumped to 1
+// only when 0 < hours < 24, floored at zero. Before this fix the console
+// used math.Ceil(hours/24), which reports one day MORE than the merchant
+// sees for any non-integral remainder — an operator reading the console
+// would quote a different number than the merchant's own dashboard.
+//
+// Table mirrors enrichTrialBanner's own case list, including the
+// 0 < hours < 24 bump and the floor-at-zero case already covered by
+// TestBillingTrialsDaysRemainingFloorsAtZero.
+func TestBillingTrialsDaysRemainingMatchesMerchantFormula(t *testing.T) {
+	asOf := billingTrialsFixtureAsOf
+
+	cases := []struct {
+		name      string
+		hoursLeft time.Duration
+		want      int
+	}{
+		{"0h left (exactly at asOf)", 0, 0},
+		{"1h left", 1 * time.Hour, 1},
+		{"23h left", 23 * time.Hour, 1},
+		{"24h left", 24 * time.Hour, 1},
+		{"25h left", 25 * time.Hour, 1},
+		{"47h left", 47 * time.Hour, 1},
+		{"48h left", 48 * time.Hour, 2},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			trialEndsAt := asOf.Add(tc.hoursLeft)
+			rows := []trial.ExpiringRow{
+				{TenantID: "t-1", StoreID: "s-1", TrialEndsAt: trialEndsAt, Plan: "trial", Period: "monthly", Status: "trialing"},
+			}
+			trials := &stubTrialLister{rows: rows, total: 1}
+			dir := &stubBillingDirectory{}
+
+			rec := httptest.NewRecorder()
+			billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+				http.MethodGet, "/admin/billing/trials", nil))
+
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			var body struct {
+				Data []struct {
+					DaysRemaining int `json:"days_remaining"`
+				} `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+			require.Len(t, body.Data, 1)
+			require.Equal(t, tc.want, body.Data[0].DaysRemaining)
+		})
+	}
+}

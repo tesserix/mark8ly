@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -210,14 +209,26 @@ func toTrialRow(r trial.ExpiringRow, names map[string]string, asOf time.Time) tr
 }
 
 // daysRemaining is computed from asOf — the SAME instant the query itself
-// used — never a fresh time.Now(). Rounded up: a trial ending 90 seconds
-// from asOf still has "1 day remaining", not "0".
+// used — never a fresh time.Now().
+//
+// This deliberately mirrors enrichTrialBanner's formula
+// (internal/handlers/admin/subscription.go) rather than a plain
+// math.Ceil(hours/24): for any non-integral remainder, Ceil rounds up one
+// day further than the merchant-facing endpoint does, so the console would
+// quote a different "days remaining" than the merchant's own dashboard for
+// the same trial. The two surfaces must agree on this number, so they share
+// the exact same arithmetic: floor(hours/24), bumped to 1 only when
+// 0 < hours < 24, floored at zero.
 func daysRemaining(trialEndsAt, asOf time.Time) int {
-	d := trialEndsAt.Sub(asOf)
-	if d <= 0 {
-		return 0
+	hoursLeft := trialEndsAt.Sub(asOf).Hours()
+	days := int(hoursLeft / 24)
+	if hoursLeft > 0 && hoursLeft < 24 {
+		days = 1
 	}
-	return int(math.Ceil(d.Hours() / 24))
+	if days < 0 {
+		days = 0
+	}
+	return days
 }
 
 // parseTrialWindow parses `days` into a query window. A missing or invalid

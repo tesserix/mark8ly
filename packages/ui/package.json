@@ -9,6 +9,7 @@
     "./subscription/*": "./src/subscription/*.tsx",
     "./auth/exchange-code": "./src/auth/exchange-code.ts",
     "./auth/admin-handoff-code": "./src/auth/admin-handoff-code.ts",
+    "./auth/csrf": "./src/auth/csrf.ts",
     "./auth/link-provider-prompt": "./src/auth/link-provider-prompt.tsx",
     "./auth/linked-providers-panel": "./src/auth/linked-providers-panel.tsx",
     "./*": "./src/*.tsx"

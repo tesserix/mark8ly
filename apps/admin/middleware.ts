@@ -6,6 +6,7 @@ import {
   isValidSlugReturnUrl,
 } from "./lib/auth/host-policy";
 import { platformInternalHeaders } from "./lib/api/server/platformInternal";
+import { isCrossOriginStateChange } from "@repo/ui/auth/csrf";
 
 /**
  * Admin middleware — Phase J.
@@ -71,6 +72,15 @@ interface SessionResponse {
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // CSRF: SameSite=Lax stops third-party sites but not sibling tenant
+  // subdomains, which share the cookie's .mark8ly.com scope.
+  if (isCrossOriginStateChange(req)) {
+    return NextResponse.json(
+      { error: "forbidden", message: "cross-origin request rejected" },
+      { status: 403 },
+    );
+  }
   const hostHeader = req.headers.get("host") ?? "";
   const hostKind = classifyAdminHost(hostHeader);
 

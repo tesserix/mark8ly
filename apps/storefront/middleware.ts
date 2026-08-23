@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { classifyStorefrontHost } from "./lib/host-policy";
+import { isCrossOriginStateChange } from "@repo/ui/auth/csrf";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL || "http://localhost:8080";
@@ -20,6 +21,15 @@ const HOST_GATE_BYPASS = [
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // CSRF: SameSite=Lax stops third-party sites but not sibling tenant
+  // subdomains, which share the cookie's .mark8ly.com scope.
+  if (isCrossOriginStateChange(req)) {
+    return NextResponse.json(
+      { error: "forbidden", message: "cross-origin request rejected" },
+      { status: 403 },
+    );
+  }
 
   // Skip the gate for static assets + probes — CDN edges and kubelet
   // hit these on whatever host they were warmed against.

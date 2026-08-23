@@ -15,12 +15,19 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 const DEV_SESSION_KEY = "dev-session-key-min-32-bytes!!!";
 
+/** Matches the cookie's maxAge so the server-side and browser-side
+ *  lifetimes agree. marketplace-api enforces the same `exp` claim. */
+export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
+
 export interface CustomerSession {
   uid: string;
   email: string;
   store_slug: string;
   store_id: string;
   tenant_id: string;
+  /** Unix seconds. Present on every cookie this module mints. */
+  iat?: number;
+  exp?: number;
 }
 
 export interface CustomerSessionScope {
@@ -34,8 +41,13 @@ function sign(payload: string): string {
 }
 
 /** Encode + sign a session into a cookie value. */
-export function encodeSession(session: CustomerSession): string {
-  const payload = Buffer.from(JSON.stringify(session)).toString("base64");
+export function encodeSession(
+  session: CustomerSession,
+  ttlSeconds: number = SESSION_TTL_SECONDS,
+): string {
+  const iat = Math.floor(Date.now() / 1000);
+  const claims: CustomerSession = { ...session, iat, exp: iat + ttlSeconds };
+  const payload = Buffer.from(JSON.stringify(claims)).toString("base64");
   const sig = sign(payload);
   return `${payload}.${sig}`;
 }
@@ -44,11 +56,7 @@ export function encodeSession(session: CustomerSession): string {
  *  signature is invalid or the payload is malformed. */
 export function decodeSession(cookieValue: string): CustomerSession | null {
   const dotIndex = cookieValue.lastIndexOf(".");
-  if (dotIndex < 0) {
-    // Legacy unsigned cookie (from the brief v0 window). Accept it
-    // but log a warning — it'll be replaced on next sign-in.
-    return decodeLegacy(cookieValue);
-  }
+  if (dotIndex < 0) return null;
 
   const payload = cookieValue.slice(0, dotIndex);
   const sig = cookieValue.slice(dotIndex + 1);
@@ -80,29 +88,23 @@ export function sessionMatchesScope(
   return true;
 }
 
-function decodeLegacy(raw: string): CustomerSession | null {
-  if (process.env.NODE_ENV === "production") {
-    return null;
-  }
-  // eslint-disable-next-line no-console
-  console.warn(
-    "[storefront] unsigned mp_customer_session cookie detected — " +
-      "will be replaced with a signed version on next sign-in.",
-  );
-  return parsePayload(raw);
-}
-
 function parsePayload(base64: string): CustomerSession | null {
   try {
     const json = Buffer.from(base64, "base64").toString();
     const parsed = JSON.parse(json) as Partial<CustomerSession>;
     if (!parsed.uid || !parsed.email) return null;
+    // A cookie with no exp can never be aged out or revoked, so it is
+    // rejected outright rather than trusted indefinitely.
+    if (typeof parsed.exp !== "number") return null;
+    if (Math.floor(Date.now() / 1000) > parsed.exp) return null;
     return {
       uid: parsed.uid,
       email: parsed.email,
       store_slug: parsed.store_slug ?? "",
       store_id: parsed.store_id ?? "",
       tenant_id: parsed.tenant_id ?? "",
+      iat: parsed.iat,
+      exp: parsed.exp,
     };
   } catch {
     return null;

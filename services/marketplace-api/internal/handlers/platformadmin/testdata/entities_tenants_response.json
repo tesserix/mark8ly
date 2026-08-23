@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+      "name": "Acme Trading",
+      "owner_email": "founder@acme.example",
+      "status": "active",
+      "created_at": "2026-08-22T10:00:00Z"
+    },
+    {
+      "id": "3f2504e0-4f89-11d3-9a0c-0305e82c3302",
+      "name": "Beta Goods",
+      "owner_email": "owner@beta.example",
+      "status": "suspended",
+      "created_at": "2026-08-21T09:30:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 50,
+    "total": 2
+  }
+}

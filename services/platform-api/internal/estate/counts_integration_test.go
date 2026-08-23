@@ -47,6 +47,7 @@ func TestGet_CountsOnlyActiveTenants(t *testing.T) {
 
 	seedTenant(t, db, tenant.StatusActive)
 	seedTenant(t, db, tenant.StatusSuspended)
+	seedTenant(t, db, tenant.StatusArchived)
 
 	got, err := repo.Get(context.Background())
 	require.NoError(t, err)
@@ -60,6 +61,7 @@ func TestGet_CountsOnlyActiveStores(t *testing.T) {
 	tenantID := seedTenant(t, db, tenant.StatusActive)
 	seedStore(t, db, tenantID, store.StatusActive)
 	seedStore(t, db, tenantID, "suspended")
+	seedStore(t, db, tenantID, store.StatusArchived)
 
 	got, err := repo.Get(context.Background())
 	require.NoError(t, err)

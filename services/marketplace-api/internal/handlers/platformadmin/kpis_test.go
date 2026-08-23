@@ -170,6 +170,26 @@ func TestKPIsKnownUninstrumentedKeyIs501KnownButNotInstrumented(t *testing.T) {
 	require.Contains(t, kpiErrorMessage(t, rec), "known but not instrumented")
 }
 
+// The 501 for an uninstrumented key must not depend on upstream health: the
+// registry check runs before any gather, so this must stay 501 even when
+// every upstream is down (which would otherwise produce a 503). If the
+// check ever moved after the gather, this test would catch it turning into
+// a 503.
+func TestKPIsKnownUninstrumentedKeyIs501EvenWhenAllUpstreamsFail(t *testing.T) {
+	estate := &stubEstateCounts{err: estatecounts.ErrUnavailable}
+	funnel := &stubFunnelClient{err: onboardingfunnel.ErrUnavailable}
+	subs := &stubSubscriptions{err: errors.New("db exploded")}
+
+	rec := httptest.NewRecorder()
+	kpisRouter(t, estate, funnel, subs).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/kpis?keys=gmv_today", nil))
+
+	require.Equal(t, http.StatusNotImplemented, rec.Code)
+	require.Equal(t, "not_implemented", errorCode(t, rec))
+	require.Equal(t, "gmv_today", kpiErrorKey(t, rec))
+	require.Contains(t, kpiErrorMessage(t, rec), "known but not instrumented")
+}
+
 // The two 501 messages are the only thing distinguishing the cases for a
 // human reading logs. Comparing the two raw messages for inequality does
 // NOT prove that: both messages interpolate their own key name

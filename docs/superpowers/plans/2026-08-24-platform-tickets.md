@@ -260,8 +260,38 @@ type TicketLister interface {
 
 ```go
 // Values are DISTINCT and NON-ZERO so an assertion cannot pass on a zero
-// fabricated by a missing field.
-func ticketsFixture() []ticket.Ticket { /* two tickets, different stores, tenants, statuses, priorities */ }
+// fabricated by a missing field. Two tickets, two stores, two tenants — the
+// shape this endpoint exists to return.
+func ticketsFixture() []ticket.Ticket {
+	conv := "conv-abc123"
+	resolved := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
+	return []ticket.Ticket{
+		{
+			ID: uuid.MustParse("11111111-1111-1111-1111-111111111111"),
+			TenantID: uuid.MustParse("aaaaaaaa-1111-1111-1111-111111111111"),
+			StoreID: uuid.MustParse("bbbbbbbb-1111-1111-1111-111111111111"),
+			TicketNumber: "T-1042", Subject: "Refund not received",
+			Description: "MUST NOT APPEAR IN THE RESPONSE",
+			Status: "open", Priority: "high",
+			SubmittedByName: "Ada Lovelace", SubmittedByEmail: "ada@example.com",
+			ConversationID: &conv,
+			CreatedAt: time.Date(2026, 8, 19, 8, 30, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 8, 19, 11, 45, 0, 0, time.UTC),
+		},
+		{
+			ID: uuid.MustParse("22222222-2222-2222-2222-222222222222"),
+			TenantID: uuid.MustParse("aaaaaaaa-2222-2222-2222-222222222222"),
+			StoreID: uuid.MustParse("bbbbbbbb-2222-2222-2222-222222222222"),
+			TicketNumber: "T-2087", Subject: "Wrong size delivered",
+			Description: "MUST NOT APPEAR IN THE RESPONSE EITHER",
+			Status: "resolved", Priority: "low",
+			SubmittedByName: "Grace Hopper", SubmittedByEmail: "grace@example.com",
+			ResolvedAt: &resolved,
+			CreatedAt: time.Date(2026, 8, 18, 7, 15, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC),
+		},
+	}
+}
 
 // THE test for the projection: assert against RAW JSON, because an
 // unmarshalled struct cannot distinguish an absent key from an empty one.
@@ -302,8 +332,24 @@ func TestTickets_LimitClampsAndIsReportedEffective(t *testing.T) {
 	require.Equal(t, ticket.MaxPlatformPageSize, body.Pagination.Limit)
 }
 
-// A missing parameter takes the default; it never errors.
-func TestTickets_MissingLimitTakesDefault(t *testing.T) { /* assert stub.gotFilter.Limit == DefaultPlatformPageSize */ }
+// A missing parameter takes the default; it never errors. Assert what the
+// REPOSITORY received — asserting only the response would pass even if the
+// handler sent 0 and the repo happened to default it downstream.
+func TestTickets_MissingLimitTakesDefault(t *testing.T) {
+	stub := &stubTicketLister{}
+	rec := getTicketsWithQuery(t, stub, "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, ticket.DefaultPlatformPageSize, stub.gotFilter.Limit)
+}
+
+// A non-numeric limit is not an error either: it takes the default, matching
+// how #276 treats a malformed parameter.
+func TestTickets_MalformedLimitTakesDefaultNotError(t *testing.T) {
+	stub := &stubTicketLister{}
+	rec := getTicketsWithQuery(t, stub, "?limit=not-a-number")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, ticket.DefaultPlatformPageSize, stub.gotFilter.Limit)
+}
 
 // store_id reaches the repository as a NARROWING filter, not a scope.
 func TestTickets_StoreIDIsPassedThroughAsNarrowing(t *testing.T) {
@@ -318,10 +364,38 @@ func TestTickets_StoreIDIsPassedThroughAsNarrowing(t *testing.T) {
 	require.Nil(t, stub2.gotFilter.StoreID, "absent store_id must stay nil, meaning every store")
 }
 
-// from/to win over since_hours when both are supplied, matching #276.
-func TestTickets_ExplicitRangeWinsOverSinceHours(t *testing.T) { /* ... */ }
+// from/to win over since_hours when both are supplied, matching #276. Pin the
+// EXACT instant that reaches the repository: asserting merely that From is
+// non-nil would pass whichever source won.
+func TestTickets_ExplicitRangeWinsOverSinceHours(t *testing.T) {
+	stub := &stubTicketLister{}
+	from := "2026-08-01T00:00:00Z"
+	getTicketsWithQuery(t, stub, "?since_hours=24&from="+from)
 
-func TestTickets_RepoErrorIs500NotEmptySuccess(t *testing.T) { /* assert 500 and that the body carries no "data" */ }
+	require.NotNil(t, stub.gotFilter.From)
+	want, err := time.Parse(time.RFC3339, from)
+	require.NoError(t, err)
+	require.True(t, stub.gotFilter.From.Equal(want),
+		"explicit from must win over since_hours; got %v", stub.gotFilter.From)
+}
+
+// And with only since_hours, From is derived from it rather than left unset.
+func TestTickets_SinceHoursAppliesWhenNoExplicitRange(t *testing.T) {
+	stub := &stubTicketLister{}
+	getTicketsWithQuery(t, stub, "?since_hours=24")
+	require.NotNil(t, stub.gotFilter.From, "since_hours must produce a From bound")
+}
+
+// A repository failure must never render as an empty success — an operator
+// reading `data: []` would conclude there are no tickets when the query blew up.
+func TestTickets_RepoErrorIs500NotEmptySuccess(t *testing.T) {
+	rec := getTickets(t, &stubTicketLister{err: errors.New("pq: connection refused")})
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.NotContains(t, rec.Body.String(), `"data"`,
+		"a failed read must not shape a result at all")
+	require.NotContains(t, rec.Body.String(), "connection refused",
+		"driver error text must be logged server-side, never echoed")
+}
 ```
 
 Fill in the helpers (`getTickets`, `getTicketsWithQuery`, `stubTicketLister` recording `gotFilter`) following how `kpisRouter` and the signed-request helpers already work in this package. Requests must carry a valid signature or they are rejected before the handler.

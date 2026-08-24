@@ -31,15 +31,17 @@ no longer true.** Five issues joined the milestone: #329 (`/admin/tickets`), #33
 **Effort ordering, re-derived 2026-08-24 (session 3 close)** — reads-before-writes no
 longer sorts this queue:
 
-**#332 → #333 → #286 → #288 (purge, last) → #319.** — **#332 is now DELIVERED; start at #333.**
+**~~#332~~ → #333 → #286 → #288 (purge, last) → #319.** — #332 shipped 2026-08-25. **Start at #333.**
 
-#287 and #329 are now DELIVERED. **#333 is blocked on a decision, not on work:** its
+#287, #329 and #332 are now DELIVERED. **#333 is blocked on a decision, not on work:** its
 acceptance requires gating on the operator holding the `rotate-credentials` **capability**,
 but this surface checks capability **presence only, never the value**
 (`internal/handlers/platformadmin/middleware.go:153`). #287 deliberately did not invent a
 value vocabulary — the console asserts these names and a guess would refuse every real
 request. Settle the console's capability names first, or ship #333 with the gate
-explicitly deferred and say so. **#332 has no blocker and is the right next task.**
+explicitly deferred and say so. That decision is still open, and #333 is the head of the
+queue behind it — so the next task is either settling the capability names or starting
+**#286**.
 
 **#286 is NOT the small one its acceptance criteria suggest.** There is **no stored
 trial-end column anywhere** — searched every migration and every Go site. Trial end is
@@ -57,13 +59,15 @@ to `ids` *before* its two validation checks and then marks all of `ids` publishe
 event with an unparseable payload or missing `store_id` is dropped without its watermark
 being bumped **and recorded as successfully published**. Invisible to any monitor.
 
-**Open in the milestone:** #281 (part (a) only), #286, #288, plus the three remaining new
-reads #329/#331/#332/#333 and the #330 decision, plus the blocked #278/#280/#290, plus
-#319 (OpenBao credentials, a different concern grouped in).
+**Open in the milestone:** #281 (part (a) only), #286, #288, plus the remaining new reads
+#331 (blocked by #336) and #333 (blocked on a decision) and the #330 decision, plus the
+blocked #278/#280/#290, plus #319 (OpenBao credentials, a different concern grouped in).
+Also new: **#348** (email delivery log — scope widened by #332's review) and **#350**
+(`recipient_user_id` documented as the wrong kind of id).
 
-The remaining **writes** are #286, #287, #288 and #281(a) — see trap 3, and trap 2
-before touching #287's routing. They are no longer the only work left: see the four
-new reads above.
+The remaining **writes** are #286, #288 and #281(a) — see trap 3. (#287 shipped; its
+trap-2 routing warning is retained below because it applies to any future
+`/admin/tenants/...` route.)
 
 **Reusable pieces the next endpoint inherits**, beyond the surface itself:
 

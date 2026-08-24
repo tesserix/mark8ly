@@ -17,13 +17,41 @@ issue: **#260**. Each endpoint is its own issue.
 **Delivered and live in production:** #274 (front door), #275 (auth), #276
 (`/admin/audit-logs`), #277 (`/admin/entities/tenants`), #279 (`/admin/conversions`),
 #282 (`/admin/kpis`), #283 (`/admin/onboarding/funnel` + `/sessions`), #284
-(`/admin/billing/subscriptions`), #285 (`/admin/billing/trials`).
+(`/admin/billing/subscriptions`), #285 (`/admin/billing/trials`), #289
+(`/admin/health`), and **#281 part (b) only** — the CSM migration fast-path review
+route, mounted and audited (#338); #281 stays OPEN for part (a).
 
-**Open in the milestone:** #281, #286, #287, #288, #289, plus the blocked
-#278/#280/#290, plus #319 (OpenBao credentials, a different concern grouped in).
+**The map changed on 2026-08-24 — this doc's "everything remaining is a write" is
+no longer true.** Five issues joined the milestone: #329 (`/admin/tickets`), #330
+(Otto cross-tenant live chat — a decision, not an endpoint), #331 (`/admin/outbox`),
+#332 (`/admin/notifications`), #333 (`/admin/break-glass`). Four of those are reads.
 
-**#289 is the last simple read.** Everything else remaining is a write (#281, #286,
-#287, #288) — see trap 3, and trap 2 before touching #287's routing.
+**Effort ordering, re-derived 2026-08-24** (reads-before-writes no longer sorts it):
+#287 → the new reads #332/#333/#329 → #286 → #288 (purge, last) → #319.
+
+**#286 is NOT the small one its acceptance criteria suggest.** There is **no stored
+trial-end column anywhere** — searched every migration and every Go site. Trial end is
+*derived* as `created_at + TrialDays` in five places: `handlers/admin/subscription.go:197`
+(what the merchant sees), `billing/trial/subscribe.go:131` (**the value sent to Stripe
+as `trial_end`**), `subscription/dunning/trial_reminders.go:108`, `billing/trial/expiring.go`,
+and `planchange.go:224` (plus #326's hardcoded 90 in the same role). "Extend a trial" is
+not representable today: it needs a new column AND all five consumers taught to respect
+it. Miss the Stripe path and the console quotes one date while Stripe bills another.
+
+**#331 is blocked by #336.** It defines `failed` as `published_at IS NULL AND error IS
+NOT NULL`, but nothing in the service ever writes `outbox_events.error` — so that filter
+can never match. #336 also records the worse half: `Publisher.Tick` appends every row id
+to `ids` *before* its two validation checks and then marks all of `ids` published, so an
+event with an unparseable payload or missing `store_id` is dropped without its watermark
+being bumped **and recorded as successfully published**. Invisible to any monitor.
+
+**Open in the milestone:** #281 (part (a) only), #286, #287, #288, plus the four new
+reads #329/#331/#332/#333 and the #330 decision, plus the blocked #278/#280/#290, plus
+#319 (OpenBao credentials, a different concern grouped in).
+
+The remaining **writes** are #286, #287, #288 and #281(a) — see trap 3, and trap 2
+before touching #287's routing. They are no longer the only work left: see the four
+new reads above.
 
 **Reusable pieces the next endpoint inherits**, beyond the surface itself:
 
@@ -93,7 +121,7 @@ rows.
   the console because `tenantRow` is a projection. A passthrough leaks every field
   added upstream, silently
 
-## Seven traps that each cost real time
+## Eight traps that each cost real time
 
 1. **`/api/v1/admin/*` is JWT-gated at the mesh.** An Istio `AuthorizationPolicy`
    (`require-customer-auth`, namespace `istio-ingress`, repo `tesserix-k8s`) denies
@@ -111,11 +139,21 @@ rows.
    required parameter so it cannot be forgotten. Calling `audit.Emit` directly on a
    write path will silently write no row (#310 built the helper; the trap remains for
    anyone not using it).
-4. **Two services, two sets of reference data.** `platform-api`'s `stores` FKs to
-   `countries`, `currencies`, `timezones` and its seed ships a specific set —
-   `GB`/`GBP`/`Europe/London` are safe, `IE`/`Europe/Dublin` are not. Copying fixture
-   values from marketplace-api produces tests that pass only on the machine where
-   someone hand-inserted the rows.
+4. **Two services, two sets of reference data — and the trap runs BOTH ways.**
+   `platform-api`'s `stores` FKs to `countries`, `currencies`, `timezones` and its
+   seed ships a specific set — `GB`/`GBP`/`Europe/London` are safe,
+   `IE`/`Europe/Dublin` are not. Copying fixture values from marketplace-api
+   produces tests that pass only on the machine where someone hand-inserted the rows.
+
+   **`marketplace-api`'s `stores` has NO such FKs.** It is a *local projection* of
+   platform-api's (`migrations/000001_products_initial.up.sql:13-26`): plain
+   `country_code char(2)`, `currency_code char(3)`, `timezone varchar(64)`, whose only
+   constraints are `stores_slug_unique` and `stores_status_valid`. Any string inserts.
+
+   Always say WHICH SERVICE. Read the unqualified sentence above as applying to
+   marketplace-api and you will "fix" a constraint that does not exist — that happened
+   on 2026-08-24, and the false claim reached a committed code comment before a
+   reviewer read the migration and caught it. Naming the service is the whole trap.
 5. **`-p 1` on integration runs.** The packages share one local Postgres; parallel
    execution exhausts its connection limit (`FATAL: sorry, too many clients already`)
    and presents as data pollution. It is not.
@@ -182,6 +220,27 @@ rows.
    verified against the `store_subscriptions.status` CHECK constraint, because Go
    cannot enumerate a type's constants and Postgres enforces that list on every write.
 
+8. **Build-tagged code is invisible to the default toolchain, and a skip reads as a
+   pass.** Two independent failure modes that compound, both hit in one file on
+   2026-08-24 (`internal/billing/migration/repository_integration_test.go`):
+
+   - `go build ./...`, `go vet ./...` and `go test ./...` **never compile**
+     `//go:build integration` files. A signature change broke two call sites there and
+     every one of those commands stayed green. Only `go vet -tags=integration ./...`
+     found it. **Put that command in the standard verification set.**
+   - `testdb.NewDB` calls `t.Skip()` when its env var is unset, and that file gated on
+     **`TEST_DB_DSN`** while the repo uses **`TEST_DATABASE_URL`** (#317's split). Under
+     the variable everyone else sets, its tests skipped silently.
+
+   Compounded: those two tests were **broken AND had never run** — they failed at the
+   merge base on a missing parent `stores` row — while every summary line read `ok`.
+   A test you have never watched RUN is not a test. Confirm from verbose output that
+   it ran; `--- SKIP` and `--- PASS` are one character apart in a wall of output.
+
+   Corollary for verification generally: an `echo "OK"` after a `;` in a shell chain
+   prints on failure too, and a cached `ok` is not a fresh run. Use `-count=1` and
+   check exit codes when the result is going to be reported as evidence.
+
 ## Environment
 
 - **Use the LAN IP, not `localhost`** — a native Postgres squats on 127.0.0.1:
@@ -234,19 +293,32 @@ Two failure modes seen more than once:
 
 ## Suggested order
 
-Reads before writes; **#288 (purge) last** — it is irreversible.
+**Sort by effort, not by read-vs-write** — the reads-before-writes heuristic stopped
+sorting the queue once four new reads joined. **#288 (purge) stays last** regardless;
+it is irreversible.
 
-Good next candidate: **#289** (`GET /admin/health` — self-reported dependency
-health). It is the **last read** in the milestone; everything else remaining is a
-write. Likely small, but check what "dependency" means here before designing: the
-surface already talks to platform-api over three clients, and a health endpoint that
-reports on dependencies it never actually exercises would be the purest form of
-trap 7.
+Order re-derived 2026-08-24:
 
-Then the writes — **#281**, **#286**, **#287**, **#288** — in that order, with
-**#288 (purge) last** because it is irreversible. Every one needs
-`EmitOperatorAction` (trap 3), and #287 needs trap 2 checked before its routing is
-touched.
+1. **#287** (suspend/unsuspend) — the smallest remaining write that can fully close an
+   issue. Needs a reason-code set defined (a product decision, not a code one). Trap 2
+   is already de-risked by the `/api/v1/platform` prefix, but check it before touching
+   routing.
+2. **The new reads — #332, #333, #329.** Unsized; reads have been the cheaper half all
+   milestone. **#331 is blocked by #336** (see above), so it is not in this group.
+3. **#286** (trial extend) — reads small, is not. See the five derivation sites above.
+4. **#288** (purge) — irreversible, last by design.
+5. **#319** (OpenBao) — different concern, grouped in, last of all.
+
+Every write needs `EmitOperatorAction` (trap 3) — except one mounted on `/internal`
+rather than the platform surface, where you set `audit.Event.TenantID` and `StoreID`
+explicitly from the row instead. #338 is the worked example: `EmitOperatorAction`
+belongs to the HMAC platform-admin surface and importing it elsewhere is the wrong
+dependency.
+
+**#289 is done** (`/admin/health`, #335). Its lesson, which the next endpoint should
+inherit: it originally specified a metric over a column nothing writes, and it shipped
+stale-heartbeat checks that were blind to `heartbeat_at IS NULL` — the signature of the
+very failure they existed to detect. Both survived task-level review. See trap 7.
 
 **Production data shapes what verification can prove.** `store_subscriptions` is
 **empty** (4 tenants, 4 stores, no merchant has entered the billing flow — it needs
@@ -272,6 +344,9 @@ passing integration check.
   extracting the wiring into a testable function; the assertion should be that every
   dependency a mounted route dereferences is non-nil at **every** site, and that the
   two sites construct equivalent `Deps`.
+- **#336** — the outbox publisher marks dropped events as published, and
+  `outbox_events.error` is never written. Blocks #331's `failed` status. Filed
+  2026-08-24 out of #289; full analysis on the issue.
 - **#326** — `planchange.go:225` hardcodes `90 * 24 * time.Hour` instead of
   `trial.TrialDays`, and sends it to **Stripe** as `trial_end`. A missed edit there
   means disagreeing with Stripe about a billing date.

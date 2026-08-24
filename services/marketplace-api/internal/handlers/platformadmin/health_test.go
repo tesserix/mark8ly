@@ -85,6 +85,23 @@ func getHealth(t *testing.T, src platformadmin.HealthSource) (*httptest.Response
 func TestHealthReportsEveryRegistryEntryInOrder(t *testing.T) {
 	_, body := getHealth(t, healthFixture())
 
+	// The nine names are written out literally, NOT derived from
+	// DependencyRegistry. Deriving them would make this test self-referential:
+	// deleting a registry entry would shrink the response and the expectation
+	// together and the test would still pass, despite its name. If you are here
+	// because you added a dependency, adding it to this list is the deliberate
+	// friction — the console's contract changed.
+	wantNames := []string{
+		"outbox", "csv_import_jobs", "campaign_sends", "stripe_webhooks",
+		"scheduled_jobs", "platform_api", "stripe_api", "email_delivery", "object_storage",
+	}
+	require.Len(t, body.Data.Dependencies, len(wantNames))
+	for i, want := range wantNames {
+		require.Equal(t, want, body.Data.Dependencies[i].Name, "dependency %d out of contract order", i)
+	}
+
+	// Cross-check against the registry too, so the two sources of truth are
+	// pinned to each other as well as to the literal contract above.
 	require.Len(t, body.Data.Dependencies, len(platformadmin.DependencyRegistry))
 	for i, want := range platformadmin.DependencyRegistry {
 		require.Equal(t, want.Name, body.Data.Dependencies[i].Name,

@@ -19,7 +19,8 @@ issue: **#260**. Each endpoint is its own issue.
 #282 (`/admin/kpis`), #283 (`/admin/onboarding/funnel` + `/sessions`), #284
 (`/admin/billing/subscriptions`), #285 (`/admin/billing/trials`), #289
 (`/admin/health`), **#287** (`/admin/tenants/{id}/suspend` + `/unsuspend`, #340),
-**#329** (`/admin/tickets`, #346), and **#281 part (b) only** — the CSM migration
+**#329** (`/admin/tickets`, #346), **#332** (`/admin/notifications`, #351), and
+**#281 part (b) only** — the CSM migration
 fast-path review route, mounted and audited (#338); #281 stays OPEN for part (a).
 
 **The map changed on 2026-08-24 — this doc's "everything remaining is a write" is
@@ -30,7 +31,7 @@ no longer true.** Five issues joined the milestone: #329 (`/admin/tickets`), #33
 **Effort ordering, re-derived 2026-08-24 (session 3 close)** — reads-before-writes no
 longer sorts this queue:
 
-**#332 → #333 → #286 → #288 (purge, last) → #319.**
+**#332 → #333 → #286 → #288 (purge, last) → #319.** — **#332 is now DELIVERED; start at #333.**
 
 #287 and #329 are now DELIVERED. **#333 is blocked on a decision, not on work:** its
 acceptance requires gating on the operator holding the `rotate-credentials` **capability**,
@@ -280,6 +281,39 @@ rows.
    changes arrive as **image tags**. A check that cannot observe its subject is
    indistinguishable from a subject that is not moving.
 
+10. **Running the search is not the same as reading it.** Trap 9 says a negative needs a
+   search rather than a lookup. #332 obeyed that and still shipped a false negative,
+   because the disconfirming evidence **was in the grep output and was read past**.
+
+   The claim was "no sent-mail log exists anywhere in the estate", written after grepping
+   all four services. The output contained
+   `migrations/000086_shipments_dispatched_email_sent_at.up.sql` — a per-email record,
+   named in the filename. A second record, `campaign_recipients`, was *analysed in detail
+   in the same document* that declared nothing existed. Neither is a delivery outcome,
+   which is the true and narrower claim; but "nothing exists" reached a spec, two Go doc
+   comments, and two issue bodies before the final whole-branch review caught it.
+
+   The corollary that costs the least to apply: **a negative you are about to write down
+   should name what you found that was closest to disconfirming it.** "No delivery-outcome
+   record exists; the two partial handoff records are X and Y" is checkable. "No record
+   exists" is not, and a reader who trusts it stops looking.
+
+   Same round, same shape, second instance: `notifications.recipient_user_id` was
+   documented as a GIP UID by migration `000091` and `models.go:38`. It holds
+   `customers.id`. The spec repeated the comment instead of reading the writer
+   (`storefront/webhooks.go:713` sets `row.CustomerID.String()`) and the reader
+   (`customer_notifications.go:58-73` resolves a `*customer.CustomerProfile`). Filed as
+   #350. **A pre-existing comment is not evidence — it is a claim of the same kind you are
+   being warned about, written by someone with the same incentives.**
+
+11. **`CREATE INDEX` without `IF NOT EXISTS` can crashloop the estate.** Caught in review on
+   #332. `AssertVersion` requires exact equality between `ExpectedSchemaVersion` and the
+   applied migration version. If an operator pre-creates an index by hand — or
+   `CONCURRENTLY`, to dodge the `ACCESS EXCLUSIVE` window, which a spec that tells them to
+   "check the table size first" actively invites — a bare `CREATE INDEX` errors,
+   golang-migrate marks the version dirty, and every pod refuses to start. Migration
+   `000101` already guards; copy that, not the bare form.
+
 ## Environment
 
 - **Use the LAN IP, not `localhost`** — a native Postgres squats on 127.0.0.1:
@@ -288,6 +322,14 @@ rows.
   The committed Makefile says `localhost`, correct everywhere else — do not change it.
 - `make dev` is broken (migrate containers fail with `exec: "up": executable file not found`).
   Apply migrations with `cd services/<svc> && DATABASE_URL=... go run ./cmd/migrate up`.
+- **Migrations apply via an initContainer, on ONE deployment.**
+  `mark8ly-marketplace-api-admin` has an init container named `migrate`;
+  `mark8ly-marketplace-api-storefront` does **not**, and both run the same image with the
+  same startup `AssertVersion` check. So on any migration rollout the two deployments are
+  briefly disagreeing with the database in opposite directions, and a storefront pod that
+  restarts in that window crashloops until its own rollout lands. Self-healing, but it
+  looks exactly like a failure if you are not expecting it. Verified on #332's rollout:
+  both reached `main-<sha7>` with 0 restarts.
 - **Deployment is Kargo-gated**, not direct ArgoCD: CI → ghcr → Kargo Warehouse →
   Freight → Promotion to the `prod` stage → ArgoCD sync. Expect ~10–20 min, and check
   `kubectl get stages,promotions -n kargo-mark8ly` rather than assuming a stall.

@@ -139,7 +139,7 @@ re-derive rather than trust.
 
 | dependency | `degraded` when | anchor |
 |---|---|---|
-| `csv_import_jobs` | a `running` job's `heartbeat_at` is older than **15 min** | **Not a chosen number.** `RecoverOrphanedJobs(ctx, repo, 15*time.Minute, log)` in `main.go` already defines when this system considers a job orphaned. The handler reuses that constant so the endpoint and the recovery job cannot drift into disagreeing about the same job. |
+| `csv_import_jobs` | a `running` job's `heartbeat_at` is older than **15 min** | **Not a chosen number**, but not yet a shared one either: `main.go` passes a bare `15*time.Minute` literal to `RecoverOrphanedJobs`, and `csvjob` exports no constant. Implementation extracts `csvjob.OrphanWindow = 15 * time.Minute`, replaces the literal at that call site, and reads it here — so the endpoint and the recovery scan cannot drift into disagreeing about the same job. Until that extraction lands, the shared definition does not exist. |
 | `campaign_sends` | a `sending` campaign's `heartbeat_at` is older than **15 min** | **Not a chosen number.** `campaign.StaleDuration = 15 * time.Minute` is an exported constant already governing `RecoverStuckCampaigns`. Reused for the same reason as the csv window. |
 | `outbox` | oldest pending older than **5 min**, or any `errored` row | Chosen. The publisher ticks every 2s with a batch of 100, so 5 min is ~150 ticks of headroom — comfortably past transient lag, well short of a stall going unnoticed. |
 | `stripe_webhooks` | any `manual_review_required`, or oldest unprocessed older than **15 min** | Chosen. `manual_review_required` is already the system's own "a human must look" flag, so any non-zero value is degraded by that table's own definition. |

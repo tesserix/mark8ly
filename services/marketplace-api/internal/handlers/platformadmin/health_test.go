@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -257,4 +258,31 @@ func TestHealthStatusPerThreshold(t *testing.T) {
 				"one second under the stripe age threshold is ok")
 		}
 	}
+}
+
+// THE test. Real handler output compared to the committed contract.
+// checked_at is replaced before comparison because it is the one field
+// that legitimately varies per request; everything else is pinned.
+func TestHealthMatchesContract(t *testing.T) {
+	rec := httptest.NewRecorder()
+	healthRouter(t, healthFixture()).ServeHTTP(rec,
+		httptest.NewRequest(http.MethodGet, "/admin/health", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	data := got["data"].(map[string]any)
+	checkedAt, ok := data["checked_at"].(string)
+	require.True(t, ok, "checked_at must be present and a string")
+	_, err := time.Parse(time.RFC3339, checkedAt)
+	require.NoError(t, err, "checked_at must be RFC3339 with offset")
+	data["checked_at"] = "PINNED"
+
+	normalised, err := json.Marshal(got)
+	require.NoError(t, err)
+
+	want, err := os.ReadFile("testdata/health_response.json")
+	require.NoError(t, err)
+	require.JSONEq(t, string(want), string(normalised))
 }

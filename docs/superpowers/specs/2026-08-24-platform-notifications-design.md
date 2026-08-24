@@ -15,15 +15,23 @@ migration and the model (`internal/notification/models.go`):
 
 | #332 asks for | what the table has |
 |---|---|
-| `recipient` (email) | `recipient_user_id` — a GIP UID string, and **only on storefront-customer rows**. NULL on every merchant/staff row, where the target is the store, not a person |
+| `recipient` (email) | `recipient_user_id` — the **customer profile id** (`customers.id`, a UUID), and **only on storefront-customer rows**. NULL on every merchant/staff row, where the target is the store, not a person |
 | delivery `status` | no such column. `is_read` is a **read** flag |
 | `template` | `type` — an event kind (`new_order`, `low_stock`, `order_shipped`, …) |
 | "did the email arrive" | nothing in the row was ever emailed |
 
-### And no sent-mail log exists anywhere in the estate
+### No *delivery-outcome* record exists anywhere in the estate
 
-This is a negative, so it was established by search rather than by one lookup (trap 9).
-All four services' migrations and Go sources:
+**Corrected 2026-08-25.** This section originally claimed that *no record of outbound
+mail exists anywhere in the estate*. That claim was **false**, and the final whole-branch
+review caught it. Two partial per-email records do exist — one of them
+(`shipments.dispatched_email_sent_at`) appeared in the very grep output this section was
+written from, and was read past. The correct, narrower claim is the one that matters:
+**nothing records a delivery outcome.** The failure is trap 9's exact shape — a negative
+established by a search that was run and then misread, and then written into a comment
+confident enough to redirect the next reader.
+
+What the search actually supports, across all four services' migrations and Go sources:
 
 - **Transactional mail is fire-and-forget and unrecorded.** Every product mailer hands a
   finished envelope to `email.Sender` — SendGrid primary, Resend fallback
@@ -33,7 +41,12 @@ All four services' migrations and Go sources:
   "the notification-service Wave 1.5 webhook receiver"; it was never rebuilt here. Open and
   click tracking are enabled on outgoing mail (`internal/email/sendgrid.go:86-90`) and
   nothing receives the resulting events.
-- **The one per-recipient email table records handoff only, and loses failures.**
+- **Two partial handoff records DO exist, and neither is a delivery outcome.**
+  `shipments.dispatched_email_sent_at` (migration `000086`) is a per-shipment timestamp
+  written at `internal/handlers/admin/shipments.go:287-288` purely as a dedup gate for the
+  "your order has shipped" email — it records that a send was *attempted once*, nothing
+  about its fate. And `campaign_recipients`, below.
+- **That per-recipient campaign table records handoff only, and loses failures.**
   `campaign_recipients` (`000012`) declares `pending`/`sent`/`delivered`/`opened`/
   `clicked`/`bounced`/`unsubscribed` (`internal/campaign/models.go:28-34`). Only `sent`
   is ever written, from the single caller at `internal/campaign/send_worker.go:241`. A
@@ -42,6 +55,8 @@ All four services' migrations and Go sources:
 
 **Therefore acceptance criterion 3 — "delivery status is the current one, not just queued
 at send time" — is not satisfiable by any data this estate holds, for any endpoint, today.**
+The two handoff records above establish *that a send was attempted*, never *what became of
+it*, which is the question the criterion asks.
 It is not a gap in this endpoint's query; it is a gap in what is recorded. That work is
 **#348**, split out with the analysis above.
 
@@ -97,7 +112,8 @@ Unknown query parameters are ignored, as elsewhere on this surface.
 }
 ```
 
-`recipient_user_id`, `resource_type` and `resource_id` are `omitempty`. `audience` is
+`recipient_user_id` carries the customer profile id (`customers.id`). It, `resource_type`
+and `resource_id` are `omitempty`. `audience` is
 always present — it is what makes an absent `recipient_user_id` mean "this went to the
 store" rather than "the lookup failed".
 
@@ -110,8 +126,8 @@ store" rather than "the lookup failed".
 - **`status`** — no delivery status exists. Emitting `is_read` under the name `status`
   would put a governance label on a metric that answers a different question — #282's
   structurally-wrong counter, with more consequence because an operator would act on it.
-- **`recipient` (email)** — no email column exists. `recipient_user_id` is a GIP UID and is
-  set only on customer rows.
+- **`recipient` (email)** — no email column exists. `recipient_user_id` is the customer
+  profile id (`customers.id`) and is set only on customer rows.
 
 All three are reported on #332 rather than worked around.
 
@@ -176,8 +192,15 @@ created_at DESC)` and `notif_store_recent_idx (store_id, created_at DESC)`. A cr
 `ORDER BY created_at DESC` has nothing to use.
 
 ```sql
-CREATE INDEX notif_created_at_idx ON notifications (created_at DESC);
+CREATE INDEX IF NOT EXISTS notif_created_at_idx ON notifications (created_at DESC);
 ```
+
+`IF NOT EXISTS` is load-bearing, not decoration. This section tells the operator to check
+the table's size before running the migration — which invites pre-creating the index by
+hand, or `CONCURRENTLY`, to avoid the `ACCESS EXCLUSIVE` window. A bare `CREATE INDEX`
+would then error, golang-migrate would mark the version dirty, and `AssertVersion` would
+refuse startup and crashloop every pod: the #287 failure this spec cites, triggered by
+following this spec's own advice. Migration `000101` already uses the guard.
 
 Same reason #276 added `idx_audit_logs_created_at`. No claim is made here about the lock
 window at production scale — the table is written by ~20 call sites per store and its
@@ -257,6 +280,9 @@ not a passing integration check.
   "what was this store told, and when" — and explicitly **not** "did the email arrive".
 - **#348** carries the email delivery log: a send record written by the shared transport, a
   signature-verified provider event webhook, and the `campaign_recipients` failure-recording
-  fix. Until it lands, no surface in this estate can report a delivery outcome.
+  fix. Until it lands, no surface in this estate can report a delivery outcome. Its scope
+  is wider than first written — it must reconcile with the two existing partial records
+  (`shipments.dispatched_email_sent_at` and `campaign_recipients`) rather than build beside
+  them.
 - `internal/campaign`'s unwritten recipient states join #322's list of declared-but-never-
   written enums.

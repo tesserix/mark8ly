@@ -22,13 +22,17 @@ type fakeStripe struct {
 	priceID    string
 	updateErr  error
 	updateSub  *billingstripe.Subscription
+	// lastTrialEnd captures the TrialEnd sent on the most recent
+	// CreateSubscription call, so tests can assert the exact Stripe value.
+	lastTrialEnd int64
 }
 
 func (f *fakeStripe) UpdateSubscription(_ context.Context, _ billingstripe.UpdateSubscriptionParams) (*billingstripe.Subscription, error) {
 	return f.updateSub, f.updateErr
 }
 
-func (f *fakeStripe) CreateSubscription(_ context.Context, _ billingstripe.CreateSubscriptionInput) (*billingstripe.Subscription, error) {
+func (f *fakeStripe) CreateSubscription(_ context.Context, in billingstripe.CreateSubscriptionInput) (*billingstripe.Subscription, error) {
+	f.lastTrialEnd = in.TrialEnd
 	return f.updateSub, f.updateErr
 }
 

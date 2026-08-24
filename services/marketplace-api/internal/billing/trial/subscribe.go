@@ -126,9 +126,9 @@ func (s *Subscriber) subscribeInTx(ctx context.Context, tx *gorm.DB, in Subscrib
 		return nil, ErrMissingStripeCustomer
 	}
 
-	// trial_end = signup_date + 90d. CreatedAt is our signup_date proxy —
-	// the row is inserted at signup, so the two are the same event.
-	trialEnd := row.CreatedAt.Add(TrialDays * 24 * time.Hour).Unix()
+	// trial_end is the EFFECTIVE end: an operator-extended trial must bill on
+	// the extended date, not created_at + TrialDays (#353).
+	trialEnd := EndsAt(row).Unix()
 
 	priceID, err := s.stripe.PriceIDFor(ctx, in.Plan, in.Period, in.Currency, row.PriceTier)
 	if err != nil {

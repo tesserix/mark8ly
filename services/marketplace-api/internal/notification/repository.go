@@ -26,10 +26,49 @@ type ListResult struct {
 	Total         int64
 }
 
+// MaxPlatformPageSize and DefaultPlatformPageSize mirror the ticket and
+// audit packages' values so every cross-tenant read on the platform
+// surface clamps alike.
+const MaxPlatformPageSize = 500
+const DefaultPlatformPageSize = 50
+
+// Audience values for PlatformListFilter.Audience. They discriminate on
+// recipient_user_id being NULL: a notification either targets the store
+// (staff bell, no individual recipient) or one storefront customer.
+const (
+	AudienceStore    = "store"
+	AudienceCustomer = "customer"
+)
+
+// PlatformListFilter is the CROSS-STORE filter for the platform console
+// (#332). It is deliberately a separate type from ListFilter: that one
+// requires a store and matches nothing without it, which is the safe
+// failure for a merchant-facing query. Widening it to mean "all stores
+// when unset" would make a forgotten field a cross-store leak.
+//
+// TenantID and StoreID NARROW; neither is a required scope.
+type PlatformListFilter struct {
+	TenantID        *uuid.UUID
+	StoreID         *uuid.UUID
+	Type            string
+	Audience        string // AudienceStore | AudienceCustomer | "" (any)
+	RecipientUserID string
+	Read            *bool
+	From            *time.Time
+	To              *time.Time
+	Page            int
+	Limit           int
+}
+
 // Repository is the data-access surface for notifications.
 type Repository interface {
 	// ListByStore returns a paginated list of notifications for a store.
 	ListByStore(ctx context.Context, db *gorm.DB, f ListFilter) (ListResult, error)
+
+	// ListPlatform returns a filtered, paginated, CROSS-STORE list of
+	// notifications for the platform console. TenantID and StoreID narrow
+	// rather than scope — see PlatformListFilter.
+	ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter) (ListResult, error)
 
 	// GetUnreadCount returns the number of unread notifications for a store.
 	GetUnreadCount(ctx context.Context, db *gorm.DB, storeID uuid.UUID) (int64, error)
@@ -89,6 +128,67 @@ func (gormRepository) ListByStore(ctx context.Context, db *gorm.DB, f ListFilter
 
 	if err := q.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&result.Notifications).Error; err != nil {
 		return result, fmt.Errorf("notification list: %w", err)
+	}
+	return result, nil
+}
+
+func (gormRepository) ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter) (ListResult, error) {
+	var result ListResult
+	q := db.WithContext(ctx).Model(&Notification{})
+
+	// TenantID and StoreID NARROW. Unset means every tenant and every
+	// store, which is the whole point of this method and exactly why it is
+	// not ListFilter.
+	if f.TenantID != nil {
+		q = q.Where("tenant_id = ?", *f.TenantID)
+	}
+	if f.StoreID != nil {
+		q = q.Where("store_id = ?", *f.StoreID)
+	}
+	if f.Type != "" {
+		q = q.Where("type = ?", f.Type)
+	}
+	// An unrecognised audience narrows nothing rather than erroring,
+	// matching how every other unknown parameter on this surface behaves.
+	switch f.Audience {
+	case AudienceStore:
+		q = q.Where("recipient_user_id IS NULL")
+	case AudienceCustomer:
+		q = q.Where("recipient_user_id IS NOT NULL")
+	}
+	if f.RecipientUserID != "" {
+		q = q.Where("recipient_user_id = ?", f.RecipientUserID)
+	}
+	if f.Read != nil {
+		q = q.Where("is_read = ?", *f.Read)
+	}
+	if f.From != nil {
+		q = q.Where("created_at >= ?", *f.From)
+	}
+	if f.To != nil {
+		q = q.Where("created_at <= ?", *f.To)
+	}
+
+	if err := q.Count(&result.Total).Error; err != nil {
+		return result, fmt.Errorf("notification platform list count: %w", err)
+	}
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = DefaultPlatformPageSize
+	}
+	if limit > MaxPlatformPageSize {
+		limit = MaxPlatformPageSize
+	}
+	page := f.Page
+	if page < 1 {
+		page = 1
+	}
+
+	if err := q.Order("created_at DESC").
+		Limit(limit).Offset((page - 1) * limit).
+		Find(&result.Notifications).Error; err != nil {
+		return result, fmt.Errorf("notification platform list: %w", err)
 	}
 	return result, nil
 }

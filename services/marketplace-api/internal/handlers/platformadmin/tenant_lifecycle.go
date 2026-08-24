@@ -90,12 +90,21 @@ type TenantLifecycleHandler struct {
 	logger *slog.Logger
 }
 
-// NewTenantLifecycleHandler constructs the handler. logger and emit may be
-// nil/no-op; storeRepo may be nil, in which case the local projection
-// update is skipped (logged, not failed) after a changed call.
+// NewTenantLifecycleHandler constructs the handler. logger may be nil;
+// storeRepo may be nil, in which case the local projection update is
+// skipped (logged, not failed) after a changed call.
+//
+// emit MUST NOT be nil, and this panics at construction if it is — not
+// at request time. A silent no-op default here would mean the surface's
+// entire auditing guarantee rests on callers remembering to wire one up
+// (see routes.go's Emitter field), which is the exact failure shape this
+// series exists to close: a handler that cannot audit must not be built,
+// rather than quietly built and then quietly skipping every audit row.
+// Callers that genuinely want to discard events must pass an explicit
+// func that does so, so that choice is visible in a diff.
 func NewTenantLifecycleHandler(client TenantLifecycle, storeRepo stores.Repository, emit lifecycleAuditFunc, logger *slog.Logger) *TenantLifecycleHandler {
 	if emit == nil {
-		emit = func(*gin.Context, uuid.UUID, audit.Event) error { return nil }
+		panic("platformadmin: NewTenantLifecycleHandler requires a non-nil emit func")
 	}
 	return &TenantLifecycleHandler{client: client, stores: storeRepo, emit: emit, logger: logger}
 }
@@ -184,9 +193,11 @@ func (h *TenantLifecycleHandler) handle(
 
 	var req lifecycleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		// A missing/absent body binds to the zero value rather than
-		// erroring on some gin configurations; the reason-code check
-		// below still catches it. A malformed JSON body IS an error here.
+		// gin's JSON binder returns io.EOF for a completely empty body, so
+		// an omitted body is rejected HERE as invalid_request — it never
+		// reaches the reason-code check below. `{}` (valid JSON, all
+		// fields absent) DOES bind successfully to the zero value and is
+		// the case the reason-code check exists to catch.
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid_request", "message": "request body could not be parsed",
 		})

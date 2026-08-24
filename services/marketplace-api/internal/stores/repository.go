@@ -218,11 +218,24 @@ func (r *gormRepository) InFlightOrderCount(ctx context.Context, storeID uuid.UU
 	return int(n), nil
 }
 
-// staleEpoch is written to synced_at by MarkStaleForTenant. It is always
-// older than any FreshTTL StoreMiddleware or slugCache is configured with,
-// so IsStale reports true unconditionally on the next read regardless of
-// how that TTL is tuned.
-var staleEpoch = time.Unix(0, 0)
+// forceRefreshAge is how far in the past MarkStaleForTenant backdates
+// synced_at. It is DELIBERATELY NOT the epoch: StoreMiddleware and
+// SlugCache both fail OPEN on a refresh error, serving a cached row
+// whose age is under their StaleCeil (24h) rather than 404ing every
+// merchant during a platform-api outage (see StoreMiddleware's
+// cacheErr == nil && cached != nil && time.Since(cached.SyncedAt) <
+// cfg.StaleCeil branch, and SlugCache.Get's matching fallback). Backdating
+// to the epoch would put every row past that 24h ceiling, so a failed
+// refresh right after an unsuspend would 404 instead of serving the
+// (still-accurate-enough) cached row — fail-closed where the design
+// requires fail-open.
+//
+// forceRefreshAge sits just past the 5-minute FreshTTL default (so
+// IsStale reports true and the very next read is forced through the
+// refresh path) but stays far inside the 24h StaleCeil default (so a
+// refresh that fails — platform-api down — still falls into the
+// stale-serve branch instead of 404ing).
+const forceRefreshAge = 10 * time.Minute
 
 // SuspendActiveForTenant flips active -> suspended for every local store
 // row belonging to tenantID. See Repository interface doc for why this is
@@ -246,7 +259,7 @@ func (r *gormRepository) MarkStaleForTenant(ctx context.Context, tenantID string
 	if err := r.db.WithContext(ctx).
 		Model(&Store{}).
 		Where("tenant_id = ?", tenantID).
-		Update("synced_at", staleEpoch).Error; err != nil {
+		Update("synced_at", time.Now().Add(-forceRefreshAge)).Error; err != nil {
 		return fmt.Errorf("stores: mark stale for tenant: %w", err)
 	}
 	return nil

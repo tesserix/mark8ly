@@ -94,6 +94,11 @@ func (r *fakeLifecycleStoreRepo) MarkStaleForTenant(_ context.Context, tenantID 
 	return nil
 }
 
+// discardAudit is an explicit, visible "throw the event away" choice —
+// NewTenantLifecycleHandler panics on a nil emit func (F1, #287) precisely
+// so that choice can never be made silently by omission.
+func discardAudit(*gin.Context, uuid.UUID, audit.Event) error { return nil }
+
 // newLifecycleDeps builds a handler wired to client, an inert local
 // store repo, and an audit func that discards every event. Used by tests
 // that don't care about the audit side effect.
@@ -102,7 +107,7 @@ func newLifecycleDeps(t *testing.T, client platformadmin.TenantLifecycle) *platf
 	return platformadmin.NewTenantLifecycleHandler(
 		client,
 		&fakeLifecycleStoreRepo{},
-		nil, // NewTenantLifecycleHandler treats nil as a no-op emit func
+		discardAudit,
 		nil,
 	)
 }
@@ -241,6 +246,8 @@ func TestSuspend_AuditsOncePerChangeAndNeverForNoOp(t *testing.T) {
 	require.Equal(t, "abuse", ev.Metadata["reason_code"])
 	require.Equal(t, "spam orders", ev.Metadata["reason"])
 	require.Equal(t, 3, ev.Metadata["stores_affected"])
+	require.Equal(t, "audit.read", ev.Metadata["capability"],
+		"the asserted capability header must be recorded on the audit row (F5, #287)")
 
 	noop := &stubLifecycle{res: &tenantlifecycle.Result{
 		TenantID: testTenant, Status: "suspended", StoresAffected: 0, Changed: false}}
@@ -260,7 +267,7 @@ func TestSuspend_UpdatesLocalProjectionImmediately(t *testing.T) {
 	repo := &fakeLifecycleStoreRepo{}
 	stub := &stubLifecycle{res: &tenantlifecycle.Result{
 		TenantID: testTenant, Status: "suspended", StoresAffected: 3, Changed: true}}
-	h := platformadmin.NewTenantLifecycleHandler(stub, repo, nil, nil)
+	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil)
 	rec := postLifecycle(t, h, "suspend", `{"reason_code":"abuse"}`)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, []string{testTenant}, repo.suspendedTenants,
@@ -275,7 +282,7 @@ func TestUnsuspend_MarksLocalProjectionStaleNotActive(t *testing.T) {
 	repo := &fakeLifecycleStoreRepo{}
 	stub := &stubLifecycle{res: &tenantlifecycle.Result{
 		TenantID: testTenant, Status: "active", StoresAffected: 3, Changed: true}}
-	h := platformadmin.NewTenantLifecycleHandler(stub, repo, nil, nil)
+	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil)
 	rec := postLifecycle(t, h, "unsuspend", `{"reason_code":"resolved"}`)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, []string{testTenant}, repo.staleTenants,

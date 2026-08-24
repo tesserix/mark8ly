@@ -52,9 +52,16 @@ func TestIntegration_Suspend_UpdatesLocalProjectionImmediately(t *testing.T) {
 	tenantID := uuid.NewString()
 	seeded := seedIntegrationStore(t, repo, tenantID)
 
+	// A SECOND tenant, seeded with its own active store, in the SAME table.
+	// This is F3's guard: SuspendActiveForTenant must filter on tenant_id,
+	// not merely on status — without that filter this store, belonging to
+	// an entirely different tenant, would also flip to suspended.
+	otherTenantID := uuid.NewString()
+	otherSeeded := seedIntegrationStore(t, repo, otherTenantID)
+
 	stub := &stubLifecycle{res: &tenantlifecycle.Result{
 		TenantID: tenantID, Status: "suspended", StoresAffected: 1, Changed: true}}
-	h := platformadmin.NewTenantLifecycleHandler(stub, repo, nil, nil)
+	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil)
 
 	rec := postLifecycleTenant(t, h, tenantID, "suspend", `{"reason_code":"abuse"}`)
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -65,6 +72,11 @@ func TestIntegration_Suspend_UpdatesLocalProjectionImmediately(t *testing.T) {
 		"local projection must already read suspended, without waiting for any TTL")
 	require.False(t, stores.IsStale(got, 5*time.Minute),
 		"the eager write must also refresh synced_at, or the row would immediately look stale")
+
+	otherGot, err := repo.GetByIDForTenant(t.Context(), otherSeeded.ID, otherTenantID)
+	require.NoError(t, err)
+	require.Equal(t, stores.StatusActive, otherGot.Status,
+		"suspending one tenant must NOT touch another tenant's store — estate-wide suspension is the bug this guards against (F3)")
 }
 
 // TestIntegration_Unsuspend_MarksLocalProjectionStaleNotActive is the
@@ -81,9 +93,17 @@ func TestIntegration_Unsuspend_MarksLocalProjectionStaleNotActive(t *testing.T) 
 	seeded.Status = stores.StatusSuspended
 	require.NoError(t, repo.Upsert(t.Context(), seeded))
 
+	// A SECOND tenant, seeded fresh and left ACTIVE. This is F3's guard on
+	// the unsuspend path: MarkStaleForTenant must filter on tenant_id, or
+	// this store's synced_at — belonging to a different tenant entirely —
+	// would also get backdated.
+	otherTenantID := uuid.NewString()
+	otherSeeded := seedIntegrationStore(t, repo, otherTenantID)
+	otherSyncedAtBefore := otherSeeded.SyncedAt
+
 	stub := &stubLifecycle{res: &tenantlifecycle.Result{
 		TenantID: tenantID, Status: "active", StoresAffected: 1, Changed: true}}
-	h := platformadmin.NewTenantLifecycleHandler(stub, repo, nil, nil)
+	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil)
 
 	rec := postLifecycleTenant(t, h, tenantID, "unsuspend", `{"reason_code":"resolved"}`)
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -94,4 +114,9 @@ func TestIntegration_Unsuspend_MarksLocalProjectionStaleNotActive(t *testing.T) 
 		"unsuspend must NOT eagerly flip the local row to active")
 	require.True(t, stores.IsStale(got, 5*time.Minute),
 		"unsuspend must force the row stale so the next read refetches from platform-api")
+
+	otherGot, err := repo.GetByIDForTenant(t.Context(), otherSeeded.ID, otherTenantID)
+	require.NoError(t, err)
+	require.WithinDuration(t, otherSyncedAtBefore, otherGot.SyncedAt, time.Second,
+		"unsuspending one tenant must NOT touch another tenant's synced_at — estate-wide staleness is the bug this guards against (F3)")
 }

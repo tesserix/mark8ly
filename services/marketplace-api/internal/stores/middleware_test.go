@@ -120,7 +120,11 @@ func (r *fakeRepo) MarkStaleForTenant(_ context.Context, tenantID string) error 
 	for k, s := range r.byKey {
 		if s.TenantID == tenantID {
 			cp := *s
-			cp.SyncedAt = time.Unix(0, 0)
+			// Mirrors the real repository's forceRefreshAge: stale enough
+			// to fail IsStale against the default 5-minute FreshTTL, but
+			// nowhere near the 24h StaleCeil, so a failed refresh still
+			// falls into the fail-open stale-serve branch instead of 404ing.
+			cp.SyncedAt = time.Now().Add(-10 * time.Minute)
 			r.byKey[k] = &cp
 		}
 	}
@@ -344,6 +348,36 @@ func TestMiddleware_StaleCache_BeyondCeiling_404(t *testing.T) {
 	}
 	if p.reached {
 		t.Fatal("handler should not be reached")
+	}
+}
+
+// TestMiddleware_MarkStaleForTenant_PlatformOutage_ServesStale pins the
+// fail-open requirement (F2, #287): MarkStaleForTenant backdates synced_at
+// enough to trip IsStale and force a refresh attempt, but NOT so far back
+// that a failed refresh (platform-api unreachable) falls outside StaleCeil.
+// If MarkStaleForTenant instead wrote the epoch, this request would 404 —
+// locking every merchant out of every store during an outage that follows
+// an unsuspend, which is exactly the failure mode this design forbids.
+func TestMiddleware_MarkStaleForTenant_PlatformOutage_ServesStale(t *testing.T) {
+	repo := newFakeRepo()
+	repo.preload(newFixtureStore(time.Now())) // fresh to start
+	if err := repo.MarkStaleForTenant(context.Background(), testTenantID); err != nil {
+		t.Fatalf("MarkStaleForTenant: %v", err)
+	}
+
+	client := &fakeClient{err: stores.ErrPlatformUnavailable}
+	p := &probe{}
+	r := buildRouter(baseCfg(repo, client), p)
+
+	w := doRequest(r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200 (fail-open on a stale-but-recent row)", w.Code)
+	}
+	if !p.reached {
+		t.Fatal("handler not reached")
+	}
+	if !p.storeStale {
+		t.Fatal("expected store_stale=true")
 	}
 }
 

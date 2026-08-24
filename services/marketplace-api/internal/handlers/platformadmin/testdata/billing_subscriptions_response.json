@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "tenant_id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+      "tenant_name": "Acme Trading",
+      "store_id": "aaaaaaaa-4f89-11d3-9a0c-0305e82c3301",
+      "plan": "starter",
+      "period": "monthly",
+      "status": "active",
+      "amount": {"amount": 1500, "currency": "GBP"},
+      "current_period_end": "2026-09-24T00:00:00Z",
+      "cancel_at_period_end": false
+    },
+    {
+      "tenant_id": "3f2504e0-4f89-11d3-9a0c-0305e82c3302",
+      "store_id": "bbbbbbbb-4f89-11d3-9a0c-0305e82c3302",
+      "plan": "trial",
+      "period": "monthly",
+      "status": "trialing",
+      "cancel_at_period_end": false
+    }
+  ],
+  "pagination": {"page": 1, "limit": 50, "total": 2}
+}

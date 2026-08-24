@@ -49,7 +49,7 @@ const (
 // meaning.
 //
 // This is an explicit DENY list rather than a hand-written allow list: a new
-// SubscriptionStatus added to models.go becomes filterable automatically,
+// SubscriptionStatus added to AllStatuses() becomes filterable automatically,
 // and hiding one requires editing this set deliberately. The reverse — a
 // hand-written allow list — silently leaves new states unfilterable, which
 // is how a console loses sight of a state nobody remembered to add.

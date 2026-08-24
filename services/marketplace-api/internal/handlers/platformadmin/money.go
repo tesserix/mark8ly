@@ -48,7 +48,13 @@ func resolveMoney(plan, period string, billingCurrency *string, tier subscriptio
 	}
 
 	if opts, ok := pricing.DevelopedCurrencyOptions(p, per); ok {
-		if amt, present := opts[cur]; present {
+		// DevelopedCurrencyOptions' Options map is pre-populated with a
+		// zero-value Amount for every developed currency, even one the
+		// catalog has no price for (see catalog.go's init: opts[c] =
+		// byPeriod[c]). Map presence alone is not proof of a real price —
+		// require a non-empty Currency too, or a catalog gap silently
+		// resolves as amount=0.
+		if amt, present := opts[cur]; present && amt.Currency != "" {
 			return money{Amount: amt.UnitAmountMinor, Currency: strings.ToUpper(amt.Currency)}, true
 		}
 	}

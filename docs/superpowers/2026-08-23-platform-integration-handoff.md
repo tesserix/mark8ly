@@ -18,16 +18,27 @@ issue: **#260**. Each endpoint is its own issue.
 (`/admin/audit-logs`), #277 (`/admin/entities/tenants`), #279 (`/admin/conversions`),
 #282 (`/admin/kpis`), #283 (`/admin/onboarding/funnel` + `/sessions`), #284
 (`/admin/billing/subscriptions`), #285 (`/admin/billing/trials`), #289
-(`/admin/health`), and **#281 part (b) only** — the CSM migration fast-path review
-route, mounted and audited (#338); #281 stays OPEN for part (a).
+(`/admin/health`), **#287** (`/admin/tenants/{id}/suspend` + `/unsuspend`, #340),
+**#329** (`/admin/tickets`, #346), and **#281 part (b) only** — the CSM migration
+fast-path review route, mounted and audited (#338); #281 stays OPEN for part (a).
 
 **The map changed on 2026-08-24 — this doc's "everything remaining is a write" is
 no longer true.** Five issues joined the milestone: #329 (`/admin/tickets`), #330
 (Otto cross-tenant live chat — a decision, not an endpoint), #331 (`/admin/outbox`),
 #332 (`/admin/notifications`), #333 (`/admin/break-glass`). Four of those are reads.
 
-**Effort ordering, re-derived 2026-08-24** (reads-before-writes no longer sorts it):
-#287 → the new reads #332/#333/#329 → #286 → #288 (purge, last) → #319.
+**Effort ordering, re-derived 2026-08-24 (session 3 close)** — reads-before-writes no
+longer sorts this queue:
+
+**#332 → #333 → #286 → #288 (purge, last) → #319.**
+
+#287 and #329 are now DELIVERED. **#333 is blocked on a decision, not on work:** its
+acceptance requires gating on the operator holding the `rotate-credentials` **capability**,
+but this surface checks capability **presence only, never the value**
+(`internal/handlers/platformadmin/middleware.go:153`). #287 deliberately did not invent a
+value vocabulary — the console asserts these names and a guess would refuse every real
+request. Settle the console's capability names first, or ship #333 with the gate
+explicitly deferred and say so. **#332 has no blocker and is the right next task.**
 
 **#286 is NOT the small one its acceptance criteria suggest.** There is **no stored
 trial-end column anywhere** — searched every migration and every Go site. Trial end is
@@ -45,7 +56,7 @@ to `ids` *before* its two validation checks and then marks all of `ids` publishe
 event with an unparseable payload or missing `store_id` is dropped without its watermark
 being bumped **and recorded as successfully published**. Invisible to any monitor.
 
-**Open in the milestone:** #281 (part (a) only), #286, #287, #288, plus the four new
+**Open in the milestone:** #281 (part (a) only), #286, #288, plus the three remaining new
 reads #329/#331/#332/#333 and the #330 decision, plus the blocked #278/#280/#290, plus
 #319 (OpenBao credentials, a different concern grouped in).
 
@@ -121,7 +132,10 @@ rows.
   the console because `tenantRow` is a projection. A passthrough leaks every field
   added upstream, silently
 
-## Eight traps that each cost real time
+## Nine traps that each cost real time
+
+> Trap 9 was added at the close of session 3, and traps 4, 6, 7 and 8 all bit again during
+> it — including in prose I wrote myself while restating the rule they encode.
 
 1. **`/api/v1/admin/*` is JWT-gated at the mesh.** An Istio `AuthorizationPolicy`
    (`require-customer-auth`, namespace `istio-ingress`, repo `tesserix-k8s`) denies
@@ -241,6 +255,31 @@ rows.
    prints on failure too, and a cached `ok` is not a fresh run. Use `-count=1` and
    check exit codes when the result is going to be reported as evidence.
 
+9. **A claim's freshness expires, and "it does not exist" needs a search.** Two shapes of
+   the same failure, both hit repeatedly in session 3.
+
+   **Freshness:** at the end of that session I reported "three instances of a nil check
+   that cannot fail", then re-read the merged code before filing the issue — two had
+   already been fixed during review. One was live. A summary you wrote twenty minutes ago
+   is a claim like any other, and code moved underneath it.
+
+   **Search, not lookup:** the tenant gate in #287 was designed for "the four admin route
+   groups" because I read one file. There are **five** — `RegisterAdminMobile` lives in a
+   different file and is mounted right beside the call I did read. The gate's own doc
+   comment then asserted it covered the admin surface, which made the gap invisible to
+   every reviewer who trusted it. The final whole-branch review caught it only by
+   searching for other `Register*` functions.
+
+   Same shape as trap 7's `outbox_events.error` and the `stores` FK claim: a negative
+   established by one lookup instead of a search, then written into a comment that
+   redirected the next reader away from checking.
+
+   **A third variant reached the instruments, not the code.** A Kargo watch reading an
+   empty jsonpath reported `Healthy` for 30 minutes while observing nothing; its
+   replacement matched a mark8ly commit SHA against `tesserix-k8s` commits, when mark8ly
+   changes arrive as **image tags**. A check that cannot observe its subject is
+   indistinguishable from a subject that is not moving.
+
 ## Environment
 
 - **Use the LAN IP, not `localhost`** — a native Postgres squats on 127.0.0.1:
@@ -344,6 +383,10 @@ passing integration check.
   extracting the wiring into a testable function; the assertion should be that every
   dependency a mounted route dereferences is non-nil at **every** site, and that the
   two sites construct equivalent `Deps`.
+- **#341** (a nil check that cannot fail), **#342** (three tests that do not prove what
+  they name), **#343** (500 rather than 400 on a malformed internal `:id`), **#344** (a
+  failed projection update cannot be retried), **#345** (`tenantgate` cache has no
+  eviction or absolute staleness ceiling) — all filed at the close of session 3 off #287.
 - **#336** — the outbox publisher marks dropped events as published, and
   `outbox_events.error` is never written. Blocks #331's `failed` status. Filed
   2026-08-24 out of #289; full analysis on the issue.

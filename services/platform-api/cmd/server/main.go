@@ -352,6 +352,7 @@ func main() {
 	// requirement.
 	strictInternal := r.Group("/internal", middleware.RequireInternalAuthStrict(cfg.InternalAuthSecret))
 	tenantHandler.RegisterDirectory(strictInternal)
+	tenantHandler.RegisterLifecycle(strictInternal)
 	onboardingHandler.RegisterAnalytics(strictInternal)
 	estate.NewHandler(estate.NewRepository(conn)).Register(strictInternal)
 

@@ -1,6 +1,7 @@
 package tenant
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -271,6 +272,51 @@ func (h *Handler) getTenantByOwnerEmail(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": t})
+}
+
+// RegisterLifecycle mounts the operator-facing tenant suspend/unsuspend
+// routes (#287) on the supplied group. Mounted on strictInternal only:
+// these act on the whole estate and are not scoped by anything the caller
+// had to know, so an unconfigured deploy must answer 503 rather than serve
+// them. Deliberately separate from the existing PATCH in Register — that
+// path runs a merchant-authorized fga.Check a platform operator has no
+// relation in, and carries no status field.
+func (h *Handler) RegisterLifecycle(g *gin.RouterGroup) {
+	t := g.Group("/tenants")
+	{
+		t.POST("/:id/suspend", h.suspendTenant)
+		t.POST("/:id/unsuspend", h.unsuspendTenant)
+	}
+}
+
+// suspendTenant serves POST /internal/tenants/:id/suspend (#287).
+func (h *Handler) suspendTenant(c *gin.Context) {
+	h.lifecycle(c, h.svc.Suspend)
+}
+
+// unsuspendTenant serves POST /internal/tenants/:id/unsuspend (#287).
+func (h *Handler) unsuspendTenant(c *gin.Context) {
+	h.lifecycle(c, h.svc.Unsuspend)
+}
+
+// lifecycle is shared by suspendTenant and unsuspendTenant: identical
+// response shaping and error mapping, one implementation so the two
+// routes cannot drift. A no-op (Changed=false) is still a 200 — #287's
+// acceptance requires that suspending an already-suspended tenant
+// returns current state, not an error.
+func (h *Handler) lifecycle(c *gin.Context, op func(context.Context, string) (*SuspendResult, error)) {
+	id := c.Param("id")
+	res, err := op(c.Request.Context(), id)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"tenant_id":       id,
+		"status":          res.Status,
+		"stores_affected": res.StoresAffected,
+		"changed":         res.Changed,
+	}})
 }
 
 func (h *Handler) listDirectory(c *gin.Context) {

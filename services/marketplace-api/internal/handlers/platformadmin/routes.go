@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
 // Deps groups everything the platform admin surface needs. Constructed in
@@ -49,6 +50,44 @@ type Deps struct {
 	// TenantDirectory above for the tenant-name lookup. Both must be
 	// non-nil for that route to mount, matching the Trials pattern above.
 	AllSubscriptions SubscriptionLister
+
+	// TenantLifecycle serves POST /admin/tenants/:id/{suspend,unsuspend}
+	// (#287) — this surface's first WRITE endpoints. Nil leaves those
+	// routes unmounted, matching the nil-safe pattern used for the other
+	// client-backed routes above. Requires DB and Emitter (both non-nil)
+	// too — see Emitter below for why Emitter is required here and nowhere
+	// else in this struct.
+	TenantLifecycle TenantLifecycle
+
+	// Emitter is the async audit-log writer used for write-endpoint audit
+	// rows (currently only tenant suspend/unsuspend). Unlike every other
+	// optional dependency in this struct, a nil Emitter does NOT leave the
+	// surface merely degraded — Register refuses to mount the
+	// TenantLifecycle routes at all when Emitter is nil (see the guard
+	// below), because a write endpoint that cannot be attributed to an
+	// operator should not exist, not run silently unaudited. (The
+	// underlying EmitOperatorAction/Emit machinery does still tolerate a
+	// nil *audit.Emitter as a fire-and-forget no-op — logged loudly rather
+	// than silent, since #287 — for callers reached other than through
+	// this Register guard.)
+	Emitter *audit.Emitter
+
+	// TenantGateInvalidator drops a tenant's cached status so a suspension
+	// takes effect immediately instead of at the next cache refresh (#287
+	// fix-round-1). Unlike Emitter above, nil here is a genuine no-op, not
+	// a mount guard: an unwired invalidator just leaves today's TTL-lag
+	// behaviour in place (a delay, never a lost audit record), so it does
+	// NOT gate whether the TenantLifecycle routes mount.
+	TenantGateInvalidator TenantGateInvalidator
+}
+
+// TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
+// here (not importing internal/tenantgate's concrete type) so this package
+// stays decoupled from the admin group's gate implementation — the same
+// reason TenantDirectory, TenantLifecycle etc. are declared as local
+// interfaces above.
+type TenantGateInvalidator interface {
+	Invalidate(tenantID string)
 }
 
 // Register mounts the platform console's /admin/* surface behind
@@ -123,5 +162,25 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.AllSubscriptions != nil && deps.TenantDirectory != nil {
 		NewBillingSubscriptionsHandler(deps.AllSubscriptions, deps.TenantDirectory, deps.DB, deps.Logger).Register(group)
+	}
+
+	switch {
+	case deps.TenantLifecycle != nil && deps.DB != nil && deps.Emitter != nil:
+		NewTenantLifecycleHandler(
+			deps.TenantLifecycle,
+			stores.NewRepository(deps.DB),
+			NewOperatorActionAuditFunc(deps.Emitter),
+			deps.TenantGateInvalidator,
+			deps.Logger,
+		).Register(group)
+	case deps.TenantLifecycle != nil:
+		// TenantLifecycle is wired but DB or Emitter isn't: mounting a
+		// write endpoint that cannot be attributed is worse than not
+		// having it (#287, F1) — this is not the nil-safe "just degraded"
+		// pattern the other routes above use.
+		if deps.Logger != nil {
+			deps.Logger.Warn("platformadmin: tenant lifecycle routes not mounted — DB and Emitter are both required",
+				"db_nil", deps.DB == nil, "emitter_nil", deps.Emitter == nil)
+		}
 	}
 }

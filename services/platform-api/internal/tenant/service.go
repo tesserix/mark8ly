@@ -196,5 +196,17 @@ func (s *Service) GetByOwnerEmail(ctx context.Context, email string) (*Tenant, e
 	return s.repo.GetByOwnerEmail(ctx, email)
 }
 
+// Suspend transitions a tenant to suspended, cascading to its active
+// stores. See Repository.Suspend for the full contract (#287).
+func (s *Service) Suspend(ctx context.Context, id string) (*SuspendResult, error) {
+	return s.repo.Suspend(ctx, id)
+}
+
+// Unsuspend transitions a tenant back to active, restoring only the
+// stores its Suspend cascade suspended. See Repository.Unsuspend (#287).
+func (s *Service) Unsuspend(ctx context.Context, id string) (*SuspendResult, error) {
+	return s.repo.Unsuspend(ctx, id)
+}
+
 // Phase Q: GetBySlug, IsSlugAvailable, validateSlug and slugPattern
 // moved to the store package — slug is a store-level identifier now.

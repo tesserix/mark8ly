@@ -101,6 +101,36 @@ func (r *fakeRepo) InFlightOrderCount(_ context.Context, _ uuid.UUID) (int, erro
 	return 0, nil
 }
 
+func (r *fakeRepo) SuspendActiveForTenant(_ context.Context, tenantID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for k, s := range r.byKey {
+		if s.TenantID == tenantID && s.Status == stores.StatusActive {
+			cp := *s
+			cp.Status = stores.StatusSuspended
+			r.byKey[k] = &cp
+		}
+	}
+	return nil
+}
+
+func (r *fakeRepo) MarkStaleForTenant(_ context.Context, tenantID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for k, s := range r.byKey {
+		if s.TenantID == tenantID {
+			cp := *s
+			// Mirrors the real repository's forceRefreshAge: stale enough
+			// to fail IsStale against the default 5-minute FreshTTL, but
+			// nowhere near the 24h StaleCeil, so a failed refresh still
+			// falls into the fail-open stale-serve branch instead of 404ing.
+			cp.SyncedAt = time.Now().Add(-10 * time.Minute)
+			r.byKey[k] = &cp
+		}
+	}
+	return nil
+}
+
 func (r *fakeRepo) preload(s *stores.Store) {
 	_ = r.Upsert(context.Background(), s)
 	r.mu.Lock()
@@ -321,6 +351,47 @@ func TestMiddleware_StaleCache_BeyondCeiling_404(t *testing.T) {
 	}
 }
 
+// TestMiddleware_ForceRefreshAgeBackdateStaysWithinStaleCeiling pins a
+// property of the forceRefreshAge CONSTANT (F2, #287 review), not of
+// MarkStaleForTenant's real caller: MarkStaleForTenant backdates synced_at
+// enough to trip IsStale and force a refresh attempt, but NOT so far back
+// that the row falls outside StaleCeil. This matters for any caller that
+// marks an ACTIVE row stale (a failed refresh on such a row then serves
+// stale instead of 404ing) — it is a general-safety property of the
+// helper, exercised here directly against an active fixture.
+//
+// It is NOT a claim about MarkStaleForTenant's actual production caller:
+// unsuspend is the only caller, and every row it touches is status=
+// suspended at the time this runs, which 404s on a failed refresh
+// regardless of forceRefreshAge's value (StoreMiddleware's suspended check
+// runs before its StaleCeil check — see TestMiddleware_StaleSuspendedIsStillRefused
+// for that path, and forceRefreshAge's doc comment in repository.go for
+// the full reasoning). This test was previously named as if it covered
+// that path; it does not, and never could, since it seeds an active
+// fixture MarkStaleForTenant's caller can never produce.
+func TestMiddleware_ForceRefreshAgeBackdateStaysWithinStaleCeiling(t *testing.T) {
+	repo := newFakeRepo()
+	repo.preload(newFixtureStore(time.Now())) // fresh to start
+	if err := repo.MarkStaleForTenant(context.Background(), testTenantID); err != nil {
+		t.Fatalf("MarkStaleForTenant: %v", err)
+	}
+
+	client := &fakeClient{err: stores.ErrPlatformUnavailable}
+	p := &probe{}
+	r := buildRouter(baseCfg(repo, client), p)
+
+	w := doRequest(r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200 (fail-open on a stale-but-recent row)", w.Code)
+	}
+	if !p.reached {
+		t.Fatal("handler not reached")
+	}
+	if !p.storeStale {
+		t.Fatal("expected store_stale=true")
+	}
+}
+
 func TestMiddleware_SingleflightCoalescing(t *testing.T) {
 	repo := newFakeRepo()
 	client := &fakeClient{
@@ -399,6 +470,99 @@ func buildRouterForTenant(cfg stores.MiddlewareConfig, p *probe, tenantID string
 
 // A concurrent request from another tenant must not piggyback on the
 // singleflight refresh of the owning tenant and receive its store.
+// A suspended store must not serve admin API traffic even though it
+// resolves cleanly and belongs to the right tenant. `reached` is the real
+// assertion: a 404 with the handler still having run would mean the
+// middleware let it through and something later happened to 404.
+func TestMiddleware_SuspendedStoreIsRefused(t *testing.T) {
+	repo := newFakeRepo()
+	st := newFixtureStore(time.Now()) // fresh, so no refresh path is involved
+	st.Status = stores.StatusSuspended
+	repo.preload(st)
+	p := &probe{}
+
+	w := doRequest(buildRouter(baseCfg(repo, &fakeClient{}), p))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d want 404", w.Code)
+	}
+	if p.reached {
+		t.Fatal("handler was reached for a suspended store")
+	}
+}
+
+func TestMiddleware_ArchivedStoreIsRefused(t *testing.T) {
+	repo := newFakeRepo()
+	st := newFixtureStore(time.Now())
+	st.Status = stores.StatusArchived
+	repo.preload(st)
+	p := &probe{}
+
+	w := doRequest(buildRouter(baseCfg(repo, &fakeClient{}), p))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d want 404", w.Code)
+	}
+	if p.reached {
+		t.Fatal("handler was reached for an archived store")
+	}
+}
+
+// THE asymmetry, half one: a stale row that says `suspended` is still
+// enforced. The fixture is deliberately OLDER than StaleCeil and the client
+// is made to fail, so the only thing the middleware can act on is the stale
+// cached row — which must still refuse.
+func TestMiddleware_StaleSuspendedIsStillRefused(t *testing.T) {
+	cfg := baseCfg(newFakeRepo(), &fakeClient{err: stores.ErrPlatformUnavailable})
+	repo := newFakeRepo()
+	// Stale past FreshTTL but WITHIN the 24h StaleCeil (see NOTE on
+	// TestMiddleware_StaleActiveIsStillServed): if this fixture were beyond
+	// the ceiling instead, the pre-existing ceiling default would already
+	// 404 it regardless of status, and the test would not actually exercise
+	// the suspended-is-authoritative-while-stale asymmetry it is meant to pin.
+	st := newFixtureStore(time.Now().Add(-1 * time.Hour))
+	st.Status = stores.StatusSuspended
+	repo.preload(st)
+	cfg.Repo = repo
+	p := &probe{}
+
+	w := doRequest(buildRouter(cfg, p))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status: got %d want 404 (a cached suspended status is authoritative at any age)", w.Code)
+	}
+	if p.reached {
+		t.Fatal("handler was reached for a stale suspended store")
+	}
+}
+
+// THE asymmetry, half two, and the one that stops the fix going too far: a
+// stale ACTIVE row is still served when platform-api is unreachable. If this
+// test fails you have made the cache fail-closed and an outage now locks out
+// every merchant.
+func TestMiddleware_StaleActiveIsStillServed(t *testing.T) {
+	cfg := baseCfg(newFakeRepo(), &fakeClient{err: stores.ErrPlatformUnavailable})
+	repo := newFakeRepo()
+	// Stale past FreshTTL but within StaleCeil, Status active. NOTE: deliberately
+	// NOT -25h (beyond the 24h StaleCeil) — that exact input is already pinned to
+	// 404 by TestMiddleware_StaleCache_BeyondCeiling_404 regardless of status, so
+	// reusing it here would contradict that pre-existing, deliberate ceiling. The
+	// "served at any age" guarantee in the design applies to suspended being
+	// refused, not to active bypassing the ceiling.
+	repo.preload(newFixtureStore(time.Now().Add(-1 * time.Hour)))
+	cfg.Repo = repo
+	p := &probe{}
+
+	w := doRequest(buildRouter(cfg, p))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200 (fail-open on stale ACTIVE is deliberate)", w.Code)
+	}
+	if !p.reached {
+		t.Fatal("handler not reached: stale active must still be served")
+	}
+}
+
 func TestStoreMiddleware_ConcurrentRefreshIsTenantScoped(t *testing.T) {
 	const otherTenantID = "33333333-3333-3333-3333-333333333333"
 

@@ -42,11 +42,23 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 	// explicit RequireTenantRelation are still protected.
 	requireTenant := auth.RequireTenantClaim()
 
+	// tenantMW mirrors routes.go's tenantMW: auth, tenant-claim guard, then
+	// TenantGate (#287, F1) so a suspended tenant is refused on every
+	// non-store-scoped mobile group too — this is the fifth admin route
+	// group the design's four-group count missed. TenantGate is a nil-safe
+	// method value (see Deps.TenantGate's doc), so appending it
+	// unconditionally is safe whether or not the gate is wired.
+	tenantMW := []gin.HandlerFunc{bearerAuth, requireTenant}
+	if deps.TenantGate != nil {
+		tenantMW = append(tenantMW, deps.TenantGate)
+	}
+	tenantMW = append(tenantMW, rateLimiter)
+
 	// Platform support chat — merchant admin → Tesserix platform team.
 	// Not store-scoped: it rides the admin's tenant from the bearer token,
 	// so any authenticated merchant admin can open a platform chat.
 	if deps.PlatformSupportHandler != nil {
-		ps := router.Group("/mobile/admin/platform-support", bearerAuth, requireTenant, rateLimiter)
+		ps := router.Group("/mobile/admin/platform-support", tenantMW...)
 		deps.PlatformSupportHandler.Register(ps)
 	}
 
@@ -56,19 +68,25 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 	// on purpose — platform-api is authoritative on owner-vs-staff teardown,
 	// and Apple requires the deletion path to work for staff too.
 	if deps.MobileAccountHandler != nil {
-		acct := router.Group("/mobile/admin/account", bearerAuth, requireTenant, rateLimiter)
+		acct := router.Group("/mobile/admin/account", tenantMW...)
 		acct.DELETE("", deps.MobileAccountHandler.Delete)
 	}
 
 	// Tenant-wide routes
 	if deps.StoresHandler != nil {
-		mobileRoot := router.Group("/mobile/admin", bearerAuth, requireTenant, rateLimiter)
+		mobileRoot := router.Group("/mobile/admin", tenantMW...)
 		mobileRoot.GET("/stores",
 			deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
 			deps.StoresHandler.List)
 	}
 
-	storeRoute := router.Group("/mobile/admin/stores/:storeId", bearerAuth, requireTenant, rateLimiter, deps.StoresMiddleware)
+	// storeRoute chain: bearerAuth -> requireTenant -> TenantGate ->
+	// rateLimiter -> StoresMiddleware, matching routes.go's storeMW
+	// ordering (tenantMW then StoresMiddleware). TenantGate runs and
+	// aborts BEFORE StoresMiddleware ever executes, so a suspended tenant
+	// never reaches the store-ownership lookup — no double-abort, just the
+	// same short-circuit routes.go already relies on.
+	storeRoute := router.Group("/mobile/admin/stores/:storeId", append(append([]gin.HandlerFunc{}, tenantMW...), deps.StoresMiddleware)...)
 	{
 		// Dashboard
 		if deps.DashboardHandler != nil {

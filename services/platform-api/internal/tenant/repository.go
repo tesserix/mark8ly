@@ -66,6 +66,33 @@ type Repository interface {
 	// tenants_owner_email_unique index (migration 0014) — which is also why
 	// this returns at most one row rather than a slice.
 	GetByOwnerEmail(ctx context.Context, email string) (*Tenant, error)
+	// Suspend transitions a tenant from active to suspended and cascades
+	// the suspension to its currently-ACTIVE stores, marking each one
+	// suspended_by_tenant=true so Unsuspend can reverse ONLY what this
+	// cascade did (see Unsuspend). A store that is already suspended
+	// (suspended individually, outside this cascade) is left untouched —
+	// it is not "affected" and its suspended_by_tenant flag is not set.
+	// A no-op (tenant already suspended) returns Changed=false. Returns
+	// apperrors.NotFound if the tenant does not exist, or
+	// apperrors.Conflict if the tenant is in a status this cannot
+	// transition from (e.g. archived).
+	Suspend(ctx context.Context, tenantID string) (*SuspendResult, error)
+	// Unsuspend transitions a tenant from suspended back to active and
+	// restores ONLY the stores this package's Suspend cascade suspended
+	// (suspended_by_tenant=true), clearing the flag on each. A store
+	// suspended individually BEFORE (or during) the tenant suspension
+	// stays suspended — reversibility is scoped to what the cascade
+	// changed, not to every suspended store under the tenant. A no-op
+	// (tenant already active) returns Changed=false. Returns
+	// apperrors.NotFound if the tenant does not exist.
+	Unsuspend(ctx context.Context, tenantID string) (*SuspendResult, error)
+}
+
+// SuspendResult reports what a Suspend/Unsuspend call actually changed.
+type SuspendResult struct {
+	Status         string // the tenant's status AFTER the call
+	StoresAffected int    // number of store rows the cascade touched
+	Changed        bool   // false when the tenant was already in the target state
 }
 
 // gormRepository is the GORM-backed implementation.
@@ -200,6 +227,92 @@ func (r *gormRepository) SlugExists(ctx context.Context, slug string) (bool, err
 		return false, fmt.Errorf("tenant: slug exists %q: %w", slug, err)
 	}
 	return count > 0, nil
+}
+
+func (r *gormRepository) Suspend(ctx context.Context, tenantID string) (*SuspendResult, error) {
+	out := &SuspendResult{}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var t Tenant
+		if err := tx.Raw(
+			`SELECT * FROM tenants WHERE id = ? FOR UPDATE`, tenantID).Scan(&t).Error; err != nil {
+			return fmt.Errorf("tenant: suspend: lock tenant %q: %w", tenantID, err)
+		}
+		if t.ID == "" {
+			return apperrors.NotFound("tenant_not_found", fmt.Sprintf("tenant %q does not exist", tenantID))
+		}
+		out.Status = t.Status
+		if t.Status == StatusSuspended {
+			return nil // already suspended: Changed stays false, StoresAffected 0
+		}
+		if t.Status != StatusActive {
+			// archived, or anything added later: refuse rather than guess.
+			return apperrors.Conflict("tenant_suspend_conflict",
+				fmt.Sprintf("tenant %q has status %q and cannot be suspended", tenantID, t.Status))
+		}
+
+		// Cascade to currently-ACTIVE stores only, flagging exactly what we
+		// changed so Unsuspend can undo precisely this and nothing else.
+		res := tx.Exec(`
+			UPDATE stores SET status = ?, suspended_by_tenant = true
+			WHERE tenant_id = ? AND status = ?`, StatusSuspended, tenantID, StatusActive)
+		if res.Error != nil {
+			return fmt.Errorf("tenant: suspend: cascade stores for %q: %w", tenantID, res.Error)
+		}
+		out.StoresAffected = int(res.RowsAffected)
+
+		if err := tx.Exec(`UPDATE tenants SET status = ? WHERE id = ?`,
+			StatusSuspended, tenantID).Error; err != nil {
+			return fmt.Errorf("tenant: suspend: update tenant %q: %w", tenantID, err)
+		}
+		out.Status = StatusSuspended
+		out.Changed = true
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *gormRepository) Unsuspend(ctx context.Context, tenantID string) (*SuspendResult, error) {
+	out := &SuspendResult{}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var t Tenant
+		if err := tx.Raw(
+			`SELECT * FROM tenants WHERE id = ? FOR UPDATE`, tenantID).Scan(&t).Error; err != nil {
+			return fmt.Errorf("tenant: unsuspend: lock tenant %q: %w", tenantID, err)
+		}
+		if t.ID == "" {
+			return apperrors.NotFound("tenant_not_found", fmt.Sprintf("tenant %q does not exist", tenantID))
+		}
+		out.Status = t.Status
+		if t.Status != StatusSuspended {
+			return nil // not suspended: no-op, Changed stays false
+		}
+
+		// Restore ONLY the stores THIS cascade suspended, then clear the
+		// flag. A store suspended individually (suspended_by_tenant=false)
+		// must stay suspended — that is the whole point of the column.
+		res := tx.Exec(`
+			UPDATE stores SET status = ?, suspended_by_tenant = false
+			WHERE tenant_id = ? AND suspended_by_tenant`, StatusActive, tenantID)
+		if res.Error != nil {
+			return fmt.Errorf("tenant: unsuspend: restore stores for %q: %w", tenantID, res.Error)
+		}
+		out.StoresAffected = int(res.RowsAffected)
+
+		if err := tx.Exec(`UPDATE tenants SET status = ? WHERE id = ?`,
+			StatusActive, tenantID).Error; err != nil {
+			return fmt.Errorf("tenant: unsuspend: update tenant %q: %w", tenantID, err)
+		}
+		out.Status = StatusActive
+		out.Changed = true
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // isUniqueViolation returns true for Postgres unique constraint violations.

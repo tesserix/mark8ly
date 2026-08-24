@@ -341,8 +341,25 @@ async function handleRequest(
       }
       if (storeRes.ok) {
         const body = (await storeRes.json()) as {
-          data: { tenant_id: string };
+          data: { tenant_id: string; status: string };
         };
+        // A suspended or archived store must not serve the admin UI. Same
+        // 404 as the unknown-slug branch above, and the same choice
+        // platform-api makes for the public storefront — an admin surface
+        // should not contradict it.
+        //
+        // NOTE (F9, #287 review): this is an unguarded fail-closed
+        // dependence on `status` being present on the response body.
+        // `body.data.status !== "active"` also 404s when `status` is
+        // `undefined` (a field that moved, was renamed, or was dropped by
+        // platform-api) — which is the right outcome today, but it means a
+        // schema change on that field lands on every merchant at once with
+        // no distinguishing error. If platform-api's `/internal/stores/
+        // by-slug` response shape ever changes, this line is where it
+        // would silently start refusing everyone.
+        if (body.data.status !== "active") {
+          return new NextResponse(null, { status: 404 });
+        }
         const requestedTenantId = body.data.tenant_id;
         if (requestedTenantId && requestedTenantId !== session.tenant_id) {
           // Try to switch. If the user has membership on the slug's

@@ -34,8 +34,12 @@ type Store struct {
 	LogoURL         *string         `gorm:"column:logo_url;type:text"                                json:"logo_url,omitempty"`
 	StorefrontTheme json.RawMessage `gorm:"column:storefront_theme;type:jsonb;not null;default:'{}'::jsonb" json:"storefront_theme"`
 	Status          string          `gorm:"column:status;type:varchar(20);not null;default:'active'" json:"status"`
-	CreatedAt       time.Time       `gorm:"column:created_at;not null;default:now()"                 json:"created_at"`
-	UpdatedAt       time.Time       `gorm:"column:updated_at;not null;default:now()"                 json:"updated_at"`
+	// SuspendedByTenant is true only for stores a TENANT-level suspension
+	// changed. Unsuspend restores exactly these rows, so a store suspended
+	// individually before the tenant was suspended stays suspended (#287).
+	SuspendedByTenant bool      `gorm:"column:suspended_by_tenant;not null;default:false" json:"suspended_by_tenant"`
+	CreatedAt         time.Time `gorm:"column:created_at;not null;default:now()"                 json:"created_at"`
+	UpdatedAt         time.Time `gorm:"column:updated_at;not null;default:now()"                 json:"updated_at"`
 }
 
 // TableName overrides GORM's default pluralization.

@@ -49,6 +49,10 @@ func StoreMiddleware(cfg MiddlewareConfig) gin.HandlerFunc {
 		cached, cacheErr := cfg.Repo.GetByIDForTenant(c.Request.Context(), storeID, tid)
 		fresh := cacheErr == nil && !IsStale(cached, cfg.FreshTTL)
 		if fresh {
+			if cached.Status != StatusActive {
+				respondNotFound(c)
+				return
+			}
 			c.Set("store", cached)
 			c.Next()
 			return
@@ -62,8 +66,18 @@ func StoreMiddleware(cfg MiddlewareConfig) gin.HandlerFunc {
 
 		switch {
 		case refreshErr == nil && result != nil:
-			c.Set("store", result.(*Store))
+			refreshed := result.(*Store)
+			if refreshed.Status != StatusActive {
+				respondNotFound(c)
+				return
+			}
+			c.Set("store", refreshed)
 			c.Next()
+		case cacheErr == nil && cached != nil && cached.Status != StatusActive:
+			// A cached suspended (or otherwise non-active) status is
+			// authoritative at any age — never fail-open on it, even
+			// within the stale ceiling.
+			respondNotFound(c)
 		case cacheErr == nil && cached != nil && time.Since(cached.SyncedAt) < cfg.StaleCeil:
 			if cfg.Logger != nil {
 				cfg.Logger.Warn("serving stale store projection",

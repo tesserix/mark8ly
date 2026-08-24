@@ -115,6 +115,8 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription/readonly"
 	"github.com/mark8ly/marketplace-api/internal/teamproxy"
 	"github.com/mark8ly/marketplace-api/internal/tenantdirectory"
+	"github.com/mark8ly/marketplace-api/internal/tenantgate"
+	"github.com/mark8ly/marketplace-api/internal/tenantlifecycle"
 	"github.com/mark8ly/marketplace-api/internal/tenantpurge"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/userprofile"
@@ -453,6 +455,13 @@ func main() {
 	// /internal vendor endpoints, so no self-vendor lookup is needed.
 	// product.Service.resolveVendorID is nil-safe for exactly this case.
 	var vendorSvc *vendor.Service
+	// tenantGate (#287) is declared at outer scope so the platformadmin.Register
+	// call sites in the mode switch below (which construct the tenant
+	// lifecycle handler's invalidator) can see the same instance the admin
+	// group's RequireActiveTenant middleware reads from — one process, one
+	// cache. Constructed inside the admin wiring branch below; stays nil in
+	// Storefront-only builds.
+	var tenantGate *tenantgate.Gate
 	// brandingSeeder is non-nil only when MARKETPLACE_API_ENABLE_TEST_ROUTES=true.
 	// Declared at func scope so the later route-mount block can see it.
 	var brandingSeeder *testroutes.BrandingSeeder
@@ -1013,7 +1022,35 @@ func main() {
 			SubRepo: subscriptionRepo,
 		})
 
+		// Tenant gate (#287) — refuses ALL admin traffic for a suspended
+		// tenant, across every admin group (StoreMiddleware only covers
+		// /admin/stores/:storeId). Degrades to a nil Gate — a no-op
+		// middleware — when MARKETPLACE_PLATFORM_API_URL is unset,
+		// matching how the other platform-api-backed features degrade.
+		if cfg.PlatformAPIURL != "" {
+			tenantGate = tenantgate.New(
+				tenantdirectory.NewClient(cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil),
+				log, 5*time.Minute)
+			log.Info("admin: tenant suspension gate enabled", "url", cfg.PlatformAPIURL)
+		} else {
+			log.Info("admin: tenant suspension gate disabled (MARKETPLACE_PLATFORM_API_URL is empty)")
+		}
+
+		// TenantGate is assigned nil, not a method value on a nil *Gate,
+		// when the gate itself is unwired: a method value formed on a nil
+		// receiver is a non-nil func (RequireActiveTenant does its own
+		// g == nil check internally), which would make every `!= nil`
+		// guard downstream (admin/routes.go, admin/mobile_routes.go) dead
+		// code — this is the third instance of that pattern on this
+		// branch (#287 review, F3). Keeping the explicit nil here makes
+		// those guards real instead of decorative.
+		var adminTenantGateHandler gin.HandlerFunc
+		if tenantGate != nil {
+			adminTenantGateHandler = tenantGate.RequireActiveTenant()
+		}
+
 		adminDeps = admin.Deps{
+			TenantGate:               adminTenantGateHandler,
 			ProductHandler:           productHandler,
 			CategoryHandler:          categoryHandler,
 			VariantHandler:           variantHandler,
@@ -1924,6 +1961,7 @@ func main() {
 		var tenantDirectoryClient platformadmin.TenantDirectory
 		var onboardingFunnelClient platformadmin.OnboardingFunnel
 		var estateCountsClient platformadmin.EstateCounts
+		var tenantLifecycleClient platformadmin.TenantLifecycle
 		if cfg.PlatformAPIURL != "" {
 			tenantDirectoryClient = tenantdirectory.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
@@ -1931,19 +1969,24 @@ func main() {
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			estateCountsClient = estatecounts.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+			tenantLifecycleClient = tenantlifecycle.NewClient(
+				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 		}
 		platformSubscriptionRepo := subscription.NewRepository()
 		platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
-			DB:               conn,
-			Repo:             auditRepo,
-			Logger:           log,
-			Secret:           cfg.PlatformAdminSecret,
-			TenantDirectory:  tenantDirectoryClient,
-			OnboardingFunnel: onboardingFunnelClient,
-			EstateCounts:     estateCountsClient,
-			Subscriptions:    platformadmin.SubscriptionsFunc(trial.CountExpiring),
-			Trials:           platformadmin.TrialListerFunc(trial.ListExpiring),
-			AllSubscriptions: platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
+			DB:                    conn,
+			Repo:                  auditRepo,
+			Logger:                log,
+			Secret:                cfg.PlatformAdminSecret,
+			TenantDirectory:       tenantDirectoryClient,
+			OnboardingFunnel:      onboardingFunnelClient,
+			EstateCounts:          estateCountsClient,
+			Subscriptions:         platformadmin.SubscriptionsFunc(trial.CountExpiring),
+			Trials:                platformadmin.TrialListerFunc(trial.ListExpiring),
+			AllSubscriptions:      platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
+			TenantLifecycle:       tenantLifecycleClient,
+			Emitter:               auditEmitter,
+			TenantGateInvalidator: tenantGate,
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2029,6 +2072,7 @@ func main() {
 			var tenantDirectoryClient platformadmin.TenantDirectory
 			var onboardingFunnelClient platformadmin.OnboardingFunnel
 			var estateCountsClient platformadmin.EstateCounts
+			var tenantLifecycleClient platformadmin.TenantLifecycle
 			if cfg.PlatformAPIURL != "" {
 				tenantDirectoryClient = tenantdirectory.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
@@ -2036,19 +2080,24 @@ func main() {
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 				estateCountsClient = estatecounts.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+				tenantLifecycleClient = tenantlifecycle.NewClient(
+					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			}
 			platformSubscriptionRepo := subscription.NewRepository()
 			platformadmin.Register(engine.Group("/api/v1/platform"), platformadmin.Deps{
-				DB:               conn,
-				Repo:             auditRepo,
-				Logger:           log,
-				Secret:           cfg.PlatformAdminSecret,
-				TenantDirectory:  tenantDirectoryClient,
-				OnboardingFunnel: onboardingFunnelClient,
-				EstateCounts:     estateCountsClient,
-				Subscriptions:    platformadmin.SubscriptionsFunc(trial.CountExpiring),
-				Trials:           platformadmin.TrialListerFunc(trial.ListExpiring),
-				AllSubscriptions: platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
+				DB:                    conn,
+				Repo:                  auditRepo,
+				Logger:                log,
+				Secret:                cfg.PlatformAdminSecret,
+				TenantDirectory:       tenantDirectoryClient,
+				OnboardingFunnel:      onboardingFunnelClient,
+				EstateCounts:          estateCountsClient,
+				Subscriptions:         platformadmin.SubscriptionsFunc(trial.CountExpiring),
+				Trials:                platformadmin.TrialListerFunc(trial.ListExpiring),
+				AllSubscriptions:      platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
+				TenantLifecycle:       tenantLifecycleClient,
+				Emitter:               auditEmitter,
+				TenantGateInvalidator: tenantGate,
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

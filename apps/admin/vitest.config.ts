@@ -49,6 +49,7 @@ export default defineConfig({
       "@repo/ui/role-badge": path.resolve(__dirname, "../../packages/ui/src/role-badge.tsx"),
       "@repo/ui/app-store-badges": path.resolve(__dirname, "../../packages/ui/src/app-store-badges.tsx"),
       "@repo/ui/status-dot": path.resolve(__dirname, "../../packages/ui/src/status-dot.tsx"),
+      "@repo/ui/auth/csrf": path.resolve(__dirname, "../../packages/ui/src/auth/csrf.ts"),
       "@repo/ui": path.resolve(__dirname, "../../packages/ui/src/index.ts"),
       react: path.resolve(__dirname, "../../node_modules/react"),
       "react-dom": path.resolve(__dirname, "../../node_modules/react-dom"),

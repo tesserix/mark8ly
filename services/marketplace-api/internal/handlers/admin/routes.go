@@ -85,8 +85,14 @@ type Deps struct {
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
 	SubscriptionStatusLoader gin.HandlerFunc // optional; runs after StoresMiddleware
 	SubscriptionReadOnlyGate gin.HandlerFunc // optional; runs after StatusLoader — returns 402 on read-only states
-	AuthzMiddleware          *authz.Middleware
-	InternalSecret           string
+	// TenantGate refuses ALL admin traffic for a suspended tenant (#287),
+	// via tenantgate.Gate.RequireActiveTenant. Runs immediately after
+	// authMW in every admin group EXCEPT the break-glass recovery route,
+	// which must survive a suspension. Nil (no PLATFORM_API_URL) degrades
+	// to a no-op, matching how other client-backed features degrade.
+	TenantGate      gin.HandlerFunc
+	AuthzMiddleware *authz.Middleware
+	InternalSecret  string
 	// AuditIngestSecret gates /internal/* routes on the admin engine
 	// (audit-events, shipments/tracking/sync, storefront-status). In
 	// prod all three endpoints pull the SAME value from the
@@ -106,6 +112,15 @@ type Deps struct {
 // RequireTenantRelation runs the FGA Check per spec §13.1.1.
 func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 	authMW := auth.HeaderTrustAuth(deps.InternalSecret)
+
+	// tenantMW runs authMW and, once the tenant is known, TenantGate
+	// (#287) — refusing every request for a suspended tenant across all
+	// tenant-scoped and store-scoped groups. Excluded on purpose from the
+	// break-glass route below, which must survive a suspension.
+	tenantMW := []gin.HandlerFunc{authMW}
+	if deps.TenantGate != nil {
+		tenantMW = append(tenantMW, deps.TenantGate)
+	}
 
 	// Internal-only routes — cluster-internal callers (CronJobs,
 	// other services). Gated ONLY by the shared X-Internal-Auth
@@ -141,7 +156,7 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		// Authz runs before the plan gate so a non-member learns nothing
 		// about the tenant's subscription. Writes are owner-only: the IdP
 		// config decides who can authenticate into the whole tenant.
-		ssoTenant := router.Group("/admin/tenants/:tenantId", authMW)
+		ssoTenant := router.Group("/admin/tenants/:tenantId", tenantMW...)
 		ssoRead := ssoTenant.Group("",
 			deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
 			plangate.RequireFeatureByTenant(deps.PlanResolver, plangate.FeatureSSO, deps.APIKeysLogger),
@@ -159,7 +174,7 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 	// Tenant-wide admin routes — outside of /stores/:storeId because they
 	// enumerate across stores, not within a single one.
 	if deps.StoresHandler != nil {
-		adminRoot := router.Group("/admin", authMW)
+		adminRoot := router.Group("/admin", tenantMW...)
 		adminRoot.GET("/stores",
 			deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
 			deps.StoresHandler.List)
@@ -167,7 +182,7 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 
 	// Account — S1. Lives outside /stores/:storeId because it's user-scoped.
 	if deps.AccountHandler != nil {
-		account := router.Group("/admin/account", authMW)
+		account := router.Group("/admin/account", tenantMW...)
 		{
 			account.GET("",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.AccountViewRole),
@@ -199,7 +214,7 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		}
 	}
 
-	storeMW := []gin.HandlerFunc{authMW, deps.StoresMiddleware}
+	storeMW := append(append([]gin.HandlerFunc{}, tenantMW...), deps.StoresMiddleware)
 	if deps.SubscriptionStatusLoader != nil {
 		storeMW = append(storeMW, deps.SubscriptionStatusLoader)
 	}

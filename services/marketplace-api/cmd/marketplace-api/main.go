@@ -115,6 +115,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription/readonly"
 	"github.com/mark8ly/marketplace-api/internal/teamproxy"
 	"github.com/mark8ly/marketplace-api/internal/tenantdirectory"
+	"github.com/mark8ly/marketplace-api/internal/tenantgate"
 	"github.com/mark8ly/marketplace-api/internal/tenantlifecycle"
 	"github.com/mark8ly/marketplace-api/internal/tenantpurge"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
@@ -1014,7 +1015,23 @@ func main() {
 			SubRepo: subscriptionRepo,
 		})
 
+		// Tenant gate (#287) — refuses ALL admin traffic for a suspended
+		// tenant, across every admin group (StoreMiddleware only covers
+		// /admin/stores/:storeId). Degrades to a nil Gate — a no-op
+		// middleware — when MARKETPLACE_PLATFORM_API_URL is unset,
+		// matching how the other platform-api-backed features degrade.
+		var tenantGate *tenantgate.Gate
+		if cfg.PlatformAPIURL != "" {
+			tenantGate = tenantgate.New(
+				tenantdirectory.NewClient(cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil),
+				log, 5*time.Minute)
+			log.Info("admin: tenant suspension gate enabled", "url", cfg.PlatformAPIURL)
+		} else {
+			log.Info("admin: tenant suspension gate disabled (MARKETPLACE_PLATFORM_API_URL is empty)")
+		}
+
 		adminDeps = admin.Deps{
+			TenantGate:               tenantGate.RequireActiveTenant(),
 			ProductHandler:           productHandler,
 			CategoryHandler:          categoryHandler,
 			VariantHandler:           variantHandler,

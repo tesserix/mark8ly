@@ -456,6 +456,11 @@ func main() {
 	// brandingSeeder is non-nil only when MARKETPLACE_API_ENABLE_TEST_ROUTES=true.
 	// Declared at func scope so the later route-mount block can see it.
 	var brandingSeeder *testroutes.BrandingSeeder
+	// migrationHandler is constructed in the admin wiring branch but its
+	// CSM-review route is mounted on the /internal group inside both
+	// engine-switch cases below, so declare it at outer scope (same
+	// reason as brandingSeeder above).
+	var migrationHandler *migration.Handler
 	// downgradeCron is non-nil only when STRIPE_BILLING_SECRET_KEY is set.
 	// Declared at func scope so the cron-start block below the admin-mode
 	// block can reference it.
@@ -940,7 +945,7 @@ func main() {
 
 		// P5 — Migration fast-path submit handler.
 		migrationRepo := migration.NewRepository(conn)
-		migrationHandler := migration.NewHandler(migrationRepo, migration.NoOpValidator{}, log)
+		migrationHandler = migration.NewHandler(migrationRepo, migration.NoOpValidator{}, log).WithAudit(auditEmitter)
 
 		// P8 — Arbitrage appeal handler (§18.8.1).
 		arbitrageAppealSvc := arbitrage.NewAppealService(conn, arbitrage.NoOpPublisher{}, arbitrage.NopPIILogger{})
@@ -1970,6 +1975,13 @@ func main() {
 		// handed off to a human. Same /internal namespace + same shared
 		// secret; the slm-router pod carries it via SLM_ROUTER_INTERNAL_AUTH.
 		ticketInternalHandler.RegisterRoutes(r.Group("/internal"))
+		// CSM fast-path review action — POST /internal/csm/migration-fast-path/
+		// :id/review. Was implemented and tested but never mounted (#281);
+		// mounted here and on the mode.Admin engine below via the same
+		// RegisterInternalRoutes method so the two engines can't drift (#323).
+		if migrationHandler != nil {
+			migrationHandler.RegisterInternalRoutes(r.Group("/internal"), cfg.InternalAuthSecret)
+		}
 		// Cross-service audit ingest — auth-bff posts login/logout,
 		// platform-api posts staff invite/accept/revoke. Mounted on the
 		// existing /internal namespace gated by X-Internal-Auth.
@@ -2077,6 +2089,13 @@ func main() {
 			// service 404'd it — register on the admin engine (the
 			// dashboard that owns tickets).
 			ticketInternalHandler.RegisterRoutes(engine.Group("/internal"))
+			// CSM fast-path review action — mirrors the mode.Both mount
+			// above via the same RegisterInternalRoutes method, so
+			// MODE=admin (production) and local mode.Both dev never drift
+			// on this route (#281, #323).
+			if migrationHandler != nil {
+				migrationHandler.RegisterInternalRoutes(engine.Group("/internal"), cfg.InternalAuthSecret)
+			}
 			// Audit ingest is admin-only because the audit_logs read
 			// endpoint also lives on the admin engine — keeping write
 			// + read on the same pod simplifies ops and keeps the

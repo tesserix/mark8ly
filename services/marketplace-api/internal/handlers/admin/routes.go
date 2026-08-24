@@ -784,8 +784,9 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		}
 
 		// Migration fast-path — P5 merchant-initiated platform migration submit.
-		// TODO: /internal/csm/migration-fast-path/:id/review wiring deferred —
-		// the /internal/ group and HeaderTrustAuth chain are not mounted here.
+		// The CSM review counterpart (POST /internal/csm/migration-fast-path/
+		// :id/review) is mounted on the /internal group via
+		// migration.Handler.RegisterInternalRoutes — see main.go.
 		if deps.MigrationFastPathHandler != nil {
 			storeRoute.POST("/migration-fast-path/submit",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),

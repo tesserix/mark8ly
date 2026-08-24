@@ -92,10 +92,14 @@ Expected: PASS.
 ```bash
 cd services/marketplace-api
 DATABASE_URL='postgres://dev:dev@192.168.1.110:5432/marketplace_db?sslmode=disable' go run ./cmd/migrate up
-psql 'postgres://dev:dev@192.168.1.110:5432/marketplace_db' -c "\d notifications" | grep notif_created_at_idx
+# psql is NOT installed on this machine; docker is. The LAN IP is
+# reachable from inside the container, `localhost` would not be.
+docker run --rm postgres:15 psql \
+  'postgres://dev:dev@192.168.1.110:5432/marketplace_db?sslmode=disable' \
+  -c "select indexname from pg_indexes where tablename='notifications'"
 ```
 
-Expected: the `grep` prints a line containing `notif_created_at_idx`. If it prints nothing, the migration did not apply — do not proceed.
+Expected: the output lists `notif_created_at_idx` alongside the four pre-existing indexes (`notifications_pkey`, `notif_store_unread_idx`, `notif_store_recent_idx`, `notif_recipient_unread_idx`). If it is absent, the migration did not apply — do not proceed.
 
 - [ ] **Step 6: Commit**
 

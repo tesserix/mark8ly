@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
 // Deps groups everything the platform admin surface needs. Constructed in
@@ -49,6 +50,20 @@ type Deps struct {
 	// TenantDirectory above for the tenant-name lookup. Both must be
 	// non-nil for that route to mount, matching the Trials pattern above.
 	AllSubscriptions SubscriptionLister
+
+	// TenantLifecycle serves POST /admin/tenants/:id/{suspend,unsuspend}
+	// (#287) — this surface's first WRITE endpoints. Nil leaves those
+	// routes unmounted, matching the nil-safe pattern used for the other
+	// client-backed routes above. Requires DB (non-nil) too, since the
+	// handler updates the local `stores` projection on a changed call.
+	TenantLifecycle TenantLifecycle
+
+	// Emitter is the async audit-log writer used for write-endpoint audit
+	// rows (currently only tenant suspend/unsuspend). Nil is tolerated —
+	// EmitOperatorAction treats a nil *audit.Emitter the same way Emit
+	// itself does: a fire-and-forget no-op, never a panic or an error that
+	// would fail a request that already succeeded upstream.
+	Emitter *audit.Emitter
 }
 
 // Register mounts the platform console's /admin/* surface behind
@@ -123,5 +138,14 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.AllSubscriptions != nil && deps.TenantDirectory != nil {
 		NewBillingSubscriptionsHandler(deps.AllSubscriptions, deps.TenantDirectory, deps.DB, deps.Logger).Register(group)
+	}
+
+	if deps.TenantLifecycle != nil && deps.DB != nil {
+		NewTenantLifecycleHandler(
+			deps.TenantLifecycle,
+			stores.NewRepository(deps.DB),
+			NewOperatorActionAuditFunc(deps.Emitter),
+			deps.Logger,
+		).Register(group)
 	}
 }

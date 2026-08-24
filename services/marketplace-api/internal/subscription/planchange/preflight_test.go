@@ -54,6 +54,8 @@ func (r *fakeStoreRepo) ListActiveOrSoftDeletedRestorable(_ context.Context, _ u
 func (r *fakeStoreRepo) InFlightOrderCount(_ context.Context, _ uuid.UUID) (int, error) {
 	return r.orderCount, nil
 }
+func (r *fakeStoreRepo) SuspendActiveForTenant(_ context.Context, _ string) error { return nil }
+func (r *fakeStoreRepo) MarkStaleForTenant(_ context.Context, _ string) error     { return nil }
 
 // activeSubscription builds a minimal StoreSubscription in Active status on
 // the given plan/period with a billing currency and period-end 30 days out.

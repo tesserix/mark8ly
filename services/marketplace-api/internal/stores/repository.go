@@ -51,6 +51,26 @@ type Repository interface {
 	// downgrading. Update the terminal set here if a new terminal status is added
 	// to order.OrderStatus.
 	InFlightOrderCount(ctx context.Context, storeID uuid.UUID) (int, error)
+
+	// SuspendActiveForTenant flips every ACTIVE local store row for a
+	// tenant to suspended, immediately — used by the platform console's
+	// tenant-suspend endpoint (#287) so enforcement does not wait out
+	// StoreMiddleware's FreshTTL. Over-enforcing (a store that was already
+	// suspended stays suspended) is the safe direction here, so this is a
+	// plain bulk UPDATE with no read-modify-write.
+	SuspendActiveForTenant(ctx context.Context, tenantID string) error
+
+	// MarkStaleForTenant forces every local store row for a tenant to be
+	// treated as stale on the next read, by resetting synced_at to the
+	// epoch. Used by the platform console's tenant-unsuspend endpoint
+	// (#287) instead of eagerly flipping status back to active: this
+	// projection has no column distinguishing a store suspended by the
+	// tenant-level cascade from one suspended individually in
+	// platform-api, so a local unsuspend cannot tell them apart. Forcing a
+	// refetch is the only way to get an authoritative status without
+	// risking that a distinction. See tenant_lifecycle.go for the full
+	// rationale.
+	MarkStaleForTenant(ctx context.Context, tenantID string) error
 }
 
 // WatermarkReader is the narrow read-only contract consumed by the M6
@@ -196,6 +216,40 @@ func (r *gormRepository) InFlightOrderCount(ctx context.Context, storeID uuid.UU
 		return 0, fmt.Errorf("stores: in-flight order count: %w", err)
 	}
 	return int(n), nil
+}
+
+// staleEpoch is written to synced_at by MarkStaleForTenant. It is always
+// older than any FreshTTL StoreMiddleware or slugCache is configured with,
+// so IsStale reports true unconditionally on the next read regardless of
+// how that TTL is tuned.
+var staleEpoch = time.Unix(0, 0)
+
+// SuspendActiveForTenant flips active -> suspended for every local store
+// row belonging to tenantID. See Repository interface doc for why this is
+// safe to over-apply (it only ever adds suspension, never removes it).
+func (r *gormRepository) SuspendActiveForTenant(ctx context.Context, tenantID string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&Store{}).
+		Where("tenant_id = ? AND status = ?", tenantID, StatusActive).
+		Updates(map[string]any{"status": StatusSuspended, "synced_at": time.Now()}).Error; err != nil {
+		return fmt.Errorf("stores: suspend active for tenant: %w", err)
+	}
+	return nil
+}
+
+// MarkStaleForTenant resets synced_at to the epoch for every local store
+// row belonging to tenantID, so the next read is forced through the
+// refresh path instead of serving a cached status. See Repository
+// interface doc for why unsuspend uses this instead of an eager flip back
+// to active.
+func (r *gormRepository) MarkStaleForTenant(ctx context.Context, tenantID string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&Store{}).
+		Where("tenant_id = ?", tenantID).
+		Update("synced_at", staleEpoch).Error; err != nil {
+		return fmt.Errorf("stores: mark stale for tenant: %w", err)
+	}
+	return nil
 }
 
 // countStoresByTenant is the shared implementation for both count methods.

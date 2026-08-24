@@ -101,6 +101,32 @@ func (r *fakeRepo) InFlightOrderCount(_ context.Context, _ uuid.UUID) (int, erro
 	return 0, nil
 }
 
+func (r *fakeRepo) SuspendActiveForTenant(_ context.Context, tenantID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for k, s := range r.byKey {
+		if s.TenantID == tenantID && s.Status == stores.StatusActive {
+			cp := *s
+			cp.Status = stores.StatusSuspended
+			r.byKey[k] = &cp
+		}
+	}
+	return nil
+}
+
+func (r *fakeRepo) MarkStaleForTenant(_ context.Context, tenantID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for k, s := range r.byKey {
+		if s.TenantID == tenantID {
+			cp := *s
+			cp.SyncedAt = time.Unix(0, 0)
+			r.byKey[k] = &cp
+		}
+	}
+	return nil
+}
+
 func (r *fakeRepo) preload(s *stores.Store) {
 	_ = r.Upsert(context.Background(), s)
 	r.mu.Lock()

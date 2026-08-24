@@ -115,6 +115,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription/readonly"
 	"github.com/mark8ly/marketplace-api/internal/teamproxy"
 	"github.com/mark8ly/marketplace-api/internal/tenantdirectory"
+	"github.com/mark8ly/marketplace-api/internal/tenantlifecycle"
 	"github.com/mark8ly/marketplace-api/internal/tenantpurge"
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/userprofile"
@@ -1924,12 +1925,15 @@ func main() {
 		var tenantDirectoryClient platformadmin.TenantDirectory
 		var onboardingFunnelClient platformadmin.OnboardingFunnel
 		var estateCountsClient platformadmin.EstateCounts
+		var tenantLifecycleClient platformadmin.TenantLifecycle
 		if cfg.PlatformAPIURL != "" {
 			tenantDirectoryClient = tenantdirectory.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			onboardingFunnelClient = onboardingfunnel.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			estateCountsClient = estatecounts.NewClient(
+				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+			tenantLifecycleClient = tenantlifecycle.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 		}
 		platformSubscriptionRepo := subscription.NewRepository()
@@ -1944,6 +1948,8 @@ func main() {
 			Subscriptions:    platformadmin.SubscriptionsFunc(trial.CountExpiring),
 			Trials:           platformadmin.TrialListerFunc(trial.ListExpiring),
 			AllSubscriptions: platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
+			TenantLifecycle:  tenantLifecycleClient,
+			Emitter:          auditEmitter,
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2029,12 +2035,15 @@ func main() {
 			var tenantDirectoryClient platformadmin.TenantDirectory
 			var onboardingFunnelClient platformadmin.OnboardingFunnel
 			var estateCountsClient platformadmin.EstateCounts
+			var tenantLifecycleClient platformadmin.TenantLifecycle
 			if cfg.PlatformAPIURL != "" {
 				tenantDirectoryClient = tenantdirectory.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 				onboardingFunnelClient = onboardingfunnel.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 				estateCountsClient = estatecounts.NewClient(
+					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+				tenantLifecycleClient = tenantlifecycle.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			}
 			platformSubscriptionRepo := subscription.NewRepository()
@@ -2049,6 +2058,8 @@ func main() {
 				Subscriptions:    platformadmin.SubscriptionsFunc(trial.CountExpiring),
 				Trials:           platformadmin.TrialListerFunc(trial.ListExpiring),
 				AllSubscriptions: platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
+				TenantLifecycle:  tenantLifecycleClient,
+				Emitter:          auditEmitter,
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

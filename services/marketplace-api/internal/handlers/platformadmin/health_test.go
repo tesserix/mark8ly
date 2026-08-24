@@ -286,3 +286,52 @@ func TestHealthMatchesContract(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, string(want), string(normalised))
 }
+
+// TestHealthNilDatabaseReportsUnknownNotFabricatedOK exercises the SOURCE's
+// nil-database handling directly, bypassing RequirePlatformAuth entirely
+// (a prior version of this test went through Register with DB nil, but
+// with DB nil the NonceStore is also nil, so RequirePlatformAuth's own
+// nil-NonceStore guard rejects the request with 503 before the handler is
+// ever reached — that version proved nothing about errNoDB). Here we build
+// the real DB-backed source with NewDBHealthSource(nil) and mount it
+// directly, so the request reaches the handler and the four instrumented
+// checks must run against a nil *gorm.DB and hit their errNoDB guard.
+func TestHealthNilDatabaseReportsUnknownNotFabricatedOK(t *testing.T) {
+	src := platformadmin.NewDBHealthSource(nil)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/health", nil)
+	require.NotPanics(t, func() {
+		healthRouter(t, src).ServeHTTP(rec, req)
+	})
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body healthBody
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+
+	var raw struct {
+		Data struct {
+			Dependencies []map[string]json.RawMessage `json:"dependencies"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &raw))
+
+	instrumented := map[string]bool{
+		"outbox": true, "csv_import_jobs": true, "campaign_sends": true, "stripe_webhooks": true,
+	}
+	seenInstrumented, seenUninstrumented := 0, 0
+	for i, dep := range body.Data.Dependencies {
+		if instrumented[dep.Name] {
+			seenInstrumented++
+			require.Equal(t, platformadmin.StatusUnknown, dep.Status,
+				"%s must report unknown against a nil DB, never a fabricated ok", dep.Name)
+			_, present := raw.Data.Dependencies[i]["metrics"]
+			require.False(t, present, "%s is unknown and must omit metrics entirely, not ship fabricated zeroes", dep.Name)
+		} else {
+			seenUninstrumented++
+			require.Equal(t, platformadmin.StatusNotInstrumented, dep.Status)
+		}
+	}
+	require.Equal(t, 4, seenInstrumented, "expected four instrumented dependencies")
+	require.Equal(t, 5, seenUninstrumented, "expected five uninstrumented dependencies")
+}

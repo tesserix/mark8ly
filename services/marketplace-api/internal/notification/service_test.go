@@ -24,6 +24,10 @@ func (f *fakeRepository) ListByStore(ctx context.Context, db *gorm.DB, filter Li
 	panic("not implemented")
 }
 
+func (f *fakeRepository) ListPlatform(ctx context.Context, db *gorm.DB, filter PlatformListFilter) (ListResult, error) {
+	panic("not implemented")
+}
+
 func (f *fakeRepository) GetUnreadCount(ctx context.Context, db *gorm.DB, storeID uuid.UUID) (int64, error) {
 	panic("not implemented")
 }

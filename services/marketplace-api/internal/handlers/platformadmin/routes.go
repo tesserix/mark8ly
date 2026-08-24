@@ -92,6 +92,16 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	NewAuditLogsHandler(deps.DB, deps.Repo, deps.Logger).Register(group)
 
+	// Health needs only the DB, so it mounts alongside the surface itself
+	// rather than behind a nil-dependency guard like the client-backed
+	// routes below. The source's nil-DB guard (errNoDB -> `unknown`) is
+	// defensive only and is NOT reachable through Register: a nil DB also
+	// leaves NonceStore nil, so RequirePlatformAuth answers 503
+	// not_configured before any handler runs. The guard stays because the
+	// source is constructible directly, and a nil *gorm.DB would otherwise
+	// panic on WithContext.
+	NewHealthHandler(NewDBHealthSource(deps.DB), deps.Logger).Register(group)
+
 	if deps.TenantDirectory != nil {
 		NewEntitiesTenantsHandler(deps.TenantDirectory, deps.Logger).Register(group)
 		NewConversionsHandler(deps.TenantDirectory, deps.Logger).Register(group)

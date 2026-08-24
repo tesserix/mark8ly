@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -169,4 +170,13 @@ func TestWorker_CancellationMidBatch(t *testing.T) {
 
 func itoa(i int) string {
 	return string(rune('0'+i/10)) + string(rune('0'+i%10))
+}
+
+// TestOrphanWindowIsFifteenMinutes pins the shared WINDOW behind "this job
+// is orphaned". The health endpoint (#289) and the startup recovery scan
+// both read this constant, so retuning it moves both together. Their
+// boundary predicates differ by one instant on purpose (`<=` vs `<`) — see
+// the constant's doc comment.
+func TestOrphanWindowIsFifteenMinutes(t *testing.T) {
+	require.Equal(t, 15*time.Minute, csvjob.OrphanWindow)
 }

@@ -1,0 +1,20 @@
+{
+  "data": {
+    "checked_at": "PINNED",
+    "dependencies": [
+      { "name": "outbox", "status": "degraded",
+        "metrics": { "pending": 7, "oldest_pending_age_seconds": 400 } },
+      { "name": "csv_import_jobs", "status": "degraded",
+        "metrics": { "queued": 5, "running_stale_heartbeat": 2 } },
+      { "name": "campaign_sends", "status": "degraded",
+        "metrics": { "sending": 9, "sending_stale_heartbeat": 4 } },
+      { "name": "stripe_webhooks", "status": "ok",
+        "metrics": { "unprocessed": 6, "oldest_unprocessed_age_seconds": 62, "manual_review_required": 0 } },
+      { "name": "scheduled_jobs", "status": "not_instrumented" },
+      { "name": "platform_api", "status": "not_instrumented" },
+      { "name": "stripe_api", "status": "not_instrumented" },
+      { "name": "email_delivery", "status": "not_instrumented" },
+      { "name": "object_storage", "status": "not_instrumented" }
+    ]
+  }
+}

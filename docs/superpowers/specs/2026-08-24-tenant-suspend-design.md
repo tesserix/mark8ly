@@ -1,6 +1,6 @@
 # Design — tenant suspend / unsuspend (#287)
 
-**Status:** approved in principle, spec awaiting review
+**Status:** approved
 **Issue:** #287 · **Umbrella:** #260 · **Date:** 2026-08-24
 
 ## The problem this design exists to avoid

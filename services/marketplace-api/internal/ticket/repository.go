@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -27,10 +28,35 @@ type ListResult struct {
 	Total   int64
 }
 
+// MaxPlatformPageSize and DefaultPlatformPageSize mirror the audit package's
+// values so every cross-tenant read on the platform surface clamps alike.
+const MaxPlatformPageSize = 500
+const DefaultPlatformPageSize = 50
+
+// PlatformListFilter is the CROSS-STORE filter. It is deliberately a separate
+// type from ListFilter: that one requires a store and a tenant and matches
+// nothing without them, which is the safe failure for a merchant-facing query.
+// Widening it to mean "all stores when unset" would make a forgotten field a
+// cross-store leak.
+type PlatformListFilter struct {
+	StoreID  *uuid.UUID // optional NARROWING, not a scope
+	Status   string
+	Priority string
+	From     *time.Time
+	To       *time.Time
+	Page     int
+	Limit    int
+}
+
 // Repository is the data-access surface for tickets.
 type Repository interface {
 	// List returns a filtered, paginated list of tickets.
 	List(ctx context.Context, db *gorm.DB, f ListFilter) (ListResult, error)
+
+	// ListPlatform returns a filtered, paginated, CROSS-STORE list of
+	// tickets for the platform console. StoreID narrows rather than
+	// scopes — see PlatformListFilter.
+	ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter) (ListResult, error)
 
 	// GetByID returns a single ticket by primary key, scoped to store and tenant.
 	GetByID(ctx context.Context, db *gorm.DB, storeID, tenantID, id uuid.UUID) (*Ticket, error)
@@ -102,6 +128,54 @@ func (gormRepository) List(ctx context.Context, db *gorm.DB, f ListFilter) (List
 
 	if err := q.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&result.Tickets).Error; err != nil {
 		return result, fmt.Errorf("ticket list: %w", err)
+	}
+	return result, nil
+}
+
+func (gormRepository) ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter) (ListResult, error) {
+	var result ListResult
+	// Model(&Ticket{}) so TableName() picks support_tickets. The bare
+	// `tickets` table belongs to a different system — see the model.
+	q := db.WithContext(ctx).Model(&Ticket{})
+
+	// StoreID NARROWS. Unset means every store, which is the whole point of
+	// this method and exactly why it is not ListFilter.
+	if f.StoreID != nil {
+		q = q.Where("store_id = ?", *f.StoreID)
+	}
+	if f.Status != "" {
+		q = q.Where("status = ?", f.Status)
+	}
+	if f.Priority != "" {
+		q = q.Where("priority = ?", f.Priority)
+	}
+	if f.From != nil {
+		q = q.Where("created_at >= ?", *f.From)
+	}
+	if f.To != nil {
+		q = q.Where("created_at <= ?", *f.To)
+	}
+
+	if err := q.Count(&result.Total).Error; err != nil {
+		return result, fmt.Errorf("ticket platform list count: %w", err)
+	}
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = DefaultPlatformPageSize
+	}
+	if limit > MaxPlatformPageSize {
+		limit = MaxPlatformPageSize
+	}
+	page := f.Page
+	if page < 1 {
+		page = 1
+	}
+
+	if err := q.Order("created_at DESC").
+		Limit(limit).Offset((page - 1) * limit).
+		Find(&result.Tickets).Error; err != nil {
+		return result, fmt.Errorf("ticket platform list: %w", err)
 	}
 	return result, nil
 }

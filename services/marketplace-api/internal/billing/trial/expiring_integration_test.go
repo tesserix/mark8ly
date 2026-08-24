@@ -253,6 +253,7 @@ func TestListExpiring_MapsAllFields(t *testing.T) {
 		r.Plan = subscription.PlanStudio
 		r.SubscriptionPeriod = subscription.PeriodAnnual
 		r.BillingCurrency = &currency
+		r.PriceTier = subscription.PriceTierPPP
 		r.HasDefaultPaymentMethod = true
 	})
 
@@ -284,6 +285,7 @@ func TestListExpiring_MapsAllFields(t *testing.T) {
 	assert.Equal(t, string(subscription.PeriodAnnual), row.Period)
 	require.NotNil(t, row.BillingCurrency)
 	assert.Equal(t, "GBP", *row.BillingCurrency)
+	assert.Equal(t, subscription.PriceTierPPP, row.PriceTier)
 	assert.True(t, row.HasPaymentMethod)
 	assert.Equal(t, string(subscription.StatusTrialing), row.Status)
 

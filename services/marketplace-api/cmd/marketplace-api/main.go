@@ -1927,6 +1927,7 @@ func main() {
 			estateCountsClient = estatecounts.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 		}
+		platformSubscriptionRepo := subscription.NewRepository()
 		platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
 			DB:               conn,
 			Repo:             auditRepo,
@@ -1937,6 +1938,7 @@ func main() {
 			EstateCounts:     estateCountsClient,
 			Subscriptions:    platformadmin.SubscriptionsFunc(trial.CountExpiring),
 			Trials:           platformadmin.TrialListerFunc(trial.ListExpiring),
+			AllSubscriptions: platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2023,6 +2025,7 @@ func main() {
 				estateCountsClient = estatecounts.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			}
+			platformSubscriptionRepo := subscription.NewRepository()
 			platformadmin.Register(engine.Group("/api/v1/platform"), platformadmin.Deps{
 				DB:               conn,
 				Repo:             auditRepo,
@@ -2033,6 +2036,7 @@ func main() {
 				EstateCounts:     estateCountsClient,
 				Subscriptions:    platformadmin.SubscriptionsFunc(trial.CountExpiring),
 				Trials:           platformadmin.TrialListerFunc(trial.ListExpiring),
+				AllSubscriptions: platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

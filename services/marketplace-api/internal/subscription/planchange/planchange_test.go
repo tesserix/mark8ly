@@ -72,6 +72,9 @@ func (r *fakeSubRepo) FindPendingDowngradesReady(_ context.Context, _ *gorm.DB, 
 func (r *fakeSubRepo) CountStoresForPlanSlot(_ context.Context, _ *gorm.DB, _ uuid.UUID) (int, error) {
 	return 0, nil
 }
+func (r *fakeSubRepo) ListAllSubscriptions(_ context.Context, _ *gorm.DB, _ subscription.CrossTenantFilter) ([]subscription.StoreSubscription, int64, error) {
+	return nil, 0, nil
+}
 
 // fixedClock returns a constant time for deterministic tests.
 type fixedClock struct{ t time.Time }

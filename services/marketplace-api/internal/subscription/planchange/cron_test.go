@@ -71,6 +71,9 @@ func (r *cronFakeSubRepo) FindPendingDowngradesReady(_ context.Context, _ *gorm.
 func (r *cronFakeSubRepo) CountStoresForPlanSlot(_ context.Context, _ *gorm.DB, _ uuid.UUID) (int, error) {
 	return 0, nil
 }
+func (r *cronFakeSubRepo) ListAllSubscriptions(_ context.Context, _ *gorm.DB, _ subscription.CrossTenantFilter) ([]subscription.StoreSubscription, int64, error) {
+	return nil, 0, nil
+}
 
 // recordingStripe wraps fakeStripe and records UpdateSubscription call params.
 type recordingStripe struct {

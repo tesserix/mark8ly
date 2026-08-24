@@ -74,7 +74,34 @@ type Repository interface {
 	// Caller scopes to tenant only — plan slots are tenant-wide. Soft-deleted
 	// stores within the 60-day restorable grace window also count toward the slot.
 	CountStoresForPlanSlot(ctx context.Context, db *gorm.DB, tenantID uuid.UUID) (int, error)
+
+	// ListAllSubscriptions returns a page of subscriptions across EVERY
+	// tenant, plus the unpaginated total.
+	//
+	// ESTATE-WIDE, deliberately unscoped by tenant: this serves the platform
+	// console's cross-tenant billing view, which is HMAC-gated on the
+	// platformadmin surface and has no tenant context at all. DO NOT call it
+	// from any tenant-facing handler — those must stay tenant-scoped like
+	// GetByStoreID.
+	ListAllSubscriptions(ctx context.Context, db *gorm.DB, f CrossTenantFilter) ([]StoreSubscription, int64, error)
 }
+
+// CrossTenantFilter narrows the estate-wide subscription listing served by
+// ListAllSubscriptions. Every field is optional — this is the platform
+// operator's view, not a tenant-scoped one.
+type CrossTenantFilter struct {
+	Status string
+	Plan   string
+	Page   int
+	Limit  int
+}
+
+// DefaultCrossTenantPageSize applies when the caller sends no limit.
+const DefaultCrossTenantPageSize = 50
+
+// MaxCrossTenantPageSize caps a page, mirroring the ceiling applied by the
+// platform-api tenant directory (see applyDirectoryFilter).
+const MaxCrossTenantPageSize = 500
 
 type gormRepository struct{}
 
@@ -247,4 +274,51 @@ func (gormRepository) CountStoresForPlanSlot(ctx context.Context, db *gorm.DB, t
 		return 0, fmt.Errorf("subscription: count stores for plan slot: %w", err)
 	}
 	return int(count), nil
+}
+
+// applyCrossTenantFilter builds the WHERE clause shared by the count and the
+// page query in ListAllSubscriptions, so the two can never drift apart.
+func applyCrossTenantFilter(q *gorm.DB, f CrossTenantFilter) *gorm.DB {
+	if f.Status != "" {
+		q = q.Where("status = ?", f.Status)
+	}
+	if f.Plan != "" {
+		q = q.Where("plan = ?", f.Plan)
+	}
+	return q
+}
+
+func (gormRepository) ListAllSubscriptions(ctx context.Context, db *gorm.DB, f CrossTenantFilter) ([]StoreSubscription, int64, error) {
+	var total int64
+	countQ := applyCrossTenantFilter(db.WithContext(ctx).Model(&StoreSubscription{}), f)
+	if err := countQ.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("subscription: list all count: %w", err)
+	}
+
+	page := f.Page
+	if page <= 0 {
+		page = 1
+	}
+	limit := f.Limit
+	switch {
+	case limit <= 0:
+		limit = DefaultCrossTenantPageSize
+	case limit > MaxCrossTenantPageSize:
+		limit = MaxCrossTenantPageSize
+	}
+
+	// Allocate before Find: a nil slice marshals to {} downstream, which
+	// defeats a caller's `?? []`.
+	rows := make([]StoreSubscription, 0, limit)
+
+	pageQ := applyCrossTenantFilter(db.WithContext(ctx).Model(&StoreSubscription{}), f)
+	if err := pageQ.
+		Order("created_at DESC").
+		Offset((page - 1) * limit).
+		Limit(limit).
+		Find(&rows).Error; err != nil {
+		return nil, 0, fmt.Errorf("subscription: list all: %w", err)
+	}
+
+	return rows, total, nil
 }

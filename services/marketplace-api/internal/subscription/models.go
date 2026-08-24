@@ -25,6 +25,37 @@ func AllPublicPlans() []SubscriptionPlan {
 	return []SubscriptionPlan{PlanTrial, PlanStarter, PlanStudio, PlanPro}
 }
 
+// AllStatuses returns every subscription lifecycle state.
+//
+// Single source for callers that must reason about the complete set. The
+// platform console's billing filter derives its accepted values from this
+// minus an explicit hidden set, so a status listed here becomes filterable
+// by default and hiding one is a deliberate act.
+//
+// Go cannot enumerate the constants of the SubscriptionStatus type, so this
+// slice is hand-maintained and does NOT automatically track new consts
+// added to the block below. What keeps it honest is
+// TestAllStatuses_MatchesDatabaseCheckConstraint
+// (status_check_constraint_integration_test.go), which verifies this list
+// against the store_subscriptions.status CHECK constraint — the one
+// mechanically-enforced "every valid status" set in the system. Add a new
+// status here (and to the const block) only alongside a migration that
+// updates that constraint, or the integration test fails.
+func AllStatuses() []SubscriptionStatus {
+	return []SubscriptionStatus{
+		StatusSignup,
+		StatusTrialing,
+		StatusActive,
+		StatusPastDue,
+		StatusPaymentActionRequired,
+		StatusCancelScheduled,
+		StatusExpired,
+		StatusStoreClosed,
+		StatusPendingHardDelete,
+		StatusHardDeleted,
+	}
+}
+
 // SubscriptionStatus enumerates subscription lifecycle states (v2.3).
 // The state machine that gates transitions between these values lives in
 // P2 — this package only defines the enum itself.

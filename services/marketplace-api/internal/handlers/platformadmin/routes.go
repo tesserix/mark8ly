@@ -44,6 +44,11 @@ type Deps struct {
 	// to mount, matching the EstateCounts/Subscriptions/OnboardingFunnel
 	// pattern above.
 	Trials TrialLister
+
+	// AllSubscriptions serves /admin/billing/subscriptions (#284), alongside
+	// TenantDirectory above for the tenant-name lookup. Both must be
+	// non-nil for that route to mount, matching the Trials pattern above.
+	AllSubscriptions SubscriptionLister
 }
 
 // Register mounts the platform console's /admin/* surface behind
@@ -102,5 +107,9 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.Trials != nil && deps.TenantDirectory != nil {
 		NewBillingTrialsHandler(deps.Trials, deps.TenantDirectory, deps.DB, nil, deps.Logger).Register(group)
+	}
+
+	if deps.AllSubscriptions != nil && deps.TenantDirectory != nil {
+		NewBillingSubscriptionsHandler(deps.AllSubscriptions, deps.TenantDirectory, deps.DB, deps.Logger).Register(group)
 	}
 }

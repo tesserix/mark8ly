@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/estatecounts"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 	"github.com/mark8ly/marketplace-api/internal/onboardingfunnel"
+	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/tenantdirectory"
 )
 
@@ -321,10 +323,14 @@ func TestBillingTrialsListExpiringErrorIs500(t *testing.T) {
 	require.Equal(t, "internal_error", errorCode(t, rec))
 }
 
-// mark8ly holds no prices and a trial cannot be in dunning: no `amount` key,
-// no `dunning_state` key, ever — asserted on the raw body across every shape
-// this handler can produce (happy path, empty, and error).
-func TestBillingTrialsNeverCarriesAmountOrDunningState(t *testing.T) {
+// A trial cannot be in dunning: the dunning ladder never selects status
+// 'trialing', so no row ever carries a `dunning_state` key. amount is
+// asserted absent too, but only because billingTrialsFixtureRows uses
+// plan="trial" throughout, which the catalog excludes by design (#328) — see
+// TestBillingTrialsPricedPlanCarriesAmount and
+// TestBillingTrialsTrialPlanOmitsAmount below for the cases that pin amount
+// as conditional rather than categorically absent.
+func TestBillingTrialsNeverCarriesDunningState(t *testing.T) {
 	asOf := billingTrialsFixtureAsOf
 	rows := billingTrialsFixtureRows(asOf)
 
@@ -353,10 +359,222 @@ func TestBillingTrialsNeverCarriesAmountOrDunningState(t *testing.T) {
 			rec := httptest.NewRecorder()
 			billingTrialsRouter(t, tc.trials, tc.dir).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.request, nil))
 			body := rec.Body.String()
-			require.False(t, strings.Contains(body, "\"amount\""), "no amount key: mark8ly holds no prices")
+			require.False(t, strings.Contains(body, "\"amount\""), "fixture rows are all plan=trial, which the catalog excludes: no amount key")
 			require.False(t, strings.Contains(body, "\"dunning_state\""), "no dunning_state key: a trial cannot be in dunning")
 		})
 	}
+}
+
+// TestBillingTrialsPricedPlanCarriesAmount proves a trial row on a merchant-
+// chosen, PRICED plan (starter/studio/pro — reachable via
+// internal/subscription/service.go's other creation path) carries `amount`
+// with an uppercase currency, resolved through the same resolveMoney helper
+// /admin/billing/subscriptions uses (#328).
+func TestBillingTrialsPricedPlanCarriesAmount(t *testing.T) {
+	asOf := billingTrialsFixtureAsOf
+	gbp := "gbp"
+	rows := []trial.ExpiringRow{
+		{
+			TenantID:         "t-priced",
+			StoreID:          "s-priced",
+			TrialEndsAt:      asOf.Add(3 * 24 * time.Hour),
+			Plan:             "starter",
+			Period:           "monthly",
+			BillingCurrency:  &gbp,
+			PriceTier:        subscription.PriceTierDeveloped,
+			HasPaymentMethod: false,
+			Status:           "trialing",
+		},
+	}
+	trials := &stubTrialLister{rows: rows, total: 1}
+	dir := &stubBillingDirectory{}
+
+	rec := httptest.NewRecorder()
+	billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/billing/trials", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Data []struct {
+			Amount *struct {
+				Amount   int64  `json:"amount"`
+				Currency string `json:"currency"`
+			} `json:"amount"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+	require.NotNil(t, body.Data[0].Amount, "a priced plan must carry an amount")
+	require.Equal(t, int64(1500), body.Data[0].Amount.Amount)
+	require.Equal(t, "GBP", body.Data[0].Amount.Currency, "currency on the wire must be uppercase")
+}
+
+// TestBillingTrialsTrialPlanOmitsAmount proves a row with plan="trial"
+// carries NO `amount` key at all — asserted on the raw JSON body, not a
+// decoded struct, so a null or a zeroed amount would also fail this. The
+// catalog has no Price objects for plan="trial" by design (#328's
+// correction): subscriptions reach plan="trial" by
+// internal/subscription/service.go:124, a path distinct from a merchant
+// choosing starter/studio/pro.
+func TestBillingTrialsTrialPlanOmitsAmount(t *testing.T) {
+	asOf := billingTrialsFixtureAsOf
+	gbp := "gbp"
+	rows := []trial.ExpiringRow{
+		{
+			TenantID:         "t-trial",
+			StoreID:          "s-trial",
+			TrialEndsAt:      asOf.Add(3 * 24 * time.Hour),
+			Plan:             "trial",
+			Period:           "monthly",
+			BillingCurrency:  &gbp,
+			PriceTier:        subscription.PriceTierDeveloped,
+			HasPaymentMethod: false,
+			Status:           "trialing",
+		},
+	}
+	trials := &stubTrialLister{rows: rows, total: 1}
+	dir := &stubBillingDirectory{}
+
+	rec := httptest.NewRecorder()
+	billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/billing/trials", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), "\"amount\"",
+		"plan=trial has no catalog price; the row must omit the amount key entirely, not null it out")
+}
+
+// TestBillingTrialsPPPTierResolvesFromPPPTable proves a PPP-tier trial row
+// resolves from the PPP price table, not the developed one — the exact
+// failure mode #328 called out: guessing the tier wrong produces a
+// wrong-but-plausible number, the worst outcome available here.
+func TestBillingTrialsPPPTierResolvesFromPPPTable(t *testing.T) {
+	asOf := billingTrialsFixtureAsOf
+	inr := "inr"
+	rows := []trial.ExpiringRow{
+		{
+			TenantID:         "t-ppp",
+			StoreID:          "s-ppp",
+			TrialEndsAt:      asOf.Add(3 * 24 * time.Hour),
+			Plan:             "starter",
+			Period:           "monthly",
+			BillingCurrency:  &inr,
+			PriceTier:        subscription.PriceTierPPP,
+			HasPaymentMethod: false,
+			Status:           "trialing",
+		},
+	}
+	trials := &stubTrialLister{rows: rows, total: 1}
+	dir := &stubBillingDirectory{}
+
+	rec := httptest.NewRecorder()
+	billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/billing/trials", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Data []struct {
+			Amount *struct {
+				Amount   int64  `json:"amount"`
+				Currency string `json:"currency"`
+			} `json:"amount"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+	require.NotNil(t, body.Data[0].Amount)
+	require.Equal(t, int64(99900), body.Data[0].Amount.Amount,
+		"PPP tier must resolve from the PPP table (99900), not the developed table")
+	require.Equal(t, "INR", body.Data[0].Amount.Currency)
+}
+
+// TestCrossEndpointAmountAgreement is the cross-endpoint invariant #328
+// exists to guarantee: the same plan/period/currency/tier resolves to the
+// SAME amount whether it is read through /admin/billing/trials or
+// /admin/billing/subscriptions. Both handlers are driven against ONE shared
+// row in this single test — two separate assertions against the same
+// catalog, each configured independently, would still pass even if the two
+// handlers resolved money differently, which is the failure mode that let a
+// structurally-zero counter ship in this codebase (#282) and the reasoning
+// #328 explicitly calls out for why one resolver must serve both endpoints.
+func TestCrossEndpointAmountAgreement(t *testing.T) {
+	asOf := billingTrialsFixtureAsOf
+	gbp := "gbp"
+	tenantID := uuid.MustParse("3f2504e0-4f89-11d3-9a0c-0305e82c3301")
+	storeID := uuid.MustParse("aaaaaaaa-4f89-11d3-9a0c-0305e82c3301")
+
+	// --- drive /admin/billing/trials ---
+	trialsRows := []trial.ExpiringRow{
+		{
+			TenantID:         tenantID.String(),
+			StoreID:          storeID.String(),
+			TrialEndsAt:      asOf.Add(3 * 24 * time.Hour),
+			Plan:             "starter",
+			Period:           "monthly",
+			BillingCurrency:  &gbp,
+			PriceTier:        subscription.PriceTierDeveloped,
+			HasPaymentMethod: false,
+			Status:           "trialing",
+		},
+	}
+	trials := &stubTrialLister{rows: trialsRows, total: 1}
+	trialsDir := &stubBillingDirectory{}
+	trialsRec := httptest.NewRecorder()
+	billingTrialsRouter(t, trials, trialsDir).ServeHTTP(trialsRec, httptest.NewRequest(
+		http.MethodGet, "/admin/billing/trials", nil))
+	require.Equal(t, http.StatusOK, trialsRec.Code)
+
+	var trialsBody struct {
+		Data []struct {
+			Amount *struct {
+				Amount   int64  `json:"amount"`
+				Currency string `json:"currency"`
+			} `json:"amount"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(trialsRec.Body.Bytes(), &trialsBody))
+	require.Len(t, trialsBody.Data, 1)
+	require.NotNil(t, trialsBody.Data[0].Amount)
+
+	// --- drive /admin/billing/subscriptions over the SAME plan/period/
+	// currency/tier ---
+	subsRows := []subscription.StoreSubscription{
+		{
+			TenantID:           tenantID,
+			StoreID:            storeID,
+			Plan:               subscription.PlanStarter,
+			Status:             subscription.StatusTrialing,
+			SubscriptionPeriod: subscription.PeriodMonthly,
+			BillingCurrency:    &gbp,
+			PriceTier:          subscription.PriceTierDeveloped,
+			CancelAtPeriodEnd:  false,
+		},
+	}
+	subs := &stubSubscriptionLister{rows: subsRows, total: 1}
+	subsDir := &stubBillingDirectory{}
+	subsRec := httptest.NewRecorder()
+	billingSubscriptionsRouter(t, subs, subsDir).ServeHTTP(subsRec, httptest.NewRequest(
+		http.MethodGet, "/admin/billing/subscriptions", nil))
+	require.Equal(t, http.StatusOK, subsRec.Code)
+
+	var subsBody struct {
+		Data []struct {
+			Amount *struct {
+				Amount   int64  `json:"amount"`
+				Currency string `json:"currency"`
+			} `json:"amount"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(subsRec.Body.Bytes(), &subsBody))
+	require.Len(t, subsBody.Data, 1)
+	require.NotNil(t, subsBody.Data[0].Amount)
+
+	require.Equal(t, subsBody.Data[0].Amount.Amount, trialsBody.Data[0].Amount.Amount,
+		"trials and subscriptions must agree on the resolved amount for the same plan/period/currency/tier")
+	require.Equal(t, subsBody.Data[0].Amount.Currency, trialsBody.Data[0].Amount.Currency,
+		"trials and subscriptions must agree on the resolved currency")
 }
 
 // The cross-endpoint invariant (#282's original defect): /admin/kpis's

@@ -72,11 +72,21 @@ type CSVJobsHealth struct {
 	RunningStaleHeartbeat int64
 }
 
-// CampaignSendsHealth is the measured state of campaigns. Fields land in Task 3.
-type CampaignSendsHealth struct{}
+// CampaignSendsHealth is the measured state of campaigns.
+type CampaignSendsHealth struct {
+	Sending               int64
+	SendingStaleHeartbeat int64
+}
 
-// StripeWebhooksHealth is the measured state of stripe_webhook_events. Fields land in Task 3.
-type StripeWebhooksHealth struct{}
+// StripeWebhooksHealth is the measured state of stripe_webhook_events.
+// Inbound only — receiving webhooks normally says nothing about whether
+// our own outbound Stripe API calls are succeeding, which is why
+// stripe_api is a separate, uninstrumented registry entry.
+type StripeWebhooksHealth struct {
+	Unprocessed                 int64
+	OldestUnprocessedAgeSeconds int64
+	ManualReviewRequired        int64
+}
 
 // HealthSource measures the four instrumented dependencies. Every method
 // takes asOf from the caller and compares against it in SQL rather than

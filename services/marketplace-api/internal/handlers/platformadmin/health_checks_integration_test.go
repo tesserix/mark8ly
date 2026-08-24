@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -106,4 +107,59 @@ func TestCSVJobsStaleHeartbeatIsInclusiveAtTheBoundary(t *testing.T) {
 	require.Equal(t, int64(1), got.Queued)
 	require.Equal(t, int64(1), got.RunningStaleHeartbeat,
 		"a heartbeat exactly OrphanWindow old is stale; one millisecond younger is not")
+}
+
+// The campaign window is campaign.StaleDuration — an exported constant
+// that already governs RecoverStuckCampaigns. Same inclusive boundary rule
+// and same 1ms offset as the csv test above.
+//
+// campaigns.tenant_id is NOT NULL and campaigns.store_id has an FK to
+// stores(id) — neither is in the plan's sketch insert. Both are added here
+// rather than weakening the fixture; seedStoreForCSV is reused even though
+// its name says CSV, since it only creates a generic store row.
+func TestCampaignSendsStaleHeartbeatIsInclusiveAtTheBoundary(t *testing.T) {
+	db := testdb.NewDB(t, "campaigns", "stores")
+	src := platformadmin.NewDBHealthSource(db)
+	storeID := seedStoreForCSV(t, db)
+
+	exactly := healthAsOf.Add(-campaign.StaleDuration)
+	justInside := exactly.Add(time.Millisecond)
+
+	insert := func(status string, heartbeat *time.Time) {
+		require.NoError(t, db.Exec(`INSERT INTO campaigns (id, tenant_id, store_id, name, status, heartbeat_at)
+			VALUES (?, ?, ?, 'c', ?, ?)`,
+			uuid.New(), uuid.New(), storeID, status, heartbeat).Error)
+	}
+	insert("sending", &exactly)
+	insert("sending", &justInside)
+	insert("draft", nil)
+
+	got, err := src.CampaignSends(context.Background(), healthAsOf)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), got.Sending, "only status='sending' rows count")
+	require.Equal(t, int64(1), got.SendingStaleHeartbeat,
+		"a heartbeat exactly StaleDuration old is stale; one millisecond younger is not")
+}
+
+func TestStripeWebhooksCountsUnprocessedAndManualReview(t *testing.T) {
+	db := testdb.NewDB(t, "stripe_webhook_events")
+	src := platformadmin.NewDBHealthSource(db)
+
+	insert := func(id string, received time.Time, processed *time.Time, manual bool) {
+		require.NoError(t, db.Exec(`INSERT INTO stripe_webhook_events
+			(event_id, event_type, payload, received_at, processed_at, manual_review_required)
+			VALUES (?, 'invoice.paid', '{}'::jsonb, ?, ?, ?)`,
+			id, received, processed, manual).Error)
+	}
+
+	done := healthAsOf.Add(-time.Hour)
+	insert("evt_done", done, &done, false)                         // processed
+	insert("evt_old", healthAsOf.Add(-20*time.Minute), nil, false) // unprocessed, oldest
+	insert("evt_manual", healthAsOf.Add(-time.Minute), nil, true)  // needs a human
+
+	got, err := src.StripeWebhooks(context.Background(), healthAsOf)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), got.Unprocessed, "processed row must not count")
+	require.Equal(t, int64(1), got.ManualReviewRequired)
+	require.Equal(t, int64(1200), got.OldestUnprocessedAgeSeconds)
 }

@@ -7,12 +7,9 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 )
-
-// errNotImplementedYet is removed in Task 3 when the remaining two checks
-// land. It exists only so this file compiles as its own commit.
-var errNotImplementedYet = errors.New("platformadmin: health check not implemented yet")
 
 // errNoDB is returned by every check when the source has no database.
 // It exists so a nil DB degrades to `unknown` rather than panicking:
@@ -67,10 +64,38 @@ func (s *dbHealthSource) CSVJobs(ctx context.Context, asOf time.Time) (CSVJobsHe
 	return out, nil
 }
 
-func (s *dbHealthSource) CampaignSends(context.Context, time.Time) (CampaignSendsHealth, error) {
-	return CampaignSendsHealth{}, errNotImplementedYet
+func (s *dbHealthSource) CampaignSends(ctx context.Context, asOf time.Time) (CampaignSendsHealth, error) {
+	if s.db == nil {
+		return CampaignSendsHealth{}, errNoDB
+	}
+	var out CampaignSendsHealth
+	err := s.db.WithContext(ctx).Raw(`
+		SELECT
+			COUNT(*) FILTER (WHERE status = 'sending') AS sending,
+			COUNT(*) FILTER (WHERE status = 'sending'
+				AND heartbeat_at IS NOT NULL
+				AND heartbeat_at <= ?)                 AS sending_stale_heartbeat
+		FROM campaigns`, asOf.Add(-campaign.StaleDuration)).Scan(&out).Error
+	if err != nil {
+		return CampaignSendsHealth{}, err
+	}
+	return out, nil
 }
 
-func (s *dbHealthSource) StripeWebhooks(context.Context, time.Time) (StripeWebhooksHealth, error) {
-	return StripeWebhooksHealth{}, errNotImplementedYet
+func (s *dbHealthSource) StripeWebhooks(ctx context.Context, asOf time.Time) (StripeWebhooksHealth, error) {
+	if s.db == nil {
+		return StripeWebhooksHealth{}, errNoDB
+	}
+	var out StripeWebhooksHealth
+	err := s.db.WithContext(ctx).Raw(`
+		SELECT
+			COUNT(*) FILTER (WHERE processed_at IS NULL) AS unprocessed,
+			COALESCE(EXTRACT(EPOCH FROM (? - MIN(received_at)
+				FILTER (WHERE processed_at IS NULL)))::bigint, 0) AS oldest_unprocessed_age_seconds,
+			COUNT(*) FILTER (WHERE manual_review_required)        AS manual_review_required
+		FROM stripe_webhook_events`, asOf).Scan(&out).Error
+	if err != nil {
+		return StripeWebhooksHealth{}, err
+	}
+	return out, nil
 }

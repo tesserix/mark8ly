@@ -166,6 +166,13 @@ type StoreSubscription struct {
 	RevalidationAttemptedAt   *time.Time `gorm:"column:revalidation_attempted_at"`
 	TaxRevalidationStartedAt  *time.Time `gorm:"column:tax_revalidation_started_at"`
 
+	// TrialEndsAt is the operator-extended trial end (migration 103). NULL —
+	// the common case — means the trial has never been extended and its end
+	// is created_at + trial.TrialDays. Never read this field directly to
+	// answer "when does this trial end": call trial.EndsAt, which is the only
+	// definition of that.
+	TrialEndsAt *time.Time `gorm:"column:trial_ends_at"`
+
 	CreatedAt time.Time `gorm:"column:created_at;not null;default:now()"`
 	UpdatedAt time.Time `gorm:"column:updated_at;not null;default:now()"`
 }

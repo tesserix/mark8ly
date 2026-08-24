@@ -10,12 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPlatformadminRegisterSitesAgree guards the failure mode in #323: the
-// mode.Both engine and the mode.Admin engine each call
-// platformadmin.Register with their own Deps literal, and a field added to
-// one and not the other means the two deployments differ silently. Three
-// distinct failure modes have been observed, including a nil interface
-// that panics at runtime.
+// TestPlatformadminRegisterSitesAgree guards one narrow slice of the
+// failure mode in #323: the mode.Both engine and the mode.Admin engine each
+// call platformadmin.Register with their own Deps literal, and a field
+// added to one and not the other means the two deployments differ silently.
+//
+// It compares the SET OF FIELD NAMES each literal sets, and nothing more.
+// Two sites that both set `DB` still pass this test even if one passes a
+// real connection and the other passes nil — values, types, and ordering
+// are out of scope.
 func TestPlatformadminRegisterSitesAgree(t *testing.T) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "main.go", nil, 0)

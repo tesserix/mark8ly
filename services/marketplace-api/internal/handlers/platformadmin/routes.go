@@ -94,10 +94,12 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	// Health needs only the DB, so it mounts alongside the surface itself
 	// rather than behind a nil-dependency guard like the client-backed
-	// routes below. A nil DB is handled inside the source, which returns
-	// errNoDB from every check rather than dereferencing a nil *gorm.DB;
-	// the handler renders that as `unknown` — the honest non-answer, and
-	// never a fabricated ok.
+	// routes below. The source's nil-DB guard (errNoDB -> `unknown`) is
+	// defensive only and is NOT reachable through Register: a nil DB also
+	// leaves NonceStore nil, so RequirePlatformAuth answers 503
+	// not_configured before any handler runs. The guard stays because the
+	// source is constructible directly, and a nil *gorm.DB would otherwise
+	// panic on WithContext.
 	NewHealthHandler(NewDBHealthSource(deps.DB), deps.Logger).Register(group)
 
 	if deps.TenantDirectory != nil {

@@ -20,8 +20,15 @@ const MaxImportRows = 50000
 // OrphanWindow is how long a 'running' job may go without a heartbeat
 // before the system considers it orphaned. Read by the startup recovery
 // scan in cmd/marketplace-api/main.go and by the platform console's
-// /admin/health endpoint (#289), so that the two cannot drift into
-// disagreeing about the same job.
+// /admin/health endpoint (#289), so the two share one definition of the
+// WINDOW and cannot drift apart if it is retuned.
+//
+// They do NOT share the boundary predicate: the recovery scan uses `<`
+// while the health check uses `<=`, so a job whose heartbeat is exactly
+// OrphanWindow old reads as stale on /admin/health one instant before the
+// scan would reset it. That one-instant disagreement is deliberate —
+// /admin/health applies "degraded when age >= window" uniformly across all
+// four of its checks.
 const OrphanWindow = 15 * time.Minute
 
 // CSVReader opens a GCS (or local) CSV file and returns a ReadCloser.

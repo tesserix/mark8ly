@@ -172,10 +172,11 @@ func itoa(i int) string {
 	return string(rune('0'+i/10)) + string(rune('0'+i%10))
 }
 
-// TestOrphanWindowIsFifteenMinutes pins the shared definition of "this job
+// TestOrphanWindowIsFifteenMinutes pins the shared WINDOW behind "this job
 // is orphaned". The health endpoint (#289) and the startup recovery scan
-// both read this constant; if they ever disagree, the console reports a
-// job healthy that the recovery scan is about to reset.
+// both read this constant, so retuning it moves both together. Their
+// boundary predicates differ by one instant on purpose (`<=` vs `<`) — see
+// the constant's doc comment.
 func TestOrphanWindowIsFifteenMinutes(t *testing.T) {
 	require.Equal(t, 15*time.Minute, csvjob.OrphanWindow)
 }

@@ -455,6 +455,13 @@ func main() {
 	// /internal vendor endpoints, so no self-vendor lookup is needed.
 	// product.Service.resolveVendorID is nil-safe for exactly this case.
 	var vendorSvc *vendor.Service
+	// tenantGate (#287) is declared at outer scope so the platformadmin.Register
+	// call sites in the mode switch below (which construct the tenant
+	// lifecycle handler's invalidator) can see the same instance the admin
+	// group's RequireActiveTenant middleware reads from — one process, one
+	// cache. Constructed inside the admin wiring branch below; stays nil in
+	// Storefront-only builds.
+	var tenantGate *tenantgate.Gate
 	// brandingSeeder is non-nil only when MARKETPLACE_API_ENABLE_TEST_ROUTES=true.
 	// Declared at func scope so the later route-mount block can see it.
 	var brandingSeeder *testroutes.BrandingSeeder
@@ -1020,7 +1027,6 @@ func main() {
 		// /admin/stores/:storeId). Degrades to a nil Gate — a no-op
 		// middleware — when MARKETPLACE_PLATFORM_API_URL is unset,
 		// matching how the other platform-api-backed features degrade.
-		var tenantGate *tenantgate.Gate
 		if cfg.PlatformAPIURL != "" {
 			tenantGate = tenantgate.New(
 				tenantdirectory.NewClient(cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil),
@@ -1955,18 +1961,19 @@ func main() {
 		}
 		platformSubscriptionRepo := subscription.NewRepository()
 		platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
-			DB:               conn,
-			Repo:             auditRepo,
-			Logger:           log,
-			Secret:           cfg.PlatformAdminSecret,
-			TenantDirectory:  tenantDirectoryClient,
-			OnboardingFunnel: onboardingFunnelClient,
-			EstateCounts:     estateCountsClient,
-			Subscriptions:    platformadmin.SubscriptionsFunc(trial.CountExpiring),
-			Trials:           platformadmin.TrialListerFunc(trial.ListExpiring),
-			AllSubscriptions: platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
-			TenantLifecycle:  tenantLifecycleClient,
-			Emitter:          auditEmitter,
+			DB:                    conn,
+			Repo:                  auditRepo,
+			Logger:                log,
+			Secret:                cfg.PlatformAdminSecret,
+			TenantDirectory:       tenantDirectoryClient,
+			OnboardingFunnel:      onboardingFunnelClient,
+			EstateCounts:          estateCountsClient,
+			Subscriptions:         platformadmin.SubscriptionsFunc(trial.CountExpiring),
+			Trials:                platformadmin.TrialListerFunc(trial.ListExpiring),
+			AllSubscriptions:      platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
+			TenantLifecycle:       tenantLifecycleClient,
+			Emitter:               auditEmitter,
+			TenantGateInvalidator: tenantGate,
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2065,18 +2072,19 @@ func main() {
 			}
 			platformSubscriptionRepo := subscription.NewRepository()
 			platformadmin.Register(engine.Group("/api/v1/platform"), platformadmin.Deps{
-				DB:               conn,
-				Repo:             auditRepo,
-				Logger:           log,
-				Secret:           cfg.PlatformAdminSecret,
-				TenantDirectory:  tenantDirectoryClient,
-				OnboardingFunnel: onboardingFunnelClient,
-				EstateCounts:     estateCountsClient,
-				Subscriptions:    platformadmin.SubscriptionsFunc(trial.CountExpiring),
-				Trials:           platformadmin.TrialListerFunc(trial.ListExpiring),
-				AllSubscriptions: platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
-				TenantLifecycle:  tenantLifecycleClient,
-				Emitter:          auditEmitter,
+				DB:                    conn,
+				Repo:                  auditRepo,
+				Logger:                log,
+				Secret:                cfg.PlatformAdminSecret,
+				TenantDirectory:       tenantDirectoryClient,
+				OnboardingFunnel:      onboardingFunnelClient,
+				EstateCounts:          estateCountsClient,
+				Subscriptions:         platformadmin.SubscriptionsFunc(trial.CountExpiring),
+				Trials:                platformadmin.TrialListerFunc(trial.ListExpiring),
+				AllSubscriptions:      platformadmin.SubscriptionListerFunc(platformSubscriptionRepo.ListAllSubscriptions),
+				TenantLifecycle:       tenantLifecycleClient,
+				Emitter:               auditEmitter,
+				TenantGateInvalidator: tenantGate,
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

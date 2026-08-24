@@ -61,7 +61,7 @@ func TestIntegration_Suspend_UpdatesLocalProjectionImmediately(t *testing.T) {
 
 	stub := &stubLifecycle{res: &tenantlifecycle.Result{
 		TenantID: tenantID, Status: "suspended", StoresAffected: 1, Changed: true}}
-	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil)
+	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil, nil)
 
 	rec := postLifecycleTenant(t, h, tenantID, "suspend", `{"reason_code":"abuse"}`)
 	require.Equal(t, http.StatusOK, rec.Code)
@@ -103,7 +103,7 @@ func TestIntegration_Unsuspend_MarksLocalProjectionStaleNotActive(t *testing.T) 
 
 	stub := &stubLifecycle{res: &tenantlifecycle.Result{
 		TenantID: tenantID, Status: "active", StoresAffected: 1, Changed: true}}
-	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil)
+	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil, nil)
 
 	rec := postLifecycleTenant(t, h, tenantID, "unsuspend", `{"reason_code":"resolved"}`)
 	require.Equal(t, http.StatusOK, rec.Code)

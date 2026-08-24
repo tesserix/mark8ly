@@ -113,6 +113,7 @@ func newLifecycleDeps(t *testing.T, client platformadmin.TenantLifecycle) *platf
 		&fakeLifecycleStoreRepo{},
 		discardAudit,
 		nil,
+		nil,
 	)
 }
 
@@ -135,6 +136,7 @@ func newLifecycleDepsCapturingAudit(t *testing.T, client platformadmin.TenantLif
 			*emitted = append(*emitted, ev)
 			return nil
 		},
+		nil,
 		nil,
 	)
 	return h, emitted
@@ -271,7 +273,7 @@ func TestSuspend_UpdatesLocalProjectionImmediately(t *testing.T) {
 	repo := &fakeLifecycleStoreRepo{}
 	stub := &stubLifecycle{res: &tenantlifecycle.Result{
 		TenantID: testTenant, Status: "suspended", StoresAffected: 3, Changed: true}}
-	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil)
+	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil, nil)
 	rec := postLifecycle(t, h, "suspend", `{"reason_code":"abuse"}`)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, []string{testTenant}, repo.suspendedTenants,
@@ -286,7 +288,7 @@ func TestUnsuspend_MarksLocalProjectionStaleNotActive(t *testing.T) {
 	repo := &fakeLifecycleStoreRepo{}
 	stub := &stubLifecycle{res: &tenantlifecycle.Result{
 		TenantID: testTenant, Status: "active", StoresAffected: 3, Changed: true}}
-	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil)
+	h := platformadmin.NewTenantLifecycleHandler(stub, repo, discardAudit, nil, nil)
 	rec := postLifecycle(t, h, "unsuspend", `{"reason_code":"resolved"}`)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, []string{testTenant}, repo.staleTenants,

@@ -71,6 +71,23 @@ type Deps struct {
 	// than silent, since #287 — for callers reached other than through
 	// this Register guard.)
 	Emitter *audit.Emitter
+
+	// TenantGateInvalidator drops a tenant's cached status so a suspension
+	// takes effect immediately instead of at the next cache refresh (#287
+	// fix-round-1). Unlike Emitter above, nil here is a genuine no-op, not
+	// a mount guard: an unwired invalidator just leaves today's TTL-lag
+	// behaviour in place (a delay, never a lost audit record), so it does
+	// NOT gate whether the TenantLifecycle routes mount.
+	TenantGateInvalidator TenantGateInvalidator
+}
+
+// TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
+// here (not importing internal/tenantgate's concrete type) so this package
+// stays decoupled from the admin group's gate implementation — the same
+// reason TenantDirectory, TenantLifecycle etc. are declared as local
+// interfaces above.
+type TenantGateInvalidator interface {
+	Invalidate(tenantID string)
 }
 
 // Register mounts the platform console's /admin/* surface behind
@@ -153,6 +170,7 @@ func Register(g *gin.RouterGroup, deps Deps) {
 			deps.TenantLifecycle,
 			stores.NewRepository(deps.DB),
 			NewOperatorActionAuditFunc(deps.Emitter),
+			deps.TenantGateInvalidator,
 			deps.Logger,
 		).Register(group)
 	case deps.TenantLifecycle != nil:

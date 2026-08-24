@@ -88,10 +88,11 @@ func NewOperatorActionAuditFunc(em *audit.Emitter) lifecycleAuditFunc {
 //     authoritative status is refetched from platform-api. Unsuspend takes
 //     effect on the next refresh, not instantly — that is deliberate.
 type TenantLifecycleHandler struct {
-	client TenantLifecycle
-	stores stores.Repository
-	emit   lifecycleAuditFunc
-	logger *slog.Logger
+	client     TenantLifecycle
+	stores     stores.Repository
+	emit       lifecycleAuditFunc
+	invalidate TenantGateInvalidator
+	logger     *slog.Logger
 }
 
 // NewTenantLifecycleHandler constructs the handler. logger may be nil;
@@ -111,11 +112,15 @@ type TenantLifecycleHandler struct {
 // closure, even when deps.Emitter itself is nil), so the panic could
 // never fire on the one path that would actually need it; the unmounted
 // route is what closes the loophole.
-func NewTenantLifecycleHandler(client TenantLifecycle, storeRepo stores.Repository, emit lifecycleAuditFunc, logger *slog.Logger) *TenantLifecycleHandler {
+// invalidator may be nil: an unwired invalidator leaves today's TTL-lag
+// behaviour in place on the admin gate (see TenantGateInvalidator's doc in
+// routes.go) rather than failing the request — it is never required the
+// way emit's audit trail is.
+func NewTenantLifecycleHandler(client TenantLifecycle, storeRepo stores.Repository, emit lifecycleAuditFunc, invalidator TenantGateInvalidator, logger *slog.Logger) *TenantLifecycleHandler {
 	if emit == nil {
 		emit = func(*gin.Context, uuid.UUID, audit.Event) error { return nil }
 	}
-	return &TenantLifecycleHandler{client: client, stores: storeRepo, emit: emit, logger: logger}
+	return &TenantLifecycleHandler{client: client, stores: storeRepo, emit: emit, invalidate: invalidator, logger: logger}
 }
 
 // Register mounts both routes on the supplied group.
@@ -230,6 +235,16 @@ func (h *TenantLifecycleHandler) handle(
 	}
 
 	if res.Changed {
+		// #287 fix-round-1: drop the admin gate's cached status for this
+		// tenant so the suspend/unsuspend takes effect on the very next
+		// admin request, instead of lagging behind by up to the gate's
+		// TTL. Best-effort like projectionUpdate below: nil-safe, and its
+		// absence is a degraded-lag, not a failure worth surfacing to the
+		// caller — the upstream write already succeeded.
+		if h.invalidate != nil {
+			h.invalidate.Invalidate(tenantIDStr)
+		}
+
 		if err := projectionUpdate(c.Request.Context(), tenantIDStr); err != nil {
 			// The upstream call already SUCCEEDED. A projection-update
 			// failure must not turn that into an error response — log

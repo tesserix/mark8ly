@@ -166,6 +166,19 @@ func (g *Gate) refresh(ctx context.Context, tenantID string) (string, error) {
 	return detail.Status, nil
 }
 
+// Invalidate drops tenantID's cached status, so a suspend or unsuspend
+// action taken through the platform console takes effect on the very next
+// admin request instead of waiting out ttl. Safe on a nil *Gate — matching
+// how the rest of this type degrades when unwired.
+func (g *Gate) Invalidate(tenantID string) {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	delete(g.cache, tenantID)
+	g.mu.Unlock()
+}
+
 func (g *Gate) warn(msg, tenantID string, err error) {
 	if g.logger == nil {
 		return

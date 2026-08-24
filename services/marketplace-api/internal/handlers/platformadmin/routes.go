@@ -79,6 +79,11 @@ type Deps struct {
 	// behaviour in place (a delay, never a lost audit record), so it does
 	// NOT gate whether the TenantLifecycle routes mount.
 	TenantGateInvalidator TenantGateInvalidator
+
+	// Tickets serves /admin/tickets (#329), the cross-store support ticket
+	// read. Nil leaves that route unmounted, matching the nil-safe pattern
+	// used for the other optional client-backed routes above.
+	Tickets TicketLister
 }
 
 // TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
@@ -162,6 +167,10 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.AllSubscriptions != nil && deps.TenantDirectory != nil {
 		NewBillingSubscriptionsHandler(deps.AllSubscriptions, deps.TenantDirectory, deps.DB, deps.Logger).Register(group)
+	}
+
+	if deps.Tickets != nil {
+		NewTicketsHandler(deps.DB, deps.Tickets, deps.Logger).Register(group)
 	}
 
 	switch {

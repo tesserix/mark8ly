@@ -550,9 +550,13 @@ func main() {
 	ticketNotifier := ticket.NewEmailNotifier(
 		emailSender, cfg.EmailFrom, cfg.PublicStorefrontHost, log,
 	)
+	// ticketRepo is hoisted so the platformadmin.Register call sites below
+	// (mode.Both and mode.Admin) can both wire the same #329 cross-store
+	// ticket read without constructing a second, redundant repository.
+	ticketRepo := ticket.NewRepository()
 	ticketSvc := ticket.NewService(ticket.ServiceConfig{
 		DB:       conn,
-		Repo:     ticket.NewRepository(),
+		Repo:     ticketRepo,
 		Logger:   log,
 		Notifier: ticketNotifier,
 	})
@@ -1987,6 +1991,7 @@ func main() {
 			TenantLifecycle:       tenantLifecycleClient,
 			Emitter:               auditEmitter,
 			TenantGateInvalidator: tenantGate,
+			Tickets:               ticketRepo,
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2098,6 +2103,7 @@ func main() {
 				TenantLifecycle:       tenantLifecycleClient,
 				Emitter:               auditEmitter,
 				TenantGateInvalidator: tenantGate,
+				Tickets:               ticketRepo,
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

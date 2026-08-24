@@ -15,9 +15,13 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 )
 
-// stubHealthSource returns canned measurements. Every value is DISTINCT
-// and NON-ZERO so an assertion cannot pass on a fabricated zero produced
-// by a missing map key — the corollary to trap 6 that bit twice.
+// stubHealthSource returns canned measurements. Every value asserted
+// against is DISTINCT and NON-ZERO so an assertion cannot pass on a
+// fabricated zero produced by a missing map key — the corollary to trap 6
+// that bit twice. The one deliberate exception is
+// StripeWebhooksHealth.ManualReviewRequired, which healthFixture sets to 0
+// so that stripe_webhooks reports `ok` in the golden fixture (Task 5),
+// giving that file a mix of statuses rather than uniform degradation.
 type stubHealthSource struct {
 	outbox    platformadmin.OutboxHealth
 	csv       platformadmin.CSVJobsHealth
@@ -209,6 +213,48 @@ func TestHealthStatusPerThreshold(t *testing.T) {
 	for _, dep := range body.Data.Dependencies {
 		if dep.Name == "stripe_webhooks" {
 			require.Equal(t, platformadmin.StatusDegraded, dep.Status)
+		}
+	}
+
+	// campaign_sends degrades on a stale heartbeat alone. Use a distinct,
+	// non-zero value (3) so it cannot be confused with another stub's field.
+	src.stripe = platformadmin.StripeWebhooksHealth{Unprocessed: 1, OldestUnprocessedAgeSeconds: 1}
+	src.campaign = platformadmin.CampaignSendsHealth{Sending: 2, SendingStaleHeartbeat: 3}
+	_, body = getHealth(t, src)
+	for _, dep := range body.Data.Dependencies {
+		if dep.Name == "campaign_sends" {
+			require.Equal(t, platformadmin.StatusDegraded, dep.Status,
+				"a stale campaign_sends heartbeat is degraded")
+		}
+	}
+	src.campaign = platformadmin.CampaignSendsHealth{Sending: 2, SendingStaleHeartbeat: 0}
+
+	// stripe_webhooks age threshold, pinned from both sides with
+	// ManualReviewRequired: 0 throughout so the age disjunct alone is under
+	// test, mirroring how the outbox age threshold is pinned above.
+	src.stripe = platformadmin.StripeWebhooksHealth{
+		Unprocessed:                 1,
+		OldestUnprocessedAgeSeconds: int64(platformadmin.StripeUnprocessedThreshold / time.Second),
+		ManualReviewRequired:        0,
+	}
+	_, body = getHealth(t, src)
+	for _, dep := range body.Data.Dependencies {
+		if dep.Name == "stripe_webhooks" {
+			require.Equal(t, platformadmin.StatusDegraded, dep.Status,
+				"a stripe age exactly equal to the threshold is degraded")
+		}
+	}
+
+	src.stripe = platformadmin.StripeWebhooksHealth{
+		Unprocessed:                 1,
+		OldestUnprocessedAgeSeconds: int64(platformadmin.StripeUnprocessedThreshold/time.Second) - 1,
+		ManualReviewRequired:        0,
+	}
+	_, body = getHealth(t, src)
+	for _, dep := range body.Data.Dependencies {
+		if dep.Name == "stripe_webhooks" {
+			require.Equal(t, platformadmin.StatusOK, dep.Status,
+				"one second under the stripe age threshold is ok")
 		}
 	}
 }

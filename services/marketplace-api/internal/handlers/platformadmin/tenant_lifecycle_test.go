@@ -94,9 +94,13 @@ func (r *fakeLifecycleStoreRepo) MarkStaleForTenant(_ context.Context, tenantID 
 	return nil
 }
 
-// discardAudit is an explicit, visible "throw the event away" choice —
-// NewTenantLifecycleHandler panics on a nil emit func (F1, #287) precisely
-// so that choice can never be made silently by omission.
+// discardAudit is an explicit, visible "throw the event away" choice, used
+// by tests that don't care about the audit side effect. The real guard
+// against a silently-unaudited write endpoint (F1, #287) is NOT here —
+// NewTenantLifecycleHandler tolerates a nil emit func too — it's in
+// Register (routes.go), which refuses to mount these routes at all when
+// Deps.Emitter is nil. See TestRegisterRequiresEmitterToMountTenantLifecycle
+// in routes_tenant_lifecycle_test.go for that guard's own test.
 func discardAudit(*gin.Context, uuid.UUID, audit.Event) error { return nil }
 
 // newLifecycleDeps builds a handler wired to client, an inert local

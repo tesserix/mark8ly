@@ -61,15 +61,17 @@ type Repository interface {
 	SuspendActiveForTenant(ctx context.Context, tenantID string) error
 
 	// MarkStaleForTenant forces every local store row for a tenant to be
-	// treated as stale on the next read, by resetting synced_at to the
-	// epoch. Used by the platform console's tenant-unsuspend endpoint
-	// (#287) instead of eagerly flipping status back to active: this
-	// projection has no column distinguishing a store suspended by the
-	// tenant-level cascade from one suspended individually in
-	// platform-api, so a local unsuspend cannot tell them apart. Forcing a
-	// refetch is the only way to get an authoritative status without
-	// risking that a distinction. See tenant_lifecycle.go for the full
-	// rationale.
+	// treated as stale on the next read, by backdating synced_at by
+	// forceRefreshAge — NOT to the epoch, so the row stays inside
+	// StaleCeil and a failed refresh still fails open (see
+	// forceRefreshAge's doc). Used by the platform console's
+	// tenant-unsuspend endpoint (#287) instead of eagerly flipping status
+	// back to active: this projection has no column distinguishing a
+	// store suspended by the tenant-level cascade from one suspended
+	// individually in platform-api, so a local unsuspend cannot tell them
+	// apart. Forcing a refetch is the only way to get an authoritative
+	// status without risking that a distinction. See tenant_lifecycle.go
+	// for the full rationale.
 	MarkStaleForTenant(ctx context.Context, tenantID string) error
 }
 
@@ -250,11 +252,16 @@ func (r *gormRepository) SuspendActiveForTenant(ctx context.Context, tenantID st
 	return nil
 }
 
-// MarkStaleForTenant resets synced_at to the epoch for every local store
-// row belonging to tenantID, so the next read is forced through the
-// refresh path instead of serving a cached status. See Repository
-// interface doc for why unsuspend uses this instead of an eager flip back
-// to active.
+// MarkStaleForTenant backdates synced_at by forceRefreshAge (NOT to the
+// epoch) for every local store row belonging to tenantID, so the next
+// read is forced through the refresh path instead of serving a cached
+// status. Backdating by forceRefreshAge rather than to the epoch keeps
+// the row's age inside StaleCeil, so a refresh that then fails (e.g.
+// platform-api unreachable) still falls into StoreMiddleware's /
+// SlugCache's fail-open stale-serve branch instead of 404ing every
+// merchant during the outage — see forceRefreshAge's doc for the full
+// reasoning. See Repository interface doc for why unsuspend uses this
+// instead of an eager flip back to active.
 func (r *gormRepository) MarkStaleForTenant(ctx context.Context, tenantID string) error {
 	if err := r.db.WithContext(ctx).
 		Model(&Store{}).

@@ -2,6 +2,7 @@ package platformadmin
 
 import (
 	"errors"
+	"log/slog"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -26,7 +27,17 @@ func EmitOperatorAction(c *gin.Context, em *audit.Emitter, tenantID uuid.UUID, e
 		return ErrMissingTenant
 	}
 	if em == nil {
-		return nil // safe to call when wiring opted out, matching Emit's own nil-receiver tolerance
+		// Still safe to call — matching Emit's own nil-receiver tolerance —
+		// but never silent: a nil emitter here means SOME write path is
+		// producing an audit-worthy event with no way to record it, and
+		// that must show up in logs even when this specific caller (e.g.
+		// wiring that opted out of auditing entirely) has no *slog.Logger
+		// of its own to hand in. slog.Default() rather than a threaded
+		// logger param, so this stays a drop-in replacement for every
+		// existing call site.
+		slog.Default().Warn("platformadmin: EmitOperatorAction called with a nil emitter, event dropped",
+			"action", ev.Action, "resource_type", ev.ResourceType, "tenant_id", tenantID)
+		return nil
 	}
 
 	ev.TenantID = tenantID

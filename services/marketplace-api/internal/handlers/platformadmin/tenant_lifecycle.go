@@ -53,8 +53,12 @@ var UnsuspendReasonCodes = []string{
 type lifecycleAuditFunc func(c *gin.Context, tenantID uuid.UUID, ev audit.Event) error
 
 // NewOperatorActionAuditFunc adapts a real *audit.Emitter into a
-// lifecycleAuditFunc via EmitOperatorAction. em may be nil — wiring that
-// has opted out of auditing.
+// lifecycleAuditFunc via EmitOperatorAction. em may be nil at the type
+// level — EmitOperatorAction tolerates it — but Register (routes.go)
+// never actually calls this with a nil em for the tenant-lifecycle
+// routes: it mounts them only when deps.Emitter != nil in the first
+// place, precisely so this adapter is never the thing standing between a
+// write endpoint and an unaudited one.
 func NewOperatorActionAuditFunc(em *audit.Emitter) lifecycleAuditFunc {
 	return func(c *gin.Context, tenantID uuid.UUID, ev audit.Event) error {
 		return EmitOperatorAction(c, em, tenantID, ev)
@@ -92,19 +96,24 @@ type TenantLifecycleHandler struct {
 
 // NewTenantLifecycleHandler constructs the handler. logger may be nil;
 // storeRepo may be nil, in which case the local projection update is
-// skipped (logged, not failed) after a changed call.
+// skipped (logged, not failed) after a changed call. emit may be nil, in
+// which case it defaults to a no-op — that default exists for direct,
+// low-level callers (this constructor has no way to know WHY emit is
+// nil), but it is not where this surface's auditing guarantee actually
+// lives.
 //
-// emit MUST NOT be nil, and this panics at construction if it is — not
-// at request time. A silent no-op default here would mean the surface's
-// entire auditing guarantee rests on callers remembering to wire one up
-// (see routes.go's Emitter field), which is the exact failure shape this
-// series exists to close: a handler that cannot audit must not be built,
-// rather than quietly built and then quietly skipping every audit row.
-// Callers that genuinely want to discard events must pass an explicit
-// func that does so, so that choice is visible in a diff.
+// The real guard is in Register: a handler that cannot audit must not
+// exist on this surface at all, so Register mounts these two routes only
+// when deps.Emitter != nil (see routes.go), rather than mounting a live
+// write endpoint whose audit trail silently no-ops. A construction-time
+// panic here was tried and rejected — production never passes a literal
+// nil (NewOperatorActionAuditFunc(deps.Emitter) always returns a non-nil
+// closure, even when deps.Emitter itself is nil), so the panic could
+// never fire on the one path that would actually need it; the unmounted
+// route is what closes the loophole.
 func NewTenantLifecycleHandler(client TenantLifecycle, storeRepo stores.Repository, emit lifecycleAuditFunc, logger *slog.Logger) *TenantLifecycleHandler {
 	if emit == nil {
-		panic("platformadmin: NewTenantLifecycleHandler requires a non-nil emit func")
+		emit = func(*gin.Context, uuid.UUID, audit.Event) error { return nil }
 	}
 	return &TenantLifecycleHandler{client: client, stores: storeRepo, emit: emit, logger: logger}
 }

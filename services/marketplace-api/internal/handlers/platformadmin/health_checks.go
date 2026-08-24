@@ -101,9 +101,21 @@ func (s *dbHealthSource) StripeWebhooks(ctx context.Context, asOf time.Time) (St
 		return StripeWebhooksHealth{}, errNoDB
 	}
 	var out StripeWebhooksHealth
-	// All three metrics share `processed_at IS NULL`, so it is a WHERE:
-	// the table is never pruned, and the WHERE lets the partial indexes
-	// (swe_orphan_idx, swe_manual_review_idx, migration 000043) apply.
+	// All three metrics share `processed_at IS NULL`, so it is a WHERE
+	// rather than three FILTERs.
+	//
+	// It is NOT an index optimisation, despite the table never being
+	// pruned. Neither partial index on this table can serve this query:
+	// swe_orphan_idx is partial on `processed_at IS NULL AND store_id IS
+	// NULL AND manual_review_required = false` and swe_manual_review_idx on
+	// `manual_review_required = true` (migration 000043). A partial index is
+	// usable only when the query predicate IMPLIES the index predicate, and
+	// this predicate is strictly weaker than both, so Postgres still scans.
+	// If this ever needs to be cheap, it needs its own index on
+	// (received_at) WHERE processed_at IS NULL.
+	//
+	// Contrast the outbox query above, where outbox_unpublished_idx IS
+	// partial on exactly `published_at IS NULL` and does apply.
 	//
 	// Scoping manual_review_required to unprocessed rows also stops it
 	// being a one-way latch. Nothing ever sets the column back to false,

@@ -62,8 +62,14 @@ var consoleHiddenStatuses = map[subscription.SubscriptionStatus]bool{
 // minus consoleHiddenStatuses — every status this surface accepts as a
 // `status` filter. See billing_subscriptions_test.go's table-driven status
 // test, which loops over subscription.AllStatuses() so a status added to
-// models.go without a corresponding entry in consoleHiddenStatuses is
+// AllStatuses() without a corresponding entry in consoleHiddenStatuses is
 // accepted automatically, and hiding one is a deliberate, tested edit.
+// AllStatuses() itself is verified against the store_subscriptions.status
+// database CHECK constraint by
+// subscription.TestAllStatuses_MatchesDatabaseCheckConstraint, which is
+// what makes it trustworthy as "every status" in the first place — see that
+// test's doc comment for why the schema, not this package, is the
+// authority.
 var validSubscriptionStatuses = func() map[string]bool {
 	m := make(map[string]bool)
 	for _, status := range subscription.AllStatuses() {

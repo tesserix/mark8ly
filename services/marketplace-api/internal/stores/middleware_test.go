@@ -351,14 +351,25 @@ func TestMiddleware_StaleCache_BeyondCeiling_404(t *testing.T) {
 	}
 }
 
-// TestMiddleware_MarkStaleForTenant_PlatformOutage_ServesStale pins the
-// fail-open requirement (F2, #287): MarkStaleForTenant backdates synced_at
+// TestMiddleware_ForceRefreshAgeBackdateStaysWithinStaleCeiling pins a
+// property of the forceRefreshAge CONSTANT (F2, #287 review), not of
+// MarkStaleForTenant's real caller: MarkStaleForTenant backdates synced_at
 // enough to trip IsStale and force a refresh attempt, but NOT so far back
-// that a failed refresh (platform-api unreachable) falls outside StaleCeil.
-// If MarkStaleForTenant instead wrote the epoch, this request would 404 —
-// locking every merchant out of every store during an outage that follows
-// an unsuspend, which is exactly the failure mode this design forbids.
-func TestMiddleware_MarkStaleForTenant_PlatformOutage_ServesStale(t *testing.T) {
+// that the row falls outside StaleCeil. This matters for any caller that
+// marks an ACTIVE row stale (a failed refresh on such a row then serves
+// stale instead of 404ing) — it is a general-safety property of the
+// helper, exercised here directly against an active fixture.
+//
+// It is NOT a claim about MarkStaleForTenant's actual production caller:
+// unsuspend is the only caller, and every row it touches is status=
+// suspended at the time this runs, which 404s on a failed refresh
+// regardless of forceRefreshAge's value (StoreMiddleware's suspended check
+// runs before its StaleCeil check — see TestMiddleware_StaleSuspendedIsStillRefused
+// for that path, and forceRefreshAge's doc comment in repository.go for
+// the full reasoning). This test was previously named as if it covered
+// that path; it does not, and never could, since it seeds an active
+// fixture MarkStaleForTenant's caller can never produce.
+func TestMiddleware_ForceRefreshAgeBackdateStaysWithinStaleCeiling(t *testing.T) {
 	repo := newFakeRepo()
 	repo.preload(newFixtureStore(time.Now())) // fresh to start
 	if err := repo.MarkStaleForTenant(context.Background(), testTenantID); err != nil {

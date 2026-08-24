@@ -221,22 +221,28 @@ func (r *gormRepository) InFlightOrderCount(ctx context.Context, storeID uuid.UU
 }
 
 // forceRefreshAge is how far in the past MarkStaleForTenant backdates
-// synced_at. It is DELIBERATELY NOT the epoch: StoreMiddleware and
-// SlugCache both fail OPEN on a refresh error, serving a cached row
-// whose age is under their StaleCeil (24h) rather than 404ing every
-// merchant during a platform-api outage (see StoreMiddleware's
-// cacheErr == nil && cached != nil && time.Since(cached.SyncedAt) <
-// cfg.StaleCeil branch, and SlugCache.Get's matching fallback). Backdating
-// to the epoch would put every row past that 24h ceiling, so a failed
-// refresh right after an unsuspend would 404 instead of serving the
-// (still-accurate-enough) cached row — fail-closed where the design
-// requires fail-open.
+// synced_at. It sits just past the 5-minute FreshTTL default (so IsStale
+// reports true and the very next read is forced through the refresh path)
+// while staying far inside the 24h StaleCeil default, which keeps the row
+// inside StoreMiddleware's / SlugCache's fail-open stale-serve window as a
+// general-safety property of this helper — useful for ANY caller that
+// marks ACTIVE rows stale, since a failed refresh on those would then be
+// served rather than 404ed.
 //
-// forceRefreshAge sits just past the 5-minute FreshTTL default (so
-// IsStale reports true and the very next read is forced through the
-// refresh path) but stays far inside the 24h StaleCeil default (so a
-// refresh that fails — platform-api down — still falls into the
-// stale-serve branch instead of 404ing).
+// That said: on this helper's only current caller, MarkStaleForTenant is
+// invoked exclusively from unsuspend (see tenant_lifecycle.go), at which
+// point every row it touches is still status=suspended (suspend flips them
+// there; unsuspend only backdates synced_at, it does not eagerly flip
+// status back — see MarkStaleForTenant's doc). StoreMiddleware's switch
+// checks `cached.Status != StatusActive` BEFORE it ever reaches the
+// StaleCeil branch, so those rows 404 on a failed refresh regardless of
+// forceRefreshAge's value — backdating by 10 minutes vs. to the epoch is
+// observationally identical on that path. That is correct: fail-closed on
+// a suspended tenant is exactly what the spec requires. Do not read this
+// constant's value as evidence that a failed refresh "still falls into the
+// stale-serve branch instead of 404ing" for MarkStaleForTenant's actual
+// caller — it does not; the general-safety property above is the reason
+// this constant is what it is, not a behavioral guarantee for unsuspend.
 const forceRefreshAge = 10 * time.Minute
 
 // SuspendActiveForTenant flips active -> suspended for every local store
@@ -255,13 +261,14 @@ func (r *gormRepository) SuspendActiveForTenant(ctx context.Context, tenantID st
 // MarkStaleForTenant backdates synced_at by forceRefreshAge (NOT to the
 // epoch) for every local store row belonging to tenantID, so the next
 // read is forced through the refresh path instead of serving a cached
-// status. Backdating by forceRefreshAge rather than to the epoch keeps
-// the row's age inside StaleCeil, so a refresh that then fails (e.g.
-// platform-api unreachable) still falls into StoreMiddleware's /
-// SlugCache's fail-open stale-serve branch instead of 404ing every
-// merchant during the outage — see forceRefreshAge's doc for the full
-// reasoning. See Repository interface doc for why unsuspend uses this
-// instead of an eager flip back to active.
+// status. See forceRefreshAge's doc for what backdating by that amount
+// does and does not guarantee: on this method's only caller (unsuspend),
+// every affected row is still status=suspended, and StoreMiddleware
+// refuses a cached suspended row before it ever consults StaleCeil — so a
+// failed refresh 404s here regardless of how far back synced_at was
+// pushed. That is intentional fail-closed behavior, not a bug. See
+// Repository interface doc for why unsuspend uses this instead of an
+// eager flip back to active.
 func (r *gormRepository) MarkStaleForTenant(ctx context.Context, tenantID string) error {
 	if err := r.db.WithContext(ctx).
 		Model(&Store{}).

@@ -101,12 +101,18 @@ func TestCSVJobsStaleHeartbeatIsInclusiveAtTheBoundary(t *testing.T) {
 	insert("running", &exactly)    // stale: age == window
 	insert("running", &justInside) // healthy: age < window
 	insert("queued", nil)          // queued, never counted as stale
+	// worker.go sets status='running' before the heartbeat loop starts, so
+	// a worker that dies in that gap leaves heartbeat_at NULL forever. That
+	// is the failure this metric exists to report, and the recovery scan
+	// resets exactly these rows — they must not read as healthy.
+	insert("running", nil)
 
 	got, err := src.CSVJobs(context.Background(), healthAsOf)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), got.Queued)
-	require.Equal(t, int64(1), got.RunningStaleHeartbeat,
-		"a heartbeat exactly OrphanWindow old is stale; one millisecond younger is not")
+	require.Equal(t, int64(2), got.RunningStaleHeartbeat,
+		"a heartbeat exactly OrphanWindow old is stale, one millisecond younger is not, "+
+			"and a running job that never heartbeat at all is stale")
 }
 
 // The campaign window is campaign.StaleDuration — an exported constant
@@ -133,12 +139,16 @@ func TestCampaignSendsStaleHeartbeatIsInclusiveAtTheBoundary(t *testing.T) {
 	insert("sending", &exactly)
 	insert("sending", &justInside)
 	insert("draft", nil)
+	// service.go flips status to 'sending' before the heartbeat loop
+	// starts; a send that dies in that gap never writes a heartbeat.
+	insert("sending", nil)
 
 	got, err := src.CampaignSends(context.Background(), healthAsOf)
 	require.NoError(t, err)
-	require.Equal(t, int64(2), got.Sending, "only status='sending' rows count")
-	require.Equal(t, int64(1), got.SendingStaleHeartbeat,
-		"a heartbeat exactly StaleDuration old is stale; one millisecond younger is not")
+	require.Equal(t, int64(3), got.Sending, "only status='sending' rows count")
+	require.Equal(t, int64(2), got.SendingStaleHeartbeat,
+		"a heartbeat exactly StaleDuration old is stale, one millisecond younger is not, "+
+			"and a sending campaign that never heartbeat at all is stale")
 }
 
 func TestStripeWebhooksCountsUnprocessedAndManualReview(t *testing.T) {
@@ -156,10 +166,15 @@ func TestStripeWebhooksCountsUnprocessedAndManualReview(t *testing.T) {
 	insert("evt_done", done, &done, false)                         // processed
 	insert("evt_old", healthAsOf.Add(-20*time.Minute), nil, false) // unprocessed, oldest
 	insert("evt_manual", healthAsOf.Add(-time.Minute), nil, true)  // needs a human
+	// Flagged AND processed: a human dealt with it. Nothing ever sets
+	// manual_review_required back to false, so an unscoped count would pin
+	// stripe_webhooks to `degraded` forever with no operator remedy.
+	insert("evt_manual_done", done, &done, true)
 
 	got, err := src.StripeWebhooks(context.Background(), healthAsOf)
 	require.NoError(t, err)
-	require.Equal(t, int64(2), got.Unprocessed, "processed row must not count")
-	require.Equal(t, int64(1), got.ManualReviewRequired)
+	require.Equal(t, int64(2), got.Unprocessed, "processed rows must not count")
+	require.Equal(t, int64(1), got.ManualReviewRequired,
+		"a flagged row that has been processed is resolved and must not count")
 	require.Equal(t, int64(1200), got.OldestUnprocessedAgeSeconds)
 }

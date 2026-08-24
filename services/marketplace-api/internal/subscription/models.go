@@ -25,6 +25,27 @@ func AllPublicPlans() []SubscriptionPlan {
 	return []SubscriptionPlan{PlanTrial, PlanStarter, PlanStudio, PlanPro}
 }
 
+// AllStatuses returns every subscription lifecycle state.
+//
+// Single source for callers that must reason about the complete set. The
+// platform console's billing filter derives its accepted values from this
+// minus an explicit hidden set, so a new state added here becomes filterable
+// by default and hiding one is a deliberate act.
+func AllStatuses() []SubscriptionStatus {
+	return []SubscriptionStatus{
+		StatusSignup,
+		StatusTrialing,
+		StatusActive,
+		StatusPastDue,
+		StatusPaymentActionRequired,
+		StatusCancelScheduled,
+		StatusExpired,
+		StatusStoreClosed,
+		StatusPendingHardDelete,
+		StatusHardDeleted,
+	}
+}
+
 // SubscriptionStatus enumerates subscription lifecycle states (v2.3).
 // The state machine that gates transitions between these values lives in
 // P2 — this package only defines the enum itself.

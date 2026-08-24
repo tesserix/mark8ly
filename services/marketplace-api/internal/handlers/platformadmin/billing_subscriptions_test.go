@@ -195,24 +195,28 @@ func TestBillingSubscriptionsEmptyIsArray(t *testing.T) {
 	require.Equal(t, 0, dir.calls, "empty page must not call tenantdirectory.List")
 }
 
-// Each of the eight subscription.Status* constants must be accepted as a
-// `status` filter. Table-driven over the constants themselves (not a
-// hand-copied list of strings) so a ninth status added to models.go without
-// handler support fails this test rather than being silently unsupported.
-func TestBillingSubscriptionsAcceptsAllEightStatuses(t *testing.T) {
-	statuses := []subscription.SubscriptionStatus{
-		subscription.StatusSignup,
-		subscription.StatusTrialing,
-		subscription.StatusActive,
-		subscription.StatusPastDue,
-		subscription.StatusPaymentActionRequired,
-		subscription.StatusCancelScheduled,
-		subscription.StatusExpired,
-		subscription.StatusStoreClosed,
-	}
-	require.Len(t, statuses, 8, "this test must cover exactly the eight platform-console-facing statuses")
+// hiddenSubscriptionStatuses mirrors platformadmin's consoleHiddenStatuses
+// deny list for this black-box test. billing_subscriptions_hidden_test.go
+// (in-package) separately asserts the real consoleHiddenStatuses var
+// contains exactly these two, so this list cannot drift silently from the
+// handler's.
+var hiddenSubscriptionStatuses = map[subscription.SubscriptionStatus]bool{
+	subscription.StatusPendingHardDelete: true,
+	subscription.StatusHardDeleted:       true,
+}
+
+// Every subscription.AllStatuses() value must be accepted as a `status`
+// filter UNLESS it is in hiddenSubscriptionStatuses, in which case it must
+// be rejected with 400. Table-driven over the full enum (not a hand-copied
+// list of strings) so a new status added to models.go is automatically
+// exercised in both directions — accepted by default, or 400 only if
+// deliberately hidden.
+func TestBillingSubscriptionsStatusFilter(t *testing.T) {
+	statuses := subscription.AllStatuses()
+	require.NotEmpty(t, statuses, "this test must cover every SubscriptionStatus constant")
 
 	for _, status := range statuses {
+		status := status
 		t.Run(string(status), func(t *testing.T) {
 			subs := &stubSubscriptionLister{}
 			dir := &stubBillingDirectory{}
@@ -220,6 +224,12 @@ func TestBillingSubscriptionsAcceptsAllEightStatuses(t *testing.T) {
 			rec := httptest.NewRecorder()
 			billingSubscriptionsRouter(t, subs, dir).ServeHTTP(rec, httptest.NewRequest(
 				http.MethodGet, "/admin/billing/subscriptions?status="+string(status), nil))
+
+			if hiddenSubscriptionStatuses[status] {
+				require.Equal(t, http.StatusBadRequest, rec.Code, "status=%s must be rejected", status)
+				require.Equal(t, 0, subs.calls, "a hidden status must never reach the repository")
+				return
+			}
 
 			require.Equal(t, http.StatusOK, rec.Code, "status=%s must be accepted", status)
 			require.Equal(t, string(status), subs.gotFilter.Status)

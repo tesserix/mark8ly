@@ -44,23 +44,35 @@ const (
 	maxBillingSubscriptionsLimit     = subscription.MaxCrossTenantPageSize
 )
 
-// validSubscriptionStatuses is the exact eight subscription.Status* values
-// this surface accepts as a `status` filter. Deliberately NOT every
-// SubscriptionStatus constant: StatusPendingHardDelete and StatusHardDeleted
-// are internal-only lifecycle states the platform console does not filter
-// on. See billing_subscriptions_test.go's table-driven status test, which
-// loops over these same eight constants so a ninth accepted value added
-// here without a corresponding constant (or vice versa) fails loudly.
-var validSubscriptionStatuses = map[string]bool{
-	string(subscription.StatusSignup):                true,
-	string(subscription.StatusTrialing):              true,
-	string(subscription.StatusActive):                true,
-	string(subscription.StatusPastDue):               true,
-	string(subscription.StatusPaymentActionRequired): true,
-	string(subscription.StatusCancelScheduled):       true,
-	string(subscription.StatusExpired):               true,
-	string(subscription.StatusStoreClosed):           true,
+// consoleHiddenStatuses are the lifecycle states the platform console does
+// not filter on. Both are internal-only teardown states with no operator
+// meaning.
+//
+// This is an explicit DENY list rather than a hand-written allow list: a new
+// SubscriptionStatus added to models.go becomes filterable automatically,
+// and hiding one requires editing this set deliberately. The reverse — a
+// hand-written allow list — silently leaves new states unfilterable, which
+// is how a console loses sight of a state nobody remembered to add.
+var consoleHiddenStatuses = map[subscription.SubscriptionStatus]bool{
+	subscription.StatusPendingHardDelete: true,
+	subscription.StatusHardDeleted:       true,
 }
+
+// validSubscriptionStatuses is derived from subscription.AllStatuses()
+// minus consoleHiddenStatuses — every status this surface accepts as a
+// `status` filter. See billing_subscriptions_test.go's table-driven status
+// test, which loops over subscription.AllStatuses() so a status added to
+// models.go without a corresponding entry in consoleHiddenStatuses is
+// accepted automatically, and hiding one is a deliberate, tested edit.
+var validSubscriptionStatuses = func() map[string]bool {
+	m := make(map[string]bool)
+	for _, status := range subscription.AllStatuses() {
+		if !consoleHiddenStatuses[status] {
+			m[string(status)] = true
+		}
+	}
+	return m
+}()
 
 // validSubscriptionPlans is the five subscription.Plan* values this surface
 // accepts as a `plan` filter — including trial and marketplace, which have

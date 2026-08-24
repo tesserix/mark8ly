@@ -44,7 +44,7 @@ decision as `/admin/kpis`.
       {
         "name": "outbox",
         "status": "ok",
-        "metrics": { "pending": 0, "oldest_pending_age_seconds": 0, "errored": 0 }
+        "metrics": { "pending": 0, "oldest_pending_age_seconds": 0 }
       },
       {
         "name": "csv_import_jobs",
@@ -112,10 +112,20 @@ Each is backed by a table that records work the system actually did.
 
 | name | source | metrics |
 |---|---|---|
-| `outbox` | `outbox_events` | `pending` (`published_at IS NULL`), `oldest_pending_age_seconds`, `errored` (`error IS NOT NULL`) |
+| `outbox` | `outbox_events` | `pending` (`published_at IS NULL`), `oldest_pending_age_seconds` |
 | `csv_import_jobs` | `csv_import_jobs` | `queued` (`status='queued'`), `running_stale_heartbeat` (`status='running'` and `heartbeat_at` older than the orphan window) |
 | `campaign_sends` | `campaigns` | `sending` (`status='sending'`), `sending_stale_heartbeat` (`heartbeat_at` older than `campaign.StaleDuration`) |
 | `stripe_webhooks` | `stripe_webhook_events` | `unprocessed` (`processed_at IS NULL`), `oldest_unprocessed_age_seconds`, `manual_review_required` |
+
+> **Why there is no `errored` metric.** An earlier draft of this spec counted
+> `outbox_events.error IS NOT NULL`. Searching every write to that table across
+> the service found that the only production write is
+> `UPDATE outbox_events SET published_at = now()` — **nothing anywhere sets the
+> `error` column.** The metric would therefore have been structurally incapable
+> of returning a non-zero value: the #282 defect exactly, inside the endpoint
+> built to avoid it. It is dropped rather than shipped as a permanent `0`,
+> per the umbrella's contract decision that a field constant by construction
+> must not ship. The dead column is filed as a separate follow-up.
 
 ### Not instrumented (5)
 
@@ -141,7 +151,7 @@ re-derive rather than trust.
 |---|---|---|
 | `csv_import_jobs` | a `running` job's `heartbeat_at` is older than **15 min** | **Not a chosen number**, but not yet a shared one either: `main.go` passes a bare `15*time.Minute` literal to `RecoverOrphanedJobs`, and `csvjob` exports no constant. Implementation extracts `csvjob.OrphanWindow = 15 * time.Minute`, replaces the literal at that call site, and reads it here — so the endpoint and the recovery scan cannot drift into disagreeing about the same job. Until that extraction lands, the shared definition does not exist. |
 | `campaign_sends` | a `sending` campaign's `heartbeat_at` is older than **15 min** | **Not a chosen number.** `campaign.StaleDuration = 15 * time.Minute` is an exported constant already governing `RecoverStuckCampaigns`. Reused for the same reason as the csv window. |
-| `outbox` | oldest pending older than **5 min**, or any `errored` row | Chosen. The publisher ticks every 2s with a batch of 100, so 5 min is ~150 ticks of headroom — comfortably past transient lag, well short of a stall going unnoticed. |
+| `outbox` | oldest pending older than **5 min** | Chosen. The publisher ticks every 2s with a batch of 100, so 5 min is ~150 ticks of headroom — comfortably past transient lag, well short of a stall going unnoticed. |
 | `stripe_webhooks` | any `manual_review_required`, or oldest unprocessed older than **15 min** | Chosen. `manual_review_required` is already the system's own "a human must look" flag, so any non-zero value is degraded by that table's own definition. |
 
 If the reused csv constant is ever changed, both call sites change together — that is

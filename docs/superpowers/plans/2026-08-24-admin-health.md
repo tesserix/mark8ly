@@ -118,7 +118,6 @@ git commit -m "refactor(csvjob): export OrphanWindow so the recovery scan and he
 type OutboxHealth struct {
 	Pending                 int64
 	OldestPendingAgeSeconds int64
-	Errored                 int64
 }
 type CSVJobsHealth struct {
 	Queued                int64
@@ -163,7 +162,7 @@ import (
 // exact-boundary fixture possible.
 var healthAsOf = time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
 
-func TestOutboxHealthCountsPendingAndErrored(t *testing.T) {
+func TestOutboxHealthCountsPendingAndMeasuresAgeFromAsOf(t *testing.T) {
 	db := testdb.NewDB(t, "outbox_events")
 	src := platformadmin.NewDBHealthSource(db)
 	tenant := uuid.NewString()
@@ -181,16 +180,16 @@ func TestOutboxHealthCountsPendingAndErrored(t *testing.T) {
 		VALUES (?, 'product', ?, 'product.created', '{}'::jsonb, ?)`,
 		tenant, uuid.NewString(), healthAsOf.Add(-10*time.Minute)).Error)
 
-	// Pending and errored, 2 minutes old.
+	// A second pending row, 2 minutes old — younger than the one above, so
+	// the age assertion below fails if MIN() ignores the pending filter.
 	require.NoError(t, db.Exec(`INSERT INTO outbox_events
-		(tenant_id, aggregate, aggregate_id, event_type, payload, created_at, error)
-		VALUES (?, 'order', ?, 'order.placed', '{}'::jsonb, ?, 'boom')`,
+		(tenant_id, aggregate, aggregate_id, event_type, payload, created_at)
+		VALUES (?, 'order', ?, 'order.placed', '{}'::jsonb, ?)`,
 		tenant, uuid.NewString(), healthAsOf.Add(-2*time.Minute)).Error)
 
 	got, err := src.Outbox(context.Background(), healthAsOf)
 	require.NoError(t, err)
 	require.Equal(t, int64(2), got.Pending, "published row must not count as pending")
-	require.Equal(t, int64(1), got.Errored)
 	require.Equal(t, int64(600), got.OldestPendingAgeSeconds,
 		"age must be measured from the caller's asOf, not Postgres now()")
 }
@@ -295,10 +294,14 @@ var DependencyRegistry = []dependencyKey{
 }
 
 // OutboxHealth is the measured state of outbox_events.
+//
+// There is deliberately no `errored` metric. Nothing in this service ever
+// writes outbox_events.error — the only production write to the table is
+// `SET published_at = now()` — so such a metric could never return a
+// non-zero value. See the spec; the dead column is a separate follow-up.
 type OutboxHealth struct {
 	Pending                 int64
 	OldestPendingAgeSeconds int64
-	Errored                 int64
 }
 
 // CSVJobsHealth is the measured state of csv_import_jobs.
@@ -362,8 +365,7 @@ func (s *dbHealthSource) Outbox(ctx context.Context, asOf time.Time) (OutboxHeal
 		SELECT
 			COUNT(*) FILTER (WHERE published_at IS NULL)                    AS pending,
 			COALESCE(EXTRACT(EPOCH FROM (? - MIN(created_at)
-				FILTER (WHERE published_at IS NULL)))::bigint, 0)           AS oldest_pending_age_seconds,
-			COUNT(*) FILTER (WHERE published_at IS NULL AND error IS NOT NULL) AS errored
+				FILTER (WHERE published_at IS NULL)))::bigint, 0)           AS oldest_pending_age_seconds
 		FROM outbox_events`, asOf).Scan(&out).Error
 	if err != nil {
 		return OutboxHealth{}, err
@@ -676,7 +678,7 @@ func (s *stubHealthSource) StripeWebhooks(context.Context, time.Time) (platforma
 // and the assertions here cannot drift apart.
 func healthFixture() *stubHealthSource {
 	return &stubHealthSource{
-		outbox:   platformadmin.OutboxHealth{Pending: 7, OldestPendingAgeSeconds: 61, Errored: 3},
+		outbox:   platformadmin.OutboxHealth{Pending: 7, OldestPendingAgeSeconds: 400},
 		csv:      platformadmin.CSVJobsHealth{Queued: 5, RunningStaleHeartbeat: 2},
 		campaign: platformadmin.CampaignSendsHealth{Sending: 9, SendingStaleHeartbeat: 4},
 		stripe: platformadmin.StripeWebhooksHealth{
@@ -778,8 +780,8 @@ func TestHealthFailedCheckIsUnknownAndDoesNotFailTheEndpoint(t *testing.T) {
 // Thresholds: each instrumented dependency is degraded on its own rule.
 func TestHealthStatusPerThreshold(t *testing.T) {
 	src := &stubHealthSource{
-		// Pending but young, and no errored rows: ok.
-		outbox:   platformadmin.OutboxHealth{Pending: 4, OldestPendingAgeSeconds: 1, Errored: 0},
+		// Pending but young: ok.
+		outbox:   platformadmin.OutboxHealth{Pending: 4, OldestPendingAgeSeconds: 1},
 		csv:      platformadmin.CSVJobsHealth{Queued: 3, RunningStaleHeartbeat: 0},
 		campaign: platformadmin.CampaignSendsHealth{Sending: 2, SendingStaleHeartbeat: 0},
 		stripe:   platformadmin.StripeWebhooksHealth{Unprocessed: 1, OldestUnprocessedAgeSeconds: 1},
@@ -792,18 +794,34 @@ func TestHealthStatusPerThreshold(t *testing.T) {
 		}
 	}
 
-	// A single errored outbox row is degraded regardless of age.
-	src.outbox = platformadmin.OutboxHealth{Pending: 1, OldestPendingAgeSeconds: 1, Errored: 1}
+	// Outbox degrades on age alone. The fixture sits ON the threshold
+	// instant: exactly OutboxPendingThreshold is degraded (age >= window).
+	src.outbox = platformadmin.OutboxHealth{
+		Pending: 1, OldestPendingAgeSeconds: int64(platformadmin.OutboxPendingThreshold / time.Second),
+	}
 	_, body = getHealth(t, src)
 	for _, dep := range body.Data.Dependencies {
 		if dep.Name == "outbox" {
 			require.Equal(t, platformadmin.StatusDegraded, dep.Status,
-				"any errored row is degraded even when nothing is old")
+				"an age exactly equal to the threshold is degraded")
+		}
+	}
+
+	// One second under the threshold is ok — this pins the boundary from
+	// the other side, so `>=` cannot silently become `>`.
+	src.outbox = platformadmin.OutboxHealth{
+		Pending: 1, OldestPendingAgeSeconds: int64(platformadmin.OutboxPendingThreshold/time.Second) - 1,
+	}
+	_, body = getHealth(t, src)
+	for _, dep := range body.Data.Dependencies {
+		if dep.Name == "outbox" {
+			require.Equal(t, platformadmin.StatusOK, dep.Status,
+				"one second under the threshold is ok")
 		}
 	}
 
 	// manual_review_required is the system's own "a human must look" flag.
-	src.outbox = platformadmin.OutboxHealth{Pending: 0, OldestPendingAgeSeconds: 0, Errored: 0}
+	src.outbox = platformadmin.OutboxHealth{Pending: 0, OldestPendingAgeSeconds: 0}
 	src.stripe = platformadmin.StripeWebhooksHealth{Unprocessed: 1, OldestUnprocessedAgeSeconds: 1, ManualReviewRequired: 1}
 	_, body = getHealth(t, src)
 	for _, dep := range body.Data.Dependencies {
@@ -875,13 +893,12 @@ func (h *HealthHandler) health(c *gin.Context) {
 		h.logCheckFailed("outbox", err)
 	} else {
 		status := StatusOK
-		if v.Errored > 0 || time.Duration(v.OldestPendingAgeSeconds)*time.Second >= OutboxPendingThreshold {
+		if time.Duration(v.OldestPendingAgeSeconds)*time.Second >= OutboxPendingThreshold {
 			status = StatusDegraded
 		}
 		measured["outbox"] = dependencyRow{Status: status, Metrics: map[string]int64{
 			"pending":                    v.Pending,
 			"oldest_pending_age_seconds": v.OldestPendingAgeSeconds,
-			"errored":                    v.Errored,
 		}}
 	}
 
@@ -1036,7 +1053,7 @@ Create `testdata/health_response.json`:
     "checked_at": "PINNED",
     "dependencies": [
       { "name": "outbox", "status": "degraded",
-        "metrics": { "pending": 7, "oldest_pending_age_seconds": 61, "errored": 3 } },
+        "metrics": { "pending": 7, "oldest_pending_age_seconds": 400 } },
       { "name": "csv_import_jobs", "status": "degraded",
         "metrics": { "queued": 5, "running_stale_heartbeat": 2 } },
       { "name": "campaign_sends", "status": "degraded",
@@ -1053,7 +1070,7 @@ Create `testdata/health_response.json`:
 }
 ```
 
-Note the fixture values are deliberately mixed: three degraded, one ok, so the golden file pins status derivation and not just field names. `outbox` is degraded on `errored: 3` while its age (61s) is *under* the 5-minute threshold — so the fixture also discriminates the two halves of that OR.
+Note the fixture values are deliberately mixed: three degraded, one ok, so the golden file pins status derivation and not just field names. `outbox` is degraded on age (400s, past the 300s threshold) while `stripe_webhooks` is ok at 62s — so a threshold applied to the wrong dependency changes the file.
 
 - [ ] **Step 4: Run to verify it passes**
 

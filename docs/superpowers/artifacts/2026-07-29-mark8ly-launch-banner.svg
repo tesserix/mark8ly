@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="Mark8ly launch: we built a real online store in ten minutes">
+  <defs>
+    <linearGradient id="mossFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2D4A2B" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#2D4A2B" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#F7F6F2"/>
+  <rect x="680" y="0" width="520" height="630" fill="url(#mossFade)"/>
+
+  <!-- left column -->
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+    <text x="72" y="96" font-size="13" letter-spacing="3.4" fill="#2D4A2B">M A R K 8 L Y &#160;&#160;·&#160;&#160; N O W &#160; L I V E</text>
+  </g>
+
+  <line x1="72" y1="120" x2="228" y2="120" stroke="#0E0E0C" stroke-width="1.4"/>
+
+  <g font-family="Georgia, 'Times New Roman', serif" fill="#0E0E0C">
+    <text x="72" y="216" font-size="62" font-weight="700" letter-spacing="-1.4">We built a real</text>
+    <text x="72" y="288" font-size="62" font-weight="700" letter-spacing="-1.4">online store in</text>
+    <text x="72" y="360" font-size="62" font-weight="700" letter-spacing="-1.4">ten minutes.</text>
+  </g>
+
+  <g font-family="Georgia, 'Times New Roman', serif" fill="#55554E">
+    <text x="73" y="416" font-size="23" font-style="italic">Here is everything that had to happen.</text>
+  </g>
+
+  <line x1="72" y1="500" x2="608" y2="500" stroke="#0E0E0C" stroke-opacity="0.14" stroke-width="1"/>
+
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+    <text x="72" y="536" font-size="14" letter-spacing="1.6" fill="#55554E">A commerce platform, from the inside</text>
+    <text x="72" y="562" font-size="13" letter-spacing="1.6" fill="#2D4A2B">blog.tesserix.app</text>
+  </g>
+
+  <!-- right column: many storefronts, one platform -->
+  <g>
+    <!-- row 1 -->
+    <g>
+      <rect x="712" y="118" width="128" height="92" rx="6" fill="#FFFFFF" stroke="#0E0E0C" stroke-opacity="0.13"/>
+      <line x1="728" y1="146" x2="800" y2="146" stroke="#0E0E0C" stroke-opacity="0.5" stroke-width="2.5"/>
+      <line x1="728" y1="164" x2="784" y2="164" stroke="#0E0E0C" stroke-opacity="0.16" stroke-width="2.5"/>
+      <line x1="728" y1="180" x2="812" y2="180" stroke="#0E0E0C" stroke-opacity="0.16" stroke-width="2.5"/>
+    </g>
+    <g>
+      <rect x="860" y="118" width="128" height="92" rx="6" fill="#FFFFFF" stroke="#0E0E0C" stroke-opacity="0.13"/>
+      <line x1="876" y1="146" x2="936" y2="146" stroke="#0E0E0C" stroke-opacity="0.5" stroke-width="2.5"/>
+      <line x1="876" y1="164" x2="948" y2="164" stroke="#0E0E0C" stroke-opacity="0.16" stroke-width="2.5"/>
+      <line x1="876" y1="180" x2="920" y2="180" stroke="#0E0E0C" stroke-opacity="0.16" stroke-width="2.5"/>
+    </g>
+    <g>
+      <rect x="1008" y="118" width="128" height="92" rx="6" fill="#FFFFFF" stroke="#0E0E0C" stroke-opacity="0.13"/>
+      <line x1="1024" y1="146" x2="1088" y2="146" stroke="#0E0E0C" stroke-opacity="0.5" stroke-width="2.5"/>
+      <line x1="1024" y1="164" x2="1108" y2="164" stroke="#0E0E0C" stroke-opacity="0.16" stroke-width="2.5"/>
+      <line x1="1024" y1="180" x2="1064" y2="180" stroke="#0E0E0C" stroke-opacity="0.16" stroke-width="2.5"/>
+    </g>
+
+    <!-- row 2, the highlighted one -->
+    <g>
+      <rect x="712" y="232" width="128" height="92" rx="6" fill="#FFFFFF" stroke="#0E0E0C" stroke-opacity="0.13"/>
+      <line x1="728" y1="260" x2="796" y2="260" stroke="#0E0E0C" stroke-opacity="0.5" stroke-width="2.5"/>
+      <line x1="728" y1="278" x2="812" y2="278" stroke="#0E0E0C" stroke-opacity="0.16" stroke-width="2.5"/>
+      <line x1="728" y1="294" x2="772" y2="294" stroke="#0E0E0C" stroke-opacity="0.16" stroke-width="2.5"/>
+    </g>
+    <g>
+      <rect x="860" y="232" width="128" height="92" rx="6" fill="#2D4A2B"/>
+      <line x1="876" y1="260" x2="944" y2="260" stroke="#FFFFFF" stroke-opacity="0.95" stroke-width="2.5"/>
+      <line x1="876" y1="278" x2="956" y2="278" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="2.5"/>
+      <line x1="876" y1="294" x2="912" y2="294" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="2.5"/>
+    </g>
+    <g>
+      <rect x="1008" y="232" width="128" height="92" rx="6" fill="#FFFFFF" stroke="#0E0E0C" stroke-opacity="0.13"/>
+      <line x1="1024" y1="260" x2="1076" y2="260" stroke="#0E0E0C" stroke-opacity="0.5" stroke-width="2.5"/>
+      <line x1="1024" y1="278" x2="1100" y2="278" stroke="#0E0E0C" stroke-opacity="0.16" stroke-width="2.5"/>
+      <line x1="1024" y1="294" x2="1052" y2="294" stroke="#0E0E0C" stroke-opacity="0.16" stroke-width="2.5"/>
+    </g>
+
+    <!-- row 3 -->
+    <g opacity="0.55">
+      <rect x="712" y="346" width="128" height="92" rx="6" fill="#FFFFFF" stroke="#0E0E0C" stroke-opacity="0.13"/>
+      <line x1="728" y1="374" x2="792" y2="374" stroke="#0E0E0C" stroke-opacity="0.4" stroke-width="2.5"/>
+      <line x1="728" y1="392" x2="804" y2="392" stroke="#0E0E0C" stroke-opacity="0.14" stroke-width="2.5"/>
+    </g>
+    <g opacity="0.55">
+      <rect x="860" y="346" width="128" height="92" rx="6" fill="#FFFFFF" stroke="#0E0E0C" stroke-opacity="0.13"/>
+      <line x1="876" y1="374" x2="928" y2="374" stroke="#0E0E0C" stroke-opacity="0.4" stroke-width="2.5"/>
+      <line x1="876" y1="392" x2="952" y2="392" stroke="#0E0E0C" stroke-opacity="0.14" stroke-width="2.5"/>
+    </g>
+    <g opacity="0.55">
+      <rect x="1008" y="346" width="128" height="92" rx="6" fill="#FFFFFF" stroke="#0E0E0C" stroke-opacity="0.13"/>
+      <line x1="1024" y1="374" x2="1084" y2="374" stroke="#0E0E0C" stroke-opacity="0.4" stroke-width="2.5"/>
+      <line x1="1024" y1="392" x2="1096" y2="392" stroke="#0E0E0C" stroke-opacity="0.14" stroke-width="2.5"/>
+    </g>
+
+    <!-- connectors down to one platform line -->
+    <g stroke="#0E0E0C" stroke-opacity="0.2" stroke-width="1.2">
+      <path d="M776,438 L776,470" fill="none"/>
+      <path d="M924,438 L924,470" fill="none"/>
+      <path d="M1072,438 L1072,470" fill="none"/>
+    </g>
+    <line x1="712" y1="470" x2="1136" y2="470" stroke="#0E0E0C" stroke-width="1.6"/>
+    <text x="712" y="498" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" letter-spacing="2.6" fill="#55554E">O N E &#160; P L A T F O R M</text>
+  </g>
+</svg>

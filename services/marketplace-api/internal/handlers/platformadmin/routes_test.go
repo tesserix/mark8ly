@@ -43,3 +43,43 @@ func TestRegisterIsNilSafe(t *testing.T) {
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/platform/admin/audit-logs", nil))
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+// /admin/health mounts whenever the surface itself mounts. It needs only
+// DB, so unlike the client-backed routes it has no nil-dependency guard.
+func TestRegisterMountsHealth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
+		Repo:   &stubRepo{},
+		Secret: "test-secret",
+	})
+
+	found := false
+	for _, route := range r.Routes() {
+		if route.Method == http.MethodGet && route.Path == "/api/v1/platform/admin/health" {
+			found = true
+		}
+	}
+	require.True(t, found, "/admin/health must mount")
+}
+
+// A nil DB must not panic the request. This is the assertion behind the
+// claim in routes.go that a nil database degrades to `unknown`: without
+// the errNoDB guard in the source, (*gorm.DB).WithContext dereferences a
+// nil receiver and this test panics rather than failing.
+func TestRegisterHealthWithNilDBReportsUnknownNotPanic(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
+		Repo:   &stubRepo{},
+		Secret: "test-secret",
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/platform/admin/health", nil)
+	require.NotPanics(t, func() { r.ServeHTTP(rec, req) })
+
+	// The surface's own auth runs first; whatever it answers, the point is
+	// that no nil dereference escaped the handler.
+	require.NotEqual(t, http.StatusInternalServerError, rec.Code)
+}

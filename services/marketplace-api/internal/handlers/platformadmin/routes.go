@@ -92,6 +92,14 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	NewAuditLogsHandler(deps.DB, deps.Repo, deps.Logger).Register(group)
 
+	// Health needs only the DB, so it mounts alongside the surface itself
+	// rather than behind a nil-dependency guard like the client-backed
+	// routes below. A nil DB is handled inside the source, which returns
+	// errNoDB from every check rather than dereferencing a nil *gorm.DB;
+	// the handler renders that as `unknown` — the honest non-answer, and
+	// never a fabricated ok.
+	NewHealthHandler(NewDBHealthSource(deps.DB), deps.Logger).Register(group)
+
 	if deps.TenantDirectory != nil {
 		NewEntitiesTenantsHandler(deps.TenantDirectory, deps.Logger).Register(group)
 		NewConversionsHandler(deps.TenantDirectory, deps.Logger).Register(group)

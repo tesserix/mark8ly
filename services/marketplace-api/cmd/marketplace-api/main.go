@@ -1370,7 +1370,7 @@ func main() {
 		csvRepo := csvjob.NewRepository(conn)
 
 		// Recovery scan on startup.
-		if err := csvjob.RecoverOrphanedJobs(context.Background(), csvRepo, 15*time.Minute, log); err != nil {
+		if err := csvjob.RecoverOrphanedJobs(context.Background(), csvRepo, csvjob.OrphanWindow, log); err != nil {
 			log.Error("csvjob: recovery scan failed", "err", err)
 			// Non-fatal — proceed without recovery.
 		} else {

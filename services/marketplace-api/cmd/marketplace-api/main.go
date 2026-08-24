@@ -518,9 +518,10 @@ func main() {
 		}
 	}
 
+	notificationRepo := notification.NewRepository()
 	notificationSvc := notification.NewService(notification.ServiceConfig{
 		DB:     conn,
-		Repo:   notification.NewRepository(),
+		Repo:   notificationRepo,
 		Logger: log,
 		Pusher: pushPublisher,
 	})
@@ -1992,6 +1993,7 @@ func main() {
 			Emitter:               auditEmitter,
 			TenantGateInvalidator: tenantGate,
 			Tickets:               ticketRepo,
+			Notifications:         notificationRepo,
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2104,6 +2106,7 @@ func main() {
 				Emitter:               auditEmitter,
 				TenantGateInvalidator: tenantGate,
 				Tickets:               ticketRepo,
+				Notifications:         notificationRepo,
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

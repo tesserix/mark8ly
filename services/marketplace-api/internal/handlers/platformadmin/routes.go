@@ -84,6 +84,15 @@ type Deps struct {
 	// read. Nil leaves that route unmounted, matching the nil-safe pattern
 	// used for the other optional client-backed routes above.
 	Tickets TicketLister
+
+	// Notifications serves /admin/notifications (#332), the cross-store
+	// in-app notification log. Nil leaves that route unmounted, matching
+	// the nil-safe pattern used for the other optional client-backed
+	// routes above.
+	//
+	// This is the notification BELL, not a sent-mail log — no record of
+	// outbound email exists anywhere in this estate. See #348.
+	Notifications NotificationLister
 }
 
 // TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
@@ -171,6 +180,10 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.Tickets != nil {
 		NewTicketsHandler(deps.DB, deps.Tickets, deps.Logger).Register(group)
+	}
+
+	if deps.Notifications != nil {
+		NewNotificationsHandler(deps.DB, deps.Notifications, deps.Logger).Register(group)
 	}
 
 	switch {

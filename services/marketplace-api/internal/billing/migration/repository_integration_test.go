@@ -128,8 +128,11 @@ func TestRepo_Approve_ShortensTaxWindow(t *testing.T) {
 
 	reviewerID := uuid.New()
 	repo := migration.NewRepository(db)
-	err := repo.Approve(context.Background(), row.ID, reviewerID, "Shopify export verified.")
+	updated, err := repo.Approve(context.Background(), row.ID, reviewerID, "Shopify export verified.")
 	require.NoError(t, err)
+	require.NotNil(t, updated, "Approve must return the updated review row")
+	assert.Equal(t, tenantID, updated.TenantID, "returned row must carry the review's real tenant id")
+	assert.Equal(t, storeID, updated.StoreID, "returned row must carry the review's real store id")
 
 	// Verify tax_id_window_shortened_at was stamped via raw query (the Go model
 	// doesn't have this column yet — it was added in migration 053).
@@ -156,8 +159,11 @@ func TestRepo_Reject_NoSideEffect(t *testing.T) {
 
 	reviewerID := uuid.New()
 	repo := migration.NewRepository(db)
-	err := repo.Reject(context.Background(), row.ID, reviewerID, "Cannot verify evidence URL.")
+	updated, err := repo.Reject(context.Background(), row.ID, reviewerID, "Cannot verify evidence URL.")
 	require.NoError(t, err)
+	require.NotNil(t, updated, "Reject must return the updated review row")
+	assert.Equal(t, tenantID, updated.TenantID, "returned row must carry the review's real tenant id")
+	assert.Equal(t, storeID, updated.StoreID, "returned row must carry the review's real store id")
 
 	// tax_id_window_shortened_at must remain NULL — reject has no side effect.
 	var shortenedAt *time.Time

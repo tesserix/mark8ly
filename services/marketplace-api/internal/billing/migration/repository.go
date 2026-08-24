@@ -97,9 +97,13 @@ func (r *Repository) Get(ctx context.Context, id uuid.UUID) (*Review, error) {
 // Approve marks the review approved and shortens the tax-ID window to 48h
 // (from the 14d default) by stamping store_subscriptions.tax_id_window_shortened_at.
 // Does NOT waive tax-ID validation — P7 still runs the registry lookup.
-func (r *Repository) Approve(ctx context.Context, id, reviewerID uuid.UUID, notes string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var review Review
+//
+// Returns the post-update review row so callers (the Review handler) can
+// attribute an audit event to the review's tenant/store without a second
+// lookup — the row is already in hand from inside this transaction.
+func (r *Repository) Approve(ctx context.Context, id, reviewerID uuid.UUID, notes string) (*Review, error) {
+	var review Review
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.First(&review, "id = ? AND status = ?", id, "pending").Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrNotFound
@@ -120,6 +124,11 @@ func (r *Repository) Approve(ctx context.Context, id, reviewerID uuid.UUID, note
 		if res.RowsAffected == 0 {
 			return ErrNotFound
 		}
+		review.Status = "approved"
+		review.ReviewerID = &reviewerID
+		trimmed := strings.TrimSpace(notes)
+		review.ReviewerNotes = trimmed
+		review.ReviewedAt = &now
 
 		// Stamp tax_id_window_shortened_at — only if not already set (idempotent).
 		return tx.Exec(`
@@ -129,23 +138,48 @@ func (r *Repository) Approve(ctx context.Context, id, reviewerID uuid.UUID, note
 			now, review.StoreID,
 		).Error
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &review, nil
 }
 
 // Reject marks the review rejected. No side effect on store_subscriptions.
-func (r *Repository) Reject(ctx context.Context, id, reviewerID uuid.UUID, notes string) error {
-	res := r.db.WithContext(ctx).Exec(`
-		UPDATE migration_fast_path_reviews
-		SET status = 'rejected', reviewer_id = ?, reviewer_notes = ?, reviewed_at = now()
-		WHERE id = ? AND status = 'pending'`,
-		reviewerID, strings.TrimSpace(notes), id,
-	)
-	if res.Error != nil {
-		return res.Error
+//
+// Returns the post-update review row for the same reason Approve does.
+func (r *Repository) Reject(ctx context.Context, id, reviewerID uuid.UUID, notes string) (*Review, error) {
+	var review Review
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.First(&review, "id = ? AND status = ?", id, "pending").Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+
+		now := time.Now().UTC()
+		res := tx.Exec(`
+			UPDATE migration_fast_path_reviews
+			SET status = 'rejected', reviewer_id = ?, reviewer_notes = ?, reviewed_at = ?
+			WHERE id = ? AND status = 'pending'`,
+			reviewerID, strings.TrimSpace(notes), now, id,
+		)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		review.Status = "rejected"
+		review.ReviewerID = &reviewerID
+		review.ReviewerNotes = strings.TrimSpace(notes)
+		review.ReviewedAt = &now
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return &review, nil
 }
 
 // isUniquePendingViolation detects the EXCLUDE-constraint violation produced by

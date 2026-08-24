@@ -130,7 +130,11 @@ POST /api/v1/platform/admin/tenants/{id}/unsuspend
 ```
 
 - **Write**, so per the enforcement matrix both operator identity **and** capability are
-  required; a read-only caller gets 403.
+  required. A caller missing either gets **401**, not 403 — `RequirePlatformAuth`
+  (`internal/handlers/platformadmin/middleware.go:153`) answers 401 for a write with no
+  capability. An earlier draft of this spec said 403; that was wrong, and the middleware
+  is the authority. Note also that only *presence* is checked, never the value — see the
+  capability ruling in the plan.
 - Response is the tenant's **current state** plus what changed:
   `{"data": {"tenant_id", "status", "stores_affected": N, "changed": bool}}`.
 - **Suspending an already-suspended tenant is a no-op returning current state** — not an
@@ -204,10 +208,16 @@ a request. Safe only while these routes are registered on the `platformadmin` gr
 - **Idempotency:** a second suspend returns `changed: false`, writes no second audit row,
   and leaves `suspended_by_tenant` untouched. Assert the audit row **count**, not just
   presence.
-- **Stale-suspended is enforced:** a projection row older than `StaleCeil` with
-  `suspended` must still be denied. Put the fixture at the exact boundary and 1ms either
-  side — `timestamptz` is microsecond-resolution, so a nanosecond offset truncates and both
-  fixtures become the same row.
+- **Stale-suspended is enforced:** a projection row that is stale but still *within*
+  `StaleCeil` and reads `suspended` must be denied.
+
+  **Revised during implementation.** An earlier draft said to put the fixture at the exact
+  `StaleCeil` boundary. That is wrong here: beyond `StaleCeil` the middleware 404s
+  regardless of status, so a boundary fixture would pass for the wrong reason — the 404
+  coming from the ceiling, not from the status check. The fixture belongs at ~1h: past
+  `FreshTTL` (so a refresh is attempted) and well inside `StaleCeil` (so a failed refresh
+  reaches the stale-serve branch, which the status check must then override). Put a fixture
+  where the candidate implementations actually disagree, which is not always the boundary.
 - **Capability:** a caller with operator identity but without the capability gets 403.
 - Golden fixture for both responses, proved by mutation against a field rename **and** a
   field addition.

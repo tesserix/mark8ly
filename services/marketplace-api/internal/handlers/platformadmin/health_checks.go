@@ -38,8 +38,7 @@ func (s *dbHealthSource) Outbox(ctx context.Context, asOf time.Time) (OutboxHeal
 		SELECT
 			COUNT(*) FILTER (WHERE published_at IS NULL)                    AS pending,
 			COALESCE(EXTRACT(EPOCH FROM (? - MIN(created_at)
-				FILTER (WHERE published_at IS NULL)))::bigint, 0)           AS oldest_pending_age_seconds,
-			COUNT(*) FILTER (WHERE published_at IS NULL AND error IS NOT NULL) AS errored
+				FILTER (WHERE published_at IS NULL)))::bigint, 0)           AS oldest_pending_age_seconds
 		FROM outbox_events`, asOf).Scan(&out).Error
 	if err != nil {
 		return OutboxHealth{}, err

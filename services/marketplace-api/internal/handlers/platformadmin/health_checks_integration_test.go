@@ -43,7 +43,7 @@ func seedStoreForCSV(t *testing.T, db *gorm.DB) string {
 	return storeID
 }
 
-func TestOutboxHealthCountsPendingAndErrored(t *testing.T) {
+func TestOutboxHealthCountsPendingAndMeasuresAgeFromAsOf(t *testing.T) {
 	db := testdb.NewDB(t, "outbox_events")
 	src := platformadmin.NewDBHealthSource(db)
 	tenant := uuid.NewString()
@@ -61,16 +61,16 @@ func TestOutboxHealthCountsPendingAndErrored(t *testing.T) {
 		VALUES (?, 'product', ?, 'product.created', '{}'::jsonb, ?)`,
 		tenant, uuid.NewString(), healthAsOf.Add(-10*time.Minute)).Error)
 
-	// Pending and errored, 2 minutes old.
+	// A second pending row, younger than the 10-minute one, so the age
+	// assertion fails if MIN() ignores the pending filter.
 	require.NoError(t, db.Exec(`INSERT INTO outbox_events
-		(tenant_id, aggregate, aggregate_id, event_type, payload, created_at, error)
-		VALUES (?, 'order', ?, 'order.placed', '{}'::jsonb, ?, 'boom')`,
+		(tenant_id, aggregate, aggregate_id, event_type, payload, created_at)
+		VALUES (?, 'order', ?, 'order.placed', '{}'::jsonb, ?)`,
 		tenant, uuid.NewString(), healthAsOf.Add(-2*time.Minute)).Error)
 
 	got, err := src.Outbox(context.Background(), healthAsOf)
 	require.NoError(t, err)
 	require.Equal(t, int64(2), got.Pending, "published row must not count as pending")
-	require.Equal(t, int64(1), got.Errored)
 	require.Equal(t, int64(600), got.OldestPendingAgeSeconds,
 		"age must be measured from the caller's asOf, not Postgres now()")
 }

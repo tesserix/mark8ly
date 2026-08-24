@@ -56,10 +56,14 @@ var DependencyRegistry = []dependencyKey{
 }
 
 // OutboxHealth is the measured state of outbox_events.
+//
+// There is deliberately no `errored` metric. Nothing in this service ever
+// writes outbox_events.error — the only production write to the table is
+// `SET published_at = now()` — so such a metric could never return a
+// non-zero value. See the spec; the dead column is a separate follow-up.
 type OutboxHealth struct {
 	Pending                 int64
 	OldestPendingAgeSeconds int64
-	Errored                 int64
 }
 
 // CSVJobsHealth is the measured state of csv_import_jobs.

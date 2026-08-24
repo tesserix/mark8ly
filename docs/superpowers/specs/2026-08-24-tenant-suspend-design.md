@@ -60,10 +60,30 @@ Enforcement points, all reading store status:
 3. **Merchant admin UI** — the Next.js middleware already resolves
    `{slug}-admin.mark8ly.com` through platform-api's internal by-slug endpoint, whose
    response carries `status`. It gains a check.
-4. **New logins** — `auth-bff` gates session issuance on tenant status
-   (`internal/loginotp/handler.go:108` and `internal/autologin/service.go:181`). A cold
-   path, one check, and without it an existing session keeps working until it happens to
-   touch a store-scoped route, and non-store-scoped admin routes stay ungated entirely.
+4. **All admin routes, including the non-store-scoped ones** — a new tenant gate in
+   marketplace-api, applied after `authMW` on all four admin groups.
+
+   **Revised 2026-08-24 during planning.** This point originally said `auth-bff` would
+   gate session issuance. Investigation killed that: `auth-bff` holds **no platform-api
+   client at all**, so it would have meant a new cross-service dependency on the login
+   path — and gating issuance only stops *new* sessions, leaving an existing one free to
+   hit `/admin` (`routes.go:162`), `/admin/account` (`:170`) and the SSO group (`:144`)
+   until it expired. Point 2 only covers `/admin/stores/:storeId`.
+
+   The gate instead reuses the `tenantdirectory` client already present in
+   marketplace-api, whose `Tenant` type **already carries `Status`**
+   (`internal/tenantdirectory/client.go:39`), with an in-process TTL cache. It copies
+   `internal/subscription/readonly`'s `RequireActive` shape — the same problem already
+   solved in this codebase — with one deliberate difference: **it allowlists nothing.**
+   `RequireActive` exempts every `GET` and the billing/tax recovery routes because a
+   read-only *subscription* is a billing state the merchant must be able to fix. A tenant
+   suspension is an operator action taken for abuse, fraud or a legal demand, where
+   self-service recovery is exactly what must not exist.
+
+   Staleness follows the same asymmetry as the store projection: cached `suspended` is
+   authoritative at any age; stale `active` still serves; a **cold cache plus a failed
+   lookup fails open**, because an outage must not lock out every merchant. That last one
+   is the gate's one hole and it is deliberate.
 
 ### Why new platform-api endpoints rather than the existing PATCHes
 
@@ -199,8 +219,13 @@ a request. Safe only while these routes are registered on the `platformadmin` gr
 - **Cloudflare edge cache.** A suspended storefront may keep serving from the edge until
   the cached response expires. Enforcement is at origin; no purge is issued. If operators
   need immediate darkness, that is a separate piece of work against the Worker.
-- **Existing merchant sessions** are not revoked. They stop working when they touch a
-  store-scoped route or re-authenticate. Active session revocation is a bigger change to
-  `auth-bff`'s session model.
+- **Existing session cookies are not revoked** — but they are no longer useful. With the
+  tenant gate on all four admin groups, an existing session is refused on every admin
+  route, so revocation would change nothing an operator can observe. What remains out of
+  scope is *cookie invalidation itself* (a change to `auth-bff`'s session model) and
+  **new logins**: nothing stops a suspended tenant's merchant from completing a fresh
+  login and obtaining a cookie that is then refused everywhere. Cosmetic, but it means the
+  login screen does not explain why nothing works. Worth a follow-up for the message
+  alone.
 - **Archived tenants.** `archived` is a third status with its own semantics; this design
   touches only the active ↔ suspended transition.

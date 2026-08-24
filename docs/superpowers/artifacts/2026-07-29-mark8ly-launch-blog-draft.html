@@ -1,0 +1,400 @@
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+#mk8-blog { font-family: 'Source Sans 3', system-ui, sans-serif; font-size: 17.5px; line-height: 1.75; color: #3d3d38; }
+#mk8-blog h1 { font-family: 'Source Serif 4', Georgia, serif; font-weight: 700; font-size: 46px; line-height: 1.1; letter-spacing: -0.02em; margin: 18px 0 14px; color: #0E0E0C; }
+#mk8-blog h2 { font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 28px; line-height: 1.25; letter-spacing: -0.01em; margin: 54px 0 14px; color: #0E0E0C; }
+#mk8-blog h3 { font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; font-size: 21px; margin: 34px 0 10px; color: #0E0E0C; }
+#mk8-blog p { margin: 0 0 18px; color: #3d3d38; }
+#mk8-blog strong { color: #0E0E0C; font-weight: 600; }
+#mk8-blog em { font-style: italic; }
+#mk8-blog a { color: #2D4A2B; text-decoration: underline; text-underline-offset: 3px; }
+#mk8-blog ul { padding-left: 24px; margin: 0 0 18px; }
+#mk8-blog ul li { margin: 0 0 8px; }
+#mk8-blog hr { border: none; height: 1px; background: #e6e4dc; margin: 44px 0; }
+#mk8-blog code { font-family: 'JetBrains Mono', monospace; font-size: 0.88em; background: #efeee8; padding: 2px 6px; border-radius: 4px; color: #0E0E0C; }
+
+#mk8-blog .lede { font-family: 'Source Serif 4', Georgia, serif; font-size: 21px; line-height: 1.5; color: #55554E; font-style: italic; margin: 0 0 30px; }
+#mk8-blog .kicker { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 12px; text-transform: uppercase; letter-spacing: 0.15em; color: #2D4A2B; background: #e8ede6; padding: 6px 12px; border-radius: 20px; margin-bottom: 18px; }
+
+#mk8-blog .pullquote { font-family: 'Source Serif 4', Georgia, serif; font-size: 24px; line-height: 1.4; color: #0E0E0C; font-style: italic; text-align: center; margin: 44px auto; padding: 28px 18px; max-width: 640px; border-top: 1px solid #e6e4dc; border-bottom: 1px solid #e6e4dc; }
+#mk8-blog .pullquote .attrib { display: block; font-family: 'Source Sans 3', sans-serif; font-style: normal; font-size: 14px; letter-spacing: 0.06em; color: #6b6b62; margin-top: 14px; }
+
+#mk8-blog .diagram { margin: 28px 0 36px; padding: 26px 22px; background: #F7F6F2; border-radius: 14px; border: 1px solid #e6e4dc; text-align: center; }
+#mk8-blog .diagram svg { max-width: 100%; height: auto; }
+#mk8-blog .diagram img { max-width: 100%; height: auto; border-radius: 8px; display: block; margin: 0 auto; }
+#mk8-blog .diagram img.phone { max-width: 290px; border-radius: 22px; box-shadow: 0 6px 28px rgba(14,14,12,0.13); }
+#mk8-blog .caption { font-family: 'Source Serif 4', Georgia, serif; font-size: 14px; font-style: italic; color: #7a7a70; margin-top: 12px; }
+
+#mk8-blog .example { background: #F2F5F1; border-left: 4px solid #2D4A2B; border-radius: 0 10px 10px 0; padding: 16px 22px; margin: 22px 0 30px; }
+#mk8-blog .example .label { font-family: 'JetBrains Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: #2D4A2B; margin-bottom: 8px; display: block; }
+#mk8-blog .example p { font-size: 16.5px; line-height: 1.65; color: #33382F; margin: 0 0 10px; }
+#mk8-blog .example p:last-child { margin-bottom: 0; }
+
+#mk8-blog .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 30px; }
+@media (max-width: 640px) { #mk8-blog .cards { grid-template-columns: 1fr; } }
+#mk8-blog .mc { border: 1px solid #e6e4dc; border-radius: 12px; padding: 18px 20px; background: #FFFFFF; }
+#mk8-blog .mc h4 { font-family: 'Source Serif 4', Georgia, serif; font-size: 18px; margin: 0 0 6px; color: #0E0E0C; }
+#mk8-blog .mc .tag { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: #2D4A2B; margin-bottom: 6px; }
+#mk8-blog .mc p { font-size: 15.5px; line-height: 1.55; margin: 0; color: #3d3d38; }
+
+#mk8-blog .benefits { width: 100%; border-collapse: collapse; margin: 24px 0 30px; font-size: 16.5px; }
+#mk8-blog .benefits td { padding: 14px 8px; border-bottom: 1px solid #e6e4dc; vertical-align: top; }
+#mk8-blog .benefits tr:first-child td { border-top: 1px solid #e6e4dc; }
+#mk8-blog .benefits td:first-child { font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; color: #0E0E0C; width: 34%; padding-right: 18px; }
+</style>
+
+<section id="mk8-blog">
+
+<span class="kicker">Mark8ly &middot; Now live</span>
+
+<h1>One Platform. Thousands of Shops. Here Is How We Built It.</h1>
+
+<p class="lede">The Bondi Store sells linen and cotton basics out of Sydney. It has its own web address, its own dashboard, its own customers. Setting it up took minutes, not months. This is the story of everything that had to happen underneath, told in plain English.</p>
+
+<p>Today we are launching <strong>Mark8ly</strong>: a place to sell online without hiring a developer to get started.</p>
+
+<p>You could read a feature list. We would rather show you a real shop.</p>
+
+<p><a href="https://the-bondi-store.mark8ly.com">The Bondi Store</a> is live right now. Open it in another tab. Click into a product. Add it to the cart. It behaves like a real shop because it is one.</p>
+
+<div class="diagram">
+<img src="https://storage.googleapis.com/tesserix-blog-assets/blog/images/2026/07/mk8-storefront.png" alt="The Bondi Store homepage, showing a coastal hero image, a shop menu, and a free shipping banner" loading="lazy">
+<div class="caption">The Bondi Store, live at the-bondi-store.mark8ly.com. Nobody wrote any code to make this page.</div>
+</div>
+
+<p>Here is what the owner did. They typed in an email address. They picked a name. They added some products and prices. Then they were open for business.</p>
+
+<p>Here is what we did in the same window of time.</p>
+
+<p>We proved who they were, without ever asking for a password. We built them a private address on the internet. We worked out exactly what they were allowed to see, and what had to stay hidden from them. Then we handed them a working dashboard and logged them straight in.</p>
+
+<p>Every one of those steps can go wrong. This is how each one works.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 660 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The journey from an email address to a live storefront, in five steps">
+  <defs>
+    <marker id="mk8a1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#b3b0a4"/></marker>
+  </defs>
+  <text x="330" y="26" text-anchor="middle" font-family="'Source Serif 4', Georgia, serif" font-size="14" font-style="italic" fill="#0E0E0C">One email address becomes one live shop</text>
+
+  <g font-family="'Source Sans 3', sans-serif">
+    <g>
+      <rect x="16" y="58" width="106" height="60" rx="10" fill="#FFFFFF" stroke="#d8d5c9"/>
+      <text x="69" y="84" text-anchor="middle" font-size="12.5" fill="#0E0E0C">email typed</text>
+      <text x="69" y="102" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="10.5" fill="#7a7a70">step 1</text>
+    </g>
+    <g>
+      <rect x="150" y="58" width="106" height="60" rx="10" fill="#FFFFFF" stroke="#d8d5c9"/>
+      <text x="203" y="84" text-anchor="middle" font-size="12.5" fill="#0E0E0C">link clicked</text>
+      <text x="203" y="102" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="10.5" fill="#7a7a70">step 2</text>
+    </g>
+    <g>
+      <rect x="284" y="58" width="106" height="60" rx="10" fill="#FFFFFF" stroke="#d8d5c9"/>
+      <text x="337" y="84" text-anchor="middle" font-size="12.5" fill="#0E0E0C">shop created</text>
+      <text x="337" y="102" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="10.5" fill="#7a7a70">step 3</text>
+    </g>
+    <g>
+      <rect x="418" y="58" width="106" height="60" rx="10" fill="#FFFFFF" stroke="#d8d5c9"/>
+      <text x="471" y="84" text-anchor="middle" font-size="12.5" fill="#0E0E0C">keys handed over</text>
+      <text x="471" y="102" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="10.5" fill="#7a7a70">step 4</text>
+    </g>
+    <g>
+      <rect x="552" y="58" width="106" height="60" rx="10" fill="#2D4A2B"/>
+      <text x="605" y="84" text-anchor="middle" font-size="12.5" fill="#FFFFFF">shop is open</text>
+      <text x="605" y="102" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="10.5" fill="#c3d3bf">step 5</text>
+    </g>
+  </g>
+
+  <g stroke="#b3b0a4" stroke-width="1.3" fill="none">
+    <path d="M122,88 L148,88" marker-end="url(#mk8a1)"/>
+    <path d="M256,88 L282,88" marker-end="url(#mk8a1)"/>
+    <path d="M390,88 L416,88" marker-end="url(#mk8a1)"/>
+    <path d="M524,88 L550,88" marker-end="url(#mk8a1)"/>
+  </g>
+
+  <line x1="16" y1="146" x2="658" y2="146" stroke="#e6e4dc"/>
+  <text x="16" y="170" font-family="'Source Sans 3', sans-serif" font-size="11.5" fill="#7a7a70">Sections 2 and 3</text>
+  <text x="337" y="170" text-anchor="middle" font-family="'Source Sans 3', sans-serif" font-size="11.5" fill="#7a7a70">Sections 4 and 5</text>
+  <text x="658" y="170" text-anchor="end" font-family="'Source Sans 3', sans-serif" font-size="11.5" fill="#7a7a70">Section 6</text>
+</svg>
+<div class="caption">Figure 1. The journey this post follows, and where each part is explained.</div>
+</div>
+
+<hr>
+
+<h2>1. One platform, thousands of shops</h2>
+
+<p>Start with the idea that shapes everything else.</p>
+
+<p>Every shop on Mark8ly runs on <strong>the same software at the same time</strong>. We do not spin up a private copy for each merchant. There is one platform, and it serves every shop on it at once.</p>
+
+<p>The industry word for this is <em>multi-tenant</em>. Think of it as a well run building rather than a street of houses. Everyone has their own front door, their own key, their own space that nobody else can enter. What they share is the foundation, the plumbing and the security desk.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 660 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How a visit to the-bondi-store.mark8ly.com finds the right shop out of thousands">
+  <defs>
+    <marker id="mk8a2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#b3b0a4"/></marker>
+  </defs>
+  <text x="330" y="26" text-anchor="middle" font-family="'Source Serif 4', Georgia, serif" font-size="14" font-style="italic" fill="#0E0E0C">One platform, thousands of shops, one correct answer</text>
+
+  <g font-family="'Source Sans 3', sans-serif">
+    <rect x="150" y="50" width="360" height="42" rx="8" fill="#FFFFFF" stroke="#d8d5c9"/>
+    <text x="330" y="76" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="13" fill="#0E0E0C">the-bondi-store.mark8ly.com</text>
+
+    <path d="M330,92 L330,124" stroke="#b3b0a4" stroke-width="1.3" fill="none" marker-end="url(#mk8a2)"/>
+
+    <rect x="176" y="126" width="308" height="48" rx="8" fill="#e8ede6" stroke="#2D4A2B" stroke-opacity="0.35"/>
+    <text x="330" y="146" text-anchor="middle" font-size="12.5" fill="#2D4A2B">read the shop name from the address</text>
+    <text x="330" y="164" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="11" fill="#4a6b47">the-bondi-store</text>
+
+    <path d="M330,174 L330,204" stroke="#b3b0a4" stroke-width="1.3" fill="none" marker-end="url(#mk8a2)"/>
+
+    <text x="330" y="198" text-anchor="middle" font-size="11.5" fill="#7a7a70">every request now carries that answer</text>
+  </g>
+
+  <g font-family="'Source Sans 3', sans-serif">
+    <rect x="30" y="212" width="128" height="62" rx="10" fill="#FFFFFF" stroke="#d8d5c9" stroke-dasharray="4 4"/>
+    <text x="94" y="238" text-anchor="middle" font-size="12" fill="#a5a299">another shop</text>
+    <text x="94" y="256" text-anchor="middle" font-size="11" fill="#a5a299">not visible</text>
+
+    <rect x="266" y="212" width="128" height="62" rx="10" fill="#2D4A2B"/>
+    <text x="330" y="238" text-anchor="middle" font-size="12" fill="#FFFFFF">The Bondi Store</text>
+    <text x="330" y="256" text-anchor="middle" font-size="11" fill="#c3d3bf">products, orders</text>
+
+    <rect x="502" y="212" width="128" height="62" rx="10" fill="#FFFFFF" stroke="#d8d5c9" stroke-dasharray="4 4"/>
+    <text x="566" y="238" text-anchor="middle" font-size="12" fill="#a5a299">another shop</text>
+    <text x="566" y="256" text-anchor="middle" font-size="11" fill="#a5a299">not visible</text>
+  </g>
+</svg>
+<div class="caption">Figure 2. The shop name is read once, at the front door, and travels with every request behind it.</div>
+</div>
+
+<p>When someone visits <code>the-bondi-store.mark8ly.com</code>, the first thing we work out is which shop they are looking at. We read the name from the address. We attach that answer to the request. Everything after that carries it.</p>
+
+<p>So the page never asks for products. It asks for <em>this shop's</em> products. Always.</p>
+
+<p>That sounds like an implementation detail. It is the whole business model. Here is what it buys you as a merchant:</p>
+
+<table class="benefits">
+<tr><td>You pay less</td><td>You are not renting a server. You are renting a slice of one that thousands of shops share. That is the difference between a monthly bill you notice and one you do not.</td></tr>
+<tr><td>You are never behind</td><td>There is one copy of the software, so a fix or a new feature reaches your shop the moment it ships. No upgrade project. No version left rotting.</td></tr>
+<tr><td>You open today</td><td>Your shop is not built for you. It already exists the second you ask for it. Nothing to install, nothing to provision, nobody to wait on.</td></tr>
+<tr><td>You stay separate</td><td>Sharing the building never means sharing the room. Your products, orders and customers are yours alone, enforced in the machinery rather than left to good intentions.</td></tr>
+</table>
+
+<p>The alternative is giving every merchant a private copy of everything. Some platforms do that. It is simpler to build, and it is why those platforms cost what they cost. A thousand merchants means a thousand systems to run, patch and pay for, and every security fix has to be applied a thousand times.</p>
+
+<p>Sharing one well guarded platform is harder to build once. It is far cheaper to run forever. That saving is the reason a small shop can afford to be here at all.</p>
+
+<hr>
+
+<h2>2. No password to lose</h2>
+
+<p>Before we hand anyone a shop, we need to know they are who they say they are.</p>
+
+<p>We do not ask for a password. You type your email address. We send you a link. You click it. You are in.</p>
+
+<p>This is safer, and the reason is simple. A password is a secret you must remember forever and never reuse. Most people manage neither. A link that works once and then stops has neither problem. Nothing to remember. Nothing worth stealing later.</p>
+
+<div class="example">
+<span class="label">Put another way</span>
+<p>A hotel does not make you memorise a code. You prove who you are once at the desk, and they hand you a card that opens one door and stops working when you leave.</p>
+<p>Your email link is that card. One door. One use. Then it is dead.</p>
+</div>
+
+<p>One detail we care about a lot: <strong>we never keep a copy of your link</strong>.</p>
+
+<p>We store a fingerprint of it instead. A scrambled version that can be checked but never turned back into the original. When you click, we scramble what you sent and see if the two match.</p>
+
+<p>So if someone ever stole our database, they would find a pile of fingerprints and not a single working link. Nothing in there opens anything. The links expire on their own too, so an old email sitting in your inbox is not a spare key to your shop.</p>
+
+<p>Shop owners and shoppers are also kept in completely separate pools. A customer account on one shop never becomes an account on our platform by accident.</p>
+
+<hr>
+
+<h2>3. Your own front door</h2>
+
+<p>Now we have a verified person who wants a shop. They pick a name. Ours picked The Bondi Store.</p>
+
+<p>Two addresses come into existence:</p>
+
+<ul>
+<li><code>the-bondi-store.mark8ly.com</code> is the shop customers see.</li>
+<li><code>the-bondi-store-admin.mark8ly.com</code> is the private dashboard where the owner works.</li>
+</ul>
+
+<p>Both are live immediately. No waiting, no setup call, no ticket in a queue.</p>
+
+<p>When the shop is ready, the owner can move it to their own web address. For them it is a form with one field in it. Behind that form, a small service talks to our DNS provider, sets up the security certificate so the padlock appears in the browser, then keeps checking until the new address answers properly.</p>
+
+<p>Your brand, your domain, your customers. We stay out of the way.</p>
+
+<hr>
+
+<h2>4. Your data stays yours</h2>
+
+<p>This is the part that decides whether a platform like ours deserves your trust.</p>
+
+<p>Every time a shop owner opens their orders page, we have to answer one question: is this person allowed to see these orders? We have to get it right every time, for every person, for every shop, forever. Getting it wrong once in the wrong direction means showing one merchant another merchant's customers.</p>
+
+<p>So permissions are not a checklist bolted on the side. They are their own system with one job.</p>
+
+<div class="example">
+<span class="label">Put another way</span>
+<p>Picture that building again. One front desk, one set of rules. A key card does not say "this person is important". It says "this person owns the shop on level three", and the doors work the rest out.</p>
+<p>Hire an assistant and you do not hand over your card. The desk records a new relationship: this person works for that shop. The right doors open. The wrong ones do not. Nobody had to think about it.</p>
+</div>
+
+<p>That is close to how ours works. We store relationships, not lists of powers. When a page needs to know if something is allowed, it asks a dedicated permissions service, and that service follows the relationships it knows about.</p>
+
+<p>Underneath sits a second layer, and it is the dull one that actually saves you. Every piece of data carries the shop it belongs to, and our data layer refuses to run a query that is not tied to a single shop. A developer having a bad day cannot accidentally write the query that returns everybody's orders. That query will not run.</p>
+
+<p class="pullquote">Keeping shops apart is not a feature we added to Mark8ly. It is the product. Everything else is shopping cart software.</p>
+
+<hr>
+
+<h2>5. The handoff that used to break</h2>
+
+<p>Now the honest part, because a post like this is worth little if it only lists the good bits.</p>
+
+<p>The first version of this flow had a bug that ruined the best moment we had. A new merchant would finish signing up, land on their dashboard, and be told they had no access to any shop.</p>
+
+<p>Their shop existed. It had been created a second earlier. What had not caught up was the paperwork saying they owned it. The dashboard asked "does this person own a shop?" before the answer had finished being written down, heard no, and did exactly what it was built to do. It kept them out.</p>
+
+<div class="pullquote">
+&ldquo;Everything fails, all the time.&rdquo;
+<span class="attrib">Werner Vogels, Chief Technology Officer, Amazon</span>
+</div>
+
+<p>The obvious fix is to write both records at the same moment and hope they both succeed. That works right up until one of them does not. Then you have a shop with no owner, or an owner with no shop, and no way to tell which.</p>
+
+<p>We used an older trick, the one a good restaurant kitchen uses. A waiter does not walk into the kitchen and shout your order. They write a ticket and put it on the rail. The kitchen works through the rail. If the kitchen is slow, the ticket waits. If a plate gets dropped, the ticket is still there and the dish gets made again. Nothing is lost just because a delivery was slow.</p>
+
+<p>So when a shop is created, we save two things together: the shop, and a ticket saying who owns it. Both are saved or neither is. A separate worker reads tickets off the rail and delivers them. If a delivery fails, the ticket stays and gets tried again.</p>
+
+<p>Then we added the small piece of manners that makes it invisible. If you land on your dashboard before the ticket arrives, we do not throw you out. We wait a beat and ask again, because we know it is on its way.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 660 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The handoff: shop record and ownership ticket saved together, delivered by a worker, with a retry on first login">
+  <defs>
+    <marker id="mk8a3" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#b3b0a4"/></marker>
+  </defs>
+  <text x="330" y="24" text-anchor="middle" font-family="'Source Serif 4', Georgia, serif" font-size="14" font-style="italic" fill="#0E0E0C">Saved together, delivered separately, never dropped</text>
+
+  <g font-family="'Source Sans 3', sans-serif">
+    <rect x="24" y="50" width="212" height="96" rx="10" fill="#FFFFFF" stroke="#2D4A2B" stroke-opacity="0.4"/>
+    <text x="130" y="72" text-anchor="middle" font-size="11" letter-spacing="1.4" fill="#2D4A2B">ONE ALL-OR-NOTHING STEP</text>
+    <rect x="40" y="82" width="180" height="26" rx="6" fill="#F7F6F2" stroke="#d8d5c9"/>
+    <text x="130" y="99" text-anchor="middle" font-size="12" fill="#0E0E0C">the shop record</text>
+    <rect x="40" y="112" width="180" height="26" rx="6" fill="#F7F6F2" stroke="#d8d5c9"/>
+    <text x="130" y="129" text-anchor="middle" font-size="12" fill="#0E0E0C">the ownership ticket</text>
+
+    <path d="M236,110 L282,110" stroke="#b3b0a4" stroke-width="1.3" fill="none" marker-end="url(#mk8a3)"/>
+
+    <rect x="284" y="82" width="126" height="56" rx="10" fill="#e8ede6" stroke="#2D4A2B" stroke-opacity="0.35"/>
+    <text x="347" y="105" text-anchor="middle" font-size="12" fill="#2D4A2B">the worker</text>
+    <text x="347" y="123" text-anchor="middle" font-size="11" fill="#4a6b47">reads the rail</text>
+
+    <path d="M410,110 L456,110" stroke="#b3b0a4" stroke-width="1.3" fill="none" marker-end="url(#mk8a3)"/>
+
+    <rect x="458" y="82" width="178" height="56" rx="10" fill="#2D4A2B"/>
+    <text x="547" y="105" text-anchor="middle" font-size="12" fill="#FFFFFF">permissions service</text>
+    <text x="547" y="123" text-anchor="middle" font-size="11" fill="#c3d3bf">Demo owns The Bondi Store</text>
+
+    <path d="M347,138 C347,176 347,176 347,182" stroke="#b3b0a4" stroke-width="1.3" fill="none" stroke-dasharray="4 4" marker-end="url(#mk8a3)"/>
+    <text x="357" y="166" font-size="11" fill="#a5a299">delivery failed?</text>
+    <text x="357" y="182" font-size="11" fill="#a5a299">ticket stays, try again</text>
+  </g>
+
+  <line x1="24" y1="206" x2="636" y2="206" stroke="#e6e4dc"/>
+  <g font-family="'Source Sans 3', sans-serif">
+    <text x="24" y="230" font-size="12" fill="#3d3d38">On first login, if the answer is not there yet, the dashboard waits a beat and asks again</text>
+    <text x="24" y="248" font-size="12" fill="#7a7a70">instead of showing a new merchant a locked door.</text>
+  </g>
+</svg>
+<div class="caption">Figure 3. The ticket rail. Nothing is lost because a delivery was slow.</div>
+</div>
+
+<p>We tell this story because it is the shape of most real platform work. The interesting problems are rarely "how do we build a shopping cart". They are "what happens when step two is slower than step three".</p>
+
+<hr>
+
+<h2>6. Everything you need to actually sell</h2>
+
+<p>With the door open and the keys handed over, here is what the merchant sees.</p>
+
+<div class="diagram">
+<img src="https://storage.googleapis.com/tesserix-blog-assets/blog/images/2026/07/mk8-admin-v2.png" alt="The Mark8ly admin dashboard for The Bondi Store, showing setup eighty percent complete, this month's takings and order counts" loading="lazy">
+<div class="caption">The Bondi Store's dashboard. Most of the setup was done for the merchant, and the month's takings sit where they can be seen at a glance.</div>
+</div>
+
+<p>That checklist is deliberate. An empty dashboard with eleven things to configure is how people give up. So the shop arrives already standing: settings filled in, a theme applied, a product in place. Changing something is far easier than starting from nothing.</p>
+
+<p>Underneath it is the real work of running a shop.</p>
+
+<div class="cards">
+  <div class="mc">
+    <span class="tag">Selling</span>
+    <h4>Products and orders</h4>
+    <p>Variants, photo galleries, categories, bulk upload by spreadsheet. Orders through their whole life, including the unglamorous end: cancellations, refunds, returns, and carts people abandoned.</p>
+  </div>
+  <div class="mc">
+    <span class="tag">Money</span>
+    <h4>Payments that work locally</h4>
+    <p>Stripe, Razorpay and PayPal, so a shop in Sydney and a shop in Pune both get a checkout their customers recognise and trust.</p>
+  </div>
+  <div class="mc">
+    <span class="tag">Delivery</span>
+    <h4>Shipping and tax</h4>
+    <p>Live rates and tracking through several carriers, and a tax engine that understands Indian GST and United States sales tax rather than one flat percentage.</p>
+  </div>
+  <div class="mc">
+    <span class="tag">Growth</span>
+    <h4>Getting people back</h4>
+    <p>Discount codes, gift cards, a points and referrals programme, email campaigns to customer segments, product reviews with photos, and wishlists.</p>
+  </div>
+</div>
+
+<p>Alongside those sit the things nobody asks about until the day they need them: a full record of who changed what, two-factor sign-in, a team page for adding staff with their own access, and live chat built into the shop.</p>
+
+<p>There is an admin app for the phone too. Running a shop does not happen at a desk. Approving an order or checking stock in a stockroom should not need a laptop. It signs in against the same permissions, so staff see exactly what they would see on the web.</p>
+
+<div class="diagram">
+<img class="phone" src="https://storage.googleapis.com/tesserix-blog-assets/blog/images/2026/07/mk8-mobile-admin-v2.png" alt="The Mark8ly admin app on a phone, showing The Bondi Store with this month's takings, order counts and three products running low on stock" loading="lazy">
+<div class="caption">The same shop on a phone: the month's takings, the order counts, and the three products running low that need attention today.</div>
+</div>
+
+<p>The shop your customers see is built to be fast. Pages are assembled on our servers and sent as finished HTML, so the storefront appears quickly on a phone with a weak signal, and search engines can read it properly. That is not a technical nicety. A slow shop and an invisible shop lose the same sale.</p>
+
+<p>Of the thirty-one things on our list for this first release, thirty are done. The one still open is different from the admin app above: a shop's own customer-facing app, under the merchant's name, on their own App Store account. That is a bigger promise, and we would rather ship it properly later than badly now.</p>
+
+<hr>
+
+<h2>7. What it costs us</h2>
+
+<p>Sharing one platform is the right choice. It is not a free one.</p>
+
+<ul>
+<li><strong>Shared systems raise the stakes.</strong> When thousands of shops share a platform, one careless query is not a small bug. That is why separation is enforced by the machinery instead of by someone remembering. It is slower to build that way, and we would choose it again.</li>
+<li><strong>Custom domains depend on things we do not control.</strong> The moment a merchant points their own address at us, we are relying on DNS, on their registrar, and on certificates renewing quietly forever. Usually it is instant. Sometimes it is a wait, and no amount of good engineering makes someone else's DNS faster.</li>
+<li><strong>Money and tax are local, everywhere.</strong> Every country has its own payment habits and its own tax rules. There is no clever shortcut. You do the work per country, or you do not really serve that country.</li>
+<li><strong>Email is harder than it looks.</strong> The whole sign-up rests on a message landing in an inbox in seconds, and not in a spam folder. That is its own ongoing discipline.</li>
+<li><strong>Things we chose not to build.</strong> No app marketplace and no theme store yet. Both are real work, and both are distractions until the core is genuinely solid. A shop that reliably takes money beats a plugin directory attached to a wobbly checkout.</li>
+</ul>
+
+<p>Security is part of shipping rather than a phase at the end. Every change runs through automatic dependency and vulnerability scanning before it can merge, and anything that fails stops the change instead of filing a ticket for later.</p>
+
+<hr>
+
+<h2>8. Open yours</h2>
+
+<p>That is the tour. An email address becomes a verified person. A verified person becomes a shop with its own address. That shop gets its own keys, and the keys arrive reliably even when a step runs slow.</p>
+
+<p>Underneath sits a good deal of machinery, all of it aimed at one thing: the person selling linen in Sydney should be thinking about linen, not about DNS records and permission models.</p>
+
+<p>Go and look at <a href="https://the-bondi-store.mark8ly.com">The Bondi Store</a>. Put something in the cart. See how it feels.</p>
+
+<p>Then, if you have something to sell, <a href="https://mark8ly.com/onboarding"><strong>open your own shop</strong></a>. It starts with an email address, exactly as The Bondi Store did.</p>
+
+</section>

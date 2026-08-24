@@ -1036,8 +1036,21 @@ func main() {
 			log.Info("admin: tenant suspension gate disabled (MARKETPLACE_PLATFORM_API_URL is empty)")
 		}
 
+		// TenantGate is assigned nil, not a method value on a nil *Gate,
+		// when the gate itself is unwired: a method value formed on a nil
+		// receiver is a non-nil func (RequireActiveTenant does its own
+		// g == nil check internally), which would make every `!= nil`
+		// guard downstream (admin/routes.go, admin/mobile_routes.go) dead
+		// code — this is the third instance of that pattern on this
+		// branch (#287 review, F3). Keeping the explicit nil here makes
+		// those guards real instead of decorative.
+		var adminTenantGateHandler gin.HandlerFunc
+		if tenantGate != nil {
+			adminTenantGateHandler = tenantGate.RequireActiveTenant()
+		}
+
 		adminDeps = admin.Deps{
-			TenantGate:               tenantGate.RequireActiveTenant(),
+			TenantGate:               adminTenantGateHandler,
 			ProductHandler:           productHandler,
 			CategoryHandler:          categoryHandler,
 			VariantHandler:           variantHandler,

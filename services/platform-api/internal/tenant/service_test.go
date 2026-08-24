@@ -144,6 +144,18 @@ func (f *fakeRepo) UpdateEditable(ctx context.Context, id string, patch map[stri
 	return t, nil
 }
 
+// Suspend/Unsuspend are exercised against a real DB in
+// suspend_integration_test.go (the cascade needs real transactions and the
+// stores table); these stubs exist only to satisfy the Repository interface
+// for the unit tests in this file.
+func (f *fakeRepo) Suspend(ctx context.Context, tenantID string) (*SuspendResult, error) {
+	return nil, apperrors.Internal("not_implemented", "fakeRepo.Suspend is not implemented")
+}
+
+func (f *fakeRepo) Unsuspend(ctx context.Context, tenantID string) (*SuspendResult, error) {
+	return nil, apperrors.Internal("not_implemented", "fakeRepo.Unsuspend is not implemented")
+}
+
 // Phase Q: slug-related tests (IsSlugAvailable, SlugExists) moved
 // to the store package along with the slug itself. See
 // internal/store for equivalent coverage.

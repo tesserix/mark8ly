@@ -16,24 +16,34 @@ issue: **#260**. Each endpoint is its own issue.
 
 **Delivered and live in production:** #274 (front door), #275 (auth), #276
 (`/admin/audit-logs`), #277 (`/admin/entities/tenants`), #279 (`/admin/conversions`),
-#283 (`/admin/onboarding/funnel` + `/sessions`), #282 (`/admin/kpis`).
+#282 (`/admin/kpis`), #283 (`/admin/onboarding/funnel` + `/sessions`), #284
+(`/admin/billing/subscriptions`), #285 (`/admin/billing/trials`).
 
-**Open in the milestone:** #281, #284, #285, #286, #287, #288, #289, plus the blocked
+**Open in the milestone:** #281, #286, #287, #288, #289, plus the blocked
 #278/#280/#290, plus #319 (OpenBao credentials, a different concern grouped in).
+
+**#289 is the last simple read.** Everything else remaining is a write (#281, #286,
+#287, #288) — see trap 3, and trap 2 before touching #287's routing.
 
 **Reusable pieces the next endpoint inherits**, beyond the surface itself:
 
 | package | what it gives you |
 |---|---|
-| `marketplace-api/internal/tenantdirectory` | tenant list/detail/by-owner-email from platform-api |
+| `marketplace-api/internal/tenantdirectory` | tenant list/detail/by-owner-email, and an `IDs` filter for batch lookup |
 | `marketplace-api/internal/onboardingfunnel` | funnel counters + session rows |
 | `marketplace-api/internal/estatecounts` | active tenant/store counts |
+| `marketplace-api/internal/billing/trial` | `TrialDays`, `DefaultExpiryWindow`, `CountExpiring`, `ListExpiring` — owns "what a trial is and when it ends" |
+| `marketplace-api/internal/billing/pricing` | the price catalog, in **minor units**, by plan/period/currency with developed and PPP tiers |
+| `platformadmin.resolveMoney` | the shared money resolver both billing endpoints use |
+| `subscription.AllStatuses()` | all ten statuses, verified against the DB CHECK constraint |
 | `platform-api` `strictInternal` group | the fail-closed internal mount (`cmd/server/main.go`) |
-| `subscription.TrialExpiryHorizon` | the shared 7-day "expiring" window — **#285 must reuse it** |
 
 All three clients share one shape (a `do` helper, a `maxBody` cap, `X-Internal-Auth`,
 and an `ErrUnavailable` that must never be conflated with an empty result). Copy the
 nearest one rather than inventing a fourth.
+
+**Money is available locally.** `pricing.MustGet` **panics** on a miss — never call it
+from a handler. Use `resolveMoney`, which omits the amount rather than faking one.
 
 ## Read these first
 
@@ -83,7 +93,7 @@ rows.
   the console because `tenantRow` is a projection. A passthrough leaks every field
   added upstream, silently
 
-## Six traps that each cost real time
+## Seven traps that each cost real time
 
 1. **`/api/v1/admin/*` is JWT-gated at the mesh.** An Istio `AuthorizationPolicy`
    (`require-customer-auth`, namespace `istio-ingress`, repo `tesserix-k8s`) denies
@@ -140,6 +150,38 @@ rows.
    test that checks a key exists passes on a fabricated `0`. Give each stub a
    distinct non-zero value and assert the values.
 
+7. **A claim is not a guarantee — including your own.** Trap 6's cousin, and the
+   costliest thing in this milestone so far. **Eleven instances**, and the three
+   worst were *conclusions about the code*, not weak tests:
+
+   | claim | reality |
+   |---|---|
+   | "`current_period_end` is the trial-end column" (#282) | The rule lives in `expiry_cron.go`: `created_at + TrialDays` with no Stripe subscription. The counter was **structurally zero** in production and reported as verified. |
+   | "mark8ly holds no prices" (#285 spec) | `internal/billing/pricing/catalog.go` holds them in minor units. The conclusion came from finding `PriceIDFor` and stopping. |
+   | "there are eight subscription statuses" | There are **ten**. Read the first eight of a const block and concluded. |
+   | "the test loops over these constants so a ninth fails loudly" (a code comment) | It hand-wrote the list. Adding a constant changed nothing. |
+   | that comment's *fix*, claiming the same guarantee | The hand-written list had merely **moved** into `AllStatuses()`. |
+
+   Two rules, and the second is the one people skip:
+
+   - **For every computed value, check the rule against whatever else in the system
+     enforces it.** The cron that expires trials, the endpoint the merchant sees, the
+     DB CHECK constraint. Mutation testing proves a test *constrains* the code; it
+     cannot prove the code asks the right question. Nothing internal to a feature can.
+   - **Concluding that something does not exist requires a search, not a single
+     lookup.** "There is no price table" and "there is no other definition of trial
+     end" were both wrong, and both were one `grep` away from being caught.
+
+   And when you write a comment asserting a property — that a test covers something,
+   that a value can never be zero — **check it the way you would check code.** Three
+   of the eleven were prose that ran ahead of the implementation, twice in a row on
+   the same line. A confident comment is worse than none: it redirects the next
+   reader away from looking.
+
+   Where a real authority exists, test against it. `subscription.AllStatuses()` is
+   verified against the `store_subscriptions.status` CHECK constraint, because Go
+   cannot enumerate a type's constants and Postgres enforces that list on every write.
+
 ## Environment
 
 - **Use the LAN IP, not `localhost`** — a native Postgres squats on 127.0.0.1:
@@ -194,16 +236,25 @@ Two failure modes seen more than once:
 
 Reads before writes; **#288 (purge) last** — it is irreversible.
 
-Good next candidate: **#285** (expiring trials with dunning state) — `subscription.
-TrialExpiryHorizon` and `CountTrialsExpiring` already exist with pinned semantics, so
-the definition of "expiring" is settled and only the listing plus dunning state is new.
-Note that `subscriptions.store_id` is unique, so trials are **per store, not per
-tenant**; decide explicitly whether the view lists per store or rolls up, because the
-two produce different numbers from identical data.
+Good next candidate: **#289** (`GET /admin/health` — self-reported dependency
+health). It is the **last read** in the milestone; everything else remaining is a
+write. Likely small, but check what "dependency" means here before designing: the
+surface already talks to platform-api over three clients, and a health endpoint that
+reports on dependencies it never actually exercises would be the purest form of
+trap 7.
 
-**#284** carries an open design question the issue itself flags: subscriptions are
-per-store and plans are Go descriptors rather than DB rows, so a cross-tenant view may
-need a projection. Say so on the issue if it does, rather than guessing.
+Then the writes — **#281**, **#286**, **#287**, **#288** — in that order, with
+**#288 (purge) last** because it is irreversible. Every one needs
+`EmitOperatorAction` (trap 3), and #287 needs trap 2 checked before its routing is
+touched.
+
+**Production data shapes what verification can prove.** `store_subscriptions` is
+**empty** (4 tenants, 4 stores, no merchant has entered the billing flow — it needs
+an explicit call with a Stripe customer). So the billing endpoints correctly serve
+`[]`, and their row-shaping is unexercised in production. When you verify a new
+endpoint, say which of your checks are data-independent — status codes, validation,
+clamps — and which are merely "no data reached this code". An empty `200` is not a
+passing integration check.
 
 **Write endpoints** (#281, #286, #287, #288) all need `EmitOperatorAction` — see trap
 3. #287 additionally needs trap 2 checked before you touch routing.
@@ -213,14 +264,24 @@ need a projection. Say so on the issue if it does, rather than guessing.
 - **#322** — `onboarding` declares `StatusAbandoned`/`StatusExpired` and its package
   doc claims a gc, but nothing writes either value and no gc exists. #283 derives
   abandoned from idle time because of this. Fix the doc at minimum.
-- **#323** — neither service's `main.go` wiring is verified by any test; deleting a
-  wiring site builds clean and passes everything. Confirmed across all three features
-  in this series. The fix is extracting the wiring into a testable function, which
-  also touches shipped code.
+- **#323** — neither service's `main.go` wiring is verified by any test. **Five
+  instances now**, with three different failure modes, none of them chosen: routes
+  silently unmounted (most), a **nil interface that panics at runtime** (the KPI
+  `Subscriptions` dependency), and one that fails to *compile* by accident of an
+  unused variable while a two-line deletion still unmounts silently. The fix is
+  extracting the wiring into a testable function; the assertion should be that every
+  dependency a mounted route dereferences is non-nil at **every** site, and that the
+  two sites construct equivalent `Deps`.
+- **#326** — `planchange.go:225` hardcodes `90 * 24 * time.Hour` instead of
+  `trial.TrialDays`, and sends it to **Stripe** as `trial_end`. A missed edit there
+  means disagreeing with Stripe about a billing date.
 - **#311** (store-less audit rows unprunable — decided: never pruned, needs the guard
   made deliberate), **#312** (gateway policy documentation), **#316/#317** (integration
   fixture drift; #317 covers the `store_subscriptions_store_id_fkey` failures you will
-  see in `internal/subscription` — pre-existing, scope your runs with `-run`),
+  see in `internal/subscription` — pre-existing, scope your runs with `-run`. It also
+  covers an **env-var split**: `internal/billing/trial`'s older tests gate on
+  `TEST_DB_DSN` while the repo uses `TEST_DATABASE_URL`, so 8 failures were *skipping
+  silently* — a skip and a pass look identical in a summary line),
   **#318** (`audit.NewEmitter` accepts a nil `Repo` and panics a worker goroutine).
 - **Local toolchain drift:** vet/LSP report `go.work requires go >= 1.26.6 (running
   go 1.26.5)`. Pre-existing, harmless to tests, noisy in diagnostics.

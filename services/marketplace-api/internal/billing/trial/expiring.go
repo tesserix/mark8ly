@@ -28,6 +28,7 @@ type ExpiringRow struct {
 	Plan             string
 	Period           string
 	BillingCurrency  *string
+	PriceTier        subscription.PriceTier
 	HasPaymentMethod bool
 	Status           string
 }
@@ -105,6 +106,7 @@ func ListExpiring(ctx context.Context, db *gorm.DB, asOf time.Time, window time.
 			Plan:             string(r.Plan),
 			Period:           string(r.SubscriptionPeriod),
 			BillingCurrency:  r.BillingCurrency,
+			PriceTier:        r.PriceTier,
 			HasPaymentMethod: r.HasDefaultPaymentMethod,
 			Status:           string(r.Status),
 		})

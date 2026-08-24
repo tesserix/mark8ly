@@ -45,13 +45,17 @@ const (
 // BillingTrialsHandler serves the platform console's GET
 // /admin/billing/trials (#285): trials about to expire, page by page.
 //
-// mark8ly holds no prices anywhere in this workspace — PriceIDFor returns a
-// Stripe price ID, not an amount — so the row deliberately carries no
-// `amount` key. And a trial cannot be in dunning: the dunning ladder selects
-// status IN (past_due, expired, store_closed), status is single-valued, and
-// a trialing row's status is 'trialing'. So no `dunning_state` key either.
-// Both are structural absences, not nulled-out fields — see billing_trials_
-// test.go for the raw-body assertions that pin this.
+// amount is resolved via the same resolveMoney helper
+// /admin/billing/subscriptions uses, so the two surfaces cannot disagree
+// about what a plan costs (#328). It is omitted, never null or zero, when
+// resolveMoney reports ok=false — which is the normal outcome for every row
+// on plan="trial": the catalog holds no Price objects for `trial` or
+// `marketplace` by design. A trial cannot be in dunning either: the dunning
+// ladder selects status IN (past_due, expired, store_closed), status is
+// single-valued, and a trialing row's status is 'trialing'. So no
+// `dunning_state` key. All three are structural absences, not nulled-out
+// fields — see billing_trials_test.go for the raw-body assertions that pin
+// this.
 type BillingTrialsHandler struct {
 	trials TrialLister
 	dir    TenantDirectory
@@ -88,7 +92,11 @@ func (h *BillingTrialsHandler) Register(g *gin.RouterGroup) {
 // gets its name omitted rather than a blank string — see list() for why
 // that disagreement is also logged. BillingCurrency is omitempty for the
 // same reason trial.ExpiringRow carries it as a pointer: a store that has
-// never taken a currency has none to report, not an empty one.
+// never taken a currency has none to report, not an empty one. Amount is a
+// *money with omitempty, mirroring subscriptionRow: resolveMoney returning
+// ok=false (no billing_currency, or a plan/period/currency the catalog has
+// no price for — trial and marketplace by design) means the row carries NO
+// amount key at all, never null and never a guessed 0.
 type trialRow struct {
 	TenantID            string  `json:"tenant_id"`
 	TenantName          string  `json:"tenant_name,omitempty"`
@@ -98,6 +106,7 @@ type trialRow struct {
 	Plan                string  `json:"plan"`
 	Period              string  `json:"period"`
 	BillingCurrency     *string `json:"billing_currency,omitempty"`
+	Amount              *money  `json:"amount,omitempty"`
 	PaymentMethodOnFile bool    `json:"payment_method_on_file"`
 	Status              string  `json:"status"`
 }
@@ -191,7 +200,7 @@ func (h *BillingTrialsHandler) lookupTenantNames(ctx context.Context, rows []tri
 }
 
 func toTrialRow(r trial.ExpiringRow, names map[string]string, asOf time.Time) trialRow {
-	return trialRow{
+	row := trialRow{
 		TenantID:      r.TenantID,
 		TenantName:    names[r.TenantID],
 		StoreID:       r.StoreID,
@@ -206,6 +215,12 @@ func toTrialRow(r trial.ExpiringRow, names map[string]string, asOf time.Time) tr
 		PaymentMethodOnFile: r.HasPaymentMethod,
 		Status:              r.Status,
 	}
+
+	if m, ok := resolveMoney(r.Plan, r.Period, r.BillingCurrency, r.PriceTier); ok {
+		row.Amount = &m
+	}
+
+	return row
 }
 
 // daysRemaining is computed from asOf — the SAME instant the query itself

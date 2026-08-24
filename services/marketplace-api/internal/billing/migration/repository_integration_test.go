@@ -39,12 +39,16 @@ func openIntegrationDB(t *testing.T) *gorm.DB {
 }
 
 // seedStoreForReview inserts the parent stores row that
-// store_subscriptions.store_id (and, transitively, migration_fast_path_reviews
-// via the app's tenant/store scoping convention) requires via foreign key.
-// CountryCode/CurrencyCode/Timezone must be values already present in the
-// countries/currencies/timezones reference tables the stores table FKs to —
-// GB/GBP/Europe/London are seeded by the base migrations; IE/Europe/Dublin
-// are NOT and will fail with a FK violation.
+// store_subscriptions.store_id requires via foreign key (see
+// seedSubscriptionForStore below). marketplace-api's stores table is a local
+// projection of platform-api's (migrations/000001_products_initial.up.sql) —
+// plain country_code/currency_code/timezone columns with no reference-data
+// foreign keys, only stores_slug_unique and the stores_status_valid CHECK
+// (status IN ('active','suspended','archived')). So the country/currency/
+// timezone values here need only be plausible strings; GB/GBP/Europe/London
+// are used for consistency with other fixtures in this repo (e.g.
+// seedStoreForCSV in internal/handlers/platformadmin/health_checks_integration_test.go),
+// not because any FK or seeded reference row requires them.
 func seedStoreForReview(t *testing.T, db *gorm.DB, tenantID, storeID uuid.UUID) {
 	t.Helper()
 	s := &stores.Store{

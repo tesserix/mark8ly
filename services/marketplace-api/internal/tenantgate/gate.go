@@ -2,13 +2,17 @@
 // refuses ALL admin traffic for a suspended tenant (#287).
 //
 // StoreMiddleware (internal/stores) already refuses a suspended tenant on
-// /admin/stores/:storeId, but that group is one of four admin route groups.
-// The other three — /admin, /admin/account and the SSO group
-// /admin/tenants/:tenantId — are tenant-scoped, not store-scoped, so
-// StoreMiddleware never runs on them. A suspended tenant with an existing
-// session (or a tenant with zero stores) would otherwise keep full access
-// to those groups until the session expired. This package closes that gap
-// at the tenant level, independent of any specific store.
+// /admin/stores/:storeId, but that group is one of FIVE admin route groups
+// (four web + the mobile group, internal/handlers/admin/mobile_routes.go,
+// which was missed in the original design and fixed under F1/#287). The
+// other four — /admin, /admin/account, the SSO group
+// /admin/tenants/:tenantId, and the mobile group's non-store-scoped routes
+// (platform-support, account, /mobile/admin/stores) — are tenant-scoped,
+// not store-scoped, so StoreMiddleware never runs on them. A suspended
+// tenant with an existing session (or a tenant with zero stores) would
+// otherwise keep full access to those groups until the session expired.
+// This package closes that gap at the tenant level, independent of any
+// specific store.
 //
 // Deliberately NOT modelled on internal/subscription/readonly: that
 // middleware allowlists billing/tax/recovery routes because a read-only
@@ -50,8 +54,14 @@ type cacheEntry struct {
 
 // Gate caches tenant status in-process to avoid a platform-api round trip
 // on every admin request. The production admin deployment runs a single
-// replica, so this cache is coherent; if it is ever scaled out, each pod
-// simply fetches more often, which stays correct — just less cache-efficient.
+// replica, so this cache is coherent. If it is ever scaled out, this stops
+// being merely "less cache-efficient": Invalidate (called from the platform
+// console's suspend/unsuspend handler) reaches only the pod that served
+// that request, so every OTHER pod keeps serving its cached status until
+// its own ttl expires — a suspend can be bypassed, and an unsuspend can
+// stay invisible, on any pod that didn't see the invalidation, for up to
+// ttl. Correctness currently depends on replicas: 1; multi-replica would
+// need a shared cache (e.g. Redis) or a pub/sub invalidation fan-out.
 type Gate struct {
 	lookup Lookup
 	logger *slog.Logger
@@ -84,14 +94,33 @@ func New(l Lookup, logger *slog.Logger, ttl time.Duration) *Gate {
 // already holds a valid session for this exact tenant, so there is nothing
 // to hide about the tenant's existence — only its access is refused.
 //
-// Staleness handling, mirroring StoreMiddleware's asymmetry:
-//   - A cached suspended (non-active) status is authoritative at ANY age —
-//     never re-fetch to give the tenant the benefit of the doubt.
+// Staleness handling, mirroring StoreMiddleware's asymmetry, WITH ONE
+// DELIBERATE DIVERGENCE (see the last bullet):
+//   - A cached suspended (non-active) status is never served AS ACCESS,
+//     regardless of age — but it IS re-fetched once ttl has elapsed (see
+//     the cached/entry.status != statusActive branch below), and an
+//     authoritative "active" answer from that re-fetch lifts it
+//     immediately. This has to be true: it is exactly what lets an
+//     unsuspend take effect without waiting for every session to expire.
+//     What never happens is decaying a suspended verdict into access on a
+//     FAILED refresh — a stale suspended entry whose re-fetch errors stays
+//     refused.
 //   - A cached active status past ttl is refreshed; if the refresh fails,
 //     the stale active status is served (fail open on the merchant's side).
 //   - No cached value at all plus a failed lookup fails OPEN (serves). A
 //     cold cache during a platform-api outage must not lock out every
 //     merchant. This is the gate's one deliberate hole.
+//   - Divergence from StoreMiddleware: StoreMiddleware caps its fail-open
+//     behavior with an absolute StaleCeil (24h) — past that age a stale row
+//     404s even if it was last known active, bounding how long an outage
+//     can paper over a stale answer. This gate has NO such ceiling: a
+//     cached active tenant is served indefinitely across repeated failed
+//     refreshes, for as long as platform-api stays unreachable, no matter
+//     how long that is. This is a deliberate divergence, not an oversight —
+//     it follows the same "must not lock out every merchant" reasoning as
+//     the cold-cache hole above — but it is a genuine gap versus
+//     StoreMiddleware's design and is called out here so it isn't mistaken
+//     for a faithful mirror of it.
 //
 // A nil Gate (no platform-api client configured) and a request with no
 // tenant_id on the context are both treated as "this middleware cannot

@@ -27,11 +27,13 @@ type NotificationLister interface {
 // log.
 //
 // This is the IN-APP notification bell, not a sent-mail log. #332 asked for
-// one; no record of outbound mail exists anywhere in this estate —
-// transactional mail is fire-and-forget through internal/email, no provider
-// event webhook was ever rebuilt, and campaign_recipients only ever writes
-// `sent`. That work is #348. Nothing here reports a delivery outcome, and
-// nothing here should be made to look as though it does.
+// one; no DELIVERY-OUTCOME record exists anywhere in this estate — nothing
+// receives provider events, so nothing knows whether an email was
+// delivered, bounced or dropped. Two partial per-email handoff records do
+// exist: campaign_recipients.status (only ever written as `sent`) and
+// shipments.dispatched_email_sent_at (a dedup timestamp for the shipped
+// email). Neither is a delivery outcome. That work is #348. Nothing here
+// should be made to look as though it reports one.
 type NotificationsHandler struct {
 	db     *gorm.DB
 	repo   NotificationLister

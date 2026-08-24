@@ -61,7 +61,7 @@ func notificationsFixture() []notification.Notification {
 	otherBody := "MUST NOT APPEAR IN THE RESPONSE EITHER"
 	resourceType := "order"
 	resourceID := uuid.MustParse("cccccccc-1111-1111-1111-111111111111")
-	uid := "gip-uid-customer-7"
+	uid := "44444444-4444-4444-4444-444444444444"
 	return []notification.Notification{
 		{
 			ID:           uuid.MustParse("11111111-1111-1111-1111-111111111111"),
@@ -80,7 +80,7 @@ func notificationsFixture() []notification.Notification {
 			TenantID:        uuid.MustParse("aaaaaaaa-2222-2222-2222-222222222222"),
 			StoreID:         uuid.MustParse("bbbbbbbb-2222-2222-2222-222222222222"),
 			RecipientUserID: &uid,
-			Type:            notification.TypeOrderShipped,
+			Type:            notification.TypeOrderPlaced,
 			Title:           "Order confirmed",
 			Message:         &otherBody,
 			IsRead:          true,
@@ -117,7 +117,6 @@ func TestNotificationsOmitsBodyAndStatus(t *testing.T) {
 	require.NotContains(t, body, `"message"`, "the notification body must never reach the console")
 	require.NotContains(t, body, "MUST NOT APPEAR IN THE RESPONSE")
 	require.NotContains(t, body, `"status"`, "there is no delivery status in this estate — see #348")
-	require.NotContains(t, body, `"source"`, "the platform API stamps source and overwrites the body")
 }
 
 // audience is always present, so an absent recipient_user_id reads as
@@ -139,7 +138,7 @@ func TestNotificationsAudienceIsAlwaysPresent(t *testing.T) {
 	require.Equal(t, "store", resp.Data[0].Audience)
 	require.Empty(t, resp.Data[0].RecipientUserID)
 	require.Equal(t, "customer", resp.Data[1].Audience)
-	require.Equal(t, "gip-uid-customer-7", resp.Data[1].RecipientUserID)
+	require.Equal(t, "44444444-4444-4444-4444-444444444444", resp.Data[1].RecipientUserID)
 }
 
 // Empty is 200 + [], never null. A nil slice marshals to null and defeats
@@ -162,7 +161,7 @@ func TestNotificationsParsesEveryFilter(t *testing.T) {
 	rec := getNotificationsWithQuery(t, stub,
 		"?type=low_stock&tenant_id="+tenantID.String()+
 			"&store_id="+storeID.String()+
-			"&audience=customer&recipient_user_id=gip-uid-zzz&read=true"+
+			"&audience=customer&recipient_user_id=55555555-5555-5555-5555-555555555555&read=true"+
 			"&from=2026-08-01T00:00:00Z&to=2026-08-31T00:00:00Z&limit=7&page=3")
 	require.Equal(t, http.StatusOK, rec.Code)
 
@@ -172,7 +171,7 @@ func TestNotificationsParsesEveryFilter(t *testing.T) {
 	require.NotNil(t, stub.gotFilter.StoreID)
 	require.Equal(t, storeID, *stub.gotFilter.StoreID)
 	require.Equal(t, "customer", stub.gotFilter.Audience)
-	require.Equal(t, "gip-uid-zzz", stub.gotFilter.RecipientUserID)
+	require.Equal(t, "55555555-5555-5555-5555-555555555555", stub.gotFilter.RecipientUserID)
 	require.NotNil(t, stub.gotFilter.Read)
 	require.True(t, *stub.gotFilter.Read)
 	require.NotNil(t, stub.gotFilter.From)

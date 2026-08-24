@@ -90,8 +90,11 @@ type Deps struct {
 	// the nil-safe pattern used for the other optional client-backed
 	// routes above.
 	//
-	// This is the notification BELL, not a sent-mail log — no record of
-	// outbound email exists anywhere in this estate. See #348.
+	// This is the notification BELL, not a sent-mail log — no
+	// delivery-outcome record exists anywhere in this estate. Two partial
+	// per-email handoff records do exist (campaign_recipients.status,
+	// shipments.dispatched_email_sent_at), but neither reports delivery,
+	// bounce or drop. See #348.
 	Notifications NotificationLister
 }
 

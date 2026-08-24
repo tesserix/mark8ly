@@ -5,4 +5,4 @@
 -- serve a query with no store_id predicate.
 --
 -- Same reason migration 000101 added idx_audit_logs_created_at for #276.
-CREATE INDEX notif_created_at_idx ON notifications (created_at DESC);
+CREATE INDEX IF NOT EXISTS notif_created_at_idx ON notifications (created_at DESC);

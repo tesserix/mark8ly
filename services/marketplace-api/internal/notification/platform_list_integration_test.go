@@ -93,7 +93,7 @@ func TestListPlatform_AudienceDiscriminatesOnRecipient(t *testing.T) {
 	repo := notification.NewRepository()
 
 	tenantID, storeID := uuid.New(), uuid.New()
-	uid := "gip-uid-customer-1"
+	uid := "66666666-6666-6666-6666-666666666666"
 	seedNotification(t, db, notification.Notification{TenantID: tenantID, StoreID: storeID, Title: "Store row"})
 	seedNotification(t, db, notification.Notification{TenantID: tenantID, StoreID: storeID, Title: "Customer row", RecipientUserID: &uid})
 
@@ -166,7 +166,7 @@ func TestListPlatform_RecipientUserIDFilter(t *testing.T) {
 	repo := notification.NewRepository()
 
 	tenantID, storeID := uuid.New(), uuid.New()
-	uidA, uidB := "gip-uid-aaa", "gip-uid-bbb"
+	uidA, uidB := "77777777-7777-7777-7777-777777777777", "88888888-8888-8888-8888-888888888888"
 	seedNotification(t, db, notification.Notification{TenantID: tenantID, StoreID: storeID, Title: "For A", RecipientUserID: &uidA})
 	seedNotification(t, db, notification.Notification{TenantID: tenantID, StoreID: storeID, Title: "For B", RecipientUserID: &uidB})
 

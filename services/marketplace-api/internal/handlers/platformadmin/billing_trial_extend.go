@@ -408,16 +408,34 @@ func (h *BillingTrialExtendHandler) respondExtendErr(c *gin.Context, err error) 
 			"message": "stripe reports this subscription is no longer trialing; it cannot be extended until the two agree",
 		})
 	case errors.Is(err, trial.ErrTrialEndNotAfterStripe):
-		// 400: the operator can fix this by picking a later date. The
-		// message is the domain error's own text, which carries BOTH the
-		// requested end and the one Stripe currently holds, so the retry can
-		// be informed rather than guessed. Echoing err.Error() is safe here
-		// and only here: this sentinel's message is composed entirely from
-		// our own two timestamps, never from a driver or a third party
-		// (#358 F2).
+		// 400: the operator can fix this by picking a later date — in the
+		// common case. The message is the domain error's own text, which
+		// carries BOTH the requested end and the one Stripe currently
+		// holds, so the retry can be informed rather than guessed. Echoing
+		// err.Error() is safe here and only here: this sentinel's message
+		// is composed entirely from our own two timestamps, never from a
+		// driver or a third party (#358 F2).
+		//
+		// #358 N1: when the requested date EQUALS what Stripe already
+		// holds, "pick a later date" is the wrong instruction — there is no
+		// later date to pick, because Stripe already has this exact one.
+		// That equality is the signature of a local row that fell behind
+		// Stripe after an ErrStripeAppliedLocalWriteFailed divergence: the
+		// Stripe call already succeeded at this date, only the local commit
+		// failed, and this endpoint refuses the corrective retry rather
+		// than guessing (extend.go's ErrTrialEndNotAfterStripe doc explains
+		// why). Detected via errors.As on the concrete
+		// TrialEndNotAfterStripeError rather than string-matching the
+		// message; a plain wrapped sentinel (no struct) falls through to
+		// the generic message below unchanged.
+		message := err.Error()
+		var notAfter *trial.TrialEndNotAfterStripeError
+		if errors.As(err, &notAfter) && notAfter.AtStripeEnd() {
+			message = "the requested trial_ends_at equals the trial end stripe currently holds; this is not a bad date, it means the local record fell behind stripe after a prior extension where stripe applied the change but this service failed to record it — see stripe_applied_local_write_failed. This requires manual reconciliation, not a different date."
+		}
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "trial_end_not_after_stripe",
-			"message": err.Error(),
+			"message": message,
 			"field":   "trial_ends_at",
 		})
 	case errors.Is(err, trial.ErrTrialEndTooFar):

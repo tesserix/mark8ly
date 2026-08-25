@@ -506,3 +506,58 @@ func TestTrialExtendNotAfterStripeMapsTo400(t *testing.T) {
 	require.Contains(t, msg, "2026-12-01T00:00:00Z")
 	require.Empty(t, aud.events, "a refusal emits no audit row")
 }
+
+// #358 N1. When the requested end EQUALS what stripe already holds — not
+// strictly before it — the operator is not looking at a bad date: they are
+// looking at a local row that fell behind stripe after an
+// ErrStripeAppliedLocalWriteFailed divergence. The 400 status and the
+// trial_end_not_after_stripe code stay the same as the strictly-earlier
+// case above; only the message changes, and it must say "reconcile", not
+// "pick a later date".
+func TestTrialExtendNotAfterStripeAtStripeEndSaysReconcile(t *testing.T) {
+	same := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	domainErr := &trial.TrialEndNotAfterStripeError{
+		Requested: same,
+		StripeEnd: same.Unix(),
+	}
+
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{err: domainErr}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "trial_end_not_after_stripe", body["error"],
+		"the code stays the same as the strictly-earlier case; only the message changes")
+
+	msg, _ := body["message"].(string)
+	require.Contains(t, msg, "manual reconciliation")
+	require.Contains(t, msg, "stripe_applied_local_write_failed")
+	require.NotContains(t, msg, "pick a later date",
+		"there is no later date to pick when the requested date already equals stripe's")
+	require.Empty(t, aud.events, "a refusal emits no audit row")
+}
+
+// #358 N1. The strictly-earlier case must still get the original two-date
+// message, not the reconciliation message — the two refusals look the same
+// at the HTTP layer (same code, same status) but mean different things to
+// an operator, and this pins that the distinguishing logic actually
+// distinguishes rather than firing on every ErrTrialEndNotAfterStripe.
+func TestTrialExtendNotAfterStripeStrictlyEarlierStaysGeneric(t *testing.T) {
+	requested := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	stripeEnd := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	domainErr := &trial.TrialEndNotAfterStripeError{
+		Requested: requested,
+		StripeEnd: stripeEnd.Unix(),
+	}
+
+	rec := postExtend(t, &stubExtender{err: domainErr}, &capturedAudit{}, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	msg, _ := body["message"].(string)
+	require.Contains(t, msg, "2026-11-15T00:00:00Z")
+	require.Contains(t, msg, "2026-12-01T00:00:00Z")
+	require.NotContains(t, msg, "manual reconciliation")
+}

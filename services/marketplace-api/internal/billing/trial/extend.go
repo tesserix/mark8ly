@@ -2,6 +2,8 @@ package trial
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"reflect"
@@ -59,6 +61,21 @@ var (
 	// "extend", and an accidental shortening bills a merchant early, which
 	// is not recoverable by a later correction. The card-LESS path is
 	// unchanged: shortening a card-less trial stays legal (#358).
+	//
+	// A SECOND consequence, undocumented before #358 N1: this check runs
+	// BEFORE UpdateTrialEnd, so it also fires on the retry that follows an
+	// ErrStripeAppliedLocalWriteFailed divergence. In that case Stripe
+	// already holds the target date Y (the first call succeeded there) and
+	// only the local commit failed; an operator retrying at Y hits
+	// end.Unix() <= current.TrialEnd here and is refused with THIS error,
+	// not rescued by it. The local row stays behind Stripe until a human
+	// reconciles it — this endpoint will not do it silently. That is
+	// deliberate too: the code fails closed rather than guessing whether an
+	// equal date means "operator picked a stale date" or "Stripe already
+	// applied this and the local write lost the race" — those look
+	// identical from here, and only a human with the ErrStripeAppliedLocalWriteFailed
+	// log line can tell them apart. See ErrStripeAppliedLocalWriteFailed for
+	// the divergence this leaves unresolved.
 	ErrTrialEndNotAfterStripe = errors.New("trial: new trial end is not after the trial end stripe currently holds")
 	// ErrStripeCall: Stripe was reached for and did not succeed. Nothing was
 	// written locally; the caller may retry.
@@ -72,6 +89,42 @@ var (
 	// subscription id and the exact trial_end Stripe now holds (#358).
 	ErrStripeAppliedLocalWriteFailed = errors.New("trial: stripe trial end was moved but the local write failed")
 )
+
+// TrialEndNotAfterStripeError carries the two dates behind
+// ErrTrialEndNotAfterStripe so a caller can tell "requested strictly before
+// what stripe holds" apart from "requested EXACTLY what stripe already
+// holds" — the latter is the signature of a local row that fell behind
+// Stripe after an ErrStripeAppliedLocalWriteFailed divergence, not of an
+// operator picking a bad date (#358 N1). Both cases still refuse with the
+// same sentinel and the same status; only the operator-facing message the
+// handler builds from this struct differs.
+type TrialEndNotAfterStripeError struct {
+	Requested time.Time
+	StripeEnd int64
+}
+
+// Error composes the same "requested X, stripe currently holds Y" text this
+// package has always produced, so err.Error() stays a stable, informative
+// string for logs and for any caller still matching on wording rather than
+// on the struct.
+func (e *TrialEndNotAfterStripeError) Error() string {
+	return fmt.Sprintf("%s: requested %s, stripe currently holds %s",
+		ErrTrialEndNotAfterStripe,
+		e.Requested.Format(time.RFC3339),
+		time.Unix(e.StripeEnd, 0).UTC().Format(time.RFC3339))
+}
+
+// Unwrap keeps errors.Is(err, ErrTrialEndNotAfterStripe) working for every
+// existing caller that matches on the sentinel rather than on this struct.
+func (e *TrialEndNotAfterStripeError) Unwrap() error { return ErrTrialEndNotAfterStripe }
+
+// AtStripeEnd reports whether the requested end exactly equals the trial_end
+// Stripe currently holds. True here means Stripe already has this date — a
+// local record fallen behind, most likely after ErrStripeAppliedLocalWriteFailed
+// — rather than an operator naming a date that is merely too early.
+func (e *TrialEndNotAfterStripeError) AtStripeEnd() bool {
+	return e.Requested.Unix() == e.StripeEnd
+}
 
 // maxStripeTrialWindow mirrors Stripe's documented bound on
 // SubscriptionUpdateParams.TrialEnd: "Can be at most two years from
@@ -258,10 +311,7 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 			// Both dates go in the message so the operator can retry
 			// immediately with an informed one instead of guessing.
 			if end.Unix() <= current.TrialEnd {
-				return fmt.Errorf("%w: requested %s, stripe currently holds %s",
-					ErrTrialEndNotAfterStripe,
-					end.Format(time.RFC3339),
-					time.Unix(current.TrialEnd, 0).UTC().Format(time.RFC3339))
+				return &TrialEndNotAfterStripeError{Requested: end, StripeEnd: current.TrialEnd}
 			}
 
 			anchor := time.Unix(current.BillingCycleAnchor, 0).UTC()
@@ -362,8 +412,31 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 //
 // A GENUINE retry — the same operator resending with the SAME
 // Idempotency-Key header and the same date — still produces the SAME key,
-// so Stripe still dedupes it. That is deliberate: it is what lets a retry
-// after a local-write failure converge instead of extending twice.
+// so Stripe still dedupes it ON THE PATHS THAT REACH THIS CALL AT ALL.
+//
+// CORRECTED (#358 N1): this used to also claim that property is what lets a
+// retry after a local-write failure converge instead of extending twice.
+// That is false on the one path it described. ErrTrialEndNotAfterStripe
+// (extend.go, above the Stripe call) runs BEFORE UpdateTrialEnd is ever
+// reached. After an ErrStripeAppliedLocalWriteFailed divergence — Stripe
+// already moved to date Y, the local commit then failed — an operator
+// retrying at Y hits end.Unix() <= current.TrialEnd and is refused with a
+// 400 before Stripe is called a second time. This function's dedupe-key
+// property never even gets exercised on that retry, because the retry never
+// reaches it. The retry does NOT converge; it is refused, and the local row
+// stays behind Stripe until a human reconciles it (see
+// ErrTrialEndNotAfterStripe and ErrStripeAppliedLocalWriteFailed).
+//
+// What this key still does, and is still worth doing: it stops two
+// DIFFERENT operator requests from colliding at Stripe. Deriving the key
+// from the store and the date alone made this sequence, all inside Stripe's
+// 24h idempotency window, a silent no-op: extend to Dec 1 (key A, applied),
+// correct to Nov 1 (key B, applied), then change BACK to Dec 1 — key A
+// again, same subscription, same params, so Stripe replays its CACHED Dec 1
+// response and changes nothing. The reply then reports Dec 1, so no check
+// on our side can notice; the console would say Dec 1 while Stripe billed
+// Nov 1, charging the merchant EARLIER than shown. Folding the caller's own
+// key in is what this function was introduced to fix, and it still does.
 //
 // The empty-key fallback preserves the pre-#358 format for non-HTTP callers
 // (the handler makes the header mandatory, so production always supplies
@@ -373,8 +446,36 @@ func stripeIdempotencyKey(callerIdemKey string, storeID uuid.UUID, end time.Time
 	if base == "" {
 		base = "trial_extend:" + storeID.String()
 	}
-	return base + ":" + strconv.FormatInt(end.Unix(), 10)
+	key := base + ":" + strconv.FormatInt(end.Unix(), 10)
+
+	if len(key) <= stripeIdempotencyKeyMaxLen {
+		return key
+	}
+
+	// #358 N2: idempotency_keys.key (varchar(255)) only bounds the SCOPED
+	// key the handler stores ("trial_extend:<store>:<header>"). The key
+	// Stripe actually sees is that scoped key PLUS ":<unix second>", so a
+	// header of roughly 195-205 characters passes our own storage but
+	// produces a Stripe key over 255 characters, which Stripe rejects — a
+	// card-backed extension that can never succeed no matter how many times
+	// it is retried.
+	//
+	// Hashed only on this long tail, never unconditionally: the common case
+	// stays human-readable in Stripe's dashboard, which is worth keeping.
+	// The hash MUST be a pure function of `key` — no time, no randomness —
+	// because determinism is the entire point of an idempotency key: the
+	// SAME caller key and target second must always produce the SAME Stripe
+	// key, or the collision-avoidance property this function exists for
+	// breaks right along with it.
+	sum := sha256.Sum256([]byte(key))
+	return "trial_extend:h:" + hex.EncodeToString(sum[:])
 }
+
+// stripeIdempotencyKeyMaxLen is Stripe's documented limit on an
+// Idempotency-Key value: "must not exceed 255 characters"
+// (https://docs.stripe.com/api/idempotent_requests). Named so the 255 here
+// reads as "Stripe's rule", not as an arbitrary local number.
+const stripeIdempotencyKeyMaxLen = 255
 
 // stripeSubscriptionID returns the subscription's Stripe id, or "" when it
 // has none. A nil pointer and a pointer to "" mean the same thing here — the

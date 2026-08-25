@@ -1138,8 +1138,16 @@ func TestPurge_ReportsPerTableRowCounts(t *testing.T) {
 	require.EqualValues(t, 2, got["reviews"])
 	require.EqualValues(t, 10, rep.TotalRows, "TotalRows must be the sum, not a count of tables")
 
-	require.Len(t, rep.Tables, len(purgePlan(tenantID, storeIDs)),
-		"every step reports, including the zero-row ones — an omitted zero and an unenumerated table are indistinguishable")
+	// NOTE: this file is `package tenantpurge_test` (EXTERNAL), so purgePlan
+	// is not reachable here — the plan-vs-preview parity property is
+	// asserted by TestCountPlan_MatchesPurgePlanTableForTable in the
+	// INTERNAL purge_test.go, where it compiles. Here we assert only that
+	// every step reports, including the zero-row ones: an omitted zero and
+	// an unenumerated table are indistinguishable to a reader.
+	prev, err := Count(t.Context(), db, tenantID, storeIDs)
+	require.NoError(t, err)
+	require.Equal(t, len(prev.Tables), len(rep.Tables))
+	require.Greater(t, len(rep.Tables), 50, "the plan enumerates ~53 tables explicitly")
 }
 
 func TestCount_ReportsTheSameRowsAndDestroysNothing(t *testing.T) {
@@ -1169,7 +1177,7 @@ func TestPurge_SecondRunReportsZeroAndSucceeds(t *testing.T) {
 }
 ```
 
-Write `seedPurgeFixture(t, db, map[string]int) (tenantID string, storeIDs []string)` following whatever the file's existing seeding already does. **Do not hand-write `INSERT INTO stores`** — migration `000058` declares `storefront_customer_portal_secret CHAR(64) NOT NULL` and dropped its DEFAULT (verified in production: `is_nullable = NO`, no default), so a raw insert fails. Use the existing helper.
+`internal/tenantpurge/purge_integration_test.go` is **`package tenantpurge_test` (external)** and already imports `pkg/testdb`. Add your tests there, use `testdb.NewDB(t)` for `db` (it gates on `TEST_DATABASE_URL` and skips when unset — do NOT write a second gating helper; a parallel helper on a different env var is how #317's 19 tests silently never ran), and write `seedPurgeFixture(t, db, map[string]int) (tenantID string, storeIDs []string)` on top of the file's existing `seedTenant` helper. Because the package is external, **`purgePlan` and `countPlan` are not reachable from these tests** — assert against the exported `Purge`/`Count` only. **Do not hand-write `INSERT INTO stores`** — migration `000058` declares `storefront_customer_portal_secret CHAR(64) NOT NULL` and dropped its DEFAULT (verified in production: `is_nullable = NO`, no default), so a raw insert fails. Use the existing helper.
 
 - [ ] **Step 2: Run and watch them fail**
 
@@ -1454,7 +1462,18 @@ import (
 // migrations, because the migrations are what the plan was originally
 // derived from and re-reading them would only re-derive the same answer.
 func TestPurgePlan_CoversEveryTenantScopedTable(t *testing.T) {
-	db := testDB(t)
+	db := testdb.NewDB(t)
+	require.Empty(t, uncoveredTenantScopedTables(t, db),
+		"tenant-scoped tables neither purged, nor cascaded, nor declared an exclusion.\n"+
+			"A tenant purge would leave these rows behind. Either add a step to purgePlan or add the "+
+			"table to declaredExclusions WITH a justification in purge.go's package doc.")
+}
+
+// uncoveredTenantScopedTables is the guard's computation, extracted so the
+// test above and the probe test below run the SAME code — one asserting it
+// finds nothing, the other asserting it finds a table planted for it.
+func uncoveredTenantScopedTables(t *testing.T, db *gorm.DB) []string {
+	t.Helper()
 
 	type fk struct {
 		Child      string
@@ -1489,6 +1508,7 @@ func TestPurgePlan_CoversEveryTenantScopedTable(t *testing.T) {
 	for _, s := range purgePlan("11111111-1111-1111-1111-111111111111", []string{"22222222-2222-2222-2222-222222222222"}) {
 		deleted[s.table] = true
 	}
+	require.NotEmpty(t, deleted, "purgePlan returned no steps — the guard would vacuously pass")
 
 	// Cascade closure: a child of a deleted parent, via ON DELETE CASCADE,
 	// is itself deleted. Iterate to a fixed point — the graph has chains
@@ -1515,7 +1535,7 @@ func TestPurgePlan_CoversEveryTenantScopedTable(t *testing.T) {
 		"break_glass_lockouts":           true, // owned by postgres; DELETE aborts the whole tx
 	}
 
-	var uncovered []string
+	uncovered := make([]string, 0, 4)
 	for _, tb := range tables {
 		if !tb.HasTenant && !tb.HasStore {
 			continue // global reference data owns no tenant's rows
@@ -1526,34 +1546,31 @@ func TestPurgePlan_CoversEveryTenantScopedTable(t *testing.T) {
 		uncovered = append(uncovered, tb.TableName)
 	}
 	sort.Strings(uncovered)
-
-	require.Empty(t, uncovered,
-		"tenant-scoped tables neither purged, nor cascaded, nor declared an exclusion: %v\n"+
-			"A tenant purge would leave these rows behind. Either add a step to purgePlan or add the "+
-			"table to declaredExclusions WITH a justification in purge.go's package doc.", uncovered)
+	return uncovered
 }
 
-// The guard is only worth having if it fails. This asserts the closure
-// logic actually discriminates, rather than marking everything covered.
+// The guard is only worth having if it can fail. This runs the SAME
+// computation against a deliberately-uncovered table and asserts it is
+// reported.
+//
+// Asserting instead that information_schema can see the probe table would
+// be a test of information_schema, not of the guard: a coverage function
+// that returned "everything is covered" unconditionally would pass it.
 func TestPurgePlan_CoverageGuardDetectsAnUncoveredTable(t *testing.T) {
-	db := testDB(t)
+	db := testdb.NewDB(t)
+
 	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS tenantpurge_guard_probe (
 		id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL)`).Error)
 	t.Cleanup(func() { _ = db.Exec(`DROP TABLE IF EXISTS tenantpurge_guard_probe`).Error })
 
-	var n int64
-	require.NoError(t, db.Raw(`
-		SELECT count(*) FROM information_schema.columns
-		WHERE table_schema='public' AND table_name='tenantpurge_guard_probe' AND column_name='tenant_id'`).Scan(&n).Error)
-	require.EqualValues(t, 1, n, "probe table must be visible to the same query the guard uses")
-	// The guard test above, run in the same package with this table
-	// present, must report tenantpurge_guard_probe as uncovered. Run it
-	// manually per the plan's mutation step — asserting it here would mean
-	// duplicating the guard's body.
+	require.Contains(t, uncoveredTenantScopedTables(t, db), "tenantpurge_guard_probe",
+		"a tenant-scoped table that the plan neither deletes nor cascades to nor excludes must be reported")
 }
 ```
 
-Write `testDB(t)` following the package's existing integration helper.
+Use the shared `pkg/testdb.NewDB(t)` — it already gates on `TEST_DATABASE_URL` and skips when unset. Do **not** write a bespoke helper: a parallel helper gating on a different env var is exactly how #317's 19 tests came to skip silently while reading as passes.
+
+Note this file is `package tenantpurge` (INTERNAL) while `purge_integration_test.go` in the same directory is `package tenantpurge_test` (external). Go permits both in one directory; the internal one is required here because the guard asserts against the unexported `purgePlan`.
 
 - [ ] **Step 2: Run it — expect PASS on the first try**
 
@@ -1568,16 +1585,20 @@ This is the unusual case where red-first does not apply: the plan is already cor
 
 - [ ] **Step 3: Prove the guard discriminates**
 
+`TestPurgePlan_CoverageGuardDetectsAnUncoveredTable` already does this in-suite — it plants `tenantpurge_guard_probe` and asserts the shared helper reports it. Confirm it RAN and PASSED in the verbose output from Step 2, then prove the helper is not vacuously empty:
+
 ```bash
 cd services/marketplace-api
-DSN='postgres://dev:dev@192.168.1.110:5432/marketplace_db?sslmode=disable'
-docker run --rm postgres:15 psql "$DSN" -c \
-  "CREATE TABLE tenantpurge_guard_probe (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL)"
-TEST_DATABASE_URL="$DSN" go test -tags=integration -p 1 -count=1 ./internal/tenantpurge/ -run TestPurgePlan_CoversEvery 2>&1 | tail -10
-docker run --rm postgres:15 psql "$DSN" -c "DROP TABLE tenantpurge_guard_probe"
+# make the exclusion list swallow everything; the probe test MUST fail
+#   declaredExclusions[tb.TableName] -> true
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:5432/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/tenantpurge/ -run CoverageGuardDetects 2>&1 | tail -10
+echo "exit=$?"
 ```
 
-The middle run **must fail**, naming `tenantpurge_guard_probe`. `psql` is not installed locally; the `docker run` form is what works. Confirm the drop succeeded before moving on.
+Expected: FAIL. Revert. If it passes, the helper is not computing what the guard claims and the whole task is theatre.
+
+If the probe table is ever left behind by an interrupted run, drop it with `docker run --rm postgres:15 psql "$DSN" -c "DROP TABLE IF EXISTS tenantpurge_guard_probe"` — `psql` is not installed locally, and the guard test will keep failing until it is gone.
 
 - [ ] **Step 4: Commit**
 
@@ -2130,9 +2151,6 @@ func TestPurge_ReasonIsCappedByRunesNotBytes(t *testing.T) {
 	// UTF-8, which Postgres rejects on the jsonb write, which fails the
 	// audit emit — an irreversible destruction recorded nowhere.
 	long := strings.Repeat("é", 600)
-	body, err := json.Marshal(map[string]any{"store_slugs": []string{}, "reason_code": "goodwill_placeholder", "reason": long})
-	require.NoError(t, err)
-	_ = body
 
 	rec := doPurge(t, td, pg, emit, `{"store_slugs":[],"reason_code":"merchant_request","reason":"`+long+`"}`)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -2466,7 +2484,26 @@ The `platformadmin.Register(engine.Group("/api/v1/platform"), platformadmin.Deps
 
 `tenantLifecycleClient` is declared as the `platformadmin.TenantLifecycle` interface, which does not include `Teardown` — declare a second variable of the concrete `*tenantlifecycle.Client` type and assign both from one construction, rather than constructing the client twice.
 
-Add `tenantpurge.NewGormPurger(db *gorm.DB) Purger` to `internal/tenantpurge` — a two-method struct binding `db` into `Purge` and `Count`, so `platformadmin` depends on an interface rather than on package-level functions.
+Add to `internal/tenantpurge`:
+
+```go
+// GormPurger binds a *gorm.DB into Purge and Count so consumers can depend
+// on a two-method interface of their own rather than on package-level
+// functions.
+type GormPurger struct{ db *gorm.DB }
+
+func NewGormPurger(db *gorm.DB) *GormPurger { return &GormPurger{db: db} }
+
+func (g *GormPurger) Purge(ctx context.Context, tenantID string, storeIDs []string) (Report, error) {
+	return Purge(ctx, g.db, tenantID, storeIDs)
+}
+
+func (g *GormPurger) Count(ctx context.Context, tenantID string, storeIDs []string) (Report, error) {
+	return Count(ctx, g.db, tenantID, storeIDs)
+}
+```
+
+It returns the **concrete** `*GormPurger`, NOT `platformadmin.Purger`. `tenantpurge` must never import `platformadmin` — the dependency runs the other way, and this surface's convention (`TenantLifecycle`, `EstateCounts`, `TenantTeardown`) is that the CONSUMER declares the interface it needs. `*GormPurger` satisfies `platformadmin.Purger` structurally.
 
 - [ ] **Step 5: Run everything**
 

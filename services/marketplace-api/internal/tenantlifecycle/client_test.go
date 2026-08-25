@@ -2,6 +2,8 @@ package tenantlifecycle_test
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -63,4 +65,86 @@ func TestSuspend_UnparseableBodyIsError(t *testing.T) {
 		Suspend(context.Background(), "t1")
 	require.Error(t, err)
 	require.Nil(t, got)
+}
+
+func TestTeardown_DecodesResult(t *testing.T) {
+	var gotBody, gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody, gotAuth = string(b), r.Header.Get("X-Internal-Auth")
+		require.Equal(t, "/internal/tenants/t-1/teardown", r.URL.Path)
+		_, _ = w.Write([]byte(`{"data":{"tenant_id":"t-1","tenant_name":"The Bondi Store","store_ids":["s-1"],"store_slugs":["the-bondi-store"]}}`))
+	}))
+	defer srv.Close()
+
+	res, err := tenantlifecycle.NewClient(srv.URL, "shh", nil).Teardown(context.Background(), "t-1", []string{"the-bondi-store"})
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"store_slugs":["the-bondi-store"]}`, gotBody)
+	require.Equal(t, "shh", gotAuth)
+	require.Equal(t, "The Bondi Store", res.TenantName)
+	require.Equal(t, []string{"s-1"}, res.StoreIDs)
+}
+
+func TestTeardown_EmptySlugSetIsSentAsAnArrayNotNull(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		_, _ = w.Write([]byte(`{"data":{"tenant_id":"t-1","store_ids":[],"store_slugs":[]}}`))
+	}))
+	defer srv.Close()
+
+	_, err := tenantlifecycle.NewClient(srv.URL, "", nil).Teardown(context.Background(), "t-1", []string{})
+
+	require.NoError(t, err)
+	// A nil slice marshals to null, which upstream reads as ABSENT and
+	// refuses with 400. The two are one character apart on the wire.
+	require.JSONEq(t, `{"store_slugs":[]}`, gotBody)
+}
+
+func TestTeardown_409CarriesTheExpectedSet(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"confirmation_mismatch","expected":["a","b"]}`))
+	}))
+	defer srv.Close()
+
+	_, err := tenantlifecycle.NewClient(srv.URL, "", nil).Teardown(context.Background(), "t-1", []string{"wrong"})
+
+	var me *tenantlifecycle.ConfirmationMismatchError
+	require.True(t, errors.As(err, &me), "want *ConfirmationMismatchError, got %T", err)
+	require.Equal(t, []string{"a", "b"}, me.Expected)
+}
+
+func TestTeardown_404IsNotFound_500IsUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   error
+	}{
+		{http.StatusNotFound, tenantlifecycle.ErrNotFound},
+		{http.StatusInternalServerError, tenantlifecycle.ErrUnavailable},
+		{http.StatusServiceUnavailable, tenantlifecycle.ErrUnavailable},
+		{http.StatusBadGateway, tenantlifecycle.ErrUnavailable},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tc.status)
+		}))
+		_, err := tenantlifecycle.NewClient(srv.URL, "", nil).Teardown(context.Background(), "t-1", []string{})
+		require.ErrorIs(t, err, tc.want, "status %d", tc.status)
+		srv.Close()
+	}
+}
+
+// A 200 with a broken body must be an error, never a zero result — the
+// failure mode this package's doc comment was written about.
+func TestTeardown_TruncatedBodyIsAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"tenant_id":`))
+	}))
+	defer srv.Close()
+
+	res, err := tenantlifecycle.NewClient(srv.URL, "", nil).Teardown(context.Background(), "t-1", []string{})
+	require.Error(t, err)
+	require.Nil(t, res)
 }

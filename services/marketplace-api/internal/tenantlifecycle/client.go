@@ -10,6 +10,7 @@
 package tenantlifecycle
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -116,6 +117,106 @@ func (c *Client) lifecycle(ctx context.Context, tenantID, action string) (*Resul
 	path := "/internal/tenants/" + url.PathEscape(tenantID) + "/" + action
 	if err := c.post(ctx, path, &envelope); err != nil {
 		return nil, err
+	}
+	return &envelope.Data, nil
+}
+
+// ConfirmationMismatchError signals platform-api refused a teardown
+// because the supplied store-slug set did not match the tenant's actual
+// set. Expected carries the actual set, so the console can refresh without
+// a second round trip.
+type ConfirmationMismatchError struct {
+	Expected []string
+}
+
+func (e *ConfirmationMismatchError) Error() string {
+	return fmt.Sprintf("tenantlifecycle: store slug confirmation mismatch; expected %v", e.Expected)
+}
+
+// TeardownResult is the outcome of an operator-initiated tenant teardown.
+// StoreIDs is what marketplace-api scopes its own purge by.
+type TeardownResult struct {
+	TenantID   string   `json:"tenant_id"`
+	TenantName string   `json:"tenant_name"`
+	StoreIDs   []string `json:"store_ids"`
+	StoreSlugs []string `json:"store_slugs"`
+}
+
+// Teardown calls POST /internal/tenants/:id/teardown (#288). IRREVERSIBLE.
+//
+// It does not reuse `post`: that helper sends no body and discards
+// non-200 bodies, and this call needs both — the confirmation set going
+// up, and the 409's `expected` set coming back.
+//
+// storeSlugs is marshalled as an ARRAY even when empty. A nil slice
+// marshals to `null`, which upstream reads as an ABSENT confirmation and
+// refuses with 400 — and "I assert this tenant has no stores" is a
+// legitimate request that must reach the check.
+func (c *Client) Teardown(ctx context.Context, tenantID string, storeSlugs []string) (*TeardownResult, error) {
+	if storeSlugs == nil {
+		storeSlugs = []string{}
+	}
+	payload, err := json.Marshal(struct {
+		StoreSlugs []string `json:"store_slugs"`
+	}{StoreSlugs: storeSlugs})
+	if err != nil {
+		return nil, fmt.Errorf("tenantlifecycle: encode teardown body: %w", err)
+	}
+
+	path := "/internal/tenants/" + url.PathEscape(tenantID) + "/teardown"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("tenantlifecycle: build teardown request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.secret != "" {
+		req.Header.Set("X-Internal-Auth", c.secret)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// fall through
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	case http.StatusConflict:
+		var mismatch struct {
+			Expected []string `json:"expected"`
+		}
+		if readErr == nil {
+			_ = json.Unmarshal(body, &mismatch)
+		}
+		if mismatch.Expected == nil {
+			mismatch.Expected = []string{}
+		}
+		return nil, &ConfirmationMismatchError{Expected: mismatch.Expected}
+	case http.StatusBadRequest:
+		return nil, fmt.Errorf("tenantlifecycle: teardown rejected: %s", string(body))
+	default:
+		return nil, fmt.Errorf("%w: upstream %d", ErrUnavailable, resp.StatusCode)
+	}
+
+	if readErr != nil {
+		return nil, fmt.Errorf("%w: read body: %v", ErrUnavailable, readErr)
+	}
+	var envelope struct {
+		Data TeardownResult `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("tenantlifecycle: decode teardown: %w", err)
+	}
+	if envelope.Data.StoreIDs == nil {
+		envelope.Data.StoreIDs = []string{}
+	}
+	if envelope.Data.StoreSlugs == nil {
+		envelope.Data.StoreSlugs = []string{}
 	}
 	return &envelope.Data, nil
 }

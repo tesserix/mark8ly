@@ -384,7 +384,13 @@ func TestPurge_SecondRunReportsZeroAndSucceeds(t *testing.T) {
 // to leak into) — so this test seeds two tenants, each with their own
 // store, and purges only one.
 func TestPurge_StoreScopedTablesAreScopedToTheTenantsOwnStores(t *testing.T) {
-	db := testdb.NewDB(t)
+	// Cleanup list, not a bare NewDB(t): this test deliberately leaves
+	// tenant B's rows behind (that is the assertion), so without it every
+	// local run accumulates another store_transactional_counter row and
+	// another store. store_transactional_counter has no FK to stores, so
+	// the stores TRUNCATE ... CASCADE does not reach it — it has to be
+	// named. Child before parent, as testdb.NewDB documents.
+	db := testdb.NewDB(t, "store_transactional_counter", "stores")
 	ctx := context.Background()
 
 	tenantA := uuid.NewString()

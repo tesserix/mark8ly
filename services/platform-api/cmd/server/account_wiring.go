@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -56,8 +57,10 @@ func newAccountService(
 	fga authz.Client,
 	gipAdmin *gipadmin.AdminClient,
 	// enqueue is deliberately an UNNAMED func type: a named type here would
-	// not be assignable to internal/account's named outboxEnqueuer.
-	enqueue func(tx *gorm.DB, kind string, payload any) error,
+	// not be assignable to internal/account's named outboxEnqueuer. The
+	// delay parameter is outbox.EnqueueAfter's — see account.outboxEnqueuer
+	// for why the two tenant.deleted callers want different values.
+	enqueue func(tx *gorm.DB, kind string, payload any, delay time.Duration) error,
 	log *slog.Logger,
 ) *account.Service {
 	var gipCleanup gipAccountDeleter

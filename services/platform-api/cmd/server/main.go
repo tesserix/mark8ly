@@ -303,7 +303,7 @@ func main() {
 	// a non-nil interface holding a nil pointer, which would defeat
 	// cleanupAfterTeardown's nil guard and panic AFTER the teardown
 	// transaction commits. See newAccountService.
-	accountSvc := newAccountService(conn, tenantRepo, fga, gipAdmin, outbox.Enqueue, log)
+	accountSvc := newAccountService(conn, tenantRepo, fga, gipAdmin, outbox.EnqueueAfter, log)
 	accountHandler := account.NewHandler(accountSvc)
 	merchantAccountRoutes := fga != nil && gipAdmin != nil
 	if !merchantAccountRoutes {

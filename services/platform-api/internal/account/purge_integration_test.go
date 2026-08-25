@@ -35,7 +35,7 @@ func testDB(t *testing.T) *gorm.DB {
 // them configured.
 func realService(t *testing.T, db *gorm.DB) *Service {
 	t.Helper()
-	return NewService(db, tenant.NewRepository(db), nil, nil, outbox.Enqueue, slog.Default())
+	return NewService(db, tenant.NewRepository(db), nil, nil, outbox.EnqueueAfter, slog.Default())
 }
 
 // seedTenantWithStores inserts a tenant with a single store under the

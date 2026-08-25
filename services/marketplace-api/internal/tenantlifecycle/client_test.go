@@ -134,19 +134,86 @@ func TestTeardown_409CarriesTheExpectedSet(t *testing.T) {
 func TestTeardown_404IsNotFound_500IsUnavailable(t *testing.T) {
 	for _, tc := range []struct {
 		status int
+		body   string
 		want   error
 	}{
-		{http.StatusNotFound, tenantlifecycle.ErrNotFound},
-		{http.StatusInternalServerError, tenantlifecycle.ErrUnavailable},
-		{http.StatusServiceUnavailable, tenantlifecycle.ErrUnavailable},
-		{http.StatusBadGateway, tenantlifecycle.ErrUnavailable},
+		// A 404 carrying the handler's error envelope IS "no such tenant".
+		{http.StatusNotFound, `{"error":"tenant_not_found","message":"tenant does not exist"}`, tenantlifecycle.ErrNotFound},
+		{http.StatusInternalServerError, "", tenantlifecycle.ErrUnavailable},
+		{http.StatusServiceUnavailable, "", tenantlifecycle.ErrUnavailable},
+		{http.StatusBadGateway, "", tenantlifecycle.ErrUnavailable},
 	} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(tc.status)
+			_, _ = w.Write([]byte(tc.body))
 		}))
 		_, err := tenantlifecycle.NewClient(srv.URL, "", nil).Teardown(context.Background(), "t-1", []string{})
 		require.ErrorIs(t, err, tc.want, "status %d", tc.status)
 		srv.Close()
+	}
+}
+
+// A 404 from the HANDLER and a 404 from an UNMOUNTED ROUTE are the two
+// values this property discriminates between, and conflating them is a
+// safety bug, not a nicety.
+//
+// Gin answers a bare `404 page not found` for a path it has no route for.
+// During a rolling deploy where marketplace-api ships ahead of platform-api
+// that is what a teardown gets. Mapped to ErrNotFound it surfaces to the
+// operator as `404 tenant_not_found`, which this API's contract defines as
+// "including already purged" — so an operator processing a GDPR erasure
+// reads "already destroyed" and closes the ticket on a live tenant.
+//
+// A bare body must therefore be ErrUpstreamRouteMissing, which wraps
+// ErrUnavailable so the handler answers 503: honest about not knowing.
+func TestTeardown_Bare404IsRouteMissingNotTenantMissing(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		body         string
+		wantIs       error
+		wantNotFound bool
+	}{
+		{
+			name:         "gin unmatched route",
+			body:         "404 page not found",
+			wantIs:       tenantlifecycle.ErrUpstreamRouteMissing,
+			wantNotFound: false,
+		},
+		{
+			name:         "empty body",
+			body:         "",
+			wantIs:       tenantlifecycle.ErrUpstreamRouteMissing,
+			wantNotFound: false,
+		},
+		{
+			name:         "well-formed JSON with no error code",
+			body:         `{}`,
+			wantIs:       tenantlifecycle.ErrUpstreamRouteMissing,
+			wantNotFound: false,
+		},
+		{
+			name:         "handler error envelope",
+			body:         `{"error":"tenant_not_found","message":"tenant does not exist"}`,
+			wantIs:       tenantlifecycle.ErrNotFound,
+			wantNotFound: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+
+			_, err := tenantlifecycle.NewClient(srv.URL, "", nil).Teardown(context.Background(), "t-1", []string{})
+			require.ErrorIs(t, err, tc.wantIs)
+			require.Equal(t, tc.wantNotFound, errors.Is(err, tenantlifecycle.ErrNotFound),
+				"a bare 404 must NOT read as tenant_not_found; an enveloped one must")
+			if !tc.wantNotFound {
+				require.ErrorIs(t, err, tenantlifecycle.ErrUnavailable,
+					"ErrUpstreamRouteMissing must wrap ErrUnavailable so the handler answers 503")
+			}
+		})
 	}
 }
 

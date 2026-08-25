@@ -31,6 +31,20 @@ var ErrNotFound = errors.New("tenantlifecycle: tenant not found")
 // transition (e.g. suspending an archived tenant).
 var ErrConflict = errors.New("tenantlifecycle: invalid status transition")
 
+// ErrUpstreamRouteMissing signals a 404 that did NOT come from the handler:
+// its body is not this surface's JSON error envelope, so nothing upstream
+// looked up a tenant and decided it was absent. Gin answers a bare
+// `404 page not found` for an unmatched route, and during a rolling deploy
+// where marketplace-api ships ahead of platform-api that is exactly what a
+// teardown gets.
+//
+// It WRAPS ErrUnavailable so callers keep answering 503 for it: "we do not
+// know" is the honest answer. Mapping it to ErrNotFound would surface as
+// `404 tenant_not_found`, which this API's contract defines as "including
+// already purged" — telling an operator working a GDPR erasure that the
+// tenant is already destroyed, when it is alive.
+var ErrUpstreamRouteMissing = fmt.Errorf("%w: teardown route not mounted upstream", ErrUnavailable)
+
 // maxBody caps what we will read from platform-api.
 const maxBody = 4 << 20
 
@@ -185,6 +199,11 @@ func (c *Client) Teardown(ctx context.Context, tenantID string, storeSlugs []str
 	case http.StatusOK:
 		// fall through
 	case http.StatusNotFound:
+		// A 404 means "no such tenant" ONLY if the handler produced it.
+		// See ErrUpstreamRouteMissing for why the two must not collapse.
+		if readErr != nil || !isErrorEnvelope(body) {
+			return nil, ErrUpstreamRouteMissing
+		}
 		return nil, ErrNotFound
 	case http.StatusConflict:
 		var mismatch struct {
@@ -219,4 +238,22 @@ func (c *Client) Teardown(ctx context.Context, tenantID string, storeSlugs []str
 		envelope.Data.StoreSlugs = []string{}
 	}
 	return &envelope.Data, nil
+}
+
+// isErrorEnvelope reports whether body is this surface's JSON error
+// envelope — `{"error": "...", ...}` with a non-empty code, as produced by
+// platform-api's respondError. A bare `404 page not found`, an HTML error
+// page from an ingress, an empty body, and `{}` all fail it.
+//
+// The `error` field must be non-empty, not merely present: a JSON document
+// with no such key unmarshals silently into the zero value, so testing only
+// for a decode error would accept any well-formed JSON at all.
+func isErrorEnvelope(body []byte) bool {
+	var env struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		return false
+	}
+	return env.Error != ""
 }

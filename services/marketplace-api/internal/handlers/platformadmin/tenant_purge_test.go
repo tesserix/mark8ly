@@ -273,6 +273,23 @@ func TestPurge_UnavailableIs503AndPurgesNothing(t *testing.T) {
 	require.Zero(t, pg.at, "an unreachable upstream must never read as 'nothing to do' and must never purge")
 }
 
+// An unmounted upstream route must reach the operator as 503, NOT as the
+// 404 this API defines as "tenant not found, including already purged".
+// See tenantlifecycle.ErrUpstreamRouteMissing.
+func TestPurge_UpstreamRouteMissingIs503NotAlreadyPurged(t *testing.T) {
+	sq := &seq{}
+	td := &fakeTeardown{seq: sq, err: tenantlifecycle.ErrUpstreamRouteMissing}
+	pg := &fakePurger{seq: sq}
+
+	rec := doPurge(t, td, pg, noopEmit, `{"store_slugs":["a"],"reason_code":"erasure_request"}`)
+
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "upstream_unavailable")
+	require.NotContains(t, rec.Body.String(), "tenant_not_found",
+		"a missing ROUTE must never be reported as a missing TENANT — an operator working an erasure would close the ticket on a live tenant")
+	require.Zero(t, pg.at, "the purger must never be called on a refusal")
+}
+
 func TestPurge_UnknownReasonCodeIs400(t *testing.T) {
 	cases := []struct {
 		code    string

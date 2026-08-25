@@ -22,16 +22,16 @@ import (
 // pattern Subscriptions/SubscriptionsFunc uses in kpis.go for
 // trial.CountExpiring.
 type TrialLister interface {
-	ListExpiring(ctx context.Context, db *gorm.DB, asOf time.Time, window time.Duration, page, limit int) ([]trial.ExpiringRow, int64, error)
+	ListExpiring(ctx context.Context, db *gorm.DB, asOf time.Time, window time.Duration, page, limit int, opts trial.ListOptions) ([]trial.ExpiringRow, int64, error)
 }
 
 // TrialListerFunc adapts a bare function — such as trial.ListExpiring — to
 // the TrialLister interface.
-type TrialListerFunc func(ctx context.Context, db *gorm.DB, asOf time.Time, window time.Duration, page, limit int) ([]trial.ExpiringRow, int64, error)
+type TrialListerFunc func(ctx context.Context, db *gorm.DB, asOf time.Time, window time.Duration, page, limit int, opts trial.ListOptions) ([]trial.ExpiringRow, int64, error)
 
 // ListExpiring implements TrialLister by delegating to the wrapped func.
-func (f TrialListerFunc) ListExpiring(ctx context.Context, db *gorm.DB, asOf time.Time, window time.Duration, page, limit int) ([]trial.ExpiringRow, int64, error) {
-	return f(ctx, db, asOf, window, page, limit)
+func (f TrialListerFunc) ListExpiring(ctx context.Context, db *gorm.DB, asOf time.Time, window time.Duration, page, limit int, opts trial.ListOptions) ([]trial.ExpiringRow, int64, error) {
+	return f(ctx, db, asOf, window, page, limit, opts)
 }
 
 // defaultBillingTrialsLimit and maxBillingTrialsLimit bound `limit`, mirroring
@@ -109,6 +109,10 @@ type trialRow struct {
 	Amount              *money  `json:"amount,omitempty"`
 	PaymentMethodOnFile bool    `json:"payment_method_on_file"`
 	Status              string  `json:"status"`
+	// StripeManaged has no omitempty: it is a fact about every row, and an
+	// absent `false` would be indistinguishable from a server that predates
+	// this field (#358).
+	StripeManaged bool `json:"stripe_managed"`
 }
 
 type billingTrialsResponse struct {
@@ -124,10 +128,15 @@ func (h *BillingTrialsHandler) list(c *gin.Context) {
 		limit = maxBillingTrialsLimit
 	}
 
+	// Default false: #285's live contract lists trials that will EXPIRE. The
+	// flag widens it to trials the console can now EXTEND (#358), which is a
+	// different question and an explicit one.
+	includeStripeManaged := c.Query("include_stripe_managed") == "true"
+
 	ctx := c.Request.Context()
 	asOf := h.now()
 
-	rows, total, err := h.trials.ListExpiring(ctx, h.db, asOf, window, page, limit)
+	rows, total, err := h.trials.ListExpiring(ctx, h.db, asOf, window, page, limit, trial.ListOptions{IncludeStripeManaged: includeStripeManaged})
 	if err != nil {
 		h.respondErr(c, err)
 		return
@@ -214,6 +223,7 @@ func toTrialRow(r trial.ExpiringRow, names map[string]string, asOf time.Time) tr
 		BillingCurrency:     r.BillingCurrency,
 		PaymentMethodOnFile: r.HasPaymentMethod,
 		Status:              r.Status,
+		StripeManaged:       r.StripeManaged,
 	}
 
 	if m, ok := resolveMoney(r.Plan, r.Period, r.BillingCurrency, r.PriceTier); ok {

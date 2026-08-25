@@ -10,7 +10,8 @@
       "period": "monthly",
       "billing_currency": "GBP",
       "payment_method_on_file": false,
-      "status": "trialing"
+      "status": "trialing",
+      "stripe_managed": false
     },
     {
       "tenant_id": "3f2504e0-4f89-11d3-9a0c-0305e82c3302",
@@ -21,7 +22,8 @@
       "plan": "trial",
       "period": "annual",
       "payment_method_on_file": true,
-      "status": "trialing"
+      "status": "trialing",
+      "stripe_managed": false
     }
   ],
   "pagination": {

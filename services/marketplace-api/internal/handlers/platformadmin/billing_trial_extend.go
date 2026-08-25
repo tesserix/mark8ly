@@ -41,16 +41,21 @@ const maxReasonLen = 500
 // TrialExtender is the subset of the trial package this handler needs,
 // declared locally so the handler is stubbable — the same reason
 // TenantLifecycle and EstateCounts are declared here rather than imported.
+//
+// callerIdemKey carries the handler's already-scoped idempotency key down
+// into the domain, which needs it to derive the key it sends to Stripe. It
+// is threaded rather than re-derived because only the handler has the
+// caller's Idempotency-Key header (#358 F1).
 type TrialExtender interface {
-	Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time) (trial.ExtendResult, error)
+	Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time, callerIdemKey string) (trial.ExtendResult, error)
 }
 
 // TrialExtenderFunc adapts a free function to TrialExtender, matching the
 // SubscriptionsFunc / TrialListerFunc pattern already used in routes.go.
-type TrialExtenderFunc func(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time) (trial.ExtendResult, error)
+type TrialExtenderFunc func(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time, callerIdemKey string) (trial.ExtendResult, error)
 
-func (f TrialExtenderFunc) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time) (trial.ExtendResult, error) {
-	return f(ctx, db, storeID, newEnd, now)
+func (f TrialExtenderFunc) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time, callerIdemKey string) (trial.ExtendResult, error) {
+	return f(ctx, db, storeID, newEnd, now, callerIdemKey)
 }
 
 // trialExtendAuditFunc records a platform-operator action. Production
@@ -108,6 +113,13 @@ type trialExtendResponse struct {
 	ReasonCode          string `json:"reason_code"`
 	Reason              string `json:"reason,omitempty"`
 	RemindersCleared    int64  `json:"reminders_cleared"`
+
+	// Present only for a card-backed extension. omitempty throughout: a
+	// card-less extension carries no Stripe keys at all, rather than nulls
+	// or a `false` that reads as "we checked and it did not move".
+	StripeSubscriptionID string `json:"stripe_subscription_id,omitempty"`
+	StripeTrialEnd       string `json:"stripe_trial_end,omitempty"`
+	BillingAnchorMoved   bool   `json:"billing_anchor_moved,omitempty"`
 }
 
 func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
@@ -229,7 +241,7 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 	}
 
 	extendedAt := time.Now().UTC()
-	res, err := h.ex.Extend(c.Request.Context(), h.db, storeID, newEnd, extendedAt)
+	res, err := h.ex.Extend(c.Request.Context(), h.db, storeID, newEnd, extendedAt, scopedKey)
 	if err != nil {
 		h.releaseReservation(c, scopedKey)
 		h.respondExtendErr(c, err)
@@ -269,6 +281,12 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 				"reminders_cleared":      res.RemindersCleared,
 			},
 		}
+		if res.StripeApplied {
+			ev.Metadata["stripe_subscription_id"] = res.StripeSubscriptionID
+			ev.Metadata["stripe_trial_end_unix"] = res.StripeTrialEnd
+			ev.Metadata["previous_stripe_trial_end_unix"] = res.PreviousStripeTrialEnd
+			ev.Metadata["previous_billing_anchor_unix"] = res.PreviousBillingAnchor
+		}
 		if err := h.audit(c, res.TenantID, ev); err != nil {
 			// Logged, not surfaced: the extension already happened, and
 			// failing the response would make the caller retry a write that
@@ -287,6 +305,18 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 		ReasonCode:          req.ReasonCode,
 		Reason:              reason,
 		RemindersCleared:    res.RemindersCleared,
+	}
+
+	if res.StripeApplied {
+		// stripe_trial_end is Stripe's own reply, not our request: the two
+		// are different claims and only one of them is authoritative.
+		resp.StripeSubscriptionID = res.StripeSubscriptionID
+		resp.StripeTrialEnd = time.Unix(res.StripeTrialEnd, 0).UTC().Format(time.RFC3339)
+		// Stripe moves billing_cycle_anchor to trial_end on every trial_end
+		// update — its documented behaviour, confirmed against the API in
+		// #358's verification. The operator learns the merchant's billing
+		// date moved from the same response that moved it.
+		resp.BillingAnchorMoved = true
 	}
 
 	if h.db != nil {
@@ -358,7 +388,7 @@ func (h *BillingTrialExtendHandler) respondExtendErr(c *gin.Context, err error) 
 	case errors.Is(err, trial.ErrStripeManaged):
 		c.JSON(http.StatusConflict, gin.H{
 			"error":   "stripe_managed",
-			"message": "this trial has a Stripe subscription; Stripe owns its billing date and it cannot be extended here",
+			"message": "this trial has a stripe subscription and stripe billing is not configured on this service, so its billing date cannot be moved",
 		})
 	case errors.Is(err, trial.ErrNotTrialing):
 		c.JSON(http.StatusConflict, gin.H{
@@ -371,6 +401,76 @@ func (h *BillingTrialExtendHandler) respondExtendErr(c *gin.Context, err error) 
 	case errors.Is(err, trial.ErrNoSubscription):
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "not_found", "message": "no subscription for that store",
+		})
+	case errors.Is(err, trial.ErrStripeStateConflict):
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "stripe_state_conflict",
+			"message": "stripe reports this subscription is no longer trialing; it cannot be extended until the two agree",
+		})
+	case errors.Is(err, trial.ErrTrialEndNotAfterStripe):
+		// 400: the operator can fix this by picking a later date — in the
+		// common case. The message is the domain error's own text, which
+		// carries BOTH the requested end and the one Stripe currently
+		// holds, so the retry can be informed rather than guessed. Echoing
+		// err.Error() is safe here and only here: this sentinel's message
+		// is composed entirely from our own two timestamps, never from a
+		// driver or a third party (#358 F2).
+		//
+		// #358 N1: when the requested date EQUALS what Stripe already
+		// holds, "pick a later date" is the wrong instruction — there is no
+		// later date to pick, because Stripe already has this exact one.
+		// That equality is the signature of a local row that fell behind
+		// Stripe after an ErrStripeAppliedLocalWriteFailed divergence: the
+		// Stripe call already succeeded at this date, only the local commit
+		// failed, and this endpoint refuses the corrective retry rather
+		// than guessing (extend.go's ErrTrialEndNotAfterStripe doc explains
+		// why). Detected via errors.As on the concrete
+		// TrialEndNotAfterStripeError rather than string-matching the
+		// message; a plain wrapped sentinel (no struct) falls through to
+		// the generic message below unchanged.
+		message := err.Error()
+		var notAfter *trial.TrialEndNotAfterStripeError
+		if errors.As(err, &notAfter) && notAfter.AtStripeEnd() {
+			message = "the requested trial_ends_at equals the trial end stripe currently holds; this is not a bad date, it means the local record fell behind stripe after a prior extension where stripe applied the change but this service failed to record it — see stripe_applied_local_write_failed. This requires manual reconciliation, not a different date."
+		}
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "trial_end_not_after_stripe",
+			"message": message,
+			"field":   "trial_ends_at",
+		})
+	case errors.Is(err, trial.ErrTrialEndTooFar):
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "trial_end_too_far",
+			"message": "trial_ends_at is more than two years after the stripe billing anchor, which stripe does not allow",
+			"field":   "trial_ends_at",
+		})
+	case errors.Is(err, trial.ErrStripeAppliedLocalWriteFailed):
+		// Checked BEFORE ErrStripeCall: this sentinel wraps the local
+		// commit's own error (extend.go's rollback path), never
+		// ErrStripeCall — the Stripe call already SUCCEEDED on this path,
+		// so the two can never both match on a real error value — but the
+		// ordering still puts the more specific, higher-stakes sentinel
+		// first so a future wrapping change cannot silently demote it to
+		// the 502 branch below. This is the one divergence #358 accepts:
+		// Stripe holds the new trial end and this service does not. 502 is
+		// deliberately NOT used here — 502 tells the caller nothing
+		// happened, and here something very much happened, to a real
+		// billing date. No audit emit is attempted (see the handler body);
+		// this log is the only signal, so it carries the reconciliation
+		// values via the wrapped error itself.
+		h.logger.Error("trial extend: stripe applied but local write failed; manual reconciliation required", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "stripe_applied_local_write_failed",
+			"message": "stripe accepted the new trial end but this service failed to record it locally; stripe and this service now disagree and require manual reconciliation",
+		})
+	case errors.Is(err, trial.ErrStripeCall):
+		// 502, not the 503 above: 503 means OUR idempotency store is
+		// unreachable, 502 means the dependency failed. The distinction
+		// matters to the operator because a 502 here also guarantees
+		// nothing was written locally.
+		h.logger.Error("trial extend: stripe call failed", "err", err)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "stripe_unavailable", "message": "could not update the trial end in stripe; nothing was changed",
 		})
 	default:
 		h.logger.Error("trial extend failed", "err", err)

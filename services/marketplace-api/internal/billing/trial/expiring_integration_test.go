@@ -82,7 +82,7 @@ func TestListExpiring_CardlessTrialEndingSoon(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 
-	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 10)
+	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 10, trial.ListOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	require.Len(t, rows, 1)
@@ -105,7 +105,7 @@ func TestListExpiring_ExcludesRowsWithStripeSubscription(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 
-	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 10)
+	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 10, trial.ListOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total)
 	assert.Empty(t, rows)
@@ -186,7 +186,7 @@ func TestListExpiring_OrderedSoonestFirst(t *testing.T) {
 	rowSoonest := seedExpiringRow(t, db, expiringAsOf.Add(1*24*time.Hour), nil)
 	rowMiddle := seedExpiringRow(t, db, expiringAsOf.Add(3*24*time.Hour), nil)
 
-	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 10)
+	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 10, trial.ListOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), total)
 	require.Len(t, rows, 3)
@@ -208,7 +208,7 @@ func TestListExpiring_CountMatchesListLength(t *testing.T) {
 	count, err := trial.CountExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow)
 	require.NoError(t, err)
 
-	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 1000)
+	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 1000, trial.ListOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, count, total)
 	assert.Equal(t, int(count), len(rows))
@@ -223,7 +223,7 @@ func TestListExpiring_Pagination(t *testing.T) {
 	seedExpiringRow(t, db, expiringAsOf.Add(2*24*time.Hour), nil)
 	seedExpiringRow(t, db, expiringAsOf.Add(3*24*time.Hour), nil)
 
-	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 1)
+	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 1, trial.ListOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), total)
 	assert.Len(t, rows, 1)
@@ -266,7 +266,7 @@ func TestListExpiring_MapsAllFields(t *testing.T) {
 		r.HasDefaultPaymentMethod = false
 	})
 
-	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 10)
+	rows, total, err := trial.ListExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow, 1, 10, trial.ListOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), total)
 	require.Len(t, rows, 2)
@@ -292,4 +292,57 @@ func TestListExpiring_MapsAllFields(t *testing.T) {
 	rowNoPM := rows[1]
 	assert.Equal(t, seededNoPM.StoreID.String(), rowNoPM.StoreID)
 	assert.False(t, rowNoPM.HasPaymentMethod)
+}
+
+// The default must be unchanged: a card-backed trial is not "expiring".
+// This is the contract #285 already ships.
+func TestListExpiring_DefaultStillExcludesStripeManaged(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+	subID := "sub_listed"
+	seedExpiringRow(t, db, expiringAsOf.Add(3*24*time.Hour),
+		func(s *subscription.StoreSubscription) { s.StripeSubscriptionID = &subID })
+	seedExpiringRow(t, db, expiringAsOf.Add(4*24*time.Hour), nil)
+
+	rows, total, err := trial.ListExpiring(context.Background(), db,
+		expiringAsOf, trial.DefaultExpiryWindow, 1, 10, trial.ListOptions{})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total, "the card-backed row must not appear by default")
+	require.Len(t, rows, 1)
+	require.False(t, rows[0].StripeManaged)
+}
+
+// With the flag, BOTH appear and each is labelled. Two rows of different
+// kinds in one fixture: one kind cannot prove a filter.
+func TestListExpiring_IncludeStripeManaged_ReturnsBothLabelled(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+	subID := "sub_listed_2"
+	cardBacked := seedExpiringRow(t, db, expiringAsOf.Add(3*24*time.Hour),
+		func(s *subscription.StoreSubscription) { s.StripeSubscriptionID = &subID })
+	cardLess := seedExpiringRow(t, db, expiringAsOf.Add(4*24*time.Hour), nil)
+
+	rows, total, err := trial.ListExpiring(context.Background(), db,
+		expiringAsOf, trial.DefaultExpiryWindow, 1, 10, trial.ListOptions{IncludeStripeManaged: true})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, rows, 2)
+
+	byStore := map[string]trial.ExpiringRow{}
+	for _, r := range rows {
+		byStore[r.StoreID] = r
+	}
+	require.True(t, byStore[cardBacked.StoreID.String()].StripeManaged)
+	require.False(t, byStore[cardLess.StoreID.String()].StripeManaged)
+}
+
+// The KPI must NOT move. CountExpiring keeps its "will expire" meaning.
+func TestCountExpiring_UnaffectedByStripeManagedRows(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+	subID := "sub_kpi"
+	seedExpiringRow(t, db, expiringAsOf.Add(3*24*time.Hour),
+		func(s *subscription.StoreSubscription) { s.StripeSubscriptionID = &subID })
+	seedExpiringRow(t, db, expiringAsOf.Add(4*24*time.Hour), nil)
+
+	n, err := trial.CountExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), n, "trials_expiring counts trials that EXPIRE; a card-backed trial converts")
 }

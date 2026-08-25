@@ -20,40 +20,59 @@ const (
 	ProrationNone             ProrationBehavior = "none"
 )
 
-// UpdateSubscriptionParams captures the inputs for a plan/period change.
-// The current subscription item ID is resolved internally via GetSubscription.
+// UpdateSubscriptionParams captures the inputs for a subscription update.
+// The current subscription item ID is resolved internally via GetSubscription
+// when — and only when — a PriceID is supplied.
 type UpdateSubscriptionParams struct {
 	SubscriptionID    string
-	PriceID           string
+	PriceID           string // optional: when empty, the price is left alone
+	TrialEnd          *int64 // optional: Unix seconds; moves billing_cycle_anchor
 	ProrationBehavior ProrationBehavior
 	IdempotencyKey    string
 	Metadata          map[string]string
 }
 
-// UpdateSubscription swaps the price on an existing Stripe Subscription.
-// Expects the subscription to have exactly one item (our catalog invariant).
-// It fetches the current subscription first to discover the subscription item ID
-// that Stripe requires when updating items.
+// UpdateSubscription updates an existing Stripe Subscription.
+//
+// Items are sent ONLY when PriceID is set. This matters: before #358 the
+// price swap was unconditional, so calling this to move a trial end would
+// have re-priced the subscription silently. The two plan-change callers
+// (subscription/planchange) always set PriceID and are unaffected.
+//
+// Setting TrialEnd also moves Stripe's billing_cycle_anchor to that value —
+// Stripe's own documented behaviour, not ours — so it changes when the
+// merchant is billed thereafter. Stripe bounds it at two years from the
+// current anchor. TrialFromPlan is never set here; Stripe rejects it
+// alongside trial_end.
 func UpdateSubscription(ctx context.Context, c *Client, in UpdateSubscriptionParams) (*Subscription, error) {
-	current, err := GetSubscription(ctx, c, in.SubscriptionID)
-	if err != nil {
-		return nil, err
+	if in.PriceID == "" && in.TrialEnd == nil {
+		return nil, errors.New("stripe: UpdateSubscription: price_id or trial_end required")
 	}
-	if len(current.Items.Data) == 0 {
-		return nil, errors.New("stripe: subscription has no items, cannot update")
-	}
-
-	itemID := current.Items.Data[0].ID
 
 	params := &sdk.SubscriptionUpdateParams{
 		ProrationBehavior: sdk.String(string(in.ProrationBehavior)),
-		Items: []*sdk.SubscriptionUpdateItemParams{
+	}
+
+	if in.PriceID != "" {
+		current, err := GetSubscription(ctx, c, in.SubscriptionID)
+		if err != nil {
+			return nil, err
+		}
+		if len(current.Items.Data) == 0 {
+			return nil, errors.New("stripe: subscription has no items, cannot update")
+		}
+		params.Items = []*sdk.SubscriptionUpdateItemParams{
 			{
-				ID:    sdk.String(itemID),
+				ID:    sdk.String(current.Items.Data[0].ID),
 				Price: sdk.String(in.PriceID),
 			},
-		},
+		}
 	}
+
+	if in.TrialEnd != nil {
+		params.TrialEnd = sdk.Int64(*in.TrialEnd)
+	}
+
 	for k, v := range in.Metadata {
 		params.AddMetadata(k, v)
 	}
@@ -66,6 +85,34 @@ func UpdateSubscription(ctx context.Context, c *Client, in UpdateSubscriptionPar
 		return nil, toAPIError(err)
 	}
 	return mapSubscription(sdkSub), nil
+}
+
+// UpdateTrialEndParams captures a trial-end move and nothing else.
+type UpdateTrialEndParams struct {
+	SubscriptionID string
+	TrialEnd       int64 // Unix seconds — required
+	IdempotencyKey string
+	Metadata       map[string]string
+}
+
+// UpdateTrialEnd moves a subscription's trial end without touching its price.
+//
+// A narrow wrapper rather than a documented convention on UpdateSubscription:
+// the extend path must be structurally incapable of acquiring a PriceID
+// later, and a struct with no PriceID field is the only way to guarantee that
+// against a future edit. proration_behavior is `none` because the anchor move
+// this causes must not generate a proration invoice.
+func UpdateTrialEnd(ctx context.Context, c *Client, in UpdateTrialEndParams) (*Subscription, error) {
+	if in.TrialEnd <= 0 {
+		return nil, errors.New("stripe: UpdateTrialEnd: trial_end required")
+	}
+	return UpdateSubscription(ctx, c, UpdateSubscriptionParams{
+		SubscriptionID:    in.SubscriptionID,
+		TrialEnd:          &in.TrialEnd,
+		ProrationBehavior: ProrationNone,
+		IdempotencyKey:    in.IdempotencyKey,
+		Metadata:          in.Metadata,
+	})
 }
 
 // PriceIDFor resolves (plan, period, currency, tier) to a Stripe Price ID via

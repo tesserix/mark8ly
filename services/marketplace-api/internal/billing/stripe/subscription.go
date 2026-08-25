@@ -19,6 +19,13 @@ type Subscription struct {
 	CurrentPeriodEnd   int64  `json:"current_period_end"`
 	CancelAtPeriodEnd  bool   `json:"cancel_at_period_end"`
 	Customer           string `json:"customer"`
+	// TrialEnd and BillingCycleAnchor are Unix seconds, 0 when Stripe
+	// reports none. Projected explicitly rather than embedding the SDK
+	// object: a passthrough leaks every field Stripe adds upstream.
+	// BillingCycleAnchor is needed because SubscriptionUpdateParams.TrialEnd
+	// is bounded at two years FROM THE ANCHOR, not from now.
+	TrialEnd           int64 `json:"trial_end"`
+	BillingCycleAnchor int64 `json:"billing_cycle_anchor"`
 	Items              struct {
 		Data []SubscriptionItem `json:"data"`
 	} `json:"items"`
@@ -43,11 +50,13 @@ func mapSubscription(s *sdk.Subscription) *Subscription {
 	}
 
 	out := &Subscription{
-		ID:                s.ID,
-		Status:            string(s.Status),
-		Currency:          string(s.Currency),
-		CancelAtPeriodEnd: s.CancelAtPeriodEnd,
-		Customer:          customerID,
+		ID:                 s.ID,
+		Status:             string(s.Status),
+		Currency:           string(s.Currency),
+		CancelAtPeriodEnd:  s.CancelAtPeriodEnd,
+		Customer:           customerID,
+		TrialEnd:           s.TrialEnd,
+		BillingCycleAnchor: s.BillingCycleAnchor,
 	}
 
 	if s.Items != nil {

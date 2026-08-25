@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -31,12 +32,14 @@ type stubExtender struct {
 	calls   int
 	gotEnd  time.Time
 	gotStor uuid.UUID
+	gotKey  string
 }
 
-func (s *stubExtender) Extend(_ context.Context, _ *gorm.DB, storeID uuid.UUID, newEnd, _ time.Time) (trial.ExtendResult, error) {
+func (s *stubExtender) Extend(_ context.Context, _ *gorm.DB, storeID uuid.UUID, newEnd, _ time.Time, callerIdemKey string) (trial.ExtendResult, error) {
 	s.calls++
 	s.gotStor = storeID
 	s.gotEnd = newEnd
+	s.gotKey = callerIdemKey
 	if s.err != nil {
 		return trial.ExtendResult{}, s.err
 	}
@@ -304,4 +307,257 @@ func TestTrialExtendTruncatesReasonOnARuneBoundary(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.True(t, utf8.ValidString(resp.Reason))
+}
+
+// stripeOKResult is okResult() plus the Stripe-side facts a card-backed
+// extension produces. Every value is DISTINCT and non-zero, AND
+// StripeTrialEnd is deliberately a DIFFERENT instant from goodBody's
+// trial_ends_at ("2026-12-01T00:00:00Z"): the response and audit row must
+// report what STRIPE actually stored, not an echo of the request, and a
+// fixture where the two happened to match would let a handler that echoes
+// the request pass every assertion here undetected.
+func stripeOKResult() trial.ExtendResult {
+	r := okResult()
+	r.StripeApplied = true
+	r.StripeSubscriptionID = "sub_verify_358"
+	r.StripeTrialEnd = time.Date(2026, 12, 3, 8, 15, 0, 0, time.UTC).Unix()
+	r.PreviousStripeTrialEnd = time.Date(2026, 9, 14, 10, 22, 31, 0, time.UTC).Unix()
+	r.PreviousBillingAnchor = time.Date(2026, 9, 14, 10, 22, 31, 0, time.UTC).Unix()
+	return r
+}
+
+// The new refusals must be distinguishable by the console. 502 is
+// deliberately NOT the handler's existing 503 `unavailable`: 503 means our
+// own idempotency store is unreachable, 502 means the dependency refused —
+// and, critically, that no local write happened.
+func TestExtend_StripeRefusalsMapToDistinctStatuses(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{"unconfigured", trial.ErrStripeManaged, http.StatusConflict, "stripe_managed"},
+		{"state conflict", trial.ErrStripeStateConflict, http.StatusConflict, "stripe_state_conflict"},
+		{"too far", trial.ErrTrialEndTooFar, http.StatusBadRequest, "trial_end_too_far"},
+		{"call failed", fmt.Errorf("%w: update trial end: boom", trial.ErrStripeCall), http.StatusBadGateway, "stripe_unavailable"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			aud := &capturedAudit{}
+			rec := postExtend(t, &stubExtender{err: tc.err}, aud, extendStoreID.String(), goodBody)
+			require.Equal(t, tc.wantStatus, rec.Code, rec.Body.String())
+
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+			require.Equal(t, tc.wantCode, got["error"])
+
+			// A refusal is not an operator action: nothing was extended, so
+			// nothing may be audited as extended.
+			require.Empty(t, aud.events, "a refused extension must emit no audit event")
+
+			// The driver's own text must never be echoed to the caller.
+			msg, _ := got["message"].(string)
+			require.NotContains(t, msg, "boom")
+		})
+	}
+}
+
+// A card-backed extension must disclose that the billing anchor moved, and
+// must echo STRIPE's value rather than the request's.
+func TestExtend_CardBacked_ResponseDisclosesStripeFacts(t *testing.T) {
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{result: stripeOKResult()}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, "sub_verify_358", got["stripe_subscription_id"])
+	require.Equal(t, "2026-12-03T08:15:00Z", got["stripe_trial_end"])
+	require.Equal(t, true, got["billing_anchor_moved"])
+
+	// The request asked for a DIFFERENT instant ("2026-12-01T00:00:00Z" in
+	// goodBody). A handler that echoed the request's parsed trial_ends_at
+	// instead of res.StripeTrialEnd would still satisfy the Equal above by
+	// coincidence in a collision fixture; this guards against exactly that.
+	require.NotEqual(t, "2026-12-01T00:00:00Z", got["stripe_trial_end"],
+		"stripe_trial_end must be Stripe's reply, not the request's trial_ends_at")
+}
+
+// A card-less extension must carry NONE of those keys — not null, not false,
+// absent. Asserted on the RAW BYTES: a decoded map cannot tell an absent key
+// from a false one, which is exactly the distinction being made here.
+func TestExtend_CardLess_OmitsStripeFields(t *testing.T) {
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{result: okResult()}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	body := rec.Body.String()
+	require.NotContains(t, body, "stripe_subscription_id")
+	require.NotContains(t, body, "stripe_trial_end")
+	require.NotContains(t, body, "billing_anchor_moved")
+}
+
+// The audit row must carry the exact integer sent to Stripe. An audit that
+// records only "extended" cannot answer "extended to what, in Stripe?" —
+// which is the question this whole series exists to be able to answer.
+func TestExtend_CardBacked_AuditCarriesExactUnixSecond(t *testing.T) {
+	aud := &capturedAudit{}
+	res := stripeOKResult()
+	rec := postExtend(t, &stubExtender{result: res}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	require.Len(t, aud.events, 1)
+	md := aud.events[0].Metadata
+	require.Equal(t, "sub_verify_358", md["stripe_subscription_id"])
+	require.Equal(t, res.StripeTrialEnd, md["stripe_trial_end_unix"])
+	require.Equal(t, res.PreviousStripeTrialEnd, md["previous_stripe_trial_end_unix"])
+	require.Equal(t, res.PreviousBillingAnchor, md["previous_billing_anchor_unix"])
+
+	// The two anchors are DIFFERENT values in this fixture, so a mapping
+	// that swapped them would be caught. Identical fixtures prove nothing.
+	require.NotEqual(t, md["stripe_trial_end_unix"], md["previous_billing_anchor_unix"])
+
+	// The request's parsed trial_ends_at ("2026-12-01T00:00:00Z") is a
+	// different instant from res.StripeTrialEnd. A handler that audited the
+	// REQUEST's end instead of Stripe's reply would still pass the Equal
+	// above by coincidence in a collision fixture; this guards against
+	// exactly that.
+	requestEnd := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC).Unix()
+	require.NotEqual(t, requestEnd, md["stripe_trial_end_unix"],
+		"stripe_trial_end_unix must be Stripe's reply, not the request's trial_ends_at")
+}
+
+// A card-less extension must add none of the Stripe keys to the audit row
+// either — the metadata says what happened, and nothing Stripe-shaped did.
+func TestExtend_CardLess_AuditHasNoStripeKeys(t *testing.T) {
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{result: okResult()}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	require.Len(t, aud.events, 1)
+	for _, k := range []string{"stripe_subscription_id", "stripe_trial_end_unix",
+		"previous_stripe_trial_end_unix", "previous_billing_anchor_unix"} {
+		_, present := aud.events[0].Metadata[k]
+		require.False(t, present, "card-less audit must not carry %s", k)
+	}
+}
+
+// ErrStripeAppliedLocalWriteFailed is the one divergence #358's design
+// accepts: Stripe already moved a real merchant's billing_cycle_anchor and
+// the local commit then failed, so this service recorded nothing. It must
+// never collapse into the ordinary 500 or the 502 used for ErrStripeCall —
+// both of those imply nothing happened, and here something very much did,
+// to a real billing date. No audit emit is attempted on this path: it would
+// write to the same database whose write just failed, and a failed emit is
+// swallowed by design, so the loud Error log is the only signal.
+func TestExtend_StripeAppliedLocalWriteFailed_Maps500NoAudit(t *testing.T) {
+	err := fmt.Errorf("%w: stripe subscription sub_verify_358 now holds trial_end=1798761600 (previously trial_end=1757845351, billing_cycle_anchor=1757845351): write trial_ends_at: boom",
+		trial.ErrStripeAppliedLocalWriteFailed)
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{err: err}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, "stripe_applied_local_write_failed", got["error"])
+
+	require.Empty(t, aud.events, "no audit emit must be attempted when the local write itself failed")
+
+	// The driver's own text must never be echoed to the caller.
+	msg, _ := got["message"].(string)
+	require.NotContains(t, msg, "boom")
+}
+
+// #358 F1. The handler already scopes the caller's Idempotency-Key header
+// per store and per endpoint; that scoped value must REACH Extend, because
+// the domain derives the key it sends to Stripe from it. Before this it was
+// computed and then dropped, and the Stripe key was derived from the store
+// and the date alone — which made a return to a previously-used date a
+// silent no-op at Stripe.
+func TestTrialExtendPassesScopedIdempotencyKeyToExtend(t *testing.T) {
+	ex := &stubExtender{result: okResult()}
+	rec := postExtend(t, ex, &capturedAudit{}, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	// postExtendWithHeaders sends "test-key-<storeID>" as the header.
+	require.Equal(t,
+		"trial_extend:"+extendStoreID.String()+":test-key-"+extendStoreID.String(),
+		ex.gotKey,
+		"the scoped key must be threaded into Extend, not recomputed or dropped")
+}
+
+// #358 F2. The new refusal maps to 400 with its own code, and the message
+// carries BOTH dates so the operator can retry with an informed one.
+func TestTrialExtendNotAfterStripeMapsTo400(t *testing.T) {
+	domainErr := fmt.Errorf("%w: requested %s, stripe currently holds %s",
+		trial.ErrTrialEndNotAfterStripe,
+		"2026-11-15T00:00:00Z", "2026-12-01T00:00:00Z")
+
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{err: domainErr}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "trial_end_not_after_stripe", body["error"])
+	msg, _ := body["message"].(string)
+	require.Contains(t, msg, "2026-11-15T00:00:00Z")
+	require.Contains(t, msg, "2026-12-01T00:00:00Z")
+	require.Empty(t, aud.events, "a refusal emits no audit row")
+}
+
+// #358 N1. When the requested end EQUALS what stripe already holds — not
+// strictly before it — the operator is not looking at a bad date: they are
+// looking at a local row that fell behind stripe after an
+// ErrStripeAppliedLocalWriteFailed divergence. The 400 status and the
+// trial_end_not_after_stripe code stay the same as the strictly-earlier
+// case above; only the message changes, and it must say "reconcile", not
+// "pick a later date".
+func TestTrialExtendNotAfterStripeAtStripeEndSaysReconcile(t *testing.T) {
+	same := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	domainErr := &trial.TrialEndNotAfterStripeError{
+		Requested: same,
+		StripeEnd: same.Unix(),
+	}
+
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{err: domainErr}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "trial_end_not_after_stripe", body["error"],
+		"the code stays the same as the strictly-earlier case; only the message changes")
+
+	msg, _ := body["message"].(string)
+	require.Contains(t, msg, "manual reconciliation")
+	require.Contains(t, msg, "stripe_applied_local_write_failed")
+	require.NotContains(t, msg, "pick a later date",
+		"there is no later date to pick when the requested date already equals stripe's")
+	require.Empty(t, aud.events, "a refusal emits no audit row")
+}
+
+// #358 N1. The strictly-earlier case must still get the original two-date
+// message, not the reconciliation message — the two refusals look the same
+// at the HTTP layer (same code, same status) but mean different things to
+// an operator, and this pins that the distinguishing logic actually
+// distinguishes rather than firing on every ErrTrialEndNotAfterStripe.
+func TestTrialExtendNotAfterStripeStrictlyEarlierStaysGeneric(t *testing.T) {
+	requested := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	stripeEnd := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	domainErr := &trial.TrialEndNotAfterStripeError{
+		Requested: requested,
+		StripeEnd: stripeEnd.Unix(),
+	}
+
+	rec := postExtend(t, &stubExtender{err: domainErr}, &capturedAudit{}, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	msg, _ := body["message"].(string)
+	require.Contains(t, msg, "2026-11-15T00:00:00Z")
+	require.Contains(t, msg, "2026-12-01T00:00:00Z")
+	require.NotContains(t, msg, "manual reconciliation")
 }

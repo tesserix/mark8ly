@@ -189,6 +189,19 @@ func (a *stripeClientAdapter) CreatePortalSession(ctx context.Context, customerI
 	return ps.URL, nil
 }
 
+// trialStripeAdapter adapts the billing Stripe client to
+// trial.StripeTrialUpdater. It exists so the trial package depends on a
+// two-method interface it declares itself rather than on the whole client.
+type trialStripeAdapter struct{ c *billingstripe.Client }
+
+func (a *trialStripeAdapter) GetSubscription(ctx context.Context, id string) (*billingstripe.Subscription, error) {
+	return billingstripe.GetSubscription(ctx, a.c, id)
+}
+
+func (a *trialStripeAdapter) UpdateTrialEnd(ctx context.Context, in billingstripe.UpdateTrialEndParams) (*billingstripe.Subscription, error) {
+	return billingstripe.UpdateTrialEnd(ctx, a.c, in)
+}
+
 // stubPlatformClient is a placeholder stores.Client that always returns
 // ErrPlatformUnavailable. M5a tests pre-seed the stores projection via
 // raw SQL so the middleware never invokes the client. M5b replaces this
@@ -1959,6 +1972,19 @@ func main() {
 		log.Info("P15 white-label lifecycle cron skipped (MODE=storefront, wlAppCredsSvc nil)")
 	}
 
+	// trialStripe stays a TRUE nil interface when Stripe is not configured.
+	// Assigning &trialStripeAdapter{c: nil} unconditionally would make
+	// Extender.Stripe != nil TRUE and panic on the first card-backed
+	// extension, after the row lock is taken — the same shape as #288's
+	// typed-nil gipDeleter. The nil interface is a supported configuration:
+	// card-backed trials get ErrStripeManaged, exactly as before #358.
+	var trialStripe trial.StripeTrialUpdater
+	if billingStripeClient != nil {
+		trialStripe = &trialStripeAdapter{c: billingStripeClient}
+	} else {
+		log.Warn("STRIPE_BILLING_SECRET_KEY not set — card-backed trials cannot be extended (409 stripe_managed)")
+	}
+
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)
 
@@ -2018,7 +2044,7 @@ func main() {
 			TenantGateInvalidator: tenantGate,
 			Tickets:               ticketRepo,
 			Notifications:         notificationRepo,
-			TrialExtender:         platformadmin.TrialExtenderFunc(trial.Extend),
+			TrialExtender:         trial.NewExtender(trialStripe),
 			TenantTeardown:        tenantTeardownClient,
 			Purger:                tenantpurge.NewGormPurger(conn),
 		})
@@ -2142,7 +2168,7 @@ func main() {
 				TenantGateInvalidator: tenantGate,
 				Tickets:               ticketRepo,
 				Notifications:         notificationRepo,
-				TrialExtender:         platformadmin.TrialExtenderFunc(trial.Extend),
+				TrialExtender:         trial.NewExtender(trialStripe),
 				TenantTeardown:        tenantTeardownClient,
 				Purger:                tenantpurge.NewGormPurger(conn),
 			})

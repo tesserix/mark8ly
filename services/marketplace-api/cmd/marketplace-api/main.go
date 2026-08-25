@@ -1706,7 +1706,10 @@ func main() {
 	// (Trial/Starter 90d, Studio 365d, Pro unlimited) are encoded in the
 	// audit package's retentionBuckets. Multi-tenant safe: each DELETE
 	// joins audit_logs to store_subscriptions on store_id, so a tenant's
-	// rows are pruned only against their OWN plan.
+	// rows are pruned only against their OWN plan. Additionally, the same
+	// pass also prunes actor_type='operator' rows at seven years via a
+	// join-less path, because those rows carry no store_id and are
+	// unreachable by the plan-based DELETE (#365).
 	auditPruneCron := audit.NewPruneCron(conn, log, nil, 0).
 		WithCounter(func(label string, n int64) {
 			metrics.AuditPruneRowsDeletedTotal.WithLabelValues(label).Add(float64(n))

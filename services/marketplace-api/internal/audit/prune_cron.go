@@ -55,10 +55,11 @@ var retentionBuckets = []retentionBucket{
 	// PlanMarketplace is platform-internal; it's also not pruned (operator-managed).
 }
 
-// PruneCron deletes audit_logs rows older than each plan's retention window
-// per spec §9. Multi-tenant safety: every DELETE joins store_subscriptions
-// on store_id, so each row is pruned only against its OWN tenant's plan —
-// no possibility of one tenant's plan leaking into another's prune cutoff.
+// PruneCron deletes audit_logs rows via two paths per spec §9: (1) per-plan
+// buckets (Trial 90d, Starter 90d, Studio 365d, Pro unlimited) joined to
+// store_subscriptions on store_id for multi-tenant safety, and (2) platform
+// operator rows (actor_type='operator', no store_id) pruned separately at
+// seven years (#365). Each path is safe against cross-tenant leakage.
 type PruneCron struct {
 	db        *gorm.DB
 	logger    *slog.Logger

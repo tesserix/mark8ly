@@ -41,18 +41,6 @@ var PurgeReasonCodes = []string{
 // irreversible destruction recorded nowhere.
 const maxReasonRunes = 500
 
-// CapabilityValueChecked records that this surface verifies capability
-// PRESENCE but never its VALUE (see middleware.go). #288's acceptance asks
-// for "the highest-privilege capability the gateway can assert", which is
-// not expressible until the console's capability vocabulary is settled —
-// the same blocker as #333. Inventing a value here would refuse every real
-// request, which is why #287 declined to invent capability names.
-//
-// When #333 lands, this is the ONE place to change: flip it and add the
-// per-route required value. Until then the value is recorded on every
-// audit row and gated nowhere.
-const CapabilityValueChecked = false
-
 // operatorAuditFunc records a platform-operator action SYNCHRONOUSLY.
 // Mirrors #287's lifecycleAuditFunc: test doubles capture the raw
 // audit.Event, which the real *audit.Emitter cannot be made to do for its

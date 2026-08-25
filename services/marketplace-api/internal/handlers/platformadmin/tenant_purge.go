@@ -82,10 +82,12 @@ type Purger interface {
 // The purge handler's order is the whole design: teardown (upstream,
 // confirms and deletes the tenant row) -> purge (local, inline destruction
 // report) -> gate invalidation (best-effort) -> audit (LAST, SYNCHRONOUS).
-// purgePlan contains `DELETE FROM audit_logs WHERE tenant_id = ?`, so an
-// audit row written before the purge is destroyed BY the purge, and an
-// async write races it. See purge() below for the full sequencing
-// rationale inline.
+// purgePlan contains
+// `DELETE FROM audit_logs WHERE tenant_id = ? AND actor_type <> 'operator'`
+// (#288) — this handler's own row is excluded from that delete, so an
+// async write still races the purge transaction rather than being
+// destroyed by it. See purge() below for the full sequencing rationale
+// inline.
 type TenantPurgeHandler struct {
 	teardown   TenantTeardown
 	purger     Purger
@@ -153,7 +155,7 @@ type purgeRequest struct {
 }
 
 // purgeResponse is the POST's `data` payload. Six fields always present;
-// `reason` is the only omitempty.
+// `reason` and `reason_not_retained` are omitempty.
 type purgeResponse struct {
 	TenantID   string                    `json:"tenant_id"`
 	TenantName string                    `json:"tenant_name"`
@@ -164,6 +166,11 @@ type purgeResponse struct {
 	Tables     []tenantpurge.TableResult `json:"tables"`
 	TotalRows  int64                     `json:"total_rows"`
 	PurgedAt   string                    `json:"purged_at"`
+	// ReasonNotRetained is set only when free text was supplied on an
+	// erasure_request purge and therefore discarded. omitempty: a purge
+	// that dropped nothing carries no such key, so its presence always
+	// means something was actually discarded (#365).
+	ReasonNotRetained bool `json:"reason_not_retained,omitempty"`
 }
 
 // previewResponse is the GET's `data` payload.
@@ -246,10 +253,14 @@ func (h *TenantPurgeHandler) purge(c *gin.Context) {
 	purgedAt := time.Now().UTC()
 
 	// 4. Audit LAST and SYNCHRONOUSLY. purgePlan contains
-	//    DELETE FROM audit_logs WHERE tenant_id = ?, so a row written
-	//    before step 2 is destroyed by step 2, and an async write races
-	//    it. EmitSync after the purge transaction has committed is the
-	//    only ordering that survives.
+	//    DELETE FROM audit_logs WHERE tenant_id = ? AND actor_type <> 'operator'
+	//    (#288) — this handler's own operator row is excluded from that
+	//    delete, so an operator row written BEFORE step 2 would now
+	//    actually survive step 2. The ordering therefore no longer rests
+	//    on "written before the purge would be destroyed by it"; it rests
+	//    entirely on the argument below: EmitSync after the purge
+	//    transaction has committed is what lets the row record the
+	//    OUTCOME rather than merely the attempt.
 	//
 	//    The row records the OUTCOME, not merely the attempt. When the
 	//    local purge failed, the upstream teardown has still committed —
@@ -260,12 +271,41 @@ func (h *TenantPurgeHandler) purge(c *gin.Context) {
 	status := audit.StatusSuccess
 	metadata := map[string]any{
 		"reason_code": req.ReasonCode,
-		"reason":      reason,
 		"store_slugs": storeSlugs,
 		"store_ids":   res.StoreIDs,
 		"tables":      rep.Tables,
 		"total_rows":  rep.TotalRows,
 		"capability":  c.GetString(CtxCapability),
+	}
+	// #365: on a statutory erasure the free text is NEVER written.
+	//
+	// This row is excluded from the purge's own audit_logs delete
+	// (purge.go:370, actor_type <> 'operator') so that the outbox backstop
+	// cannot destroy the record of the destruction (#288). It therefore
+	// OUTLIVES the tenant — and free text on an erasure is exactly where an
+	// operator writes what the erasure was for ("cust jane@…, ticket 4471"),
+	// so the surviving row would carry the thing being erased.
+	//
+	// Never written rather than stripped later: CloudNativePG backs up to
+	// GCS continuously (3-day PITR), so text that exists even briefly is
+	// captured there. "We never recorded it" is both stronger and easier to
+	// explain than a two-stage rule.
+	//
+	// reason_code SURVIVES. PurgeReasonCodes keeps merchant_request and
+	// erasure_request distinct precisely because "only the second carries a
+	// statutory clock, and an audit trail that cannot tell them apart cannot
+	// answer the question a regulator asks" — dropping the category as well
+	// would defeat the reason the category exists.
+	//
+	// The purge itself is never refused for carrying free text: blocking an
+	// art.17 purge against a statutory deadline on a formatting objection is
+	// a worse outcome than a discarded sentence. We accept it, don't store
+	// it, and disclose the drop via reason_not_retained below.
+	reasonNotRetained := false
+	if req.ReasonCode == "erasure_request" {
+		reasonNotRetained = reason != ""
+	} else {
+		metadata["reason"] = reason
 	}
 	if purgeErr != nil {
 		status = audit.StatusFailure
@@ -308,15 +348,16 @@ func (h *TenantPurgeHandler) purge(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": purgeResponse{
-		TenantID:   res.TenantID,
-		TenantName: res.TenantName,
-		StoreIDs:   res.StoreIDs,
-		StoreSlugs: res.StoreSlugs,
-		ReasonCode: req.ReasonCode,
-		Reason:     reason,
-		Tables:     rep.Tables,
-		TotalRows:  rep.TotalRows,
-		PurgedAt:   purgedAt.Format(time.RFC3339),
+		TenantID:          res.TenantID,
+		TenantName:        res.TenantName,
+		StoreIDs:          res.StoreIDs,
+		StoreSlugs:        res.StoreSlugs,
+		ReasonCode:        req.ReasonCode,
+		Reason:            reason,
+		Tables:            rep.Tables,
+		TotalRows:         rep.TotalRows,
+		PurgedAt:          purgedAt.Format(time.RFC3339),
+		ReasonNotRetained: reasonNotRetained,
 	}})
 }
 

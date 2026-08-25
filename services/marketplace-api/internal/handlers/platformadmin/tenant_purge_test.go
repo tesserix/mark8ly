@@ -616,3 +616,82 @@ func TestPurgePreview_MatchesGoldenFixture(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, string(want), rec.Body.String())
 }
+
+// THE CARVE-OUT. On an erasure_request purge the free-text reason must never
+// be written. Asserted on the METADATA the audit event carries, not on the
+// response: the response is what we say, the metadata is what survives the
+// tenant for seven years.
+func TestPurge_ErasureRequest_DropsFreeTextFromAuditMetadata(t *testing.T) {
+	sq := &seq{}
+	td := &fakeTeardown{seq: sq, res: &tenantlifecycle.TeardownResult{
+		TenantID: tenantID, TenantName: "The Bondi Store",
+		StoreIDs: []string{"s-1"}, StoreSlugs: []string{"a"},
+	}}
+	pg := &fakePurger{seq: sq, rep: tenantpurge.Report{
+		Tables: []tenantpurge.TableResult{{Table: "products", RowsDeleted: 3}}, TotalRows: 3,
+	}}
+	var got audit.Event
+	emit := func(_ *gin.Context, _ uuid.UUID, ev audit.Event) error { got = ev; return nil }
+
+	rec := doPurge(t, td, pg, emit,
+		`{"store_slugs":["a"],"reason_code":"erasure_request","reason":"cust jane@example.com asked, ticket 4471"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	_, present := got.Metadata["reason"]
+	require.False(t, present,
+		"an erasure purge's free text must be ABSENT from the metadata, not empty — it outlives the tenant")
+	require.Equal(t, "erasure_request", got.Metadata["reason_code"],
+		"reason_code must survive: it is what tells a regulator a statutory clock applied")
+
+	// The operator is told, so nobody believes they documented something
+	// that silently vanished.
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	data, ok := body["data"].(map[string]any)
+	require.True(t, ok, "response is enveloped under data: %s", rec.Body.String())
+	require.Equal(t, true, data["reason_not_retained"])
+}
+
+// THE DISCRIMINATING PAIR (trap 13). The SAME free text under a different
+// reason code MUST persist. Without this, the test above passes against an
+// implementation that drops `reason` unconditionally, and every purge loses
+// its context.
+func TestPurge_NonErasureReasonCodes_KeepFreeText(t *testing.T) {
+	const text = "cust jane@example.com asked, ticket 4471"
+	for _, code := range []string{"merchant_request", "fraud", "abandoned", "legal", "operator_error"} {
+		t.Run(code, func(t *testing.T) {
+			sq := &seq{}
+			td := &fakeTeardown{seq: sq, res: &tenantlifecycle.TeardownResult{
+				TenantID: tenantID, TenantName: "The Bondi Store",
+				StoreIDs: []string{"s-1"}, StoreSlugs: []string{"a"},
+			}}
+			pg := &fakePurger{seq: sq, rep: tenantpurge.Report{TotalRows: 0}}
+			var got audit.Event
+			emit := func(_ *gin.Context, _ uuid.UUID, ev audit.Event) error { got = ev; return nil }
+
+			rec := doPurge(t, td, pg, emit,
+				`{"store_slugs":["a"],"reason_code":"`+code+`","reason":"`+text+`"}`)
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+			require.Equal(t, text, got.Metadata["reason"],
+				"only erasure_request drops free text; %s must keep it", code)
+			require.NotContains(t, rec.Body.String(), "reason_not_retained",
+				"nothing was dropped, so the disclosure key must be absent (omitempty)")
+		})
+	}
+}
+
+// An erasure purge with NO free text must not claim text was dropped.
+func TestPurge_ErasureRequest_NoText_DoesNotClaimADrop(t *testing.T) {
+	sq := &seq{}
+	td := &fakeTeardown{seq: sq, res: &tenantlifecycle.TeardownResult{
+		TenantID: tenantID, TenantName: "The Bondi Store",
+		StoreIDs: []string{"s-1"}, StoreSlugs: []string{"a"},
+	}}
+	pg := &fakePurger{seq: sq, rep: tenantpurge.Report{TotalRows: 0}}
+
+	rec := doPurge(t, td, pg, noopEmit, `{"store_slugs":["a"],"reason_code":"erasure_request"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "reason_not_retained",
+		"nothing was dropped, so nothing should be disclosed")
+}

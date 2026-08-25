@@ -46,9 +46,22 @@ type PurgeResult struct {
 // is authorization.
 //
 // The confirmation check runs INSIDE the teardown transaction, against a
-// snapshot taken under SELECT ... FOR UPDATE. Comparing slugs read outside
-// the transaction that deletes the row is the same stale read the check
-// exists to prevent, only with a shorter window.
+// snapshot taken under SELECT ... FOR UPDATE. Postgres runs at READ
+// COMMITTED by default, so every statement inside the transaction takes
+// its own fresh snapshot — running the comparison inside the transaction
+// NARROWS the window in which a store could be created and missed by the
+// check, it does not close it. A store committed by another session
+// between the snapshot statement and the DELETE FROM tenants is cascaded
+// away without ever appearing in the confirmed set, under either
+// arrangement. That narrower window is the actual reason for doing the
+// comparison in-transaction; concurrent store creation during a purge is
+// not defended against.
+//
+// What the transaction plus SELECT ... FOR UPDATE on the tenant row does
+// genuinely guarantee is serialising two concurrent PURGES of the same
+// tenant: the second blocks on the lock until the first commits (or rolls
+// back), then re-reads and finds no row, so exactly one purge can
+// succeed. See TestPurgeTenant_Integration_ConcurrentPurgesHaveExactlyOneWinner.
 //
 // Post-commit cleanup mirrors deleteOwnerAccount and is best-effort for
 // the same reason: the tenant.deleted outbox event enqueued inside the

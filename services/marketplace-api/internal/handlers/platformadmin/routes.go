@@ -96,6 +96,14 @@ type Deps struct {
 	// shipments.dispatched_email_sent_at), but neither reports delivery,
 	// bounce or drop. See #348.
 	Notifications NotificationLister
+
+	// TrialExtender serves POST /admin/billing/trials/:storeID/extend
+	// (#286), this surface's second WRITE. It uses DB (for idempotency
+	// replay) and Emitter (for the audit row) when they are present, but —
+	// unlike TenantLifecycle — mounting is NOT gated on either: the
+	// handler is nil-safe on both, so a nil DB just disables idempotency
+	// replay and a nil Emitter is tolerated by NewOperatorActionAuditFunc.
+	TrialExtender TrialExtender
 }
 
 // TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
@@ -207,5 +215,20 @@ func Register(g *gin.RouterGroup, deps Deps) {
 			deps.Logger.Warn("platformadmin: tenant lifecycle routes not mounted — DB and Emitter are both required",
 				"db_nil", deps.DB == nil, "emitter_nil", deps.Emitter == nil)
 		}
+	}
+
+	// Unlike TenantLifecycle above, mounting here is NOT gated on DB or
+	// Emitter being non-nil: the handler itself is nil-safe on both (the
+	// idempotency Lookup/Save calls are guarded on h.db != nil, and
+	// NewOperatorActionAuditFunc tolerates a nil *audit.Emitter — see its
+	// own doc comment in tenant_lifecycle.go). This matches the nil-safe
+	// pattern used for Tickets/Notifications above, not the hard mount
+	// gate used for TenantLifecycle.
+	if deps.TrialExtender != nil {
+		NewBillingTrialExtendHandler(
+			deps.DB, deps.TrialExtender,
+			NewOperatorActionAuditFunc(deps.Emitter),
+			deps.Logger,
+		).Register(group)
 	}
 }

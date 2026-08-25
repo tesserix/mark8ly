@@ -59,7 +59,22 @@ func okResult() trial.ExtendResult {
 	}
 }
 
+// postExtend sends the Idempotency-Key header by default — required since
+// this handler makes the endpoint safe to retry. Tests that specifically
+// exercise the missing-header case use postExtendNoIdempotencyKey instead.
 func postExtend(t *testing.T, ex platformadmin.TrialExtender, aud *capturedAudit, storeID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return postExtendWithHeaders(t, ex, aud, storeID, body, true)
+}
+
+// postExtendNoIdempotencyKey omits the Idempotency-Key header, for the test
+// asserting that its absence is refused.
+func postExtendNoIdempotencyKey(t *testing.T, ex platformadmin.TrialExtender, aud *capturedAudit, storeID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return postExtendWithHeaders(t, ex, aud, storeID, body, false)
+}
+
+func postExtendWithHeaders(t *testing.T, ex platformadmin.TrialExtender, aud *capturedAudit, storeID, body string, withIdempotencyKey bool) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -68,6 +83,9 @@ func postExtend(t *testing.T, ex platformadmin.TrialExtender, aud *capturedAudit
 	req := httptest.NewRequest(http.MethodPost,
 		"/admin/billing/trials/"+storeID+"/extend", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
+	if withIdempotencyKey {
+		req.Header.Set("Idempotency-Key", "test-key-"+storeID)
+	}
 	r.ServeHTTP(rec, req)
 	return rec
 }
@@ -199,4 +217,26 @@ func TestTrialExtendUnparseableDate(t *testing.T) {
 		`{"reason_code":"goodwill","trial_ends_at":"next tuesday"}`)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Equal(t, 0, ex.calls)
+}
+
+// The Idempotency-Key header is REQUIRED. A write that cannot be retried
+// safely is worse than one that refuses to start.
+func TestTrialExtendRequiresIdempotencyKey(t *testing.T) {
+	ex := &stubExtender{result: okResult()}
+	rec := postExtendNoIdempotencyKey(t, ex, &capturedAudit{}, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "idempotency_key_required")
+	require.Equal(t, 0, ex.calls)
+}
+
+// `reason` must be OMITTED from the response JSON when empty, not present
+// with an empty value — asserted on the raw body bytes, which is the only
+// way to distinguish an absent key from an empty one. An unmarshalled
+// struct assertion cannot tell those apart.
+func TestTrialExtendOmitsEmptyReasonFromResponse(t *testing.T) {
+	body := `{"reason_code":"goodwill","trial_ends_at":"2026-12-01T00:00:00Z"}`
+	rec := postExtend(t, &stubExtender{result: okResult()}, &capturedAudit{}, extendStoreID.String(), body)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), `"reason"`,
+		"an empty reason must be omitted from the response, not sent as an empty string")
 }

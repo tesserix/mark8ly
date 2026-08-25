@@ -2,6 +2,7 @@ package platformadmin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
+	"github.com/mark8ly/marketplace-api/internal/idempotency"
 )
 
 // ExtendReasonCodes is the closed set of reasons a trial may be extended
@@ -54,7 +56,14 @@ func (f TrialExtenderFunc) Extend(ctx context.Context, db *gorm.DB, storeID uuid
 // closes over a real *audit.Emitter via EmitOperatorAction; test doubles
 // capture the audit.Event synchronously, which the real Emitter cannot do
 // because its write happens on an async worker goroutine.
-type trialExtendAuditFunc func(c *gin.Context, tenantID uuid.UUID, ev audit.Event) error
+//
+// Declared as an alias of lifecycleAuditFunc (tenant_lifecycle.go), not a
+// second independent named type: NewOperatorActionAuditFunc returns
+// lifecycleAuditFunc, and Go's assignability rules do not implicitly
+// convert between two distinct named function types even when their
+// underlying signatures match. An alias keeps exactly one adapter in this
+// package rather than requiring — or worse, silently needing — a second one.
+type trialExtendAuditFunc = lifecycleAuditFunc
 
 // BillingTrialExtendHandler serves POST /admin/billing/trials/{store_id}/extend.
 //
@@ -95,6 +104,25 @@ type trialExtendResponse struct {
 }
 
 func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
+	idemKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if idemKey == "" {
+		// A write that cannot be retried safely is worse than one that
+		// refuses to start.
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "idempotency_key_required", "message": "the Idempotency-Key header is required for this endpoint",
+		})
+		return
+	}
+
+	if h.db != nil {
+		if stored, ok, err := idempotency.Lookup(c.Request.Context(), h.db, idemKey); err == nil && ok {
+			// A replay: return the stored bytes verbatim, without calling
+			// Extend and without emitting a second audit row.
+			c.Data(http.StatusOK, "application/json; charset=utf-8", stored)
+			return
+		}
+	}
+
 	storeID, err := uuid.Parse(strings.TrimSpace(c.Param("storeID")))
 	if err != nil {
 		// 400, not 500: a malformed id is the caller's error. #343 records
@@ -187,7 +215,7 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, trialExtendResponse{
+	resp := trialExtendResponse{
 		StoreID:             res.StoreID.String(),
 		TenantID:            res.TenantID.String(),
 		TrialEndsAt:         next,
@@ -195,7 +223,24 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 		ReasonCode:          req.ReasonCode,
 		Reason:              reason,
 		RemindersCleared:    res.RemindersCleared,
-	})
+	}
+
+	if h.db != nil {
+		if body, err := json.Marshal(resp); err != nil {
+			if h.logger != nil {
+				h.logger.Error("trial extend: could not marshal response for idempotency save", "err", err)
+			}
+		} else if err := idempotency.Save(c.Request.Context(), h.db, idemKey, res.TenantID.String(), body, time.Now().UTC(), idempotency.DefaultTTL); err != nil {
+			// Logged, not surfaced: the extension already happened, and
+			// failing the response would make the caller retry a write
+			// that succeeded.
+			if h.logger != nil {
+				h.logger.Error("trial extend: idempotency save failed", "store_id", res.StoreID.String(), "err", err)
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 // respondExtendErr maps the domain's sentinel errors to distinct statuses

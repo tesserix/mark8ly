@@ -2005,6 +2005,7 @@ func main() {
 			TenantGateInvalidator: tenantGate,
 			Tickets:               ticketRepo,
 			Notifications:         notificationRepo,
+			TrialExtender:         platformadmin.TrialExtenderFunc(trial.Extend),
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2118,6 +2119,7 @@ func main() {
 				TenantGateInvalidator: tenantGate,
 				Tickets:               ticketRepo,
 				Notifications:         notificationRepo,
+				TrialExtender:         platformadmin.TrialExtenderFunc(trial.Extend),
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

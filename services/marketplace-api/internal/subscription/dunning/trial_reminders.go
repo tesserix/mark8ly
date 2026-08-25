@@ -45,8 +45,9 @@ var trialReminderTargets = []trialReminderTarget{
 	{"has_pm_t_minus_1", 1, email.TemplateTrialHasPMT1, true, "trial ends tomorrow; plan auto-starts"},
 }
 
-// SendTrialReminders is a daily cron that emails merchants approaching the
-// 90-day trial boundary. Cadence depends on whether the merchant has a
+// SendTrialReminders is a daily cron that emails merchants approaching their
+// trial's effective end (normally 90 days, extended if an operator has set
+// trial_ends_at). Cadence depends on whether the merchant has a
 // default payment method on file (mirrored onto store_subscriptions by the
 // customer.updated webhook handler — see migration 087):
 //

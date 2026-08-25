@@ -10,7 +10,7 @@ ALTER TABLE store_subscriptions ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP
 
 -- Partial, because extensions are rare: this index stays small while giving
 -- the extended branch of the trial-window queries something to use. The
--- unextended branch keeps using ss_status_created_at_idx from migration 087.
+-- unextended branch keeps using ss_trial_reminder_scan_idx from migration 087.
 CREATE INDEX IF NOT EXISTS ss_trial_ends_at_idx
     ON store_subscriptions (trial_ends_at)
     WHERE trial_ends_at IS NOT NULL;

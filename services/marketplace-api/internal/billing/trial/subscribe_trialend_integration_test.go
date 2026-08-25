@@ -38,6 +38,11 @@ func (f *trialEndCaptureStripe) PriceIDFor(_ context.Context, _ subscription.Sub
 // real-money value: Stripe bills the merchant on whatever date this call
 // sends, so the assertion checks the exact integer rather than merely that
 // CreateSubscription was called.
+//
+// This is the only assertion anywhere on the value sent to Stripe by the
+// subscribe path. It requires the `integration` build tag and a real
+// Postgres at TEST_DATABASE_URL (see pkg/testdb) — a plain `go test ./...`
+// does not build or run it.
 func TestSubscribe_TrialEndSentToStripeIsEffectiveEnd(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stores")
 

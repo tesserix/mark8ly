@@ -1,7 +1,8 @@
 // Package trial implements the deferred-charge card-add flow (§5.3).
 // A merchant adds their card at onboarding time; we provision a Stripe
-// subscription with trial_end = signup_date + 90d so Stripe defers the first
-// invoice to day 90. No charge occurs at call time.
+// subscription with trial_end = the effective trial end (EndsAt) — normally
+// signup_date + 90d, but a platform operator may have extended it — so
+// Stripe defers the first invoice accordingly. No charge occurs at call time.
 package trial
 
 import (
@@ -84,7 +85,9 @@ type SubscribeResult struct {
 	TrialEndUnix         int64
 }
 
-// Subscribe creates a Stripe subscription with trial_end = signup_date + 90d.
+// Subscribe creates a Stripe subscription with trial_end = the effective
+// trial end (EndsAt) — normally signup_date + 90d, extended if an operator
+// has set trial_ends_at.
 //
 // It does NOT flip subscription.status — the webhook owns that transition via
 // statemachine.Transition. Keeping Subscribe a pure "provision Stripe + persist id"

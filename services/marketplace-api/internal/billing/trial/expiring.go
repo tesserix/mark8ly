@@ -17,9 +17,11 @@ import (
 // report different numbers for the same word.
 const DefaultExpiryWindow = 7 * 24 * time.Hour
 
-// MaxExpiryWindow clamps `days`. Beyond the trial length the window stops
-// meaning anything — every live trial is inside it.
-const MaxExpiryWindow = time.Duration(TrialDays) * 24 * time.Hour
+// MaxExpiryWindow clamps `days`. An operator-extended trial (trial_ends_at
+// set via the console) can end arbitrarily far in the future, so this is
+// NOT a claim that every live trial ends within TrialDays — it is only a
+// bound to keep the window finite.
+const MaxExpiryWindow = 365 * 24 * time.Hour
 
 // ExpiringRow is one trial about to expire.
 type ExpiringRow struct {
@@ -86,8 +88,13 @@ func ListExpiring(ctx context.Context, db *gorm.DB, asOf time.Time, window time.
 	// assumption that every row shared one trial length — extensions break
 	// that, so an older row extended further out must sort after a newer one
 	// ending sooner.
+	// Built in hours, not days: INTERVAL '<n> days' is calendar arithmetic
+	// evaluated in the session timezone, which can disagree with EndsAt's
+	// exact 90*24h across a DST boundary in a non-UTC session. This is
+	// ordering-only, but it must still agree with EndsAt or rows sort
+	// inconsistently with what they're compared against.
 	err = expiringScope(db.WithContext(ctx), asOf, window).
-		Order("COALESCE(trial_ends_at, created_at + INTERVAL '" + strconv.Itoa(TrialDays) + " days') ASC").
+		Order("COALESCE(trial_ends_at, created_at + INTERVAL '" + strconv.Itoa(TrialDays*24) + " hours') ASC").
 		Offset(offset).
 		Limit(limit).
 		Find(&raw).Error

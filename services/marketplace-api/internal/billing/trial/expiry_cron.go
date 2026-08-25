@@ -19,8 +19,10 @@ import (
 const ExpirySpec = "15 0 * * *"
 
 // ExpiryCron transitions trialing stores that have no card (stripe_subscription_id
-// IS NULL) and whose trial has exceeded TrialDays to the "expired" status via the
-// state machine. It is idempotent: stores already in "expired" are never selected.
+// IS NULL) and whose trial has passed its effective end (EndsAt — normally
+// TrialDays, extended if an operator has set trial_ends_at) to the "expired"
+// status via the state machine. It is idempotent: stores already in "expired"
+// are never selected.
 type ExpiryCron struct {
 	db      *gorm.DB
 	emitter *audit.Emitter
@@ -73,7 +75,7 @@ func (c *ExpiryCron) expireOne(ctx context.Context, row *subscription.StoreSubsc
 		From:     subscription.StatusTrialing,
 		To:       subscription.StatusExpired,
 		Actor:    "system:cron:trial_expiry",
-		Reason:   "day_90_no_card",
+		Reason:   "trial_ended_no_card",
 	})
 	switch {
 	case err == nil:

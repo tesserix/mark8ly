@@ -21,11 +21,15 @@ import (
 // duration is not a trial end at all — add the file to `allowed` with a comment
 // explaining why.
 //
-// NOTE: This regex tripwire is a heuristic, not a proof. It does not match
-// negated forms (Add(-90 * 24 * time.Hour)) that escape only because of a
-// minus sign, or durations already bound to a named constant. A PASS does not
-// prove trial end is defined in only one place; it only means this one pattern
-// set hasn't found a second definition.
+// NOTE: This regex tripwire is a heuristic, not a proof. It does not match:
+//   - negated forms (Add(-90 * 24 * time.Hour)) that escape only because of a
+//     minus sign;
+//   - AddDate(0, 0, 90) — literal days, not routed through TrialDays;
+//   - Add(time.Duration(TrialDays)*24*time.Hour) or Add(trialLen) — a
+//     duration bound to a variable before being passed to Add.
+//
+// A PASS does not prove trial end is defined in only one place; it only means
+// this one pattern set hasn't found a second definition.
 func TestTrialEndIsDerivedInExactlyOnePlace(t *testing.T) {
 	// Matches `<something>.Add(TrialDays * 24 * time.Hour)` and the hardcoded
 	// 90-day form that #326 was, in either spacing.

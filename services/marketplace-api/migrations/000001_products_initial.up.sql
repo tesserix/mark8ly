@@ -259,7 +259,9 @@ CREATE INDEX outbox_unpublished_idx
     ON outbox_events (tenant_id, created_at) WHERE published_at IS NULL;
 
 -- ------------------------------------------------------------
--- idempotency_keys — cleanup via the nightly sweep job (slice 1)
+-- idempotency_keys — pruned by internal/idempotency.SweepExpired, run from
+-- the platform-admin daily cron since #286. (This comment previously claimed
+-- cleanup via a nightly sweep job that did not exist.)
 -- ------------------------------------------------------------
 CREATE TABLE idempotency_keys (
     key        varchar(255) PRIMARY KEY,

@@ -1,7 +1,11 @@
-// Package idempotency holds the IdempotencyKey model. Cleanup of expired
-// rows happens in the nightly sweep job (spec §14.10 — same CronJob as
-// orphan GCS sweep). This package does not own the cleanup job itself,
-// only the row shape.
+// Package idempotency holds the IdempotencyKey model and its store.
+//
+// Expired rows are pruned by SweepExpired, wired onto the platform-admin
+// daily cron (platformadmin.SweepSpec) since #286 — this table's first
+// consumer. An earlier version of this comment, and the one in migration
+// 000001, both claimed a pre-existing nightly sweep handled it. Neither was
+// true: the only other references delete by tenant_id when a tenant is
+// hard-deleted or purged, and nothing read expires_at at all.
 package idempotency
 
 import (

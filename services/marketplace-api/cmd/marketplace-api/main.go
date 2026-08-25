@@ -1722,11 +1722,22 @@ func main() {
 		}); err != nil {
 			log.Error("register platform admin nonce sweep cron", "err", err)
 		}
+
+		if _, err := trialScheduler.AddFunc(platformadmin.SweepSpec, func() {
+			deleted, err := platformadmin.SweepExpiredIdempotencyKeys(workerCtx, conn)
+			if err != nil {
+				log.Error("platform admin idempotency sweep failed", "err", err)
+				return
+			}
+			log.Info("platform admin idempotency sweep complete", "rows_deleted", deleted)
+		}); err != nil {
+			log.Error("register platform admin idempotency sweep cron", "err", err)
+		}
 	}
 
 	trialScheduler.Start()
 	defer trialScheduler.Stop()
-	log.Info("P5 crons started", "count", 4)
+	log.Info("P5 crons started", "count", 5)
 
 	// P6 dunning + SCA recovery crons. Emails route through the NoOpClient
 	// until a real adapter is wired (email columns on StoreSubscription are
@@ -1994,6 +2005,7 @@ func main() {
 			TenantGateInvalidator: tenantGate,
 			Tickets:               ticketRepo,
 			Notifications:         notificationRepo,
+			TrialExtender:         platformadmin.TrialExtenderFunc(trial.Extend),
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2107,6 +2119,7 @@ func main() {
 				TenantGateInvalidator: tenantGate,
 				Tickets:               ticketRepo,
 				Notifications:         notificationRepo,
+				TrialExtender:         platformadmin.TrialExtenderFunc(trial.Extend),
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

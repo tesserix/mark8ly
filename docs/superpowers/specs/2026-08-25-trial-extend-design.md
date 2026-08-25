@@ -167,9 +167,16 @@ not assert a direction.
 { "store_id": "…", "tenant_id": "…",
   "trial_ends_at": "2026-12-01T00:00:00Z",
   "previous_trial_ends_at": "2026-09-14T10:22:31Z",
+  "reason_code": "support_escalation",
   "reason": "…",
+  "reminders_cleared": 2,
   "extended_at": "2026-08-25T09:00:00Z" }
 ```
+
+`reason_code` and `reminders_cleared` were added after this block was first
+written — the former by the decision to match #287's contract, the latter because
+the operator should see that the reminder cadence was re-armed rather than have to
+infer it. `reason` keeps `omitempty`; the other six are always present.
 
 `previous_trial_ends_at` is the **effective** end before the write — `trial.EndsAt` of the
 row as read, which is the derived date when the trial had never been extended. It is what
@@ -216,6 +223,20 @@ first use. Acceptance criterion 4 is therefore net-new machinery on this surface
 
 - The `Idempotency-Key` header is **required** for this endpoint. A write that cannot be
   retried safely is worse than one that refuses to start.
+- **The key is namespaced per store before it reaches the table**
+  (`trial_extend:<store_id>:<key>`). `idempotency_keys.key` is a bare primary key shared by
+  the whole service and the caller chooses the header value, so an unscoped key would replay
+  across stores: the same key against a different store would return the FIRST store's
+  `store_id`, `tenant_id` and dates while the second store was never extended — a
+  cross-tenant read on a governance surface, and a silently skipped billing write. This was
+  caught only by the final whole-branch review; the first integration test used one store for
+  every call and so contained no case where the unscoped implementation answered differently.
+- **The key is RESERVED before the work, not merely looked up afterwards.** Lookup-then-Save
+  is check-then-act: two pods can both miss and both extend, and `ON CONFLICT DO NOTHING`
+  keeps only the first *body*, so the loser's response is returned to a caller and never
+  stored — a third retry would then replay a third, different body. `Reserve` claims the key
+  first; the loser gets `409 in_progress`, and a reserved-but-incomplete row is never
+  replayable.
 - On a hit, the stored response body is replayed with its original status and **no** second
   audit row is written. That is what "idempotent" has to mean here — the state write is
   naturally idempotent because the value is absolute, but the audit row is not.

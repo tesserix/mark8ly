@@ -44,15 +44,15 @@ func withCurrentTimestamp(in *platformadmin.SignatureInput) {
 // test below.
 func fullPurgeDeps() platformadmin.Deps {
 	return platformadmin.Deps{
-		Repo:                  &stubRepo{},
-		Secret:                testSecret,
-		DB:                    &gorm.DB{},
-		NonceStore:            newMemNonces(),
-		TenantTeardown:        &fakeTeardown{seq: &seq{}},
-		Purger:                &fakePurger{seq: &seq{}},
-		TenantDirectory:       &stubDirectory{detail: &tenantdirectory.TenantDetail{}},
-		Emitter:               audit.NewEmitter(audit.EmitterConfig{Repo: &recordingRepo{}}),
-		TenantLifecycle:       &stubLifecycle{},
+		Repo:            &stubRepo{},
+		Secret:          testSecret,
+		DB:              &gorm.DB{},
+		NonceStore:      newMemNonces(),
+		TenantTeardown:  &fakeTeardown{seq: &seq{}},
+		Purger:          &fakePurger{seq: &seq{}},
+		TenantDirectory: &stubDirectory{detail: &tenantdirectory.TenantDetail{}},
+		Emitter:         audit.NewEmitter(audit.EmitterConfig{Repo: &recordingRepo{}}),
+		TenantLifecycle: &stubLifecycle{},
 	}
 }
 

@@ -358,8 +358,8 @@ func TestPurge_SuccessIsAuditedAsSuccessWithNoPurgeError(t *testing.T) {
 
 func TestPurge_UnknownReasonCodeIs400(t *testing.T) {
 	cases := []struct {
-		code    string
-		wantOK  bool
+		code   string
+		wantOK bool
 	}{
 		{"", false},
 		{"nonsense", false},
@@ -427,7 +427,12 @@ func TestPurge_AuditRowCarriesOperatorCapabilityReasonAndCounts(t *testing.T) {
 		Tables: []tenantpurge.TableResult{{Table: "products", RowsDeleted: 9}}, TotalRows: 9,
 	}}
 	var got audit.Event
-	emit := func(_ *gin.Context, id uuid.UUID, ev audit.Event) error { got = ev; ev.TenantID = id; got = ev; return nil }
+	emit := func(_ *gin.Context, id uuid.UUID, ev audit.Event) error {
+		got = ev
+		ev.TenantID = id
+		got = ev
+		return nil
+	}
 
 	rec := doPurge(t, td, pg, emit, `{"store_slugs":["a","b"],"reason_code":"fraud","reason":"confirmed fraud"}`)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())

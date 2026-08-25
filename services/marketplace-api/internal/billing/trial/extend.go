@@ -21,9 +21,18 @@ import (
 var (
 	ErrNoSubscription   = errors.New("trial: no subscription for store")
 	ErrAlreadyConverted = errors.New("trial: subscription already converted")
-	ErrStripeManaged    = errors.New("trial: trial is stripe-managed")
-	ErrNotTrialing      = errors.New("trial: subscription is not in a trial state")
-	ErrEndNotInFuture   = errors.New("trial: new trial end must be in the future")
+	// ErrStripeManaged: as of #358, this does NOT mean "this trial is
+	// Stripe-managed, refuse it" — card-backed trials are extended through
+	// Stripe below. It means the trial IS card-backed but this build has no
+	// Stripe client configured (e.Stripe == nil), so there is nowhere to
+	// send the update and a local-only write would put the console and
+	// Stripe in disagreement about when a real merchant is charged. The
+	// wire code stays "stripe_managed" — it is a live contract shipped by
+	// #286 and the caller-visible meaning, "we will not move this trial's
+	// date here", is unchanged.
+	ErrStripeManaged  = errors.New("trial: trial is stripe-managed")
+	ErrNotTrialing    = errors.New("trial: subscription is not in a trial state")
+	ErrEndNotInFuture = errors.New("trial: new trial end must be in the future")
 
 	// ErrStripeStateConflict: the local row says trialing but Stripe does
 	// not. Reconciling silently is not this endpoint's job.

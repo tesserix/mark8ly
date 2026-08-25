@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -304,4 +305,145 @@ func TestTrialExtendTruncatesReasonOnARuneBoundary(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.True(t, utf8.ValidString(resp.Reason))
+}
+
+// stripeOKResult is okResult() plus the Stripe-side facts a card-backed
+// extension produces. Every value is DISTINCT and non-zero: a payload
+// assembled by map lookup returns the zero value for a key nobody set, so
+// identical or zero fixtures would let a broken mapping pass.
+func stripeOKResult() trial.ExtendResult {
+	r := okResult()
+	r.StripeApplied = true
+	r.StripeSubscriptionID = "sub_verify_358"
+	r.StripeTrialEnd = time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC).Unix()
+	r.PreviousStripeTrialEnd = time.Date(2026, 9, 14, 10, 22, 31, 0, time.UTC).Unix()
+	r.PreviousBillingAnchor = time.Date(2026, 9, 14, 10, 22, 31, 0, time.UTC).Unix()
+	return r
+}
+
+// The new refusals must be distinguishable by the console. 502 is
+// deliberately NOT the handler's existing 503 `unavailable`: 503 means our
+// own idempotency store is unreachable, 502 means the dependency refused —
+// and, critically, that no local write happened.
+func TestExtend_StripeRefusalsMapToDistinctStatuses(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{"unconfigured", trial.ErrStripeManaged, http.StatusConflict, "stripe_managed"},
+		{"state conflict", trial.ErrStripeStateConflict, http.StatusConflict, "stripe_state_conflict"},
+		{"too far", trial.ErrTrialEndTooFar, http.StatusBadRequest, "trial_end_too_far"},
+		{"call failed", fmt.Errorf("%w: update trial end: boom", trial.ErrStripeCall), http.StatusBadGateway, "stripe_unavailable"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			aud := &capturedAudit{}
+			rec := postExtend(t, &stubExtender{err: tc.err}, aud, extendStoreID.String(), goodBody)
+			require.Equal(t, tc.wantStatus, rec.Code, rec.Body.String())
+
+			var got map[string]any
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+			require.Equal(t, tc.wantCode, got["error"])
+
+			// A refusal is not an operator action: nothing was extended, so
+			// nothing may be audited as extended.
+			require.Empty(t, aud.events, "a refused extension must emit no audit event")
+
+			// The driver's own text must never be echoed to the caller.
+			msg, _ := got["message"].(string)
+			require.NotContains(t, msg, "boom")
+		})
+	}
+}
+
+// A card-backed extension must disclose that the billing anchor moved, and
+// must echo STRIPE's value rather than the request's.
+func TestExtend_CardBacked_ResponseDisclosesStripeFacts(t *testing.T) {
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{result: stripeOKResult()}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, "sub_verify_358", got["stripe_subscription_id"])
+	require.Equal(t, "2026-12-01T00:00:00Z", got["stripe_trial_end"])
+	require.Equal(t, true, got["billing_anchor_moved"])
+}
+
+// A card-less extension must carry NONE of those keys — not null, not false,
+// absent. Asserted on the RAW BYTES: a decoded map cannot tell an absent key
+// from a false one, which is exactly the distinction being made here.
+func TestExtend_CardLess_OmitsStripeFields(t *testing.T) {
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{result: okResult()}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	body := rec.Body.String()
+	require.NotContains(t, body, "stripe_subscription_id")
+	require.NotContains(t, body, "stripe_trial_end")
+	require.NotContains(t, body, "billing_anchor_moved")
+}
+
+// The audit row must carry the exact integer sent to Stripe. An audit that
+// records only "extended" cannot answer "extended to what, in Stripe?" —
+// which is the question this whole series exists to be able to answer.
+func TestExtend_CardBacked_AuditCarriesExactUnixSecond(t *testing.T) {
+	aud := &capturedAudit{}
+	res := stripeOKResult()
+	rec := postExtend(t, &stubExtender{result: res}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	require.Len(t, aud.events, 1)
+	md := aud.events[0].Metadata
+	require.Equal(t, "sub_verify_358", md["stripe_subscription_id"])
+	require.Equal(t, res.StripeTrialEnd, md["stripe_trial_end_unix"])
+	require.Equal(t, res.PreviousStripeTrialEnd, md["previous_stripe_trial_end_unix"])
+	require.Equal(t, res.PreviousBillingAnchor, md["previous_billing_anchor_unix"])
+
+	// The two anchors are DIFFERENT values in this fixture, so a mapping
+	// that swapped them would be caught. Identical fixtures prove nothing.
+	require.NotEqual(t, md["stripe_trial_end_unix"], md["previous_billing_anchor_unix"])
+}
+
+// A card-less extension must add none of the Stripe keys to the audit row
+// either — the metadata says what happened, and nothing Stripe-shaped did.
+func TestExtend_CardLess_AuditHasNoStripeKeys(t *testing.T) {
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{result: okResult()}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	require.Len(t, aud.events, 1)
+	for _, k := range []string{"stripe_subscription_id", "stripe_trial_end_unix",
+		"previous_stripe_trial_end_unix", "previous_billing_anchor_unix"} {
+		_, present := aud.events[0].Metadata[k]
+		require.False(t, present, "card-less audit must not carry %s", k)
+	}
+}
+
+// ErrStripeAppliedLocalWriteFailed is the one divergence #358's design
+// accepts: Stripe already moved a real merchant's billing_cycle_anchor and
+// the local commit then failed, so this service recorded nothing. It must
+// never collapse into the ordinary 500 or the 502 used for ErrStripeCall —
+// both of those imply nothing happened, and here something very much did,
+// to a real billing date. No audit emit is attempted on this path: it would
+// write to the same database whose write just failed, and a failed emit is
+// swallowed by design, so the loud Error log is the only signal.
+func TestExtend_StripeAppliedLocalWriteFailed_Maps500NoAudit(t *testing.T) {
+	err := fmt.Errorf("%w: stripe subscription sub_verify_358 now holds trial_end=1798761600 (previously trial_end=1757845351, billing_cycle_anchor=1757845351): write trial_ends_at: boom",
+		trial.ErrStripeAppliedLocalWriteFailed)
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{err: err}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, "stripe_applied_local_write_failed", got["error"])
+
+	require.Empty(t, aud.events, "no audit emit must be attempted when the local write itself failed")
+
+	// The driver's own text must never be echoed to the caller.
+	msg, _ := got["message"].(string)
+	require.NotContains(t, msg, "boom")
 }

@@ -126,7 +126,7 @@ func TestUpdateTrialEnd_SendsExactTrialEndAndNoPrice(t *testing.T) {
 	c := billingstripe.New("sk_test_x")
 	c.SetBaseURLForTesting(srv.URL)
 
-	sub, err := billingstripe.UpdateTrialEnd(context.Background(), c, billingbillingstripe.UpdateTrialEndParams{
+	sub, err := billingstripe.UpdateTrialEnd(context.Background(), c, billingstripe.UpdateTrialEndParams{
 		SubscriptionID: subID,
 		TrialEnd:       newEnd,
 		IdempotencyKey: "trial_extend:store-1:abc",

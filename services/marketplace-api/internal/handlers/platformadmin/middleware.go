@@ -43,17 +43,61 @@ const maxIdentityLen = 256
 // reason #287 declined to invent capability names.
 //
 // This is a SWITCH, not a marker: RequirePlatformAuth's write branch reads
-// it. Flipping it to true, with RequiredWriteCapability set, turns value
-// enforcement on for every write on this surface with no other edit. It
-// lives here, beside the check it controls, so that reading the
-// enforcement matrix in this file tells you the whole truth about it.
+// it. Flipping it to true, with RequiredWriteCapabilities' values filled
+// in, turns value enforcement on for every write on this surface with no
+// other edit. It lives here, beside the check it controls and beside
+// RequiredWriteCapabilities itself, so that reading the enforcement matrix
+// in this file tells you the whole truth about it.
 const CapabilityValueChecked = false
 
-// RequiredWriteCapability is the capability value a write must present
-// once CapabilityValueChecked is true. Empty while it is false: an empty
-// required value with enforcement ON would refuse every real request,
-// which is the failure mode #333 has to resolve before this can flip.
-const RequiredWriteCapability = ""
+// CapabilityKey builds the lookup key that RequiredWriteCapabilities (and
+// RequirePlatformAuth's write branch, below) use: the write's HTTP method,
+// upper-cased, plus the route TEMPLATE gin matched — exactly what
+// c.FullPath() returns once routing has resolved (populated by the time
+// this middleware runs, per gin's docs), not the literal request path.
+// Keying on the template rather than the literal path is what lets one map
+// entry cover every tenant this route is ever called for.
+//
+// Exported so tests build the SAME key this file computes internally,
+// rather than a hand-written string that could silently drift from it —
+// see routes_capability_coverage_test.go.
+func CapabilityKey(method, routeTemplate string) string {
+	return strings.ToUpper(strings.TrimSpace(method)) + " " + routeTemplate
+}
+
+// RequiredWriteCapabilities is the per-route capability enforcement
+// matrix. It replaces what used to be a single global RequiredWriteCapability
+// string: one value could never express that this surface's four writes
+// are NOT equally privileged (#288's tenant purge needs "the
+// highest-privilege capability the gateway can assert" — a claim a single
+// shared value cannot make against three lesser writes at the same time).
+//
+// Match rule is EXACT STRING EQUALITY against ONE required capability per
+// route — not a set, not a lattice, not a prefix match. Per #275, mark8ly
+// does not own the privilege model: the console asserts the capability for
+// the action it is performing, and this surface's job is only to record it
+// and refuse a mismatch, never to reason about what a capability implies
+// or ranks against another.
+//
+// Every value below is EMPTY, and CapabilityValueChecked (above) is FALSE:
+// this map exists to have the right SHAPE — one declared entry per write
+// route — not the right VALUES. #287 declined to invent capability names
+// and #275 says the vocabulary belongs to the console, so no value here is
+// a guess; #333's entire job is filling these in once that vocabulary is
+// settled, not reshaping this map.
+//
+// Every write route Register (routes.go) can mount MUST have an entry
+// here, even while every value is empty. TestAllWriteRoutesDeclareACapability
+// (routes_capability_coverage_test.go) builds the real router with every
+// write route wired and fails the build — naming the offending route — if
+// one is undeclared, so a route added without a line here is caught here,
+// not as a production 403 the day #333 turns enforcement on.
+var RequiredWriteCapabilities = map[string]string{
+	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/billing/trials/:storeID/extend"): "",
+	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/tenants/:id/suspend"):            "",
+	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/tenants/:id/unsuspend"):          "",
+	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/tenants/:id/purge"):              "",
+}
 
 // AuthConfig configures RequirePlatformAuth.
 type AuthConfig struct {
@@ -68,6 +112,27 @@ type AuthConfig struct {
 	Window time.Duration
 	// Logger receives rejection detail. Optional.
 	Logger *slog.Logger
+
+	// CapabilityChecked overrides CapabilityValueChecked for this
+	// instance of RequirePlatformAuth. Nil — the value every production
+	// caller (Register in routes.go, and cmd/marketplace-api/main.go,
+	// which never sets this field) leaves it at — falls back to
+	// CapabilityValueChecked, the actual production switch, which stays
+	// false. This exists ONLY so middleware_test.go can exercise both
+	// arms of the capability-value gate without editing the production
+	// constant; it is not a runtime knob production wiring is meant to
+	// use. See TestAuthConfigCapabilityCheckedNilDefaultsToProductionOff
+	// for the proof that leaving it unset really does mean "off".
+	CapabilityChecked *bool
+
+	// RequiredCapabilities overrides RequiredWriteCapabilities for this
+	// instance of RequirePlatformAuth. Nil — again, every production
+	// caller's value — falls back to the real RequiredWriteCapabilities
+	// matrix declared above. Tests use this to exercise match, mismatch,
+	// and undeclared-route behaviour with non-empty capability values
+	// without touching the production matrix, whose values #364 requires
+	// stay empty until #333.
+	RequiredCapabilities map[string]string
 }
 
 // RequirePlatformAuth verifies the gateway signature, enforces the replay
@@ -166,7 +231,8 @@ func RequirePlatformAuth(cfg AuthConfig) gin.HandlerFunc {
 		// Normalise case here the same way CanonicalString does (it upper-
 		// cases Method before signing), so the method the HMAC covers is
 		// exactly the method write-enforcement classifies.
-		if isWrite(strings.ToUpper(strings.TrimSpace(c.Request.Method))) {
+		writeMethod := strings.ToUpper(strings.TrimSpace(c.Request.Method))
+		if isWrite(writeMethod) {
 			if in.Operator == "" {
 				abort(c, http.StatusUnauthorized, "operator_required",
 					"write requests must carry an operator identity")
@@ -177,6 +243,7 @@ func RequirePlatformAuth(cfg AuthConfig) gin.HandlerFunc {
 					"write requests must carry a capability")
 				return
 			}
+
 			// Capability PRESENCE is enforced (above). Capability VALUE is
 			// NOT — pending #333. Every write on this surface, including
 			// the irreversible tenant purge (#288), is admitted on ANY
@@ -186,13 +253,49 @@ func RequirePlatformAuth(cfg AuthConfig) gin.HandlerFunc {
 			// That is deliberate, not an oversight: the console's
 			// capability vocabulary is not settled, and hard-coding a
 			// value here would refuse every real request. This block is
-			// the gate, wired and inert: when #333 lands, set
-			// RequiredWriteCapability and flip CapabilityValueChecked, and
-			// enforcement starts here — nothing else needs writing.
-			if CapabilityValueChecked && in.Capability != RequiredWriteCapability {
-				abort(c, http.StatusForbidden, "capability_insufficient",
-					"the presented capability does not authorize this request")
-				return
+			// the gate, wired and inert: when #333 lands, fill in
+			// RequiredWriteCapabilities' values and flip
+			// CapabilityValueChecked, and enforcement starts here —
+			// nothing else needs writing.
+			capabilityChecked := CapabilityValueChecked
+			if cfg.CapabilityChecked != nil {
+				capabilityChecked = *cfg.CapabilityChecked
+			}
+			if capabilityChecked {
+				requirements := RequiredWriteCapabilities
+				if cfg.RequiredCapabilities != nil {
+					requirements = cfg.RequiredCapabilities
+				}
+
+				// c.FullPath() is the matched route TEMPLATE (e.g.
+				// ".../tenants/:id/purge"), not the literal request path —
+				// see CapabilityKey's doc comment. It is populated by gin
+				// before middleware runs.
+				required, declared := requirements[CapabilityKey(writeMethod, c.FullPath())]
+				if !declared {
+					// Distinguishable from "capability_insufficient" below
+					// on purpose: this means the GATEWAY hasn't declared
+					// what this route needs, not that the CALLER presented
+					// the wrong thing. The two point an operator at
+					// different fixes — one at mark8ly's route
+					// declaration, the other at the console's capability
+					// assertion — and conflating them would send whoever
+					// is debugging a production refusal to the wrong
+					// place. Fails CLOSED: an undeclared write route is
+					// refused, never admitted on any capability, so a
+					// forgotten declaration is a refusal in production,
+					// not a silent hole — the same posture this surface
+					// already takes on a missing secret (503
+					// not_configured, above).
+					abort(c, http.StatusForbidden, "capability_route_undeclared",
+						"this route has not declared a required capability")
+					return
+				}
+				if in.Capability != required {
+					abort(c, http.StatusForbidden, "capability_insufficient",
+						"the presented capability does not authorize this request")
+					return
+				}
 			}
 		}
 

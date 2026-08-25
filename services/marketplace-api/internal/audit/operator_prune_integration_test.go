@@ -39,6 +39,16 @@ func TestOperatorPrune_SevenYearBoundary(t *testing.T) {
 	survives := insertOperatorRow(t, db, cutoff.Add(time.Second))
 	deleted := insertOperatorRow(t, db, cutoff.Add(-time.Second))
 
+	// exactlyAtCutoff sits ON the boundary: created_at == cutoff. The rule is
+	// created_at < cutoff (strict), so a row created exactly seven years ago
+	// has not yet EXCEEDED seven years and must survive. This is the only
+	// row that can distinguish `<` from `<=` — the ±1s rows above cannot,
+	// because neither of them is ever equal to cutoff. `now` is fixed with
+	// whole-second (in fact zero sub-second) precision, and cutoff is
+	// derived from that same pinned clock via AddDate, so this timestamp is
+	// exact — not merely close — down to the value Postgres stores.
+	exactlyAtCutoff := insertOperatorRow(t, db, cutoff)
+
 	cron := audit.NewPruneCron(db, nil, func() time.Time { return now }, 0)
 	stats, err := cron.Run(ctx)
 	require.NoError(t, err)
@@ -48,6 +58,8 @@ func TestOperatorPrune_SevenYearBoundary(t *testing.T) {
 		"a row one second inside seven years must survive")
 	require.Equal(t, int64(0), countRows(t, db, deleted),
 		"a row one second past seven years must be deleted")
+	require.Equal(t, int64(1), countRows(t, db, exactlyAtCutoff),
+		"a row created EXACTLY seven years ago must survive: created_at < cutoff is strict, and equal is not less-than")
 }
 
 // THE NEGATIVE GUARD. #311 says store-less rows are never pruned; #365

@@ -147,10 +147,17 @@ if billingStripeClient != nil {
 ```
 
 Assigning a nil `*billingstripe.Client` into the interface unconditionally makes
-`e.Stripe != nil` **true** and the first method call panics. This is #288's second
-Critical, verbatim, in a new location; the same shape already has a written
-precedent in `main.go`'s `tenantTeardownClient` comment. A test asserts that an
-unconfigured build takes the `ErrStripeManaged` branch rather than panicking.
+`e.Stripe != nil` **true** and the first method call panics — inside the
+transaction, after the row lock has been taken. This is #288's second Critical,
+verbatim, in a new location; the same shape already has a written precedent in
+`main.go`'s `tenantTeardownClient` comment.
+
+A comment at the call site is not enough, because a call site can be copied
+wrongly and a comment cannot fail a test. **`NewExtender` normalises a typed nil
+to a true nil** via a `reflect` check, and two tests pin it: one asserts
+`NewExtender(typedNil).Stripe == nil`, the other asserts a card-backed extension
+on such a build returns `ErrStripeManaged` rather than panicking, and writes
+nothing.
 
 ## What the endpoint does
 
@@ -210,6 +217,40 @@ cannot accidentally acquire a `PriceID` later.
 mapped field by field from the SDK object as the existing mapper does — a
 projection, never a passthrough.
 
+## Making the new path reachable: `GET /admin/billing/trials`
+
+`trial.ListExpiring` filters `stripe_subscription_id IS NULL`
+(`internal/billing/trial/expiring.go:57`), and that query backs #285's
+`GET /admin/billing/trials`. **Card-backed trials are invisible in the console's
+trial list.** Shipping #358 without addressing that delivers an endpoint whose
+only entry point is a store id the console has no way to obtain from this
+surface — a route that works and that nobody can reach.
+
+So the list is widened, in this branch, in the narrowest way that does not
+disturb what is already live:
+
+- `trial.ListExpiring` gains a trailing `ListOptions{IncludeStripeManaged bool}`.
+  The **zero value is today's behaviour**, so an omitted option can never widen a
+  live result set by accident.
+- The handler reads `?include_stripe_managed=true`, defaulting to false. #285's
+  shipped contract is unchanged for every existing caller.
+- Every row gains `stripe_managed` (a bool, **not** `omitempty` — it is a fact
+  about every row, and an absent `false` is indistinguishable from an older
+  server).
+- **`CountExpiring` does not change.** It backs #282's `trials_expiring` KPI,
+  whose meaning is "trials that will EXPIRE". A card-backed trial converts rather
+  than expiring; counting it there would silently move a delivered metric. The
+  list's `total` is therefore computed over the list's own scope, not by calling
+  `CountExpiring`.
+
+One caveat worth stating rather than discovering later: for a card-backed trial
+that has never been extended, `trial_ends_at` is NULL and `EndsAt` derives
+`created_at + 90d`. That agrees with Stripe **because `subscribe.go:132` sends
+`EndsAt` as Stripe's `trial_end` at creation** — not by coincidence. If the two
+ever diverge through a Stripe-side change made outside this system, the list
+shows our value while Stripe holds the authoritative one. The `stripe_managed`
+flag is what tells the operator which rows carry that caveat.
+
 ## Refusals
 
 | condition | sentinel | HTTP | code |
@@ -266,7 +307,12 @@ enough, because a stub returns the zero value for a field nobody set. So:
 - **Ordering**: a stub whose `UpdateTrialEnd` returns an error must leave
   `trial_ends_at` and the `trial_reminders` rows untouched. This is the failure
   ordering decision, expressed as a test.
-- **Unconfigured build**: nil updater → `ErrStripeManaged`, not a panic.
+- **Unconfigured build**: nil updater → `ErrStripeManaged`, not a panic; and a
+  **typed**-nil updater likewise, asserted on `NewExtender` directly.
+- **The widened list, both ways**: default excludes card-backed rows (today's
+  contract), the flag includes them, each row is labelled, and `CountExpiring`
+  is unmoved by a card-backed row. Prove the default by mutation — force the flag
+  true and the default test must fail.
 
 Verification set: `go vet -tags=integration ./...` (the only thing that compiles
 build-tagged files), `go test ./...` from the service root, `-p 1`,

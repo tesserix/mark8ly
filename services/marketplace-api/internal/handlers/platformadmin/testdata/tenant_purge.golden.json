@@ -1,0 +1,15 @@
+{
+  "data": {
+    "tenant_id": "55555555-5555-5555-5555-555555555555",
+    "tenant_name": "The Bondi Store",
+    "store_ids": ["s-1", "s-2"],
+    "store_slugs": ["bondi-main", "bondi-pop-up"],
+    "reason_code": "merchant_request",
+    "reason": "merchant closed shop",
+    "tables": [
+      { "table": "products", "rows": 7 },
+      { "table": "orders", "rows": 4 }
+    ],
+    "total_rows": 11
+  }
+}

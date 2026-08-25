@@ -41,23 +41,33 @@
 //   - promo_codes (admin-created Stripe coupon catalog, no tenant_id)
 //   - signup_anomaly_log (global daily cron marker, no tenant_id)
 //
-// Legally-protected / append-only tables — deleting these would either
-// error (DB role has DELETE revoked) or defeat their entire purpose
-// (records that must outlive the tenant for compliance):
-//   - business_entity_attestations — migration 000045 REVOKEs DELETE from
-//     both the marketplace_user role and PUBLIC; a DELETE against it
-//     errors under the app's DB role.
-//   - app_contract_attestations — migration 000075 mirrors the same
-//     REVOKE DELETE pattern (Apple 4.2.6 attestation log).
-//   - subscription_plan_change_audit — migration 000050 REVOKEs UPDATE,
-//     DELETE FROM PUBLIC; append-only billing-change audit trail.
+// Legally-protected / append-only tables — excluded because deleting them
+// would destroy records that must outlive the tenant for compliance.
+//
+// NOTE, corrected 2026-08-25 against production: an earlier version of
+// this comment said these tables were ALSO protected by the database,
+// because "the DB role has DELETE revoked". That is FALSE for all four.
+// The service connects as `marketplace_api`, which OWNS every one of them
+// with full arwdDxt — migration 000045/000075/000050's `REVOKE ... FROM
+// PUBLIC` never applied to the owner. Nothing in the database stops a
+// future step from deleting them. This Go list and purge_test.go's
+// protectedTables are the ONLY things that do.
+//
+//   - business_entity_attestations — KYB attestation log.
+//   - app_contract_attestations — Apple 4.2.6 attestation log.
+//   - subscription_plan_change_audit — append-only billing-change trail.
 //   - billing_archive — populated by internal/billingarchive.Builder AFTER
 //     a store hard-delete specifically so it SURVIVES the tenant's own
 //     deletion (7-year GDPR/tax retention, §23.2). It is keyed by
 //     original_tenant_id/original_store_id, not tenant_id/store_id — that
 //     rename is itself a signal it has a different lifecycle. Purging it
-//     here would delete the compliance record the purge is supposed to
-//     leave behind.
+//     here would delete the compliance record the purge is meant to leave
+//     behind.
+//
+// break_glass_lockouts is the one table where the privilege claim IS
+// true: it is owned by `postgres` in production, so marketplace_api has
+// no DELETE and including it would abort the whole single-tx purge
+// (SQLSTATE 42501). See the inline comment in group 5.
 //
 // See task-1-report.md for the full per-table FK/scoping audit.
 package tenantpurge

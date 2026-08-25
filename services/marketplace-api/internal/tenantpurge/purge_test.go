@@ -22,9 +22,14 @@ var globalDenyTables = []string{
 	"shipping_zones",
 }
 
-// protectedTables must NEVER appear in a purge plan either: deleting them
-// would either error (DB role has DELETE revoked) or defeat their entire
-// compliance purpose. See purge.go's package doc comment for citations.
+// protectedTables must NEVER appear in a purge plan: deleting them would
+// destroy records that must outlive the tenant, or (for webhook_events and
+// the global reference rows) touch data no tenant owns.
+//
+// This test is not a formality. Corrected 2026-08-25: the claim that the
+// database also protects the first four — "DB role has DELETE revoked" —
+// is false. marketplace_api OWNS them with full DELETE. This list is the
+// only enforcement there is.
 var protectedTables = []string{
 	"business_entity_attestations",
 	"app_contract_attestations",

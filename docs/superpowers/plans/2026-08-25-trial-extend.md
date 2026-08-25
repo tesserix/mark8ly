@@ -1211,6 +1211,14 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 			Action:       "trial.extended",
 			ResourceType: "subscription",
 			ResourceID:   res.SubscriptionID.String(),
+			// StoreID is deliberately LEFT NIL even though we have one.
+			// audit.Event's own comment groups trial extend with the
+			// tenant-scoped platform writes, and a store-scoped audit row
+			// would surface this operator action inside the MERCHANT's own
+			// store-scoped audit view — a product decision about what a
+			// merchant sees, not a detail to settle by default here. The
+			// store id is still recorded, in metadata below.
+			TenantID: res.TenantID,
 			Metadata: map[string]any{
 				"reason_code":            req.ReasonCode,
 				"reason":                 reason,

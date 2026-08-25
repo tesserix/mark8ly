@@ -64,6 +64,17 @@
 //     here would delete the compliance record the purge is meant to leave
 //     behind.
 //
+// Partially excluded:
+//   - audit_logs rows with actor_type = 'operator'. These are PLATFORM
+//     GOVERNANCE records — what an operator did TO a tenant — not tenant
+//     data, and they must outlive the tenant for the same reason
+//     billing_archive does. Load-bearing, not tidiness: the purge writes
+//     its own tenant.purged row AFTER the purge transaction commits, and
+//     platform-api's outbox drainer re-runs this same plan ~1s later as
+//     the durability backstop. Without the predicate the backstop deletes
+//     the record of the destruction it is backing up. See the inline
+//     comment on the audit_logs step in group 5.
+//
 // break_glass_lockouts is the one table where the privilege claim IS
 // true: it is owned by `postgres` in production, so marketplace_api has
 // no DELETE and including it would abort the whole single-tx purge
@@ -337,7 +348,28 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		// and is still purged.
 		tenantScoped("break_glass_accounts", tenantID), // 000072: tenant_id (PK)
 		tenantScoped("enterprise_api_keys", tenantID),  // 000068: tenant_id, store_id
-		tenantScoped("audit_logs", tenantID),           // 000035ish: tenant_id, store_id
+		// audit_logs is tenant-scoped EXCEPT for operator rows. A platform
+		// operator's action against a tenant (suspend, trial extend, purge)
+		// is a governance record about the OPERATOR, not tenant data, and it
+		// must outlive the tenant for the same reason billing_archive does.
+		//
+		// This is load-bearing, not tidiness: the purge's OWN audit row is
+		// written AFTER the purge commits, and platform-api's outbox drainer
+		// then runs this same plan a second time ~1s later via
+		// POST /internal/tenants/:id/purge. Without this predicate the
+		// backstop deletes the record of the destruction it is backing up —
+		// an irreversible action, reported as audited, recorded nowhere.
+		//
+		// No `actor_type IS NULL` branch: actor_type is NOT NULL DEFAULT
+		// 'user' (migration 000035_audit_logs.up.sql, widened to admit
+		// 'operator' by 000101), verified against production 2026-08-25 —
+		// information_schema reports is_nullable = NO. A condition that can
+		// never fire would only imply the column is nullable.
+		deleteStep{
+			table: "audit_logs", // 000035: tenant_id, store_id, actor_type
+			sql:   "DELETE FROM audit_logs WHERE tenant_id = ? AND actor_type <> 'operator'",
+			args:  []any{tenantID},
+		},
 		subquery("payment_action_reminders", "subscription_id", "store_subscriptions", tenantID),
 		tenantScoped("trial_reminders", tenantID),             // 000088: tenant_id, store_id
 		tenantScoped("warehouses", tenantID),                  // 000095: tenant_id, store_id

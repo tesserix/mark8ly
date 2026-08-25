@@ -471,3 +471,104 @@ func TestPurge_Integration_MismatchDestroysNothing(t *testing.T) {
 	// B is untouched too — it was never the purge target.
 	require.EqualValues(t, 1, countByTenant(t, db, "stores", tenantB))
 }
+
+// TestPurge_Integration_OutboxBackstopReRunDoesNotDeleteTheAuditRow composes
+// the TWO purges that actually happen in production, which no other test
+// constructs.
+//
+// platform-api's teardown enqueues a `tenant.deleted` outbox event INSIDE
+// the teardown transaction — the designed durability backstop. Its drainer
+// polls every second and calls marketplace-api's internal purge endpoint,
+// which runs tenantpurge.Purge a SECOND time with the same (tenantID,
+// storeIDs). Before the actor_type predicate, that second run executed
+// `DELETE FROM audit_logs WHERE tenant_id = ?` and destroyed the
+// `tenant.purged` row the governed handler had written after its own inline
+// purge: an irreversible destruction, reported as audited, recorded nowhere.
+//
+// So: run the handler end to end, assert the row exists, then invoke Purge
+// DIRECTLY with the drainer's arguments and assert the row is STILL there —
+// while the tenant's ordinary (non-operator) audit rows stay destroyed, so
+// the predicate cannot pass by excluding everything.
+func TestPurge_Integration_OutboxBackstopReRunDoesNotDeleteTheAuditRow(t *testing.T) {
+	db := testdb.NewDB(t, purgeIntegrationTablesToCleanup...)
+	repo := stores.NewRepository(db)
+
+	tenantA := uuid.NewString()
+	storeA := seedIntegrationStore(t, repo, tenantA)
+
+	// Two ORDINARY (actor_type = 'system') rows. These are tenant data and
+	// MUST be destroyed — without them a predicate that excluded every row
+	// would look identical to the correct one.
+	seedAuditLog(t, db, tenantA, storeA.ID)
+	seedAuditLog(t, db, tenantA, storeA.ID)
+	require.EqualValues(t, 2, countByTenant(t, db, "audit_logs", tenantA), "sanity: 2 pre-existing non-operator rows")
+
+	stub := newTeardownStub(t, teardownFixture{
+		tenantID: tenantA, tenantName: "Tenant A",
+		storeIDs: []string{storeA.ID}, storeSlugs: []string{storeA.Slug},
+	})
+	client := tenantlifecycle.NewClient(stub.URL, "", nil)
+	r := newPurgeIntegrationRouter(t, db, client, &stubDirectory{})
+
+	target := "/admin/tenants/" + tenantA + "/purge"
+	body := fmt.Sprintf(`{"store_slugs":["%s"],"reason_code":"erasure_request"}`, storeA.Slug)
+	req := signedRequest(t, http.MethodPost, target, []byte(body))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	// After the governed handler: the two ordinary rows are gone, the
+	// tenant.purged row is the sole survivor.
+	require.EqualValues(t, 1, countByTenant(t, db, "audit_logs", tenantA),
+		"after the inline purge exactly the tenant.purged row must remain")
+	require.EqualValues(t, 0, countOperatorAudit(t, db, tenantA, "!="),
+		"every non-operator row for this tenant must already be destroyed")
+	require.EqualValues(t, 1, countOperatorAudit(t, db, tenantA, "="),
+		"the surviving row must be the operator governance row")
+
+	// NOW the backstop. These are exactly the arguments platform-api's
+	// outbox drainer passes: the tenant id and the store ids captured in
+	// the tenant.deleted payload before the tenant row was deleted.
+	rep, err := tenantpurge.Purge(context.Background(), db, tenantA, []string{storeA.ID})
+	require.NoError(t, err, "the backstop purge must succeed; it is idempotent by design")
+
+	var auditRows int64 = -1
+	for _, tr := range rep.Tables {
+		if tr.Table == "audit_logs" {
+			auditRows = tr.RowsDeleted
+		}
+	}
+	require.EqualValues(t, 0, auditRows,
+		"the backstop must delete ZERO audit_logs rows: the tenant's own rows are already gone "+
+			"and the operator governance row is excluded from the plan")
+
+	// The whole point: the record of the destruction survives the backstop
+	// that was supposed to be backing that destruction up.
+	require.EqualValues(t, 1, countByTenant(t, db, "audit_logs", tenantA),
+		"the tenant.purged row must survive the outbox drainer's second purge")
+
+	var got struct {
+		Action    string `gorm:"column:action"`
+		ActorType string `gorm:"column:actor_type"`
+	}
+	require.NoError(t, db.Raw(
+		`SELECT action, actor_type FROM audit_logs WHERE tenant_id = ?`, tenantA,
+	).Scan(&got).Error)
+	require.Equal(t, "tenant.purged", got.Action)
+	require.Equal(t, "operator", got.ActorType)
+}
+
+// countOperatorAudit counts this tenant's audit_logs rows whose actor_type
+// compares to 'operator' with op ("=" or "!="). Split out so the two halves
+// of the property — operator rows kept, non-operator rows destroyed — read
+// as two distinct assertions rather than one aggregate that either could
+// satisfy alone.
+func countOperatorAudit(t *testing.T, db *gorm.DB, tenantID, op string) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, db.Raw(
+		"SELECT count(*) FROM audit_logs WHERE tenant_id = ? AND actor_type "+op+" 'operator'",
+		tenantID,
+	).Scan(&n).Error)
+	return n
+}

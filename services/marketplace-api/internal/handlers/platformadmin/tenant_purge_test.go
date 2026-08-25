@@ -290,6 +290,72 @@ func TestPurge_UpstreamRouteMissingIs503NotAlreadyPurged(t *testing.T) {
 	require.Zero(t, pg.at, "the purger must never be called on a refusal")
 }
 
+// `purge_incomplete` — the teardown committed upstream but the local purge
+// failed — had NO test at all, and the audit row it wrote said the purge
+// SUCCEEDED: Status was left at its zero value, which the emitter defaults
+// to StatusSuccess, with total_rows: 0 from the empty report.
+//
+// The operator sees 500. The permanent record says success. On the one
+// endpoint whose entire purpose is producing a trustworthy record of an
+// irreversible act, those must agree.
+func TestPurge_LocalPurgeFailureIsAuditedAsFailureWithTheError(t *testing.T) {
+	sq := &seq{}
+	td := &fakeTeardown{seq: sq, res: &tenantlifecycle.TeardownResult{
+		TenantID: tenantID, TenantName: "The Bondi Store",
+		StoreIDs: []string{"33333333-3333-3333-3333-333333333333"}, StoreSlugs: []string{"bondi"},
+	}}
+	purgeFailure := errors.New("tenantpurge: delete from orders: connection reset")
+	pg := &fakePurger{seq: sq, err: purgeFailure}
+
+	var got audit.Event
+	emits := 0
+	emit := func(_ *gin.Context, _ uuid.UUID, ev audit.Event) error {
+		emits++
+		got = ev
+		return nil
+	}
+
+	rec := doPurge(t, td, pg, emit, `{"store_slugs":["bondi"],"reason_code":"erasure_request"}`)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "purge_incomplete")
+
+	// The event is still written: the tenant row is already gone upstream,
+	// so "no record at all" is the worse outcome.
+	require.Equal(t, 1, emits, "a failed local purge must still be audited — the teardown already committed")
+	require.Equal(t, "tenant.purged", got.Action)
+	require.Equal(t, audit.StatusFailure, got.Status,
+		"the operator was told 500; the audit row must not say the purge succeeded")
+	require.Equal(t, audit.SeverityCritical, got.Severity)
+	require.Equal(t, purgeFailure.Error(), got.Metadata["purge_error"],
+		"the failure that produced the 500 must be recorded, not just its existence implied by the status")
+	require.Equal(t, "erasure_request", got.Metadata["reason_code"])
+}
+
+// The success path must NOT be stamped failure — otherwise the assertion
+// above would pass against a handler that marked every purge failed.
+func TestPurge_SuccessIsAuditedAsSuccessWithNoPurgeError(t *testing.T) {
+	sq := &seq{}
+	td := &fakeTeardown{seq: sq, res: &tenantlifecycle.TeardownResult{
+		TenantID: tenantID, TenantName: "The Bondi Store",
+		StoreIDs: []string{"33333333-3333-3333-3333-333333333333"}, StoreSlugs: []string{"bondi"},
+	}}
+	pg := &fakePurger{seq: sq, rep: tenantpurge.Report{
+		Tables:    []tenantpurge.TableResult{{Table: "products", RowsDeleted: 2}},
+		TotalRows: 2,
+	}}
+
+	var got audit.Event
+	emit := func(_ *gin.Context, _ uuid.UUID, ev audit.Event) error { got = ev; return nil }
+
+	rec := doPurge(t, td, pg, emit, `{"store_slugs":["bondi"],"reason_code":"erasure_request"}`)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, audit.StatusSuccess, got.Status)
+	require.NotContains(t, got.Metadata, "purge_error")
+	require.EqualValues(t, 2, got.Metadata["total_rows"])
+}
+
 func TestPurge_UnknownReasonCodeIs400(t *testing.T) {
 	cases := []struct {
 		code    string

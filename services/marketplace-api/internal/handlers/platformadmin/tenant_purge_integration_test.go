@@ -572,3 +572,83 @@ func countOperatorAudit(t *testing.T, db *gorm.DB, tenantID, op string) int64 {
 	).Scan(&n).Error)
 	return n
 }
+
+// failingPurger is a Purger whose Purge always fails, standing in for a
+// local DELETE that dies mid-flight after the upstream teardown already
+// committed. Count is never used by the purge path.
+type failingPurger struct{ err error }
+
+func (f *failingPurger) Purge(context.Context, string, []string) (tenantpurge.Report, error) {
+	return tenantpurge.Report{}, f.err
+}
+
+func (f *failingPurger) Count(context.Context, string, []string) (tenantpurge.Report, error) {
+	return tenantpurge.Report{}, f.err
+}
+
+// TestPurge_Integration_IncompletePurgeIsRecordedAsAFailure drives the
+// `purge_incomplete` path against a REAL audit_logs table.
+//
+// The unit test proves the handler hands the emitter StatusFailure. Only a
+// real database proves the row LANDS: `status` is a CHECK-constrained
+// column (audit_logs_status_chk, migration 000035), so a value the handler
+// is happy with can still be rejected on write — and on this endpoint a
+// rejected write means an irreversible destruction recorded nowhere.
+func TestPurge_Integration_IncompletePurgeIsRecordedAsAFailure(t *testing.T) {
+	db := testdb.NewDB(t, purgeIntegrationTablesToCleanup...)
+	repo := stores.NewRepository(db)
+
+	tenantA := uuid.NewString()
+	storeA := seedIntegrationStore(t, repo, tenantA)
+
+	stub := newTeardownStub(t, teardownFixture{
+		tenantID: tenantA, tenantName: "Tenant A",
+		storeIDs: []string{storeA.ID}, storeSlugs: []string{storeA.Slug},
+	})
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(platformadmin.RequirePlatformAuth(platformadmin.AuthConfig{
+		Secret:     testSecret,
+		NonceStore: newMemNonces(),
+		Now:        func() time.Time { return fixedNow },
+	}))
+	emitter := audit.NewEmitter(audit.EmitterConfig{DB: db, Repo: audit.NewRepository(), Logger: slog.Default()})
+	t.Cleanup(func() { emitter.Stop(context.Background()) })
+	h := platformadmin.NewTenantPurgeHandler(
+		tenantlifecycle.NewClient(stub.URL, "", nil),
+		&failingPurger{err: fmt.Errorf("tenantpurge: delete from orders: connection reset")},
+		&stubDirectory{},
+		platformadmin.NewOperatorActionSyncFunc(emitter),
+		nil, nil,
+	)
+	h.Register(r.Group(""))
+
+	target := "/admin/tenants/" + tenantA + "/purge"
+	body := fmt.Sprintf(`{"store_slugs":["%s"],"reason_code":"erasure_request"}`, storeA.Slug)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodPost, target, []byte(body)))
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "purge_incomplete")
+
+	var got struct {
+		Action   string          `gorm:"column:action"`
+		Status   string          `gorm:"column:status"`
+		Metadata json.RawMessage `gorm:"column:metadata"`
+	}
+	require.EqualValues(t, 1, countByTenant(t, db, "audit_logs", tenantA),
+		"the teardown committed upstream — a failed local purge must still leave exactly one record")
+	require.NoError(t, db.Raw(
+		`SELECT action, status, metadata FROM audit_logs WHERE tenant_id = ?`, tenantA,
+	).Scan(&got).Error)
+
+	require.Equal(t, "tenant.purged", got.Action)
+	require.Equal(t, "failure", got.Status,
+		"the operator was answered 500 purge_incomplete; the permanent record must not say success")
+
+	var meta map[string]any
+	require.NoError(t, json.Unmarshal(got.Metadata, &meta))
+	require.Equal(t, "tenantpurge: delete from orders: connection reset", meta["purge_error"])
+	require.EqualValues(t, 0, meta["total_rows"])
+}

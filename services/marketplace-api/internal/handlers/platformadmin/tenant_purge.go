@@ -250,20 +250,35 @@ func (h *TenantPurgeHandler) purge(c *gin.Context) {
 	//    before step 2 is destroyed by step 2, and an async write races
 	//    it. EmitSync after the purge transaction has committed is the
 	//    only ordering that survives.
+	//
+	//    The row records the OUTCOME, not merely the attempt. When the
+	//    local purge failed, the upstream teardown has still committed —
+	//    the tenant row is gone — so the event must be written, but as a
+	//    FAILURE carrying the error. Stamping the default StatusSuccess
+	//    here would answer the operator `500 purge_incomplete` while the
+	//    audit trail said the purge succeeded, with total_rows: 0.
+	status := audit.StatusSuccess
+	metadata := map[string]any{
+		"reason_code": req.ReasonCode,
+		"reason":      reason,
+		"store_slugs": storeSlugs,
+		"store_ids":   res.StoreIDs,
+		"tables":      rep.Tables,
+		"total_rows":  rep.TotalRows,
+		"capability":  c.GetString(CtxCapability),
+	}
+	if purgeErr != nil {
+		status = audit.StatusFailure
+		metadata["purge_error"] = purgeErr.Error()
+	}
+
 	auditErr := h.emit(c, tenantUUID, audit.Event{
 		Action:       "tenant.purged",
 		ResourceType: "tenant",
 		ResourceID:   tenantIDStr,
+		Status:       status,
 		Severity:     audit.SeverityCritical,
-		Metadata: map[string]any{
-			"reason_code": req.ReasonCode,
-			"reason":      reason,
-			"store_slugs": storeSlugs,
-			"store_ids":   res.StoreIDs,
-			"tables":      rep.Tables,
-			"total_rows":  rep.TotalRows,
-			"capability":  c.GetString(CtxCapability),
-		},
+		Metadata:     metadata,
 	})
 
 	// Both purgeErr and auditErr are reported to the operator rather than

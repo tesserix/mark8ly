@@ -1218,7 +1218,11 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 			// store-scoped audit view — a product decision about what a
 			// merchant sees, not a detail to settle by default here. The
 			// store id is still recorded, in metadata below.
-			TenantID: res.TenantID,
+			//
+			// TenantID is NOT set here either: EmitOperatorAction assigns
+			// it from its own tenantID parameter (audit.go:44). Setting it
+			// in this literal would be overwritten with the same value and
+			// would imply the caller owns a field the helper owns.
 			Metadata: map[string]any{
 				"reason_code":            req.ReasonCode,
 				"reason":                 reason,

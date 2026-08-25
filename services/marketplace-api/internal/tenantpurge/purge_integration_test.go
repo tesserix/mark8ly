@@ -166,13 +166,18 @@ func seedTenant(t *testing.T, db *gorm.DB, tenantID string) seededTenant {
 // per-table row counts and nothing else, so a caller can assert on precise
 // row counts (not just presence) and on TotalRows as their sum.
 //
-// The tenant's rows reference an "anchor" store (via seedStore) that is
-// deliberately owned by a DIFFERENT, throwaway tenant — so it satisfies the
-// NOT NULL store_id FK on products/orders/etc. without itself being swept
-// by the purge of tenantID (Purge's "stores" step is scoped by tenant_id,
-// independent of storeIDs). That keeps TotalRows exactly the sum of the
-// requested counts, with no seeded store/vendor/category noise from
-// seedTenant's broader fixture.
+// The tenant's rows reference its OWN store (via seedStore) — this must be
+// the tenant's own store, not a foreign one, because storeIDs is passed
+// straight through to Purge exactly as the production caller
+// (internal/handlers/internalsvc/tenant_purge.go, fed by platform-api's
+// teardown snapshot of the tenant's own stores) would supply it. Four
+// storeScoped steps in purgePlan (csv_import_jobs, promo_redemptions,
+// campaign_email_budget, store_transactional_counter) have NO tenant_id
+// column at all — store_id is their only scoping — so handing Purge a
+// foreign tenant's store id there would be a fixture-only "safe" case that
+// silently permits an unsafe call shape everywhere else. The store row
+// itself is therefore always counted as part of the fixture's own total —
+// see the "stores" entries added to TotalRows at each call site below.
 //
 // Supported keys: "products", "orders", "reviews" (reviews requires
 // "products" > 0 to have a product to attach to — seedPurgeFixture fails
@@ -181,7 +186,7 @@ func seedPurgeFixture(t *testing.T, db *gorm.DB, counts map[string]int) (string,
 	t.Helper()
 
 	tenantID := uuid.NewString()
-	anchorStoreID := seedStore(t, db, uuid.NewString()) // different tenant: never purged, only satisfies FKs
+	storeID := seedStore(t, db, tenantID) // the tenant's OWN store — matches how Purge is actually called in production
 
 	exec := func(sql string, args ...any) {
 		t.Helper()
@@ -198,7 +203,7 @@ func seedPurgeFixture(t *testing.T, db *gorm.DB, counts map[string]int) (string,
 		// UUID satisfies the constraint without needing a vendors row.
 		exec(`INSERT INTO products (id, tenant_id, store_id, handle, title, status, vendor_id, tags)
 		      VALUES (?, ?, ?, ?, 'Seed Product', 'draft', ?, '{}')`,
-			id, tenantID, anchorStoreID, fmt.Sprintf("seed-product-%d-%s", i, id[:8]), uuid.NewString())
+			id, tenantID, storeID, fmt.Sprintf("seed-product-%d-%s", i, id[:8]), uuid.NewString())
 		productIDs = append(productIDs, id)
 	}
 
@@ -206,7 +211,7 @@ func seedPurgeFixture(t *testing.T, db *gorm.DB, counts map[string]int) (string,
 		id := uuid.NewString()
 		exec(`INSERT INTO orders (id, tenant_id, store_id, order_number, idempotency_key, customer_email, subtotal, grand_total, currency_code)
 		      VALUES (?, ?, ?, ?, ?, 'buyer@example.com', 100, 100, 'USD')`,
-			id, tenantID, anchorStoreID, fmt.Sprintf("SEED-%d-%s", i, id[:8]), "idem-"+id)
+			id, tenantID, storeID, fmt.Sprintf("SEED-%d-%s", i, id[:8]), "idem-"+id)
 	}
 
 	if n := counts["reviews"]; n > 0 {
@@ -217,11 +222,11 @@ func seedPurgeFixture(t *testing.T, db *gorm.DB, counts map[string]int) (string,
 			id := uuid.NewString()
 			exec(`INSERT INTO reviews (id, tenant_id, store_id, product_id, customer_name, customer_email, rating, content, status)
 			      VALUES (?, ?, ?, ?, 'Seed Customer', ?, 5, 'Great!', 'published')`,
-				id, tenantID, anchorStoreID, productIDs[0], fmt.Sprintf("seed-review-%d-%s@example.com", i, id[:8]))
+				id, tenantID, storeID, productIDs[0], fmt.Sprintf("seed-review-%d-%s@example.com", i, id[:8]))
 		}
 	}
 
-	return tenantID, []string{anchorStoreID}
+	return tenantID, []string{storeID}
 }
 
 func countRows(t *testing.T, db *gorm.DB, table, whereCol, id string) int64 {
@@ -317,7 +322,12 @@ func TestPurge_ReportsPerTableRowCounts(t *testing.T) {
 	require.EqualValues(t, 3, got["products"])
 	require.EqualValues(t, 5, got["orders"])
 	require.EqualValues(t, 2, got["reviews"])
-	require.EqualValues(t, 10, rep.TotalRows, "TotalRows must be the sum, not a count of tables")
+	require.EqualValues(t, 1, got["stores"])
+	// 11 = 3 products + 5 orders + 2 reviews + the tenant's own seeded store
+	// (seedPurgeFixture seeds the store under this SAME tenant, matching
+	// how Purge is actually called in production — see seedPurgeFixture's
+	// doc comment).
+	require.EqualValues(t, 11, rep.TotalRows, "TotalRows must be the sum, not a count of tables")
 
 	// NOTE: this file is `package tenantpurge_test` (EXTERNAL), so purgePlan
 	// is not reachable here — the plan-vs-preview parity property is
@@ -337,11 +347,16 @@ func TestCount_ReportsTheSameRowsAndDestroysNothing(t *testing.T) {
 
 	rep, err := tenantpurge.Count(context.Background(), db, tenantID, storeIDs)
 	require.NoError(t, err)
-	require.EqualValues(t, 8, rep.TotalRows)
+	// 9 = 3 products + 5 orders + the tenant's own seeded store.
+	require.EqualValues(t, 9, rep.TotalRows)
 
 	var products int64
 	require.NoError(t, db.Raw(`SELECT count(*) FROM products WHERE tenant_id = ?`, tenantID).Scan(&products).Error)
 	require.EqualValues(t, 3, products, "Count must not delete anything")
+
+	var stores int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM stores WHERE tenant_id = ?`, tenantID).Scan(&stores).Error)
+	require.EqualValues(t, 1, stores, "Count must not delete the tenant's store either")
 }
 
 // A second purge is a no-op, not a partial re-run (#288 AC4).
@@ -355,4 +370,52 @@ func TestPurge_SecondRunReportsZeroAndSucceeds(t *testing.T) {
 	rep, err := tenantpurge.Purge(context.Background(), db, tenantID, storeIDs)
 	require.NoError(t, err)
 	require.EqualValues(t, 0, rep.TotalRows)
+}
+
+// storeScoped tables (csv_import_jobs, promo_redemptions,
+// campaign_email_budget, store_transactional_counter) have NO tenant_id
+// column at all — `WHERE store_id IN (...)` is their ONLY scoping. If
+// Purge were ever handed a store id that isn't actually the target
+// tenant's own, or if storeScoped's WHERE clause regressed to something
+// unconditional, these tables would delete another tenant's rows with no
+// tenant_id check anywhere to catch it. One store cannot prove store
+// scoping (a bug that matches on any store would still pass), and one
+// tenant cannot prove tenant isolation (there'd be no second tenant's row
+// to leak into) — so this test seeds two tenants, each with their own
+// store, and purges only one.
+func TestPurge_StoreScopedTablesAreScopedToTheTenantsOwnStores(t *testing.T) {
+	db := testdb.NewDB(t)
+	ctx := context.Background()
+
+	tenantA := uuid.NewString()
+	storeA := seedStore(t, db, tenantA)
+	tenantB := uuid.NewString()
+	storeB := seedStore(t, db, tenantB)
+
+	// store_transactional_counter: (store_id uuid NOT NULL, month date NOT
+	// NULL, sent integer NOT NULL DEFAULT 0) — no FKs at all, so a bare
+	// INSERT is enough.
+	require.NoError(t, db.Exec(
+		`INSERT INTO store_transactional_counter (store_id, month, sent) VALUES (?, '2026-08-01', 7)`,
+		storeA).Error)
+	require.NoError(t, db.Exec(
+		`INSERT INTO store_transactional_counter (store_id, month, sent) VALUES (?, '2026-08-01', 7)`,
+		storeB).Error)
+
+	rep, err := tenantpurge.Purge(ctx, db, tenantA, []string{storeA})
+	require.NoError(t, err)
+
+	var got int64 = -1
+	for _, tr := range rep.Tables {
+		if tr.Table == "store_transactional_counter" {
+			got = tr.RowsDeleted
+		}
+	}
+	require.EqualValues(t, 1, got, "report must show exactly 1 row deleted from store_transactional_counter, not merely non-zero")
+
+	var countA, countB int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM store_transactional_counter WHERE store_id = ?`, storeA).Scan(&countA).Error)
+	require.NoError(t, db.Raw(`SELECT count(*) FROM store_transactional_counter WHERE store_id = ?`, storeB).Scan(&countB).Error)
+	require.EqualValues(t, 0, countA, "tenant A's store_transactional_counter row must be gone")
+	require.EqualValues(t, 1, countB, "tenant B's store_transactional_counter row must survive — cross-tenant leak")
 }

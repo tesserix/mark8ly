@@ -56,6 +56,29 @@ func fullPurgeDeps() platformadmin.Deps {
 	}
 }
 
+// purgeOnlyDeps is fullPurgeDeps' minimal counterpart: every dependency the
+// purge routes require, and NOTHING else — no TenantLifecycle. Used only
+// by TestRegister_SharingTheMerchantPrefixPanicsAtRouterBuild, where a
+// second platformadmin route mounted alongside purge (e.g.
+// TenantLifecycle's :id suspend/unsuspend) would introduce a second
+// possible wildcard collision on the shared group and make that test's
+// require.Panics overdetermined — it would panic regardless of what
+// purge's own wildcard is, so mutating purge's wildcard alone could never
+// decide the test's outcome. Every other test in this file should keep
+// using fullPurgeDeps, not this.
+func purgeOnlyDeps() platformadmin.Deps {
+	return platformadmin.Deps{
+		Repo:            &stubRepo{},
+		Secret:          testSecret,
+		DB:              &gorm.DB{},
+		NonceStore:      newMemNonces(),
+		TenantTeardown:  &fakeTeardown{seq: &seq{}},
+		Purger:          &fakePurger{seq: &seq{}},
+		TenantDirectory: &stubDirectory{detail: &tenantdirectory.TenantDetail{}},
+		Emitter:         audit.NewEmitter(audit.EmitterConfig{Repo: &recordingRepo{}}),
+	}
+}
+
 // TestRegister_MountsPurgeRoutesWhenWired: every dependency present ->
 // both routes resolve (not 404) for a validly-signed request.
 func TestRegister_MountsPurgeRoutesWhenWired(t *testing.T) {
@@ -246,11 +269,18 @@ func TestRegister_SharingTheMerchantPrefixPanicsAtRouterBuild(t *testing.T) {
 		// path position.
 		g.GET("/admin/tenants/:tenantId/sso/config", func(c *gin.Context) {})
 
-		// platformadmin's purge routes use :id at the SAME position
-		// (/admin/tenants/:id/...) — mounted on the SAME "/api/v1" group
-		// this time, not the sibling "/api/v1/platform" prefix production
-		// actually uses. Two different wildcard names at this one node is
-		// exactly what gin refuses to build.
-		platformadmin.Register(g, fullPurgeDeps())
+		// purgeOnlyDeps, NOT fullPurgeDeps: fullPurgeDeps also wires
+		// TenantLifecycle, whose routes use :id at this SAME path position.
+		// If this test used fullPurgeDeps, the assertion would be
+		// overdetermined — purge's wildcard could be changed to match the
+		// stub's :tenantId and the test would STILL panic, just from
+		// colliding with TenantLifecycle's :id instead of with the stub.
+		// (This is exactly what happened in fix round 1: mutating purge's
+		// wildcard alone could never make this test go green, so it could
+		// never demonstrate the hazard it names.) With only the purge
+		// routes mounted, purge's wildcard is the ONLY platformadmin
+		// wildcard in play, so mutating it alone genuinely decides whether
+		// this test panics — see the mutation proof in the Task 11 report.
+		platformadmin.Register(g, purgeOnlyDeps())
 	})
 }

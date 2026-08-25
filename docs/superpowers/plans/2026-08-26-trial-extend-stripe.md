@@ -126,7 +126,7 @@ func TestUpdateTrialEnd_SendsExactTrialEndAndNoPrice(t *testing.T) {
 	c := billingstripe.New("sk_test_x")
 	c.SetBaseURLForTesting(srv.URL)
 
-	sub, err := billingstripe.UpdateTrialEnd(context.Background(), c, billingstripe.UpdateTrialEndParams{
+	sub, err := billingstripe.UpdateTrialEnd(context.Background(), c, billingbillingstripe.UpdateTrialEndParams{
 		SubscriptionID: subID,
 		TrialEnd:       newEnd,
 		IdempotencyKey: "trial_extend:store-1:abc",
@@ -415,7 +415,7 @@ git commit -m "feat(stripe): optional price swap and trial_end on subscription u
 **Interfaces:**
 - Consumes: `stripe.Subscription` (Task 1), `stripe.UpdateTrialEndParams` (Task 1).
 - Produces:
-  - `type StripeTrialUpdater interface { GetSubscription(ctx, id string) (*stripe.Subscription, error); UpdateTrialEnd(ctx, in stripe.UpdateTrialEndParams) (*stripe.Subscription, error) }`
+  - `type StripeTrialUpdater interface { GetSubscription(ctx, id string) (*billingstripe.Subscription, error); UpdateTrialEnd(ctx, in billingstripe.UpdateTrialEndParams) (*billingstripe.Subscription, error) }`
   - `type Extender struct{ Stripe StripeTrialUpdater }`
   - `func NewExtender(su StripeTrialUpdater) *Extender`
   - `func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time) (ExtendResult, error)`
@@ -509,8 +509,8 @@ In `internal/billing/trial/extend.go`, add above `Extend`:
 // declared here rather than imported as a concrete type so the extension can
 // be tested without a live Stripe and so the dependency points inward.
 type StripeTrialUpdater interface {
-	GetSubscription(ctx context.Context, id string) (*stripe.Subscription, error)
-	UpdateTrialEnd(ctx context.Context, in stripe.UpdateTrialEndParams) (*stripe.Subscription, error)
+	GetSubscription(ctx context.Context, id string) (*billingstripe.Subscription, error)
+	UpdateTrialEnd(ctx context.Context, in billingstripe.UpdateTrialEndParams) (*billingstripe.Subscription, error)
 }
 
 // Extender owns "move a trial's end date", for both card-less and
@@ -531,7 +531,7 @@ func NewExtender(su StripeTrialUpdater) *Extender {
 }
 ```
 
-Add `"github.com/mark8ly/marketplace-api/internal/billing/stripe"` to the imports.
+Add `billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"` to the imports — every other file in this package uses that alias (`subscribe.go:17`, `adapter_test.go:12`), and a second spelling for one import is the kind of inconsistency that makes a later reader think two packages are involved.
 
 Add `StripeApplied bool` to `ExtendResult` with a comment:
 
@@ -589,22 +589,22 @@ Append to `internal/billing/trial/extend_stripe_integration_test.go`:
 ```go
 // fakeUpdater records what it was asked to do and returns what it is told to.
 type fakeUpdater struct {
-	get        *stripe.Subscription
+	get        *billingstripe.Subscription
 	getErr     error
-	updated    *stripe.Subscription
+	updated    *billingstripe.Subscription
 	updateErr  error
-	seenParams stripe.UpdateTrialEndParams
+	seenParams billingstripe.UpdateTrialEndParams
 	updateCalls int
 }
 
-func (f *fakeUpdater) GetSubscription(ctx context.Context, id string) (*stripe.Subscription, error) {
+func (f *fakeUpdater) GetSubscription(ctx context.Context, id string) (*billingstripe.Subscription, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
 	return f.get, nil
 }
 
-func (f *fakeUpdater) UpdateTrialEnd(ctx context.Context, in stripe.UpdateTrialEndParams) (*stripe.Subscription, error) {
+func (f *fakeUpdater) UpdateTrialEnd(ctx context.Context, in billingstripe.UpdateTrialEndParams) (*billingstripe.Subscription, error) {
 	f.updateCalls++
 	f.seenParams = in
 	if f.updateErr != nil {
@@ -631,12 +631,12 @@ func TestExtender_CardBacked_SendsExactUnixSecondAndWritesLocally(t *testing.T) 
 	newEnd := stripeExtendAsOf.Add(60 * 24 * time.Hour)
 
 	f := &fakeUpdater{
-		get: &stripe.Subscription{
+		get: &billingstripe.Subscription{
 			ID: subID, Status: "trialing",
 			TrialEnd:           derivedEnd.Unix(),
 			BillingCycleAnchor: derivedEnd.Unix(),
 		},
-		updated: &stripe.Subscription{
+		updated: &billingstripe.Subscription{
 			ID: subID, Status: "trialing",
 			TrialEnd:           newEnd.Unix(),
 			BillingCycleAnchor: newEnd.Unix(),
@@ -679,7 +679,7 @@ func TestExtender_CardBacked_StripeFailure_WritesNothingLocally(t *testing.T) {
 	).Error)
 
 	f := &fakeUpdater{
-		get: &stripe.Subscription{ID: subID, Status: "trialing",
+		get: &billingstripe.Subscription{ID: subID, Status: "trialing",
 			TrialEnd: derivedEnd.Unix(), BillingCycleAnchor: derivedEnd.Unix()},
 		updateErr: errors.New("stripe: boom"),
 	}
@@ -706,7 +706,7 @@ func TestExtender_CardBacked_StripeNotTrialing_Refuses(t *testing.T) {
 	const subID = "sub_card_active"
 	seeded := seedCardBacked(t, db, subID, stripeExtendAsOf.Add(10*24*time.Hour))
 
-	f := &fakeUpdater{get: &stripe.Subscription{ID: subID, Status: "active",
+	f := &fakeUpdater{get: &billingstripe.Subscription{ID: subID, Status: "active",
 		TrialEnd: 0, BillingCycleAnchor: stripeExtendAsOf.Unix()}}
 
 	_, err := trial.NewExtender(f).Extend(context.Background(), db,
@@ -729,9 +729,9 @@ func TestExtender_CardBacked_TwoYearBound_AtTheBoundary(t *testing.T) {
 		newEnd := anchor.Add(twoYears)
 
 		f := &fakeUpdater{
-			get: &stripe.Subscription{ID: subID, Status: "trialing",
+			get: &billingstripe.Subscription{ID: subID, Status: "trialing",
 				TrialEnd: stripeExtendAsOf.Unix(), BillingCycleAnchor: anchor.Unix()},
-			updated: &stripe.Subscription{ID: subID, Status: "trialing",
+			updated: &billingstripe.Subscription{ID: subID, Status: "trialing",
 				TrialEnd: newEnd.Unix(), BillingCycleAnchor: newEnd.Unix()},
 		}
 		_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf)
@@ -745,7 +745,7 @@ func TestExtender_CardBacked_TwoYearBound_AtTheBoundary(t *testing.T) {
 		seeded := seedCardBacked(t, db, subID, stripeExtendAsOf.Add(10*24*time.Hour))
 		newEnd := anchor.Add(twoYears + time.Second)
 
-		f := &fakeUpdater{get: &stripe.Subscription{ID: subID, Status: "trialing",
+		f := &fakeUpdater{get: &billingstripe.Subscription{ID: subID, Status: "trialing",
 			TrialEnd: stripeExtendAsOf.Unix(), BillingCycleAnchor: anchor.Unix()}}
 		_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf)
 		require.ErrorIs(t, err, trial.ErrTrialEndTooFar)
@@ -765,7 +765,7 @@ func TestExtender_CardBacked_BoundIsMeasuredFromAnchorNotNow(t *testing.T) {
 	anchor := stripeExtendAsOf.Add(-18 * 30 * 24 * time.Hour)
 	newEnd := stripeExtendAsOf.Add(12 * 30 * 24 * time.Hour) // legal under now+2y, illegal under anchor+2y
 
-	f := &fakeUpdater{get: &stripe.Subscription{ID: subID, Status: "trialing",
+	f := &fakeUpdater{get: &billingstripe.Subscription{ID: subID, Status: "trialing",
 		TrialEnd: stripeExtendAsOf.Unix(), BillingCycleAnchor: anchor.Unix()}}
 	_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf)
 	require.ErrorIs(t, err, trial.ErrTrialEndTooFar,
@@ -785,9 +785,9 @@ func TestExtender_CardBacked_ScopedToTheRequestedStore(t *testing.T) {
 	newEnd := stripeExtendAsOf.Add(60 * 24 * time.Hour)
 
 	f := &fakeUpdater{
-		get: &stripe.Subscription{ID: "sub_target", Status: "trialing",
+		get: &billingstripe.Subscription{ID: "sub_target", Status: "trialing",
 			TrialEnd: derivedEnd.Unix(), BillingCycleAnchor: derivedEnd.Unix()},
-		updated: &stripe.Subscription{ID: "sub_target", Status: "trialing",
+		updated: &billingstripe.Subscription{ID: "sub_target", Status: "trialing",
 			TrialEnd: newEnd.Unix(), BillingCycleAnchor: newEnd.Unix()},
 	}
 	_, err := trial.NewExtender(f).Extend(context.Background(), db, target.StoreID, newEnd, stripeExtendAsOf)
@@ -800,7 +800,7 @@ func TestExtender_CardBacked_ScopedToTheRequestedStore(t *testing.T) {
 }
 ```
 
-Add `"errors"`, `"gorm.io/gorm"` and `"github.com/mark8ly/marketplace-api/internal/billing/stripe"` to that file's imports.
+Add `"errors"`, `"gorm.io/gorm"` and `billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"` to that file's imports (the alias every other file in this package uses).
 
 - [ ] **Step 2: Run and verify they fail**
 
@@ -917,7 +917,7 @@ and after the `EndsAt(sub)` check and the `out.PreviousEndsAt` assignment, befor
 				return ErrTrialEndTooFar
 			}
 
-			updated, err := e.Stripe.UpdateTrialEnd(sctx, stripe.UpdateTrialEndParams{
+			updated, err := e.Stripe.UpdateTrialEnd(sctx, billingstripe.UpdateTrialEndParams{
 				SubscriptionID: stripeID,
 				TrialEnd:       end.Unix(),
 				// Derived from the store, so a retry of the SAME extension
@@ -1218,11 +1218,26 @@ go test -count=1 ./internal/handlers/platformadmin/... 2>&1 | tail -5
 go vet -tags=integration ./... 2>&1 | tail -5
 ```
 
-- [ ] **Step 7: Prove the omission by mutation**
+- [ ] **Step 7: Confirm the golden fixture did NOT move**
 
-Remove `omitempty` from `BillingAnchorMoved` and re-run `TestExtend_CardLess_OmitsStripeFields`. It MUST fail. Revert.
+`testdata/trial_extend_response.json` is a byte-for-byte golden, and `TestTrialExtendMatchesPinnedContract` drives it with `okResult()` — a **card-less** result. All three new fields carry `omitempty`, so the golden must still pass **unchanged**:
 
-- [ ] **Step 8: Commit**
+```bash
+cd services/marketplace-api
+set -o pipefail
+go test -count=1 -run TestTrialExtendMatchesPinnedContract ./internal/handlers/platformadmin/ -v 2>&1 | tail -10
+git diff --stat internal/handlers/platformadmin/testdata/trial_extend_response.json
+```
+
+Expected: PASS, and an EMPTY diff for that file.
+
+**If that golden fails, do not regenerate it.** A card-less response that carries Stripe keys is the defect the `omitempty` exists to prevent; regenerating the fixture would ship it and pin it as correct. Fix the code.
+
+- [ ] **Step 8: Prove the omission by mutation**
+
+Remove `omitempty` from `BillingAnchorMoved` and re-run `TestExtend_CardLess_OmitsStripeFields` and `TestTrialExtendMatchesPinnedContract`. BOTH must fail. Revert.
+
+- [ ] **Step 9: Commit**
 
 ```bash
 git add internal/handlers/platformadmin/billing_trial_extend.go internal/handlers/platformadmin/billing_trial_extend_test.go
@@ -1487,68 +1502,73 @@ func TestCountExpiring_UnaffectedByStripeManagedRows(t *testing.T) {
 }
 ```
 
-And in `internal/handlers/platformadmin/billing_trials_test.go` (read its existing stub-lister helper first and reuse it; the sketch below names the shape it must have):
+And in `internal/handlers/platformadmin/billing_trials_test.go`.
+
+**First, the two existing implementations must gain the new parameter** — there are exactly two, and the second is easy to miss:
+
+- `stubTrialLister.ListExpiring` (`:40`) — add `opts trial.ListOptions` and record it on the struct as `gotOpts trial.ListOptions`. Do NOT add a second stub; this one already records the params it was called with, which is precisely what the new test needs.
+- `sharedTrialsFixture.ListExpiring` (`:708`) — add `_ trial.ListOptions`.
+
+Then add:
 
 ```go
-// captureLister records the ListOptions it was handed, so the test can
-// assert what the handler ASKED FOR rather than only what came back.
-type captureLister struct {
-	gotOpts trial.ListOptions
-	rows    []trial.ExpiringRow
-	total   int64
-}
-
-func (c *captureLister) ListExpiring(_ context.Context, _ *gorm.DB, _ time.Time, _ time.Duration,
-	_, _ int, opts trial.ListOptions) ([]trial.ExpiringRow, int64, error) {
-	c.gotOpts = opts
-	return c.rows, c.total, nil
-}
-
-// The query parameter must reach the lister, and the row must be labelled on
-// the wire. Both directions matter: a handler that always passes true would
-// widen a live contract, and a handler that never passes it would make #358's
-// endpoint undiscoverable.
-func TestBillingTrials_IncludeStripeManagedFlagReachesTheLister(t *testing.T) {
-	row := trial.ExpiringRow{
-		TenantID:      "aaaaaaaa-1111-1111-1111-111111111111",
-		StoreID:       "bbbbbbbb-1111-1111-1111-111111111111",
-		TrialEndsAt:   time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC),
-		Plan:          "trial",
-		Period:        "monthly",
-		Status:        "trialing",
-		StripeManaged: true,
-	}
+// The query parameter must reach the lister, and the row must be labelled
+// on the wire. Both directions matter: a handler that always passed true
+// would widen a live contract, and one that never passed it would leave
+// #358's endpoint undiscoverable.
+func TestBillingTrials_IncludeStripeManagedReachesTheLister(t *testing.T) {
+	dir := &stubBillingDirectory{names: map[string]string{}}
 
 	t.Run("with the flag", func(t *testing.T) {
-		lister := &captureLister{rows: []trial.ExpiringRow{row}, total: 1}
-		rec := getTrials(t, lister, "?include_stripe_managed=true")
+		rows := billingTrialsFixtureRows(billingTrialsFixtureAsOf)
+		rows[0].StripeManaged = true
+		trials := &stubTrialLister{rows: rows, total: int64(len(rows))}
+
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials?include_stripe_managed=true", nil))
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-		require.True(t, lister.gotOpts.IncludeStripeManaged)
-		// Raw bytes: a decoded map cannot distinguish an absent key from
-		// false, and this field's whole job is to distinguish two kinds of row.
+
+		require.True(t, trials.gotOpts.IncludeStripeManaged)
+		// Raw bytes: a decoded map cannot distinguish an absent key from a
+		// false one, and telling those apart is this field's whole job.
 		require.Contains(t, rec.Body.String(), `"stripe_managed":true`)
 	})
 
-	t.Run("without the flag", func(t *testing.T) {
-		lister := &captureLister{rows: nil, total: 0}
-		rec := getTrials(t, lister, "")
+	t.Run("without the flag the default is unchanged", func(t *testing.T) {
+		trials := &stubTrialLister{rows: nil, total: 0}
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials", nil))
 		require.Equal(t, http.StatusOK, rec.Code)
-		require.False(t, lister.gotOpts.IncludeStripeManaged,
+		require.False(t, trials.gotOpts.IncludeStripeManaged,
 			"the default must stay #285's shipped contract")
 	})
 
+	t.Run("anything other than true is false", func(t *testing.T) {
+		trials := &stubTrialLister{rows: nil, total: 0}
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials?include_stripe_managed=1", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.False(t, trials.gotOpts.IncludeStripeManaged,
+			"a widening flag must require the exact value, never a truthy-looking one")
+	})
+
 	t.Run("a card-less row is labelled false, not omitted", func(t *testing.T) {
-		cardless := row
-		cardless.StripeManaged = false
-		lister := &captureLister{rows: []trial.ExpiringRow{cardless}, total: 1}
-		rec := getTrials(t, lister, "?include_stripe_managed=true")
+		rows := billingTrialsFixtureRows(billingTrialsFixtureAsOf)
+		for i := range rows {
+			rows[i].StripeManaged = false
+		}
+		trials := &stubTrialLister{rows: rows, total: int64(len(rows))}
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials?include_stripe_managed=true", nil))
 		require.Contains(t, rec.Body.String(), `"stripe_managed":false`,
-			"every row states its kind; an omitted false is indistinguishable from an old server")
+			"every row states its kind; an omitted false is indistinguishable from an older server")
 	})
 }
 ```
-
-`getTrials(t, lister, query)` is the existing helper in that file that mounts `NewBillingTrialsHandler` on a gin engine with a fixed clock and issues the GET — use it under whatever name it already has, and add the `query` parameter if it does not take one.
 
 - [ ] **Step 2: Run and verify they fail**
 

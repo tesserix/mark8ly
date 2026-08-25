@@ -2,6 +2,8 @@ package audit
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"strings"
@@ -122,6 +124,47 @@ func (e *Emitter) Emit(c *gin.Context, ev Event) {
 			"resource_type", ev.ResourceType,
 			"queue_size", cap(e.queue))
 	}
+}
+
+// EmitSync writes an audit row on the CALLER's goroutine and returns the
+// outcome. It is the exception to this package's fire-and-forget rule, and
+// it exists for exactly one situation: an action whose own effect can
+// destroy the audit row recording it.
+//
+// The tenant purge (#288) deletes `audit_logs WHERE tenant_id = ?`. Emit
+// hands the row to a background worker, so an Emit on that path races its
+// own DELETE — the row may land before the purge and be destroyed, after
+// it and survive, or (queue full) never be written at all. None of those
+// is an audit trail.
+//
+// Use Emit everywhere else. Audit must never gate a business request, and
+// this function does exactly that.
+//
+// buildEntry is REUSED rather than an Entry assembled here: a second
+// derivation of actor type, operator id, capability and scope would drift
+// the moment either path gained a field.
+func (e *Emitter) EmitSync(c *gin.Context, ev Event) error {
+	if e == nil {
+		return errors.New("audit.EmitSync: nil emitter")
+	}
+	if ev.Action == "" || ev.ResourceType == "" {
+		return errors.New("audit.EmitSync: action and resource_type are required")
+	}
+
+	entry := buildEntry(c, ev)
+	if entry == nil {
+		return errors.New("audit.EmitSync: no tenant in scope, refusing to write a tenant-unscoped row")
+	}
+
+	// Use a fresh background context with a timeout rather than the
+	// request's — matching write(). A client disconnecting mid-purge must
+	// not cancel the record of what was destroyed.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := e.repo.Create(ctx, e.db, entry); err != nil {
+		return fmt.Errorf("audit.EmitSync: insert: %w", err)
+	}
+	return nil
 }
 
 // Stop signals workers to drain the queue and exit. Safe to call once;

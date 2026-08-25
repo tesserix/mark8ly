@@ -78,6 +78,18 @@ func (a *realStripeAdapter) UpdateTrialEnd(ctx context.Context, in billingstripe
 	return billingstripe.UpdateTrialEnd(ctx, a.c, in)
 }
 
+// requireStep fails the test with the setup step's name prefixed onto the
+// raw Stripe/DB error, rather than a bare error the next reader has to
+// guess the origin of. Fix round 1 (F4): a prior failure here surfaced only
+// as a raw Stripe 400 with no indication of which of the four setup calls
+// produced it.
+func requireStep(t *testing.T, step string, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("%s: %v", step, err)
+	}
+}
+
 // seedStripeliveStore inserts a minimal stores row so a store_subscriptions
 // row referencing storeID satisfies store_subscriptions_store_id_fkey.
 // Self-contained copy of expiring_integration_test.go's seedExpiringStore —
@@ -138,9 +150,34 @@ func TestExtend_RealStripeAndRealPostgres_HoldsLockAcrossNetworkCall(t *testing.
 
 	c := billingstripe.New(stripeKey)
 
+	// storeID (and everything derived from it below) MUST be freshly random
+	// per run, not a constant. Fix round 1 (F2): billingstripe derives
+	// several idempotency keys straight from the store id —
+	// CustomerIdempotencyKey(storeID), the product idempotency key below,
+	// and CreateSubscription's SubscriptionIdempotencyKey(storeID, plan,
+	// period). Stripe caches an idempotent response for 24h; a constant
+	// storeID would make every rerun inside that window silently replay the
+	// FIRST run's cached objects — including trial_end — rather than create
+	// anything new, which would look like a pass while testing nothing.
+	// uuid.New() is the source of that freshness; nothing below may
+	// hardcode storeID's value.
 	tenantID := uuid.New()
 	storeID := uuid.New()
 	seedStripeliveStore(t, db, tenantID, storeID)
+
+	// runTag disambiguates the OTHER thing that collides across runs: the
+	// Stripe Price's lookup_key. Fix round 1 (F1): pricing.MustGetDescriptor
+	// returns the catalog's real descriptor, whose LookupKey is a FIXED
+	// string ("mark8ly_starter_monthly_developed_v1") shared with
+	// production's own bootstrap — the first run against any given Stripe
+	// test account creates that Price and every subsequent run then fails
+	// CreatePrice with "a price already uses that lookup key" (see the
+	// round-1 failure log). storeID is already a fresh random uuid.New()
+	// per run (see the comment above), so folding it into the lookup key is
+	// enough on its own; the nanosecond timestamp is added only as a second,
+	// independent source of uniqueness so this does not regress if storeID
+	// generation ever changes.
+	runTag := fmt.Sprintf("%s-%d", storeID.String(), time.Now().UnixNano())
 
 	// --- Real Stripe customer, price, and TRIALING subscription -----------
 	//
@@ -153,15 +190,51 @@ func TestExtend_RealStripeAndRealPostgres_HoldsLockAcrossNetworkCall(t *testing.
 		Name:     "Stripelive Task 8 Test",
 		Country:  "IE",
 	})
-	require.NoError(t, err, "CreateCustomer")
+	requireStep(t, "CreateCustomer", err)
 
-	product, err := billingstripe.CreateProduct(ctx, c, "Stripelive Task 8 Test Product", "starter",
-		"stripelive-task8-product:"+storeID.String())
-	require.NoError(t, err, "CreateProduct")
+	product, err := billingstripe.CreateProduct(ctx, c, "Stripelive Task 8 Test Product "+runTag, "starter",
+		"stripelive-task8-product:"+runTag)
+	requireStep(t, "CreateProduct", err)
+	t.Cleanup(func() {
+		// Fix round 1 (F3): every run now creates a uniquely-named product,
+		// so the accumulation flagged after the first submission is worse
+		// unless each run also deactivates its own. billingstripe has no
+		// wrapper for this (checked product.go — CreateProduct/
+		// FindProductByMetadata only), so this uses the raw SDK, same as
+		// the subscription cancel below. Deactivating (not deleting) is
+		// deliberate: Stripe test-mode products with prices attached
+		// generally cannot be deleted, only archived via active=false.
+		raw := sdk.NewClient(stripeKey)
+		if _, cerr := raw.V1Products.Update(context.Background(), product.ID, &sdk.ProductUpdateParams{Active: sdk.Bool(false)}); cerr != nil {
+			t.Logf("cleanup: failed to deactivate stripe test-mode product %s: %v", product.ID, cerr)
+		}
+	})
 
-	desc := pricing.MustGetDescriptor(pricing.PlanStarter, pricing.PeriodMonthly, pricing.TierDeveloped)
+	// A hand-built descriptor, not pricing.MustGetDescriptor's catalog
+	// value — see the runTag comment above for why the catalog's fixed
+	// LookupKey cannot be reused here. Baseline/Tier/Plan/Period mirror the
+	// catalog shape closely enough for CreatePrice's logic (single baseline
+	// currency, TierDeveloped's per-currency-options loop over an empty
+	// Options map is a no-op) without colliding with anything real.
+	desc := pricing.PriceDescriptor{
+		Plan:      pricing.PlanStarter,
+		Period:    pricing.PeriodMonthly,
+		Tier:      pricing.TierDeveloped,
+		Baseline:  pricing.Amount{Currency: "usd", UnitAmountMinor: 999},
+		Options:   map[string]pricing.Amount{},
+		LookupKey: "stripelive_task8_" + runTag,
+	}
 	price, err := billingstripe.CreatePrice(ctx, c, product.ID, desc)
-	require.NoError(t, err, "CreatePrice")
+	requireStep(t, "CreatePrice", err)
+	t.Cleanup(func() {
+		// Same rationale as the product cleanup above: no billingstripe
+		// wrapper exists (checked price.go), so this deactivates via the
+		// raw SDK. A Price cannot be deleted once created, only archived.
+		raw := sdk.NewClient(stripeKey)
+		if _, cerr := raw.V1Prices.Update(context.Background(), price.ID, &sdk.PriceUpdateParams{Active: sdk.Bool(false)}); cerr != nil {
+			t.Logf("cleanup: failed to deactivate stripe test-mode price %s: %v", price.ID, cerr)
+		}
+	})
 
 	initialTrialEnd := time.Now().Add(48 * time.Hour).UTC()
 	sdkSub, err := billingstripe.CreateSubscription(ctx, c, billingstripe.CreateSubscriptionInput{
@@ -172,7 +245,7 @@ func TestExtend_RealStripeAndRealPostgres_HoldsLockAcrossNetworkCall(t *testing.
 		PriceID:    price.ID,
 		TrialEnd:   initialTrialEnd.Unix(),
 	})
-	require.NoError(t, err, "CreateSubscription")
+	requireStep(t, "CreateSubscription", err)
 	require.Equal(t, "trialing", sdkSub.Status, "setup subscription must be trialing")
 
 	// Cancel the Stripe test-mode subscription on the way out. This is

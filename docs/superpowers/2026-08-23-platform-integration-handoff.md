@@ -19,7 +19,8 @@ issue: **#260**. Each endpoint is its own issue.
 #282 (`/admin/kpis`), #283 (`/admin/onboarding/funnel` + `/sessions`), #284
 (`/admin/billing/subscriptions`), #285 (`/admin/billing/trials`), #289
 (`/admin/health`), **#287** (`/admin/tenants/{id}/suspend` + `/unsuspend`, #340),
-**#329** (`/admin/tickets`, #346), **#332** (`/admin/notifications`, #351), and
+**#329** (`/admin/tickets`, #346), **#332** (`/admin/notifications`, #351), **#353**
+(storable trial end, #355 — split out of #286, also closed #326), and
 **#281 part (b) only** — the CSM migration
 fast-path review route, mounted and audited (#338); #281 stays OPEN for part (a).
 
@@ -31,7 +32,9 @@ no longer true.** Five issues joined the milestone: #329 (`/admin/tickets`), #33
 **Effort ordering, re-derived 2026-08-24 (session 3 close)** — reads-before-writes no
 longer sorts this queue:
 
-**~~#332~~ → #333 → #286 → #288 (purge, last) → #319.** — #332 shipped 2026-08-25. **Start at #333.**
+**~~#332~~ → #333 → ~~#353~~ → #286 → #288 (purge, last) → #319.** — #332 and #353 shipped
+2026-08-25. **#286 is next and is now genuinely small**; #333 remains blocked on the
+capability-name decision.
 
 #287, #329 and #332 are now DELIVERED. **#333 is blocked on a decision, not on work:** its
 acceptance requires gating on the operator holding the `rotate-credentials` **capability**,
@@ -43,9 +46,16 @@ explicitly deferred and say so. That decision is still open, and #333 is the hea
 queue behind it — so the next task is either settling the capability names or starting
 **#286**.
 
-**#286 is NOT the small one its acceptance criteria suggest.** There is **no stored
-trial-end column anywhere** — searched every migration and every Go site. Trial end is
-*derived* as `created_at + TrialDays` in five places: `handlers/admin/subscription.go:197`
+**#286 was NOT the small one its acceptance criteria suggested — that is now FIXED by #353.**
+`store_subscriptions.trial_ends_at` exists (nullable, NULL = never extended), one accessor
+`trial.EndsAt` owns the answer, and a guard test fails if a second derivation site appears.
+Writing that column now changes what the cron expires, what Stripe bills, what the merchant
+sees and what the console lists. **#286 is now a small write on top.**
+
+Historical note, kept because the count was wrong in a way that mattered: this doc said trial
+end was derived in **five** places. It was **six** — `expiry_cron.go` was missing from the
+list, and that is the one whose omission would have meant an extension does not extend
+anything. The original five were: `handlers/admin/subscription.go:197`
 (what the merchant sees), `billing/trial/subscribe.go:131` (**the value sent to Stripe
 as `trial_end`**), `subscription/dunning/trial_reminders.go:108`, `billing/trial/expiring.go`,
 and `planchange.go:224` (plus #326's hardcoded 90 in the same role). "Extend a trial" is
@@ -317,6 +327,28 @@ rows.
    "check the table size first" actively invites — a bare `CREATE INDEX` errors,
    golang-migrate marks the version dirty, and every pod refuses to start. Migration
    `000101` already guards; copy that, not the bare form.
+
+12. **A pre-existing comment is a claim of exactly the kind these traps warn about.** Trap 10
+   said running the search is not the same as reading it. This is its sibling: prose already
+   in the repo carries no more authority than prose you just wrote, and trusting it is how a
+   false claim gets laundered into a spec.
+
+   Three instances in one milestone round:
+   - `notifications.recipient_user_id` is documented as a "GIP string user id" by migration
+     `000091` and `models.go:38`. It holds `customers.id`. A spec repeated the comment instead
+     of reading the writer (`storefront/webhooks.go:713` sets `row.CustomerID.String()`) and
+     the reader (`customer_notifications.go:58-73` resolves a `*customer.CustomerProfile`).
+     Filed as #350.
+   - `idempotency_keys` is documented as swept nightly, by migration `000001:262` **and** by
+     `internal/idempotency/models.go:3-6`. **Nothing sweeps it.** The only two Go references
+     delete by `tenant_id` during tenant hard-delete and purge; nothing reads `expires_at`.
+     The claim reached a draft of #286's spec as fact before a search caught it.
+   - Migration `000103`'s own comment named `ss_status_created_at_idx`, an index that exists
+     nowhere — while a task reviewer had already stated the correct name,
+     `ss_trial_reminder_scan_idx`, in a review that was read and accepted.
+
+   Two comments agreeing with each other is not corroboration; it is usually one comment
+   copied. **Check the claim against the code that would have to be true for it.**
 
 ## Environment
 

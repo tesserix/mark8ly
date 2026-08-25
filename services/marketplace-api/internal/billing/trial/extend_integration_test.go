@@ -196,15 +196,24 @@ func TestExtend_UnknownStore(t *testing.T) {
 func TestExtend_ExtendedTrialSurvivesTheExpiryCron(t *testing.T) {
 	db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores", "audit_logs")
 
-	pastDue := extendAsOf.Add(-10 * 24 * time.Hour) // derived end already passed
-	protected := seedExpiringRow(t, db, pastDue, nil)
-	control := seedExpiringRow(t, db, pastDue, nil)
+	// Derived end is still in the FUTURE at extension time — a trial whose
+	// effective end has already passed cannot be extended at all since
+	// #286's lapsed-trial refusal (ErrNotTrialing); see
+	// TestExtend_RefusesLapsedButNotYetSweptTrial. cronNow, below, is what
+	// puts the ORIGINAL end in the past by the time the cron runs.
+	derivedEnd := extendAsOf.Add(10 * 24 * time.Hour)
+	protected := seedExpiringRow(t, db, derivedEnd, nil)
+	control := seedExpiringRow(t, db, derivedEnd, nil)
 
 	_, err := trial.Extend(context.Background(), db,
 		protected.StoreID, extendAsOf.Add(30*24*time.Hour), extendAsOf)
 	require.NoError(t, err)
 
-	cron := trial.NewExpiryCron(db, nil, nil, func() time.Time { return extendAsOf })
+	// Past the ORIGINAL derived end (+10d) but before the NEW extended end
+	// (+30d): the control (never extended) must expire at this instant,
+	// while the protected row must not.
+	cronNow := extendAsOf.Add(15 * 24 * time.Hour)
+	cron := trial.NewExpiryCron(db, nil, nil, func() time.Time { return cronNow })
 	require.NoError(t, cron.Run(context.Background()))
 
 	var after subscription.StoreSubscription
@@ -216,4 +225,43 @@ func TestExtend_ExtendedTrialSurvivesTheExpiryCron(t *testing.T) {
 	require.NoError(t, db.First(&ctl, "store_id = ?", control.StoreID).Error)
 	require.Equal(t, subscription.StatusExpired, ctl.Status,
 		"the unextended control MUST expire, or this test passes because the cron did nothing")
+}
+
+// The trap this closes: between a trial's effective end passing and the
+// 00:15 expiry cron sweeping it to `not_trialing`, status alone still reads
+// `trialing`. Without this refusal the SAME request would succeed before
+// the cron runs and fail with ErrNotTrialing after it — the operator's
+// answer depending on the hour. Using ErrNotTrialing here, not a distinct
+// error, is what makes the answer consistent across that boundary.
+func TestExtend_RefusesLapsedButNotYetSweptTrial(t *testing.T) {
+	db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores")
+
+	lapsed := extendAsOf.Add(-time.Hour) // effective end already passed, status still trialing
+	seeded := seedExpiringRow(t, db, lapsed, nil)
+
+	_, err := trial.Extend(context.Background(), db,
+		seeded.StoreID, extendAsOf.Add(30*24*time.Hour), extendAsOf)
+	require.ErrorIs(t, err, trial.ErrNotTrialing)
+
+	var untouched subscription.StoreSubscription
+	require.NoError(t, db.First(&untouched, "store_id = ?", seeded.StoreID).Error)
+	require.Nil(t, untouched.TrialEndsAt, "a refused extension must not write anything")
+}
+
+// A non-nil pointer to an EMPTY string is not Stripe-managed. Only a
+// pointer to a real subscription id means Stripe owns the billing date —
+// the empty string is what a webhook or a migration can leave behind, and
+// treating it as "managed" would make every such row permanently
+// unextendable through this endpoint.
+func TestExtend_EmptyStringStripeSubscriptionIDIsNotStripeManaged(t *testing.T) {
+	db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores")
+
+	empty := ""
+	seeded := seedExpiringRow(t, db, extendAsOf.Add(10*24*time.Hour),
+		func(r *subscription.StoreSubscription) { r.StripeSubscriptionID = &empty })
+
+	newEnd := extendAsOf.Add(60 * 24 * time.Hour)
+	res, err := trial.Extend(context.Background(), db, seeded.StoreID, newEnd, extendAsOf)
+	require.NoError(t, err, "an empty-string StripeSubscriptionID must NOT be treated as stripe-managed")
+	require.True(t, newEnd.Equal(res.NewEndsAt))
 }

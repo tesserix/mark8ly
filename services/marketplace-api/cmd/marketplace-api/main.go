@@ -1737,7 +1737,7 @@ func main() {
 
 	trialScheduler.Start()
 	defer trialScheduler.Stop()
-	log.Info("P5 crons started", "count", 4)
+	log.Info("P5 crons started", "count", 5)
 
 	// P6 dunning + SCA recovery crons. Emails route through the NoOpClient
 	// until a real adapter is wired (email columns on StoreSubscription are

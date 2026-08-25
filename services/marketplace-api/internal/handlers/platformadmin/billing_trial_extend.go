@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -77,8 +78,13 @@ type BillingTrialExtendHandler struct {
 	logger *slog.Logger
 }
 
-// NewBillingTrialExtendHandler constructs the handler. logger may be nil.
+// NewBillingTrialExtendHandler constructs the handler. logger may be nil —
+// slog.Default() is substituted, matching EmitOperatorAction's own
+// fallback (audit.go), so a nil logger can never silence an error path.
 func NewBillingTrialExtendHandler(db *gorm.DB, ex TrialExtender, aud trialExtendAuditFunc, logger *slog.Logger) *BillingTrialExtendHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &BillingTrialExtendHandler{db: db, ex: ex, audit: aud, logger: logger}
 }
 
@@ -98,6 +104,7 @@ type trialExtendResponse struct {
 	TenantID            string `json:"tenant_id"`
 	TrialEndsAt         string `json:"trial_ends_at"`
 	PreviousTrialEndsAt string `json:"previous_trial_ends_at"`
+	ExtendedAt          string `json:"extended_at"`
 	ReasonCode          string `json:"reason_code"`
 	Reason              string `json:"reason,omitempty"`
 	RemindersCleared    int64  `json:"reminders_cleared"`
@@ -114,23 +121,68 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 		return
 	}
 
-	if h.db != nil {
-		if stored, ok, err := idempotency.Lookup(c.Request.Context(), h.db, idemKey); err == nil && ok {
-			// A replay: return the stored bytes verbatim, without calling
-			// Extend and without emitting a second audit row.
-			c.Data(http.StatusOK, "application/json; charset=utf-8", stored)
-			return
-		}
-	}
-
 	storeID, err := uuid.Parse(strings.TrimSpace(c.Param("storeID")))
 	if err != nil {
 		// 400, not 500: a malformed id is the caller's error. #343 records
-		// the opposite happening on another internal route.
+		// the opposite happening on another internal route. Matches
+		// tenant_lifecycle.go's invalid_tenant_id shape so the console
+		// handles both writes the same way.
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid_request", "message": "store id is not a valid uuid",
+			"error": "invalid_store_id", "message": "store id is not a valid uuid", "field": "store_id",
 		})
 		return
+	}
+
+	// Namespaced so a key can never replay across stores or across
+	// endpoints. idempotency_keys.key is a bare primary key shared by the
+	// whole service, and the caller's raw header is theirs to choose —
+	// without this, reusing a key against a different store returns the
+	// first store's response and silently skips the second extension.
+	scopedKey := "trial_extend:" + storeID.String() + ":" + idemKey
+
+	if h.db != nil {
+		// Reserve BEFORE doing the work, not Lookup-then-Save after: two
+		// pods handling the same retry can both miss a plain Lookup before
+		// either writes, and ON CONFLICT DO NOTHING on the final save only
+		// keeps the first BODY — the loser's response would still be
+		// returned to its own caller and never stored, so a third retry
+		// would then replay a THIRD different body. Reserve closes that
+		// race by claiming the key itself first.
+		claimed, err := idempotency.Reserve(c.Request.Context(), h.db, scopedKey, storeID.String(), time.Now().UTC(), idempotency.DefaultTTL)
+		if err != nil {
+			// Fail CLOSED: a caller that cannot be told whether this key
+			// was already used must not be allowed through to a second
+			// Extend + a second audit row. Costs nothing — Extend would
+			// fail on the same unreachable DB anyway — and 503 is exactly
+			// what should make the caller retry.
+			h.logger.Error("trial extend: idempotency reserve failed", "store_id", storeID.String(), "err", err)
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "unavailable", "message": "could not verify idempotency key",
+			})
+			return
+		}
+		if !claimed {
+			stored, ok, err := idempotency.Lookup(c.Request.Context(), h.db, scopedKey)
+			if err != nil {
+				h.logger.Error("trial extend: idempotency lookup failed", "store_id", storeID.String(), "err", err)
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "unavailable", "message": "could not verify idempotency key",
+				})
+				return
+			}
+			if ok {
+				// A replay: return the stored bytes verbatim, without
+				// calling Extend and without emitting a second audit row.
+				c.Data(http.StatusOK, "application/json; charset=utf-8", stored)
+				return
+			}
+			// Reserved but not yet completed: another caller (or another
+			// pod handling the SAME retry) is still doing the work.
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "in_progress", "message": "a request with this Idempotency-Key is already in flight",
+			})
+			return
+		}
 	}
 
 	var req trialExtendRequest
@@ -164,10 +216,11 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 
 	reason := strings.TrimSpace(req.Reason)
 	if len(reason) > maxReasonLen {
-		reason = reason[:maxReasonLen]
+		reason = truncateUTF8(reason, maxReasonLen)
 	}
 
-	res, err := h.ex.Extend(c.Request.Context(), h.db, storeID, newEnd, time.Now().UTC())
+	extendedAt := time.Now().UTC()
+	res, err := h.ex.Extend(c.Request.Context(), h.db, storeID, newEnd, extendedAt)
 	if err != nil {
 		h.respondExtendErr(c, err)
 		return
@@ -206,7 +259,7 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 				"reminders_cleared":      res.RemindersCleared,
 			},
 		}
-		if err := h.audit(c, res.TenantID, ev); err != nil && h.logger != nil {
+		if err := h.audit(c, res.TenantID, ev); err != nil {
 			// Logged, not surfaced: the extension already happened, and
 			// failing the response would make the caller retry a write that
 			// succeeded.
@@ -220,6 +273,7 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 		TenantID:            res.TenantID.String(),
 		TrialEndsAt:         next,
 		PreviousTrialEndsAt: prev,
+		ExtendedAt:          extendedAt.Format(time.RFC3339),
 		ReasonCode:          req.ReasonCode,
 		Reason:              reason,
 		RemindersCleared:    res.RemindersCleared,
@@ -227,20 +281,37 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 
 	if h.db != nil {
 		if body, err := json.Marshal(resp); err != nil {
-			if h.logger != nil {
-				h.logger.Error("trial extend: could not marshal response for idempotency save", "err", err)
-			}
-		} else if err := idempotency.Save(c.Request.Context(), h.db, idemKey, res.TenantID.String(), body, time.Now().UTC(), idempotency.DefaultTTL); err != nil {
+			h.logger.Error("trial extend: could not marshal response for idempotency save", "err", err)
+		} else if err := idempotency.Complete(c.Request.Context(), h.db, scopedKey, body); err != nil {
 			// Logged, not surfaced: the extension already happened, and
 			// failing the response would make the caller retry a write
 			// that succeeded.
-			if h.logger != nil {
-				h.logger.Error("trial extend: idempotency save failed", "store_id", res.StoreID.String(), "err", err)
-			}
+			h.logger.Error("trial extend: idempotency complete failed", "store_id", res.StoreID.String(), "err", err)
 		}
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// truncateUTF8 truncates s to at most maxBytes bytes without splitting a
+// multibyte rune. A raw byte slice (reason[:n]) can cut a rune in half at
+// the boundary, producing invalid UTF-8 that fails to marshal into the
+// audit row's jsonb Metadata column — the emit then fails silently and the
+// extension succeeds UNAUDITED, which is the exact gap this series exists
+// to close.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	b := s[:maxBytes]
+	for len(b) > 0 {
+		r, size := utf8.DecodeLastRuneInString(b)
+		if r != utf8.RuneError || size != 1 {
+			break
+		}
+		b = b[:len(b)-1]
+	}
+	return b
 }
 
 // respondExtendErr maps the domain's sentinel errors to distinct statuses
@@ -270,9 +341,7 @@ func (h *BillingTrialExtendHandler) respondExtendErr(c *gin.Context, err error) 
 			"error": "not_found", "message": "no subscription for that store",
 		})
 	default:
-		if h.logger != nil {
-			h.logger.Error("trial extend failed", "err", err)
-		}
+		h.logger.Error("trial extend failed", "err", err)
 		// The driver's error text is logged server-side, never echoed.
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "internal_error", "message": "could not extend trial",

@@ -21,6 +21,12 @@ const DefaultTTL = 24 * time.Hour
 // the sweep happened to run recently, and replaying a response past its TTL
 // would make the guarantee depend on cron timing.
 //
+// A row with no Response is ALSO a miss, not an error: Reserve creates such
+// a row to claim a key before the work behind it has finished, and its
+// caller has not completed yet. Treating it as a hit would replay an empty
+// body to a second caller instead of telling them the truth — that a
+// request with this key is still in flight.
+//
 // Expiry is judged against the DATABASE clock (`now()` in the query below),
 // deliberately — every pod hitting this query agrees on what "now" means
 // regardless of its own clock, which is what keeps the replay guarantee
@@ -36,6 +42,9 @@ func Lookup(ctx context.Context, db *gorm.DB, key string) (json.RawMessage, bool
 		return nil, false, nil
 	case err != nil:
 		return nil, false, fmt.Errorf("idempotency: lookup: %w", err)
+	}
+	if len(row.Response) == 0 {
+		return nil, false, nil
 	}
 	return json.RawMessage(row.Response), true, nil
 }
@@ -58,6 +67,48 @@ func Save(ctx context.Context, db *gorm.DB, key, tenantID string, body json.RawM
 		Create(&row).Error
 	if err != nil {
 		return fmt.Errorf("idempotency: save: %w", err)
+	}
+	return nil
+}
+
+// Reserve claims key for the caller. It returns claimed=true when this
+// caller won the race and should do the work, false when another caller
+// already holds it — in which case the winner's response is the one that
+// will be replayed, and this caller must not execute.
+//
+// This is what makes the guarantee hold across pods: Lookup-then-Save is
+// check-then-act, and two pods can both miss before either saves. Reserve
+// closes that gap with an ON CONFLICT DO NOTHING insert of a row with no
+// Response — the row's mere existence is the claim, and Complete fills in
+// the body once the work is done. The tenantID passed here need not be the
+// final subscription's own tenant when that is not yet known at claim time
+// (the trial-extend handler passes the store id it already has); it exists
+// to satisfy idempotency_keys.tenant_id's NOT NULL constraint for purge
+// scoping, not to be authoritative — Complete does not revise it.
+func Reserve(ctx context.Context, db *gorm.DB, key, tenantID string, now time.Time, ttl time.Duration) (bool, error) {
+	row := IdempotencyKey{
+		Key:       key,
+		TenantID:  tenantID,
+		CreatedAt: now.UTC(),
+		ExpiresAt: now.UTC().Add(ttl),
+	}
+	res := db.WithContext(ctx).
+		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "key"}}, DoNothing: true}).
+		Create(&row)
+	if res.Error != nil {
+		return false, fmt.Errorf("idempotency: reserve: %w", res.Error)
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// Complete stores the response body against an already-reserved key,
+// turning a claimed-but-empty row into a replayable one.
+func Complete(ctx context.Context, db *gorm.DB, key string, body json.RawMessage) error {
+	err := db.WithContext(ctx).Model(&IdempotencyKey{}).
+		Where("key = ?", key).
+		Update("response", []byte(body)).Error
+	if err != nil {
+		return fmt.Errorf("idempotency: complete: %w", err)
 	}
 	return nil
 }

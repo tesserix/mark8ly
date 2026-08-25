@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -94,14 +96,34 @@ const goodBody = `{"reason_code":"support_escalation","reason":"migration slippe
 
 // The golden fixture pins the contract as bytes, catching a rename or an
 // unauthorized addition that a struct-shaped assertion would accept.
+//
+// extended_at is necessarily dynamic — it is the wall-clock instant the
+// extension was performed, set from time.Now() in the handler — so it is
+// verified separately (present, RFC3339, recent) and then normalized to
+// the fixture's placeholder value before the byte-for-byte comparison.
 func TestTrialExtendMatchesPinnedContract(t *testing.T) {
 	aud := &capturedAudit{}
+	before := time.Now().UTC()
 	rec := postExtend(t, &stubExtender{result: okResult()}, aud, extendStoreID.String(), goodBody)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	extendedAt, ok := got["extended_at"].(string)
+	require.True(t, ok, "extended_at must be present in the response")
+	parsed, err := time.Parse(time.RFC3339, extendedAt)
+	require.NoError(t, err, "extended_at must be RFC3339")
+	require.WithinDuration(t, before, parsed, 5*time.Second,
+		"extended_at must be the instant the extension was performed")
+
+	got["extended_at"] = "2026-08-25T00:00:00Z"
+	normalized, err := json.Marshal(got)
+	require.NoError(t, err)
+
 	want, err := os.ReadFile("testdata/trial_extend_response.json")
 	require.NoError(t, err)
-	require.JSONEq(t, string(want), rec.Body.String())
+	require.JSONEq(t, string(want), string(normalized))
 }
 
 // Every declared reason code is accepted, and one outside the set is
@@ -173,12 +195,22 @@ func TestTrialExtendRefusalMapping(t *testing.T) {
 }
 
 // A malformed store id is a 400, not a 500 — #343 records the opposite
-// happening on another internal route.
+// happening on another internal route. The error shape matches
+// tenant_lifecycle.go's invalid_tenant_id (field: "id") — invalid_store_id
+// with field: "store_id" — so the console handles both writes the same way.
 func TestTrialExtendMalformedStoreIDIs400(t *testing.T) {
 	ex := &stubExtender{result: okResult()}
 	rec := postExtend(t, ex, &capturedAudit{}, "not-a-uuid", goodBody)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Equal(t, 0, ex.calls, "the domain call must not be reached with an unparsed id")
+
+	var resp struct {
+		Error string `json:"error"`
+		Field string `json:"field"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, "invalid_store_id", resp.Error)
+	require.Equal(t, "store_id", resp.Field)
 }
 
 // The audit row carries the action, the reason code, the free text and both
@@ -239,4 +271,37 @@ func TestTrialExtendOmitsEmptyReasonFromResponse(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.NotContains(t, rec.Body.String(), `"reason"`,
 		"an empty reason must be omitted from the response, not sent as an empty string")
+}
+
+// A reason with a multibyte rune sitting on the 500-byte truncation
+// boundary must not be cut mid-rune: a raw byte-slice truncation there
+// produces invalid UTF-8, which fails to marshal into the audit row's
+// jsonb Metadata column, silently drops the audit emit, and leaves the
+// extension unaudited — the exact gap this series exists to close.
+func TestTrialExtendTruncatesReasonOnARuneBoundary(t *testing.T) {
+	longReason := strings.Repeat("日", 400) // 3 bytes/rune * 400 = 1200 bytes, well past the 500 cap
+
+	type reqBody struct {
+		ReasonCode  string `json:"reason_code"`
+		Reason      string `json:"reason"`
+		TrialEndsAt string `json:"trial_ends_at"`
+	}
+	raw, err := json.Marshal(reqBody{ReasonCode: "goodwill", Reason: longReason, TrialEndsAt: "2026-12-01T00:00:00Z"})
+	require.NoError(t, err)
+
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{result: okResult()}, aud, extendStoreID.String(), string(raw))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	require.Len(t, aud.events, 1)
+	reason, _ := aud.events[0].Metadata["reason"].(string)
+	require.NotEmpty(t, reason)
+	require.LessOrEqual(t, len(reason), 500)
+	require.True(t, utf8.ValidString(reason), "a truncated multibyte reason must remain valid UTF-8")
+
+	var resp struct {
+		Reason string `json:"reason"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.True(t, utf8.ValidString(resp.Reason))
 }

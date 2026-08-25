@@ -74,6 +74,17 @@ func Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now tim
 			return ErrNotTrialing
 		}
 
+		// A trial whose EFFECTIVE end has already passed but whose status
+		// is still `trialing` — the window between the end passing and the
+		// 00:15 expiry cron sweeping it to `not_trialing` — must refuse the
+		// same way the post-cron state does. Using the SAME sentinel,
+		// ErrNotTrialing, is the point: the operator's answer must not
+		// depend on whether the cron happened to run yet. Reinstating an
+		// already-expired trial is out of scope (see the spec).
+		if !EndsAt(sub).After(now) {
+			return ErrNotTrialing
+		}
+
 		// The EFFECTIVE end before the write — the derived date when the
 		// trial has never been extended. Never recompute it here; EndsAt is
 		// the only definition (#353).

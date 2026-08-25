@@ -2018,7 +2018,7 @@ func main() {
 			TenantGateInvalidator: tenantGate,
 			Tickets:               ticketRepo,
 			Notifications:         notificationRepo,
-			TrialExtender:         platformadmin.TrialExtenderFunc(trial.Extend),
+			TrialExtender:         platformadmin.TrialExtenderFunc(trial.NewExtender(nil).Extend),
 			TenantTeardown:        tenantTeardownClient,
 			Purger:                tenantpurge.NewGormPurger(conn),
 		})
@@ -2142,7 +2142,7 @@ func main() {
 				TenantGateInvalidator: tenantGate,
 				Tickets:               ticketRepo,
 				Notifications:         notificationRepo,
-				TrialExtender:         platformadmin.TrialExtenderFunc(trial.Extend),
+				TrialExtender:         platformadmin.TrialExtenderFunc(trial.NewExtender(nil).Extend),
 				TenantTeardown:        tenantTeardownClient,
 				Purger:                tenantpurge.NewGormPurger(conn),
 			})

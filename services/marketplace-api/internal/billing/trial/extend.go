@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
@@ -31,6 +32,36 @@ type ExtendResult struct {
 	PreviousEndsAt   time.Time
 	NewEndsAt        time.Time
 	RemindersCleared int64
+
+	// StripeApplied is true only when this extension moved the trial end in
+	// Stripe. False for every card-less extension. The handler surfaces it so
+	// an operator learns from the same call whether a billing anchor moved.
+	StripeApplied bool
+}
+
+// StripeTrialUpdater is the subset of the Stripe client this package needs,
+// declared here rather than imported as a concrete type so the extension can
+// be tested without a live Stripe and so the dependency points inward.
+type StripeTrialUpdater interface {
+	GetSubscription(ctx context.Context, id string) (*billingstripe.Subscription, error)
+	UpdateTrialEnd(ctx context.Context, in billingstripe.UpdateTrialEndParams) (*billingstripe.Subscription, error)
+}
+
+// Extender owns "move a trial's end date", for both card-less and
+// card-backed trials.
+//
+// A nil Stripe field is a SUPPORTED configuration, not a degraded one: a
+// build without STRIPE_BILLING_SECRET_KEY refuses card-backed trials with
+// ErrStripeManaged, exactly as this endpoint did before #358. Callers MUST
+// leave the interface nil rather than assigning a nil *stripe.Client into
+// it — a typed nil makes `e.Stripe != nil` true and panics on first use.
+type Extender struct {
+	Stripe StripeTrialUpdater
+}
+
+// NewExtender constructs an Extender. su may be nil; see the type's comment.
+func NewExtender(su StripeTrialUpdater) *Extender {
+	return &Extender{Stripe: su}
 }
 
 // Extend moves a trial's end date, refusing the states where doing so
@@ -43,7 +74,7 @@ type ExtendResult struct {
 //
 // now is a parameter rather than time.Now() so callers and tests can pin
 // the boundary exactly; production passes time.Now().UTC().
-func Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time) (ExtendResult, error) {
+func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time) (ExtendResult, error) {
 	var out ExtendResult
 
 	// Checked before opening a transaction: it needs no row, and refusing

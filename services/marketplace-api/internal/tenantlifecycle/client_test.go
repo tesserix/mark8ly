@@ -87,20 +87,34 @@ func TestTeardown_DecodesResult(t *testing.T) {
 }
 
 func TestTeardown_EmptySlugSetIsSentAsAnArrayNotNull(t *testing.T) {
-	var gotBody string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		gotBody = string(b)
-		_, _ = w.Write([]byte(`{"data":{"tenant_id":"t-1","store_ids":[],"store_slugs":[]}}`))
-	}))
-	defer srv.Close()
+	// nil and []string{} are the two values this property discriminates
+	// between: a nil slice marshals to `null`, which upstream reads as an
+	// ABSENT confirmation and refuses with 400. Only the nil case can fail
+	// if the guard is removed, so only the nil case actually tests it —
+	// but both are asserted, because both are legal inputs that must reach
+	// upstream as the same thing.
+	for _, tc := range []struct {
+		name  string
+		slugs []string
+	}{
+		{"nil slice", nil},
+		{"empty non-nil slice", []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotBody string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, _ := io.ReadAll(r.Body)
+				gotBody = string(b)
+				_, _ = w.Write([]byte(`{"data":{"tenant_id":"t-1","store_ids":[],"store_slugs":[]}}`))
+			}))
+			defer srv.Close()
 
-	_, err := tenantlifecycle.NewClient(srv.URL, "", nil).Teardown(context.Background(), "t-1", []string{})
+			_, err := tenantlifecycle.NewClient(srv.URL, "", nil).Teardown(context.Background(), "t-1", tc.slugs)
 
-	require.NoError(t, err)
-	// A nil slice marshals to null, which upstream reads as ABSENT and
-	// refuses with 400. The two are one character apart on the wire.
-	require.JSONEq(t, `{"store_slugs":[]}`, gotBody)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"store_slugs":[]}`, gotBody)
+		})
+	}
 }
 
 func TestTeardown_409CarriesTheExpectedSet(t *testing.T) {

@@ -3,8 +3,11 @@ package platformadmin
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/mark8ly/marketplace-api/internal/idempotency"
 )
 
 // SweepSpec is the cron expression for the expired nonce sweep — runs at
@@ -25,4 +28,12 @@ func SweepExpiredNonces(ctx context.Context, db *gorm.DB) (int64, error) {
 		return 0, fmt.Errorf("platformadmin: sweep expired nonces: %w", res.Error)
 	}
 	return res.RowsAffected, nil
+}
+
+// SweepExpiredIdempotencyKeys deletes idempotency_keys rows past their
+// expires_at. It rides the same daily schedule as the nonce sweep because
+// both tables exist only to serve this surface, and #286 is the first
+// consumer this table has ever had.
+func SweepExpiredIdempotencyKeys(ctx context.Context, db *gorm.DB) (int64, error) {
+	return idempotency.SweepExpired(ctx, db, time.Now().UTC())
 }

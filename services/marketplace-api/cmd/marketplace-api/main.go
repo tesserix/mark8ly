@@ -1722,6 +1722,17 @@ func main() {
 		}); err != nil {
 			log.Error("register platform admin nonce sweep cron", "err", err)
 		}
+
+		if _, err := trialScheduler.AddFunc(platformadmin.SweepSpec, func() {
+			deleted, err := platformadmin.SweepExpiredIdempotencyKeys(workerCtx, conn)
+			if err != nil {
+				log.Error("platform admin idempotency sweep failed", "err", err)
+				return
+			}
+			log.Info("platform admin idempotency sweep complete", "rows_deleted", deleted)
+		}); err != nil {
+			log.Error("register platform admin idempotency sweep cron", "err", err)
+		}
 	}
 
 	trialScheduler.Start()

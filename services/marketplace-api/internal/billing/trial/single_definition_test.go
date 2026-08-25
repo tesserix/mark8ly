@@ -17,7 +17,15 @@ import (
 //
 // This test fails when an eighth site appears. If you are here because it
 // failed: call trial.EndsAt instead of doing the arithmetic, or — if your site
-// genuinely is a new definition — change EndsAt and say so.
+// genuinely is a new definition — change EndsAt and say so, or — if the
+// duration is not a trial end at all — add the file to `allowed` with a comment
+// explaining why.
+//
+// NOTE: This regex tripwire is a heuristic, not a proof. It does not match
+// negated forms (Add(-90 * 24 * time.Hour)) that escape only because of a
+// minus sign, or durations already bound to a named constant. A PASS does not
+// prove trial end is defined in only one place; it only means this one pattern
+// set hasn't found a second definition.
 func TestTrialEndIsDerivedInExactlyOnePlace(t *testing.T) {
 	// Matches `<something>.Add(TrialDays * 24 * time.Hour)` and the hardcoded
 	// 90-day form that #326 was, in either spacing.
@@ -30,6 +38,13 @@ func TestTrialEndIsDerivedInExactlyOnePlace(t *testing.T) {
 	// The one legitimate site. Paths are relative to the service root.
 	allowed := map[string]bool{
 		filepath.Join("internal", "billing", "trial", "endsat.go"): true,
+
+		// Not a trial end. This is the white-label app SUNSET schedule —
+		// sunset_scheduled → downloads_blocked → pulled → firebase_archived —
+		// which happens to use a 90-day step. Allowlisted with a reason rather
+		// than renamed to dodge the regex: this guard exists to stop a second
+		// definition of TRIAL end, not to ban 90-day durations.
+		filepath.Join("internal", "whitelabel", "lifecycle", "advancer.go"): true,
 	}
 
 	root := filepath.Join("..", "..", "..") // -> services/marketplace-api
@@ -67,5 +82,6 @@ func TestTrialEndIsDerivedInExactlyOnePlace(t *testing.T) {
 
 	require.Empty(t, offenders,
 		"these files derive a trial end themselves instead of calling trial.EndsAt — "+
-			"that is how #353 happened. Call trial.EndsAt, or change EndsAt if this is genuinely a new definition.")
+			"that is how #353 happened. Call trial.EndsAt, or change EndsAt if this is genuinely a new definition, "+
+			"or add the file to `allowed` with a comment if the duration is not a trial end at all.")
 }

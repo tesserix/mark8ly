@@ -4,7 +4,12 @@ package tenant
 
 import (
 	"context"
+	"sort"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 	"github.com/mark8ly/platform-api/pkg/testdb"
@@ -223,4 +228,81 @@ func TestIntegration_DeleteInTx_NotFound(t *testing.T) {
 	if !ok || ae.Code != "tenant_not_found" {
 		t.Errorf("expected tenant_not_found, got %v", err)
 	}
+}
+
+// seedTenantNamed inserts a tenant row with the given name and owner uid, returning the tenant ID.
+// Used by snapshot tests that need specific tenant names and UIDs.
+func seedTenantNamed(t *testing.T, db *gorm.DB, name, ownerUID string) string {
+	t.Helper()
+	var tenantID string
+	require.NoError(t, db.Raw(
+		`INSERT INTO tenants (name, owner_user_id, owner_email, status)
+		 VALUES (?, ?, ?, ?)
+		 RETURNING id`,
+		name, ownerUID, ownerUID+"@example.com", StatusActive,
+	).Scan(&tenantID).Error)
+	return tenantID
+}
+
+// seedStoreWithSlug inserts a store row under tenantID with the given slug, returning the store ID.
+// Uses GB/GBP/Europe/London — the reference rows actually present in platform-api's seed.
+// Used by snapshot tests that need specific store slugs.
+func seedStoreWithSlug(t *testing.T, db *gorm.DB, tenantID, slug string) string {
+	t.Helper()
+	var storeID string
+	require.NoError(t, db.Raw(
+		`INSERT INTO stores (tenant_id, slug, name, country_code, currency_code, timezone, status)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 RETURNING id`,
+		tenantID, slug, "Test Store", "GB", "GBP", "Europe/London", StatusActive,
+	).Scan(&storeID).Error)
+	return storeID
+}
+
+func TestSnapshotForTeardown_ReturnsNameOwnerAndStoreSlugs(t *testing.T) {
+	db := testdb.NewTx(t)
+	repo := NewRepository(db)
+
+	tenantID := seedTenantNamed(t, db, "The Bondi Store", "owner-uid-1")
+	seedStoreWithSlug(t, db, tenantID, "the-bondi-store")
+	seedStoreWithSlug(t, db, tenantID, "bondi-outlet")
+
+	// A SECOND tenant with its own store. A snapshot that ignores its
+	// tenant_id filter would pick this up, and a one-tenant fixture
+	// could never tell the difference.
+	otherID := seedTenantNamed(t, db, "The Facade Factory", "owner-uid-2")
+	seedStoreWithSlug(t, db, otherID, "the-facade-factory")
+
+	var snap *TeardownSnapshot
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		snap, err = repo.SnapshotForTeardown(t.Context(), tx, tenantID)
+		return err
+	}))
+
+	require.Equal(t, tenantID, snap.TenantID)
+	require.Equal(t, "The Bondi Store", snap.Name)
+	require.Equal(t, "owner-uid-1", snap.OwnerUserID)
+
+	slugs := make([]string, 0, len(snap.Stores))
+	for _, s := range snap.Stores {
+		require.NotEmpty(t, s.ID, "store id must be populated, not just the slug")
+		slugs = append(slugs, s.Slug)
+	}
+	sort.Strings(slugs)
+	require.Equal(t, []string{"bondi-outlet", "the-bondi-store"}, slugs)
+}
+
+func TestSnapshotForTeardown_UnknownTenantIsNotFound(t *testing.T) {
+	db := testdb.NewTx(t)
+	repo := NewRepository(db)
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		_, err := repo.SnapshotForTeardown(t.Context(), tx, uuid.NewString())
+		return err
+	})
+
+	ae, ok := apperrors.As(err)
+	require.True(t, ok, "want an *apperrors.AppError, got %T", err)
+	require.Equal(t, "tenant_not_found", ae.Code)
 }

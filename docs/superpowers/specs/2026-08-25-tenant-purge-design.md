@@ -180,8 +180,12 @@ and already holds the tenant's detail row.
 An **absent** `store_slugs` is `invalid_request`, never an implicit "no stores" match — a
 client that drops the field must fail, not purge. An **empty array** is a different thing and
 is legal: it asserts "this tenant has no stores", and it succeeds only against a tenant that
-actually has none. The two are distinguished by presence, not by length, so the field is
-decoded as a pointer rather than a slice whose zero value is indistinguishable from `[]`.
+actually has none. The two are distinguished by presence, not by length. The field is decoded as a pointer
+(`*[]string`) to state that in the type — **not** because a plain slice would collapse them.
+Corrected after measuring: `encoding/json` already leaves a plain `[]string` nil for `{}` and
+allocates a non-nil empty slice for `[]`, so a plain field distinguishes absent from empty on
+its own. The pointer's real value is that it depends only on whether the key was present,
+rather than on a JSON library's nil-vs-empty convention for slices.
 
 Set comparison is order-insensitive and exact in both directions — a supplied subset is a
 mismatch, not a partial match.

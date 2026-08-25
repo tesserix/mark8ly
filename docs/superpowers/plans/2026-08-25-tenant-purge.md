@@ -948,11 +948,18 @@ type accountDeleter interface {
 
 // teardownRequest is the body for POST /internal/tenants/:id/teardown.
 //
-// StoreSlugs is a POINTER so an ABSENT field and an EMPTY array stay
-// distinguishable. Absent is a client that dropped the confirmation and
-// must fail; empty is a deliberate assertion that this tenant has no
-// stores, and matches only a tenant that has none. A plain []string
-// collapses the two into nil.
+// ABSENT store_slugs and an EMPTY array mean different things and must stay
+// distinguishable: absent is a client that dropped the confirmation and has
+// to fail; empty is a deliberate assertion that this tenant has no stores,
+// and matches only a tenant that genuinely has none.
+//
+// The POINTER is not what makes that work — measured, not assumed:
+// encoding/json already leaves a plain []string nil for `{}` and allocates a
+// non-nil empty slice for `[]`, so a plain field distinguishes them too. The
+// pointer is here because it states the requirement in the TYPE, and because
+// it depends only on whether the key was present rather than on a JSON
+// library's nil-vs-empty convention for slices (gin can be built against
+// jsoniter or go_json, which are not bound to stdlib's behaviour).
 type teardownRequest struct {
 	StoreSlugs *[]string `json:"store_slugs"`
 }
@@ -2254,9 +2261,14 @@ type Purger interface {
 
 // purgeRequest is the wire body.
 //
-// StoreSlugs is a POINTER so ABSENT and EMPTY stay distinguishable all the
-// way down. Absent is a client that dropped the confirmation and must
+// ABSENT and EMPTY store_slugs mean different things and stay distinguishable
+// all the way down: absent is a client that dropped the confirmation and must
 // fail; empty asserts the tenant has no stores and must reach the check.
+//
+// The POINTER is not what makes that work — encoding/json already leaves a
+// plain []string nil for `{}` and non-nil for `[]`. It is here to state the
+// requirement in the type, and to avoid depending on a JSON library's
+// nil-vs-empty slice convention.
 type purgeRequest struct {
 	StoreSlugs *[]string `json:"store_slugs"`
 	ReasonCode string    `json:"reason_code"`

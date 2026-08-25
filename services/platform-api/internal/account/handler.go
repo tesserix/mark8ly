@@ -56,11 +56,14 @@ func (h *Handler) delete(c *gin.Context) {
 
 // teardownRequest is the body for POST /internal/tenants/:id/teardown.
 //
-// StoreSlugs is a POINTER so an ABSENT field and an EMPTY array stay
-// distinguishable. Absent is a client that dropped the confirmation and
-// must fail; empty is a deliberate assertion that this tenant has no
-// stores, and matches only a tenant that has none. A plain []string
-// collapses the two into nil.
+// ABSENT store_slugs and an EMPTY array mean different things and both
+// must survive to the check: absent is a client that dropped the
+// confirmation and must fail; empty is a deliberate assertion that this
+// tenant has no stores, and matches only a tenant that genuinely has
+// none. encoding/json already distinguishes the two without the pointer
+// (nil for absent, a non-nil empty slice for []); StoreSlugs is a POINTER
+// anyway so the requirement lives in the TYPE rather than depending on a
+// JSON decoder's nil-vs-empty convention for slices.
 type teardownRequest struct {
 	StoreSlugs *[]string `json:"store_slugs"`
 }

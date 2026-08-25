@@ -140,6 +140,49 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 	// first store's response and silently skips the second extension.
 	scopedKey := "trial_extend:" + storeID.String() + ":" + idemKey
 
+	var req trialExtendRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// gin returns io.EOF for a completely empty body, so an omitted
+		// body is rejected HERE. `{}` binds to the zero value and is the
+		// case the reason-code check below exists to catch.
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid_request", "message": "request body could not be parsed",
+		})
+		return
+	}
+
+	if !isKnownReasonCode(req.ReasonCode, ExtendReasonCodes) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_reason_code",
+			"message": "reason_code is required and must be one of the declared codes",
+			"field":   "reason_code",
+			"allowed": ExtendReasonCodes,
+		})
+		return
+	}
+
+	newEnd, err := time.Parse(time.RFC3339, strings.TrimSpace(req.TrialEndsAt))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid_request", "message": "trial_ends_at must be an RFC3339 timestamp",
+		})
+		return
+	}
+
+	reason := strings.TrimSpace(req.Reason)
+	if len(reason) > maxReasonLen {
+		reason = truncateUTF8(reason, maxReasonLen)
+	}
+
+	// Reserve immediately before the work, AFTER every validation step
+	// above: validation is deterministic, so two concurrent callers with
+	// the same key either both pass it or both fail it identically, and
+	// only then race on Reserve. Reserving any earlier would let a failed
+	// attempt (a malformed body, an unknown reason_code, a bad date, or a
+	// domain refusal below) leave the key claimed with an empty Response
+	// for the full TTL — turning a mistyped request into a key that
+	// answers 409 in_progress for a day, which is worse than the race F3
+	// closed.
 	if h.db != nil {
 		// Reserve BEFORE doing the work, not Lookup-then-Save after: two
 		// pods handling the same retry can both miss a plain Lookup before
@@ -185,43 +228,10 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 		}
 	}
 
-	var req trialExtendRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		// gin returns io.EOF for a completely empty body, so an omitted
-		// body is rejected HERE. `{}` binds to the zero value and is the
-		// case the reason-code check below exists to catch.
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid_request", "message": "request body could not be parsed",
-		})
-		return
-	}
-
-	if !isKnownReasonCode(req.ReasonCode, ExtendReasonCodes) {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "invalid_reason_code",
-			"message": "reason_code is required and must be one of the declared codes",
-			"field":   "reason_code",
-			"allowed": ExtendReasonCodes,
-		})
-		return
-	}
-
-	newEnd, err := time.Parse(time.RFC3339, strings.TrimSpace(req.TrialEndsAt))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid_request", "message": "trial_ends_at must be an RFC3339 timestamp",
-		})
-		return
-	}
-
-	reason := strings.TrimSpace(req.Reason)
-	if len(reason) > maxReasonLen {
-		reason = truncateUTF8(reason, maxReasonLen)
-	}
-
 	extendedAt := time.Now().UTC()
 	res, err := h.ex.Extend(c.Request.Context(), h.db, storeID, newEnd, extendedAt)
 	if err != nil {
+		h.releaseReservation(c, scopedKey)
 		h.respondExtendErr(c, err)
 		return
 	}
@@ -312,6 +322,28 @@ func truncateUTF8(s string, maxBytes int) string {
 		b = b[:len(b)-1]
 	}
 	return b
+}
+
+// releaseReservation drops a Reserve claim that will never be Completed,
+// because Extend refused or failed. Without this, a reservation taken
+// before this failure would sit on the key with an empty Response for the
+// full TTL — turning a mistyped reason_code or a domain refusal (already
+// converted, Stripe-managed, not trialing, end not in future, no
+// subscription) into a key that answers 409 in_progress for a day, even
+// though the caller already has their real answer and a corrected retry
+// should proceed normally.
+//
+// The failure is logged, not surfaced: the caller already has the actual
+// error response from respondExtendErr, and a Release failure just means
+// the reservation lives out its TTL instead of being cleared early — an
+// inconvenience, not a correctness problem.
+func (h *BillingTrialExtendHandler) releaseReservation(c *gin.Context, scopedKey string) {
+	if h.db == nil {
+		return
+	}
+	if err := idempotency.Release(c.Request.Context(), h.db, scopedKey); err != nil {
+		h.logger.Error("trial extend: idempotency release failed", "err", err)
+	}
 }
 
 // respondExtendErr maps the domain's sentinel errors to distinct statuses

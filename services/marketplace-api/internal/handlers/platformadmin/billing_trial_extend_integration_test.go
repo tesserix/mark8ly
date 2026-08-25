@@ -175,3 +175,86 @@ func TestTrialExtendSecondCallerDoesNotExecuteWhileFirstInFlight(t *testing.T) {
 	require.Equal(t, int32(1), atomic.LoadInt32(&calls),
 		"the second caller must not execute Extend while the first is still in flight")
 }
+
+// The bug this closes (F3 re-review, Critical): Reserve used to run BEFORE
+// validation, so a request refused by validation left the key claimed with
+// an empty Response for the full TTL — the caller's CORRECTED retry with
+// the same key would then see 409 in_progress for up to a day. Reserve now
+// runs only after every validation step passes, so a validation failure
+// never claims the key at all, and the retry proceeds exactly as if it
+// were the first attempt.
+func TestTrialExtendCorrectedRetrySucceedsAfterReasonCodeRefusal(t *testing.T) {
+	db := testdb.NewDB(t, "idempotency_keys")
+
+	gin.SetMode(gin.TestMode)
+	ex := &stubExtender{result: okResult()}
+	aud := &capturedAudit{}
+	r := gin.New()
+	platformadmin.NewBillingTrialExtendHandler(db, ex, aud.fn, nil).Register(r.Group(""))
+
+	do := func(body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost,
+			"/admin/billing/trials/"+extendStoreID.String()+"/extend",
+			bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "retry-after-validation-failure")
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	badBody := `{"reason_code":"not_a_real_code","trial_ends_at":"2026-12-01T00:00:00Z"}`
+	refused := do(badBody)
+	require.Equal(t, http.StatusBadRequest, refused.Code, refused.Body.String())
+	require.Equal(t, 0, ex.calls, "an invalid reason_code must never reach Extend")
+
+	retry := do(goodBody)
+	require.Equal(t, http.StatusOK, retry.Code, retry.Body.String(),
+		"a validation failure must never claim the key, so the corrected retry sees neither 409 in_progress nor a replay")
+	require.Equal(t, 1, ex.calls, "the corrected retry must actually execute")
+}
+
+// The bug this closes (F3 re-review, Critical), for the case that DOES
+// reserve the key: a domain refusal (ErrNotTrialing here) happens AFTER a
+// successful Reserve, so without an explicit release the key would stay
+// claimed-but-incomplete for the full TTL. The handler must call
+// idempotency.Release on this path so a corrected retry with the same key
+// executes for real — not 409 in_progress, and not an empty replay.
+func TestTrialExtendCorrectedRetrySucceedsAfterDomainRefusal(t *testing.T) {
+	db := testdb.NewDB(t, "idempotency_keys")
+
+	gin.SetMode(gin.TestMode)
+	var callCount int32
+	ex := platformadmin.TrialExtenderFunc(func(_ context.Context, _ *gorm.DB, storeID uuid.UUID, newEnd, _ time.Time) (trial.ExtendResult, error) {
+		if atomic.AddInt32(&callCount, 1) == 1 {
+			return trial.ExtendResult{}, trial.ErrNotTrialing
+		}
+		res := okResult()
+		res.StoreID = storeID
+		res.NewEndsAt = newEnd
+		return res, nil
+	})
+	aud := &capturedAudit{}
+	r := gin.New()
+	platformadmin.NewBillingTrialExtendHandler(db, ex, aud.fn, nil).Register(r.Group(""))
+
+	do := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost,
+			"/admin/billing/trials/"+extendStoreID.String()+"/extend",
+			bytes.NewBufferString(goodBody))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "retry-after-domain-refusal")
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	refused := do()
+	require.Equal(t, http.StatusConflict, refused.Code, refused.Body.String())
+	require.Contains(t, refused.Body.String(), "not_trialing")
+
+	retry := do()
+	require.Equal(t, http.StatusOK, retry.Code, retry.Body.String(),
+		"the reservation from the refused attempt must have been released — the retry must not see 409 in_progress or an empty replay")
+	require.Equal(t, int32(2), atomic.LoadInt32(&callCount), "the retry must actually execute Extend, not replay")
+}

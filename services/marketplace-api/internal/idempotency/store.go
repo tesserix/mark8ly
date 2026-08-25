@@ -113,6 +113,27 @@ func Complete(ctx context.Context, db *gorm.DB, key string, body json.RawMessage
 	return nil
 }
 
+// Release drops a reservation whose work did not complete, so a corrected
+// retry with the same key is not blocked until the TTL expires.
+//
+// Only ever call this for a key THIS caller reserved and did not Complete.
+// A reservation that outlives its failed attempt turns a mistyped request
+// into a key that answers 409 in_progress for a day.
+//
+// Scoped to key AND an empty Response, so this can never delete a completed
+// row that some other caller is entitled to replay: if the row was already
+// completed (by this caller or, in a race, by whoever else reserved it
+// first) the delete simply matches zero rows.
+func Release(ctx context.Context, db *gorm.DB, key string) error {
+	err := db.WithContext(ctx).
+		Where("key = ? AND response IS NULL", key).
+		Delete(&IdempotencyKey{}).Error
+	if err != nil {
+		return fmt.Errorf("idempotency: release: %w", err)
+	}
+	return nil
+}
+
 // SweepExpired deletes rows past their expires_at, inclusive of the instant
 // itself.
 //

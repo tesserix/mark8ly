@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +15,7 @@ import (
 // can inject a fake and exercise the handler without a real DB/FGA/GIP.
 type accountDeleter interface {
 	DeleteAccount(ctx context.Context, tenantID, actorUID string) error
+	PurgeTenant(ctx context.Context, tenantID string, storeSlugs []string) (*PurgeResult, error)
 }
 
 // Handler is the HTTP layer for account teardown.
@@ -50,6 +52,62 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// teardownRequest is the body for POST /internal/tenants/:id/teardown.
+//
+// StoreSlugs is a POINTER so an ABSENT field and an EMPTY array stay
+// distinguishable. Absent is a client that dropped the confirmation and
+// must fail; empty is a deliberate assertion that this tenant has no
+// stores, and matches only a tenant that has none. A plain []string
+// collapses the two into nil.
+type teardownRequest struct {
+	StoreSlugs *[]string `json:"store_slugs"`
+}
+
+// RegisterOperator mounts the operator-initiated teardown.
+//
+// Mounted on the STRICT internal group (which answers 503 when the shared
+// secret is unset), and mounted UNCONDITIONALLY — unlike Register, whose
+// merchant route is gated on FGA and GIP being wired. An absent route
+// answers 404, and the caller cannot tell that apart from "no such
+// tenant", which on an irreversible endpoint would be a silent lie.
+// PurgeTenant tolerates nil FGA and GIP clients for exactly this reason.
+func (h *Handler) RegisterOperator(internal *gin.RouterGroup) {
+	internal.Group("/tenants").POST("/:id/teardown", h.teardown)
+}
+
+func (h *Handler) teardown(c *gin.Context) {
+	var req teardownRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.StoreSlugs == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_request",
+			"message": "store_slugs is required; send [] to assert the tenant has no stores",
+		})
+		return
+	}
+
+	res, err := h.svc.PurgeTenant(c.Request.Context(), c.Param("id"), *req.StoreSlugs)
+	if err != nil {
+		var me *MismatchError
+		if errors.As(err, &me) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":    "confirmation_mismatch",
+				"message":  "supplied store_slugs do not match the tenant's current stores",
+				"expected": me.Expected,
+			})
+			return
+		}
+		respondError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"tenant_id":   res.TenantID,
+		"tenant_name": res.TenantName,
+		"store_ids":   res.StoreIDs,
+		"store_slugs": res.StoreSlugs,
+	}})
 }
 
 // respondError maps apperrors typed errors to their HTTP status. This is

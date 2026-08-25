@@ -69,13 +69,13 @@ func TestListExpiring_UsesTheExtendedEnd(t *testing.T) {
 	})
 
 	// A 7-day window around now would catch the DERIVED end and must not.
-	rows, total, err := trial.ListExpiring(context.Background(), db, now, 7*24*time.Hour, 1, 50)
+	rows, total, err := trial.ListExpiring(context.Background(), db, now, 7*24*time.Hour, 1, 50, trial.ListOptions{})
 	require.NoError(t, err)
 	require.Equal(t, int64(0), total, "the old derived end must not put an extended trial in the window")
 	require.Empty(t, rows)
 
 	// A window that reaches the NEW end must catch it, and report that date.
-	rows, total, err = trial.ListExpiring(context.Background(), db, now, 45*24*time.Hour, 1, 50)
+	rows, total, err = trial.ListExpiring(context.Background(), db, now, 45*24*time.Hour, 1, 50, trial.ListOptions{})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), total)
 	require.Len(t, rows, 1)
@@ -105,7 +105,7 @@ func TestListExpiring_OrdersByEffectiveEndNotCreatedAt(t *testing.T) {
 	// is created + 90d = now + 5d, so seed directly at that effective end.
 	sooner := seedExpiringRow(t, db, now.Add(-85*24*time.Hour).Add(trialLen), nil) // ends in 5 days
 
-	rows, total, err := trial.ListExpiring(context.Background(), db, now, 30*24*time.Hour, 1, 50)
+	rows, total, err := trial.ListExpiring(context.Background(), db, now, 30*24*time.Hour, 1, 50, trial.ListOptions{})
 	require.NoError(t, err)
 	require.Equal(t, int64(2), total)
 	require.Len(t, rows, 2)

@@ -34,15 +34,17 @@ type stubTrialLister struct {
 	gotWindow time.Duration
 	gotPage   int
 	gotLimit  int
+	gotOpts   trial.ListOptions
 	calls     int
 }
 
-func (s *stubTrialLister) ListExpiring(_ context.Context, _ *gorm.DB, asOf time.Time, window time.Duration, page, limit int) ([]trial.ExpiringRow, int64, error) {
+func (s *stubTrialLister) ListExpiring(_ context.Context, _ *gorm.DB, asOf time.Time, window time.Duration, page, limit int, opts trial.ListOptions) ([]trial.ExpiringRow, int64, error) {
 	s.calls++
 	s.gotAsOf = asOf
 	s.gotWindow = window
 	s.gotPage = page
 	s.gotLimit = limit
+	s.gotOpts = opts
 	if s.err != nil {
 		return nil, 0, s.err
 	}
@@ -705,7 +707,7 @@ type sharedTrialsFixture struct {
 	rows []trial.ExpiringRow
 }
 
-func (f *sharedTrialsFixture) ListExpiring(_ context.Context, _ *gorm.DB, _ time.Time, _ time.Duration, _, _ int) ([]trial.ExpiringRow, int64, error) {
+func (f *sharedTrialsFixture) ListExpiring(_ context.Context, _ *gorm.DB, _ time.Time, _ time.Duration, _, _ int, _ trial.ListOptions) ([]trial.ExpiringRow, int64, error) {
 	return f.rows, int64(len(f.rows)), nil
 }
 
@@ -766,4 +768,61 @@ func TestBillingTrialsDaysRemainingMatchesMerchantFormula(t *testing.T) {
 			require.Equal(t, tc.want, body.Data[0].DaysRemaining)
 		})
 	}
+}
+
+// The query parameter must reach the lister, and the row must be labelled
+// on the wire. Both directions matter: a handler that always passed true
+// would widen a live contract, and one that never passed it would leave
+// #358's endpoint undiscoverable.
+func TestBillingTrials_IncludeStripeManagedReachesTheLister(t *testing.T) {
+	dir := &stubBillingDirectory{names: map[string]string{}}
+
+	t.Run("with the flag", func(t *testing.T) {
+		rows := billingTrialsFixtureRows(billingTrialsFixtureAsOf)
+		rows[0].StripeManaged = true
+		trials := &stubTrialLister{rows: rows, total: int64(len(rows))}
+
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials?include_stripe_managed=true", nil))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+		require.True(t, trials.gotOpts.IncludeStripeManaged)
+		// Raw bytes: a decoded map cannot distinguish an absent key from a
+		// false one, and telling those apart is this field's whole job.
+		require.Contains(t, rec.Body.String(), `"stripe_managed":true`)
+	})
+
+	t.Run("without the flag the default is unchanged", func(t *testing.T) {
+		trials := &stubTrialLister{rows: nil, total: 0}
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.False(t, trials.gotOpts.IncludeStripeManaged,
+			"the default must stay #285's shipped contract")
+	})
+
+	t.Run("anything other than true is false", func(t *testing.T) {
+		trials := &stubTrialLister{rows: nil, total: 0}
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials?include_stripe_managed=1", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.False(t, trials.gotOpts.IncludeStripeManaged,
+			"a widening flag must require the exact value, never a truthy-looking one")
+	})
+
+	t.Run("a card-less row is labelled false, not omitted", func(t *testing.T) {
+		rows := billingTrialsFixtureRows(billingTrialsFixtureAsOf)
+		for i := range rows {
+			rows[i].StripeManaged = false
+		}
+		trials := &stubTrialLister{rows: rows, total: int64(len(rows))}
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials?include_stripe_managed=true", nil))
+		require.Contains(t, rec.Body.String(), `"stripe_managed":false`,
+			"every row states its kind; an omitted false is indistinguishable from an older server")
+	})
 }

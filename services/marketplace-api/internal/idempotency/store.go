@@ -20,6 +20,12 @@ const DefaultTTL = 24 * time.Hour
 // An EXPIRED row is a miss: expiry is a property of the row, not of whether
 // the sweep happened to run recently, and replaying a response past its TTL
 // would make the guarantee depend on cron timing.
+//
+// Expiry is judged against the DATABASE clock (`now()` in the query below),
+// deliberately — every pod hitting this query agrees on what "now" means
+// regardless of its own clock, which is what keeps the replay guarantee
+// consistent across replicas. SweepExpired, below, takes an app-clock `now`
+// instead; the two are not guaranteed to agree.
 func Lookup(ctx context.Context, db *gorm.DB, key string) (json.RawMessage, bool, error) {
 	var row IdempotencyKey
 	err := db.WithContext(ctx).
@@ -62,6 +68,12 @@ func Save(ctx context.Context, db *gorm.DB, key, tenantID string, body json.RawM
 // NOTHING pruned this table before #286 — the comments in migration 000001
 // and models.go claiming a nightly sweep were both wrong, and the only other
 // references delete by tenant_id during tenant hard-delete and purge.
+//
+// now is a parameter (for deterministic tests), which makes it an APP-clock
+// instant — unlike Lookup, which judges expiry against the database's own
+// clock. Callers must keep the `now` they pass here strictly behind what
+// Lookup would see, or a row Lookup would still honour could be deleted
+// first (see platformadmin.sweepGrace, the production caller's margin).
 func SweepExpired(ctx context.Context, db *gorm.DB, now time.Time) (int64, error) {
 	res := db.WithContext(ctx).
 		Where("expires_at <= ?", now.UTC()).

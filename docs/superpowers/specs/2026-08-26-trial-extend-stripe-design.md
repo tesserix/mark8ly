@@ -123,9 +123,29 @@ func NewExtender(su StripeTrialUpdater) *Extender
 func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time) (ExtendResult, error)
 ```
 
-The method signature is **identical** to today's free function, so
-`platformadmin.TrialExtender`, `TrialExtenderFunc` and the entire handler are
-untouched. Only the two `main.go` sites change.
+The method signature was originally specified as **identical** to today's free
+function, so that the handler would be untouched and only the two `main.go` sites
+would change.
+
+**That clause was withdrawn during execution, and this paragraph records why**, because
+the contradiction was this document's fault rather than any implementer's. The same
+spec required, at step 5d below, "an idempotency key derived from **the handler's
+already-scoped key**". A signature identical to the old free function has no parameter
+through which that key can arrive. The two requirements could not both be met, and no
+single task could have noticed — the handler and the domain were different tasks.
+
+The whole-branch review found the consequence: with the key derived from
+`(storeID, trial_end)` instead, extending to a date, correcting it, and then returning
+to the FIRST date within Stripe's 24-hour idempotency window replays the first call's
+key with identical parameters. Stripe returns the cached response and performs nothing,
+while we write the new date locally and report success — the console then shows a date
+the merchant has already been billed past, which is the failure direction this design
+exists to prevent.
+
+Resolved in favour of the key: `Extend` takes the caller's idempotency key as a
+parameter, and the Stripe key combines it with the absolute target second. A genuine
+retry (same `Idempotency-Key` header) still produces the same Stripe key, so Stripe
+still dedupes it and the post-divergence heal still converges.
 
 Rejected alternatives, and why:
 
@@ -187,9 +207,20 @@ Inside one transaction:
       job.
    c. Refuse if `newEnd` is more than two years after Stripe's
       `billing_cycle_anchor` (`ErrTrialEndTooFar`), stating the actual bound.
+   c-bis. Refuse if the requested end is not strictly AFTER Stripe's CURRENT
+      `trial_end` (`ErrTrialEndNotAfterStripe` → 400 `trial_end_not_after_stripe`,
+      naming both dates). **Added during execution.** Without it, a card-backed trial
+      whose Stripe `trial_end` is later than our derived date could be SHORTENED by an
+      operator who believed they were extending it, and the call would report success
+      with `billing_anchor_moved: true`. The comparison is against Stripe's value, not
+      our local one: the local value is the stale one, so comparing against it would
+      refuse every retry and leave the operator with no path. The consequence is
+      deliberate and worth stating plainly — **shortening a card-backed trial is not
+      possible through this endpoint**. The card-less path is unchanged.
    d. `UpdateTrialEnd` with the exact Unix second, `proration_behavior=none`,
-      **no** `Items`, **no** `TrialFromPlan`, and an idempotency key derived from
-      the handler's already-scoped key so a retry cannot move the date twice.
+      **no** `Items`, **no** `TrialFromPlan`, and an idempotency key built from the
+      handler's already-scoped key AND the absolute target second, so a retry cannot
+      move the date twice and two different operator requests can never collide.
    e. Write `trial_ends_at`, delete the reminder rows, commit.
 
 Any failure in 5a–5d rolls back before the local row is touched. Only a failure
@@ -258,6 +289,8 @@ flag is what tells the operator which rows carry that caveat.
 | Stripe not configured, trial is card-backed | `ErrStripeManaged` (existing) | 409 | `stripe_managed` |
 | Stripe says the subscription is not trialing | `ErrStripeStateConflict` | 409 | `stripe_state_conflict` |
 | `newEnd` > Stripe anchor + 2 years | `ErrTrialEndTooFar` | 400 | `trial_end_too_far` |
+| Requested end is not after Stripe's current trial end | `ErrTrialEndNotAfterStripe` | 400 | `trial_end_not_after_stripe` |
+| Stripe moved but the local commit failed | `ErrStripeAppliedLocalWriteFailed` | 500 | `stripe_applied_local_write_failed` |
 | Stripe call failed or timed out | wrapped, not a sentinel | 502 | `stripe_unavailable` |
 
 `stripe_unavailable` is deliberately **502**, distinct from the handler's

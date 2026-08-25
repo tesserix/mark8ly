@@ -2070,7 +2070,8 @@ func main() {
 		// must match what VendorClient.PurgeTenant signs with, NOT
 		// AuditIngestSecret (different caller, different secret).
 		internalsvc.NewTenantPurgeHandler(func(ctx context.Context, tenantID string, storeIDs []string) error {
-			return tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+			_, err := tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+			return err
 		}).Register(r.Group("/internal"), cfg.InternalAuthSecret)
 		if stripeBillingWebhookHandler != nil {
 			r.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
@@ -2195,7 +2196,8 @@ func main() {
 			// must match what VendorClient.PurgeTenant signs with, NOT
 			// AuditIngestSecret (different caller, different secret).
 			internalsvc.NewTenantPurgeHandler(func(ctx context.Context, tenantID string, storeIDs []string) error {
-				return tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+				_, err := tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+				return err
 			}).Register(engine.Group("/internal"), cfg.InternalAuthSecret)
 			// Reverse custom-domain lookup (domain → slug). The admin
 			// middleware uses this to verify a custom-admin host

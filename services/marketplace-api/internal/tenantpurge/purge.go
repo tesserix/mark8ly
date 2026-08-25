@@ -81,6 +81,23 @@ type deleteStep struct {
 	args []any
 }
 
+// TableResult is one table's contribution to a purge or a preview.
+type TableResult struct {
+	Table       string `json:"table"`
+	RowsDeleted int64  `json:"rows"`
+}
+
+// Report is what a purge destroyed, or what a preview would destroy.
+//
+// It lists EVERY step in the plan, including the zero-row ones: to a
+// reader, an omitted zero and a table the plan never reaches are
+// indistinguishable, and showing what the plan reaches is the whole point
+// of the preview.
+type Report struct {
+	Tables    []TableResult `json:"tables"`
+	TotalRows int64         `json:"total_rows"`
+}
+
 // Purge deletes every row belonging to tenantID across every
 // marketplace-api domain table, inside a single transaction, in FK-safe
 // order. It never touches global reference tables or the legally-protected
@@ -90,24 +107,77 @@ type deleteStep struct {
 // Purge is idempotent: every delete is a `WHERE` clause that matches zero
 // rows on a second run, so calling Purge twice for the same tenant is safe
 // and returns nil both times.
-func Purge(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string) error {
+func Purge(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string) (Report, error) {
 	if db == nil {
-		return fmt.Errorf("tenantpurge: db must not be nil")
+		return Report{}, fmt.Errorf("tenantpurge: db must not be nil")
 	}
 	if tenantID == "" {
-		return fmt.Errorf("tenantpurge: tenantID must not be empty")
+		return Report{}, fmt.Errorf("tenantpurge: tenantID must not be empty")
 	}
 
 	steps := purgePlan(tenantID, storeIDs)
+	rep := Report{Tables: make([]TableResult, 0, len(steps))}
 
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		rep.Tables = rep.Tables[:0]
+		rep.TotalRows = 0
 		for _, step := range steps {
-			if err := tx.Exec(step.sql, step.args...).Error; err != nil {
-				return fmt.Errorf("tenantpurge: delete from %s: %w", step.table, err)
+			res := tx.Exec(step.sql, step.args...)
+			if res.Error != nil {
+				return fmt.Errorf("tenantpurge: delete from %s: %w", step.table, res.Error)
 			}
+			rep.Tables = append(rep.Tables, TableResult{Table: step.table, RowsDeleted: res.RowsAffected})
+			rep.TotalRows += res.RowsAffected
 		}
 		return nil
 	})
+	if err != nil {
+		return Report{}, err
+	}
+	return rep, nil
+}
+
+// Count runs the purge plan's enumeration with SELECT count(*) in place of
+// DELETE. It destroys nothing and is what backs the operator preview
+// (#288). It derives from countPlan, which derives from the same table
+// list as purgePlan, so a preview can never enumerate a different set of
+// tables from the purge it previews.
+func Count(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string) (Report, error) {
+	if db == nil {
+		return Report{}, fmt.Errorf("tenantpurge: db must not be nil")
+	}
+	if tenantID == "" {
+		return Report{}, fmt.Errorf("tenantpurge: tenantID must not be empty")
+	}
+
+	steps := countPlan(tenantID, storeIDs)
+	rep := Report{Tables: make([]TableResult, 0, len(steps))}
+	for _, step := range steps {
+		var n int64
+		if err := db.WithContext(ctx).Raw(step.sql, step.args...).Scan(&n).Error; err != nil {
+			return Report{}, fmt.Errorf("tenantpurge: count %s: %w", step.table, err)
+		}
+		rep.Tables = append(rep.Tables, TableResult{Table: step.table, RowsDeleted: n})
+		rep.TotalRows += n
+	}
+	return rep, nil
+}
+
+// countPlan mirrors purgePlan step for step, rewriting each DELETE as the
+// equivalent SELECT count(*). It is derived from purgePlan rather than
+// written out a second time — a hand-maintained twin of a hand-maintained
+// list is how the two enumerations in this service came to disagree.
+func countPlan(tenantID string, storeIDs []string) []deleteStep {
+	steps := purgePlan(tenantID, storeIDs)
+	out := make([]deleteStep, 0, len(steps))
+	for _, s := range steps {
+		out = append(out, deleteStep{
+			table: s.table,
+			sql:   "SELECT count(*) FROM" + strings.TrimPrefix(s.sql, "DELETE FROM"),
+			args:  s.args,
+		})
+	}
+	return out
 }
 
 // purgePlan builds the ordered list of deletes for tenantID/storeIDs. It has

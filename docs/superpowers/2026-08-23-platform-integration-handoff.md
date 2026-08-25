@@ -20,8 +20,8 @@ issue: **#260**. Each endpoint is its own issue.
 (`/admin/billing/subscriptions`), #285 (`/admin/billing/trials`), #289
 (`/admin/health`), **#287** (`/admin/tenants/{id}/suspend` + `/unsuspend`, #340),
 **#329** (`/admin/tickets`, #346), **#332** (`/admin/notifications`, #351), **#353**
-(storable trial end, #355 — split out of #286, also closed #326), and
-**#281 part (b) only** — the CSM migration
+(storable trial end, #355 — split out of #286, also closed #326), **#286**
+(`/admin/billing/trials/{store_id}/extend`, #357), and **#281 part (b) only** — the CSM migration
 fast-path review route, mounted and audited (#338); #281 stays OPEN for part (a).
 
 **The map changed on 2026-08-24 — this doc's "everything remaining is a write" is
@@ -32,9 +32,9 @@ no longer true.** Five issues joined the milestone: #329 (`/admin/tickets`), #33
 **Effort ordering, re-derived 2026-08-24 (session 3 close)** — reads-before-writes no
 longer sorts this queue:
 
-**~~#332~~ → #333 → ~~#353~~ → #286 → #288 (purge, last) → #319.** — #332 and #353 shipped
-2026-08-25. **#286 is next and is now genuinely small**; #333 remains blocked on the
-capability-name decision.
+**~~#332~~ → #333 → ~~#353~~ → ~~#286~~ → #288 (purge, last) → #319.** — #332, #353 and #286
+all shipped 2026-08-25. **#288 is next** and is the irreversible one; #333 remains blocked
+on the capability-name decision. New: #348, #358.
 
 #287, #329 and #332 are now DELIVERED. **#333 is blocked on a decision, not on work:** its
 acceptance requires gating on the operator holding the `rotate-credentials` **capability**,
@@ -350,6 +350,30 @@ rows.
    Two comments agreeing with each other is not corroboration; it is usually one comment
    copied. **Check the claim against the code that would have to be true for it.**
 
+13. **A test for a property that discriminates between two values must contain both
+   values.** Trap 6's sharpest instance, and it cost a **Critical** on #286 that four task
+   reviews and the controller all missed.
+
+   The idempotency key was global — nothing bound it to the store — so reusing a key
+   against a different store returned the FIRST store's `store_id`, `tenant_id` and dates
+   (a cross-tenant read on a governance surface) while the second store was never extended
+   and the operator saw success.
+
+   It survived every earlier gate because **the integration test written to prove that
+   exact acceptance criterion used one store for every call.** No fixture distinguished the
+   broken implementation from the correct one.
+
+   One store cannot prove cross-store scoping. One status cannot prove a status filter. One
+   tenant cannot prove tenant isolation. Before writing the assertion, name the two values
+   the property discriminates between, and put both in the fixture.
+
+14. **New Critical breakage in a fix diff joins the open findings — it is not a residual.**
+   #286's fix wave closed a Critical and introduced another: a reserved idempotency key was
+   never released on failure, so a mistyped `reason_code` answered `409 in_progress` for
+   24 hours — strictly worse than the bug it replaced, where a failed attempt simply was not
+   saved. The "no second fix wave" rule exists to stop chasing residuals indefinitely, not
+   to ship a known Critical.
+
 ## Environment
 
 - **Use the LAN IP, not `localhost`** — a native Postgres squats on 127.0.0.1:
@@ -366,6 +390,12 @@ rows.
   restarts in that window crashloops until its own rollout lands. Self-healing, but it
   looks exactly like a failure if you are not expecting it. Verified on #332's rollout:
   both reached `main-<sha7>` with 0 restarts.
+- **Production Postgres is IN-CLUSTER and reachable** — earlier versions of this doc did not
+  say so, and a verification was once skipped for want of it. CloudNativePG at
+  `mark8ly-postgres-rw.mark8ly.svc.cluster.local`, database `mark8ly_marketplace_api`.
+  Read-only: `kubectl exec -n mark8ly mark8ly-postgres-2 -c postgres -- psql -U postgres -d mark8ly_marketplace_api -tAc "<query>"`.
+  Use it to replace a stale claim with a measured one rather than repeating the claim.
+  Measured 2026-08-25: `store_subscriptions` = **0 rows**, `stores` = 4.
 - **Deployment is Kargo-gated**, not direct ArgoCD: CI → ghcr → Kargo Warehouse →
   Freight → Promotion to the `prod` stage → ArgoCD sync. Expect ~10–20 min, and check
   `kubectl get stages,promotions -n kargo-mark8ly` rather than assuming a stall.

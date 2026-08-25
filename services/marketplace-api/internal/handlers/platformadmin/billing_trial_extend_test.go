@@ -308,14 +308,17 @@ func TestTrialExtendTruncatesReasonOnARuneBoundary(t *testing.T) {
 }
 
 // stripeOKResult is okResult() plus the Stripe-side facts a card-backed
-// extension produces. Every value is DISTINCT and non-zero: a payload
-// assembled by map lookup returns the zero value for a key nobody set, so
-// identical or zero fixtures would let a broken mapping pass.
+// extension produces. Every value is DISTINCT and non-zero, AND
+// StripeTrialEnd is deliberately a DIFFERENT instant from goodBody's
+// trial_ends_at ("2026-12-01T00:00:00Z"): the response and audit row must
+// report what STRIPE actually stored, not an echo of the request, and a
+// fixture where the two happened to match would let a handler that echoes
+// the request pass every assertion here undetected.
 func stripeOKResult() trial.ExtendResult {
 	r := okResult()
 	r.StripeApplied = true
 	r.StripeSubscriptionID = "sub_verify_358"
-	r.StripeTrialEnd = time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC).Unix()
+	r.StripeTrialEnd = time.Date(2026, 12, 3, 8, 15, 0, 0, time.UTC).Unix()
 	r.PreviousStripeTrialEnd = time.Date(2026, 9, 14, 10, 22, 31, 0, time.UTC).Unix()
 	r.PreviousBillingAnchor = time.Date(2026, 9, 14, 10, 22, 31, 0, time.UTC).Unix()
 	return r
@@ -368,8 +371,15 @@ func TestExtend_CardBacked_ResponseDisclosesStripeFacts(t *testing.T) {
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, "sub_verify_358", got["stripe_subscription_id"])
-	require.Equal(t, "2026-12-01T00:00:00Z", got["stripe_trial_end"])
+	require.Equal(t, "2026-12-03T08:15:00Z", got["stripe_trial_end"])
 	require.Equal(t, true, got["billing_anchor_moved"])
+
+	// The request asked for a DIFFERENT instant ("2026-12-01T00:00:00Z" in
+	// goodBody). A handler that echoed the request's parsed trial_ends_at
+	// instead of res.StripeTrialEnd would still satisfy the Equal above by
+	// coincidence in a collision fixture; this guards against exactly that.
+	require.NotEqual(t, "2026-12-01T00:00:00Z", got["stripe_trial_end"],
+		"stripe_trial_end must be Stripe's reply, not the request's trial_ends_at")
 }
 
 // A card-less extension must carry NONE of those keys — not null, not false,
@@ -405,6 +415,15 @@ func TestExtend_CardBacked_AuditCarriesExactUnixSecond(t *testing.T) {
 	// The two anchors are DIFFERENT values in this fixture, so a mapping
 	// that swapped them would be caught. Identical fixtures prove nothing.
 	require.NotEqual(t, md["stripe_trial_end_unix"], md["previous_billing_anchor_unix"])
+
+	// The request's parsed trial_ends_at ("2026-12-01T00:00:00Z") is a
+	// different instant from res.StripeTrialEnd. A handler that audited the
+	// REQUEST's end instead of Stripe's reply would still pass the Equal
+	// above by coincidence in a collision fixture; this guards against
+	// exactly that.
+	requestEnd := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC).Unix()
+	require.NotEqual(t, requestEnd, md["stripe_trial_end_unix"],
+		"stripe_trial_end_unix must be Stripe's reply, not the request's trial_ends_at")
 }
 
 // A card-less extension must add none of the Stripe keys to the audit row

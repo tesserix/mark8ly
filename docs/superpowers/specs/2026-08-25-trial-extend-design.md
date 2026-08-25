@@ -72,15 +72,56 @@ construction: applying it a second time is a no-op on the state. That property i
 difference between a retry being safe and being a second extension, and it is worth more
 than the small convenience of sending a duration.
 
-### Reason: required free text
+### Reason: required code plus optional free text, matching #287
 
-Non-empty after trimming, capped at 500 characters, stored on the audit row.
+```json
+{ "reason_code": "support_escalation", "reason": "migration from Shopify slipped two weeks" }
+```
 
-**Deliberately not a vocabulary.** #287 declined to invent capability names because the
-console asserts them and a guess refuses every real request; the same risk applies to reason
-codes. Free text cannot mismatch. The cost is that reasons are not aggregatable — "how often
-do we extend for support escalations" means reading rows rather than grouping them — and an
-optional `reason_code` can be added later without breaking a caller.
+**Corrected during planning.** An earlier draft specified free text only, on the grounds that
+#287 "declined to invent a vocabulary". That is true of **capability names** — where the
+console is the authority and a guess refuses every real request — but it is the wrong
+precedent to cite here, and #287's own *reason* handling points the other way:
+
+```go
+// tenant_lifecycle.go:27-31
+// SuspendReasonCodes is the closed set of reasons a tenant may be suspended
+// for. An audit row saying WHAT happened without WHY is the gap this series
+// exists to close (#287), so the code is REQUIRED; free text (`reason`) is
+// accepted IN ADDITION, never instead.
+```
+
+`lifecycleRequest` is `{reason_code, reason}` and is already live on this surface. The
+mismatch risk is low in this direction because **mark8ly defines the set and publishes it**;
+the console sends it. #287 chose its seven codes unilaterally and they work.
+
+Shipping free text here would leave two operator-action endpoints on one surface with
+different reason contracts — an operator must supply `reason_code` to suspend a tenant but
+not to extend a trial. Consistency wins.
+
+```go
+// ExtendReasonCodes is the closed set of reasons a trial may be extended for.
+// Deliberately a different set from SuspendReasonCodes: the reasons for
+// granting more trial time are not the reasons for suspending a tenant.
+var ExtendReasonCodes = []string{
+    "support_escalation", // an open support case needs more time to resolve
+    "onboarding_delay",   // setup or migration slipped for reasons outside the merchant's control
+    "billing_dispute",    // a billing disagreement is open; the trial should not lapse meanwhile
+    "goodwill",           // discretionary grant, no other category applies
+    "operator_error",     // correcting a mistaken earlier extension or trial start
+}
+```
+
+Validation matches #287 exactly, including the error shape, so the console handles both
+endpoints the same way:
+
+| condition | status | body |
+|---|---|---|
+| body absent or unparseable | 400 | `{"error":"invalid_request","message":"request body could not be parsed"}` |
+| `reason_code` absent or not in the set | 400 | `{"error":"invalid_reason_code","message":"reason_code is required and must be one of the declared codes","field":"reason_code","allowed":[…]}` |
+
+`reason` stays optional free text, trimmed, capped at 500 characters. Both are stored on the
+audit row.
 
 ### Refusals
 
@@ -93,7 +134,7 @@ ignored** — that is #286's own acceptance criterion.
 | `stripe_subscription_id IS NOT NULL` | 409 | `stripe_managed` |
 | `status` not in (`trialing`, `signup`) | 409 | `not_trialing` |
 | `trial_ends_at` not in the future | 400 | `invalid_request` |
-| `reason` absent or blank | 400 | `invalid_request` |
+| `reason_code` absent or unknown | 400 | `invalid_reason_code` |
 | `trial_ends_at` unparseable or absent | 400 | `invalid_request` |
 | no subscription for that store | 404 | `not_found` |
 
@@ -243,7 +284,7 @@ body has never run.
 
 - **Pushing a changed `trial_end` to Stripe** — refused with `stripe_managed` and split to its
   own issue, for the reasons under Refusals.
-- **A reason vocabulary** — an optional `reason_code` can be added later without breaking a
-  caller.
+- **Reason codes beyond the five declared** — the set is mark8ly's to extend, and adding one
+  is a one-line change plus a note on the issue.
 - **Shortening a trial into the past, or reinstating an expired one.** Both are different
   operator actions with different consequences, and neither is what #286 asks for.

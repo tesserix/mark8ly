@@ -31,16 +31,28 @@ func withCurrentTimestamp(in *platformadmin.SignatureInput) {
 // fullPurgeDeps returns a Deps literal with every dependency the purge
 // routes require present and wired, so individual tests can start from a
 // fully-mounted baseline and knock out one field at a time.
+//
+// TenantLifecycle is wired here too, even though none of the tests in this
+// file otherwise exercise suspend/unsuspend: tenant_lifecycle.go and
+// tenant_purge.go both register /admin/tenants/:id/... on the SAME
+// platformadmin group, using :id in both files independently. Nothing
+// enforces that the two files agree on the wildcard name — if one drifted
+// (e.g. someone renamed tenant_lifecycle.go's :id to :tenantID), gin would
+// panic at Register() time on the SHARED group. Mounting both here means
+// every test built on fullPurgeDeps() incidentally re-proves that
+// agreement on every run, rather than only the one dedicated collision
+// test below.
 func fullPurgeDeps() platformadmin.Deps {
 	return platformadmin.Deps{
-		Repo:            &stubRepo{},
-		Secret:          testSecret,
-		DB:              &gorm.DB{},
-		NonceStore:      newMemNonces(),
-		TenantTeardown:  &fakeTeardown{seq: &seq{}},
-		Purger:          &fakePurger{seq: &seq{}},
-		TenantDirectory: &stubDirectory{detail: &tenantdirectory.TenantDetail{}},
-		Emitter:         audit.NewEmitter(audit.EmitterConfig{Repo: &recordingRepo{}}),
+		Repo:                  &stubRepo{},
+		Secret:                testSecret,
+		DB:                    &gorm.DB{},
+		NonceStore:            newMemNonces(),
+		TenantTeardown:        &fakeTeardown{seq: &seq{}},
+		Purger:                &fakePurger{seq: &seq{}},
+		TenantDirectory:       &stubDirectory{detail: &tenantdirectory.TenantDetail{}},
+		Emitter:               audit.NewEmitter(audit.EmitterConfig{Repo: &recordingRepo{}}),
+		TenantLifecycle:       &stubLifecycle{},
 	}
 }
 
@@ -169,29 +181,76 @@ func TestRegister_BogusSiblingUnderTenantsStays404(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-// TestRegister_RouterBuildsWithBothTenantRouteSets pins Trap 2: the
-// merchant admin tree registers /admin/tenants/:tenantId/... under one
-// wildcard name; the platformadmin group uses :id at the same path
-// position. Two different wildcard names at one position panic gin at
-// ROUTER BUILD TIME — the service fails to start, and no request-level
-// test catches it. Both trees are registered on ONE engine here to prove
-// they coexist.
-func TestRegister_RouterBuildsWithBothTenantRouteSets(t *testing.T) {
+// TestRegister_BothTenantRouteTreesCoexistOnOneEngine asserts only that the
+// merchant admin tree and the platformadmin tree can both be registered on
+// ONE gin engine at their CURRENT, production prefixes
+// (/api/v1/admin/tenants/:tenantId/... and /api/v1/platform/admin/tenants/
+// :id/...) without panicking.
+//
+// It does NOT and CANNOT detect a wildcard-name collision (Trap 2): the two
+// trees mount at SIBLING prefixes, so they never share a route node, and no
+// choice of wildcard name on either side can make this test panic. This was
+// previously named TestRegister_RouterBuildsWithBothTenantRouteSets with a
+// comment claiming it "pins Trap 2" — a reviewer mutated platformadmin's
+// wildcard from :id to :tid and this test kept passing, proving the claim
+// false. See TestRegister_SharingTheMerchantPrefixPanicsAtRouterBuild below
+// for the test that actually exercises the collision, by putting both trees
+// on the SAME prefix.
+func TestRegister_BothTenantRouteTreesCoexistOnOneEngine(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	require.NotPanics(t, func() {
 		r := gin.New()
 
 		// Mirrors cmd/marketplace-api/main.go exactly: the merchant admin
-		// tree mounts at /api/v1 (its /admin/tenants/:tenantId/... group
-		// lives under here), and platformadmin mounts at the SIBLING
-		// /api/v1/platform prefix — never under /api/v1/admin, which is
-		// what avoids the wildcard collision in the first place.
+		// tree mounts at /api/v1, and platformadmin mounts at the SIBLING
+		// /api/v1/platform prefix — never under /api/v1/admin. The prefix
+		// separation, not any property this test checks, is what prevents
+		// the wildcard collision in production; see routes.go's Register
+		// doc comment.
 		admin.RegisterAdmin(r.Group("/api/v1"), admin.Deps{
 			SSOConfigHandler: admin.NewSSOConfigHandler(nil, nil, nil, nil),
 			AuthzMiddleware:  authz.NewMiddleware(authz.NewFakeClient(), nil),
 		})
 
 		platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps())
+	})
+}
+
+// TestRegister_SharingTheMerchantPrefixPanicsAtRouterBuild pins the actual
+// Trap 2 hazard: the merchant tree registers /admin/tenants/:tenantId/...
+// and this surface uses :id at the same path position. Two DIFFERENT
+// wildcard names at one path position make gin panic at ROUTER BUILD TIME
+// — the service fails to start, and no request-level test catches it.
+//
+// This test pins WHY the two surfaces mount at sibling prefixes in
+// production: put them on the SAME prefix and the router refuses to
+// build. routes.go's Register doc comment says not to "tidy" the prefixes
+// back together onto /api/v1/admin; this is that warning made executable.
+//
+// A bare stub route stands in for the merchant admin tree's
+// /admin/tenants/:tenantId registration — the collision is a property of
+// gin's router, not of any particular handler behind the route, so a stub
+// proves it exactly as well as the real admin.RegisterAdmin tree and keeps
+// the test cheap.
+func TestRegister_SharingTheMerchantPrefixPanicsAtRouterBuild(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	require.Panics(t, func() {
+		r := gin.New()
+		g := r.Group("/api/v1")
+
+		// Stands in for the merchant admin tree's
+		// /admin/tenants/:tenantId/... group (internal/handlers/admin/
+		// routes.go's ssoTenant), claiming the :tenantId wildcard at this
+		// path position.
+		g.GET("/admin/tenants/:tenantId/sso/config", func(c *gin.Context) {})
+
+		// platformadmin's purge routes use :id at the SAME position
+		// (/admin/tenants/:id/...) — mounted on the SAME "/api/v1" group
+		// this time, not the sibling "/api/v1/platform" prefix production
+		// actually uses. Two different wildcard names at this one node is
+		// exactly what gin refuses to build.
+		platformadmin.Register(g, fullPurgeDeps())
 	})
 }

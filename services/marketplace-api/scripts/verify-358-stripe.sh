@@ -78,7 +78,13 @@ esac
 
 KEY="$STRIPE_TEST_KEY"
 
-api() { curl -sS -u "$KEY:" "https://api.stripe.com/v1/$1" "${@:2}"; }
+# The key is fed to curl via --config (reading a "user = ..." line from
+# stdin) rather than -u, because -u would put the credential in this
+# process's argv, where any user on the machine can read it via `ps`.
+api() {
+  local path="$1"; shift
+  printf 'user = "%s:"\n' "$KEY" | curl -sS --config - "https://api.stripe.com/v1/$path" "$@"
+}
 
 cmd="${1:-setup}"
 

@@ -1712,7 +1712,13 @@ case "$KEY" in
   *) echo "REFUSING: key is not sk_test_ — this script must never touch live billing" >&2; exit 1 ;;
 esac
 
-api() { curl -sS -u "$KEY:" "https://api.stripe.com/v1/$1" "${@:2}"; }
+# The key is fed to curl via --config (reading a "user = ..." line from
+# stdin) rather than -u, because -u would put the credential in this
+# process's argv, where any user on the machine can read it via `ps`.
+api() {
+  local path="$1"; shift
+  printf 'user = "%s:"\n' "$KEY" | curl -sS --config - "https://api.stripe.com/v1/$path" "$@"
+}
 
 echo "==> creating a test-mode customer + trialing subscription"
 CUS=$(api customers -d "description=mark8ly-358-verify" | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')

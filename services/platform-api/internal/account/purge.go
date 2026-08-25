@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -35,6 +36,31 @@ type PurgeResult struct {
 	StoreIDs   []string
 	StoreSlugs []string
 }
+
+// PurgeBackstopDelay defers the first drain attempt of the tenant.deleted
+// event enqueued by PurgeTenant.
+//
+// The operator purge does the marketplace-side purge INLINE, and its whole
+// point is to report what it destroyed. The outbox event exists so the purge
+// still happens if this process dies between the teardown commit and that
+// inline call — a backstop.
+//
+// Undelayed, it is not a backstop but a competitor, and it wins. Measured in
+// production on 2026-08-25: the teardown committed at 14:12:55.405, the
+// drainer completed the whole marketplace purge at 14:12:55.580, and the
+// inline purge did not finish until 14:12:57.211 — so it deleted 0 rows and
+// reported `total_rows: 0` for a purge that destroyed 5. The operator was
+// told nothing was destroyed, and the permanent audit record said the same.
+// That is a direct violation of #288's "audited with ... what was destroyed",
+// and it is non-deterministic: whichever transaction gets the locks first
+// wins.
+//
+// 30s is chosen to be far longer than any plausible inline purge (the plan
+// issues 53 DELETEs in one transaction; the run above took ~1.8s) while
+// still bounding how long a crashed request leaves rows stranded. It costs
+// nothing in the happy path: the inline purge finishes first, so the drained
+// event is a no-op re-run, which Purge is designed for.
+const PurgeBackstopDelay = 30 * time.Second
 
 // PurgeTenant is the operator-initiated tenant teardown behind
 // POST /admin/tenants/{id}/purge (#288). It is IRREVERSIBLE.
@@ -106,10 +132,13 @@ func (s *Service) PurgeTenant(ctx context.Context, tenantID string, suppliedSlug
 		if err := s.repo.DeleteInTx(ctx, tx, tenantID); err != nil {
 			return err
 		}
+		// PurgeBackstopDelay, not 0: this request purges marketplace-api
+		// INLINE and reports what it destroyed. An immediately-drainable
+		// event makes the drainer race that inline purge — see the constant.
 		return s.outbox(tx, TenantDeletedOutboxKind, tenantDeletedPayload{
 			TenantID: tenantID,
 			StoreIDs: idsOf(snap.Stores),
-		})
+		}, PurgeBackstopDelay)
 	}
 
 	if s.db == nil {

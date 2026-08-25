@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -74,14 +75,15 @@ func (f *fakeGIP) DeleteAccount(ctx context.Context, uid string) error {
 }
 
 // fakeOutbox is an in-memory double satisfying the outboxEnqueuer func
-// type via its Enqueue method value (fakeOutbox{}.Enqueue matches the
-// func(tx *gorm.DB, kind string, payload any) error shape).
+// type via its Enqueue method value.
 type fakeOutbox struct {
-	kinds []string
+	kinds  []string
+	delays []time.Duration
 }
 
-func (f *fakeOutbox) Enqueue(tx *gorm.DB, kind string, payload any) error {
+func (f *fakeOutbox) Enqueue(tx *gorm.DB, kind string, payload any, delay time.Duration) error {
 	f.kinds = append(f.kinds, kind)
+	f.delays = append(f.delays, delay)
 	return nil
 }
 
@@ -236,5 +238,32 @@ func TestDeleteAccount_Owner_TeardownFailure_FailsCall(t *testing.T) {
 	}
 	if ob.has("tenant.deleted") {
 		t.Error("tenant.deleted should not be enqueued when DB teardown fails")
+	}
+}
+
+// The merchant self-serve teardown runs NO inline purge — the outbox event is
+// the only thing that will ever purge marketplace-api — so it must be
+// drainable immediately. This is the counterweight to
+// TestPurgeTenant_EnqueuesTheBackstopDelayed: together they pin that the
+// delay is a per-path decision, not a constant applied everywhere.
+func TestDeleteAccount_OwnerEnqueuesTenantDeletedWithNoDelay(t *testing.T) {
+	ctx := context.Background()
+	fga := authz.NewFake()
+	if err := fga.WriteOwnership(ctx, "owner-1", "t1"); err != nil {
+		t.Fatalf("seed ownership: %v", err)
+	}
+	repo := &fakeTenantRepo{stores: map[string][]string{"t1": {"s1"}}}
+	ob := &fakeOutbox{}
+
+	svc := NewService(nil, repo, fga, &fakeGIP{}, ob.Enqueue, testLogger())
+	if err := svc.DeleteAccount(ctx, "t1", "owner-1"); err != nil {
+		t.Fatalf("DeleteAccount() error = %v", err)
+	}
+
+	if !ob.has(TenantDeletedOutboxKind) {
+		t.Fatalf("expected %s to be enqueued", TenantDeletedOutboxKind)
+	}
+	if len(ob.delays) != 1 || ob.delays[0] != 0 {
+		t.Errorf("delays = %v, want [0]: the merchant path has no inline purge, so its event must drain at once", ob.delays)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -53,7 +54,7 @@ func TestNewAccountService_OperatorPurgeSurvivesAbsentGIPAndFGA(t *testing.T) {
 	}}
 
 	enqueued := 0
-	enqueue := func(*gorm.DB, string, any) error { enqueued++; return nil }
+	enqueue := func(*gorm.DB, string, any, time.Duration) error { enqueued++; return nil }
 
 	// nil conn, nil fga, nil gipAdmin — precisely the unconfigured
 	// deployment the startup warning in main.go describes.

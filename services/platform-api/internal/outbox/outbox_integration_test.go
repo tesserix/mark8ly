@@ -219,3 +219,63 @@ func TestIntegration_Enqueue_RollsBackWithTransaction(t *testing.T) {
 		t.Errorf("rolled-back tx left %d outbox row(s); should be 0", count)
 	}
 }
+
+// TestIntegration_EnqueueAfter_IsNotDrainedBeforeItsDelay is the property the
+// operator tenant purge (#288) depends on: an event enqueued as a BACKSTOP for
+// work the same request also does inline must not be claimable while that
+// inline work is still running.
+//
+// Both halves are asserted against ONE drainer and ONE event, because the
+// failure this guards against is "the delay is written but Tick ignores it" —
+// and a test that only checked the early Tick would pass against an event that
+// never becomes claimable at all.
+func TestIntegration_EnqueueAfter_IsNotDrainedBeforeItsDelay(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	var called atomic.Int32
+	d := NewDrainer(db, log, Config{})
+	d.Register("test.delayed", func(ctx context.Context, p json.RawMessage) error {
+		called.Add(1)
+		return nil
+	})
+
+	if err := EnqueueAfter(db, "test.delayed", map[string]string{"k": "v"}, 30*time.Second); err != nil {
+		t.Fatalf("EnqueueAfter: %v", err)
+	}
+
+	// The row is durable immediately — the delay defers ELIGIBILITY, not the
+	// write. A backstop that isn't committed with the transaction is no
+	// backstop at all.
+	var row Event
+	if err := db.First(&row).Error; err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if row.Status != StatusPending {
+		t.Errorf("Status = %q, want %q", row.Status, StatusPending)
+	}
+	if !row.NextAttemptAt.After(time.Now().Add(25 * time.Second)) {
+		t.Errorf("NextAttemptAt = %v, want ~30s in the future", row.NextAttemptAt)
+	}
+
+	// Half 1: not claimable yet.
+	if err := d.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+	if called.Load() != 0 {
+		t.Fatalf("handler called %d times before the delay elapsed, want 0 — the drainer is racing the inline purge", called.Load())
+	}
+
+	// Half 2: once due, it drains normally. Move the row's due time into the
+	// past rather than sleeping 30s.
+	if err := db.Model(&Event{}).Where("id = ?", row.ID).
+		Update("next_attempt_at", time.Now().Add(-time.Second)).Error; err != nil {
+		t.Fatalf("age the row: %v", err)
+	}
+	if err := d.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick after delay: %v", err)
+	}
+	if called.Load() != 1 {
+		t.Errorf("handler called %d times after the delay elapsed, want 1 — the backstop must still fire", called.Load())
+	}
+}

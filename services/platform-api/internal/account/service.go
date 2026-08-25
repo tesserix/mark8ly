@@ -30,6 +30,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -45,12 +46,20 @@ type gipDeleter interface {
 	DeleteAccount(ctx context.Context, uid string) error
 }
 
-// outboxEnqueuer matches the real outbox.Enqueue function's signature
+// outboxEnqueuer matches the real outbox.EnqueueAfter function's signature
 // (see internal/outbox/outbox.go). It's a func type rather than a
-// method-interface so outbox.Enqueue itself can be passed directly in
+// method-interface so outbox.EnqueueAfter itself can be passed directly in
 // production with no adapter, while tests supply a recording fake's
 // method value.
-type outboxEnqueuer func(tx *gorm.DB, kind string, payload any) error
+//
+// The delay is part of the TYPE, not a detail hidden inside the outbox
+// package, because the two paths that enqueue tenant.deleted want opposite
+// things from it. The merchant self-serve delete has no inline purge — the
+// outbox IS the purge, so it passes 0. The operator purge (#288) does the
+// purge inline and needs the event to be a genuine backstop rather than a
+// competitor, so it passes PurgeBackstopDelay. A caller that has to choose
+// a value is a caller that has to think about which it is.
+type outboxEnqueuer func(tx *gorm.DB, kind string, payload any, delay time.Duration) error
 
 // TenantRepo is the subset of tenant.Repository the service uses.
 // ListStoreIDs is needed before the DB cascade removes the stores out
@@ -150,7 +159,9 @@ func (s *Service) teardownTenantTx(ctx context.Context, tenantID string, storeID
 			return err
 		}
 		payload := tenantDeletedPayload{TenantID: tenantID, StoreIDs: storeIDs}
-		return s.outbox(tx, TenantDeletedOutboxKind, payload)
+		// 0: the merchant path runs NO inline purge, so this event is the
+		// only thing that will ever purge marketplace-api. Drain it at once.
+		return s.outbox(tx, TenantDeletedOutboxKind, payload, 0)
 	}
 	if s.db == nil {
 		// Unit tests construct the service with a nil db and fakes that

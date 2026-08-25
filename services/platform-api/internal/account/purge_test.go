@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -33,10 +34,14 @@ func (f *fakePurgeTenantRepo) SnapshotForTeardown(_ context.Context, _ *gorm.DB,
 	return f.snap, f.snapErr
 }
 
-type recordingOutbox struct{ kinds []string }
+type recordingOutbox struct {
+	kinds  []string
+	delays []time.Duration
+}
 
-func (r *recordingOutbox) enqueue(_ *gorm.DB, kind string, _ any) error {
+func (r *recordingOutbox) enqueue(_ *gorm.DB, kind string, _ any, delay time.Duration) error {
 	r.kinds = append(r.kinds, kind)
+	r.delays = append(r.delays, delay)
 	return nil
 }
 
@@ -145,4 +150,33 @@ func TestPurgeTenant_UnknownTenantPropagatesNotFound(t *testing.T) {
 	ae, ok := apperrors.As(err)
 	require.True(t, ok, "want an *apperrors.AppError, got %T", err)
 	require.Equal(t, "tenant_not_found", ae.Code)
+}
+
+// The operator purge's tenant.deleted event must be enqueued as a BACKSTOP,
+// not as a competitor to the inline purge this same request performs.
+//
+// Undelayed, the drainer wins: measured in production, it completed the whole
+// marketplace purge 175ms after the teardown committed and 1.6s before the
+// inline purge finished, so the inline purge deleted 0 rows and reported
+// `total_rows: 0` for a purge that destroyed 5. #288 requires the audit row to
+// record "what was destroyed"; 0 is not that.
+//
+// The merchant self-serve path is the OPPOSITE case and is asserted alongside
+// it deliberately — there is no inline purge there, the event IS the purge,
+// and delaying it would stall a real teardown for no reason. A single
+// assertion on either path alone would pass against a service that used one
+// delay everywhere.
+func TestPurgeTenant_EnqueuesTheBackstopDelayed(t *testing.T) {
+	repo := &fakePurgeTenantRepo{snap: snapshotWith("the-bondi-store")}
+	ob := &recordingOutbox{}
+	svc := newTestService(repo, ob.enqueue)
+
+	_, err := svc.PurgeTenant(t.Context(), "t-1", []string{"the-bondi-store"})
+	require.NoError(t, err)
+
+	require.Equal(t, []string{TenantDeletedOutboxKind}, ob.kinds)
+	require.Equal(t, []time.Duration{PurgeBackstopDelay}, ob.delays,
+		"the operator purge purges inline and reports what it destroyed; its outbox event must not race that")
+	require.Greater(t, PurgeBackstopDelay, 5*time.Second,
+		"the delay must comfortably exceed a real inline purge (53 DELETEs; ~1.8s observed in prod)")
 }

@@ -83,15 +83,38 @@ type Handler func(ctx context.Context, payload json.RawMessage) error
 // originating entity). The whole point is atomic visibility: either both
 // the entity and the outbox row commit, or neither does.
 func Enqueue(tx *gorm.DB, kind string, payload any) error {
+	return EnqueueAfter(tx, kind, payload, 0)
+}
+
+// EnqueueAfter is Enqueue with the FIRST attempt deferred by delay. The row
+// is still written inside the caller's transaction — durability is
+// unchanged — only its eligibility is pushed out, because Tick claims
+// pending events on `next_attempt_at <= now()`.
+//
+// This exists for events that BACK UP work the enqueuing request also does
+// inline. Draining such an event immediately does not make the system more
+// durable; it makes the drainer race the request. The operator tenant purge
+// (#288) is the case that forced this: the drainer completed the purge 175ms
+// after the teardown committed, ~1.6s before the request's own purge
+// finished, so the inline purge deleted 0 rows and the operator — and the
+// permanent audit record — were told 0 rows were destroyed for a purge that
+// destroyed 5. See account.PurgeBackstopDelay.
+//
+// A non-positive delay behaves exactly like Enqueue: eligible immediately.
+func EnqueueAfter(tx *gorm.DB, kind string, payload any, delay time.Duration) error {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("outbox: marshal payload: %w", err)
+	}
+	next := time.Now()
+	if delay > 0 {
+		next = next.Add(delay)
 	}
 	evt := Event{
 		Kind:          kind,
 		Payload:       raw,
 		Status:        StatusPending,
-		NextAttemptAt: time.Now(),
+		NextAttemptAt: next,
 	}
 	if err := tx.Create(&evt).Error; err != nil {
 		return fmt.Errorf("outbox: enqueue %q: %w", kind, err)

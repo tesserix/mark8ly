@@ -1344,7 +1344,17 @@ Measured against production on 2026-08-25: the service connects as `marketplace_
 - [ ] **Step 1: Re-measure before writing (do not trust this plan either)**
 
 ```bash
-kubectl exec -n mark8ly mark8ly-postgres-2 -c postgres -- psql -U postgres -d mark8ly_marketplace_api -tAF'|' -c "
+# Select the primary by ROLE, never by pod name. CloudNativePG reschedules
+# instances and the names rotate — on 2026-08-25 the documented
+# `mark8ly-postgres-2` answered "pods not found" mid-session while the
+# primary was `mark8ly-postgres-3`, then came back. A hardcoded pod name is
+# a check that stops working without telling you it stopped.
+PGPOD=$(kubectl get pods -n mark8ly \
+  -l cnpg.io/cluster=mark8ly-postgres,cnpg.io/instanceRole=primary \
+  -o jsonpath='{.items[0].metadata.name}')
+echo "primary=$PGPOD"
+
+kubectl exec -n mark8ly "$PGPOD" -c postgres -- psql -U postgres -d mark8ly_marketplace_api -tAF'|' -c "
 SELECT relname, relowner::regrole::text, coalesce(array_to_string(relacl,' '),'(default)')
 FROM pg_class WHERE relnamespace='public'::regnamespace
 AND relname IN ('subscription_plan_change_audit','business_entity_attestations','app_contract_attestations','billing_archive','break_glass_lockouts');"
@@ -2657,7 +2667,10 @@ These were found while verifying #288's premises and are deliberately not fixed 
 - [ ] **Step 1: Re-measure before filing**
 
 ```bash
-kubectl exec -n mark8ly mark8ly-postgres-2 -c postgres -- psql -U postgres -d mark8ly_marketplace_api -tAF'|' -c "
+PGPOD=$(kubectl get pods -n mark8ly \
+  -l cnpg.io/cluster=mark8ly-postgres,cnpg.io/instanceRole=primary \
+  -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n mark8ly "$PGPOD" -c postgres -- psql -U postgres -d mark8ly_marketplace_api -tAF'|' -c "
 SELECT table_name, string_agg(column_name, ',' ORDER BY column_name)
 FROM information_schema.columns
 WHERE table_schema='public'

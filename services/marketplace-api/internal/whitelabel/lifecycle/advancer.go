@@ -17,16 +17,6 @@ import (
 	wlmetrics "github.com/mark8ly/marketplace-api/internal/whitelabel/metrics"
 )
 
-// White-label app sunset lifecycle schedule. These are distinct from subscription
-// trial periods and measure when the white-label app transitions through states:
-// sunset_scheduled → (30 days) → downloads_blocked → (30 days) → pulled →
-// (immediately) → firebase_archived → (30 days) → credentials_purged (terminal).
-const (
-	appSunsetDaysToDownloadBlock = time.Duration(30) * 24 * time.Hour
-	appSunsetDaysToPull          = time.Duration(60) * 24 * time.Hour
-	appSunsetDaysFinal           = time.Duration(90) * 24 * time.Hour
-)
-
 // Clock returns the current wall time. Injectable so tests can
 // deterministically age rows.
 type Clock func() time.Time
@@ -129,14 +119,14 @@ func (a *Advancer) advanceOne(ctx context.Context, r Row, now time.Time) error {
 			a.logger.InfoContext(ctx, "lifecycle: banner tick",
 				"store_id", r.StoreID, "days_elapsed", daysElapsed)
 			return a.updateStatus(ctx, r, StatusSunsetScheduled,
-				r.ScheduledAt.Add(appSunsetDaysToDownloadBlock))
+				r.ScheduledAt.Add(30*24*time.Hour))
 		}
 		// Day 30 — block downloads.
 		if err := a.blockDownloads(ctx, r); err != nil {
 			return err
 		}
 		return a.transition(ctx, r, StatusDownloadsBlocked,
-			r.ScheduledAt.Add(appSunsetDaysToPull))
+			r.ScheduledAt.Add(60*24*time.Hour))
 
 	case StatusDownloadsBlocked:
 		// Day 60 — pull apps.
@@ -152,7 +142,7 @@ func (a *Advancer) advanceOne(ctx context.Context, r Row, now time.Time) error {
 			return err
 		}
 		return a.transition(ctx, r, StatusFirebaseArchived,
-			r.ScheduledAt.Add(appSunsetDaysFinal))
+			r.ScheduledAt.Add(90*24*time.Hour))
 
 	case StatusFirebaseArchived:
 		// Day 90 — delete Firebase + purge all credentials. Terminal.

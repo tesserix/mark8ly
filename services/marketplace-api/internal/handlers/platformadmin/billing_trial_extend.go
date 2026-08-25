@@ -41,16 +41,21 @@ const maxReasonLen = 500
 // TrialExtender is the subset of the trial package this handler needs,
 // declared locally so the handler is stubbable — the same reason
 // TenantLifecycle and EstateCounts are declared here rather than imported.
+//
+// callerIdemKey carries the handler's already-scoped idempotency key down
+// into the domain, which needs it to derive the key it sends to Stripe. It
+// is threaded rather than re-derived because only the handler has the
+// caller's Idempotency-Key header (#358 F1).
 type TrialExtender interface {
-	Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time) (trial.ExtendResult, error)
+	Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time, callerIdemKey string) (trial.ExtendResult, error)
 }
 
 // TrialExtenderFunc adapts a free function to TrialExtender, matching the
 // SubscriptionsFunc / TrialListerFunc pattern already used in routes.go.
-type TrialExtenderFunc func(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time) (trial.ExtendResult, error)
+type TrialExtenderFunc func(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time, callerIdemKey string) (trial.ExtendResult, error)
 
-func (f TrialExtenderFunc) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time) (trial.ExtendResult, error) {
-	return f(ctx, db, storeID, newEnd, now)
+func (f TrialExtenderFunc) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time, callerIdemKey string) (trial.ExtendResult, error) {
+	return f(ctx, db, storeID, newEnd, now, callerIdemKey)
 }
 
 // trialExtendAuditFunc records a platform-operator action. Production
@@ -236,7 +241,7 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 	}
 
 	extendedAt := time.Now().UTC()
-	res, err := h.ex.Extend(c.Request.Context(), h.db, storeID, newEnd, extendedAt)
+	res, err := h.ex.Extend(c.Request.Context(), h.db, storeID, newEnd, extendedAt, scopedKey)
 	if err != nil {
 		h.releaseReservation(c, scopedKey)
 		h.respondExtendErr(c, err)
@@ -401,6 +406,19 @@ func (h *BillingTrialExtendHandler) respondExtendErr(c *gin.Context, err error) 
 		c.JSON(http.StatusConflict, gin.H{
 			"error":   "stripe_state_conflict",
 			"message": "stripe reports this subscription is no longer trialing; it cannot be extended until the two agree",
+		})
+	case errors.Is(err, trial.ErrTrialEndNotAfterStripe):
+		// 400: the operator can fix this by picking a later date. The
+		// message is the domain error's own text, which carries BOTH the
+		// requested end and the one Stripe currently holds, so the retry can
+		// be informed rather than guessed. Echoing err.Error() is safe here
+		// and only here: this sentinel's message is composed entirely from
+		// our own two timestamps, never from a driver or a third party
+		// (#358 F2).
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "trial_end_not_after_stripe",
+			"message": err.Error(),
+			"field":   "trial_ends_at",
 		})
 	case errors.Is(err, trial.ErrTrialEndTooFar):
 		c.JSON(http.StatusBadRequest, gin.H{

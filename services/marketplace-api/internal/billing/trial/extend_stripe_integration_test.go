@@ -32,7 +32,7 @@ func TestExtender_CardlessPathUnchanged(t *testing.T) {
 	seeded := seedExpiringRow(t, db, derivedEnd, nil)
 	newEnd := stripeExtendAsOf.Add(60 * 24 * time.Hour)
 
-	res, err := trial.NewExtender(nil).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf)
+	res, err := trial.NewExtender(nil).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf, "")
 	require.NoError(t, err)
 	require.True(t, derivedEnd.Equal(res.PreviousEndsAt))
 	require.True(t, newEnd.Equal(res.NewEndsAt))
@@ -55,7 +55,7 @@ func TestExtender_NilUpdater_RefusesCardBacked(t *testing.T) {
 		func(s *subscription.StoreSubscription) { s.StripeSubscriptionID = &subID })
 
 	_, err := trial.NewExtender(nil).Extend(context.Background(), db,
-		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf)
+		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrStripeManaged)
 
 	var after subscription.StoreSubscription
@@ -71,6 +71,12 @@ type fakeUpdater struct {
 	updateErr   error
 	seenParams  billingstripe.UpdateTrialEndParams
 	updateCalls int
+
+	// seenKeys records the idempotency key of EVERY UpdateTrialEnd, in
+	// order. A fake cannot reproduce Stripe's response cache, so the keys
+	// it was handed are the only observable that decides whether Stripe
+	// would have deduped a call (#358 F1).
+	seenKeys []string
 }
 
 func (f *fakeUpdater) GetSubscription(ctx context.Context, id string) (*billingstripe.Subscription, error) {
@@ -83,6 +89,7 @@ func (f *fakeUpdater) GetSubscription(ctx context.Context, id string) (*billings
 func (f *fakeUpdater) UpdateTrialEnd(ctx context.Context, in billingstripe.UpdateTrialEndParams) (*billingstripe.Subscription, error) {
 	f.updateCalls++
 	f.seenParams = in
+	f.seenKeys = append(f.seenKeys, in.IdempotencyKey)
 	if f.updateErr != nil {
 		return nil, f.updateErr
 	}
@@ -148,19 +155,22 @@ func TestExtender_CardBacked_SendsExactUnixSecondAndWritesLocally(t *testing.T) 
 		},
 	}
 
-	res, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf)
+	callerKey := "trial_extend:" + seeded.StoreID.String() + ":op-header-1"
+	res, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf, callerKey)
 	require.NoError(t, err)
 
 	require.Equal(t, 1, f.updateCalls)
 	require.Equal(t, newEnd.Unix(), f.seenParams.TrialEnd,
 		"the exact integer sent to Stripe is the acceptance criterion")
 	require.Equal(t, subID, f.seenParams.SubscriptionID)
-	// F1: the key is part of the wire contract, so it is pinned exactly.
-	// It encodes the ABSOLUTE target second, which is what makes a replay
-	// re-assert the same date rather than shift the trial again — Stripe's
-	// own dedupe only lasts 24h and cannot be relied on beyond that.
+	// F1: the key is part of the wire contract, so it is pinned exactly. It
+	// is the CALLER's scoped key plus the absolute target second. The
+	// caller's half is what makes two different operator requests distinct
+	// (see TestExtender_CardBacked_ReturningToAPreviousDateGetsANewStripeKey);
+	// the second is what keeps one reused header key across two bodies from
+	// replaying the first body's outcome.
 	require.Equal(t,
-		"trial_extend:"+seeded.StoreID.String()+":"+strconv.FormatInt(newEnd.Unix(), 10),
+		callerKey+":"+strconv.FormatInt(newEnd.Unix(), 10),
 		f.seenParams.IdempotencyKey)
 	require.Equal(t, seeded.StoreID.String(), f.seenParams.Metadata["mark8ly_store_id"])
 	require.Equal(t, seeded.TenantID.String(), f.seenParams.Metadata["mark8ly_tenant_id"])
@@ -199,7 +209,7 @@ func TestExtender_CardBacked_StripeFailure_WritesNothingLocally(t *testing.T) {
 	}
 
 	_, err := trial.NewExtender(f).Extend(context.Background(), db,
-		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf)
+		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrStripeCall)
 
 	var after subscription.StoreSubscription
@@ -225,7 +235,7 @@ func TestExtender_CardBacked_StripeNotTrialing_Refuses(t *testing.T) {
 		TrialEnd: 0, BillingCycleAnchor: stripeExtendAsOf.Unix()}}
 
 	_, err := trial.NewExtender(f).Extend(context.Background(), db,
-		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf)
+		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrStripeStateConflict)
 	require.Equal(t, 0, f.updateCalls, "a refusal must not reach Stripe's update")
 	// F3: the sentinel alone cannot see a refusal that failed to refuse.
@@ -253,7 +263,7 @@ func TestExtender_CardBacked_TwoYearBound_AtTheBoundary(t *testing.T) {
 			updated: &billingstripe.Subscription{ID: subID, Status: "trialing",
 				TrialEnd: newEnd.Unix(), BillingCycleAnchor: newEnd.Unix()},
 		}
-		_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf)
+		_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf, "")
 		require.NoError(t, err)
 		require.Equal(t, 1, f.updateCalls)
 	})
@@ -267,7 +277,7 @@ func TestExtender_CardBacked_TwoYearBound_AtTheBoundary(t *testing.T) {
 
 		f := &fakeUpdater{get: &billingstripe.Subscription{ID: subID, Status: "trialing",
 			TrialEnd: stripeExtendAsOf.Unix(), BillingCycleAnchor: anchor.Unix()}}
-		_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf)
+		_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf, "")
 		require.ErrorIs(t, err, trial.ErrTrialEndTooFar)
 		require.Equal(t, 0, f.updateCalls)
 		requireUntouched(t, db, seeded) // F3
@@ -288,7 +298,7 @@ func TestExtender_CardBacked_BoundIsMeasuredFromAnchorNotNow(t *testing.T) {
 
 	f := &fakeUpdater{get: &billingstripe.Subscription{ID: subID, Status: "trialing",
 		TrialEnd: stripeExtendAsOf.Unix(), BillingCycleAnchor: anchor.Unix()}}
-	_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf)
+	_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrTrialEndTooFar,
 		"a now-based bound would allow this; the bound is from the anchor")
 	require.Equal(t, 0, f.updateCalls)
@@ -311,7 +321,7 @@ func TestExtender_CardBacked_ScopedToTheRequestedStore(t *testing.T) {
 		updated: &billingstripe.Subscription{ID: "sub_target", Status: "trialing",
 			TrialEnd: newEnd.Unix(), BillingCycleAnchor: newEnd.Unix()},
 	}
-	_, err := trial.NewExtender(f).Extend(context.Background(), db, target.StoreID, newEnd, stripeExtendAsOf)
+	_, err := trial.NewExtender(f).Extend(context.Background(), db, target.StoreID, newEnd, stripeExtendAsOf, "")
 	require.NoError(t, err)
 	require.Equal(t, "sub_target", f.seenParams.SubscriptionID)
 
@@ -343,7 +353,7 @@ func TestExtender_CardBacked_StripeAPIErrorSurvivesTheWrap(t *testing.T) {
 	}
 
 	_, err := trial.NewExtender(f).Extend(context.Background(), db,
-		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf)
+		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf, "")
 
 	require.ErrorIs(t, err, trial.ErrStripeCall, "the sentinel the handler switches on must still match")
 
@@ -368,7 +378,7 @@ func TestExtender_CardBacked_GetSubscriptionFailure_RefusesBeforeUpdate(t *testi
 	f := &fakeUpdater{getErr: errors.New("stripe: unreachable")}
 
 	_, err := trial.NewExtender(f).Extend(context.Background(), db,
-		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf)
+		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrStripeCall)
 	require.Contains(t, err.Error(), "get subscription", "the failing call must be identifiable")
 	require.Equal(t, 0, f.updateCalls, "a failed read must never be followed by a write to Stripe")
@@ -395,7 +405,7 @@ func TestExtender_CardBacked_NilSubscriptionFromStripe_IsAnErrorNotAPanic(t *tes
 	}
 
 	_, err := trial.NewExtender(f).Extend(context.Background(), db,
-		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf)
+		seeded.StoreID, stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrStripeCall)
 	requireUntouched(t, db, seeded)
 }
@@ -428,7 +438,7 @@ func TestExtender_CardBacked_StripeAppliedThenLocalWriteFails_IsItsOwnError(t *t
 			tx.AddError(errors.New("disk on fire"))
 		}))
 
-	_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf)
+	_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf, "")
 
 	require.ErrorIs(t, err, trial.ErrStripeAppliedLocalWriteFailed,
 		"a moved billing anchor with no local record is not a routine DB error")
@@ -470,7 +480,7 @@ func TestExtender_LocksTheSubscriptionRowForUpdate(t *testing.T) {
 		updated: &billingstripe.Subscription{ID: subID, Status: "trialing",
 			TrialEnd: newEnd.Unix(), BillingCycleAnchor: newEnd.Unix()},
 	}
-	_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf)
+	_, err := trial.NewExtender(f).Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf, "")
 	require.NoError(t, err)
 
 	var locked string
@@ -484,22 +494,12 @@ func TestExtender_LocksTheSubscriptionRowForUpdate(t *testing.T) {
 		"the store_subscriptions SELECT must carry FOR UPDATE; captured: %v", selects)
 }
 
-// A typed nil in an interface is NOT nil. Assigning a nil
-// *stripe.Client into StripeTrialUpdater makes `e.Stripe != nil` TRUE, and
-// the first method call panics — after the row lock has been taken and
-// inside a transaction. That is #288's second Critical (a typed-nil
-// *gipadmin.AdminClient that panicked after the purge transaction had
-// already committed) in a new location, so it gets a guard rather than a
-// warning comment.
-func TestNewExtender_TypedNilUpdaterIsTreatedAsAbsent(t *testing.T) {
-	var typedNil *fakeUpdater // nil POINTER; a non-nil INTERFACE once assigned
+// TestNewExtender_TypedNilUpdaterIsTreatedAsAbsent lives in
+// extend_typednil_test.go, which carries NO build tag and needs no database,
+// so the guard runs on every plain `go test ./...` (#358 F3). Only the
+// DB-dependent sibling below stays here.
 
-	e := trial.NewExtender(typedNil)
-	require.Nil(t, e.Stripe,
-		"a typed-nil updater must be normalised to a true nil, or every card-backed extension panics")
-}
-
-// And the behaviour that guard buys: a card-backed trial on a typed-nil
+// The behaviour that guard buys: a card-backed trial on a typed-nil
 // build refuses exactly as an unconfigured one does, rather than panicking
 // mid-transaction.
 func TestExtender_TypedNilUpdater_RefusesInsteadOfPanicking(t *testing.T) {
@@ -513,11 +513,172 @@ func TestExtender_TypedNilUpdater_RefusesInsteadOfPanicking(t *testing.T) {
 	var err error
 	require.NotPanics(t, func() {
 		_, err = e.Extend(context.Background(), db, seeded.StoreID,
-			stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf)
+			stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf, "")
 	})
 	require.ErrorIs(t, err, trial.ErrStripeManaged)
 
 	var after subscription.StoreSubscription
 	require.NoError(t, db.First(&after, "store_id = ?", seeded.StoreID).Error)
 	require.Nil(t, after.TrialEndsAt, "a refused extension must write nothing")
+}
+
+// #358 F1, AS THE BUG'S OWN SHAPE. Extend to D, then to E, then BACK to D.
+//
+// The defect: the Stripe idempotency key was derived from the store id and
+// the target second alone, so the third request — a genuinely new operator
+// action — reused the FIRST request's key. Same subscription, same params,
+// inside Stripe's 24h window, so Stripe would replay its cached response
+// and perform NOTHING while returning a body that says D. `updated.TrialEnd`
+// would then be D, so no check in Extend could notice, and the console would
+// report D while Stripe billed E — the merchant charged EARLIER than shown,
+// the exact direction this design rejects.
+//
+// A fake cannot reproduce Stripe's cache, so the assertion is on the KEYS
+// the fake received: that is the observable that decides whether Stripe
+// would dedupe. Under the old derivation seenKeys[0] == seenKeys[2] and this
+// test fails on that equality.
+//
+// The fake's GetSubscription deliberately reports the SAME baseline
+// trial_end for all three calls rather than advancing. That is not a
+// convenience: it is precisely the state the F1 dedupe itself produces —
+// Stripe's stored trial_end does not move when a call is silently replayed —
+// and it keeps this test measuring the key derivation rather than the
+// ordering rule that ErrTrialEndNotAfterStripe enforces.
+func TestExtender_CardBacked_ReturningToAPreviousDateGetsANewStripeKey(t *testing.T) {
+	db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores")
+
+	const subID = "sub_key_reuse"
+	baseline := stripeExtendAsOf.Add(10 * 24 * time.Hour)
+	seeded := seedCardBacked(t, db, subID, baseline)
+
+	dateD := stripeExtendAsOf.Add(60 * 24 * time.Hour)
+	dateE := stripeExtendAsOf.Add(90 * 24 * time.Hour)
+
+	f := &fakeUpdater{
+		get: &billingstripe.Subscription{ID: subID, Status: "trialing",
+			TrialEnd: baseline.Unix(), BillingCycleAnchor: baseline.Unix()},
+		updated: &billingstripe.Subscription{ID: subID, Status: "trialing",
+			TrialEnd: dateD.Unix(), BillingCycleAnchor: dateD.Unix()},
+	}
+	e := trial.NewExtender(f)
+
+	// Three distinct operator requests: each carries its own
+	// Idempotency-Key header, so each arrives with its own scoped key.
+	scoped := func(header string) string {
+		return "trial_extend:" + seeded.StoreID.String() + ":" + header
+	}
+
+	_, err := e.Extend(context.Background(), db, seeded.StoreID, dateD, stripeExtendAsOf, scoped("op-1"))
+	require.NoError(t, err)
+	_, err = e.Extend(context.Background(), db, seeded.StoreID, dateE, stripeExtendAsOf, scoped("op-2"))
+	require.NoError(t, err)
+	_, err = e.Extend(context.Background(), db, seeded.StoreID, dateD, stripeExtendAsOf, scoped("op-3"))
+	require.NoError(t, err)
+
+	require.Len(t, f.seenKeys, 3)
+	require.NotEqual(t, f.seenKeys[0], f.seenKeys[2],
+		"returning to a previously-used date is a NEW operator request and must not reuse the first request's stripe key, or stripe replays the cached response and moves nothing")
+	require.NotEqual(t, f.seenKeys[0], f.seenKeys[1])
+	require.NotEqual(t, f.seenKeys[1], f.seenKeys[2])
+}
+
+// The other half of the same contract: a GENUINE retry — the operator
+// resending with the SAME Idempotency-Key header and the same date — must
+// still produce the SAME Stripe key, so Stripe still dedupes it. That is
+// what makes a retry after a local-write failure converge instead of
+// extending twice (#358 F1).
+func TestExtender_CardBacked_SameCallerKeyAndDateStillDedupes(t *testing.T) {
+	db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores")
+
+	const subID = "sub_key_retry"
+	baseline := stripeExtendAsOf.Add(10 * 24 * time.Hour)
+	seeded := seedCardBacked(t, db, subID, baseline)
+	newEnd := stripeExtendAsOf.Add(60 * 24 * time.Hour)
+
+	f := &fakeUpdater{
+		get: &billingstripe.Subscription{ID: subID, Status: "trialing",
+			TrialEnd: baseline.Unix(), BillingCycleAnchor: baseline.Unix()},
+		updated: &billingstripe.Subscription{ID: subID, Status: "trialing",
+			TrialEnd: newEnd.Unix(), BillingCycleAnchor: newEnd.Unix()},
+	}
+	e := trial.NewExtender(f)
+	key := "trial_extend:" + seeded.StoreID.String() + ":op-retry"
+
+	_, err := e.Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf, key)
+	require.NoError(t, err)
+	_, err = e.Extend(context.Background(), db, seeded.StoreID, newEnd, stripeExtendAsOf, key)
+	require.NoError(t, err)
+
+	require.Len(t, f.seenKeys, 2)
+	require.Equal(t, f.seenKeys[0], f.seenKeys[1],
+		"a genuine retry must reach stripe under the same key, or the retry becomes a second extension")
+}
+
+// #358 F2. An "extend" must never SHORTEN a card-backed trial.
+//
+// The local derived end is the stale one: trial_ends_at is NULL for a
+// never-extended card-backed row, so the console shows created_at+90d while
+// Stripe may already hold a later date. An operator picking a date they
+// believe is later than what the CONSOLE shows can therefore pull a real
+// billing date forward. Before this refusal the call succeeded and reported
+// billing_anchor_moved: true.
+func TestExtender_CardBacked_RefusesAnEndNotAfterStripes(t *testing.T) {
+	baseline := stripeExtendAsOf.Add(10 * 24 * time.Hour)    // what the console derives
+	stripeHolds := stripeExtendAsOf.Add(40 * 24 * time.Hour) // what stripe really holds
+
+	t.Run("a date between the local derived end and stripe's is refused", func(t *testing.T) {
+		db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores")
+		const subID = "sub_shorten"
+		seeded := seedCardBacked(t, db, subID, baseline)
+		seedReminder(t, db, seeded)
+
+		requested := stripeExtendAsOf.Add(25 * 24 * time.Hour)
+
+		f := &fakeUpdater{get: &billingstripe.Subscription{ID: subID, Status: "trialing",
+			TrialEnd: stripeHolds.Unix(), BillingCycleAnchor: baseline.Unix()}}
+
+		_, err := trial.NewExtender(f).Extend(context.Background(), db,
+			seeded.StoreID, requested, stripeExtendAsOf, "trial_extend:x:op-shorten")
+
+		require.ErrorIs(t, err, trial.ErrTrialEndNotAfterStripe)
+		// BOTH dates, so the operator can retry with an informed one
+		// instead of guessing which way the disagreement runs.
+		require.Contains(t, err.Error(), requested.Format(time.RFC3339))
+		require.Contains(t, err.Error(), stripeHolds.Format(time.RFC3339))
+
+		require.Equal(t, 0, f.updateCalls, "a refusal must never reach stripe's update")
+		requireUntouched(t, db, seeded)
+	})
+
+	// The boundary itself: equal is not "after". A no-op restatement of the
+	// date stripe already holds still moves the billing anchor at stripe, so
+	// it is refused rather than waved through.
+	t.Run("exactly stripe's current trial end is refused", func(t *testing.T) {
+		db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores")
+		const subID = "sub_shorten_eq"
+		seeded := seedCardBacked(t, db, subID, baseline)
+		seedReminder(t, db, seeded)
+
+		f := &fakeUpdater{get: &billingstripe.Subscription{ID: subID, Status: "trialing",
+			TrialEnd: stripeHolds.Unix(), BillingCycleAnchor: baseline.Unix()}}
+
+		_, err := trial.NewExtender(f).Extend(context.Background(), db,
+			seeded.StoreID, stripeHolds, stripeExtendAsOf, "trial_extend:x:op-eq")
+
+		require.ErrorIs(t, err, trial.ErrTrialEndNotAfterStripe)
+		require.Equal(t, 0, f.updateCalls)
+		requireUntouched(t, db, seeded)
+	})
+
+	// And the card-LESS path is unchanged: shortening there stays legal.
+	t.Run("a card-less trial can still be shortened", func(t *testing.T) {
+		db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores")
+		seeded := seedExpiringRow(t, db, stripeExtendAsOf.Add(40*24*time.Hour), nil)
+		earlier := stripeExtendAsOf.Add(5 * 24 * time.Hour)
+
+		res, err := trial.NewExtender(nil).Extend(context.Background(), db,
+			seeded.StoreID, earlier, stripeExtendAsOf, "trial_extend:x:op-cardless")
+		require.NoError(t, err)
+		require.True(t, earlier.Equal(res.NewEndsAt))
+	})
 }

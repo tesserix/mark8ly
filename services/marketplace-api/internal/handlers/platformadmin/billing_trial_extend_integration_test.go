@@ -76,7 +76,7 @@ func TestTrialExtendKeyDoesNotReplayAcrossStores(t *testing.T) {
 	storeB := uuid.New()
 
 	var calledWith []uuid.UUID
-	ex := platformadmin.TrialExtenderFunc(func(_ context.Context, _ *gorm.DB, storeID uuid.UUID, newEnd, _ time.Time) (trial.ExtendResult, error) {
+	ex := platformadmin.TrialExtenderFunc(func(_ context.Context, _ *gorm.DB, storeID uuid.UUID, newEnd, _ time.Time, _ string) (trial.ExtendResult, error) {
 		calledWith = append(calledWith, storeID)
 		return trial.ExtendResult{
 			SubscriptionID:   uuid.New(),
@@ -135,7 +135,7 @@ func TestTrialExtendSecondCallerDoesNotExecuteWhileFirstInFlight(t *testing.T) {
 	release := make(chan struct{})
 	var calls int32
 
-	ex := platformadmin.TrialExtenderFunc(func(_ context.Context, _ *gorm.DB, storeID uuid.UUID, newEnd, _ time.Time) (trial.ExtendResult, error) {
+	ex := platformadmin.TrialExtenderFunc(func(_ context.Context, _ *gorm.DB, storeID uuid.UUID, newEnd, _ time.Time, _ string) (trial.ExtendResult, error) {
 		atomic.AddInt32(&calls, 1)
 		close(entered)
 		<-release // held open until the test allows it to finish
@@ -225,7 +225,7 @@ func TestTrialExtendCorrectedRetrySucceedsAfterDomainRefusal(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	var callCount int32
-	ex := platformadmin.TrialExtenderFunc(func(_ context.Context, _ *gorm.DB, storeID uuid.UUID, newEnd, _ time.Time) (trial.ExtendResult, error) {
+	ex := platformadmin.TrialExtenderFunc(func(_ context.Context, _ *gorm.DB, storeID uuid.UUID, newEnd, _ time.Time, _ string) (trial.ExtendResult, error) {
 		if atomic.AddInt32(&callCount, 1) == 1 {
 			return trial.ExtendResult{}, trial.ErrNotTrialing
 		}

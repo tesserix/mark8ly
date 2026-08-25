@@ -30,7 +30,7 @@ func TestExtend_SetsTheNewEndAndReportsThePrevious(t *testing.T) {
 	seeded := seedExpiringRow(t, db, derivedEnd, nil)
 	newEnd := extendAsOf.Add(60 * 24 * time.Hour)
 
-	res, err := trial.NewExtender(nil).Extend(context.Background(), db, seeded.StoreID, newEnd, extendAsOf)
+	res, err := trial.NewExtender(nil).Extend(context.Background(), db, seeded.StoreID, newEnd, extendAsOf, "")
 	require.NoError(t, err)
 
 	require.Equal(t, seeded.StoreID, res.StoreID)
@@ -62,7 +62,7 @@ func TestExtend_ClearsSentReminders(t *testing.T) {
 	).Error)
 
 	res, err := trial.NewExtender(nil).Extend(context.Background(), db,
-		seeded.StoreID, extendAsOf.Add(60*24*time.Hour), extendAsOf)
+		seeded.StoreID, extendAsOf.Add(60*24*time.Hour), extendAsOf, "")
 	require.NoError(t, err)
 	require.Equal(t, int64(1), res.RemindersCleared)
 
@@ -83,7 +83,7 @@ func TestExtend_RefusesConverted(t *testing.T) {
 	trialing := seedExpiringRow(t, db, extendAsOf.Add(10*24*time.Hour), nil)
 
 	_, err := trial.NewExtender(nil).Extend(context.Background(), db,
-		converted.StoreID, extendAsOf.Add(60*24*time.Hour), extendAsOf)
+		converted.StoreID, extendAsOf.Add(60*24*time.Hour), extendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrAlreadyConverted)
 
 	var untouched subscription.StoreSubscription
@@ -91,7 +91,7 @@ func TestExtend_RefusesConverted(t *testing.T) {
 	require.Nil(t, untouched.TrialEndsAt, "a refused extension must not write anything")
 
 	_, err = trial.NewExtender(nil).Extend(context.Background(), db,
-		trialing.StoreID, extendAsOf.Add(60*24*time.Hour), extendAsOf)
+		trialing.StoreID, extendAsOf.Add(60*24*time.Hour), extendAsOf, "")
 	require.NoError(t, err, "the control MUST succeed — otherwise this test passes because everything is refused")
 }
 
@@ -105,7 +105,7 @@ func TestExtend_RefusesStripeManaged(t *testing.T) {
 		func(r *subscription.StoreSubscription) { r.StripeSubscriptionID = &subID })
 
 	_, err := trial.NewExtender(nil).Extend(context.Background(), db,
-		managed.StoreID, extendAsOf.Add(60*24*time.Hour), extendAsOf)
+		managed.StoreID, extendAsOf.Add(60*24*time.Hour), extendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrStripeManaged)
 
 	var untouched subscription.StoreSubscription
@@ -136,7 +136,7 @@ func TestExtend_StatusMatrix(t *testing.T) {
 				func(r *subscription.StoreSubscription) { r.Status = st })
 
 			_, err := trial.NewExtender(nil).Extend(context.Background(), db,
-				seeded.StoreID, extendAsOf.Add(60*24*time.Hour), extendAsOf)
+				seeded.StoreID, extendAsOf.Add(60*24*time.Hour), extendAsOf, "")
 			if tc.wantErr == nil {
 				require.NoError(t, err)
 				return
@@ -154,15 +154,15 @@ func TestExtend_RefusesEndNotInFuture(t *testing.T) {
 
 	seeded := seedExpiringRow(t, db, extendAsOf.Add(10*24*time.Hour), nil)
 
-	_, err := trial.NewExtender(nil).Extend(context.Background(), db, seeded.StoreID, extendAsOf, extendAsOf)
+	_, err := trial.NewExtender(nil).Extend(context.Background(), db, seeded.StoreID, extendAsOf, extendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrEndNotInFuture, "exactly `now` is not in the future")
 
 	_, err = trial.NewExtender(nil).Extend(context.Background(), db,
-		seeded.StoreID, extendAsOf.Add(-time.Hour), extendAsOf)
+		seeded.StoreID, extendAsOf.Add(-time.Hour), extendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrEndNotInFuture)
 
 	_, err = trial.NewExtender(nil).Extend(context.Background(), db,
-		seeded.StoreID, extendAsOf.Add(time.Second), extendAsOf)
+		seeded.StoreID, extendAsOf.Add(time.Second), extendAsOf, "")
 	require.NoError(t, err, "one second after `now` IS in the future")
 }
 
@@ -175,7 +175,7 @@ func TestExtend_AllowsAnEarlierButStillFutureEnd(t *testing.T) {
 	seeded := seedExpiringRow(t, db, extendAsOf.Add(40*24*time.Hour), nil)
 	earlier := extendAsOf.Add(5 * 24 * time.Hour)
 
-	res, err := trial.NewExtender(nil).Extend(context.Background(), db, seeded.StoreID, earlier, extendAsOf)
+	res, err := trial.NewExtender(nil).Extend(context.Background(), db, seeded.StoreID, earlier, extendAsOf, "")
 	require.NoError(t, err)
 	require.True(t, earlier.Equal(res.NewEndsAt))
 }
@@ -185,7 +185,7 @@ func TestExtend_UnknownStore(t *testing.T) {
 	db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores")
 
 	_, err := trial.NewExtender(nil).Extend(context.Background(), db,
-		uuid.New(), extendAsOf.Add(60*24*time.Hour), extendAsOf)
+		uuid.New(), extendAsOf.Add(60*24*time.Hour), extendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrNoSubscription)
 }
 
@@ -206,7 +206,7 @@ func TestExtend_ExtendedTrialSurvivesTheExpiryCron(t *testing.T) {
 	control := seedExpiringRow(t, db, derivedEnd, nil)
 
 	_, err := trial.NewExtender(nil).Extend(context.Background(), db,
-		protected.StoreID, extendAsOf.Add(30*24*time.Hour), extendAsOf)
+		protected.StoreID, extendAsOf.Add(30*24*time.Hour), extendAsOf, "")
 	require.NoError(t, err)
 
 	// Past the ORIGINAL derived end (+10d) but before the NEW extended end
@@ -240,7 +240,7 @@ func TestExtend_RefusesLapsedButNotYetSweptTrial(t *testing.T) {
 	seeded := seedExpiringRow(t, db, lapsed, nil)
 
 	_, err := trial.NewExtender(nil).Extend(context.Background(), db,
-		seeded.StoreID, extendAsOf.Add(30*24*time.Hour), extendAsOf)
+		seeded.StoreID, extendAsOf.Add(30*24*time.Hour), extendAsOf, "")
 	require.ErrorIs(t, err, trial.ErrNotTrialing)
 
 	var untouched subscription.StoreSubscription
@@ -261,7 +261,7 @@ func TestExtend_EmptyStringStripeSubscriptionIDIsNotStripeManaged(t *testing.T) 
 		func(r *subscription.StoreSubscription) { r.StripeSubscriptionID = &empty })
 
 	newEnd := extendAsOf.Add(60 * 24 * time.Hour)
-	res, err := trial.NewExtender(nil).Extend(context.Background(), db, seeded.StoreID, newEnd, extendAsOf)
+	res, err := trial.NewExtender(nil).Extend(context.Background(), db, seeded.StoreID, newEnd, extendAsOf, "")
 	require.NoError(t, err, "an empty-string StripeSubscriptionID must NOT be treated as stripe-managed")
 	require.True(t, newEnd.Equal(res.NewEndsAt))
 }

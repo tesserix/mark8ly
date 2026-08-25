@@ -296,7 +296,7 @@ func TestExtend_RealStripeAndRealPostgres_HoldsLockAcrossNetworkCall(t *testing.
 	newEnd := time.Now().Add(30 * 24 * time.Hour).UTC().Truncate(time.Second)
 
 	start := time.Now()
-	res, err := extender.Extend(ctx, db, storeID, newEnd, time.Now().UTC())
+	res, err := extender.Extend(ctx, db, storeID, newEnd, time.Now().UTC(), "")
 	elapsed := time.Since(start)
 
 	// This IS the number the design's safety argument depends on: the

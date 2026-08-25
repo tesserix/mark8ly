@@ -32,12 +32,14 @@ type stubExtender struct {
 	calls   int
 	gotEnd  time.Time
 	gotStor uuid.UUID
+	gotKey  string
 }
 
-func (s *stubExtender) Extend(_ context.Context, _ *gorm.DB, storeID uuid.UUID, newEnd, _ time.Time) (trial.ExtendResult, error) {
+func (s *stubExtender) Extend(_ context.Context, _ *gorm.DB, storeID uuid.UUID, newEnd, _ time.Time, callerIdemKey string) (trial.ExtendResult, error) {
 	s.calls++
 	s.gotStor = storeID
 	s.gotEnd = newEnd
+	s.gotKey = callerIdemKey
 	if s.err != nil {
 		return trial.ExtendResult{}, s.err
 	}
@@ -465,4 +467,42 @@ func TestExtend_StripeAppliedLocalWriteFailed_Maps500NoAudit(t *testing.T) {
 	// The driver's own text must never be echoed to the caller.
 	msg, _ := got["message"].(string)
 	require.NotContains(t, msg, "boom")
+}
+
+// #358 F1. The handler already scopes the caller's Idempotency-Key header
+// per store and per endpoint; that scoped value must REACH Extend, because
+// the domain derives the key it sends to Stripe from it. Before this it was
+// computed and then dropped, and the Stripe key was derived from the store
+// and the date alone — which made a return to a previously-used date a
+// silent no-op at Stripe.
+func TestTrialExtendPassesScopedIdempotencyKeyToExtend(t *testing.T) {
+	ex := &stubExtender{result: okResult()}
+	rec := postExtend(t, ex, &capturedAudit{}, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	// postExtendWithHeaders sends "test-key-<storeID>" as the header.
+	require.Equal(t,
+		"trial_extend:"+extendStoreID.String()+":test-key-"+extendStoreID.String(),
+		ex.gotKey,
+		"the scoped key must be threaded into Extend, not recomputed or dropped")
+}
+
+// #358 F2. The new refusal maps to 400 with its own code, and the message
+// carries BOTH dates so the operator can retry with an informed one.
+func TestTrialExtendNotAfterStripeMapsTo400(t *testing.T) {
+	domainErr := fmt.Errorf("%w: requested %s, stripe currently holds %s",
+		trial.ErrTrialEndNotAfterStripe,
+		"2026-11-15T00:00:00Z", "2026-12-01T00:00:00Z")
+
+	aud := &capturedAudit{}
+	rec := postExtend(t, &stubExtender{err: domainErr}, aud, extendStoreID.String(), goodBody)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "trial_end_not_after_stripe", body["error"])
+	msg, _ := body["message"].(string)
+	require.Contains(t, msg, "2026-11-15T00:00:00Z")
+	require.Contains(t, msg, "2026-12-01T00:00:00Z")
+	require.Empty(t, aud.events, "a refusal emits no audit row")
 }

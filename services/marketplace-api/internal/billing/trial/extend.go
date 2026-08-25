@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,6 +43,23 @@ var (
 	// CURRENT billing_cycle_anchor — not from now, which is a different
 	// instant whenever the anchor is not near now.
 	ErrTrialEndTooFar = errors.New("trial: new trial end is more than two years from the stripe billing anchor")
+	// ErrTrialEndNotAfterStripe: the requested end is not strictly AFTER the
+	// trial_end Stripe currently holds, so applying it would move a real
+	// merchant's billing date EARLIER — the direction #358 rejects.
+	//
+	// The comparison is deliberately against STRIPE's value and never
+	// against the local derived end: for a never-extended card-backed row
+	// trial_ends_at is NULL, so EndsAt(sub) reports created_at+90d, which is
+	// exactly the stale number that made this reachable. Comparing against
+	// the stale value would refuse every informed retry too and leave the
+	// operator permanently stuck.
+	//
+	// NARROWING, STATED OUTRIGHT: this makes SHORTENING a card-backed trial
+	// impossible through this endpoint. That is deliberate — this route is
+	// "extend", and an accidental shortening bills a merchant early, which
+	// is not recoverable by a later correction. The card-LESS path is
+	// unchanged: shortening a card-less trial stays legal (#358).
+	ErrTrialEndNotAfterStripe = errors.New("trial: new trial end is not after the trial end stripe currently holds")
 	// ErrStripeCall: Stripe was reached for and did not succeed. Nothing was
 	// written locally; the caller may retry.
 	ErrStripeCall = errors.New("trial: stripe call failed")
@@ -143,7 +161,13 @@ func NewExtender(su StripeTrialUpdater) *Extender {
 //
 // now is a parameter rather than time.Now() so callers and tests can pin
 // the boundary exactly; production passes time.Now().UTC().
-func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time) (ExtendResult, error) {
+//
+// callerIdemKey is the caller's own already-scoped idempotency key (the
+// handler's "trial_extend:<store_id>:<Idempotency-Key header>"). It is not
+// used for any local write — the handler owns idempotency_keys — it exists
+// only so the key sent to Stripe can be derived from the REQUEST as well as
+// from the target date. See stripeIdempotencyKey (#358).
+func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, newEnd, now time.Time, callerIdemKey string) (ExtendResult, error) {
 	var out ExtendResult
 
 	// Checked before opening a transaction: it needs no row, and refusing
@@ -221,6 +245,25 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 			if current.Status != "trialing" {
 				return ErrStripeStateConflict
 			}
+
+			// An "extend" must never move a card-backed trial EARLIER.
+			// Stripe's trial_end is the only value that says when the
+			// merchant is actually charged; our local derived end can be
+			// older than it (trial_ends_at is NULL until the first
+			// extension, so the console shows created_at+90d). Without this
+			// an operator picking a date they believe is later than what the
+			// console shows can pull a real billing date forward, and we
+			// would report success with billing_anchor_moved: true (#358).
+			//
+			// Both dates go in the message so the operator can retry
+			// immediately with an informed one instead of guessing.
+			if end.Unix() <= current.TrialEnd {
+				return fmt.Errorf("%w: requested %s, stripe currently holds %s",
+					ErrTrialEndNotAfterStripe,
+					end.Format(time.RFC3339),
+					time.Unix(current.TrialEnd, 0).UTC().Format(time.RFC3339))
+			}
+
 			anchor := time.Unix(current.BillingCycleAnchor, 0).UTC()
 			if end.After(anchor.Add(maxStripeTrialWindow)) {
 				return ErrTrialEndTooFar
@@ -229,16 +272,10 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 			updated, err := e.Stripe.UpdateTrialEnd(sctx, billingstripe.UpdateTrialEndParams{
 				SubscriptionID: stripeID,
 				TrialEnd:       end.Unix(),
-				// Derived from the store AND the absolute target second.
-				// Stripe expires idempotency keys after 24h, so this does
-				// NOT dedupe forever — what it actually buys is that a
-				// replay re-asserts the SAME absolute date rather than
-				// shifting the trial by a relative amount again. Inside
-				// Stripe's 24h window the replay is also deduped outright;
-				// after it, the retry is simply a no-op restatement. A
-				// genuinely different extension of the same store gets a
-				// different key and still moves the date.
-				IdempotencyKey: "trial_extend:" + sub.StoreID.String() + ":" + strconv.FormatInt(end.Unix(), 10),
+				// Derived from the CALLER's key and the absolute target
+				// second — see stripeIdempotencyKey for why both halves are
+				// load-bearing (#358 F1).
+				IdempotencyKey: stripeIdempotencyKey(callerIdemKey, sub.StoreID, end),
 				Metadata: map[string]string{
 					"mark8ly_store_id":  sub.StoreID.String(),
 					"mark8ly_tenant_id": sub.TenantID.String(),
@@ -300,6 +337,43 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 		return ExtendResult{}, err
 	}
 	return out, nil
+}
+
+// stripeIdempotencyKey derives the key handed to Stripe's UpdateTrialEnd.
+//
+// It combines TWO things, and both are load-bearing (#358 F1):
+//
+//   - the caller's already-scoped key, which is unique per operator REQUEST
+//     ("trial_extend:<store_id>:<Idempotency-Key header>"), and
+//   - the absolute target second.
+//
+// The caller's key is what makes two DIFFERENT operator requests distinct
+// even when they name the same date. Deriving the key from the store and
+// the date alone made this sequence, all inside Stripe's 24h idempotency
+// window, a silent no-op: extend to Dec 1 (key A, applied), correct to
+// Nov 1 (key B, applied), then change BACK to Dec 1 — key A again, same
+// subscription, same params, so Stripe replays its CACHED Dec 1 response
+// and changes nothing. The reply then reports Dec 1, so no check on our
+// side can notice; the console would say Dec 1 while Stripe billed Nov 1,
+// charging the merchant EARLIER than shown.
+//
+// The target second is what keeps a caller who reuses one header key across
+// two different bodies from getting the first body's outcome.
+//
+// A GENUINE retry — the same operator resending with the SAME
+// Idempotency-Key header and the same date — still produces the SAME key,
+// so Stripe still dedupes it. That is deliberate: it is what lets a retry
+// after a local-write failure converge instead of extending twice.
+//
+// The empty-key fallback preserves the pre-#358 format for non-HTTP callers
+// (the handler makes the header mandatory, so production always supplies
+// one); it is weaker, which is exactly why the route requires a key.
+func stripeIdempotencyKey(callerIdemKey string, storeID uuid.UUID, end time.Time) string {
+	base := strings.TrimSpace(callerIdemKey)
+	if base == "" {
+		base = "trial_extend:" + storeID.String()
+	}
+	return base + ":" + strconv.FormatInt(end.Unix(), 10)
 }
 
 // stripeSubscriptionID returns the subscription's Stripe id, or "" when it

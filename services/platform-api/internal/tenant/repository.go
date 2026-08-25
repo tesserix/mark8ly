@@ -43,6 +43,20 @@ type Repository interface {
 	// the rows out from under it. If tx is nil, the repository's own db is
 	// used (read-only lookups don't require a transaction).
 	ListStoreIDs(ctx context.Context, tx *gorm.DB, tenantID string) ([]string, error)
+	// SnapshotForTeardown reads the identifying state an operator purge
+	// confirms against, with SELECT ... FOR UPDATE on the tenant row.
+	//
+	// It exists rather than composing GetByID + ListStoreIDs because both
+	// of those read OUTSIDE the caller's transaction: reading in-tx narrows
+	// (does not close) the window for a store created concurrently to be
+	// missed by the confirmation check. Exactly one concurrent purge
+	// succeeding is enforced separately, by DeleteInTx's row-count check
+	// on DELETE — not demonstrated to depend on this FOR UPDATE, which is
+	// kept for the narrower snapshot window and as defence in depth.
+	//
+	// Returns apperrors.NotFound("tenant_not_found") when the tenant does
+	// not exist — including when a concurrent purge just removed it.
+	SnapshotForTeardown(ctx context.Context, tx *gorm.DB, tenantID string) (*TeardownSnapshot, error)
 	// DeleteInTx deletes a tenant and everything that must be reconciled
 	// first. onboarding_sessions.tenant_id is ON DELETE SET NULL, but the
 	// onboarding_sessions_completed_consistency CHECK requires tenant_id to
@@ -93,6 +107,22 @@ type SuspendResult struct {
 	Status         string // the tenant's status AFTER the call
 	StoresAffected int    // number of store rows the cascade touched
 	Changed        bool   // false when the tenant was already in the target state
+}
+
+// StoreRef identifies one store under a tenant: the id an operator purge
+// passes to marketplace-api, and the slug it confirms against.
+type StoreRef struct {
+	ID   string `gorm:"column:id"`
+	Slug string `gorm:"column:slug"`
+}
+
+// TeardownSnapshot is a tenant's identifying state as of the moment the
+// teardown transaction locked its row.
+type TeardownSnapshot struct {
+	TenantID    string
+	Name        string
+	OwnerUserID string
+	Stores      []StoreRef
 }
 
 // gormRepository is the GORM-backed implementation.
@@ -198,6 +228,43 @@ func (r *gormRepository) ListStoreIDs(ctx context.Context, tx *gorm.DB, tenantID
 		return nil, fmt.Errorf("tenant: list store ids: %w", err)
 	}
 	return ids, nil
+}
+
+func (r *gormRepository) SnapshotForTeardown(ctx context.Context, tx *gorm.DB, tenantID string) (*TeardownSnapshot, error) {
+	db := r.db
+	if tx != nil {
+		db = tx
+	}
+
+	var row struct {
+		ID          string
+		Name        string
+		OwnerUserID string
+	}
+	res := db.WithContext(ctx).
+		Raw(`SELECT id, name, owner_user_id FROM tenants WHERE id = ? FOR UPDATE`, tenantID).
+		Scan(&row)
+	if res.Error != nil {
+		return nil, fmt.Errorf("tenant: snapshot for teardown: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return nil, apperrors.NotFound("tenant_not_found",
+			fmt.Sprintf("tenant %q does not exist", tenantID))
+	}
+
+	stores := make([]StoreRef, 0, 4)
+	if err := db.WithContext(ctx).
+		Raw(`SELECT id, slug FROM stores WHERE tenant_id = ? ORDER BY slug`, tenantID).
+		Scan(&stores).Error; err != nil {
+		return nil, fmt.Errorf("tenant: snapshot store refs: %w", err)
+	}
+
+	return &TeardownSnapshot{
+		TenantID:    row.ID,
+		Name:        row.Name,
+		OwnerUserID: row.OwnerUserID,
+		Stores:      stores,
+	}, nil
 }
 
 func (r *gormRepository) DeleteInTx(ctx context.Context, tx *gorm.DB, tenantID string) error {

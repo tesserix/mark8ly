@@ -9,8 +9,8 @@ import (
 )
 
 // TenantDeletedOutboxKind is the dispatch key for the tenant-teardown
-// purge event enqueued by teardownTenantTx. Must match the literal
-// "tenant.deleted" used there.
+// purge event, enqueued both by teardownTenantTx (merchant self-serve
+// delete) and by PurgeTenant (operator-initiated purge, #288).
 const TenantDeletedOutboxKind = "tenant.deleted"
 
 // tenantPurger is the subset of marketplaceapi.VendorClient the handler

@@ -3,6 +3,8 @@ package tenantpurge
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 const testTenantID = "11111111-1111-1111-1111-111111111111"
@@ -20,9 +22,14 @@ var globalDenyTables = []string{
 	"shipping_zones",
 }
 
-// protectedTables must NEVER appear in a purge plan either: deleting them
-// would either error (DB role has DELETE revoked) or defeat their entire
-// compliance purpose. See purge.go's package doc comment for citations.
+// protectedTables must NEVER appear in a purge plan: deleting them would
+// destroy records that must outlive the tenant, or (for webhook_events and
+// the global reference rows) touch data no tenant owns.
+//
+// This test is not a formality. Corrected 2026-08-25: the claim that the
+// database also protects the first four — "DB role has DELETE revoked" —
+// is false. marketplace_api OWNS them with full DELETE. This list is the
+// only enforcement there is.
 var protectedTables = []string{
 	"business_entity_attestations",
 	"app_contract_attestations",
@@ -241,15 +248,39 @@ func TestPurgePlan_Deterministic(t *testing.T) {
 }
 
 func TestPurge_RejectsEmptyTenantID(t *testing.T) {
-	err := Purge(nil, nil, "", nil) //nolint:staticcheck // deliberately nil ctx/db to hit the validation guard before either is used
+	_, err := Purge(nil, nil, "", nil) //nolint:staticcheck // deliberately nil ctx/db to hit the validation guard before either is used
 	if err == nil {
 		t.Fatal("expected an error for empty tenantID, got nil")
 	}
 }
 
 func TestPurge_RejectsNilDB(t *testing.T) {
-	err := Purge(nil, nil, testTenantID, nil) //nolint:staticcheck // deliberately nil ctx to hit the validation guard before it's used
+	_, err := Purge(nil, nil, testTenantID, nil) //nolint:staticcheck // deliberately nil ctx to hit the validation guard before it's used
 	if err == nil {
 		t.Fatal("expected an error for nil db, got nil")
+	}
+}
+
+// The preview and the purge must enumerate exactly the same tables in
+// exactly the same order. Two lists of "every tenant-scoped table" that
+// must agree, with nothing forcing them to, is the defect this package's
+// sibling (subscription/harddelete) already demonstrates.
+func TestCountPlan_MatchesPurgePlanTableForTable(t *testing.T) {
+	purge := purgePlan(testTenantID, testStoreIDs)
+	count := countPlan(testTenantID, testStoreIDs)
+
+	require.Equal(t, len(purge), len(count), "the two plans must have the same length")
+	for i := range purge {
+		require.Equal(t, purge[i].table, count[i].table, "step %d", i)
+		require.Equal(t, purge[i].args, count[i].args, "step %d args", i)
+	}
+}
+
+func TestCountPlan_SelectsRatherThanDeletes(t *testing.T) {
+	for _, s := range countPlan(testTenantID, testStoreIDs) {
+		require.True(t, strings.HasPrefix(s.sql, "SELECT count(*)"),
+			"step %q must count, got %q", s.table, s.sql)
+		require.NotContains(t, s.sql, "DELETE",
+			"a preview step must contain no DELETE at all: %q", s.sql)
 	}
 }

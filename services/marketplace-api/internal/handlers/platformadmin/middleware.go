@@ -33,6 +33,28 @@ const maxBodyBytes = 1 << 20
 // unbounded junk into an integrity record — not a schema constraint.
 const maxIdentityLen = 256
 
+// CapabilityValueChecked reports whether this surface enforces the VALUE
+// of the capability a write presents, as opposed to merely its PRESENCE.
+//
+// It is FALSE. Presence is enforced in RequirePlatformAuth below; value is
+// not. #288's acceptance asks for "the highest-privilege capability the
+// gateway can assert", which is not expressible until the console's
+// capability vocabulary is settled — the same blocker as #333, and the
+// reason #287 declined to invent capability names.
+//
+// This is a SWITCH, not a marker: RequirePlatformAuth's write branch reads
+// it. Flipping it to true, with RequiredWriteCapability set, turns value
+// enforcement on for every write on this surface with no other edit. It
+// lives here, beside the check it controls, so that reading the
+// enforcement matrix in this file tells you the whole truth about it.
+const CapabilityValueChecked = false
+
+// RequiredWriteCapability is the capability value a write must present
+// once CapabilityValueChecked is true. Empty while it is false: an empty
+// required value with enforcement ON would refuse every real request,
+// which is the failure mode #333 has to resolve before this can flip.
+const RequiredWriteCapability = ""
+
 // AuthConfig configures RequirePlatformAuth.
 type AuthConfig struct {
 	// Secret is the shared HMAC key. Empty means NOT CONFIGURED, and every
@@ -153,6 +175,23 @@ func RequirePlatformAuth(cfg AuthConfig) gin.HandlerFunc {
 			if in.Capability == "" {
 				abort(c, http.StatusUnauthorized, "capability_required",
 					"write requests must carry a capability")
+				return
+			}
+			// Capability PRESENCE is enforced (above). Capability VALUE is
+			// NOT — pending #333. Every write on this surface, including
+			// the irreversible tenant purge (#288), is admitted on ANY
+			// non-empty capability string; the value is recorded on the
+			// audit row and gates nothing.
+			//
+			// That is deliberate, not an oversight: the console's
+			// capability vocabulary is not settled, and hard-coding a
+			// value here would refuse every real request. This block is
+			// the gate, wired and inert: when #333 lands, set
+			// RequiredWriteCapability and flip CapabilityValueChecked, and
+			// enforcement starts here — nothing else needs writing.
+			if CapabilityValueChecked && in.Capability != RequiredWriteCapability {
+				abort(c, http.StatusForbidden, "capability_insufficient",
+					"the presented capability does not authorize this request")
 				return
 			}
 		}

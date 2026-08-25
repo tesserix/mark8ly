@@ -15,9 +15,11 @@ package tenantpurge_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/tenantpurge"
@@ -55,18 +57,36 @@ var domainTablesToCleanup = []string{
 	"fx_rates",
 }
 
+// seedStore inserts one store row for tenantID and returns its id. Extracted
+// so every fixture in this file creates stores through one place — migration
+// 000058 declares storefront_customer_portal_secret CHAR(64) NOT NULL with
+// no DEFAULT, so a naive `INSERT INTO stores` written elsewhere fails; this
+// is the one INSERT that gets the encode(gen_random_bytes(32), 'hex')
+// workaround right, and seedPurgeFixture reuses it rather than duplicating
+// it.
+func seedStore(t *testing.T, db *gorm.DB, tenantID string) string {
+	t.Helper()
+	storeID := uuid.NewString()
+	if err := db.Exec(`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, storefront_customer_portal_secret)
+	      VALUES (?, ?, ?, 'Seed Store', 'US', 'USD', 'UTC', 'active', encode(gen_random_bytes(32), 'hex'))`,
+		storeID, tenantID, "seed-store-"+storeID[:8]).Error; err != nil {
+		t.Fatalf("seedStore: %v", err)
+	}
+	return storeID
+}
+
 func seedTenant(t *testing.T, db *gorm.DB, tenantID string) seededTenant {
 	t.Helper()
 
 	s := seededTenant{
 		tenantID:  tenantID,
-		storeID:   uuid.NewString(),
 		orderID:   uuid.NewString(),
 		returnID:  uuid.NewString(),
 		productID: uuid.NewString(),
 		reviewID:  uuid.NewString(),
 		vendorID:  uuid.NewString(),
 	}
+	s.storeID = seedStore(t, db, s.tenantID)
 
 	exec := func(sql string, args ...any) {
 		t.Helper()
@@ -74,11 +94,6 @@ func seedTenant(t *testing.T, db *gorm.DB, tenantID string) seededTenant {
 			t.Fatalf("seed: %s: %v", sql, err)
 		}
 	}
-
-	// stores (group 6 root)
-	exec(`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, storefront_customer_portal_secret)
-	      VALUES (?, ?, ?, 'Seed Store', 'US', 'USD', 'UTC', 'active', encode(gen_random_bytes(32), 'hex'))`,
-		s.storeID, s.tenantID, "seed-store-"+s.storeID[:8])
 
 	// group 6 — CASCADE-swept config table (proves stores CASCADE reaches it)
 	exec(`INSERT INTO coupons (id, tenant_id, store_id, code, title, type, value, per_customer, target_type, stackable, status)
@@ -147,6 +162,73 @@ func seedTenant(t *testing.T, db *gorm.DB, tenantID string) seededTenant {
 	return s
 }
 
+// seedPurgeFixture seeds a brand-new tenant with EXACTLY the requested
+// per-table row counts and nothing else, so a caller can assert on precise
+// row counts (not just presence) and on TotalRows as their sum.
+//
+// The tenant's rows reference its OWN store (via seedStore) — this must be
+// the tenant's own store, not a foreign one, because storeIDs is passed
+// straight through to Purge exactly as the production caller
+// (internal/handlers/internalsvc/tenant_purge.go, fed by platform-api's
+// teardown snapshot of the tenant's own stores) would supply it. Four
+// storeScoped steps in purgePlan (csv_import_jobs, promo_redemptions,
+// campaign_email_budget, store_transactional_counter) have NO tenant_id
+// column at all — store_id is their only scoping — so handing Purge a
+// foreign tenant's store id there would be a fixture-only "safe" case that
+// silently permits an unsafe call shape everywhere else. The store row
+// itself is therefore always counted as part of the fixture's own total —
+// see the "stores" entries added to TotalRows at each call site below.
+//
+// Supported keys: "products", "orders", "reviews" (reviews requires
+// "products" > 0 to have a product to attach to — seedPurgeFixture fails
+// fast if that's violated).
+func seedPurgeFixture(t *testing.T, db *gorm.DB, counts map[string]int) (string, []string) {
+	t.Helper()
+
+	tenantID := uuid.NewString()
+	storeID := seedStore(t, db, tenantID) // the tenant's OWN store — matches how Purge is actually called in production
+
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if err := db.Exec(sql, args...).Error; err != nil {
+			t.Fatalf("seedPurgeFixture: %s: %v", sql, err)
+		}
+	}
+
+	var productIDs []string
+	for i := 0; i < counts["products"]; i++ {
+		id := uuid.NewString()
+		// vendor_id is NOT NULL (migration 000028) but carries no enforced
+		// FK to vendors(id) (see purge.go's package doc comment) — a fresh
+		// UUID satisfies the constraint without needing a vendors row.
+		exec(`INSERT INTO products (id, tenant_id, store_id, handle, title, status, vendor_id, tags)
+		      VALUES (?, ?, ?, ?, 'Seed Product', 'draft', ?, '{}')`,
+			id, tenantID, storeID, fmt.Sprintf("seed-product-%d-%s", i, id[:8]), uuid.NewString())
+		productIDs = append(productIDs, id)
+	}
+
+	for i := 0; i < counts["orders"]; i++ {
+		id := uuid.NewString()
+		exec(`INSERT INTO orders (id, tenant_id, store_id, order_number, idempotency_key, customer_email, subtotal, grand_total, currency_code)
+		      VALUES (?, ?, ?, ?, ?, 'buyer@example.com', 100, 100, 'USD')`,
+			id, tenantID, storeID, fmt.Sprintf("SEED-%d-%s", i, id[:8]), "idem-"+id)
+	}
+
+	if n := counts["reviews"]; n > 0 {
+		if len(productIDs) == 0 {
+			t.Fatalf("seedPurgeFixture: reviews requested (%d) but no products seeded to attach them to", n)
+		}
+		for i := 0; i < n; i++ {
+			id := uuid.NewString()
+			exec(`INSERT INTO reviews (id, tenant_id, store_id, product_id, customer_name, customer_email, rating, content, status)
+			      VALUES (?, ?, ?, ?, 'Seed Customer', ?, 5, 'Great!', 'published')`,
+				id, tenantID, storeID, productIDs[0], fmt.Sprintf("seed-review-%d-%s@example.com", i, id[:8]))
+		}
+	}
+
+	return tenantID, []string{storeID}
+}
+
 func countRows(t *testing.T, db *gorm.DB, table, whereCol, id string) int64 {
 	t.Helper()
 	var n int64
@@ -175,7 +257,7 @@ func TestIntegration_Purge_DeletesTenantLeavesGlobalAndOtherTenantIntact(t *test
 	tenant1 := seedTenant(t, db, uuid.NewString())
 	tenant2 := seedTenant(t, db, uuid.NewString())
 
-	if err := tenantpurge.Purge(ctx, db, tenant1.tenantID, []string{tenant1.storeID}); err != nil {
+	if _, err := tenantpurge.Purge(ctx, db, tenant1.tenantID, []string{tenant1.storeID}); err != nil {
 		t.Fatalf("Purge tenant1: %v", err)
 	}
 
@@ -210,10 +292,136 @@ func TestIntegration_Purge_DeletesTenantLeavesGlobalAndOtherTenantIntact(t *test
 	}
 
 	// idempotent: purging an already-purged tenant is a nil-error no-op.
-	if err := tenantpurge.Purge(ctx, db, tenant1.tenantID, []string{tenant1.storeID}); err != nil {
+	if _, err := tenantpurge.Purge(ctx, db, tenant1.tenantID, []string{tenant1.storeID}); err != nil {
 		t.Fatalf("second Purge (idempotency check) returned error: %v", err)
 	}
 	if n := countRows(t, db, "stores", "tenant_id", tenant1.tenantID); n != 0 {
 		t.Errorf("expected tenant1 to still have 0 stores after the idempotent re-run, got %d", n)
 	}
+}
+
+// Row counts are VALUES, not presence. A report assembled by map lookup
+// returns a fabricated 0 for a missing key, and a test asserting the key
+// exists passes on it — so every seeded table gets a DISTINCT non-zero
+// count and the numbers are asserted.
+func TestPurge_ReportsPerTableRowCounts(t *testing.T) {
+	db := testdb.NewDB(t)
+	tenantID, storeIDs := seedPurgeFixture(t, db, map[string]int{
+		"products": 3,
+		"orders":   5,
+		"reviews":  2,
+	})
+
+	rep, err := tenantpurge.Purge(context.Background(), db, tenantID, storeIDs)
+	require.NoError(t, err)
+
+	got := map[string]int64{}
+	for _, tr := range rep.Tables {
+		got[tr.Table] = tr.RowsDeleted
+	}
+	require.EqualValues(t, 3, got["products"])
+	require.EqualValues(t, 5, got["orders"])
+	require.EqualValues(t, 2, got["reviews"])
+	require.EqualValues(t, 1, got["stores"])
+	// 11 = 3 products + 5 orders + 2 reviews + the tenant's own seeded store
+	// (seedPurgeFixture seeds the store under this SAME tenant, matching
+	// how Purge is actually called in production — see seedPurgeFixture's
+	// doc comment).
+	require.EqualValues(t, 11, rep.TotalRows, "TotalRows must be the sum, not a count of tables")
+
+	// NOTE: this file is `package tenantpurge_test` (EXTERNAL), so purgePlan
+	// is not reachable here — the plan-vs-preview parity property is
+	// asserted by TestCountPlan_MatchesPurgePlanTableForTable in the
+	// INTERNAL purge_test.go, where it compiles. Here we assert only that
+	// every step reports, including the zero-row ones: an omitted zero and
+	// an unenumerated table are indistinguishable to a reader.
+	prev, err := tenantpurge.Count(context.Background(), db, tenantID, storeIDs)
+	require.NoError(t, err)
+	require.Equal(t, len(prev.Tables), len(rep.Tables))
+	require.Greater(t, len(rep.Tables), 50, "the plan enumerates ~53 tables explicitly")
+}
+
+func TestCount_ReportsTheSameRowsAndDestroysNothing(t *testing.T) {
+	db := testdb.NewDB(t)
+	tenantID, storeIDs := seedPurgeFixture(t, db, map[string]int{"products": 3, "orders": 5})
+
+	rep, err := tenantpurge.Count(context.Background(), db, tenantID, storeIDs)
+	require.NoError(t, err)
+	// 9 = 3 products + 5 orders + the tenant's own seeded store.
+	require.EqualValues(t, 9, rep.TotalRows)
+
+	var products int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM products WHERE tenant_id = ?`, tenantID).Scan(&products).Error)
+	require.EqualValues(t, 3, products, "Count must not delete anything")
+
+	var stores int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM stores WHERE tenant_id = ?`, tenantID).Scan(&stores).Error)
+	require.EqualValues(t, 1, stores, "Count must not delete the tenant's store either")
+}
+
+// A second purge is a no-op, not a partial re-run (#288 AC4).
+func TestPurge_SecondRunReportsZeroAndSucceeds(t *testing.T) {
+	db := testdb.NewDB(t)
+	tenantID, storeIDs := seedPurgeFixture(t, db, map[string]int{"products": 3})
+
+	_, err := tenantpurge.Purge(context.Background(), db, tenantID, storeIDs)
+	require.NoError(t, err)
+
+	rep, err := tenantpurge.Purge(context.Background(), db, tenantID, storeIDs)
+	require.NoError(t, err)
+	require.EqualValues(t, 0, rep.TotalRows)
+}
+
+// storeScoped tables (csv_import_jobs, promo_redemptions,
+// campaign_email_budget, store_transactional_counter) have NO tenant_id
+// column at all — `WHERE store_id IN (...)` is their ONLY scoping. If
+// Purge were ever handed a store id that isn't actually the target
+// tenant's own, or if storeScoped's WHERE clause regressed to something
+// unconditional, these tables would delete another tenant's rows with no
+// tenant_id check anywhere to catch it. One store cannot prove store
+// scoping (a bug that matches on any store would still pass), and one
+// tenant cannot prove tenant isolation (there'd be no second tenant's row
+// to leak into) — so this test seeds two tenants, each with their own
+// store, and purges only one.
+func TestPurge_StoreScopedTablesAreScopedToTheTenantsOwnStores(t *testing.T) {
+	// Cleanup list, not a bare NewDB(t): this test deliberately leaves
+	// tenant B's rows behind (that is the assertion), so without it every
+	// local run accumulates another store_transactional_counter row and
+	// another store. store_transactional_counter has no FK to stores, so
+	// the stores TRUNCATE ... CASCADE does not reach it — it has to be
+	// named. Child before parent, as testdb.NewDB documents.
+	db := testdb.NewDB(t, "store_transactional_counter", "stores")
+	ctx := context.Background()
+
+	tenantA := uuid.NewString()
+	storeA := seedStore(t, db, tenantA)
+	tenantB := uuid.NewString()
+	storeB := seedStore(t, db, tenantB)
+
+	// store_transactional_counter: (store_id uuid NOT NULL, month date NOT
+	// NULL, sent integer NOT NULL DEFAULT 0) — no FKs at all, so a bare
+	// INSERT is enough.
+	require.NoError(t, db.Exec(
+		`INSERT INTO store_transactional_counter (store_id, month, sent) VALUES (?, '2026-08-01', 7)`,
+		storeA).Error)
+	require.NoError(t, db.Exec(
+		`INSERT INTO store_transactional_counter (store_id, month, sent) VALUES (?, '2026-08-01', 7)`,
+		storeB).Error)
+
+	rep, err := tenantpurge.Purge(ctx, db, tenantA, []string{storeA})
+	require.NoError(t, err)
+
+	var got int64 = -1
+	for _, tr := range rep.Tables {
+		if tr.Table == "store_transactional_counter" {
+			got = tr.RowsDeleted
+		}
+	}
+	require.EqualValues(t, 1, got, "report must show exactly 1 row deleted from store_transactional_counter, not merely non-zero")
+
+	var countA, countB int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM store_transactional_counter WHERE store_id = ?`, storeA).Scan(&countA).Error)
+	require.NoError(t, db.Raw(`SELECT count(*) FROM store_transactional_counter WHERE store_id = ?`, storeB).Scan(&countB).Error)
+	require.EqualValues(t, 0, countA, "tenant A's store_transactional_counter row must be gone")
+	require.EqualValues(t, 1, countB, "tenant B's store_transactional_counter row must survive — cross-tenant leak")
 }

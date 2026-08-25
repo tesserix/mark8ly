@@ -2,9 +2,11 @@ package account
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
@@ -14,6 +16,7 @@ import (
 // can inject a fake and exercise the handler without a real DB/FGA/GIP.
 type accountDeleter interface {
 	DeleteAccount(ctx context.Context, tenantID, actorUID string) error
+	PurgeTenant(ctx context.Context, tenantID string, storeSlugs []string) (*PurgeResult, error)
 }
 
 // Handler is the HTTP layer for account teardown.
@@ -50,6 +53,80 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// teardownRequest is the body for POST /internal/tenants/:id/teardown.
+//
+// ABSENT store_slugs and an EMPTY array mean different things and both
+// must survive to the check: absent is a client that dropped the
+// confirmation and must fail; empty is a deliberate assertion that this
+// tenant has no stores, and matches only a tenant that genuinely has
+// none. encoding/json already distinguishes the two without the pointer
+// (nil for absent, a non-nil empty slice for []); StoreSlugs is a POINTER
+// anyway so the requirement lives in the TYPE rather than depending on a
+// JSON decoder's nil-vs-empty convention for slices.
+type teardownRequest struct {
+	StoreSlugs *[]string `json:"store_slugs"`
+}
+
+// RegisterOperator mounts the operator-initiated teardown.
+//
+// Mounted on the STRICT internal group (which answers 503 when the shared
+// secret is unset), and mounted UNCONDITIONALLY — unlike Register, whose
+// merchant route is gated on FGA and GIP being wired. An absent route
+// answers 404, and the caller cannot tell that apart from "no such
+// tenant", which on an irreversible endpoint would be a silent lie.
+// PurgeTenant tolerates nil FGA and GIP clients for exactly this reason.
+func (h *Handler) RegisterOperator(internal *gin.RouterGroup) {
+	internal.Group("/tenants").POST("/:id/teardown", h.teardown)
+}
+
+func (h *Handler) teardown(c *gin.Context) {
+	// Validate the path parameter BEFORE it reaches a `WHERE id = ?`.
+	// PurgeTenant passes it straight into a uuid-typed comparison, so a
+	// non-UUID raises a Postgres cast error and respondError answers 500 —
+	// a malformed request reported as a server fault. marketplace-api
+	// parses the id before ever calling here, but this STRICT internal
+	// group is reachable in-cluster by anything holding the shared secret.
+	// Same shape and same error body as the marketplace-side handler
+	// (internal/handlers/platformadmin/tenant_purge.go).
+	if _, err := uuid.Parse(c.Param("id")); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid_tenant_id", "message": "id must be a UUID", "field": "id",
+		})
+		return
+	}
+
+	var req teardownRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.StoreSlugs == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_request",
+			"message": "store_slugs is required; send [] to assert the tenant has no stores",
+		})
+		return
+	}
+
+	res, err := h.svc.PurgeTenant(c.Request.Context(), c.Param("id"), *req.StoreSlugs)
+	if err != nil {
+		var me *MismatchError
+		if errors.As(err, &me) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":    "confirmation_mismatch",
+				"message":  "supplied store_slugs do not match the tenant's current stores",
+				"expected": me.Expected,
+			})
+			return
+		}
+		respondError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"tenant_id":   res.TenantID,
+		"tenant_name": res.TenantName,
+		"store_ids":   res.StoreIDs,
+		"store_slugs": res.StoreSlugs,
+	}})
 }
 
 // respondError maps apperrors typed errors to their HTTP status. This is

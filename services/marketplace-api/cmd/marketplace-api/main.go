@@ -1978,6 +1978,7 @@ func main() {
 		var onboardingFunnelClient platformadmin.OnboardingFunnel
 		var estateCountsClient platformadmin.EstateCounts
 		var tenantLifecycleClient platformadmin.TenantLifecycle
+		var tenantTeardownClient platformadmin.TenantTeardown
 		if cfg.PlatformAPIURL != "" {
 			tenantDirectoryClient = tenantdirectory.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
@@ -1985,8 +1986,20 @@ func main() {
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			estateCountsClient = estatecounts.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
-			tenantLifecycleClient = tenantlifecycle.NewClient(
+			// One construction, assigned to both interfaces: the
+			// TenantLifecycle interface Register uses for suspend/unsuspend
+			// doesn't include Teardown, so purge needs the concrete client
+			// too. Assigning only inside this block (rather than declaring
+			// a *tenantlifecycle.Client at outer scope and handing it to
+			// both fields unconditionally) keeps tenantTeardownClient a
+			// TRUE nil interface when PlatformAPIURL is unset — a nil
+			// *tenantlifecycle.Client assigned into an interface field is a
+			// non-nil interface value, which would defeat Register's
+			// TenantTeardown != nil mount guard (#323).
+			lifecycleClient := tenantlifecycle.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+			tenantLifecycleClient = lifecycleClient
+			tenantTeardownClient = lifecycleClient
 		}
 		platformSubscriptionRepo := subscription.NewRepository()
 		platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
@@ -2006,6 +2019,8 @@ func main() {
 			Tickets:               ticketRepo,
 			Notifications:         notificationRepo,
 			TrialExtender:         platformadmin.TrialExtenderFunc(trial.Extend),
+			TenantTeardown:        tenantTeardownClient,
+			Purger:                tenantpurge.NewGormPurger(conn),
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2070,7 +2085,8 @@ func main() {
 		// must match what VendorClient.PurgeTenant signs with, NOT
 		// AuditIngestSecret (different caller, different secret).
 		internalsvc.NewTenantPurgeHandler(func(ctx context.Context, tenantID string, storeIDs []string) error {
-			return tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+			_, err := tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+			return err
 		}).Register(r.Group("/internal"), cfg.InternalAuthSecret)
 		if stripeBillingWebhookHandler != nil {
 			r.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
@@ -2092,6 +2108,7 @@ func main() {
 			var onboardingFunnelClient platformadmin.OnboardingFunnel
 			var estateCountsClient platformadmin.EstateCounts
 			var tenantLifecycleClient platformadmin.TenantLifecycle
+			var tenantTeardownClient platformadmin.TenantTeardown
 			if cfg.PlatformAPIURL != "" {
 				tenantDirectoryClient = tenantdirectory.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
@@ -2099,8 +2116,14 @@ func main() {
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 				estateCountsClient = estatecounts.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
-				tenantLifecycleClient = tenantlifecycle.NewClient(
+				// One construction, assigned to both interfaces — see the
+				// matching comment on the mode.Both branch above for why a
+				// nil *tenantlifecycle.Client must never reach
+				// tenantTeardownClient unconditionally (#323).
+				lifecycleClient := tenantlifecycle.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+				tenantLifecycleClient = lifecycleClient
+				tenantTeardownClient = lifecycleClient
 			}
 			platformSubscriptionRepo := subscription.NewRepository()
 			platformadmin.Register(engine.Group("/api/v1/platform"), platformadmin.Deps{
@@ -2120,6 +2143,8 @@ func main() {
 				Tickets:               ticketRepo,
 				Notifications:         notificationRepo,
 				TrialExtender:         platformadmin.TrialExtenderFunc(trial.Extend),
+				TenantTeardown:        tenantTeardownClient,
+				Purger:                tenantpurge.NewGormPurger(conn),
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the
@@ -2195,7 +2220,8 @@ func main() {
 			// must match what VendorClient.PurgeTenant signs with, NOT
 			// AuditIngestSecret (different caller, different secret).
 			internalsvc.NewTenantPurgeHandler(func(ctx context.Context, tenantID string, storeIDs []string) error {
-				return tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+				_, err := tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+				return err
 			}).Register(engine.Group("/internal"), cfg.InternalAuthSecret)
 			// Reverse custom-domain lookup (domain → slug). The admin
 			// middleware uses this to verify a custom-admin host

@@ -408,3 +408,43 @@ func TestAllUnauthenticatedBodiesAreByteIdentical(t *testing.T) {
 	require.Equal(t, missingRec.Body.String(), oversizedRec.Body.String())
 	require.Equal(t, missingRec.Body.String(), replayRec.Body.String())
 }
+
+// withCapability overrides the signed capability value.
+func withCapability(v string) reqOpt {
+	return func(in *platformadmin.SignatureInput) { in.Capability = v }
+}
+
+// Capability PRESENCE is enforced; capability VALUE is not — pending #333.
+// This test pins BOTH halves so the enforcement matrix cannot drift
+// silently in either direction:
+//
+//   - the declared switch is off, and
+//   - with it off, an arbitrary capability string admits a write.
+//
+// MUTATION: flip CapabilityValueChecked to true in middleware.go and the
+// second half fails with 403 capability_insufficient — which is the point.
+// The constant is a real switch wired to the real check, not a marker;
+// a future #333 implementer flips it and sets RequiredWriteCapability
+// rather than writing the gate from scratch.
+func TestWriteCapabilityValueIsRecordedButNotEnforced(t *testing.T) {
+	require.False(t, platformadmin.CapabilityValueChecked,
+		"value enforcement is off pending #333; if this is now on, the second half of this test and the note in middleware.go both need updating")
+
+	r := newRouter(t, testSecret, newMemNonces())
+	body := []byte(`{"x":1}`)
+
+	// A capability nobody has ever defined, on an otherwise valid signed
+	// write. It is admitted, and the value is carried through to the audit
+	// context rather than checked against anything.
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodPost, "/admin/ping", body,
+		withCapability("not.a.real.capability")))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	// And the read path reports the value it recorded, unmodified.
+	readRec := httptest.NewRecorder()
+	r.ServeHTTP(readRec, signedRequest(t, http.MethodGet, "/admin/ping", nil,
+		withCapability("not.a.real.capability")))
+	require.Equal(t, http.StatusOK, readRec.Code)
+	require.Contains(t, readRec.Body.String(), `"capability":"not.a.real.capability"`)
+}

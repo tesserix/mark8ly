@@ -156,6 +156,13 @@ func (f *fakeRepo) Unsuspend(ctx context.Context, tenantID string) (*SuspendResu
 	return nil, apperrors.Internal("not_implemented", "fakeRepo.Unsuspend is not implemented")
 }
 
+// SnapshotForTeardown is not exercised by these service-level unit tests
+// (covered by integration tests); this stub exists only to satisfy the
+// Repository interface.
+func (f *fakeRepo) SnapshotForTeardown(ctx context.Context, tx *gorm.DB, tenantID string) (*TeardownSnapshot, error) {
+	return nil, apperrors.Internal("not_implemented", "fakeRepo.SnapshotForTeardown is not implemented")
+}
+
 // Phase Q: slug-related tests (IsSlugAvailable, SlugExists) moved
 // to the store package along with the slug itself. See
 // internal/store for equivalent coverage.

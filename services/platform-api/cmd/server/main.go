@@ -290,20 +290,24 @@ func main() {
 	})
 	invitationHandler := invitation.NewHandler(invitationSvc)
 
-	// ─── Account teardown (Task 5) ──────────────────────────────────────
-	// DeleteAccount unconditionally calls both fga.GetRole and
-	// gip.DeleteAccount with no internal nil-check (unlike tenantHandler,
-	// which nil-checks fga itself — see its doc comment), so wiring this
-	// handler with either dependency missing would panic on first call
-	// rather than degrading gracefully. Gate it the same way authHandler
-	// is gated above: skip registering the route in envs that lack the
-	// GIP credentials or a live OpenFGA store, and log why.
-	var accountHandler *account.Handler
-	if fga != nil && gipAdmin != nil {
-		accountSvc := account.NewService(conn, tenantRepo, fga, gipAdmin, outbox.Enqueue, log)
-		accountHandler = account.NewHandler(accountSvc)
-	} else {
-		log.Warn("account: teardown endpoint disabled — missing OpenFGA store or GIP_PROJECT_ID/GIP_TENANT_ID/GIP_WEB_API_KEY")
+	// ─── Account teardown (Task 5) / operator tenant purge (#288) ───────
+	// The operator teardown path (#288) needs neither FGA nor GIP to
+	// function — its cleanup of both is best-effort post-commit — so the
+	// service is constructed unconditionally and its route is mounted
+	// unconditionally below. Only the MERCHANT DeleteAccount route stays
+	// gated: it calls fga.GetRole and gip.DeleteAccount with no internal
+	// nil-check and would panic on first call.
+	//
+	// gipAdmin is passed to newAccountService as the CONCRETE pointer on
+	// purpose: it converts a nil one into a true nil interface rather than
+	// a non-nil interface holding a nil pointer, which would defeat
+	// cleanupAfterTeardown's nil guard and panic AFTER the teardown
+	// transaction commits. See newAccountService.
+	accountSvc := newAccountService(conn, tenantRepo, fga, gipAdmin, outbox.Enqueue, log)
+	accountHandler := account.NewHandler(accountSvc)
+	merchantAccountRoutes := fga != nil && gipAdmin != nil
+	if !merchantAccountRoutes {
+		log.Warn("account: merchant teardown endpoint disabled — missing OpenFGA store or GIP_PROJECT_ID/GIP_TENANT_ID/GIP_WEB_API_KEY; operator teardown (#288) stays mounted")
 	}
 
 	// ─── Outbox drainer ────────────────────────────────────────────────
@@ -355,6 +359,7 @@ func main() {
 	tenantHandler.RegisterLifecycle(strictInternal)
 	onboardingHandler.RegisterAnalytics(strictInternal)
 	estate.NewHandler(estate.NewRepository(conn)).Register(strictInternal)
+	accountHandler.RegisterOperator(strictInternal)
 
 	locationHandler.Register(v1)
 	tenantHandler.Register(v1, internal)
@@ -365,7 +370,7 @@ func main() {
 	if authHandler != nil {
 		authHandler.Register(internal)
 	}
-	if accountHandler != nil {
+	if merchantAccountRoutes {
 		accountHandler.Register(internal)
 	}
 	notification.NewHandler(templateLoader, sender, cfg.EmailFrom).Register(internal)

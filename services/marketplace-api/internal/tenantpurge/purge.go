@@ -41,23 +41,44 @@
 //   - promo_codes (admin-created Stripe coupon catalog, no tenant_id)
 //   - signup_anomaly_log (global daily cron marker, no tenant_id)
 //
-// Legally-protected / append-only tables — deleting these would either
-// error (DB role has DELETE revoked) or defeat their entire purpose
-// (records that must outlive the tenant for compliance):
-//   - business_entity_attestations — migration 000045 REVOKEs DELETE from
-//     both the marketplace_user role and PUBLIC; a DELETE against it
-//     errors under the app's DB role.
-//   - app_contract_attestations — migration 000075 mirrors the same
-//     REVOKE DELETE pattern (Apple 4.2.6 attestation log).
-//   - subscription_plan_change_audit — migration 000050 REVOKEs UPDATE,
-//     DELETE FROM PUBLIC; append-only billing-change audit trail.
+// Legally-protected / append-only tables — excluded because deleting them
+// would destroy records that must outlive the tenant for compliance.
+//
+// NOTE, corrected 2026-08-25 against production: an earlier version of
+// this comment said these tables were ALSO protected by the database,
+// because "the DB role has DELETE revoked". That is FALSE for all four.
+// The service connects as `marketplace_api`, which OWNS every one of them
+// with full arwdDxt — migration 000045/000075/000050's `REVOKE ... FROM
+// PUBLIC` never applied to the owner. Nothing in the database stops a
+// future step from deleting them. This Go list and purge_test.go's
+// protectedTables are the ONLY things that do.
+//
+//   - business_entity_attestations — KYB attestation log.
+//   - app_contract_attestations — Apple 4.2.6 attestation log.
+//   - subscription_plan_change_audit — append-only billing-change trail.
 //   - billing_archive — populated by internal/billingarchive.Builder AFTER
 //     a store hard-delete specifically so it SURVIVES the tenant's own
 //     deletion (7-year GDPR/tax retention, §23.2). It is keyed by
 //     original_tenant_id/original_store_id, not tenant_id/store_id — that
 //     rename is itself a signal it has a different lifecycle. Purging it
-//     here would delete the compliance record the purge is supposed to
-//     leave behind.
+//     here would delete the compliance record the purge is meant to leave
+//     behind.
+//
+// Partially excluded:
+//   - audit_logs rows with actor_type = 'operator'. These are PLATFORM
+//     GOVERNANCE records — what an operator did TO a tenant — not tenant
+//     data, and they must outlive the tenant for the same reason
+//     billing_archive does. Load-bearing, not tidiness: the purge writes
+//     its own tenant.purged row AFTER the purge transaction commits, and
+//     platform-api's outbox drainer re-runs this same plan ~1s later as
+//     the durability backstop. Without the predicate the backstop deletes
+//     the record of the destruction it is backing up. See the inline
+//     comment on the audit_logs step in group 5.
+//
+// break_glass_lockouts is the one table where the privilege claim IS
+// true: it is owned by `postgres` in production, so marketplace_api has
+// no DELETE and including it would abort the whole single-tx purge
+// (SQLSTATE 42501). See the inline comment in group 5.
 //
 // See task-1-report.md for the full per-table FK/scoping audit.
 package tenantpurge
@@ -81,6 +102,23 @@ type deleteStep struct {
 	args []any
 }
 
+// TableResult is one table's contribution to a purge or a preview.
+type TableResult struct {
+	Table       string `json:"table"`
+	RowsDeleted int64  `json:"rows"`
+}
+
+// Report is what a purge destroyed, or what a preview would destroy.
+//
+// It lists EVERY step in the plan, including the zero-row ones: to a
+// reader, an omitted zero and a table the plan never reaches are
+// indistinguishable, and showing what the plan reaches is the whole point
+// of the preview.
+type Report struct {
+	Tables    []TableResult `json:"tables"`
+	TotalRows int64         `json:"total_rows"`
+}
+
 // Purge deletes every row belonging to tenantID across every
 // marketplace-api domain table, inside a single transaction, in FK-safe
 // order. It never touches global reference tables or the legally-protected
@@ -90,24 +128,99 @@ type deleteStep struct {
 // Purge is idempotent: every delete is a `WHERE` clause that matches zero
 // rows on a second run, so calling Purge twice for the same tenant is safe
 // and returns nil both times.
-func Purge(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string) error {
+func Purge(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string) (Report, error) {
 	if db == nil {
-		return fmt.Errorf("tenantpurge: db must not be nil")
+		return Report{}, fmt.Errorf("tenantpurge: db must not be nil")
 	}
 	if tenantID == "" {
-		return fmt.Errorf("tenantpurge: tenantID must not be empty")
+		return Report{}, fmt.Errorf("tenantpurge: tenantID must not be empty")
 	}
 
 	steps := purgePlan(tenantID, storeIDs)
+	rep := Report{Tables: make([]TableResult, 0, len(steps))}
 
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		rep.Tables = rep.Tables[:0]
+		rep.TotalRows = 0
 		for _, step := range steps {
-			if err := tx.Exec(step.sql, step.args...).Error; err != nil {
-				return fmt.Errorf("tenantpurge: delete from %s: %w", step.table, err)
+			res := tx.Exec(step.sql, step.args...)
+			if res.Error != nil {
+				return fmt.Errorf("tenantpurge: delete from %s: %w", step.table, res.Error)
 			}
+			rep.Tables = append(rep.Tables, TableResult{Table: step.table, RowsDeleted: res.RowsAffected})
+			rep.TotalRows += res.RowsAffected
 		}
 		return nil
 	})
+	if err != nil {
+		return Report{}, err
+	}
+	return rep, nil
+}
+
+// Count runs the purge plan's enumeration with SELECT count(*) in place of
+// DELETE. It destroys nothing and is what backs the operator preview
+// (#288). It derives from countPlan, which derives from the same table
+// list as purgePlan, so a preview can never enumerate a different set of
+// tables from the purge it previews.
+func Count(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string) (Report, error) {
+	if db == nil {
+		return Report{}, fmt.Errorf("tenantpurge: db must not be nil")
+	}
+	if tenantID == "" {
+		return Report{}, fmt.Errorf("tenantpurge: tenantID must not be empty")
+	}
+
+	steps := countPlan(tenantID, storeIDs)
+	rep := Report{Tables: make([]TableResult, 0, len(steps))}
+	for _, step := range steps {
+		var n int64
+		if err := db.WithContext(ctx).Raw(step.sql, step.args...).Scan(&n).Error; err != nil {
+			return Report{}, fmt.Errorf("tenantpurge: count %s: %w", step.table, err)
+		}
+		rep.Tables = append(rep.Tables, TableResult{Table: step.table, RowsDeleted: n})
+		rep.TotalRows += n
+	}
+	return rep, nil
+}
+
+// GormPurger binds a *gorm.DB into Purge and Count so consumers can depend
+// on a two-method interface of their own rather than on package-level
+// functions. NewGormPurger returns the CONCRETE *GormPurger, never an
+// interface: this package must never import a consumer package (e.g.
+// internal/handlers/platformadmin) to return one of its interface types —
+// the dependency runs the other way. *GormPurger satisfies any consumer's
+// locally-declared Purge/Count interface structurally.
+type GormPurger struct{ db *gorm.DB }
+
+// NewGormPurger constructs a GormPurger bound to db.
+func NewGormPurger(db *gorm.DB) *GormPurger { return &GormPurger{db: db} }
+
+// Purge delegates to the package-level Purge with the bound db.
+func (g *GormPurger) Purge(ctx context.Context, tenantID string, storeIDs []string) (Report, error) {
+	return Purge(ctx, g.db, tenantID, storeIDs)
+}
+
+// Count delegates to the package-level Count with the bound db.
+func (g *GormPurger) Count(ctx context.Context, tenantID string, storeIDs []string) (Report, error) {
+	return Count(ctx, g.db, tenantID, storeIDs)
+}
+
+// countPlan mirrors purgePlan step for step, rewriting each DELETE as the
+// equivalent SELECT count(*). It is derived from purgePlan rather than
+// written out a second time — a hand-maintained twin of a hand-maintained
+// list is how the two enumerations in this service came to disagree.
+func countPlan(tenantID string, storeIDs []string) []deleteStep {
+	steps := purgePlan(tenantID, storeIDs)
+	out := make([]deleteStep, 0, len(steps))
+	for _, s := range steps {
+		out = append(out, deleteStep{
+			table: s.table,
+			sql:   "SELECT count(*) FROM" + strings.TrimPrefix(s.sql, "DELETE FROM"),
+			args:  s.args,
+		})
+	}
+	return out
 }
 
 // purgePlan builds the ordered list of deletes for tenantID/storeIDs. It has
@@ -235,7 +348,28 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		// and is still purged.
 		tenantScoped("break_glass_accounts", tenantID), // 000072: tenant_id (PK)
 		tenantScoped("enterprise_api_keys", tenantID),  // 000068: tenant_id, store_id
-		tenantScoped("audit_logs", tenantID),           // 000035ish: tenant_id, store_id
+		// audit_logs is tenant-scoped EXCEPT for operator rows. A platform
+		// operator's action against a tenant (suspend, trial extend, purge)
+		// is a governance record about the OPERATOR, not tenant data, and it
+		// must outlive the tenant for the same reason billing_archive does.
+		//
+		// This is load-bearing, not tidiness: the purge's OWN audit row is
+		// written AFTER the purge commits, and platform-api's outbox drainer
+		// then runs this same plan a second time ~1s later via
+		// POST /internal/tenants/:id/purge. Without this predicate the
+		// backstop deletes the record of the destruction it is backing up —
+		// an irreversible action, reported as audited, recorded nowhere.
+		//
+		// No `actor_type IS NULL` branch: actor_type is NOT NULL DEFAULT
+		// 'user' (migration 000035_audit_logs.up.sql, widened to admit
+		// 'operator' by 000101), verified against production 2026-08-25 —
+		// information_schema reports is_nullable = NO. A condition that can
+		// never fire would only imply the column is nullable.
+		deleteStep{
+			table: "audit_logs", // 000035: tenant_id, store_id, actor_type
+			sql:   "DELETE FROM audit_logs WHERE tenant_id = ? AND actor_type <> 'operator'",
+			args:  []any{tenantID},
+		},
 		subquery("payment_action_reminders", "subscription_id", "store_subscriptions", tenantID),
 		tenantScoped("trial_reminders", tenantID),             // 000088: tenant_id, store_id
 		tenantScoped("warehouses", tenantID),                  // 000095: tenant_id, store_id

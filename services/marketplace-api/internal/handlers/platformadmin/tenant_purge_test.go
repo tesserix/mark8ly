@@ -650,6 +650,17 @@ func TestPurge_ErasureRequest_DropsFreeTextFromAuditMetadata(t *testing.T) {
 	data, ok := body["data"].(map[string]any)
 	require.True(t, ok, "response is enveloped under data: %s", rec.Body.String())
 	require.Equal(t, true, data["reason_not_retained"])
+
+	// #365 F2: the response must not hand back the text it just said it
+	// discarded. reason_not_retained=true and a populated "reason" key in
+	// the SAME payload would tell the operator "this was not retained"
+	// while echoing it straight back — confusing, and an invitation for a
+	// console to display or store text we just promised not to keep.
+	_, reasonKeyPresent := data["reason"]
+	require.False(t, reasonKeyPresent,
+		"reason must be absent from the response when reason_not_retained is true")
+	require.NotContains(t, rec.Body.String(), "jane@example.com",
+		"the discarded free text must not appear anywhere in the response body")
 }
 
 // THE DISCRIMINATING PAIR (trap 13). The SAME free text under a different

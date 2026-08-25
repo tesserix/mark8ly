@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -141,8 +142,19 @@ func (c *PruneCron) Run(ctx context.Context) (PruneStats, error) {
 	}
 	if err != nil {
 		stats.ErrorsByPlan["operator (7 year retention)"]++
-		c.logger.Error("audit prune: operator path failed",
-			"deleted_so_far", opDeleted, "err", err.Error())
+		// #365 F3: ctx.Err() (context.Canceled / context.DeadlineExceeded)
+		// means workerCtx was cancelled by a routine shutdown mid-pass, not
+		// that the prune itself failed. Logging that at ERROR reads as "the
+		// prune broke" on every clean shutdown — exactly the kind of line
+		// that costs an operator ten minutes at the wrong moment. Anything
+		// else (a real DB/driver error) still logs at ERROR unchanged.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			c.logger.Info("audit prune: operator path interrupted by shutdown",
+				"deleted_so_far", opDeleted, "err", err.Error())
+		} else {
+			c.logger.Error("audit prune: operator path failed",
+				"deleted_so_far", opDeleted, "err", err.Error())
+		}
 	} else {
 		c.logger.Info("audit prune: operator path complete",
 			"cutoff", opCutoff.Format(time.RFC3339),

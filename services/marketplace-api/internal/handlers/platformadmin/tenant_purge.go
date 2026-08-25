@@ -347,13 +347,26 @@ func (h *TenantPurgeHandler) purge(c *gin.Context) {
 		return
 	}
 
+	// #365: when reasonNotRetained is true, the free text was never
+	// persisted (see the "reason" field's doc comment on previewResponse
+	// above the erasure branch). Echoing it back here would hand the
+	// operator, in the same response, the exact text we just promised not
+	// to keep — nothing persists it and the body isn't logged, so this
+	// isn't a leak, but it invites a console to display or store text we
+	// said we discarded. responseReason stays "" (Reason is `omitempty`)
+	// whenever reasonNotRetained is set.
+	responseReason := reason
+	if reasonNotRetained {
+		responseReason = ""
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": purgeResponse{
 		TenantID:          res.TenantID,
 		TenantName:        res.TenantName,
 		StoreIDs:          res.StoreIDs,
 		StoreSlugs:        res.StoreSlugs,
 		ReasonCode:        req.ReasonCode,
-		Reason:            reason,
+		Reason:            responseReason,
 		Tables:            rep.Tables,
 		TotalRows:         rep.TotalRows,
 		PurgedAt:          purgedAt.Format(time.RFC3339),

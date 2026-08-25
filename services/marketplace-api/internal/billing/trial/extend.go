@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -109,8 +110,26 @@ type Extender struct {
 	Stripe StripeTrialUpdater
 }
 
-// NewExtender constructs an Extender. su may be nil; see the type's comment.
+// NewExtender constructs an Extender.
+//
+// su may be nil, and a TYPED nil — a nil *stripe.Client assigned into the
+// interface — is normalised to a true nil here rather than being left to
+// panic at first use. Both mean the same thing to a reader ("no Stripe
+// configured"), but only one of them means it to Go: an interface holding a
+// nil pointer is itself non-nil, so `e.Stripe != nil` would be true and the
+// first method call would panic INSIDE the transaction, after the row lock
+// was taken — with the operator seeing a 500 for a request that changed
+// nothing, or worse, in a variant of this shape, for one that changed
+// everything (#288).
+//
+// Enforced here rather than documented at the call site because a call site
+// can be copied wrongly and a comment cannot fail a test.
 func NewExtender(su StripeTrialUpdater) *Extender {
+	if su != nil {
+		if v := reflect.ValueOf(su); v.Kind() == reflect.Ptr && v.IsNil() {
+			su = nil
+		}
+	}
 	return &Extender{Stripe: su}
 }
 

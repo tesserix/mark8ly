@@ -483,3 +483,41 @@ func TestExtender_LocksTheSubscriptionRowForUpdate(t *testing.T) {
 	require.NotEmpty(t, locked,
 		"the store_subscriptions SELECT must carry FOR UPDATE; captured: %v", selects)
 }
+
+// A typed nil in an interface is NOT nil. Assigning a nil
+// *stripe.Client into StripeTrialUpdater makes `e.Stripe != nil` TRUE, and
+// the first method call panics — after the row lock has been taken and
+// inside a transaction. That is #288's second Critical (a typed-nil
+// *gipadmin.AdminClient that panicked after the purge transaction had
+// already committed) in a new location, so it gets a guard rather than a
+// warning comment.
+func TestNewExtender_TypedNilUpdaterIsTreatedAsAbsent(t *testing.T) {
+	var typedNil *fakeUpdater // nil POINTER; a non-nil INTERFACE once assigned
+
+	e := trial.NewExtender(typedNil)
+	require.Nil(t, e.Stripe,
+		"a typed-nil updater must be normalised to a true nil, or every card-backed extension panics")
+}
+
+// And the behaviour that guard buys: a card-backed trial on a typed-nil
+// build refuses exactly as an unconfigured one does, rather than panicking
+// mid-transaction.
+func TestExtender_TypedNilUpdater_RefusesInsteadOfPanicking(t *testing.T) {
+	db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores")
+	subID := "sub_typed_nil"
+	seeded := seedCardBacked(t, db, subID, stripeExtendAsOf.Add(10*24*time.Hour))
+
+	var typedNil *fakeUpdater
+	e := trial.NewExtender(typedNil)
+
+	var err error
+	require.NotPanics(t, func() {
+		_, err = e.Extend(context.Background(), db, seeded.StoreID,
+			stripeExtendAsOf.Add(60*24*time.Hour), stripeExtendAsOf)
+	})
+	require.ErrorIs(t, err, trial.ErrStripeManaged)
+
+	var after subscription.StoreSubscription
+	require.NoError(t, db.First(&after, "store_id = ?", seeded.StoreID).Error)
+	require.Nil(t, after.TrialEndsAt, "a refused extension must write nothing")
+}

@@ -47,11 +47,12 @@ type Repository interface {
 	// confirms against, with SELECT ... FOR UPDATE on the tenant row.
 	//
 	// It exists rather than composing GetByID + ListStoreIDs because both
-	// of those read OUTSIDE the caller's transaction, and a confirmation
-	// check comparing values read outside the transaction that deletes the
-	// row is the same stale read it exists to prevent. The FOR UPDATE also
-	// serialises two concurrent purges of one tenant: the second blocks
-	// until the first commits, then finds no row.
+	// of those read OUTSIDE the caller's transaction: reading in-tx narrows
+	// (does not close) the window for a store created concurrently to be
+	// missed by the confirmation check. Exactly one concurrent purge
+	// succeeding is enforced separately, by DeleteInTx's row-count check
+	// on DELETE — not demonstrated to depend on this FOR UPDATE, which is
+	// kept for the narrower snapshot window and as defence in depth.
 	//
 	// Returns apperrors.NotFound("tenant_not_found") when the tenant does
 	// not exist — including when a concurrent purge just removed it.

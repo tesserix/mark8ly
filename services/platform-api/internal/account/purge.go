@@ -57,11 +57,14 @@ type PurgeResult struct {
 // comparison in-transaction; concurrent store creation during a purge is
 // not defended against.
 //
-// What the transaction plus SELECT ... FOR UPDATE on the tenant row does
-// genuinely guarantee is serialising two concurrent PURGES of the same
-// tenant: the second blocks on the lock until the first commits (or rolls
-// back), then re-reads and finds no row, so exactly one purge can
-// succeed. See TestPurgeTenant_Integration_ConcurrentPurgesHaveExactlyOneWinner.
+// Exactly one purge of a given tenant succeeding is enforced by
+// DeleteInTx's RowsAffected == 0 check, riding Postgres's implicit row
+// lock on DELETE — that's the mechanism
+// TestPurgeTenant_Integration_ConcurrentPurgesHaveExactlyOneWinner proves
+// (one winner, by whatever mechanism; it isn't evidence for FOR UPDATE
+// specifically). SELECT ... FOR UPDATE is kept as defence in depth and to
+// narrow the snapshot window above, not because a test shows it
+// load-bearing: removing it, that same test still passed 8/8.
 //
 // Post-commit cleanup mirrors deleteOwnerAccount and is best-effort for
 // the same reason: the tenant.deleted outbox event enqueued inside the

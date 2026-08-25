@@ -422,10 +422,15 @@ func withCapability(v string) reqOpt {
 //   - with it off, an arbitrary capability string admits a write.
 //
 // MUTATION: flip CapabilityValueChecked to true in middleware.go and the
-// second half fails with 403 capability_insufficient — which is the point.
-// The constant is a real switch wired to the real check, not a marker;
-// a future #333 implementer flips it and sets RequiredWriteCapability
-// rather than writing the gate from scratch.
+// second half fails — with 403 capability_route_undeclared here, since
+// "/admin/ping" is this test's own throwaway route and was never declared
+// in RequiredWriteCapabilities (a real mounted write route with a matching
+// declared-but-empty entry would instead fail with capability_insufficient,
+// since "not.a.real.capability" != ""). Either way the write stops being
+// admitted — which is the point. The constant is a real switch wired to
+// the real check, not a marker; a future #333 implementer flips it and
+// fills in RequiredWriteCapabilities' values rather than writing the gate
+// from scratch.
 func TestWriteCapabilityValueIsRecordedButNotEnforced(t *testing.T) {
 	require.False(t, platformadmin.CapabilityValueChecked,
 		"value enforcement is off pending #333; if this is now on, the second half of this test and the note in middleware.go both need updating")
@@ -447,4 +452,102 @@ func TestWriteCapabilityValueIsRecordedButNotEnforced(t *testing.T) {
 		withCapability("not.a.real.capability")))
 	require.Equal(t, http.StatusOK, readRec.Code)
 	require.Contains(t, readRec.Body.String(), `"capability":"not.a.real.capability"`)
+}
+
+// boolPtr is a tiny helper for AuthConfig.CapabilityChecked, which is a
+// *bool specifically so its zero value (nil) is distinguishable from an
+// explicit false — see AuthConfig's doc comment in middleware.go.
+func boolPtr(b bool) *bool { return &b }
+
+// newRouterWithCapabilityConfig is newRouter's counterpart for the tests
+// below: it lets a test override AuthConfig.CapabilityChecked and
+// RequiredCapabilities, which newRouter deliberately does not expose —
+// every other test in this file exercises the shipped, switch-off state.
+// A nil checked argument leaves CapabilityChecked unset, exactly as every
+// production caller (Register, cmd/marketplace-api/main.go) does.
+func newRouterWithCapabilityConfig(t *testing.T, checked *bool, required map[string]string) *gin.Engine {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.Use(platformadmin.RequirePlatformAuth(platformadmin.AuthConfig{
+		Secret:               testSecret,
+		NonceStore:           newMemNonces(),
+		Now:                  func() time.Time { return fixedNow },
+		CapabilityChecked:    checked,
+		RequiredCapabilities: required,
+	}))
+	r.POST("/admin/ping", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
+	return r
+}
+
+// TestAuthConfigCapabilityCheckedNilDefaultsToProductionOff proves the
+// thing #364 requires above everything else: leaving CapabilityChecked
+// unset — what every production caller does — behaves EXACTLY like the
+// shipped CapabilityValueChecked=false constant, not like some other
+// default. If this ever starts failing, either the fallback in
+// RequirePlatformAuth broke or CapabilityValueChecked itself changed; both
+// are shipping-blocking for #364.
+func TestAuthConfigCapabilityCheckedNilDefaultsToProductionOff(t *testing.T) {
+	require.False(t, platformadmin.CapabilityValueChecked,
+		"production default must be off; #364 must not flip this")
+
+	r := newRouterWithCapabilityConfig(t, nil, nil)
+	body := []byte(`{"x":1}`)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodPost, "/admin/ping", body,
+		withCapability("literally.anything")))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+// TestCapabilityCheckedOnAdmitsMatchingCapability: switch ON, presented
+// capability equals the declared required value -> admitted.
+func TestCapabilityCheckedOnAdmitsMatchingCapability(t *testing.T) {
+	required := map[string]string{
+		platformadmin.CapabilityKey(http.MethodPost, "/admin/ping"): "billing.trial.extend",
+	}
+	r := newRouterWithCapabilityConfig(t, boolPtr(true), required)
+	body := []byte(`{"x":1}`)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodPost, "/admin/ping", body,
+		withCapability("billing.trial.extend")))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+// TestCapabilityCheckedOnRefusesMismatchedCapability: switch ON,
+// presented capability differs from the declared required value -> 403
+// capability_insufficient. This is the "your capability is wrong" cell —
+// distinguishable from the "this route declared nothing" cell below.
+func TestCapabilityCheckedOnRefusesMismatchedCapability(t *testing.T) {
+	required := map[string]string{
+		platformadmin.CapabilityKey(http.MethodPost, "/admin/ping"): "billing.trial.extend",
+	}
+	r := newRouterWithCapabilityConfig(t, boolPtr(true), required)
+	body := []byte(`{"x":1}`)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodPost, "/admin/ping", body,
+		withCapability("something.else")))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, "capability_insufficient", errorCode(t, rec))
+}
+
+// TestCapabilityCheckedOnFailsClosedForUndeclaredRoute: switch ON, the
+// write route has NO entry in the lookup at all -> refused with a code
+// distinguishable from a capability mismatch. A missing declaration is a
+// mark8ly bug (nothing to fix on the caller's side by presenting a
+// different capability); a mismatch is a caller bug. Conflating them would
+// send whoever is debugging a production refusal to the wrong place.
+func TestCapabilityCheckedOnFailsClosedForUndeclaredRoute(t *testing.T) {
+	r := newRouterWithCapabilityConfig(t, boolPtr(true), map[string]string{})
+	body := []byte(`{"x":1}`)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodPost, "/admin/ping", body,
+		withCapability("anything")))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, "capability_route_undeclared", errorCode(t, rec))
+	require.NotEqual(t, "capability_insufficient", errorCode(t, rec))
 }

@@ -67,6 +67,16 @@ func TestPruneCronSkipsStoreLessRows(t *testing.T) {
 		storelessID, tenantID, longAgo.AddDate(0, 0, -800),
 	).Error)
 
+	// #365's other half: the same kind of row, past seven years, IS pruned.
+	// Without this the file asserts only "operator rows survive", which is
+	// no longer the whole rule.
+	ancientOperatorID := uuid.New()
+	require.NoError(t, db.Exec(
+		`INSERT INTO audit_logs (id, tenant_id, store_id, actor_type, action, resource_type, status, severity, created_at)
+		 VALUES (?, ?, NULL, 'operator', 'tenant.purged', 'tenant', 'success', 'warning', ?)`,
+		ancientOperatorID, tenantID, time.Now().UTC().AddDate(-8, 0, 0),
+	).Error)
+
 	cron := audit.NewPruneCron(db, nil, nil, 0)
 	stats, err := cron.Run(ctx)
 	require.NoError(t, err)
@@ -79,5 +89,11 @@ func TestPruneCronSkipsStoreLessRows(t *testing.T) {
 
 	var storelessCount int64
 	require.NoError(t, db.Raw(`SELECT count(*) FROM audit_logs WHERE id = ?`, storelessID).Scan(&storelessCount).Error)
-	require.Equal(t, int64(1), storelessCount, "store-less operator audit row must survive the prune (#311)")
+	require.Equal(t, int64(1), storelessCount,
+		"a store-less operator row must survive the PLAN-BASED prune (#311); it is under the 7-year operator window (#365)")
+
+	var ancientOperatorCount int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM audit_logs WHERE id = ?`, ancientOperatorID).Scan(&ancientOperatorCount).Error)
+	require.Equal(t, int64(0), ancientOperatorCount,
+		"a store-less operator row past seven years must be deleted by the #365 operator prune")
 }

@@ -97,12 +97,13 @@ type Deps struct {
 	// bounce or drop. See #348.
 	Notifications NotificationLister
 
-	// TrialExtender serves POST /admin/billing/trials/:storeID/extend
-	// (#286), this surface's second WRITE. It uses DB (for idempotency
-	// replay) and Emitter (for the audit row) when they are present, but —
-	// unlike TenantLifecycle — mounting is NOT gated on either: the
-	// handler is nil-safe on both, so a nil DB just disables idempotency
-	// replay and a nil Emitter is tolerated by NewOperatorActionAuditFunc.
+	// TrialExtender serves POST /admin/billing/trials/:storeID/extend (#286),
+	// this surface's second WRITE. Like TenantLifecycle it needs DB and
+	// Emitter as well: a write endpoint that cannot be attributed to an
+	// operator should not exist rather than run silently unaudited (#287,
+	// F1) — mounting is hard-gated on both being non-nil, matching
+	// TenantLifecycle exactly, not the nil-safe "just degraded" pattern
+	// used for the read routes in this struct.
 	TrialExtender TrialExtender
 }
 
@@ -217,18 +218,23 @@ func Register(g *gin.RouterGroup, deps Deps) {
 		}
 	}
 
-	// Unlike TenantLifecycle above, mounting here is NOT gated on DB or
-	// Emitter being non-nil: the handler itself is nil-safe on both (the
-	// idempotency Lookup/Save calls are guarded on h.db != nil, and
-	// NewOperatorActionAuditFunc tolerates a nil *audit.Emitter — see its
-	// own doc comment in tenant_lifecycle.go). This matches the nil-safe
-	// pattern used for Tickets/Notifications above, not the hard mount
-	// gate used for TenantLifecycle.
-	if deps.TrialExtender != nil {
+	switch {
+	case deps.TrialExtender != nil && deps.DB != nil && deps.Emitter != nil:
 		NewBillingTrialExtendHandler(
 			deps.DB, deps.TrialExtender,
 			NewOperatorActionAuditFunc(deps.Emitter),
 			deps.Logger,
 		).Register(group)
+	case deps.TrialExtender != nil:
+		// TrialExtender is wired but DB or Emitter isn't: mounting a write
+		// endpoint that cannot be attributed is worse than not having it
+		// (#287, F1) — this is not the nil-safe "just degraded" pattern the
+		// read routes above use. A trial extension is a billing decision
+		// made against a merchant; an unattributed one should not be
+		// reachable.
+		if deps.Logger != nil {
+			deps.Logger.Warn("platformadmin: trial extend route not mounted — DB and Emitter are both required",
+				"db_nil", deps.DB == nil, "emitter_nil", deps.Emitter == nil)
+		}
 	}
 }

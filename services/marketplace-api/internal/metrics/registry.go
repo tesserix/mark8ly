@@ -104,7 +104,9 @@ var (
 
 	// AuditPruneRowsDeletedTotal counts audit_logs rows hard-deleted by the
 	// retention prune cron, labeled by retention bucket
-	// (trial_starter_90d, studio_365d). Pro is unlimited and never pruned.
+	// (trial_starter_90d, studio_365d, operator_7y). Pro is unlimited and never pruned.
+	// operator_7y: platform operator rows, retained seven years from created_at
+	// under the same legal-obligation basis as billing_archive (#365).
 	AuditPruneRowsDeletedTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "mark8ly_audit_prune_rows_deleted_total",

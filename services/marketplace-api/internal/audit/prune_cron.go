@@ -2,6 +2,7 @@ package audit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -55,10 +56,11 @@ var retentionBuckets = []retentionBucket{
 	// PlanMarketplace is platform-internal; it's also not pruned (operator-managed).
 }
 
-// PruneCron deletes audit_logs rows older than each plan's retention window
-// per spec §9. Multi-tenant safety: every DELETE joins store_subscriptions
-// on store_id, so each row is pruned only against its OWN tenant's plan —
-// no possibility of one tenant's plan leaking into another's prune cutoff.
+// PruneCron deletes audit_logs rows via two paths per spec §9: (1) per-plan
+// buckets (Trial 90d, Starter 90d, Studio 365d, Pro unlimited) joined to
+// store_subscriptions on store_id for multi-tenant safety, and (2) platform
+// operator rows (actor_type='operator', no store_id) pruned separately at
+// seven years (#365). Each path is safe against cross-tenant leakage.
 type PruneCron struct {
 	db        *gorm.DB
 	logger    *slog.Logger
@@ -88,6 +90,11 @@ type PruneStats struct {
 	RowsDeleted  int64
 	BatchesRun   int
 	ErrorsByPlan map[string]int
+
+	// OperatorRowsDeleted counts rows removed by the 7-year operator path
+	// (#365), kept separate from RowsDeleted so the two retention rules stay
+	// distinguishable in logs and telemetry.
+	OperatorRowsDeleted int64
 }
 
 // Run executes one prune pass over every retention bucket. Per-bucket
@@ -122,6 +129,38 @@ func (c *PruneCron) Run(ctx context.Context) (PruneStats, error) {
 			"rows_deleted", deleted,
 			"batches", batches)
 	}
+
+	// #365 — operator rows, 7 years, no join. Failure is logged and
+	// swallowed like a bucket failure: a lock conflict here must not fail
+	// the whole pass.
+	opCutoff := now.AddDate(-OperatorRetentionYears, 0, 0)
+	opDeleted, opBatches, err := c.pruneOperatorRows(ctx, opCutoff)
+	stats.OperatorRowsDeleted = opDeleted
+	stats.BatchesRun += opBatches
+	if c.counter != nil && opDeleted > 0 {
+		c.counter(OperatorMetricLabel, opDeleted)
+	}
+	if err != nil {
+		stats.ErrorsByPlan["operator (7 year retention)"]++
+		// #365 F3: ctx.Err() (context.Canceled / context.DeadlineExceeded)
+		// means workerCtx was cancelled by a routine shutdown mid-pass, not
+		// that the prune itself failed. Logging that at ERROR reads as "the
+		// prune broke" on every clean shutdown — exactly the kind of line
+		// that costs an operator ten minutes at the wrong moment. Anything
+		// else (a real DB/driver error) still logs at ERROR unchanged.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			c.logger.Info("audit prune: operator path interrupted by shutdown",
+				"deleted_so_far", opDeleted, "err", err.Error())
+		} else {
+			c.logger.Error("audit prune: operator path failed",
+				"deleted_so_far", opDeleted, "err", err.Error())
+		}
+	} else {
+		c.logger.Info("audit prune: operator path complete",
+			"cutoff", opCutoff.Format(time.RFC3339),
+			"rows_deleted", opDeleted, "batches", opBatches)
+	}
+
 	return stats, nil
 }
 
@@ -177,9 +216,17 @@ func (c *PruneCron) pruneBucket(ctx context.Context, plans []subscription.Subscr
 		// catch it.
 		//
 		// "Never pruned" means never pruned on this timer, not immune to
-		// deletion: internal/tenantpurge/purge.go:238 deletes audit_logs by
-		// tenant_id and still reaches these rows, so GDPR erasure and
-		// tenant deletion are unaffected by this guard.
+		// deletion — but tenant purge does NOT get you there either.
+		// internal/tenantpurge/purge.go:370 runs
+		// `DELETE FROM audit_logs WHERE tenant_id = ? AND actor_type <> 'operator'`,
+		// which deliberately EXCLUDES operator rows: the purge's own audit
+		// row is written after the purge commits, and the outbox drainer
+		// re-runs the same plan ~1s later as a backstop, so the exclusion
+		// stops that backstop from destroying the record of the destruction
+		// it is backing up (#288). That's exactly why operator rows need
+		// their own retention path rather than riding on GDPR erasure: see
+		// pruneOperatorRows in operator_prune.go, which prunes them at
+		// seven years instead (#365).
 		res := c.db.WithContext(ctx).Exec(`
 			DELETE FROM audit_logs
 			WHERE id IN (

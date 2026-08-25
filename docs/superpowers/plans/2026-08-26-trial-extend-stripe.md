@@ -969,7 +969,11 @@ Expected: every `TestExtender_*` PASSes and no previously-passing test in the pa
 
 - [ ] **Step 5: Prove the ordering by mutation**
 
-Move the `if stripeID := …` block to AFTER the local `Update` and the reminder `DELETE`, and re-run `TestExtender_CardBacked_StripeFailure_WritesNothingLocally`. It MUST fail — the row now carries a `trial_ends_at` a failed Stripe call never earned. Revert, and record the observed failure in the commit message. This is the test that encodes the decision; if it passes under both orderings it encodes nothing.
+**Corrected during execution — the obvious mutation does not work.** Moving the `if stripeID := …` block after the local `Update` and the reminder `DELETE` does NOT fail, because both statements live inside the same `db.Transaction` closure: returning an error rolls the whole thing back regardless of the order the statements ran in. Measured, not reasoned about.
+
+The mutation with teeth is **hoisting the Stripe call out of the transaction entirely, to after the commit.** Do that, re-run `TestExtender_CardBacked_StripeFailure_WritesNothingLocally`, and it MUST fail with the row carrying a `trial_ends_at` that a failed Stripe call never earned. Revert, and record the observed failure in the commit message.
+
+What this proves, stated precisely so nobody over-claims it later: the test constrains **Stripe-after-commit**, which is the ordering that would actually put a merchant's billing date and the console into disagreement. It does not constrain statement order inside the transaction, and nothing needs it to. This is the test that encodes the decision; if it passes under both orderings it encodes nothing.
 
 - [ ] **Step 6: Commit**
 

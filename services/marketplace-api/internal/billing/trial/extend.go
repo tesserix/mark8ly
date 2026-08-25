@@ -35,6 +35,14 @@ var (
 	// ErrStripeCall: Stripe was reached for and did not succeed. Nothing was
 	// written locally; the caller may retry.
 	ErrStripeCall = errors.New("trial: stripe call failed")
+	// ErrStripeAppliedLocalWriteFailed: the ONE divergence this design
+	// accepts has actually happened. Stripe moved the merchant's billing
+	// anchor and the local write then failed, so the console still shows the
+	// old date while the merchant is really billed on the new one. This is
+	// NOT a routine database error and must never be reported as one: it
+	// needs a human to reconcile, so the wrapped message carries the Stripe
+	// subscription id and the exact trial_end Stripe now holds (#358).
+	ErrStripeAppliedLocalWriteFailed = errors.New("trial: stripe trial end was moved but the local write failed")
 )
 
 // maxStripeTrialWindow mirrors Stripe's documented bound on
@@ -180,7 +188,7 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 
 			current, err := e.Stripe.GetSubscription(sctx, stripeID)
 			if err != nil {
-				return fmt.Errorf("%w: get subscription: %v", ErrStripeCall, err)
+				return fmt.Errorf("%w: get subscription: %w", ErrStripeCall, err)
 			}
 			if current.Status != "trialing" {
 				return ErrStripeStateConflict
@@ -193,9 +201,15 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 			updated, err := e.Stripe.UpdateTrialEnd(sctx, billingstripe.UpdateTrialEndParams{
 				SubscriptionID: stripeID,
 				TrialEnd:       end.Unix(),
-				// Derived from the store, so a retry of the SAME extension
-				// cannot move the date twice, while a different extension of
-				// the same store still can.
+				// Derived from the store AND the absolute target second.
+				// Stripe expires idempotency keys after 24h, so this does
+				// NOT dedupe forever — what it actually buys is that a
+				// replay re-asserts the SAME absolute date rather than
+				// shifting the trial by a relative amount again. Inside
+				// Stripe's 24h window the replay is also deduped outright;
+				// after it, the retry is simply a no-op restatement. A
+				// genuinely different extension of the same store gets a
+				// different key and still moves the date.
 				IdempotencyKey: "trial_extend:" + sub.StoreID.String() + ":" + strconv.FormatInt(end.Unix(), 10),
 				Metadata: map[string]string{
 					"mark8ly_store_id":  sub.StoreID.String(),
@@ -203,7 +217,15 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 				},
 			})
 			if err != nil {
-				return fmt.Errorf("%w: update trial end: %v", ErrStripeCall, err)
+				return fmt.Errorf("%w: update trial end: %w", ErrStripeCall, err)
+			}
+
+			// A (nil, nil) return would panic on the deref below — inside an
+			// open transaction still holding the FOR UPDATE row lock, which
+			// is a far worse failure than an error. The real client never
+			// does this; the guard is about the failure mode, not the odds.
+			if updated == nil {
+				return fmt.Errorf("%w: update trial end: stripe returned no subscription", ErrStripeCall)
 			}
 
 			out.StripeApplied = true
@@ -238,6 +260,15 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 		return nil
 	})
 	if err != nil {
+		// The closure wrote into `out` before the rollback, so `out` still
+		// records whether Stripe was actually moved. A rolled-back
+		// transaction undoes our row; it cannot undo Stripe.
+		if out.StripeApplied {
+			return ExtendResult{}, fmt.Errorf(
+				"%w: stripe subscription %s now holds trial_end=%d (previously trial_end=%d, billing_cycle_anchor=%d): %w",
+				ErrStripeAppliedLocalWriteFailed, out.StripeSubscriptionID, out.StripeTrialEnd,
+				out.PreviousStripeTrialEnd, out.PreviousBillingAnchor, err)
+		}
 		return ExtendResult{}, err
 	}
 	return out, nil

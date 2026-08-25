@@ -74,6 +74,15 @@ type PurgeResult struct {
 // absent answers 404 and the caller cannot tell that apart from "no such
 // tenant".
 //
+// "May be nil" means a TRUE nil interface, and that is a property of the
+// WIRING, not of this file: s.fga is authz.Client, an interface all the
+// way up through main, and s.gip is only ever assigned from a NON-nil
+// *gipadmin.AdminClient — see newAccountService in
+// cmd/server/account_wiring.go and its test. Handing NewService a nil
+// concrete pointer directly would produce a non-nil interface holding a
+// nil pointer; cleanupAfterTeardown's `!= nil` guards would pass, and the
+// nil receiver would panic AFTER this transaction has already committed.
+//
 // KNOWN GAP, inherited from deleteOwnerAccount rather than introduced
 // here: authz.Client has no method enumerating a tenant's members
 // (DeleteTuple requires a userID), so staff/admin/viewer tuples and their

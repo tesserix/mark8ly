@@ -139,6 +139,12 @@ func TestAccountHandler_Delete_NotFound_404(t *testing.T) {
 	}
 }
 
+// teardownTenantID is a real UUID because the teardown handler now
+// validates its path parameter before it can reach a `WHERE id = ?`
+// comparison against a uuid column. "t-1" would be answered 400 and never
+// reach the service.
+const teardownTenantID = "11111111-1111-1111-1111-111111111111"
+
 type fakePurger struct {
 	res *PurgeResult
 	err error
@@ -160,23 +166,23 @@ func teardownRouter(svc accountDeleter) *gin.Engine {
 
 func TestTeardown_SuccessReturnsResult(t *testing.T) {
 	f := &fakePurger{res: &PurgeResult{
-		TenantID: "t-1", TenantName: "The Bondi Store",
+		TenantID: teardownTenantID, TenantName: "The Bondi Store",
 		StoreIDs: []string{"s-1"}, StoreSlugs: []string{"the-bondi-store"},
 	}}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/internal/tenants/t-1/teardown",
+	req := httptest.NewRequest(http.MethodPost, "/internal/tenants/"+teardownTenantID+"/teardown",
 		strings.NewReader(`{"store_slugs":["the-bondi-store"]}`))
 	teardownRouter(f).ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, []string{"the-bondi-store"}, f.got)
-	require.JSONEq(t, `{"data":{"tenant_id":"t-1","tenant_name":"The Bondi Store","store_ids":["s-1"],"store_slugs":["the-bondi-store"]}}`, rec.Body.String())
+	require.JSONEq(t, `{"data":{"tenant_id":"`+teardownTenantID+`","tenant_name":"The Bondi Store","store_ids":["s-1"],"store_slugs":["the-bondi-store"]}}`, rec.Body.String())
 }
 
 func TestTeardown_MismatchIs409WithExpectedSet(t *testing.T) {
 	f := &fakePurger{err: &MismatchError{Expected: []string{"a", "b"}}}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/internal/tenants/t-1/teardown",
+	req := httptest.NewRequest(http.MethodPost, "/internal/tenants/"+teardownTenantID+"/teardown",
 		strings.NewReader(`{"store_slugs":["wrong"]}`))
 	teardownRouter(f).ServeHTTP(rec, req)
 
@@ -187,7 +193,7 @@ func TestTeardown_MismatchIs409WithExpectedSet(t *testing.T) {
 func TestTeardown_NotFoundIs404(t *testing.T) {
 	f := &fakePurger{err: apperrors.NotFound("tenant_not_found", "nope")}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/internal/tenants/t-1/teardown",
+	req := httptest.NewRequest(http.MethodPost, "/internal/tenants/"+teardownTenantID+"/teardown",
 		strings.NewReader(`{"store_slugs":[]}`))
 	teardownRouter(f).ServeHTTP(rec, req)
 
@@ -200,14 +206,37 @@ func TestTeardown_NotFoundIs404(t *testing.T) {
 func TestTeardown_AbsentStoreSlugsIs400_EmptyIsAccepted(t *testing.T) {
 	absent := httptest.NewRecorder()
 	teardownRouter(&fakePurger{}).ServeHTTP(absent,
-		httptest.NewRequest(http.MethodPost, "/internal/tenants/t-1/teardown", strings.NewReader(`{}`)))
+		httptest.NewRequest(http.MethodPost, "/internal/tenants/"+teardownTenantID+"/teardown", strings.NewReader(`{}`)))
 	require.Equal(t, http.StatusBadRequest, absent.Code)
 
-	f := &fakePurger{res: &PurgeResult{TenantID: "t-1", StoreIDs: []string{}, StoreSlugs: []string{}}}
+	f := &fakePurger{res: &PurgeResult{TenantID: teardownTenantID, StoreIDs: []string{}, StoreSlugs: []string{}}}
 	empty := httptest.NewRecorder()
 	teardownRouter(f).ServeHTTP(empty,
-		httptest.NewRequest(http.MethodPost, "/internal/tenants/t-1/teardown", strings.NewReader(`{"store_slugs":[]}`)))
+		httptest.NewRequest(http.MethodPost, "/internal/tenants/"+teardownTenantID+"/teardown", strings.NewReader(`{"store_slugs":[]}`)))
 	require.Equal(t, http.StatusOK, empty.Code)
 	require.NotNil(t, f.got, "an empty array must reach the service as a non-nil empty slice")
 	require.Empty(t, f.got)
+}
+
+// A non-UUID id must be answered 400 and must NOT reach the service.
+//
+// Without this check the id goes straight into PurgeTenant's
+// `WHERE id = ?` against a uuid column, Postgres raises a cast error, and
+// respondError answers 500 — a malformed request reported as a server
+// fault on the one endpoint where "the server broke" and "you sent
+// nonsense" must not look the same. marketplace-api parses the id before
+// it ever calls here, but this strict internal group is callable
+// in-cluster by anything holding the shared secret.
+func TestTeardown_NonUUIDIdIs400AndNeverReachesTheService(t *testing.T) {
+	f := &fakePurger{res: &PurgeResult{TenantID: "whatever"}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/internal/tenants/not-a-uuid/teardown",
+		strings.NewReader(`{"store_slugs":[]}`))
+	teardownRouter(f).ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.JSONEq(t,
+		`{"error":"invalid_tenant_id","message":"id must be a UUID","field":"id"}`,
+		rec.Body.String())
+	require.Nil(t, f.got, "an unparseable id must never reach PurgeTenant — it would destroy a tenant")
 }

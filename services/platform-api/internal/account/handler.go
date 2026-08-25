@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
@@ -81,6 +82,21 @@ func (h *Handler) RegisterOperator(internal *gin.RouterGroup) {
 }
 
 func (h *Handler) teardown(c *gin.Context) {
+	// Validate the path parameter BEFORE it reaches a `WHERE id = ?`.
+	// PurgeTenant passes it straight into a uuid-typed comparison, so a
+	// non-UUID raises a Postgres cast error and respondError answers 500 —
+	// a malformed request reported as a server fault. marketplace-api
+	// parses the id before ever calling here, but this STRICT internal
+	// group is reachable in-cluster by anything holding the shared secret.
+	// Same shape and same error body as the marketplace-side handler
+	// (internal/handlers/platformadmin/tenant_purge.go).
+	if _, err := uuid.Parse(c.Param("id")); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid_tenant_id", "message": "id must be a UUID", "field": "id",
+		})
+		return
+	}
+
 	var req teardownRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.StoreSlugs == nil {
 		c.JSON(http.StatusBadRequest, gin.H{

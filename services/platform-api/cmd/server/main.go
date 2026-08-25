@@ -297,7 +297,13 @@ func main() {
 	// unconditionally below. Only the MERCHANT DeleteAccount route stays
 	// gated: it calls fga.GetRole and gip.DeleteAccount with no internal
 	// nil-check and would panic on first call.
-	accountSvc := account.NewService(conn, tenantRepo, fga, gipAdmin, outbox.Enqueue, log)
+	//
+	// gipAdmin is passed to newAccountService as the CONCRETE pointer on
+	// purpose: it converts a nil one into a true nil interface rather than
+	// a non-nil interface holding a nil pointer, which would defeat
+	// cleanupAfterTeardown's nil guard and panic AFTER the teardown
+	// transaction commits. See newAccountService.
+	accountSvc := newAccountService(conn, tenantRepo, fga, gipAdmin, outbox.Enqueue, log)
 	accountHandler := account.NewHandler(accountSvc)
 	merchantAccountRoutes := fga != nil && gipAdmin != nil
 	if !merchantAccountRoutes {

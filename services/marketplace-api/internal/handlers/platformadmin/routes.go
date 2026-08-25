@@ -105,6 +105,18 @@ type Deps struct {
 	// TenantLifecycle exactly, not the nil-safe "just degraded" pattern
 	// used for the read routes in this struct.
 	TrialExtender TrialExtender
+
+	// TenantTeardown and Purger together serve POST /admin/tenants/:id/purge
+	// and GET /admin/tenants/:id/purge/preview (#288) — the surface's
+	// IRREVERSIBLE endpoint. Both must be non-nil, along with DB, Emitter
+	// and TenantDirectory, for either route to mount.
+	//
+	// Emitter is required for the same reason it is required by
+	// TenantLifecycle, and more so: a purge that cannot be audited is an
+	// irreversible destruction with no record, which is the exact gap this
+	// series exists to close. An unmounted route is the right failure.
+	TenantTeardown TenantTeardown
+	Purger         Purger
 }
 
 // TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
@@ -235,6 +247,27 @@ func Register(g *gin.RouterGroup, deps Deps) {
 		if deps.Logger != nil {
 			deps.Logger.Warn("platformadmin: trial extend route not mounted — DB and Emitter are both required",
 				"db_nil", deps.DB == nil, "emitter_nil", deps.Emitter == nil)
+		}
+	}
+
+	switch {
+	case deps.TenantTeardown != nil && deps.Purger != nil && deps.Emitter != nil &&
+		deps.DB != nil && deps.TenantDirectory != nil:
+		NewTenantPurgeHandler(
+			deps.TenantTeardown, deps.Purger, deps.TenantDirectory,
+			NewOperatorActionSyncFunc(deps.Emitter), deps.TenantGateInvalidator, deps.Logger,
+		).Register(group)
+	case deps.TenantTeardown != nil || deps.Purger != nil:
+		// TenantTeardown or Purger is wired but one of DB, Emitter or
+		// TenantDirectory isn't: a handler that cannot audit an
+		// irreversible destruction must not exist on this surface at all
+		// (#287, F1, and more so here) — not the nil-safe "just degraded"
+		// pattern the read routes above use.
+		if deps.Logger != nil {
+			deps.Logger.Warn("platformadmin: tenant purge routes not mounted — TenantTeardown, Purger, DB, Emitter and TenantDirectory are all required",
+				"teardown_nil", deps.TenantTeardown == nil, "purger_nil", deps.Purger == nil,
+				"db_nil", deps.DB == nil, "emitter_nil", deps.Emitter == nil,
+				"tenant_directory_nil", deps.TenantDirectory == nil)
 		}
 	}
 }

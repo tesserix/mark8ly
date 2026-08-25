@@ -173,6 +173,28 @@ func Count(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string)
 	return rep, nil
 }
 
+// GormPurger binds a *gorm.DB into Purge and Count so consumers can depend
+// on a two-method interface of their own rather than on package-level
+// functions. NewGormPurger returns the CONCRETE *GormPurger, never an
+// interface: this package must never import a consumer package (e.g.
+// internal/handlers/platformadmin) to return one of its interface types —
+// the dependency runs the other way. *GormPurger satisfies any consumer's
+// locally-declared Purge/Count interface structurally.
+type GormPurger struct{ db *gorm.DB }
+
+// NewGormPurger constructs a GormPurger bound to db.
+func NewGormPurger(db *gorm.DB) *GormPurger { return &GormPurger{db: db} }
+
+// Purge delegates to the package-level Purge with the bound db.
+func (g *GormPurger) Purge(ctx context.Context, tenantID string, storeIDs []string) (Report, error) {
+	return Purge(ctx, g.db, tenantID, storeIDs)
+}
+
+// Count delegates to the package-level Count with the bound db.
+func (g *GormPurger) Count(ctx context.Context, tenantID string, storeIDs []string) (Report, error) {
+	return Count(ctx, g.db, tenantID, storeIDs)
+}
+
 // countPlan mirrors purgePlan step for step, rewriting each DELETE as the
 // equivalent SELECT count(*). It is derived from purgePlan rather than
 // written out a second time — a hand-maintained twin of a hand-maintained

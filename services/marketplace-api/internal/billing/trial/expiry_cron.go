@@ -19,8 +19,10 @@ import (
 const ExpirySpec = "15 0 * * *"
 
 // ExpiryCron transitions trialing stores that have no card (stripe_subscription_id
-// IS NULL) and whose trial has exceeded TrialDays to the "expired" status via the
-// state machine. It is idempotent: stores already in "expired" are never selected.
+// IS NULL) and whose trial has passed its effective end (EndsAt — normally
+// TrialDays, extended if an operator has set trial_ends_at) to the "expired"
+// status via the state machine. It is idempotent: stores already in "expired"
+// are never selected.
 type ExpiryCron struct {
 	db      *gorm.DB
 	emitter *audit.Emitter
@@ -40,18 +42,21 @@ func NewExpiryCron(db *gorm.DB, em *audit.Emitter, logger *slog.Logger, clock fu
 	return &ExpiryCron{db: db, emitter: em, logger: logger, clock: clock}
 }
 
-// Run selects all trialing stores without a card whose created_at is older
-// than TrialDays and transitions each one to "expired" via statemachine.Transition.
+// Run selects all trialing stores without a card whose effective trial end
+// has passed and transitions each one to "expired" via statemachine.Transition.
 // Row-level errors are logged and skipped so one bad row never blocks the rest.
 func (c *ExpiryCron) Run(ctx context.Context) error {
-	// signup_date proxy: created_at. Cutoff: stores created more than TrialDays ago.
-	cutoff := c.clock().UTC().AddDate(0, 0, -TrialDays)
+	// Effective trial end, not created_at + TrialDays: a trial an operator
+	// extended must survive its original day 90. EndedBeforeScope carries
+	// both branches — see endsat.go.
+	now := c.clock().UTC()
 	var rows []subscription.StoreSubscription
-	err := c.db.WithContext(ctx).
-		Where("status = ?", subscription.StatusTrialing).
-		Where("stripe_subscription_id IS NULL").
-		Where("created_at < ?", cutoff).
-		Find(&rows).Error
+	err := EndedBeforeScope(
+		c.db.WithContext(ctx).
+			Where("status = ?", subscription.StatusTrialing).
+			Where("stripe_subscription_id IS NULL"),
+		now,
+	).Find(&rows).Error
 	if err != nil {
 		return err
 	}
@@ -70,7 +75,7 @@ func (c *ExpiryCron) expireOne(ctx context.Context, row *subscription.StoreSubsc
 		From:     subscription.StatusTrialing,
 		To:       subscription.StatusExpired,
 		Actor:    "system:cron:trial_expiry",
-		Reason:   "day_90_no_card",
+		Reason:   "trial_ended_no_card",
 	})
 	switch {
 	case err == nil:

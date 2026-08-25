@@ -1,7 +1,8 @@
 // Package trial implements the deferred-charge card-add flow (§5.3).
 // A merchant adds their card at onboarding time; we provision a Stripe
-// subscription with trial_end = signup_date + 90d so Stripe defers the first
-// invoice to day 90. No charge occurs at call time.
+// subscription with trial_end = the effective trial end (EndsAt) — normally
+// signup_date + 90d, but a platform operator may have extended it — so
+// Stripe defers the first invoice accordingly. No charge occurs at call time.
 package trial
 
 import (
@@ -84,7 +85,9 @@ type SubscribeResult struct {
 	TrialEndUnix         int64
 }
 
-// Subscribe creates a Stripe subscription with trial_end = signup_date + 90d.
+// Subscribe creates a Stripe subscription with trial_end = the effective
+// trial end (EndsAt) — normally signup_date + 90d, extended if an operator
+// has set trial_ends_at.
 //
 // It does NOT flip subscription.status — the webhook owns that transition via
 // statemachine.Transition. Keeping Subscribe a pure "provision Stripe + persist id"
@@ -126,9 +129,9 @@ func (s *Subscriber) subscribeInTx(ctx context.Context, tx *gorm.DB, in Subscrib
 		return nil, ErrMissingStripeCustomer
 	}
 
-	// trial_end = signup_date + 90d. CreatedAt is our signup_date proxy —
-	// the row is inserted at signup, so the two are the same event.
-	trialEnd := row.CreatedAt.Add(TrialDays * 24 * time.Hour).Unix()
+	// trial_end is the EFFECTIVE end: an operator-extended trial must bill on
+	// the extended date, not created_at + TrialDays (#353).
+	trialEnd := EndsAt(row).Unix()
 
 	priceID, err := s.stripe.PriceIDFor(ctx, in.Plan, in.Period, in.Currency, row.PriceTier)
 	if err != nil {

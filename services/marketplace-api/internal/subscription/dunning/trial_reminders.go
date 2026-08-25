@@ -45,8 +45,9 @@ var trialReminderTargets = []trialReminderTarget{
 	{"has_pm_t_minus_1", 1, email.TemplateTrialHasPMT1, true, "trial ends tomorrow; plan auto-starts"},
 }
 
-// SendTrialReminders is a daily cron that emails merchants approaching the
-// 90-day trial boundary. Cadence depends on whether the merchant has a
+// SendTrialReminders is a daily cron that emails merchants approaching their
+// trial's effective end (normally 90 days, extended if an operator has set
+// trial_ends_at). Cadence depends on whether the merchant has a
 // default payment method on file (mirrored onto store_subscriptions by the
 // customer.updated webhook handler — see migration 087):
 //
@@ -102,23 +103,25 @@ func (s *SendTrialReminders) Run(ctx context.Context) error {
 }
 
 func (s *SendTrialReminders) runForOffset(ctx context.Context, now time.Time, t trialReminderTarget) error {
-	// Target subscriptions whose trial expiry (created_at + TrialDays) is
-	// exactly DaysBefore days from now — equivalently, those created
-	// (TrialDays - DaysBefore) days ago.
-	dayOffset := trial.TrialDays - t.DaysBefore
+	// Target subscriptions whose EFFECTIVE trial end falls on the day that is
+	// DaysBefore days from now. This used to work backwards from a fixed trial
+	// length and bucket on created_at, which meant an operator-extended trial
+	// kept its original reminder schedule and got nothing before its real end
+	// (#353).
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).
-		AddDate(0, 0, -dayOffset)
-	dayEnd := dayStart.AddDate(0, 0, 1)
+		AddDate(0, 0, t.DaysBefore)
 
 	var rows []subscription.StoreSubscription
-	err := s.db.WithContext(ctx).
-		Where("status IN ?", []subscription.SubscriptionStatus{
-			subscription.StatusSignup,
-			subscription.StatusTrialing,
-		}).
-		Where("has_default_payment_method = ?", t.HasPM).
-		Where("created_at >= ? AND created_at < ?", dayStart, dayEnd).
-		Find(&rows).Error
+	err := trial.EndsWithinDayScope(
+		s.db.WithContext(ctx).
+			Model(&subscription.StoreSubscription{}).
+			Where("status IN ?", []subscription.SubscriptionStatus{
+				subscription.StatusSignup,
+				subscription.StatusTrialing,
+			}).
+			Where("has_default_payment_method = ?", t.HasPM),
+		dayStart,
+	).Find(&rows).Error
 	if err != nil {
 		return err
 	}

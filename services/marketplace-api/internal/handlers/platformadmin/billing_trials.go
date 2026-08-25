@@ -248,8 +248,9 @@ func daysRemaining(trialEndsAt, asOf time.Time) int {
 
 // parseTrialWindow parses `days` into a query window. A missing or invalid
 // value takes trial.DefaultExpiryWindow; this never errors. The result
-// clamps to trial.MaxExpiryWindow — beyond the trial length the window
-// stops meaning anything, since every live trial is already inside it.
+// clamps to trial.MaxExpiryWindow — a bound to keep the window finite, not
+// a claim about trial length: an operator-extended trial can end further
+// out than TrialDays.
 func parseTrialWindow(raw string) time.Duration {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

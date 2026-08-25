@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/planchange"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
@@ -280,6 +281,76 @@ func TestExecute_Downgrade_StudioToStarter_OverQuota_Rejected(t *testing.T) {
 		Where("store_id = ? AND action = ?", storeID, "downgrade_blocked_over_quota").
 		Count(&count).Error)
 	require.Equal(t, int64(1), count)
+}
+
+// TestExecute_InitialSubscription_TrialEndSentToStripeIsEffectiveEnd proves
+// the trial_end wired into the initial Stripe CreateSubscription call is the
+// EFFECTIVE end (trial.EndsAt), not created_at + 90d. This is the call site
+// that closes #326 (a hardcoded 90*24h that never referenced trial.TrialDays)
+// and it sends real money-affecting data to Stripe, so the assertion checks
+// the exact integer rather than merely that CreateSubscription was called.
+func TestExecute_InitialSubscription_TrialEndSentToStripeIsEffectiveEnd(t *testing.T) {
+	db := testdb.NewDB(t, "subscription_plan_change_audit", "store_subscriptions", "stores")
+	ctx := context.Background()
+
+	tenantID := uuid.New()
+	storeID := uuid.New()
+
+	// store_subscriptions.store_id has a FK to stores — seed the parent row
+	// first (mirrors seedStores below / trial's seedExpiringStore).
+	require.NoError(t, db.Exec(
+		`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at, storefront_customer_portal_secret)
+		 VALUES (?, ?, ?, 'Test Store', 'US', 'USD', 'UTC', 'active', now(), encode(gen_random_bytes(32), 'hex'))`,
+		storeID, tenantID, "test-store-"+uuid.NewString()[:8],
+	).Error)
+
+	created := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	extended := time.Date(2026, 12, 25, 0, 0, 0, 0, time.UTC)
+	require.NotEqual(t, created.Add(90*24*time.Hour).Unix(), extended.Unix(),
+		"fixture must distinguish the extended value from the derived one")
+
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:           tenantID,
+		StoreID:            storeID,
+		StripeCustomerID:   "cus_initial_sub",
+		Plan:               subscription.PlanTrial,
+		Status:             subscription.StatusSignup,
+		SubscriptionPeriod: subscription.PeriodMonthly,
+		PriceTier:          subscription.PriceTierDeveloped,
+		BillingCurrency:    strPtr("USD"),
+		CreatedAt:          created,
+		TrialEndsAt:        &extended,
+	}).Error)
+
+	fake := fakeStripeOK()
+
+	o := planchange.NewOrchestrator(planchange.Deps{
+		DB:               db,
+		Stripe:           fake,
+		SubscriptionRepo: subscription.NewRepository(),
+		Clock:            fixedClock{t: time.Now()},
+	})
+
+	out, err := o.Execute(ctx, planchange.Input{
+		TenantID:          tenantID,
+		StoreID:           storeID,
+		TargetPlan:        subscription.PlanStarter,
+		TargetPeriod:      subscription.PeriodMonthly,
+		RequestedCurrency: "USD",
+		Actor:             "user:" + uuid.NewString(),
+		Reason:            "initial_selection",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, planchange.ResultUpgradeCommitted, out.Result)
+
+	got, err := subscription.NewRepository().GetByStoreID(ctx, db, tenantID, storeID)
+	require.NoError(t, err)
+
+	require.Equal(t, extended.UTC().Unix(), fake.lastTrialEnd,
+		"trial_end sent to Stripe must be the effective end (trial.EndsAt), not created_at + 90d")
+	require.Equal(t, trial.EndsAt(*got).Unix(), fake.lastTrialEnd,
+		"trial_end sent to Stripe must go through the same accessor as the merchant-facing display")
 }
 
 func strPtr(s string) *string { return &s }

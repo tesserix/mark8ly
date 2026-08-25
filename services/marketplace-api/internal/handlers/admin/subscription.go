@@ -194,7 +194,7 @@ func enrichTrialBanner(resp *SubscriptionResponse, s subscription.StoreSubscript
 		return
 	}
 
-	endsAt := s.CreatedAt.Add(trial.TrialDays * 24 * time.Hour).UTC()
+	endsAt := trial.EndsAt(s)
 	endsAtStr := endsAt.Format("2006-01-02T15:04:05Z")
 	resp.TrialEndsAt = &endsAtStr
 

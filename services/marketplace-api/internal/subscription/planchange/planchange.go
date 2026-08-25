@@ -16,6 +16,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
@@ -221,8 +222,11 @@ func (o *Orchestrator) executeInitialSubscription(ctx context.Context, tx *gorm.
 		return Output{}, fmt.Errorf("planchange: resolve price id: %w", err)
 	}
 
-	// trial_end = signup_date + 90d. CreatedAt is the signup timestamp.
-	trialEnd := sub.CreatedAt.Add(90 * 24 * time.Hour).Unix()
+	// trial_end is the EFFECTIVE end (#353). This previously hardcoded
+	// 90 * 24 * time.Hour without referencing trial.TrialDays at all (#326),
+	// so a change to the trial length would silently have disagreed with
+	// Stripe about a billing date.
+	trialEnd := trial.EndsAt(*sub).Unix()
 
 	stripeSub, err := o.deps.Stripe.CreateSubscription(ctx, billingstripe.CreateSubscriptionInput{
 		StoreID:    in.StoreID.String(),

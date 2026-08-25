@@ -3,6 +3,7 @@ package trial
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -16,9 +17,11 @@ import (
 // report different numbers for the same word.
 const DefaultExpiryWindow = 7 * 24 * time.Hour
 
-// MaxExpiryWindow clamps `days`. Beyond the trial length the window stops
-// meaning anything — every live trial is inside it.
-const MaxExpiryWindow = time.Duration(TrialDays) * 24 * time.Hour
+// MaxExpiryWindow clamps `days`. An operator-extended trial (trial_ends_at
+// set via the console) can end arbitrarily far in the future, so this is
+// NOT a claim that every live trial ends within TrialDays — it is only a
+// bound to keep the window finite.
+const MaxExpiryWindow = 365 * 24 * time.Hour
 
 // ExpiringRow is one trial about to expire.
 type ExpiringRow struct {
@@ -41,24 +44,19 @@ type ExpiringRow struct {
 //   - status = 'trialing'
 //   - stripe_subscription_id IS NULL — no card. A trialing subscription WITH
 //     a card has a Stripe subscription and will CONVERT, not expire; its
-//     renewal date comes from Stripe, not from created_at.
-//   - created_at + TrialDays inside the window. This is the same rule
+//     renewal date comes from Stripe, not from us.
+//   - effective trial end inside the window. This is the same rule
 //     expiry_cron.go applies and the same date the merchant is shown.
 //
-// Half-open left so an already-expired trial is not "expiring"; inclusive
-// right so one ending exactly at the edge is.
-//
-// Note the algebra: created_at + TrialDays > asOf is created_at > asOf -
-// TrialDays. Doing it this way keeps the comparison on a plain indexed
-// column instead of an expression — do not "simplify" it back to comparing
-// against an expression on created_at.
+// The window's brackets and the index-preserving two-branch predicate both
+// live in EndsBetweenScope — see endsat.go.
 func expiringScope(db *gorm.DB, asOf time.Time, window time.Duration) *gorm.DB {
-	trialLen := time.Duration(TrialDays) * 24 * time.Hour
-	return db.Model(&subscription.StoreSubscription{}).
-		Where("status = ?", subscription.StatusTrialing).
-		Where("stripe_subscription_id IS NULL").
-		Where("created_at > ?", asOf.Add(-trialLen)).
-		Where("created_at <= ?", asOf.Add(window).Add(-trialLen))
+	return EndsBetweenScope(
+		db.Model(&subscription.StoreSubscription{}).
+			Where("status = ?", subscription.StatusTrialing).
+			Where("stripe_subscription_id IS NULL"),
+		asOf, asOf.Add(window),
+	)
 }
 
 // CountExpiring counts trials that will expire in the window (asOf,
@@ -75,21 +73,28 @@ func CountExpiring(ctx context.Context, db *gorm.DB, asOf time.Time, window time
 }
 
 // ListExpiring returns a page of trials expiring in the window (asOf,
-// asOf+window], ordered by created_at ASC (soonest trial end first, since
-// every row shares the same trial length), along with the unpaginated total
-// match count.
+// asOf+window], ordered by soonest effective end first, along with the
+// unpaginated total match count.
 func ListExpiring(ctx context.Context, db *gorm.DB, asOf time.Time, window time.Duration, page, limit int) ([]ExpiringRow, int64, error) {
 	total, err := CountExpiring(ctx, db, asOf, window)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	trialLen := time.Duration(TrialDays) * 24 * time.Hour
 	offset := (page - 1) * limit
 
 	var raw []subscription.StoreSubscription
+	// Soonest effective end first. This used to order by created_at on the
+	// assumption that every row shared one trial length — extensions break
+	// that, so an older row extended further out must sort after a newer one
+	// ending sooner.
+	// Built in hours, not days: INTERVAL '<n> days' is calendar arithmetic
+	// evaluated in the session timezone, which can disagree with EndsAt's
+	// exact 90*24h across a DST boundary in a non-UTC session. This is
+	// ordering-only, but it must still agree with EndsAt or rows sort
+	// inconsistently with what they're compared against.
 	err = expiringScope(db.WithContext(ctx), asOf, window).
-		Order("created_at ASC").
+		Order("COALESCE(trial_ends_at, created_at + INTERVAL '" + strconv.Itoa(TrialDays*24) + " hours') ASC").
 		Offset(offset).
 		Limit(limit).
 		Find(&raw).Error
@@ -102,7 +107,7 @@ func ListExpiring(ctx context.Context, db *gorm.DB, asOf time.Time, window time.
 		rows = append(rows, ExpiringRow{
 			TenantID:         r.TenantID.String(),
 			StoreID:          r.StoreID.String(),
-			TrialEndsAt:      r.CreatedAt.Add(trialLen),
+			TrialEndsAt:      EndsAt(r),
 			Plan:             string(r.Plan),
 			Period:           string(r.SubscriptionPeriod),
 			BillingCurrency:  r.BillingCurrency,

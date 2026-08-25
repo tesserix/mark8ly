@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/platform-api/internal/authz"
+	"github.com/mark8ly/platform-api/internal/tenant"
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
 
@@ -46,6 +47,13 @@ func (f *fakeTenantRepo) DeleteInTx(ctx context.Context, tx *gorm.DB, tenantID s
 	}
 	f.deleted[tenantID] = true
 	return nil
+}
+
+// SnapshotForTeardown is not exercised by this file's tests (they cover
+// DeleteAccount, not PurgeTenant); it exists only so fakeTenantRepo keeps
+// satisfying TenantRepo. See purge_test.go for the tests that use it.
+func (f *fakeTenantRepo) SnapshotForTeardown(ctx context.Context, tx *gorm.DB, tenantID string) (*tenant.TeardownSnapshot, error) {
+	return nil, nil
 }
 
 // fakeGIP is an in-memory double for gipDeleter.

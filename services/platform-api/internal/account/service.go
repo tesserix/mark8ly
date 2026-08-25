@@ -34,6 +34,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/platform-api/internal/authz"
+	"github.com/mark8ly/platform-api/internal/tenant"
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
 
@@ -58,6 +59,10 @@ type outboxEnqueuer func(tx *gorm.DB, kind string, payload any) error
 type TenantRepo interface {
 	ListStoreIDs(ctx context.Context, tx *gorm.DB, tenantID string) ([]string, error)
 	DeleteInTx(ctx context.Context, tx *gorm.DB, tenantID string) error
+	// SnapshotForTeardown is used by the operator purge path to read the
+	// tenant's identifying state under lock, inside the same transaction
+	// that deletes it. See PurgeTenant.
+	SnapshotForTeardown(ctx context.Context, tx *gorm.DB, tenantID string) (*tenant.TeardownSnapshot, error)
 }
 
 // tenantDeletedPayload is the outbox payload for "tenant.deleted". The
@@ -145,7 +150,7 @@ func (s *Service) teardownTenantTx(ctx context.Context, tenantID string, storeID
 			return err
 		}
 		payload := tenantDeletedPayload{TenantID: tenantID, StoreIDs: storeIDs}
-		return s.outbox(tx, "tenant.deleted", payload)
+		return s.outbox(tx, TenantDeletedOutboxKind, payload)
 	}
 	if s.db == nil {
 		// Unit tests construct the service with a nil db and fakes that

@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
@@ -22,7 +24,30 @@ var (
 	ErrStripeManaged    = errors.New("trial: trial is stripe-managed")
 	ErrNotTrialing      = errors.New("trial: subscription is not in a trial state")
 	ErrEndNotInFuture   = errors.New("trial: new trial end must be in the future")
+
+	// ErrStripeStateConflict: the local row says trialing but Stripe does
+	// not. Reconciling silently is not this endpoint's job.
+	ErrStripeStateConflict = errors.New("trial: stripe subscription is not trialing")
+	// ErrTrialEndTooFar: Stripe bounds trial_end at two years FROM THE
+	// CURRENT billing_cycle_anchor — not from now, which is a different
+	// instant whenever the anchor is not near now.
+	ErrTrialEndTooFar = errors.New("trial: new trial end is more than two years from the stripe billing anchor")
+	// ErrStripeCall: Stripe was reached for and did not succeed. Nothing was
+	// written locally; the caller may retry.
+	ErrStripeCall = errors.New("trial: stripe call failed")
 )
+
+// maxStripeTrialWindow mirrors Stripe's documented bound on
+// SubscriptionUpdateParams.TrialEnd: "Can be at most two years from
+// billing_cycle_anchor". Validated locally so the operator gets our error
+// envelope and the actual bound, rather than an opaque Stripe 400.
+const maxStripeTrialWindow = 2 * 365 * 24 * time.Hour
+
+// stripeCallTimeout bounds how long the store_subscriptions row lock is held
+// across the external call. The lock is deliberate — it is what removes the
+// window in which the row could convert while Stripe is in flight — and this
+// ceiling is what keeps "deliberate" from becoming "indefinite".
+const stripeCallTimeout = 10 * time.Second
 
 // ExtendResult describes a completed extension.
 type ExtendResult struct {
@@ -37,6 +62,14 @@ type ExtendResult struct {
 	// Stripe. False for every card-less extension. The handler surfaces it so
 	// an operator learns from the same call whether a billing anchor moved.
 	StripeApplied bool
+
+	// The Stripe-side facts, populated only when StripeApplied is true.
+	// StripeTrialEnd is read from Stripe's REPLY, never echoed from our
+	// request: what we asked for and what Stripe stored are two claims.
+	StripeSubscriptionID   string
+	StripeTrialEnd         int64
+	PreviousStripeTrialEnd int64
+	PreviousBillingAnchor  int64
 }
 
 // StripeTrialUpdater is the subset of the Stripe client this package needs,
@@ -85,7 +118,8 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var sub subscription.StoreSubscription
-		if err := tx.Where("store_id = ?", storeID).First(&sub).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("store_id = ?", storeID).First(&sub).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrNoSubscription
 			}
@@ -99,8 +133,6 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 		switch {
 		case sub.Status == subscription.StatusActive:
 			return ErrAlreadyConverted
-		case sub.StripeSubscriptionID != nil && *sub.StripeSubscriptionID != "":
-			return ErrStripeManaged
 		case sub.Status != subscription.StatusTrialing && sub.Status != subscription.StatusSignup:
 			return ErrNotTrialing
 		}
@@ -122,6 +154,65 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 		out.PreviousEndsAt = EndsAt(sub)
 
 		end := newEnd.UTC()
+
+		// Card-backed: Stripe owns the billing date, so Stripe moves FIRST
+		// and is the source of truth. The row lock taken above is held
+		// across this call, so nothing can convert or re-extend underneath
+		// it; stripeCallTimeout bounds how long that lock can live.
+		//
+		// The ordering is the decision #358 required be made deliberately:
+		// if this call fails the transaction rolls back and NOTHING is
+		// written locally. If instead the commit below fails, Stripe is
+		// AHEAD of us — the merchant is billed LATER than the console shows,
+		// which is the safe direction. The reverse ordering fails the other
+		// way.
+		if stripeID := stripeSubscriptionID(sub); stripeID != "" {
+			if e.Stripe == nil {
+				// No Stripe configured: refuse exactly as this endpoint did
+				// before #358. A local-only extension of a Stripe-managed
+				// trial would put the console and Stripe in disagreement
+				// about when a real merchant is charged.
+				return ErrStripeManaged
+			}
+
+			sctx, cancel := context.WithTimeout(ctx, stripeCallTimeout)
+			defer cancel()
+
+			current, err := e.Stripe.GetSubscription(sctx, stripeID)
+			if err != nil {
+				return fmt.Errorf("%w: get subscription: %v", ErrStripeCall, err)
+			}
+			if current.Status != "trialing" {
+				return ErrStripeStateConflict
+			}
+			anchor := time.Unix(current.BillingCycleAnchor, 0).UTC()
+			if end.After(anchor.Add(maxStripeTrialWindow)) {
+				return ErrTrialEndTooFar
+			}
+
+			updated, err := e.Stripe.UpdateTrialEnd(sctx, billingstripe.UpdateTrialEndParams{
+				SubscriptionID: stripeID,
+				TrialEnd:       end.Unix(),
+				// Derived from the store, so a retry of the SAME extension
+				// cannot move the date twice, while a different extension of
+				// the same store still can.
+				IdempotencyKey: "trial_extend:" + sub.StoreID.String() + ":" + strconv.FormatInt(end.Unix(), 10),
+				Metadata: map[string]string{
+					"mark8ly_store_id":  sub.StoreID.String(),
+					"mark8ly_tenant_id": sub.TenantID.String(),
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("%w: update trial end: %v", ErrStripeCall, err)
+			}
+
+			out.StripeApplied = true
+			out.StripeSubscriptionID = stripeID
+			out.StripeTrialEnd = updated.TrialEnd
+			out.PreviousStripeTrialEnd = current.TrialEnd
+			out.PreviousBillingAnchor = current.BillingCycleAnchor
+		}
+
 		if err := tx.Model(&subscription.StoreSubscription{}).
 			Where("store_id = ?", storeID).
 			Update("trial_ends_at", end).Error; err != nil {
@@ -150,4 +241,15 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 		return ExtendResult{}, err
 	}
 	return out, nil
+}
+
+// stripeSubscriptionID returns the subscription's Stripe id, or "" when it
+// has none. A nil pointer and a pointer to "" mean the same thing here — the
+// trial is card-less — and collapsing them at one site keeps every caller
+// from having to remember that.
+func stripeSubscriptionID(sub subscription.StoreSubscription) string {
+	if sub.StripeSubscriptionID == nil {
+		return ""
+	}
+	return *sub.StripeSubscriptionID
 }

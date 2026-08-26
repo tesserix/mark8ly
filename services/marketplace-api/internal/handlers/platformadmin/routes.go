@@ -191,6 +191,11 @@ func Register(g *gin.RouterGroup, deps Deps) {
 	// nil *gorm.DB would otherwise panic on WithContext.
 	NewHealthHandler(NewDBHealthSource(deps.DB), deps.Logger).Register(group)
 
+	// §8.8. Mounted beside health and for the same reason: it depends on
+	// nothing. See LifecycleReasonCodesHandler.Register for why it is not
+	// gated on the writes it describes.
+	NewLifecycleReasonCodesHandler().Register(group)
+
 	if deps.TenantDirectory != nil {
 		NewEntitiesTenantsHandler(deps.TenantDirectory, deps.Logger).Register(group)
 		NewConversionsHandler(deps.TenantDirectory, deps.Logger).Register(group)

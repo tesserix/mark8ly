@@ -119,7 +119,7 @@ func TestIntegration_ListPlatform_OlderThanMinutesExcludesPublished(t *testing.T
 	oldPub := listAsOf.Add(-30 * time.Minute)
 
 	oldPendingID := seedRow(t, db, tenantID, "product.created", listAsOf.Add(-60*time.Minute), nil, nil)
-	seedRow(t, db, tenantID, "product.updated", listAsOf.Add(-1*time.Minute), nil, nil)     // young pending
+	seedRow(t, db, tenantID, "product.updated", listAsOf.Add(-1*time.Minute), nil, nil)       // young pending
 	seedRow(t, db, tenantID, "product.deleted", listAsOf.Add(-600*time.Minute), &oldPub, nil) // very old, published
 
 	got, err := outbox.ListPlatform(context.Background(), db,

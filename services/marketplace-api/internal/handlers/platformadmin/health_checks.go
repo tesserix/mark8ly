@@ -31,14 +31,19 @@ func (s *dbHealthSource) Outbox(ctx context.Context, asOf time.Time) (OutboxHeal
 		return OutboxHealth{}, errNoDB
 	}
 	var out OutboxHealth
-	// The pending condition is a WHERE, not a FILTER: outbox_events is
-	// never pruned, and only a WHERE lets Postgres use outbox_unpublished_idx
-	// (a partial index on published_at IS NULL, migration 000001) instead of
-	// scanning every row ever written on a shared db-f1-micro.
+	// The published_at condition stays a WHERE, not a FILTER: outbox_events
+	// is never pruned, and only a WHERE lets Postgres use
+	// outbox_unpublished_idx (a partial index on published_at IS NULL,
+	// migration 000001) instead of scanning every row ever written on a
+	// shared db-f1-micro. The pending/errored split is done with FILTER
+	// *inside* that index-selected set, so the split costs nothing.
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT
-			COUNT(*)                                                        AS pending,
-			COALESCE(EXTRACT(EPOCH FROM (? - MIN(created_at)))::bigint, 0)  AS oldest_pending_age_seconds
+			COUNT(*) FILTER (WHERE error IS NULL)                       AS pending,
+			COALESCE(EXTRACT(EPOCH FROM (
+				? - MIN(created_at) FILTER (WHERE error IS NULL)))::bigint, 0)
+			                                                            AS oldest_pending_age_seconds,
+			COUNT(*) FILTER (WHERE error IS NOT NULL)                   AS errored
 		FROM outbox_events
 		WHERE published_at IS NULL`, asOf).Scan(&out).Error
 	if err != nil {

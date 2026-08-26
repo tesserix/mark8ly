@@ -162,6 +162,38 @@ func TestWinBack_SecondRunSameDayDoesNotResend(t *testing.T) {
 // email.Client (NewTemplateClient) instead of a test double, so this test
 // fails if recipient validation is ever removed from the real client — a
 // double-only test wouldn't catch that regression.
+// TestWinBack_OverlappingRunsAcrossClockDoNotResend uses two DIFFERENT
+// clocks (12h apart) whose windows both cover the same seeded row, unlike
+// TestWinBack_SecondRunSameDayDoesNotResend which reuses one clock and so
+// cannot distinguish a row-anchored period key from a wall-clock one. Under
+// a wall-clock key (`windowStart.Format(...)`), the two runs' windowStart
+// values fall on different calendar dates here, so the row claims under two
+// different period keys and gets mailed twice — the bug this task exists to
+// close. Under a row-anchored key the two runs agree on the same period key
+// and the second claim loses.
+func TestWinBack_OverlappingRunsAcrossClockDoNotResend(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores", "billing_email_sends")
+	// Fixed anchor (not time.Now()) so the two windowStart values are
+	// guaranteed to land on different calendar dates regardless of when
+	// this test runs.
+	now := time.Date(2026, 8, 20, 23, 0, 0, 0, time.UTC)
+
+	addr := "merchant@example.com"
+	seedExpired(t, db, now, &addr)
+
+	client := &stubClient{}
+	firstRunNow := now
+	secondRunNow := now.Add(12 * time.Hour)
+
+	firstCron := lifecycle.NewWinBackCron(db, client, nil, func() time.Time { return firstRunNow })
+	require.NoError(t, firstCron.Run(context.Background()))
+	require.Len(t, client.sent, 1, "first run should send exactly once")
+
+	secondCron := lifecycle.NewWinBackCron(db, client, nil, func() time.Time { return secondRunNow })
+	require.NoError(t, secondCron.Run(context.Background()))
+	require.Len(t, client.sent, 1, "second run (different clock, overlapping window) re-sent — duplicate win-back mail")
+}
+
 func TestWinBack_RealClientRefusesPlaceholderAddress(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stores", "billing_email_sends")
 	now := time.Now().UTC()

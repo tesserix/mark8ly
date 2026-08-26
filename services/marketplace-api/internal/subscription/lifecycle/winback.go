@@ -77,14 +77,22 @@ func (c *WinBackCron) Run(ctx context.Context) error {
 		return err
 	}
 	c.logger.Info("lifecycle: win-back cron started", "eligible", len(rows))
-	periodKey := windowStart.Format("2006-01-02")
 	for i := range rows {
-		c.sendOne(ctx, &rows[i], periodKey, now)
+		c.sendOne(ctx, &rows[i], now)
 	}
 	return nil
 }
 
-func (c *WinBackCron) sendOne(ctx context.Context, row *subscription.StoreSubscription, periodKey string, now time.Time) {
+func (c *WinBackCron) sendOne(ctx context.Context, row *subscription.StoreSubscription, now time.Time) {
+	// The period key is anchored to the row's own updated_at, not to the
+	// cron's wall-clock windowStart. Eligibility here is a sliding window,
+	// so two runs (e.g. a missed run followed by a catch-up near a UTC day
+	// boundary) can both select the same row with different windowStart
+	// values. A wall-clock key would then differ between the two runs and
+	// the claim would let both through — two win-back emails. Deriving the
+	// key from row.UpdatedAt guarantees any two runs that select this row
+	// agree on the same key, so the second claim always loses.
+	periodKey := row.UpdatedAt.UTC().Format("2006-01-02")
 	won, err := subscription.ClaimEmailSend(ctx, c.db, row.ID, string(email.TemplateWinBack), periodKey, now)
 	if err != nil {
 		c.logger.Error("lifecycle: win-back claim failed; skipping",

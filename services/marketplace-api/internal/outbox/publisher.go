@@ -125,8 +125,14 @@ func (p *Publisher) Tick(ctx context.Context) (int, error) {
 			// pill this pre-check exists to remove.
 			if _, err := uuid.Parse(sid); sid == "" || err != nil {
 				if p.logger != nil {
-					p.logger.Warn("outbox publisher: payload missing store_id; failing",
-						"event_id", r.ID, "event_type", r.EventType)
+					// store_id_present discriminates the two cases this guard
+					// now covers — absent/empty vs present-but-unparseable —
+					// without emitting the value itself, which is producer
+					// controlled. "missing" alone would send an operator
+					// looking for an absent field that is in fact there.
+					p.logger.Warn("outbox publisher: missing or invalid store_id; failing",
+						"event_id", r.ID, "event_type", r.EventType,
+						"store_id_present", sid != "")
 				}
 				failures = append(failures, Failure{ID: r.ID, Reason: ReasonPayloadMissingStoreID})
 				continue

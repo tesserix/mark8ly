@@ -244,3 +244,96 @@ func TestIntegration_ProcessBatch_Ordering(t *testing.T) {
 		}
 	}
 }
+
+func TestIntegration_MarkFailedInTx_SetsReasonAndLeavesUnpublished(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	bad := makeEvent(tenantID)
+	good := makeEvent(tenantID)
+	enqueueCommitted(t, db, bad)
+	enqueueCommitted(t, db, good)
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{
+			{ID: bad.ID, Reason: outbox.ReasonPayloadUnparseable},
+		})
+	})
+	if err != nil {
+		t.Fatalf("MarkFailedInTx: %v", err)
+	}
+
+	var got outbox.OutboxEvent
+	if err := db.First(&got, "id = ?", bad.ID).Error; err != nil {
+		t.Fatalf("reload failed row: %v", err)
+	}
+	if got.Error == nil {
+		t.Fatalf("error is nil; want %q", outbox.ReasonPayloadUnparseable)
+	}
+	// Assert the EXACT code, not merely non-nil: a stub returns the zero
+	// value for a field nobody set.
+	if *got.Error != outbox.ReasonPayloadUnparseable {
+		t.Fatalf("error = %q, want %q", *got.Error, outbox.ReasonPayloadUnparseable)
+	}
+	if got.PublishedAt != nil {
+		t.Fatalf("a failed row must stay unpublished, got published_at=%v", got.PublishedAt)
+	}
+
+	var untouched outbox.OutboxEvent
+	if err := db.First(&untouched, "id = ?", good.ID).Error; err != nil {
+		t.Fatalf("reload untouched row: %v", err)
+	}
+	if untouched.Error != nil {
+		t.Fatalf("unrelated row was marked failed: %q", *untouched.Error)
+	}
+}
+
+func TestIntegration_MarkFailedInTx_GroupsDistinctReasons(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	unparseable := makeEvent(tenantID)
+	missingStore := makeEvent(tenantID)
+	enqueueCommitted(t, db, unparseable)
+	enqueueCommitted(t, db, missingStore)
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{
+			{ID: unparseable.ID, Reason: outbox.ReasonPayloadUnparseable},
+			{ID: missingStore.ID, Reason: outbox.ReasonPayloadMissingStoreID},
+		})
+	})
+	if err != nil {
+		t.Fatalf("MarkFailedInTx: %v", err)
+	}
+
+	for _, tc := range []struct {
+		id   string
+		want string
+	}{
+		{unparseable.ID, outbox.ReasonPayloadUnparseable},
+		{missingStore.ID, outbox.ReasonPayloadMissingStoreID},
+	} {
+		var got outbox.OutboxEvent
+		if err := db.First(&got, "id = ?", tc.id).Error; err != nil {
+			t.Fatalf("reload %s: %v", tc.id, err)
+		}
+		if got.Error == nil || *got.Error != tc.want {
+			t.Fatalf("row %s error = %v, want %q", tc.id, got.Error, tc.want)
+		}
+	}
+}
+
+func TestIntegration_MarkFailedInTx_EmptyIsNoOp(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, nil)
+	})
+	if err != nil {
+		t.Fatalf("empty MarkFailedInTx must be a no-op, got: %v", err)
+	}
+}

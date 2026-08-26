@@ -61,6 +61,28 @@ const (
 	EventAbandonedCartRecoveryEmail = "abandoned_cart.recovery_email"
 )
 
+// Failure reason codes written to outbox_events.error when the publisher
+// cannot process a row. This vocabulary is CLOSED and the values are
+// STABLE: #331 serves this column cross-tenant to the platform console,
+// and a stable code is what lets the console render it.
+//
+// A raw error string must NEVER be stored here. encoding/json quotes the
+// offending input in its unmarshal errors, so persisting err.Error() would
+// copy fragments of an arbitrary customer-data JSONB payload into a column
+// that leaves this service — defeating the same reasoning that keeps
+// `payload` out of #331's response, through a field nobody would audit.
+const (
+	ReasonPayloadUnparseable    = "payload_unparseable"
+	ReasonPayloadMissingStoreID = "payload_missing_store_id"
+)
+
+// Failure is one row the publisher could not process, paired with the
+// reason code to persist. See MarkFailedInTx.
+type Failure struct {
+	ID     string
+	Reason string
+}
+
 // IsOrderAggregate reports whether an aggregate string belongs to the orders
 // domain. The watermark publisher uses this to decide which store_watermarks
 // column to bump (orders_updated_at vs products_updated_at).

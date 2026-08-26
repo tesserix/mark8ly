@@ -19,6 +19,14 @@ type Repository interface {
 	ProcessBatch(ctx context.Context, limit int,
 		fn func(tx *gorm.DB, rows []OutboxEvent) error) (int, error)
 	MarkPublishedInTx(tx *gorm.DB, ids []string) error
+	// MarkFailedInTx records why the publisher could not process each row,
+	// leaving published_at NULL. A row with error set is TERMINAL: the poll
+	// in ProcessBatch excludes it, so it is never retried. Requeueing is an
+	// operator action — clear error and the row re-enters the poll.
+	//
+	// Reason must be one of the Reason* constants in models.go, never a raw
+	// error string. See the comment on those constants.
+	MarkFailedInTx(tx *gorm.DB, failures []Failure) error
 }
 
 type gormRepository struct {
@@ -65,6 +73,26 @@ func (r *gormRepository) MarkPublishedInTx(tx *gorm.DB, ids []string) error {
 	if err := tx.Exec(`UPDATE outbox_events SET published_at = now() WHERE id IN ?`,
 		ids).Error; err != nil {
 		return fmt.Errorf("outbox: mark published: %w", err)
+	}
+	return nil
+}
+
+func (r *gormRepository) MarkFailedInTx(tx *gorm.DB, failures []Failure) error {
+	if len(failures) == 0 {
+		return nil
+	}
+	// Grouped by reason so this is one statement per DISTINCT reason (two,
+	// today) rather than one per row. Map iteration order is unspecified
+	// and irrelevant: the id sets are disjoint, so the statements commute.
+	byReason := make(map[string][]string, len(failures))
+	for _, f := range failures {
+		byReason[f.Reason] = append(byReason[f.Reason], f.ID)
+	}
+	for reason, ids := range byReason {
+		if err := tx.Exec(`UPDATE outbox_events SET error = ? WHERE id IN ?`,
+			reason, ids).Error; err != nil {
+			return fmt.Errorf("outbox: mark failed: %w", err)
+		}
 	}
 	return nil
 }

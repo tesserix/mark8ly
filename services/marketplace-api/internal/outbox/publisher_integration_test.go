@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,10 +25,15 @@ func quietLogger() *slog.Logger {
 
 func insertStore(t *testing.T, db *gorm.DB, id, tenantID string) {
 	t.Helper()
+	// storefront_customer_portal_secret is char(64) NOT NULL with no default
+	// and no Go hook — callers set it explicitly (internal/stores/models.go).
+	// Omitting it made every test using this helper fail at INSERT.
 	err := db.Exec(`
-		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())`,
-		id, tenantID, "test-"+id[:8], "Test Store", "US", "USD", "UTC", "active").Error
+		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status,
+		                    storefront_customer_portal_secret, synced_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, now())`,
+		id, tenantID, "test-"+id[:8], "Test Store", "US", "USD", "UTC", "active",
+		strings.Repeat("0", 64)).Error
 	if err != nil {
 		t.Fatalf("insertStore: %v", err)
 	}

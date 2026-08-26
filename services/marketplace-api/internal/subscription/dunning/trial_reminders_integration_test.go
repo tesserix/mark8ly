@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/email"
@@ -307,4 +308,70 @@ func TestTrialReminders_FailedSendDoesNotReleaseTheClaim(t *testing.T) {
 	var claims int64
 	require.NoError(t, db.Raw(`SELECT count(*) FROM trial_reminders`).Scan(&claims).Error)
 	require.EqualValues(t, 1, claims, "the burned slot must stay claimed")
+}
+
+// seedHasPMTrialSub seeds a T-1 has-payment-method trial subscription with the
+// given plan, so the two tests below differ only in the plan column.
+func seedHasPMTrialSub(t *testing.T, db *gorm.DB, now time.Time, plan subscription.SubscriptionPlan, addr string) {
+	t.Helper()
+	created := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC).
+		AddDate(0, 0, -(trial.TrialDays - 1))
+	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, tenantID, storeID)
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		ID:                      uuid.New(),
+		TenantID:                tenantID,
+		StoreID:                 storeID,
+		StripeCustomerID:        "cus_" + storeID.String()[:8],
+		Plan:                    plan,
+		Status:                  subscription.StatusTrialing,
+		HasDefaultPaymentMethod: true,
+		CreatedAt:               created,
+		Email:                   &addr,
+	}).Error)
+}
+
+// trial_has_pm_t1 says "your <plan> plan begins tomorrow — we will charge the
+// card on file". has_default_payment_method is mirrored from Stripe and is
+// independent of plan selection, so a merchant who attached a card but never
+// picked a plan is still on plan='trial' and will not be charged: nothing was
+// ever subscribed. Sending would be a false billing statement.
+func TestTrialReminders_HasPMT1SkippedWhenPlanStillTrial(t *testing.T) {
+	db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores")
+	now := time.Now().UTC()
+
+	seedHasPMTrialSub(t, db, now, subscription.PlanTrial, "merchant-plan-trial@example.com")
+
+	client := &capturingClient{}
+	skipped := &stubSkip{}
+	cron := dunning.NewSendTrialReminders(db, client, slog.Default(), nil, func() time.Time { return now }).
+		WithSkipCounter(skipped)
+	require.NoError(t, cron.Run(context.Background()))
+
+	require.Zero(t, client.count(), "told a merchant they are about to be charged with no plan recorded")
+	require.Equal(t, 1, skipped.n[string(email.TemplateTrialHasPMT1)+"/plan_unresolved"])
+
+	// The idempotency slot must stay free: if the merchant picks a plan before
+	// the trial ends, a later tick has to be able to send a correct reminder.
+	var claims int64
+	require.NoError(t, db.Raw(
+		`SELECT count(*) FROM trial_reminders WHERE offset_key = 'has_pm_t_minus_1'`).Scan(&claims).Error)
+	require.EqualValues(t, 0, claims, "the slot was burned; a correct reminder can never be sent")
+}
+
+// The counterpart to the test above: with a real plan the reminder must still
+// go out. Without this assertion the guard could silently disable the whole
+// template and nothing would notice.
+func TestTrialReminders_HasPMT1StillSendsWithRealPlan(t *testing.T) {
+	db := testdb.NewDB(t, "trial_reminders", "store_subscriptions", "stores")
+	now := time.Now().UTC()
+
+	seedHasPMTrialSub(t, db, now, subscription.PlanStarter, "merchant-plan-starter@example.com")
+
+	client := &capturingClient{}
+	cron := dunning.NewSendTrialReminders(db, client, slog.Default(), nil, func() time.Time { return now })
+	require.NoError(t, cron.Run(context.Background()))
+
+	require.Equal(t, 1, client.count(), "a merchant on a real plan must still get the T-1 heads-up")
+	require.Equal(t, email.TemplateTrialHasPMT1, client.sends[0].Template)
 }

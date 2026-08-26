@@ -151,6 +151,30 @@ func (s *SendTrialReminders) runForOffset(ctx context.Context, now time.Time, t 
 // skip without sending. Email-send failures intentionally do NOT delete the
 // idempotency row — that would risk a double-send on the next tick.
 func (s *SendTrialReminders) processOne(ctx context.Context, row *subscription.StoreSubscription, t trialReminderTarget, now time.Time) error {
+	// The has-PM T-1 template tells the merchant "your <plan> plan begins
+	// tomorrow — we will charge the card on file". has_default_payment_method
+	// is mirrored from Stripe's invoice_settings.default_payment_method and
+	// says nothing about whether a plan was ever selected, so a merchant who
+	// attached a card but never finished plan selection is still on
+	// plan='trial' and nothing will be charged: no Stripe subscription exists.
+	// Sending would be a false billing statement, so skip it.
+	//
+	// The guard sits BEFORE the idempotency claim deliberately. The slot must
+	// stay unclaimed: if the merchant selects a plan before the trial ends, a
+	// later tick should still be able to send them a correct reminder. Nothing
+	// is sent here, so there is no double-send for the claim to protect against.
+	if t.HasPM && row.Plan == subscription.PlanTrial {
+		s.logger.Warn("trial reminder skipped: plan still 'trial' at a billing reminder — merchant has a card but never selected a plan",
+			"store_id", row.StoreID.String(),
+			"tenant_id", row.TenantID.String(),
+			"offset", t.OffsetKey,
+			"reason", "plan_unresolved")
+		if s.skip != nil {
+			s.skip.WithTemplateReason(string(t.Template), "plan_unresolved").Inc()
+		}
+		return nil
+	}
+
 	res := s.db.WithContext(ctx).Exec(`
 		INSERT INTO trial_reminders (subscription_id, tenant_id, store_id, offset_key, sent_at)
 		VALUES (?, ?, ?, ?, ?)

@@ -105,3 +105,67 @@ func TestInvoicePaid_TrialBilled_NoClaimStoreSkipsSend(t *testing.T) {
 	require.NoError(t, db.Where("id = ?", sub.ID).First(&reloaded).Error)
 	require.NotNil(t, reloaded.FirstChargeAt, "webhook side effects must still run")
 }
+
+// seedFirstChargeSubWithPlan is seedFirstChargeSub with an explicit plan, so
+// the two tests below differ only in the plan column.
+func seedFirstChargeSubWithPlan(t *testing.T, plan subscription.SubscriptionPlan) (*gorm.DB, subscription.StoreSubscription, string) {
+	t.Helper()
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
+
+	storeID := uuid.New()
+	seedStore(t, db, storeID)
+	addr := "merchant@example.com"
+	customerID := "cus_" + uuid.NewString()[:12]
+	sub := subscription.StoreSubscription{
+		TenantID:         uuid.New(),
+		StoreID:          storeID,
+		StripeCustomerID: customerID,
+		Plan:             plan,
+		Status:           subscription.StatusActive,
+		Email:            &addr,
+	}
+	require.NoError(t, db.Create(&sub).Error)
+	return db, sub, customerID
+}
+
+// The trial-billed template names the plan the merchant is now being billed
+// for. plan='trial' at first charge means no plan was ever recorded (e.g. the
+// legacy CreateCheckoutSession route, which never persists it), so the email
+// would tell the merchant their "trial plan" is active and billed monthly.
+// Skip the send instead.
+func TestInvoicePaid_TrialBilled_SkippedWhenPlanStillTrial(t *testing.T) {
+	db, sub, customerID := seedFirstChargeSubWithPlan(t, subscription.PlanTrial)
+
+	client := &captureEmailClient{}
+	d := dispatch.New(nil).WithEmail(client).WithDB(db)
+	require.NoError(t, dispatchInvoicePaid(t, d, db, customerID))
+
+	require.Empty(t, client.recipients, "confirmed a 'trial plan' the merchant was never billed for")
+
+	// The claim must NOT be burned: the skip sends nothing, so there is no
+	// double-send to guard against, and a claim would suppress a correct
+	// confirmation if the plan is resolved before a retry lands.
+	var n int64
+	require.NoError(t, db.Raw(
+		`SELECT count(*) FROM billing_email_sends
+		 WHERE subscription_id = ? AND template_key = ?`,
+		sub.ID, string(email.TemplateTrialStartedBilled)).Scan(&n).Error)
+	require.EqualValues(t, 0, n, "the at-most-once slot was burned on a send that never happened")
+
+	// The webhook's own side effects still run.
+	var reloaded subscription.StoreSubscription
+	require.NoError(t, db.Where("id = ?", sub.ID).First(&reloaded).Error)
+	require.NotNil(t, reloaded.FirstChargeAt, "webhook side effects must still run")
+}
+
+// The counterpart: with a real plan the confirmation must still be sent.
+// Without this the guard could silently disable the template entirely.
+func TestInvoicePaid_TrialBilled_StillSendsWithRealPlan(t *testing.T) {
+	db, _, customerID := seedFirstChargeSubWithPlan(t, subscription.PlanStarter)
+
+	client := &captureEmailClient{}
+	d := dispatch.New(nil).WithEmail(client).WithDB(db)
+	require.NoError(t, dispatchInvoicePaid(t, d, db, customerID))
+
+	require.Len(t, client.recipients, 1, "a merchant on a real plan must still get the confirmation")
+}

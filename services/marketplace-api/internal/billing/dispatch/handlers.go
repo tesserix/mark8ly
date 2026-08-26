@@ -245,6 +245,9 @@ func (d *Dispatcher) handleSubscriptionDeleted(ctx context.Context, tx *gorm.DB,
 // update, this invoice is the first successful charge — meaning the trial
 // has just transitioned to a paid plan. We emit a TemplateTrialStartedBilled
 // confirmation email so the merchant knows their selected plan is now active.
+// The confirmation is suppressed when plan is still 'trial' — see
+// sendTrialBilled — because the template would then name "trial" as the plan
+// the merchant is being billed for.
 //
 // Multi-pod safety: the dispatcher holds pg_advisory_xact_lock on the store
 // for the duration of webhook processing (see dispatcher.go), so two pods
@@ -315,6 +318,28 @@ const trialBilledPeriodKey = "first_charge"
 // skipped rather than risked.
 func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subscription.StoreSubscription) {
 	log := slog.Default()
+
+	// The template says "your <plan> plan is active ... billed monthly". A
+	// subscription is bootstrapped on plan='trial' and only advanced by
+	// CommitUpgrade / CommitDowngrade / planchange's initial_selection, so a
+	// merchant who reached first charge through the legacy CreateCheckoutSession
+	// route (which never persists the plan) would be told their "trial plan" is
+	// now being billed. That is a false billing statement, so skip the send.
+	//
+	// Ordering: the guard sits BEFORE the claim on purpose. The claim's job is
+	// to stop a SECOND send after the webhook transaction rolls back
+	// (first_charge_at returns to NULL and Stripe retries) — see the doc comment
+	// above. A skip sends nothing, so there is no send to deduplicate, and
+	// burning the one-per-subscription slot here would permanently suppress a
+	// correct confirmation if the plan is resolved before the retry lands.
+	if sub.Plan == subscription.PlanTrial {
+		log.Warn("dispatch: trial-billed email skipped — plan still 'trial' at first charge; no plan was ever recorded for this subscription",
+			"store_id", sub.StoreID.String(),
+			"tenant_id", sub.TenantID.String(),
+			"reason", "plan_unresolved")
+		d.countSkip("plan_unresolved")
+		return
+	}
 
 	if d.db == nil {
 		log.Warn("dispatch: trial-billed email skipped — no claim store wired (WithDB)",

@@ -107,6 +107,18 @@ var (
 		[]string{"offset"},
 	)
 
+	// BillingEmailsSkippedTotal counts subscription emails deliberately not
+	// sent — an undeliverable recipient, a render failure, or a transport
+	// failure. Its companion *_sent_total counters only ever increment on a
+	// real delivery, so sent+skipped is the eligible population. #381.
+	BillingEmailsSkippedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_subscription_billing_emails_skipped_total",
+			Help: "Count of subscription emails not sent, labeled by template and reason (no_address, placeholder_address, invalid_address, render_failed, transport_failed).",
+		},
+		[]string{"template", "reason"},
+	)
+
 	// AuditPruneRowsDeletedTotal counts audit_logs rows hard-deleted by the
 	// retention prune cron, labeled by retention bucket
 	// (trial_starter_90d, studio_365d, operator_7y). Pro is unlimited and never pruned.
@@ -174,6 +186,7 @@ func init() {
 		DunningEmailsSentTotal,
 		PaymentActionRemindersSentTotal,
 		TrialRemindersSentTotal,
+		BillingEmailsSkippedTotal,
 		AuditPruneRowsDeletedTotal,
 		DunningSuppressedRefundWindowTotal,
 		APIKeyUsedTotal,

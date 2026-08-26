@@ -28,3 +28,22 @@ type prometheusCounterVec struct{ cv *prometheus.CounterVec }
 func (p *prometheusCounterVec) WithDay(label string) CounterIncrementer {
 	return prometheusCounter{c: p.cv.WithLabelValues(label)}
 }
+
+// SkipCounter counts billing emails that were deliberately NOT sent,
+// labeled by template and reason. Defined here at the point of use rather
+// than in the metrics package so the crons stay testable with a stub.
+type SkipCounter interface {
+	WithTemplateReason(template, reason string) CounterIncrementer
+}
+
+// WrapPrometheusSkipCounter adapts a two-label *prometheus.CounterVec to
+// SkipCounter. Use with metrics.BillingEmailsSkippedTotal in main.go.
+func WrapPrometheusSkipCounter(cv *prometheus.CounterVec) SkipCounter {
+	return &prometheusSkipCounter{cv: cv}
+}
+
+type prometheusSkipCounter struct{ cv *prometheus.CounterVec }
+
+func (p *prometheusSkipCounter) WithTemplateReason(template, reason string) CounterIncrementer {
+	return prometheusCounter{c: p.cv.WithLabelValues(template, reason)}
+}

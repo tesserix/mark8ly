@@ -2,6 +2,7 @@ package dunning
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -175,6 +176,18 @@ func (s *SendDunningEmails) runForDay(ctx context.Context, now time.Time, t dunn
 				"reason", email.SkipReason(err), "err", err.Error())
 			if s.skip != nil {
 				s.skip.WithTemplateReason(string(t.Template), email.SkipReason(err)).Inc()
+			}
+			if errors.Is(err, email.ErrUndeliverable) {
+				// The address is missing or wrong — recoverable via the
+				// backfill or a customer.updated webhook. Release the
+				// claim so a later run can still deliver this notice.
+				if relErr := subscription.ReleaseEmailClaim(ctx, s.db, r.SubscriptionID, string(t.Template), periodKey); relErr != nil {
+					s.logger.Error("dunning email: release claim failed",
+						"day", t.Day, "store_id", r.StoreID, "err", relErr.Error())
+				} else {
+					s.logger.Info("dunning email: claim released for retry",
+						"day", t.Day, "store_id", r.StoreID)
+				}
 			}
 			continue
 		}

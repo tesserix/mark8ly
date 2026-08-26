@@ -2,6 +2,7 @@ package dunning
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -155,6 +156,27 @@ func (s *SendPaymentActionReminders) processOne(ctx context.Context, row *subscr
 			"reason", email.SkipReason(err), "err", err.Error())
 		if s.skip != nil {
 			s.skip.WithTemplateReason(string(email.TemplatePaymentActionReminder), email.SkipReason(err)).Inc()
+		}
+		if errors.Is(err, email.ErrUndeliverable) {
+			// The address is missing or wrong — recoverable via the
+			// backfill or a customer.updated webhook. Release the claim
+			// so a later run can still deliver this notice.
+			//
+			// NOTE: this table's "subscription_id" column actually holds
+			// store_id (see the INSERT above) — keyed identically here.
+			delErr := s.db.WithContext(ctx).Exec(`
+				DELETE FROM payment_action_reminders
+				WHERE subscription_id = ? AND offset_key = ?`,
+				row.StoreID, t.OffsetKey,
+			).Error
+			if delErr != nil {
+				s.logger.Error("SCA reminder: release claim failed",
+					"store_id", row.StoreID.String(), "offset", t.OffsetKey, "err", delErr.Error())
+			} else {
+				s.logger.Info("SCA reminder: claim released for retry",
+					"store_id", row.StoreID.String(), "offset", t.OffsetKey)
+			}
+			return nil
 		}
 		// Don't delete the idempotency row — we'd risk double-send on retry.
 		return nil

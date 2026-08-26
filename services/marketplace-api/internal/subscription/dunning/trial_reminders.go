@@ -2,6 +2,7 @@ package dunning
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -210,6 +211,24 @@ func (s *SendTrialReminders) processOne(ctx context.Context, row *subscription.S
 			"err", err.Error())
 		if s.skip != nil {
 			s.skip.WithTemplateReason(string(t.Template), email.SkipReason(err)).Inc()
+		}
+		if errors.Is(err, email.ErrUndeliverable) {
+			// The address is missing or wrong — recoverable via the
+			// backfill or a customer.updated webhook. Release the claim
+			// so a later run can still deliver this notice.
+			delErr := s.db.WithContext(ctx).Exec(`
+				DELETE FROM trial_reminders
+				WHERE subscription_id = ? AND offset_key = ?`,
+				row.ID, t.OffsetKey,
+			).Error
+			if delErr != nil {
+				s.logger.Error("trial reminder: release claim failed",
+					"store_id", row.StoreID.String(), "offset", t.OffsetKey, "err", delErr.Error())
+			} else {
+				s.logger.Info("trial reminder: claim released for retry",
+					"store_id", row.StoreID.String(), "offset", t.OffsetKey)
+			}
+			return nil
 		}
 		// Do not delete the idempotency row — that would risk a double-send.
 		// At-most-once is the deliberate contract: see the spec, §6.

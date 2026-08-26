@@ -33,3 +33,18 @@ func ClaimEmailSend(ctx context.Context, db *gorm.DB, subscriptionID uuid.UUID, 
 	}
 	return res.RowsAffected == 1, nil
 }
+
+// ReleaseEmailClaim removes a claim so a later run may retry.
+//
+// Called ONLY when the send failed because we had no usable address — the
+// backfill or a customer.updated webhook may supply one later, and a merchant
+// should not permanently lose a notice because their address had not landed
+// yet. Every other failure keeps its claim: at-most-once for transport errors
+// is deliberate, because a duplicate billing email is worse than a missed one.
+func ReleaseEmailClaim(ctx context.Context, db *gorm.DB, subscriptionID uuid.UUID, templateKey, periodKey string) error {
+	return db.WithContext(ctx).Exec(`
+		DELETE FROM billing_email_sends
+		WHERE subscription_id = ? AND template_key = ? AND period_key = ?`,
+		subscriptionID, templateKey, periodKey,
+	).Error
+}

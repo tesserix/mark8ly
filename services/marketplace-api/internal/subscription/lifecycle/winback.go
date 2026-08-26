@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -138,6 +139,18 @@ func (c *WinBackCron) sendOne(ctx context.Context, row *subscription.StoreSubscr
 			"reason", email.SkipReason(err), "err", err.Error())
 		if c.skip != nil {
 			c.skip.WithTemplateReason(string(email.TemplateWinBack), email.SkipReason(err)).Inc()
+		}
+		if errors.Is(err, email.ErrUndeliverable) {
+			// The address is missing or wrong — recoverable via the
+			// backfill or a customer.updated webhook. Release the claim
+			// so a later run can still deliver this notice.
+			if relErr := subscription.ReleaseEmailClaim(ctx, c.db, row.ID, string(email.TemplateWinBack), periodKey); relErr != nil {
+				c.logger.Error("lifecycle: win-back release claim failed",
+					"store_id", row.StoreID, "err", relErr.Error())
+			} else {
+				c.logger.Info("lifecycle: win-back claim released for retry",
+					"store_id", row.StoreID)
+			}
 		}
 		return
 	}

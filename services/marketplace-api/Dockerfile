@@ -9,7 +9,7 @@
 # securityContext overrides USER and binaries are mode 0755.
 
 # ─── builder ────────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-go-builder@sha256:758711faa24b33371fa3773b0ff3a1c3ac261e6092fefdec0a14cc5fca9be465 AS builder
+FROM ghcr.io/tesserix/base-go-builder@sha256:6dd108601b58dde3e6cee2b1bac01b113baa9180f4051983c4b69b76a1c8ec06 AS builder
 USER 0:0
 WORKDIR /src
 

@@ -118,7 +118,7 @@ var (
 	BillingEmailsSkippedTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "mark8ly_subscription_billing_emails_skipped_total",
-			Help: "Count of subscription emails not sent, labeled by template and reason (no_address, placeholder_address, invalid_address, render_failed, transport_failed, no_provider, claim_failed, no_claim_store).",
+			Help: "Count of subscription emails not sent, labeled by template and reason (no_address, placeholder_address, invalid_address, render_failed, transport_failed, no_provider, claim_failed, no_claim_store). Exception: plan_unresolved is deliberately counted outside the idempotency claim, so on repeat same-day cron runs it may be incremented more than once per merchant — for that reason, sent+skipped is an inequality rather than an equality.",
 		},
 		[]string{"template", "reason"},
 	)

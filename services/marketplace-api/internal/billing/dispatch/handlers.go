@@ -414,9 +414,28 @@ func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subsc
 		}
 
 		if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, to, data); sendErr != nil {
-			// The claim is deliberately NOT released: at-most-once beats a
-			// duplicate, matching the other four billing mail paths.
 			d.countSkip(email.SkipReason(sendErr))
+			// An address failure releases the claim; a transport failure keeps
+			// it. Same split as the other four billing mail paths.
+			//
+			// Releasing matters more here than anywhere else: period_key is
+			// the constant "first_charge", so the claim is one-per-subscription
+			// for LIFE. A merchant still on a billing+<uuid>@mark8ly.local
+			// placeholder at first charge would otherwise burn that slot
+			// before any network call, and — because first_charge_at is
+			// committed, so wasFirstCharge is false forever after — never
+			// receive a trial-billed confirmation at all, however many real
+			// addresses arrive later.
+			if errors.Is(sendErr, email.ErrUndeliverable) {
+				if relErr := subscription.ReleaseEmailClaim(ctx, d.db, sub.ID,
+					string(email.TemplateTrialStartedBilled), trialBilledPeriodKey); relErr != nil {
+					log.Error("dispatch: trial-billed release claim failed",
+						"store_id", sub.StoreID.String(), "err", relErr.Error())
+				} else {
+					log.Info("dispatch: trial-billed claim released for retry",
+						"store_id", sub.StoreID.String())
+				}
+			}
 			return fmt.Errorf("dispatch: trial-billed email not sent for store %s (reason %s): %w",
 				sub.StoreID, email.SkipReason(sendErr), sendErr)
 		}
@@ -431,9 +450,10 @@ func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subsc
 	// plus a possible Resend fallback) must not hold the per-store lock and
 	// a pool connection against Stripe's 30s webhook budget.
 	//
-	// The claim above stays inside the transaction on the non-transactional
-	// handle: it is what stops a rollback-then-retry from sending twice, and
-	// moving it out here would reintroduce that duplicate.
+	// Note the claim is NOT taken here — it is the first statement of the
+	// send closure, and travels with the send. The rationale is above; the
+	// short version is that a claim written here would survive a rollback
+	// that discarded the send it paid for.
 	if postcommit.Add(ctx, send) {
 		return
 	}

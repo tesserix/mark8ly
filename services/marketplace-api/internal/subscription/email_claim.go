@@ -3,10 +3,15 @@ package subscription
 // email_claim.go — claim-first idempotency for billing mail (#381).
 //
 // The contract mirrors payment_action_reminders: claim the slot BEFORE
-// sending, and never release it on a send failure. That makes delivery
+// sending, and never release it on a TRANSPORT failure. That makes delivery
 // at-most-once — a transient provider error costs the merchant that one
 // notice rather than risking a duplicate. The failure is visible through
 // the caller's skipped counter and Warn log.
+//
+// The one exception is an ADDRESS failure (email.ErrUndeliverable): nothing
+// was ever handed to a provider, so there is no duplicate to guard against,
+// and the address is recoverable via the backfill or a customer.updated
+// webhook. Those callers release the claim — see ReleaseEmailClaim below.
 
 import (
 	"context"

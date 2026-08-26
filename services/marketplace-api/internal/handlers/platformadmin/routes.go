@@ -97,6 +97,16 @@ type Deps struct {
 	// bounce or drop. See #348.
 	Notifications NotificationLister
 
+	// Outbox serves /admin/outbox (#331), the cross-tenant read of stuck and
+	// failed outbox events. Nil leaves that route unmounted, matching the
+	// nil-safe pattern used for the other optional read routes above.
+	//
+	// This became answerable only with #336: before it, nothing wrote
+	// outbox_events.error, so the `failed` status could never have matched a
+	// row and this endpoint would have reported a permanently empty set
+	// while looking as though it worked.
+	Outbox OutboxLister
+
 	// TrialExtender serves POST /admin/billing/trials/:storeID/extend (#286),
 	// this surface's second WRITE. Like TenantLifecycle it needs DB and
 	// Emitter as well: a write endpoint that cannot be attributed to an
@@ -208,6 +218,10 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.Notifications != nil {
 		NewNotificationsHandler(deps.DB, deps.Notifications, deps.Logger).Register(group)
+	}
+
+	if deps.Outbox != nil {
+		NewOutboxHandler(deps.DB, deps.Outbox, deps.Logger).Register(group)
 	}
 
 	switch {

@@ -27,6 +27,12 @@ const (
 	// Sent from invoice.paid webhook on the first successful charge —
 	// confirms the chosen plan is now active.
 	TemplateTrialStartedBilled TemplateID = "trial_started_billed"
+
+	// Day-30 post-expiry win-back promo. Lived in the lifecycle package
+	// until #381; moved here so the billing catalog is complete in one
+	// place and the email package can register its fallback without
+	// importing lifecycle (which imports email).
+	TemplateWinBack TemplateID = "win_back_day30"
 )
 
 // Client is the narrow interface every caller uses.

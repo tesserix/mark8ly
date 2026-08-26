@@ -37,3 +37,24 @@ func TestWrapPrometheusCounterVec_WithDay_Inc(t *testing.T) {
 	assert.Equal(t, float64(2), testutil.ToFloat64(cv.WithLabelValues("day_5")))
 	assert.Equal(t, float64(1), testutil.ToFloat64(cv.WithLabelValues("day_7")))
 }
+
+// --- appended for #381 ---
+
+func TestWrapPrometheusSkipCounter_IncrementsLabelledSeries(t *testing.T) {
+	cv := prometheus.NewCounterVec(
+		prometheus.CounterOpts{Name: "test_skipped_total", Help: "test"},
+		[]string{"template", "reason"},
+	)
+
+	sc := dunning.WrapPrometheusSkipCounter(cv)
+	sc.WithTemplateReason("dunning_day_5", "placeholder_address").Inc()
+	sc.WithTemplateReason("dunning_day_5", "placeholder_address").Inc()
+	sc.WithTemplateReason("dunning_day_7", "no_address").Inc()
+
+	if got := testutil.ToFloat64(cv.WithLabelValues("dunning_day_5", "placeholder_address")); got != 2 {
+		t.Errorf("day_5/placeholder = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(cv.WithLabelValues("dunning_day_7", "no_address")); got != 1 {
+		t.Errorf("day_7/no_address = %v, want 1", got)
+	}
+}

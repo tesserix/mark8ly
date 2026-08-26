@@ -26,7 +26,7 @@ func (r *recordingEmail) Send(_ context.Context, template email.TemplateID, to s
 	return nil
 }
 
-func seedTrialSub(t *testing.T, db *gorm.DB, createdAt time.Time, trialEndsAt *time.Time, hasPM bool) subscription.StoreSubscription {
+func seedTrialSub(t *testing.T, db *gorm.DB, createdAt time.Time, trialEndsAt *time.Time, hasPM bool, emailAddr *string) subscription.StoreSubscription {
 	t.Helper()
 	tenantID, storeID := uuid.New(), uuid.New()
 	seedStore(t, db, tenantID, storeID)
@@ -37,6 +37,7 @@ func seedTrialSub(t *testing.T, db *gorm.DB, createdAt time.Time, trialEndsAt *t
 		HasDefaultPaymentMethod: hasPM,
 		CreatedAt:               createdAt,
 		TrialEndsAt:             trialEndsAt,
+		Email:                   emailAddr,
 	}
 	require.NoError(t, db.Create(&sub).Error)
 	return sub
@@ -53,7 +54,8 @@ func TestTrialReminders_FireRelativeToTheExtendedEnd(t *testing.T) {
 	created := now.Add(-75 * 24 * time.Hour)
 	// Real end is 60 days away, so nothing should fire today.
 	extended := now.Add(60 * 24 * time.Hour)
-	sub := seedTrialSub(t, db, created, &extended, false)
+	merchantEmail := "merchant@example.com"
+	sub := seedTrialSub(t, db, created, &extended, false, &merchantEmail)
 
 	rec := &recordingEmail{}
 	cron := dunning.NewSendTrialReminders(db, rec, nil, nil, func() time.Time { return now })
@@ -77,7 +79,8 @@ func TestTrialReminders_FireOnTheExtendedEndsT15(t *testing.T) {
 	// value can put this row in the T-15 bucket.
 	created := now.Add(-200 * 24 * time.Hour)
 	extended := time.Date(2026, 6, 30, 9, 0, 0, 0, time.UTC) // 15 days out
-	sub := seedTrialSub(t, db, created, &extended, false)
+	merchantEmail := "merchant@example.com"
+	sub := seedTrialSub(t, db, created, &extended, false, &merchantEmail)
 
 	rec := &recordingEmail{}
 	cron := dunning.NewSendTrialReminders(db, rec, nil, nil, func() time.Time { return now })

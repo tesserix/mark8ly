@@ -39,6 +39,7 @@ type SendPaymentActionReminders struct {
 	logger  *slog.Logger
 	clock   func() time.Time
 	counter CounterVecIncrementer
+	skip    SkipCounter
 }
 
 // NewSendPaymentActionReminders constructs a SendPaymentActionReminders cron.
@@ -57,6 +58,13 @@ func NewSendPaymentActionReminders(db *gorm.DB, em email.Client, logger *slog.Lo
 		counter: counter,
 		clock:   clock,
 	}
+}
+
+// WithSkipCounter attaches the counter for emails deliberately not sent.
+// Optional: nil means skips are logged but not counted.
+func (s *SendPaymentActionReminders) WithSkipCounter(c SkipCounter) *SendPaymentActionReminders {
+	s.skip = c
+	return s
 }
 
 // Run executes one pass: for each offset (14d/7d/1d), finds subscriptions in
@@ -126,13 +134,28 @@ func (s *SendPaymentActionReminders) processOne(ctx context.Context, row *subscr
 		return nil
 	}
 
-	if err := s.emailCl.Send(ctx, email.TemplatePaymentActionReminder, row.StoreID.String(), map[string]any{
+	to := ""
+	if row.Email != nil {
+		to = *row.Email
+	}
+	invoiceURL := ""
+	if row.HostedInvoiceURL != nil {
+		invoiceURL = *row.HostedInvoiceURL
+	}
+
+	if err := s.emailCl.Send(ctx, email.TemplatePaymentActionReminder, to, map[string]any{
 		"store_id":           row.StoreID.String(),
+		"tenant_id":          row.TenantID.String(),
+		"store_name":         subscription.StoreNameFor(ctx, s.db, row.StoreID),
 		"offset":             t.OffsetKey,
-		"hosted_invoice_url": row.HostedInvoiceURL,
+		"hosted_invoice_url": invoiceURL,
 	}); err != nil {
-		s.logger.Warn("SCA reminder email failed",
-			"store_id", row.StoreID.String(), "offset", t.OffsetKey, "err", err.Error())
+		s.logger.Warn("SCA reminder not sent",
+			"store_id", row.StoreID.String(), "offset", t.OffsetKey,
+			"reason", email.SkipReason(err), "err", err.Error())
+		if s.skip != nil {
+			s.skip.WithTemplateReason(string(email.TemplatePaymentActionReminder), email.SkipReason(err)).Inc()
+		}
 		// Don't delete the idempotency row — we'd risk double-send on retry.
 		return nil
 	}

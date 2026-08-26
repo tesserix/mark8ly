@@ -136,6 +136,28 @@ func summariseSDKPaymentMethod(pm *sdk.PaymentMethod) (PaymentMethodSummary, boo
 	return PaymentMethodSummary{}, false
 }
 
+// GetCustomerEmail returns the billing address Stripe holds for a customer,
+// or "" when the customer has none. Used by cmd/backfill-email to populate
+// store_subscriptions.email for rows predating migration 104 (#381).
+//
+// An empty customerID is not an error — it means the subscription was never
+// bootstrapped against Stripe, which the caller skips.
+func GetCustomerEmail(ctx context.Context, c *Client, customerID string) (string, error) {
+	if customerID == "" {
+		return "", nil
+	}
+	params := &sdk.CustomerRetrieveParams{}
+	params.Context = ctx
+	cu, err := c.sdk.V1Customers.Retrieve(ctx, customerID, params)
+	if err != nil {
+		return "", toAPIError(err)
+	}
+	if cu == nil {
+		return "", nil
+	}
+	return cu.Email, nil
+}
+
 // Idempotent: if the customer is already deleted in Stripe (HTTP 404), the
 // error is treated as a no-op success so the caller can safely retry.
 func DeleteCustomer(ctx context.Context, c *Client, customerID string) error {

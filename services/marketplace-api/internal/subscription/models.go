@@ -104,10 +104,15 @@ const (
 // StoreSubscription is the GORM model for the store_subscriptions table.
 // Column definitions must stay aligned with migrations 036-040.
 type StoreSubscription struct {
-	ID                   uuid.UUID          `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	TenantID             uuid.UUID          `gorm:"column:tenant_id;type:uuid;not null;index:ss_tenant_idx"`
-	StoreID              uuid.UUID          `gorm:"column:store_id;type:uuid;not null;uniqueIndex"`
-	StripeCustomerID     string             `gorm:"column:stripe_customer_id;type:varchar(100);not null"`
+	ID               uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID         uuid.UUID `gorm:"column:tenant_id;type:uuid;not null;index:ss_tenant_idx"`
+	StoreID          uuid.UUID `gorm:"column:store_id;type:uuid;not null;uniqueIndex"`
+	StripeCustomerID string    `gorm:"column:stripe_customer_id;type:varchar(100);not null"`
+	// Email is the merchant's billing address, mirrored from the Stripe
+	// customer by handleCustomerUpdated and backfilled by cmd/backfill-email
+	// (migration 104, #381). NULL means "not known yet" — every mailer
+	// refuses to send and counts a skip rather than guessing.
+	Email                *string            `gorm:"column:email;type:citext"`
 	StripeSubscriptionID *string            `gorm:"column:stripe_subscription_id;type:varchar(100)"`
 	Plan                 SubscriptionPlan   `gorm:"column:plan;type:varchar(30);not null;default:trial"`
 	Status               SubscriptionStatus `gorm:"column:status;type:varchar(30);not null;default:signup"`
@@ -149,6 +154,7 @@ type StoreSubscription struct {
 
 	// v2.3 P6 — SCA fallback + dunning refund-window guard (§4.7, §16.5).
 	// HostedInvoiceURL is populated by invoice.payment_action_required and
+	// invoice.payment_failed (the dunning ladder's emails link to it) and
 	// cleared on invoice.paid. FirstChargeAt is stamped once on the first
 	// successful invoice.paid and never updated thereafter — it anchors the
 	// 14-day refund window that blocks ladder-driven expiry.

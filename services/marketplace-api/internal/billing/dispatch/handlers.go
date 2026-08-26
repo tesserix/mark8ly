@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -244,10 +245,16 @@ func (d *Dispatcher) handleSubscriptionDeleted(ctx context.Context, tx *gorm.DB,
 // update, this invoice is the first successful charge — meaning the trial
 // has just transitioned to a paid plan. We emit a TemplateTrialStartedBilled
 // confirmation email so the merchant knows their selected plan is now active.
+// The confirmation is suppressed when plan is still 'trial' — see
+// sendTrialBilled — because the template would then name "trial" as the plan
+// the merchant is being billed for.
 //
 // Multi-pod safety: the dispatcher holds pg_advisory_xact_lock on the store
 // for the duration of webhook processing (see dispatcher.go), so two pods
 // cannot race to detect "first charge" — only one will see first_charge_at=nil.
+// The confirmation email's own at-most-once guarantee comes from a
+// billing_email_sends claim on a non-transactional handle, NOT from
+// first_charge_at — see sendTrialBilled.
 func (d *Dispatcher) handleInvoicePaid(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	customer, err := extractCustomerID(raw)
 	if err != nil {
@@ -279,33 +286,174 @@ func (d *Dispatcher) handleInvoicePaid(ctx context.Context, tx *gorm.DB, raw []b
 	}
 
 	if wasFirstCharge && d.emailCl != nil {
-		// TODO: real email recipient — see trial.ExpiryCron / SendTrialReminders.
-		// StoreID placeholder mirrors the existing convention until store_email
-		// columns land on StoreSubscription.
-		if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, sub.StoreID.String(), map[string]any{
-			"store_id":  sub.StoreID.String(),
-			"tenant_id": sub.TenantID.String(),
-			"plan":      string(sub.Plan),
-			"period":    string(sub.SubscriptionPeriod),
-		}); sendErr != nil {
-			// Don't fail the webhook — Stripe would retry, double-firing every
-			// other side effect. Email failure is a soft error: log and move on.
-			// Idempotency is preserved by first_charge_at being non-nil after
-			// this UPDATE, so a retried invoice.paid event won't re-emit.
-			_ = fmt.Errorf("dispatch: trial-billed email (non-fatal): %w", sendErr)
-		}
+		d.sendTrialBilled(ctx, tx, sub)
 	}
 	return nil
+}
+
+// trialBilledPeriodKey is the period_key for the trial-billed confirmation.
+//
+// It is a constant rather than the Stripe event id because the guarantee we
+// want is "at most one trial-billed confirmation per subscription, ever" —
+// which is exactly what the claim's primary key
+// (subscription_id, template_key, period_key) gives with a fixed period.
+// The event id would only deduplicate redeliveries of the *same* Stripe
+// event; a distinct invoice.paid event arriving after a rolled-back
+// transaction (first_charge_at back to NULL) would carry a different id and
+// send a second confirmation. This email fires once in a subscription's
+// life, so the period is its whole life.
+const trialBilledPeriodKey = "first_charge"
+
+// sendTrialBilled emits the trial-started-billed confirmation.
+//
+// Idempotency guarantee, and why it is NOT first_charge_at: the send happens
+// inside the locked webhook transaction, and invoice.paid is dispatched as a
+// chain (see dispatcher.go) whose later handler can fail — or the commit
+// itself can fail — rolling first_charge_at back to NULL. The email is
+// already gone at that point, and Stripe's retry would see wasFirstCharge
+// again. So the claim is written on d.db, a NON-transactional handle: it
+// survives the rollback and the retry loses the claim.
+//
+// Without d.db there is no way to make this at-most-once, so the send is
+// skipped rather than risked.
+func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subscription.StoreSubscription) {
+	log := slog.Default()
+
+	// The template says "your <plan> plan is active ... billed monthly". A
+	// subscription is bootstrapped on plan='trial' and only advanced by
+	// CommitUpgrade / CommitDowngrade / planchange's initial_selection, so a
+	// merchant who reached first charge through the legacy CreateCheckoutSession
+	// route (which never persists the plan) would be told their "trial plan" is
+	// now being billed. That is a false billing statement, so skip the send.
+	//
+	// Ordering: the guard sits BEFORE the claim on purpose. The claim's job is
+	// to stop a SECOND send after the webhook transaction rolls back
+	// (first_charge_at returns to NULL and Stripe retries) — see the doc comment
+	// above. A skip sends nothing, so there is no send to deduplicate, and
+	// burning the one-per-subscription slot here would permanently suppress a
+	// correct confirmation if the plan is resolved before the retry lands.
+	if sub.Plan == subscription.PlanTrial {
+		log.Warn("dispatch: trial-billed email skipped — plan still 'trial' at first charge; no plan was ever recorded for this subscription",
+			"store_id", sub.StoreID.String(),
+			"tenant_id", sub.TenantID.String(),
+			"reason", "plan_unresolved")
+		d.countSkip("plan_unresolved")
+		return
+	}
+
+	if d.db == nil {
+		log.Warn("dispatch: trial-billed email skipped — no claim store wired (WithDB)",
+			"store_id", sub.StoreID.String())
+		d.countSkip("no_claim_store")
+		return
+	}
+
+	won, claimErr := subscription.ClaimEmailSend(ctx, d.db, sub.ID,
+		string(email.TemplateTrialStartedBilled), trialBilledPeriodKey, time.Now().UTC())
+	if claimErr != nil {
+		log.Error("dispatch: trial-billed claim failed; not sending",
+			"store_id", sub.StoreID.String(), "err", claimErr.Error())
+		d.countSkip("claim_failed")
+		return
+	}
+	if !won {
+		// Already sent for this subscription — a retry after a rolled-back
+		// transaction, or a second pod. Nothing to do.
+		return
+	}
+
+	to := ""
+	if sub.Email != nil {
+		to = *sub.Email
+	}
+	if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, to, map[string]any{
+		"store_id":   sub.StoreID.String(),
+		"tenant_id":  sub.TenantID.String(),
+		"store_name": subscription.StoreNameFor(ctx, tx, sub.StoreID),
+		"plan":       string(sub.Plan),
+		"period":     string(sub.SubscriptionPeriod),
+	}); sendErr != nil {
+		// Don't fail the webhook — Stripe would retry, double-firing every
+		// other side effect. Email failure is a soft error: log and move on.
+		// The claim is deliberately NOT released: at-most-once beats a
+		// duplicate, matching the other four billing mail paths.
+		log.Warn("dispatch: trial-billed email not sent",
+			"store_id", sub.StoreID.String(),
+			"reason", email.SkipReason(sendErr),
+			"err", sendErr.Error())
+		d.countSkip(email.SkipReason(sendErr))
+		return
+	}
+	if d.sent != nil {
+		d.sent.WithTemplate(string(email.TemplateTrialStartedBilled)).Inc()
+	}
+}
+
+// countSkip increments the skipped-emails counter when one is wired.
+func (d *Dispatcher) countSkip(reason string) {
+	if d.skip != nil {
+		d.skip.WithTemplateReason(string(email.TemplateTrialStartedBilled), reason).Inc()
+	}
 }
 
 // handleInvoicePaymentFailed routes invoice.payment_failed through the state
 // machine. Valid From states per §17.2: active, payment_action_required.
 // Idempotent replays where the status has already advanced are silently
 // dropped via ErrCASConflict.
+//
+// It also persists hosted_invoice_url from the payload, mirroring
+// handleInvoicePaymentActionRequired. This handler is the one that produces
+// past_due — i.e. the entire dunning cohort — and the dunning ladder's day-5
+// and day-7 emails render a "pay this invoice" button only when
+// hosted_invoice_url is set. Without this write the ordinary "card declined,
+// no SCA challenge" merchant reaches the two emails immediately preceding
+// suspension with no payment link at all.
+//
+// The write is unconditional and happens BEFORE the status transition, so a
+// replay (or an event arriving when the status has already advanced) still
+// refreshes the URL. An empty/absent field is left alone rather than blanking
+// a good URL; clearing on success stays where it belongs, in handleInvoicePaid.
 func (d *Dispatcher) handleInvoicePaymentFailed(ctx context.Context, tx *gorm.DB, raw []byte) error {
-	customer, err := extractCustomerID(raw)
-	if err != nil {
-		return err
+	var e struct {
+		Data struct {
+			Object struct {
+				Customer         string `json:"customer"`
+				HostedInvoiceURL string `json:"hosted_invoice_url"`
+			} `json:"object"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return fmt.Errorf("dispatch: unmarshal invoice.payment_failed: %w", err)
+	}
+	customer := e.Data.Object.Customer
+	if customer == "" {
+		return errors.New("dispatch: invoice.payment_failed missing customer")
+	}
+
+	// Persist hosted_invoice_url unconditionally so the merchant can always
+	// reach the Stripe-hosted payment page the dunning emails link to, even
+	// on event replay.
+	//
+	// Deliberately NOT stamping updated_at here: it is not a business-state
+	// change, it is bookkeeping. store_subscriptions.updated_at is both the
+	// win-back cron's 30-to-31-day eligibility window AND its idempotency
+	// key, and it also feeds the expired->store_closed timer and the 150-day
+	// hard-delete cutoff (see cmd/backfill-email for the original fix of
+	// this exact bug). Stripe keeps retrying failed invoices for weeks after
+	// a subscription is already expired, so this handler runs against
+	// already-terminal rows far more often than the SCA path below — bumping
+	// updated_at here would silently move or drop those merchants from the
+	// win-back window and push back their retention timers.
+	if e.Data.Object.HostedInvoiceURL != "" {
+		res := tx.WithContext(ctx).Exec(`
+			UPDATE store_subscriptions
+			SET hosted_invoice_url = ?
+			WHERE stripe_customer_id = ?`,
+			e.Data.Object.HostedInvoiceURL, customer,
+		)
+		if res.Error != nil {
+			return fmt.Errorf("dispatch: persist hosted_invoice_url: %w", res.Error)
+		}
 	}
 
 	var sub subscription.StoreSubscription
@@ -318,7 +466,7 @@ func (d *Dispatcher) handleInvoicePaymentFailed(ctx context.Context, tx *gorm.DB
 		return nil
 	}
 
-	err = statemachine.Transition(ctx, statemachine.TransitionInput{
+	err := statemachine.Transition(ctx, statemachine.TransitionInput{
 		DB:       tx,
 		Emitter:  d.emitter,
 		TenantID: sub.TenantID,
@@ -360,11 +508,16 @@ func (d *Dispatcher) handleInvoicePaymentActionRequired(ctx context.Context, tx 
 
 	// Persist hosted_invoice_url unconditionally so the merchant can always
 	// reach the Stripe-hosted payment page, even on event replay.
+	//
+	// Deliberately NOT stamping updated_at here either — same reasoning as
+	// handleInvoicePaymentFailed above: this UPDATE only touches the
+	// bookkeeping hosted_invoice_url column, not status, so it must not move
+	// the win-back cron's eligibility/idempotency window or the lifecycle
+	// crons' retention timers.
 	if e.Data.Object.HostedInvoiceURL != "" {
 		res := tx.WithContext(ctx).Exec(`
 			UPDATE store_subscriptions
-			SET hosted_invoice_url = ?,
-			    updated_at         = now()
+			SET hosted_invoice_url = ?
 			WHERE stripe_customer_id = ?`,
 			e.Data.Object.HostedInvoiceURL, customer,
 		)
@@ -415,6 +568,7 @@ func handleCustomerUpdated(ctx context.Context, tx *gorm.DB, raw []byte) error {
 		Data struct {
 			Object struct {
 				Customer        string `json:"id"`
+				Email           string `json:"email"`
 				InvoiceSettings struct {
 					DefaultPaymentMethod *string `json:"default_payment_method"`
 				} `json:"invoice_settings"`
@@ -432,12 +586,19 @@ func handleCustomerUpdated(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	hasPM := e.Data.Object.InvoiceSettings.DefaultPaymentMethod != nil &&
 		*e.Data.Object.InvoiceSettings.DefaultPaymentMethod != ""
 
+	// email is written only when the event carries one. Stripe omits the
+	// field on some replays, and an absent field must not blank an address
+	// we already hold — COALESCE on the parameter, not on the column, so an
+	// empty string is treated as "no value in this event".
+	email := strings.TrimSpace(e.Data.Object.Email)
+
 	res := tx.WithContext(ctx).Exec(`
 		UPDATE store_subscriptions
 		SET has_default_payment_method = ?,
+		    email                      = COALESCE(NULLIF(?, ''), email),
 		    updated_at                 = now()
 		WHERE stripe_customer_id = ?`,
-		hasPM, customer,
+		hasPM, email, customer,
 	)
 	if res.Error != nil {
 		return fmt.Errorf("dispatch: customer.updated has_default_payment_method: %w", res.Error)

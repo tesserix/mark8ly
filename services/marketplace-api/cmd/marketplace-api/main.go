@@ -216,6 +216,38 @@ func (stubPlatformClient) GetStoreBySlug(ctx context.Context, slug string) (*sto
 	return nil, stores.ErrPlatformUnavailable
 }
 
+// lifecycleSkipCounter adapts the shared skipped-emails CounterVec to
+// lifecycle.SkipCounter. Separate from dunning's adapter because the two
+// packages declare their own consumer-side interfaces.
+type lifecycleSkipCounter struct{ cv *prometheus.CounterVec }
+
+func (l lifecycleSkipCounter) WithTemplateReason(template, reason string) lifecycle.CounterIncrementer {
+	return l.cv.WithLabelValues(template, reason)
+}
+
+// lifecycleSentCounter adapts the shared delivered-emails CounterVec to
+// lifecycle.SentCounter — win_back_day30 has no per-feature sent counter of
+// its own, so without this the sent+skipped identity would be false for it.
+type lifecycleSentCounter struct{ cv *prometheus.CounterVec }
+
+func (l lifecycleSentCounter) WithTemplate(template string) lifecycle.CounterIncrementer {
+	return l.cv.WithLabelValues(template)
+}
+
+// dispatchSkipCounter / dispatchSentCounter do the same for the
+// trial_started_billed confirmation emitted from the invoice.paid webhook.
+type dispatchSkipCounter struct{ cv *prometheus.CounterVec }
+
+func (d dispatchSkipCounter) WithTemplateReason(template, reason string) dispatch.CounterIncrementer {
+	return d.cv.WithLabelValues(template, reason)
+}
+
+type dispatchSentCounter struct{ cv *prometheus.CounterVec }
+
+func (d dispatchSentCounter) WithTemplate(template string) dispatch.CounterIncrementer {
+	return d.cv.WithLabelValues(template)
+}
+
 // otelServiceName is the OpenTelemetry service.name reported for traces and
 // metrics. Both MODE variants (admin/storefront) run the same binary/image,
 // so they share one logical service name; the MODE is distinguished via
@@ -284,6 +316,17 @@ func main() {
 		}
 		cancel()
 	}
+	// #381 — billing mail (dunning, trial cadence, payment-action, win-back,
+	// trial-billed). Registered AFTER SeedFromEmbedded, deliberately: spec §4
+	// says "no seed migration ... a key with no row simply renders from its
+	// embedded default". Registration makes a key overridable from the
+	// operator console; seeding it as a published row would mean the first
+	// boot wins forever, because SeedFromEmbedded is ON CONFLICT DO NOTHING
+	// and Loader.Render prefers a published row — so a later edit to
+	// templates_content.go would deploy and silently never reach a merchant.
+	// orderdoc/giftcard keep their existing seed-then-render behaviour: they
+	// are registered above and so still seed, unchanged.
+	email.RegisterFallbacks(templateLoader)
 	// Test-send dispatcher used by /internal/templates/:key/test. nil
 	// SendGrid key is acceptable — handler returns 503 with a clear
 	// message so dev users don't get silent fail.
@@ -551,6 +594,14 @@ func main() {
 		email.ProviderSendGrid: cfg.SendGridAPIKey,
 		email.ProviderResend:   cfg.ResendAPIKey,
 	}, cfg.EmailPrimaryProvider, log)
+
+	// billingEmailClient is the production email.Client. Before #381 the only
+	// implementation was the no-op logger, wired at three sites below, so no
+	// merchant had ever received a dunning notice, trial reminder,
+	// payment-action reminder, win-back promo or trial-billed confirmation.
+	// One instance shared by all three, so failover and attribution are
+	// identical wherever billing mail originates.
+	billingEmailClient := email.NewTemplateClient(templateLoader, emailSender, cfg.EmailFrom, log)
 
 	// Dashboard D2 — Tickets. Hoisted for the same reason as the
 	// notification service: the storefront /support/tickets endpoint
@@ -1592,12 +1643,18 @@ func main() {
 		}
 		dispatcher := dispatch.New(auditEmitter)
 
-		// Email adapter — currently the NoOp implementation pending real SMTP/SendGrid
-		// wiring (deferred when email/store_name columns land on StoreSubscription).
-		// Used by the dispatcher for the trial-billed confirmation email on first
-		// invoice.paid, and by the dunning + trial reminder crons.
-		dispatcherEmailClient := email.NoOpClient{Logger: log}
-		dispatcher.WithEmail(dispatcherEmailClient)
+		// Email adapter — the real template client (render → SendGrid → Resend),
+		// shared with the dunning, trial reminder and win-back crons so failover
+		// and attribution are identical wherever billing mail originates.
+		// WithDB hands the dispatcher a NON-transactional handle: the
+		// trial-billed confirmation claims a billing_email_sends row before
+		// sending, and that claim has to survive a rollback of the webhook
+		// transaction it is sent from (see dispatch.sendTrialBilled).
+		dispatcherEmailClient := billingEmailClient
+		dispatcher.WithEmail(dispatcherEmailClient).
+			WithDB(conn).
+			WithSkipCounter(dispatchSkipCounter{metrics.BillingEmailsSkippedTotal}).
+			WithSentCounter(dispatchSentCounter{metrics.BillingEmailsSentTotal})
 
 		// P7 §19.2: annotate B2B invoices with the reverse-charge clause on
 		// invoice.finalized for validated tax IDs in reverse-charge jurisdictions.
@@ -1758,10 +1815,11 @@ func main() {
 	defer trialScheduler.Stop()
 	log.Info("P5 crons started", "count", 5)
 
-	// P6 dunning + SCA recovery crons. Emails route through the NoOpClient
-	// until a real adapter is wired (email columns on StoreSubscription are
-	// deferred). All state mutations go through statemachine.Transition.
-	dunningEmailClient := email.NoOpClient{Logger: log}
+	// P6 dunning + SCA recovery crons. Emails route through the real
+	// template client as of #381 — recipients come from
+	// store_subscriptions.email, and an unknown or placeholder address is
+	// counted as skipped rather than reported as delivered.
+	dunningEmailClient := billingEmailClient
 
 	ladderCron := dunning.NewStepDailyLadder(conn, auditEmitter, log,
 		dunning.WrapPrometheusCounter(metrics.DunningSuppressedRefundWindowTotal),
@@ -1776,7 +1834,7 @@ func main() {
 
 	dunningEmailsCron := dunning.NewSendDunningEmails(conn, dunningEmailClient, log,
 		dunning.WrapPrometheusCounterVec(metrics.DunningEmailsSentTotal),
-		nil)
+		nil).WithSkipCounter(dunning.WrapPrometheusSkipCounter(metrics.BillingEmailsSkippedTotal))
 	if _, err := trialScheduler.AddFunc(dunning.DunningEmailsSpec, func() {
 		if err := dunningEmailsCron.Run(workerCtx); err != nil {
 			log.Error("dunning emails cron failed", "err", err)
@@ -1787,7 +1845,7 @@ func main() {
 
 	scaRemindersCron := dunning.NewSendPaymentActionReminders(conn, dunningEmailClient, log,
 		dunning.WrapPrometheusCounterVec(metrics.PaymentActionRemindersSentTotal),
-		nil)
+		nil).WithSkipCounter(dunning.WrapPrometheusSkipCounter(metrics.BillingEmailsSkippedTotal))
 
 	// P7 §19.5 — quarterly tax-ID revalidation cron. Daily 02:00 UTC. Re-runs
 	// the validator for each subscription with a >90d-old validation; on
@@ -1824,7 +1882,7 @@ func main() {
 	// via the trial_reminders table (migration 088). See spec §5.3.
 	trialRemindersCron := dunning.NewSendTrialReminders(conn, dunningEmailClient, log,
 		dunning.WrapPrometheusCounterVec(metrics.TrialRemindersSentTotal),
-		nil)
+		nil).WithSkipCounter(dunning.WrapPrometheusSkipCounter(metrics.BillingEmailsSkippedTotal))
 	if _, err := trialScheduler.AddFunc(dunning.TrialRemindersSpec, func() {
 		if err := trialRemindersCron.Run(workerCtx); err != nil {
 			log.Error("trial reminders cron failed", "err", err)
@@ -1876,8 +1934,10 @@ func main() {
 		log.Error("register lifecycle hard-delete cron", "err", err)
 	}
 
-	winBackEmailClient := email.NoOpClient{Logger: log}
-	winBackCron := lifecycle.NewWinBackCron(conn, winBackEmailClient, log, nil)
+	winBackEmailClient := billingEmailClient
+	winBackCron := lifecycle.NewWinBackCron(conn, winBackEmailClient, log, nil).
+		WithSkipCounter(lifecycleSkipCounter{metrics.BillingEmailsSkippedTotal}).
+		WithSentCounter(lifecycleSentCounter{metrics.BillingEmailsSentTotal})
 	if _, err := trialScheduler.AddFunc(lifecycle.WinBackSpec, func() {
 		if err := winBackCron.Run(workerCtx); err != nil {
 			log.Error("lifecycle win-back cron failed", "err", err)

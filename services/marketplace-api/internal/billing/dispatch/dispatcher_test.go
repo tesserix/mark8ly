@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
 	"github.com/mark8ly/marketplace-api/internal/email"
@@ -201,6 +202,7 @@ func TestDispatch_InvoicePaid_StampsFirstChargeAt_ClearsHostedURL(t *testing.T) 
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
 	hostedURL := "https://invoice.stripe.com/i/acct_123/test_yyy"
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
@@ -230,6 +232,7 @@ func TestDispatch_InvoicePaid_FirstChargeAtIdempotent_SecondEventDoesNotAdvance(
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -380,9 +383,10 @@ func (r *dispatchEmailRecorder) Send(_ context.Context, t email.TemplateID, _ st
 // email client is wired. This is the merchant-facing confirmation that
 // "your chosen plan is now active and we just billed your card".
 func TestDispatch_InvoicePaid_FirstChargeEmitsTrialBilledEmail(t *testing.T) {
-	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -393,7 +397,7 @@ func TestDispatch_InvoicePaid_FirstChargeEmitsTrialBilledEmail(t *testing.T) {
 	}).Error)
 
 	rec := &dispatchEmailRecorder{}
-	d := dispatch.New(nil).WithEmail(rec)
+	d := dispatch.New(nil).WithEmail(rec).WithDB(db)
 	payload := []byte(`{"id":"evt_first","type":"invoice.paid","data":{"object":{"customer":"cus_first_charge"}}}`)
 	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
 		EventID: "evt_first", EventType: "invoice.paid", Payload: payload,
@@ -414,9 +418,10 @@ func TestDispatch_InvoicePaid_FirstChargeEmitsTrialBilledEmail(t *testing.T) {
 // is robust to no email client being wired (e.g. dev mode without the
 // adapter): first_charge_at is still stamped, no panic, no error.
 func TestDispatch_InvoicePaid_NoEmailClientStillProcesses(t *testing.T) {
-	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -434,4 +439,222 @@ func TestDispatch_InvoicePaid_NoEmailClientStillProcesses(t *testing.T) {
 	var sub subscription.StoreSubscription
 	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
 	require.NotNil(t, sub.FirstChargeAt, "first_charge_at must be stamped even without email client")
+}
+
+// capturedSend records one call to captureEmailClient.Send, so tests can
+// assert on both the recipient and the data map (e.g. store_name).
+type capturedSend struct {
+	to   string
+	data map[string]any
+}
+
+// captureEmailClient is a minimal email.Client stub that records every send
+// it was asked to make. Unlike dispatchEmailRecorder above (which only cares
+// which template fired), this one exists to catch the actual bugs in Task
+// 12: the recipient passed to Send was a store UUID, not an address, and
+// store_name was a hardcoded literal. Send honours the same contract the
+// real client enforces — validating the recipient first — so a test double
+// here can't mask a bounce the production client would have caught.
+type captureEmailClient struct {
+	recipients []string
+	sends      []capturedSend
+}
+
+func (c *captureEmailClient) Send(_ context.Context, _ email.TemplateID, to string, data map[string]any) error {
+	if err := email.ValidateRecipient(to); err != nil {
+		return err
+	}
+	c.recipients = append(c.recipients, to)
+	c.sends = append(c.sends, capturedSend{to: to, data: data})
+	return nil
+}
+
+// runInvoicePaidFirstCharge seeds a store and a store_subscriptions row with
+// first_charge_at NULL and the given email (nil leaves it unset), attaches
+// client as the dispatcher's email client, and dispatches a first-charge
+// invoice.paid event. Returns the db handle and storeID so callers can
+// re-query store_subscriptions afterward, the seeded store's name so
+// callers can assert it was used verbatim, and the error from Dispatch so
+// callers can assert on webhook-level failure behavior.
+func runInvoicePaidFirstCharge(t *testing.T, client email.Client, addr *string) (db *gorm.DB, storeID uuid.UUID, storeName string, err error) {
+	t.Helper()
+	db = testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
+
+	tenantID := uuid.New()
+	storeID = uuid.New()
+	seedStore(t, db, storeID)
+	storeName = "Test Store " + storeID.String() // must match seedStore's inserted name
+
+	customerID := "cus_" + uuid.NewString()[:12]
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: customerID,
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusActive,
+		Email:            addr,
+		// FirstChargeAt deliberately nil — this is the first charge.
+	}).Error)
+
+	d := dispatch.New(nil).WithEmail(client).WithDB(db)
+	eventID := "evt_" + uuid.NewString()[:12]
+	payload := []byte(`{"id":"` + eventID + `","type":"invoice.paid","data":{"object":{"customer":"` + customerID + `"}}}`)
+	err = d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: eventID, EventType: "invoice.paid", Payload: payload,
+	})
+	return db, storeID, storeName, err
+}
+
+// TestInvoicePaid_TrialBilledUsesRealAddress verifies the trial-billed
+// confirmation email is sent to the merchant's actual address (not the
+// store UUID that used to be passed as `to`), carries the store's real
+// name (not the "your store" literal), and that the webhook's own side
+// effects (first_charge_at stamped, hosted_invoice_url cleared) happened.
+func TestInvoicePaid_TrialBilledUsesRealAddress(t *testing.T) {
+	addr := "merchant@example.com"
+	client := &captureEmailClient{}
+
+	db, storeID, storeName, err := runInvoicePaidFirstCharge(t, client, &addr)
+	require.NoError(t, err)
+
+	require.Len(t, client.recipients, 1, "sent %d emails, want 1", len(client.recipients))
+	require.Equal(t, addr, client.recipients[0], "a store UUID would bounce")
+	require.Len(t, client.sends, 1)
+	require.Equal(t, storeName, client.sends[0].data["store_name"],
+		"store_name must be the real store name, not the \"your store\" literal")
+
+	var sub subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
+	require.NotNil(t, sub.FirstChargeAt, "first_charge_at must be stamped")
+	require.Nil(t, sub.HostedInvoiceURL, "hosted_invoice_url must be cleared")
+}
+
+// TestInvoicePaid_TrialBilledWithoutAddressDoesNotFailTheWebhook verifies a
+// missing/invalid recipient keeps the webhook non-fatal — Stripe must not
+// retry and re-fire every other invoice.paid side effect — and that those
+// side effects (first_charge_at stamped, hosted_invoice_url cleared) still
+// happened even though the email send failed.
+func TestInvoicePaid_TrialBilledWithoutAddressDoesNotFailTheWebhook(t *testing.T) {
+	client := &captureEmailClient{}
+
+	db, storeID, _, err := runInvoicePaidFirstCharge(t, client, nil)
+
+	require.NoError(t, err, "webhook must stay non-fatal on email failure")
+	require.Empty(t, client.recipients, "no address means nothing should have been sent")
+
+	var sub subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
+	require.NotNil(t, sub.FirstChargeAt, "first_charge_at must be stamped even though the email failed")
+	require.Nil(t, sub.HostedInvoiceURL, "hosted_invoice_url must be cleared even though the email failed")
+}
+
+// TestDispatch_InvoicePaymentFailed_PersistsHostedInvoiceURL pins the fix for
+// the dunning cohort's missing payment link: invoice.payment_failed is the
+// handler that produces past_due, and the day-5 / day-7 dunning emails only
+// render a payment button when hosted_invoice_url is set. Before this, only
+// the SCA path (invoice.payment_action_required) ever wrote the column, so
+// the ordinary declined-card merchant got the linkless {{else}} branch.
+func TestDispatch_InvoicePaymentFailed_PersistsHostedInvoiceURL(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID)
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_pf_url",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusActive,
+	}).Error)
+
+	stripeURL := "https://invoice.stripe.com/i/acct_123/pf_xxx"
+	payload := []byte(`{"id":"evt_pf_url","type":"invoice.payment_failed","data":{"object":{"customer":"cus_pf_url","hosted_invoice_url":"` + stripeURL + `"}}}`)
+	d := dispatch.New(nil)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_pf_url", EventType: "invoice.payment_failed", Payload: payload,
+	}))
+
+	var sub subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
+	require.NotNil(t, sub.HostedInvoiceURL, "dunning emails have no payment link without this")
+	require.Equal(t, stripeURL, *sub.HostedInvoiceURL)
+	require.Equal(t, subscription.StatusPastDue, sub.Status)
+}
+
+// TestDispatch_InvoicePaymentFailed_AbsentURLKeepsExistingValue verifies an
+// event without hosted_invoice_url does not blank a URL we already hold —
+// Stripe omits the field on some payloads, and overwriting with "" would
+// re-break the dunning link for a merchant who already had one.
+func TestDispatch_InvoicePaymentFailed_AbsentURLKeepsExistingValue(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID)
+	existing := "https://invoice.stripe.com/i/acct_123/already_here"
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_pf_nourl",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusActive,
+		HostedInvoiceURL: &existing,
+	}).Error)
+
+	payload := []byte(`{"id":"evt_pf_nourl","type":"invoice.payment_failed","data":{"object":{"customer":"cus_pf_nourl"}}}`)
+	d := dispatch.New(nil)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_pf_nourl", EventType: "invoice.payment_failed", Payload: payload,
+	}))
+
+	var sub subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
+	require.NotNil(t, sub.HostedInvoiceURL, "an absent field must not blank an existing URL")
+	require.Equal(t, existing, *sub.HostedInvoiceURL)
+	require.Equal(t, subscription.StatusPastDue, sub.Status)
+}
+
+// TestDispatch_InvoicePaymentFailed_DoesNotStampUpdatedAt guards against
+// reintroducing the exact bug cmd/backfill-email fixed: store_subscriptions.
+// updated_at is both the win-back cron's 30-to-31-day eligibility window AND
+// its idempotency key, and it also drives the expired->store_closed timer and
+// the 150-day hard-delete cutoff. Stripe keeps retrying a failed invoice for
+// weeks after a subscription is already expired, so invoice.payment_failed
+// commonly arrives against an already-terminal row. Persisting
+// hosted_invoice_url must not stamp updated_at as a side effect — only a real
+// business-state transition may.
+func TestDispatch_InvoicePaymentFailed_DoesNotStampUpdatedAt(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID)
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_pf_noupdate",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusExpired,
+	}).Error)
+
+	// GORM stamps updated_at on create, so pin it to a known past value with
+	// a raw UPDATE before dispatching.
+	knownPast := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, db.Exec(
+		`UPDATE store_subscriptions SET updated_at = ? WHERE store_id = ?`,
+		knownPast, storeID,
+	).Error)
+
+	stripeURL := "https://invoice.stripe.com/i/acct_123/pf_noupdate"
+	payload := []byte(`{"id":"evt_pf_noupdate","type":"invoice.payment_failed","data":{"object":{"customer":"cus_pf_noupdate","hosted_invoice_url":"` + stripeURL + `"}}}`)
+	d := dispatch.New(nil)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_pf_noupdate", EventType: "invoice.payment_failed", Payload: payload,
+	}))
+
+	var sub subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
+	require.NotNil(t, sub.HostedInvoiceURL, "hosted_invoice_url must still be persisted")
+	require.Equal(t, stripeURL, *sub.HostedInvoiceURL)
+	require.Equal(t, subscription.StatusExpired, sub.Status, "expired is terminal, payment_failed must no-op the transition")
+	require.True(t, knownPast.Equal(sub.UpdatedAt),
+		"updated_at must not be stamped by the bookkeeping hosted_invoice_url write; got %v want %v", sub.UpdatedAt, knownPast)
 }

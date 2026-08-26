@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/email"
@@ -40,6 +41,7 @@ func TestSCAReminders_SendsAtT14T7T1(t *testing.T) {
 		storeID := uuid.New()
 		tenantID := uuid.New()
 		seedStore(t, db, tenantID, storeID)
+		merchantEmail := "merchant-sca-" + o.key + "@example.com"
 		sub := subscription.StoreSubscription{
 			ID:               uuid.New(),
 			TenantID:         tenantID,
@@ -48,6 +50,7 @@ func TestSCAReminders_SendsAtT14T7T1(t *testing.T) {
 			Plan:             subscription.PlanStarter,
 			Status:           subscription.StatusPaymentActionRequired,
 			HostedInvoiceURL: &hostedURL,
+			Email:            &merchantEmail,
 		}
 		if err := db.Create(&sub).Error; err != nil {
 			t.Fatalf("seed sub (%s): %v", o.key, err)
@@ -93,6 +96,7 @@ func TestSCAReminders_Idempotent_OnConflict(t *testing.T) {
 	seedStore(t, db, tenantID, storeID)
 	fourteenDaysAgo := now.AddDate(0, 0, -14)
 
+	merchantEmail := "merchant-sca-idem@example.com"
 	sub := subscription.StoreSubscription{
 		ID:               uuid.New(),
 		TenantID:         tenantID,
@@ -101,6 +105,7 @@ func TestSCAReminders_Idempotent_OnConflict(t *testing.T) {
 		Plan:             subscription.PlanStarter,
 		Status:           subscription.StatusPaymentActionRequired,
 		HostedInvoiceURL: &hostedURL,
+		Email:            &merchantEmail,
 	}
 	if err := db.Create(&sub).Error; err != nil {
 		t.Fatalf("seed sub: %v", err)
@@ -153,6 +158,7 @@ func TestSCAReminders_SkipsSubsWithoutHostedInvoiceURL(t *testing.T) {
 	seedStore(t, db, tenantID, storeID)
 	fourteenDaysAgo := now.AddDate(0, 0, -14)
 
+	merchantEmail := "merchant-sca-no-url@example.com"
 	sub := subscription.StoreSubscription{
 		ID:               uuid.New(),
 		TenantID:         tenantID,
@@ -161,6 +167,7 @@ func TestSCAReminders_SkipsSubsWithoutHostedInvoiceURL(t *testing.T) {
 		Plan:             subscription.PlanStarter,
 		Status:           subscription.StatusPaymentActionRequired,
 		HostedInvoiceURL: nil, // no URL
+		Email:            &merchantEmail,
 	}
 	if err := db.Create(&sub).Error; err != nil {
 		t.Fatalf("seed sub: %v", err)
@@ -190,4 +197,56 @@ func TestSCAReminders_SkipsSubsWithoutHostedInvoiceURL(t *testing.T) {
 	if got := client.count(); got != 0 {
 		t.Fatalf("expected 0 sends (no hosted_invoice_url), got %d", got)
 	}
+}
+
+// TestPaymentActionReminders_UndeliverableCountsSkippedNotSent verifies that
+// a payment_action_required subscription seeded with a placeholder (.local)
+// address is not mailed, and the skip lands on the skip counter rather than
+// the sent counter.
+func TestPaymentActionReminders_UndeliverableCountsSkippedNotSent(t *testing.T) {
+	db := testdb.NewDB(t, "payment_action_reminders", "audit_logs", "store_subscriptions", "stores")
+
+	now := time.Now().UTC()
+	hostedURL := "https://invoice.stripe.com/i/placeholder-test"
+	storeID := uuid.New()
+	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
+	placeholder := "billing+7f3a@mark8ly.local"
+	fourteenDaysAgo := now.AddDate(0, 0, -14)
+
+	sub := subscription.StoreSubscription{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_placeholder",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusPaymentActionRequired,
+		HostedInvoiceURL: &hostedURL,
+		Email:            &placeholder,
+	}
+	require.NoError(t, db.Create(&sub).Error)
+	auditEntry := audit.Entry{
+		ID:           uuid.New(),
+		TenantID:     tenantID,
+		StoreID:      &storeID,
+		ActorType:    audit.ActorSystem,
+		Action:       "subscription.state_transition",
+		ResourceType: "subscription",
+		Status:       audit.StatusSuccess,
+		Severity:     audit.SeverityWarning,
+		Metadata:     audit.Metadata{"to_status": "payment_action_required", "from_status": "active"},
+		CreatedAt:    fourteenDaysAgo,
+	}
+	require.NoError(t, db.Create(&auditEntry).Error)
+
+	client := &stubClient{}
+	sent, skipped := &stubVec{}, &stubSkip{}
+	cron := dunning.NewSendPaymentActionReminders(db, client, nil, sent, func() time.Time { return now }).
+		WithSkipCounter(skipped)
+
+	require.NoError(t, cron.Run(context.Background()))
+
+	require.Empty(t, client.sent, "mailed a .local address")
+	require.Zero(t, sent.n["t_minus_14"], "sent counter incremented for mail never sent")
+	require.Equal(t, 1, skipped.n["payment_action_reminder/placeholder_address"])
 }

@@ -306,13 +306,15 @@ const trialBilledPeriodKey = "first_charge"
 
 // sendTrialBilled emits the trial-started-billed confirmation.
 //
-// Idempotency guarantee, and why it is NOT first_charge_at: the send happens
-// inside the locked webhook transaction, and invoice.paid is dispatched as a
-// chain (see dispatcher.go) whose later handler can fail — or the commit
-// itself can fail — rolling first_charge_at back to NULL. The email is
-// already gone at that point, and Stripe's retry would see wasFirstCharge
-// again. So the claim is written on d.db, a NON-transactional handle: it
-// survives the rollback and the retry loses the claim.
+// Idempotency guarantee, and why it is NOT first_charge_at: the claim is
+// taken inside the locked webhook transaction, and invoice.paid is dispatched
+// as a chain (see dispatcher.go) whose later handler can fail — or the commit
+// itself can fail — rolling first_charge_at back to NULL. Stripe's retry
+// would then see wasFirstCharge again. So the claim is written on d.db, a
+// NON-transactional handle: it survives the rollback and the retry loses the
+// claim. The send itself is deferred until after that transaction commits
+// (see the bottom of this function); the claim stays inside it, on d.db, for
+// exactly the reason above.
 //
 // Without d.db there is no way to make this at-most-once, so the send is
 // skipped rather than risked.
@@ -366,26 +368,57 @@ func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subsc
 	if sub.Email != nil {
 		to = *sub.Email
 	}
-	if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, to, map[string]any{
+	// Everything the send needs is resolved HERE, inside the transaction:
+	// tx is dead once it commits, so the store name cannot be looked up from
+	// the deferred closure.
+	data := map[string]any{
 		"store_id":   sub.StoreID.String(),
 		"tenant_id":  sub.TenantID.String(),
 		"store_name": subscription.StoreNameFor(ctx, tx, sub.StoreID),
 		"plan":       string(sub.Plan),
 		"period":     string(sub.SubscriptionPeriod),
-	}); sendErr != nil {
+	}
+
+	// send is the provider HTTP call and nothing else. It is the only part
+	// of this function that leaves the process, and the only part that must
+	// not run under the advisory lock.
+	send := func() error {
+		if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, to, data); sendErr != nil {
+			// The claim is deliberately NOT released: at-most-once beats a
+			// duplicate, matching the other four billing mail paths.
+			d.countSkip(email.SkipReason(sendErr))
+			return fmt.Errorf("dispatch: trial-billed email not sent for store %s (reason %s): %w",
+				sub.StoreID, email.SkipReason(sendErr), sendErr)
+		}
+		if d.sent != nil {
+			d.sent.WithTemplate(string(email.TemplateTrialStartedBilled)).Inc()
+		}
+		return nil
+	}
+
+	// Hand the send to the request's collector so the caller runs it after
+	// the advisory-lock transaction commits — a SendGrid call (15s timeout,
+	// plus a possible Resend fallback) must not hold the per-store lock and
+	// a pool connection against Stripe's 30s webhook budget.
+	//
+	// The claim above stays inside the transaction on the non-transactional
+	// handle: it is what stops a rollback-then-retry from sending twice, and
+	// moving it out here would reintroduce that duplicate.
+	if col := deferredSendsFrom(ctx); col != nil {
+		col.Add(send)
+		return
+	}
+
+	// No collector in ctx — a caller that did not opt in (tests, or a future
+	// entry point). Send inline rather than dropping it: the old behaviour is
+	// slow, but silently losing a merchant's billing email is worse.
+	if sendErr := send(); sendErr != nil {
 		// Don't fail the webhook — Stripe would retry, double-firing every
 		// other side effect. Email failure is a soft error: log and move on.
-		// The claim is deliberately NOT released: at-most-once beats a
-		// duplicate, matching the other four billing mail paths.
 		log.Warn("dispatch: trial-billed email not sent",
 			"store_id", sub.StoreID.String(),
 			"reason", email.SkipReason(sendErr),
 			"err", sendErr.Error())
-		d.countSkip(email.SkipReason(sendErr))
-		return
-	}
-	if d.sent != nil {
-		d.sent.WithTemplate(string(email.TemplateTrialStartedBilled)).Inc()
 	}
 }
 

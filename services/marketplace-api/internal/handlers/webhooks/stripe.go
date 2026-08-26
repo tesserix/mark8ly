@@ -17,6 +17,7 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
@@ -158,9 +159,29 @@ func (h *StripeHandler) dispatchLocked(ctx context.Context, evt webhookevents.St
 	if err := h.cfg.Repo.SetStoreID(ctx, h.cfg.DB, evt.EventID, storeID, tenantID); err != nil {
 		return err
 	}
-	return subscription.WithAdvisoryLock(ctx, h.cfg.DB, storeID, func(tx *gorm.DB) error {
+	// Collector installed before the lock, drained after it commits. The
+	// dispatcher registers provider HTTP calls (the trial-billed
+	// confirmation) on it instead of making them inline: a SendGrid call
+	// (15s, plus a possible Resend fallback) held the per-store advisory
+	// lock and one connection of a small pool against Stripe's 30s webhook
+	// budget.
+	ctx, deferred := dispatch.WithDeferredSends(ctx)
+	if err := subscription.WithAdvisoryLock(ctx, h.cfg.DB, storeID, func(tx *gorm.DB) error {
 		return h.cfg.Dispatch(ctx, tx, evt)
-	})
+	}); err != nil {
+		// Rolled back: the pending sends describe side effects that never
+		// happened, so drop them rather than draining.
+		return err
+	}
+
+	// Non-fatal by contract: returning a send failure here would make Stripe
+	// retry the event and re-fire every other side effect.
+	for _, sendErr := range deferred.Run(ctx) {
+		h.cfg.Logger.Warn("stripe: deferred billing email failed",
+			"event_id", evt.EventID, "event_type", evt.EventType,
+			"err", billingstripe.SanitizeForLog(sendErr))
+	}
+	return nil
 }
 
 // lookupStoreByStripeCustomer parses the customer ID from the event payload

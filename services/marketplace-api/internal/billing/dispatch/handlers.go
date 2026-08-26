@@ -433,11 +433,21 @@ func (d *Dispatcher) handleInvoicePaymentFailed(ctx context.Context, tx *gorm.DB
 	// Persist hosted_invoice_url unconditionally so the merchant can always
 	// reach the Stripe-hosted payment page the dunning emails link to, even
 	// on event replay.
+	//
+	// Deliberately NOT stamping updated_at here: it is not a business-state
+	// change, it is bookkeeping. store_subscriptions.updated_at is both the
+	// win-back cron's 30-to-31-day eligibility window AND its idempotency
+	// key, and it also feeds the expired->store_closed timer and the 150-day
+	// hard-delete cutoff (see cmd/backfill-email for the original fix of
+	// this exact bug). Stripe keeps retrying failed invoices for weeks after
+	// a subscription is already expired, so this handler runs against
+	// already-terminal rows far more often than the SCA path below — bumping
+	// updated_at here would silently move or drop those merchants from the
+	// win-back window and push back their retention timers.
 	if e.Data.Object.HostedInvoiceURL != "" {
 		res := tx.WithContext(ctx).Exec(`
 			UPDATE store_subscriptions
-			SET hosted_invoice_url = ?,
-			    updated_at         = now()
+			SET hosted_invoice_url = ?
 			WHERE stripe_customer_id = ?`,
 			e.Data.Object.HostedInvoiceURL, customer,
 		)
@@ -498,11 +508,16 @@ func (d *Dispatcher) handleInvoicePaymentActionRequired(ctx context.Context, tx 
 
 	// Persist hosted_invoice_url unconditionally so the merchant can always
 	// reach the Stripe-hosted payment page, even on event replay.
+	//
+	// Deliberately NOT stamping updated_at here either — same reasoning as
+	// handleInvoicePaymentFailed above: this UPDATE only touches the
+	// bookkeeping hosted_invoice_url column, not status, so it must not move
+	// the win-back cron's eligibility/idempotency window or the lifecycle
+	// crons' retention timers.
 	if e.Data.Object.HostedInvoiceURL != "" {
 		res := tx.WithContext(ctx).Exec(`
 			UPDATE store_subscriptions
-			SET hosted_invoice_url = ?,
-			    updated_at         = now()
+			SET hosted_invoice_url = ?
 			WHERE stripe_customer_id = ?`,
 			e.Data.Object.HostedInvoiceURL, customer,
 		)

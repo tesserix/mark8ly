@@ -612,3 +612,49 @@ func TestDispatch_InvoicePaymentFailed_AbsentURLKeepsExistingValue(t *testing.T)
 	require.Equal(t, existing, *sub.HostedInvoiceURL)
 	require.Equal(t, subscription.StatusPastDue, sub.Status)
 }
+
+// TestDispatch_InvoicePaymentFailed_DoesNotStampUpdatedAt guards against
+// reintroducing the exact bug cmd/backfill-email fixed: store_subscriptions.
+// updated_at is both the win-back cron's 30-to-31-day eligibility window AND
+// its idempotency key, and it also drives the expired->store_closed timer and
+// the 150-day hard-delete cutoff. Stripe keeps retrying a failed invoice for
+// weeks after a subscription is already expired, so invoice.payment_failed
+// commonly arrives against an already-terminal row. Persisting
+// hosted_invoice_url must not stamp updated_at as a side effect — only a real
+// business-state transition may.
+func TestDispatch_InvoicePaymentFailed_DoesNotStampUpdatedAt(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID)
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_pf_noupdate",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusExpired,
+	}).Error)
+
+	// GORM stamps updated_at on create, so pin it to a known past value with
+	// a raw UPDATE before dispatching.
+	knownPast := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, db.Exec(
+		`UPDATE store_subscriptions SET updated_at = ? WHERE store_id = ?`,
+		knownPast, storeID,
+	).Error)
+
+	stripeURL := "https://invoice.stripe.com/i/acct_123/pf_noupdate"
+	payload := []byte(`{"id":"evt_pf_noupdate","type":"invoice.payment_failed","data":{"object":{"customer":"cus_pf_noupdate","hosted_invoice_url":"` + stripeURL + `"}}}`)
+	d := dispatch.New(nil)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_pf_noupdate", EventType: "invoice.payment_failed", Payload: payload,
+	}))
+
+	var sub subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
+	require.NotNil(t, sub.HostedInvoiceURL, "hosted_invoice_url must still be persisted")
+	require.Equal(t, stripeURL, *sub.HostedInvoiceURL)
+	require.Equal(t, subscription.StatusExpired, sub.Status, "expired is terminal, payment_failed must no-op the transition")
+	require.True(t, knownPast.Equal(sub.UpdatedAt),
+		"updated_at must not be stamped by the bookkeeping hosted_invoice_url write; got %v want %v", sub.UpdatedAt, knownPast)
+}

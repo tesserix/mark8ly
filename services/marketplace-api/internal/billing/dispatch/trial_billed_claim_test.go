@@ -179,27 +179,25 @@ func TestInvoicePaid_TrialBilled_StillSendsWithRealPlan(t *testing.T) {
 	require.Len(t, client.recipients, 1, "a merchant on a real plan must still get the confirmation")
 }
 
-// TestInvoicePaid_TrialBilled_ClaimSurvivesRolledBackDeferredSend pins where
-// the claim lives, on the real deferred path.
+// TestInvoicePaid_TrialBilled_RolledBackWebhookStillDeliversOnRetry pins the
+// delivery guarantee on the real deferred path.
 //
-// Since the send moved out of the transaction, the two now sit on opposite
-// sides of the commit: the claim is taken inside the locked transaction on
-// the non-transactional handle d.db, and the send is registered on the
-// post-commit collector. Those two placements have different rollback
-// behaviour, and this test is what distinguishes them — the sibling test
-// above cannot, because it exercises the inline fallback where both run
-// unconditionally, one after the other.
+// Since the send moved out of the transaction, a rollback discards it: the
+// collector is never drained (stripe.go and orphan_resolver.go both return
+// early on the lock's error), so nothing was sent and — because the claim is
+// taken inside that same discarded unit of work — nothing was claimed either.
+// The merchant is therefore owed the confirmation, and Stripe's retry must
+// deliver it.
 //
-// The scenario is a rollback: a later stage of the invoice.paid chain fails,
-// so the transaction is rolled back and — mirroring stripe.go and
-// orphan_resolver.go on their error paths — the collector is NEVER drained.
-// Anything registered on it is discarded. The claim must not be among those
-// things: it is written straight to d.db, so it survives.
+// This is the test that catches claiming too early. Take the claim inside the
+// transaction instead and it survives the rollback that dropped the send, the
+// retry finds the slot burned, and the merchant receives NOTHING — permanently,
+// because the retry commits first_charge_at and the template never fires
+// again. That failure is silent: no error, no retry, no bounce.
 //
-// Move the claim into the deferred closure and this test fails at the claim
-// assertion (nothing was written, because the closure was discarded) and
-// again on the retry (which, finding no claim, sends).
-func TestInvoicePaid_TrialBilled_ClaimSurvivesRolledBackDeferredSend(t *testing.T) {
+// The sibling test above cannot catch it. It exercises the inline fallback,
+// where claim and send run together unconditionally.
+func TestInvoicePaid_TrialBilled_RolledBackWebhookStillDeliversOnRetry(t *testing.T) {
 	db, sub, customerID := seedFirstChargeSub(t)
 
 	client := &captureEmailClient{}
@@ -233,16 +231,11 @@ func TestInvoicePaid_TrialBilled_ClaimSurvivesRolledBackDeferredSend(t *testing.
 	require.NoError(t, db.Where("id = ?", sub.ID).First(&reloaded).Error)
 	require.Nil(t, reloaded.FirstChargeAt, "the transaction did not roll back")
 
-	// THE INVARIANT: the claim was written on the non-transactional handle,
-	// so it is still there. Inside the deferred closure it would have been
-	// discarded along with the send.
-	var n int64
-	require.NoError(t, db.Raw(
-		`SELECT count(*) FROM billing_email_sends
-		 WHERE subscription_id = ? AND template_key = ? AND period_key = 'first_charge'`,
-		sub.ID, string(email.TemplateTrialStartedBilled)).Scan(&n).Error)
-	require.EqualValues(t, 1, n,
-		"the claim did not survive the rollback — it is not on the non-transactional handle")
+	// No claim: it lives inside the discarded unit of work, so the retry
+	// still has its one shot. A claim here would be a burned slot paid for
+	// by an email that never left.
+	require.EqualValues(t, 0, claimCount(t, db, sub.ID),
+		"the rollback burned the at-most-once slot without sending anything")
 
 	// Attempt 2: Stripe retries. This one commits and drains.
 	ctx2, deferred2 := postcommit.WithDeferredSends(context.Background())
@@ -255,6 +248,20 @@ func TestInvoicePaid_TrialBilled_ClaimSurvivesRolledBackDeferredSend(t *testing.
 	}))
 	require.Empty(t, deferred2.Run(ctx2))
 
-	require.Empty(t, client.recipients,
-		"the retry sent a billing confirmation the surviving claim should have suppressed")
+	require.Len(t, client.recipients, 1,
+		"the merchant got %d confirmations across a rollback and its retry, want exactly 1",
+		len(client.recipients))
+	require.EqualValues(t, 1, claimCount(t, db, sub.ID),
+		"the delivered send must leave a claim behind, or a redelivery would send again")
+}
+
+// claimCount returns the number of trial-billed claim rows for a subscription.
+func claimCount(t *testing.T, db *gorm.DB, subID uuid.UUID) int64 {
+	t.Helper()
+	var n int64
+	require.NoError(t, db.Raw(
+		`SELECT count(*) FROM billing_email_sends
+		 WHERE subscription_id = ? AND template_key = ? AND period_key = 'first_charge'`,
+		subID, string(email.TemplateTrialStartedBilled)).Scan(&n).Error)
+	return n
 }

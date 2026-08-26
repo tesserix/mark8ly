@@ -1,0 +1,113 @@
+# Runs @tesserix/admin-conformance against mark8ly's DEPLOYED platform admin
+# surface, and fails on any endpoint that deviates from the Product Admin
+# Integration Contract (#290).
+#
+# # Why this is not a pull_request check
+#
+# The suite is a black-box check over HTTP: it tests whatever is running at
+# `--base`, which is production. A PR's code is not deployed, so a green tick
+# on a PR would assert nothing about that PR, and a red one would blame it for
+# a deviation that was already there. Both are worse than no check.
+#
+# So it runs on a schedule and on demand, against what is actually serving. The
+# window between a deviation merging and this catching it is one day; the
+# alternative — a check whose result is unrelated to the change under review —
+# is a permanently misleading tick.
+#
+# `workflow_dispatch` is the after-deploy path: run it once Kargo has promoted
+# a change to this surface, rather than waiting for the next schedule.
+name: Admin conformance
+
+on:
+  schedule:
+    # 06:20 UTC daily. Offset off the hour so it does not queue behind
+    # everything else in the estate that runs at :00.
+    - cron: "20 6 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    # The declaration itself IS checkable at merge time, unlike the endpoints:
+    # a malformed or mistyped file makes the suite exit 2 regardless of what is
+    # deployed. Catching that on the commit that introduced it is worth the run.
+    paths:
+      - admin-conformance.json
+      - .github/workflows/admin-conformance.yml
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: Contract conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Fails loudly rather than skipping. A conformance job that quietly does
+      # nothing when its secret is absent is the exact failure the contract's
+      # §5 exists to prevent — it reports green while checking nothing.
+      - name: Require the signing secret
+        env:
+          ADMIN_CONFORMANCE_SECRET: ${{ secrets.ADMIN_CONFORMANCE_SECRET }}
+        run: |
+          if [ -z "$ADMIN_CONFORMANCE_SECRET" ]; then
+            echo "::error::ADMIN_CONFORMANCE_SECRET is not set on this repository."
+            echo "It is the platform admin HMAC secret — the same value as"
+            echo "PLATFORM_ADMIN_SECRET in the mark8ly-marketplace-api-platform-admin"
+            echo "Kubernetes secret. Set it with: gh secret set ADMIN_CONFORMANCE_SECRET"
+            exit 1
+          fi
+
+      # The secret is passed by ENVIRONMENT, never as a command-line flag: the
+      # CLI refuses a flag-borne secret outright, since anything on argv shows
+      # up in `ps`, in CI logs that echo the command, and in shell history.
+      #
+      # (That sentence originally named the rejected flag literally. It tripped
+      # GitGuardian's "Generic CLI Secret" detector, which matched the flag and
+      # read the following word as its value — a false positive, but one that
+      # costs a red check and a scare every time this file is touched.)
+      #
+      # --base MUST carry the /api/v1/platform prefix. This surface
+      # authenticates by HMAC rather than JWT and is mounted there deliberately
+      # (see services/marketplace-api/internal/handlers/platformadmin/routes.go).
+      # Get it wrong and the answer is a 404 from the router, with nothing in
+      # the application's own logs to explain it.
+      - name: Run the conformance suite
+        env:
+          ADMIN_CONFORMANCE_SECRET: ${{ secrets.ADMIN_CONFORMANCE_SECRET }}
+        run: |
+          set +e
+          # The registry override is REQUIRED, not belt-and-braces. This repo's
+          # root .npmrc scopes every @tesserix package to npm.pkg.github.com:
+          #
+          #   @tesserix:registry=https://npm.pkg.github.com
+          #
+          # @tesserix/admin-conformance is published to registry.npmjs.org
+          # (trusted publishing, no NPM_TOKEN anywhere) and was never published
+          # to GitHub Packages, so without this the job dies with a confusing
+          # E404 saying the package "does not exist under owner tesserix" —
+          # which reads as a missing package rather than a redirected registry.
+          #
+          # Set via `env` rather than `export`: neither bash nor zsh accepts
+          # `npm_config_@tesserix:registry` as an identifier, so `export` is a
+          # syntax error while `env` passes it through fine.
+          env "npm_config_@tesserix:registry=https://registry.npmjs.org" \
+            npx -y "@tesserix/admin-conformance@^0.4.0" \
+              --base "https://api.mark8ly.com/api/v1/platform" \
+              --slug mark8ly
+          status=$?
+          set -e
+          # 0 conforms, 1 a declared endpoint deviates, 2 the suite could not
+          # run at all. Distinguished because they have different owners: 1 is
+          # this service's bug, 2 is a broken harness, and a job that reports
+          # them identically eventually sends someone to debug the wrong one.
+          case "$status" in
+            0) echo "Every declared endpoint conforms." ;;
+            1) echo "::error::A declared endpoint deviates from the contract."; exit 1 ;;
+            2) echo "::error::The suite could not run — bad flags, unreadable declaration, or an unreachable base URL. This is a harness failure, not a contract deviation."; exit 1 ;;
+            *) echo "::error::Unexpected exit $status from the conformance suite."; exit 1 ;;
+          esac

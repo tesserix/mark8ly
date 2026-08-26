@@ -3,7 +3,7 @@
     "checked_at": "PINNED",
     "dependencies": [
       { "name": "outbox", "status": "degraded",
-        "metrics": { "pending": 7, "oldest_pending_age_seconds": 400 } },
+        "metrics": { "pending": 7, "oldest_pending_age_seconds": 400, "errored": 3 } },
       { "name": "csv_import_jobs", "status": "degraded",
         "metrics": { "queued": 5, "running_stale_heartbeat": 2 } },
       { "name": "campaign_sends", "status": "degraded",

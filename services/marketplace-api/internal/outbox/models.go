@@ -1,7 +1,22 @@
 // Package outbox holds the OutboxEvent model. Events are written in the
 // same transaction as the mutation that produces them (see spec §13.2.7).
-// Slice 1's publisher reads these rows, upserts store_watermarks, and
-// marks them published. Slice 2 adds real Pub/Sub delivery.
+// Slice 1's publisher reads these rows, upserts store_watermarks, and marks
+// them published. Slice 2 adds real Pub/Sub delivery.
+//
+// A row is in one of three states, all derived from existing columns:
+//
+//	pending    published_at IS NULL AND error IS NULL
+//	failed     published_at IS NULL AND error IS NOT NULL   (terminal)
+//	published  published_at IS NOT NULL
+//
+// failed is terminal: ProcessBatch's poll excludes it, so it is never
+// retried. Clearing error re-enters the row into the poll, but that alone
+// is NOT recovery: the watermark upsert is monotonic (GREATEST) over the
+// row's ORIGINAL created_at, so a row that sat failed while later events
+// published for the same store will publish without moving the watermark —
+// no consumer learns, and the health alarm clears. Recovery for a stale row
+// is a fresh enqueue (or bumping created_at alongside clearing error).
+// See #336.
 package outbox
 
 import (
@@ -60,6 +75,34 @@ const (
 	EventReturnRejected             = "return.rejected"
 	EventAbandonedCartRecoveryEmail = "abandoned_cart.recovery_email"
 )
+
+// Failure reason codes written to outbox_events.error when the publisher
+// cannot process a row. This vocabulary is CLOSED and the values are
+// STABLE: #331 serves this column cross-tenant to the platform console,
+// and a stable code is what lets the console render it.
+//
+// A raw error string must NEVER be stored here. encoding/json quotes the
+// offending input in its unmarshal errors, so persisting err.Error() would
+// copy fragments of an arbitrary customer-data JSONB payload into a column
+// that leaves this service — defeating the same reasoning that keeps
+// `payload` out of #331's response, through a field nobody would audit.
+const (
+	ReasonPayloadUnparseable    = "payload_unparseable"
+	ReasonPayloadMissingStoreID = "payload_missing_store_id"
+	// ReasonUnknown is written when a caller supplies a reason outside this
+	// vocabulary. It exists so MarkFailedInTx can neutralise an unrecognised
+	// string WITHOUT failing the batch: returning an error there would roll
+	// back the publisher's transaction, leaving the offending rows pending
+	// and re-selected forever — the exact poison pill this work removes.
+	ReasonUnknown = "unknown"
+)
+
+// Failure is one row the publisher could not process, paired with the
+// reason code to persist. See MarkFailedInTx.
+type Failure struct {
+	ID     string
+	Reason string
+}
 
 // IsOrderAggregate reports whether an aggregate string belongs to the orders
 // domain. The watermark publisher uses this to decide which store_watermarks

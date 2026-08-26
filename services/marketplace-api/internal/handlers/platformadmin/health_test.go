@@ -48,7 +48,7 @@ func (s *stubHealthSource) StripeWebhooks(context.Context, time.Time) (platforma
 // and the assertions here cannot drift apart.
 func healthFixture() *stubHealthSource {
 	return &stubHealthSource{
-		outbox:   platformadmin.OutboxHealth{Pending: 7, OldestPendingAgeSeconds: 400},
+		outbox:   platformadmin.OutboxHealth{Pending: 7, OldestPendingAgeSeconds: 400, Errored: 3},
 		csv:      platformadmin.CSVJobsHealth{Queued: 5, RunningStaleHeartbeat: 2},
 		campaign: platformadmin.CampaignSendsHealth{Sending: 9, SendingStaleHeartbeat: 4},
 		stripe: platformadmin.StripeWebhooksHealth{
@@ -334,4 +334,34 @@ func TestHealthNilDatabaseReportsUnknownNotFabricatedOK(t *testing.T) {
 	}
 	require.Equal(t, 4, seenInstrumented, "expected four instrumented dependencies")
 	require.Equal(t, 5, seenUninstrumented, "expected five uninstrumented dependencies")
+}
+
+// An errored row degrades regardless of age. This alarm does not clear by
+// draining — only by an operator resolving the row — which is the correct
+// shape for a condition that requires a human, and the same shape
+// csv_import_jobs already uses for RunningStaleHeartbeat.
+func TestOutboxDegradesOnErroredEvenWhenNothingIsPending(t *testing.T) {
+	_, body := getHealth(t, &stubHealthSource{
+		outbox: platformadmin.OutboxHealth{Pending: 0, OldestPendingAgeSeconds: 0, Errored: 1},
+	})
+	dep := body.Data.Dependencies[0]
+	require.Equal(t, "outbox", dep.Name)
+	require.Equal(t, "degraded", dep.Status,
+		"a terminally-failed event must degrade even with an empty pending queue")
+	require.Equal(t, int64(1), dep.Metrics["errored"])
+	require.Equal(t, int64(0), dep.Metrics["pending"])
+}
+
+func TestOutboxIsOKWhenNothingErroredAndBacklogIsYoung(t *testing.T) {
+	_, body := getHealth(t, &stubHealthSource{
+		outbox: platformadmin.OutboxHealth{
+			Pending:                 3,
+			OldestPendingAgeSeconds: int64(platformadmin.OutboxPendingThreshold/time.Second) - 1,
+			Errored:                 0,
+		},
+	})
+	dep := body.Data.Dependencies[0]
+	require.Equal(t, "outbox", dep.Name)
+	require.Equal(t, "ok", dep.Status)
+	require.Equal(t, int64(0), dep.Metrics["errored"])
 }

@@ -178,3 +178,52 @@ func TestStripeWebhooksCountsUnprocessedAndManualReview(t *testing.T) {
 		"a flagged row that has been processed is resolved and must not count")
 	require.Equal(t, int64(1200), got.OldestUnprocessedAgeSeconds)
 }
+
+// A terminally-failed row is NOT pending. If it counted as pending, the
+// first one would put /admin/health into a degraded state that never
+// clears, because oldest_pending_age_seconds would grow forever.
+func TestOutboxHealthExcludesFailedRowsFromPendingAndAge(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	src := platformadmin.NewDBHealthSource(db)
+	tenant := uuid.NewString()
+
+	// Failed and very old: must not count as pending, and must not drive
+	// the age.
+	require.NoError(t, db.Exec(`INSERT INTO outbox_events
+		(tenant_id, aggregate, aggregate_id, event_type, payload, created_at, error)
+		VALUES (?, 'product', ?, 'product.created', '{}'::jsonb, ?, 'payload_unparseable')`,
+		tenant, uuid.NewString(), healthAsOf.Add(-72*time.Hour)).Error)
+
+	// Genuinely pending, 5 minutes old.
+	require.NoError(t, db.Exec(`INSERT INTO outbox_events
+		(tenant_id, aggregate, aggregate_id, event_type, payload, created_at)
+		VALUES (?, 'product', ?, 'product.created', '{}'::jsonb, ?)`,
+		tenant, uuid.NewString(), healthAsOf.Add(-5*time.Minute)).Error)
+
+	got, err := src.Outbox(context.Background(), healthAsOf)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), got.Pending, "a failed row must not count as pending")
+	require.Equal(t, int64(1), got.Errored, "the failed row must be counted as errored")
+	require.Equal(t, int64(300), got.OldestPendingAgeSeconds,
+		"age must ignore failed rows, or the alarm never clears")
+}
+
+// Errored counts only unpublished failures. A published row is settled
+// whatever its error column happens to hold.
+func TestOutboxHealthErroredIsZeroWhenNoFailedRows(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	src := platformadmin.NewDBHealthSource(db)
+	tenant := uuid.NewString()
+
+	published := healthAsOf.Add(-time.Hour)
+	require.NoError(t, db.Exec(`INSERT INTO outbox_events
+		(tenant_id, aggregate, aggregate_id, event_type, payload, created_at, published_at)
+		VALUES (?, 'product', ?, 'product.created', '{}'::jsonb, ?, ?)`,
+		tenant, uuid.NewString(), published, published).Error)
+
+	got, err := src.Outbox(context.Background(), healthAsOf)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), got.Pending)
+	require.Equal(t, int64(0), got.Errored)
+	require.Equal(t, int64(0), got.OldestPendingAgeSeconds)
+}

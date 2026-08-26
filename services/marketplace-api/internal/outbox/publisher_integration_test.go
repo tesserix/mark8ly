@@ -24,9 +24,13 @@ func quietLogger() *slog.Logger {
 
 func insertStore(t *testing.T, db *gorm.DB, id, tenantID string) {
 	t.Helper()
+	// storefront_customer_portal_secret is char(64) NOT NULL with no default
+	// and no Go hook — callers set it explicitly (internal/stores/models.go).
+	// Omitting it made every test using this helper fail at INSERT.
 	err := db.Exec(`
-		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())`,
+		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status,
+		                    storefront_customer_portal_secret, synced_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, encode(gen_random_bytes(32), 'hex'), now())`,
 		id, tenantID, "test-"+id[:8], "Test Store", "US", "USD", "UTC", "active").Error
 	if err != nil {
 		t.Fatalf("insertStore: %v", err)
@@ -165,7 +169,7 @@ func TestIntegration_Publisher_BatchMultipleEvents_MaxCreatedAt(t *testing.T) {
 	}
 }
 
-func TestIntegration_Publisher_MissingStoreID_DropFloor(t *testing.T) {
+func TestIntegration_Publisher_MissingStoreID_MarksFailedNotPublished(t *testing.T) {
 	db := testdb.NewDB(t, "outbox_events", "store_watermarks", "stores")
 	repo := outbox.NewRepository(db)
 
@@ -204,8 +208,14 @@ func TestIntegration_Publisher_MissingStoreID_DropFloor(t *testing.T) {
 	if err := db.First(&got, "id = ?", evt.ID).Error; err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if got.PublishedAt == nil {
-		t.Fatalf("expected malformed event to still be marked published")
+	if got.PublishedAt != nil {
+		t.Fatalf("a dropped event must NOT be marked published, got published_at=%v", got.PublishedAt)
+	}
+	if got.Error == nil {
+		t.Fatalf("error is nil; want %q", outbox.ReasonPayloadMissingStoreID)
+	}
+	if *got.Error != outbox.ReasonPayloadMissingStoreID {
+		t.Fatalf("error = %q, want %q", *got.Error, outbox.ReasonPayloadMissingStoreID)
 	}
 
 	var n int64
@@ -239,5 +249,127 @@ func TestIntegration_Publisher_CleanShutdown(t *testing.T) {
 	case <-done:
 	case <-time.After(200 * time.Millisecond):
 		t.Fatalf("publisher did not shut down within 200ms")
+	}
+}
+
+func TestIntegration_Publisher_UnparseablePayload_MarksFailedNotPublished(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events", "store_watermarks", "stores")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	storeID := uuid.NewString()
+	insertStore(t, db, storeID, tenantID)
+
+	// jsonb rejects malformed JSON at insert, so the unparseable-to-Go
+	// value is a well-formed JSON scalar: valid jsonb, but not the object
+	// json.Unmarshal into map[string]any requires.
+	evt := &outbox.OutboxEvent{
+		TenantID:    tenantID,
+		Aggregate:   outbox.AggregateProduct,
+		AggregateID: uuid.NewString(),
+		EventType:   outbox.EventProductCreated,
+		Payload:     datatypes.JSON([]byte(`"not-an-object"`)),
+	}
+	if err := db.Create(evt).Error; err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	pub := outbox.New(outbox.Config{
+		Repo: repo, DB: db, Logger: quietLogger(),
+		Interval: 1 * time.Second, BatchSize: 100,
+	})
+	if _, err := pub.Tick(context.Background()); err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+
+	var got outbox.OutboxEvent
+	if err := db.First(&got, "id = ?", evt.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.PublishedAt != nil {
+		t.Fatalf("a dropped event must NOT be marked published, got published_at=%v", got.PublishedAt)
+	}
+	if got.Error == nil || *got.Error != outbox.ReasonPayloadUnparseable {
+		t.Fatalf("error = %v, want %q", got.Error, outbox.ReasonPayloadUnparseable)
+	}
+}
+
+// The mixed batch is the composition no single-purpose test constructs, and
+// it is the whole point of the fix: one good row and one bad row in the SAME
+// tick. The good row must publish AND bump its watermark; the bad row must
+// be failed AND left unpublished. A regression that reverted the id-building
+// inversion would still pass every single-row test in this file.
+func TestIntegration_Publisher_MixedBatch_PublishesGoodFailsBad(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events", "store_watermarks", "stores")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	storeID := uuid.NewString()
+	insertStore(t, db, storeID, tenantID)
+
+	good := enqueueForStore(t, db, tenantID, storeID)
+
+	bad := &outbox.OutboxEvent{
+		TenantID:    tenantID,
+		Aggregate:   outbox.AggregateProduct,
+		AggregateID: uuid.NewString(),
+		EventType:   outbox.EventProductUpdated,
+		Payload:     datatypes.JSON([]byte(`{"unrelated":"value"}`)),
+	}
+	if err := db.Create(bad).Error; err != nil {
+		t.Fatalf("enqueue bad: %v", err)
+	}
+
+	pub := outbox.New(outbox.Config{
+		Repo: repo, DB: db, Logger: quietLogger(),
+		Interval: 1 * time.Second, BatchSize: 100,
+	})
+	count, err := pub.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("tick saw %d rows, want 2", count)
+	}
+
+	var gotGood outbox.OutboxEvent
+	if err := db.First(&gotGood, "id = ?", good.ID).Error; err != nil {
+		t.Fatalf("reload good: %v", err)
+	}
+	if gotGood.PublishedAt == nil {
+		t.Fatalf("the good event must be published even when a bad one shares its batch")
+	}
+	if gotGood.Error != nil {
+		t.Fatalf("the good event must not be marked failed, got %q", *gotGood.Error)
+	}
+
+	var gotBad outbox.OutboxEvent
+	if err := db.First(&gotBad, "id = ?", bad.ID).Error; err != nil {
+		t.Fatalf("reload bad: %v", err)
+	}
+	if gotBad.PublishedAt != nil {
+		t.Fatalf("the bad event must NOT be published, got published_at=%v", gotBad.PublishedAt)
+	}
+	if gotBad.Error == nil || *gotBad.Error != outbox.ReasonPayloadMissingStoreID {
+		t.Fatalf("bad event error = %v, want %q", gotBad.Error, outbox.ReasonPayloadMissingStoreID)
+	}
+
+	// The good row's watermark landed: the drop must not have suppressed it.
+	var n int64
+	if err := db.Raw(`SELECT count(*) FROM store_watermarks WHERE store_id = ?`, storeID).
+		Scan(&n).Error; err != nil {
+		t.Fatalf("count watermarks: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("watermark rows = %d, want 1", n)
+	}
+
+	// And the failed row is not retried on the next tick.
+	count, err = pub.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("second tick: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("second tick saw %d rows, want 0 (failed rows are terminal)", count)
 	}
 }

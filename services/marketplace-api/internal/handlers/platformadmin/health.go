@@ -61,13 +61,21 @@ var DependencyRegistry = []dependencyKey{
 
 // OutboxHealth is the measured state of outbox_events.
 //
-// There is deliberately no `errored` metric. Nothing in this service ever
-// writes outbox_events.error — the only production write to the table is
-// `SET published_at = now()` — so such a metric could never return a
-// non-zero value. See the spec; the dead column is a separate follow-up.
+// Pending counts rows the publisher will still attempt: published_at IS
+// NULL AND error IS NULL. Errored counts rows it has given up on:
+// published_at IS NULL AND error IS NOT NULL, which #336 made a real state
+// by teaching the publisher to write outbox_events.error instead of marking
+// a dropped event published.
+//
+// The two are separate because they need different reactions. A pending
+// backlog drains on its own and is measured by age; an errored row never
+// drains — only an operator clears it — so counting it as pending would
+// make OldestPendingAgeSeconds grow forever and leave this surface
+// permanently degraded on a condition draining cannot fix.
 type OutboxHealth struct {
 	Pending                 int64
 	OldestPendingAgeSeconds int64
+	Errored                 int64
 }
 
 // CSVJobsHealth is the measured state of csv_import_jobs.
@@ -152,12 +160,17 @@ func (h *HealthHandler) health(c *gin.Context) {
 		h.logCheckFailed("outbox", err)
 	} else {
 		status := StatusOK
-		if time.Duration(v.OldestPendingAgeSeconds)*time.Second >= OutboxPendingThreshold {
+		// Errored degrades regardless of age: a terminally-failed event is
+		// a silent divergence between this service and whatever consumes
+		// the watermark, and it does not resolve on its own.
+		if v.Errored > 0 ||
+			time.Duration(v.OldestPendingAgeSeconds)*time.Second >= OutboxPendingThreshold {
 			status = StatusDegraded
 		}
 		measured["outbox"] = dependencyRow{Status: status, Metrics: map[string]int64{
 			"pending":                    v.Pending,
 			"oldest_pending_age_seconds": v.OldestPendingAgeSeconds,
+			"errored":                    v.Errored,
 		}}
 	}
 

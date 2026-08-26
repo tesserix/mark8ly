@@ -5,6 +5,7 @@ package outbox_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -242,5 +243,234 @@ func TestIntegration_ProcessBatch_Ordering(t *testing.T) {
 			t.Fatalf("position %d: got id=%s tenant=%s created=%s, want id=%s",
 				i, captured[i].ID, captured[i].TenantID, captured[i].CreatedAt, w)
 		}
+	}
+}
+
+func TestIntegration_MarkFailedInTx_SetsReasonAndLeavesUnpublished(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	bad := makeEvent(tenantID)
+	good := makeEvent(tenantID)
+	enqueueCommitted(t, db, bad)
+	enqueueCommitted(t, db, good)
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{
+			{ID: bad.ID, Reason: outbox.ReasonPayloadUnparseable},
+		})
+	})
+	if err != nil {
+		t.Fatalf("MarkFailedInTx: %v", err)
+	}
+
+	var got outbox.OutboxEvent
+	if err := db.First(&got, "id = ?", bad.ID).Error; err != nil {
+		t.Fatalf("reload failed row: %v", err)
+	}
+	if got.Error == nil {
+		t.Fatalf("error is nil; want %q", outbox.ReasonPayloadUnparseable)
+	}
+	// Assert the EXACT code, not merely non-nil: a stub returns the zero
+	// value for a field nobody set.
+	if *got.Error != outbox.ReasonPayloadUnparseable {
+		t.Fatalf("error = %q, want %q", *got.Error, outbox.ReasonPayloadUnparseable)
+	}
+	if got.PublishedAt != nil {
+		t.Fatalf("a failed row must stay unpublished, got published_at=%v", got.PublishedAt)
+	}
+
+	var untouched outbox.OutboxEvent
+	if err := db.First(&untouched, "id = ?", good.ID).Error; err != nil {
+		t.Fatalf("reload untouched row: %v", err)
+	}
+	if untouched.Error != nil {
+		t.Fatalf("unrelated row was marked failed: %q", *untouched.Error)
+	}
+}
+
+func TestIntegration_MarkFailedInTx_GroupsDistinctReasons(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	unparseable := makeEvent(tenantID)
+	missingStore := makeEvent(tenantID)
+	enqueueCommitted(t, db, unparseable)
+	enqueueCommitted(t, db, missingStore)
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{
+			{ID: unparseable.ID, Reason: outbox.ReasonPayloadUnparseable},
+			{ID: missingStore.ID, Reason: outbox.ReasonPayloadMissingStoreID},
+		})
+	})
+	if err != nil {
+		t.Fatalf("MarkFailedInTx: %v", err)
+	}
+
+	for _, tc := range []struct {
+		id   string
+		want string
+	}{
+		{unparseable.ID, outbox.ReasonPayloadUnparseable},
+		{missingStore.ID, outbox.ReasonPayloadMissingStoreID},
+	} {
+		var got outbox.OutboxEvent
+		if err := db.First(&got, "id = ?", tc.id).Error; err != nil {
+			t.Fatalf("reload %s: %v", tc.id, err)
+		}
+		if got.Error == nil || *got.Error != tc.want {
+			t.Fatalf("row %s error = %v, want %q", tc.id, got.Error, tc.want)
+		}
+	}
+}
+
+func TestIntegration_MarkFailedInTx_EmptyIsNoOp(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, nil)
+	})
+	if err != nil {
+		t.Fatalf("empty MarkFailedInTx must be a no-op, got: %v", err)
+	}
+}
+
+func TestIntegration_MarkFailedInTx_CoercesUnrecognisedReason(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	evt := makeEvent(tenantID)
+	enqueueCommitted(t, db, evt)
+
+	// Shaped like a real encoding/json error: it quotes the offending input,
+	// which is exactly how customer payload data would reach this column.
+	raw := `json: cannot unmarshal string into Go value of type map[string]interface {} "acme-secret-sku"`
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{{ID: evt.ID, Reason: raw}})
+	}); err != nil {
+		t.Fatalf("MarkFailedInTx: %v", err)
+	}
+
+	var got outbox.OutboxEvent
+	if err := db.First(&got, "id = ?", evt.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.Error == nil {
+		t.Fatalf("error is nil; want %q", outbox.ReasonUnknown)
+	}
+	if *got.Error != outbox.ReasonUnknown {
+		t.Fatalf("error = %q, want %q", *got.Error, outbox.ReasonUnknown)
+	}
+	if strings.Contains(*got.Error, "acme-secret-sku") {
+		t.Fatalf("payload fragment leaked into outbox_events.error: %q", *got.Error)
+	}
+	if got.PublishedAt != nil {
+		t.Fatalf("a failed row must stay unpublished, got published_at=%v", got.PublishedAt)
+	}
+}
+
+func TestIntegration_MarkFailedInTx_DuplicateIDFirstReasonWins(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	evt := makeEvent(tenantID)
+	enqueueCommitted(t, db, evt)
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{
+			{ID: evt.ID, Reason: outbox.ReasonPayloadUnparseable},
+			{ID: evt.ID, Reason: outbox.ReasonPayloadMissingStoreID},
+		})
+	}); err != nil {
+		t.Fatalf("MarkFailedInTx: %v", err)
+	}
+
+	var got outbox.OutboxEvent
+	if err := db.First(&got, "id = ?", evt.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	// Deterministic: the FIRST entry wins, regardless of map iteration order.
+	if got.Error == nil || *got.Error != outbox.ReasonPayloadUnparseable {
+		t.Fatalf("error = %v, want %q (first occurrence wins)", got.Error, outbox.ReasonPayloadUnparseable)
+	}
+}
+
+// A row with error set is TERMINAL. This is the poison-pill proof: nothing
+// else in the suite exercises the poll's error IS NULL term, which exists
+// precisely so a permanently-failing row cannot be re-selected forever and
+// starve real events out of the batch window.
+func TestIntegration_ProcessBatch_SkipsFailedRows(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	failed := makeEvent(tenantID)
+	fresh := makeEvent(tenantID)
+	enqueueCommitted(t, db, failed)
+	enqueueCommitted(t, db, fresh)
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{
+			{ID: failed.ID, Reason: outbox.ReasonPayloadUnparseable},
+		})
+	}); err != nil {
+		t.Fatalf("seed failed row: %v", err)
+	}
+
+	var seen []string
+	count, err := repo.ProcessBatch(context.Background(), 10,
+		func(tx *gorm.DB, rows []outbox.OutboxEvent) error {
+			for _, r := range rows {
+				seen = append(seen, r.ID)
+			}
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("ProcessBatch: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("ProcessBatch saw %d rows, want 1 (the failed row must be skipped)", count)
+	}
+	if len(seen) != 1 || seen[0] != fresh.ID {
+		t.Fatalf("ProcessBatch saw %v, want only the un-failed row %s", seen, fresh.ID)
+	}
+}
+
+// Clearing error is the documented requeue path for an operator. It must
+// actually work, or "terminal" means "lost".
+func TestIntegration_ProcessBatch_ClearingErrorRequeues(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	evt := makeEvent(tenantID)
+	enqueueCommitted(t, db, evt)
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{
+			{ID: evt.ID, Reason: outbox.ReasonPayloadMissingStoreID},
+		})
+	}); err != nil {
+		t.Fatalf("seed failed row: %v", err)
+	}
+
+	if err := db.Exec(`UPDATE outbox_events SET error = NULL WHERE id = ?`, evt.ID).Error; err != nil {
+		t.Fatalf("clear error: %v", err)
+	}
+
+	count, err := repo.ProcessBatch(context.Background(), 10,
+		func(tx *gorm.DB, rows []outbox.OutboxEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("ProcessBatch: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("ProcessBatch saw %d rows, want 1 after error was cleared", count)
 	}
 }

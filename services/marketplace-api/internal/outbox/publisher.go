@@ -14,9 +14,12 @@ import (
 // See spec §14.1 (watermark separation) and §14.6 (publisher semantics).
 //
 // Payload invariant: every outbox row in slice 1 carries a "store_id" key
-// at the top level of its JSON payload. Rows without it are logged and
-// marked published without a watermark bump — losing the signal is
-// preferable to blocking the publisher on a producer bug.
+// at the top level of its JSON payload. A row without it, or with a payload
+// that will not unmarshal, is logged and marked FAILED — error is set, and
+// published_at is left NULL. It never blocks the publisher (the original
+// reason for dropping it) and it is never retried (both causes are
+// deterministic properties of the row), but it is no longer recorded as a
+// successful publish. See #336; the failed state is served by #331.
 type Publisher struct {
 	repo     Repository
 	db       *gorm.DB
@@ -91,24 +94,31 @@ func (p *Publisher) Tick(ctx context.Context) (int, error) {
 		}
 		byBucket := map[key]time.Time{}
 		ids := make([]string, 0, len(rows))
+		failures := make([]Failure, 0)
 		for _, r := range rows {
-			ids = append(ids, r.ID)
 			var payload map[string]any
 			if err := json.Unmarshal(r.Payload, &payload); err != nil {
 				if p.logger != nil {
-					p.logger.Warn("outbox publisher: unparseable payload; dropping",
+					p.logger.Warn("outbox publisher: unparseable payload; failing",
 						"event_id", r.ID, "err", err)
 				}
+				failures = append(failures, Failure{ID: r.ID, Reason: ReasonPayloadUnparseable})
 				continue
 			}
 			sid, _ := payload["store_id"].(string)
 			if sid == "" {
 				if p.logger != nil {
-					p.logger.Warn("outbox publisher: payload missing store_id; dropping",
+					p.logger.Warn("outbox publisher: payload missing store_id; failing",
 						"event_id", r.ID, "event_type", r.EventType)
 				}
+				failures = append(failures, Failure{ID: r.ID, Reason: ReasonPayloadMissingStoreID})
 				continue
 			}
+			// Appended only now: a row reaches this line exactly when it is
+			// going to contribute a watermark bump. Appending before the
+			// checks above is what made a dropped event indistinguishable
+			// from a published one (#336).
+			ids = append(ids, r.ID)
 			axis := "products"
 			if IsOrderAggregate(r.Aggregate) {
 				axis = "orders"
@@ -141,6 +151,11 @@ func (p *Publisher) Tick(ctx context.Context) (int, error) {
 			if err := tx.Exec(stmt, k.storeID, ts).Error; err != nil {
 				return err
 			}
+		}
+		// Both marks run in the SAME transaction as the watermark bumps
+		// above, so a batch's outcome commits whole or not at all.
+		if err := p.repo.MarkFailedInTx(tx, failures); err != nil {
+			return err
 		}
 		return p.repo.MarkPublishedInTx(tx, ids)
 	})

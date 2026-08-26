@@ -41,19 +41,24 @@ var (
 		[]string{"provider", "event_type"},
 	)
 
-	// OutboxEventsPending tracks the current outbox queue depth.
-	OutboxEventsPending = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "outbox_events_pending",
-			Help: "Number of pending outbox events.",
-		},
-	)
-
 	// OutboxEventsPublishedTotal counts outbox events published.
 	OutboxEventsPublishedTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "outbox_events_published_total",
 			Help: "Total outbox events published.",
+		},
+	)
+
+	// OutboxEventsFailedTotal counts outbox events the publisher gave up on.
+	// There is deliberately no pending GAUGE beside these two counters:
+	// /admin/health reports pending depth, oldest-pending age and errored
+	// count from a DB query, authoritatively, whereas a gauge set by the
+	// publisher would be reported identically by every replica running in
+	// admin or both mode — so any dashboard summing it would multiply.
+	OutboxEventsFailedTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "outbox_events_failed_total",
+			Help: "Total outbox events marked terminally failed by the publisher.",
 		},
 	)
 
@@ -162,8 +167,8 @@ func init() {
 		HTTPRequestDuration,
 		OrdersCreatedTotal,
 		WebhookReceivedTotal,
-		OutboxEventsPending,
 		OutboxEventsPublishedTotal,
+		OutboxEventsFailedTotal,
 		TrialSignupAnomalyAlertsTotal,
 		TrialActivationDay30Total,
 		DunningEmailsSentTotal,

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"gorm.io/gorm"
 )
 
@@ -85,8 +86,18 @@ func (p *Publisher) Start(ctx context.Context) <-chan struct{} {
 // (product, category, media) bumps products_updated_at. This lets storefront
 // clients poll the orders signal independently of product edits. See spec
 // §14.1 and Orders M2 plan (Option A).
+//
+// The returned int is the number of rows the poll SAW — not the number
+// published. Since #336 a batch can be entirely failed, so a non-zero return
+// says work was examined, not that anything was delivered. The
+// outbox_events_published_total and outbox_events_failed_total counters are
+// what separate those two outcomes.
 func (p *Publisher) Tick(ctx context.Context) (int, error) {
-	return p.repo.ProcessBatch(ctx, p.batch, func(tx *gorm.DB, rows []OutboxEvent) error {
+	var published, failed int
+	seen, err := p.repo.ProcessBatch(ctx, p.batch, func(tx *gorm.DB, rows []OutboxEvent) error {
+		// Reset per attempt: ProcessBatch's callback can run again, and a
+		// counter that survived a rolled-back attempt would over-count.
+		published, failed = 0, 0
 		// Group by (store_id, axis) where axis ∈ {"products","orders"}.
 		type key struct {
 			storeID string
@@ -204,9 +215,19 @@ func (p *Publisher) Tick(ctx context.Context) (int, error) {
 		}
 		// Both marks run in the SAME transaction as the watermark bumps
 		// above, so a batch's outcome commits whole or not at all.
+		published, failed = len(ids), len(failures)
 		if err := p.repo.MarkFailedInTx(tx, failures); err != nil {
 			return err
 		}
 		return p.repo.MarkPublishedInTx(tx, ids)
 	})
+	if err != nil {
+		return seen, err
+	}
+	// AFTER the commit, never inside the callback: the transaction can roll
+	// back, and a Prometheus counter cannot be decremented, so an over-count
+	// is permanent.
+	metrics.OutboxEventsPublishedTotal.Add(float64(published))
+	metrics.OutboxEventsFailedTotal.Add(float64(failed))
+	return seen, nil
 }

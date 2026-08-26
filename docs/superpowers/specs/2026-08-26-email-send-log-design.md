@@ -27,16 +27,27 @@ SendGrid primary → Resend fallback via `FallbackSender`, constructed at a **si
 headers and Resend returns `{"id": …}` in its body; both are discarded — `sendgrid.go:117` and
 `resend.go:112` read only the status code. So no correlation key exists today.
 
-**The `CustomArgs` doc comment is aspirational, not descriptive.** It says *"Always emit `product` so
-cross-product surfaces stay distinguishable"*. In fact only **5 of 12** mailer files set `CustomArgs`
-at all:
+**All five mailers that use `email.Sender` already set `kind`.** Exactly five files construct an
+`email.Message`: `ticket/mailer.go`, `giftcard/mailer.go`, `orderdoc/mailer.go`,
+`shipping/labelmailer.go` and `campaign/email_dispatcher.go`. Every one sets `CustomArgs` with a
+`kind`, and most also set `tenant_id` / `store_id`. **Attribution is already complete for everything
+that goes through this transport**, so this piece threads nothing through call sites.
 
-| sets `CustomArgs` | does not |
-|---|---|
-| `ticket/mailer.go` · `giftcard/mailer.go` · `orderdoc/mailer.go` · `shipping/labelmailer.go` · `campaign/email_dispatcher.go` | `billing/dispatch/handlers.go` · `campaign/send_worker.go` · `signup/anomaly_cron.go` · `subscription/dunning/dunning_emails.go` · `subscription/dunning/payment_action_reminders.go` · `subscription/dunning/trial_reminders.go` · `subscription/lifecycle/winback.go` |
+> An earlier draft of this document claimed "7 of 12 mailers set no `CustomArgs`, including all three
+> dunning mailers and winback". **That was wrong**, and the error is recorded rather than deleted
+> because of where it came from: grepping `.Send(ctx`, a method name, which also matches
+> `signup/anomaly_cron.go` (Slack, not email), `campaign/send_worker.go` (the campaign dispatcher,
+> which delegates to `email_dispatcher.go`) and `billing/dispatch/handlers.go` (a different
+> interface entirely). Grepping the type actually constructed — `email.Message{` — found the real
+> set of five. Grep a type, not a method name, when the question is "who uses this interface".
 
-The seven without attribution include **all three dunning mailers and winback** — payment-failure and
-trial-expiry notices, which are exactly the emails whose non-delivery ends in a suspended store.
+**There is a second, entirely separate email path, and it sends nothing.** `email.Client`
+(`internal/email/client.go:33`) is a template facade used by dunning, the trial-reminder cadence,
+payment-action reminders, winback and the trial-billed confirmation. Its only implementation is
+`NoOpClient`, wired at `main.go:1599`, `:1764` and `:1879`. Those emails have never been sent. Filed
+as **#381**. Fixing it is not this piece's job, but it bounds what this piece may claim: a send log
+over `email.Sender` will correctly show nothing for those templates, because nothing is sent. The log
+makes that gap visible; it does not close it.
 
 The existing vocabulary is consistent where it exists: lowercase snake_case single tokens
 (`giftcard`, `shipping_label`, `campaign`, typed constants in `orderdoc`), alongside `product` and
@@ -135,23 +146,16 @@ which may be shared or reused.
 
 ---
 
-## 5. Attribution across all 12 mailers
+## 5. Attribution
 
-The decorator reads `kind`, `tenant_id` and `store_id` from `CustomArgs` — keys that already exist in
-the five mailers that set them. The seven that do not gain the same shape, following the established
-convention. No new mechanism is introduced; the gap is that over half the mailers never adopted the
-existing one.
+The decorator reads `kind`, `tenant_id` and `store_id` **from `CustomArgs`**. All five mailers that
+use `email.Sender` already set them (§1), so this piece changes no mailer and touches no call site.
+Coverage is complete because the decorator wraps the transport; attribution is complete because the
+mailers already supply it.
 
-**This is in piece A rather than deferred.** The decorator's zero-touch property was only ever about
-the *log*, never about *attribution*, and a log recording `unknown` for every dunning notice does not
-answer the question the issue exists to ask. Each edit is small and mechanical.
-
-**`kind` falls back to `unknown`** when absent, mirroring `sanitizeReason`'s `ReasonUnknown` from
-#336: an unattributed send appears in the log as unattributed, queryable, rather than vanishing.
-After this piece the gap is closed for all twelve; the sentinel is for the thirteenth mailer someone
-adds later.
-
----
+**`kind` still falls back to `unknown`** when absent, mirroring `sanitizeReason`'s `ReasonUnknown`
+from #336. Nothing needs it today. It exists so a mailer added later without attribution appears in
+the log as unattributed and queryable, rather than writing an empty string nobody notices.
 
 ## 6. Testing
 
@@ -164,7 +168,6 @@ adds later.
   struct definition.
 - **`CustomArgs` is not mutated**, and the `send_id` reaches the wrapped sender.
 - **`kind` falls back to `unknown`** when a mailer supplies none.
-- **Each of the twelve mailers emits its kind.**
 
 ---
 

@@ -23,6 +23,17 @@ type OutboxLister interface {
 		asOf time.Time) (outbox.PlatformListResult, error)
 }
 
+// OutboxListerFunc adapts a plain function to OutboxLister, so
+// outbox.ListPlatform — which is a package function, not a method — can be
+// wired directly in main.go. Same pattern as TrialListerFunc.
+type OutboxListerFunc func(ctx context.Context, db *gorm.DB, f outbox.PlatformListFilter,
+	asOf time.Time) (outbox.PlatformListResult, error)
+
+func (fn OutboxListerFunc) ListPlatform(ctx context.Context, db *gorm.DB,
+	f outbox.PlatformListFilter, asOf time.Time) (outbox.PlatformListResult, error) {
+	return fn(ctx, db, f, asOf)
+}
+
 // OutboxHandler serves GET /admin/outbox to the platform console — a
 // cross-tenant read of outbox_events answering "what is stuck, what failed,
 // and why" (#331).

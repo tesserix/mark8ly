@@ -89,6 +89,14 @@ const (
 const (
 	ReasonPayloadUnparseable    = "payload_unparseable"
 	ReasonPayloadMissingStoreID = "payload_missing_store_id"
+	// ReasonStoreNotFound is written when a payload's store_id is
+	// well-formed but has no matching row in `stores`. The watermark upsert
+	// would raise an FK violation (store_watermarks.store_id REFERENCES
+	// stores(id)), which ABORTS the whole transaction rather than failing
+	// one row — see #374. Permanent in practice: stores are removed only by
+	// tenant purge and hard-delete, both of which sweep this tenant's
+	// outbox_events too.
+	ReasonStoreNotFound = "store_not_found"
 	// ReasonUnknown is written when a caller supplies a reason outside this
 	// vocabulary. It exists so MarkFailedInTx can neutralise an unrecognised
 	// string WITHOUT failing the batch: returning an error there would roll

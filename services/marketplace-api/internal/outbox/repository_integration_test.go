@@ -474,3 +474,30 @@ func TestIntegration_ProcessBatch_ClearingErrorRequeues(t *testing.T) {
 		t.Fatalf("ProcessBatch saw %d rows, want 1 after error was cleared", count)
 	}
 }
+
+// Guard against adding a reason constant without allowlisting it in
+// sanitizeReason, which would silently record "unknown" instead.
+func TestIntegration_MarkFailedInTx_StoreNotFoundIsInTheVocabulary(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	evt := makeEvent(tenantID)
+	enqueueCommitted(t, db, evt)
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{
+			{ID: evt.ID, Reason: outbox.ReasonStoreNotFound},
+		})
+	}); err != nil {
+		t.Fatalf("MarkFailedInTx: %v", err)
+	}
+
+	var got outbox.OutboxEvent
+	if err := db.First(&got, "id = ?", evt.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.Error == nil || *got.Error != outbox.ReasonStoreNotFound {
+		t.Fatalf("error = %v, want %q (is it in sanitizeReason's switch?)", got.Error, outbox.ReasonStoreNotFound)
+	}
+}

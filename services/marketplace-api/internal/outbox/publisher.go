@@ -93,7 +93,7 @@ func (p *Publisher) Tick(ctx context.Context) (int, error) {
 			axis    string
 		}
 		byBucket := map[key]time.Time{}
-		ids := make([]string, 0, len(rows))
+		idsByStore := make(map[string][]string, len(rows))
 		failures := make([]Failure, 0)
 		for _, r := range rows {
 			var payload map[string]any
@@ -118,7 +118,7 @@ func (p *Publisher) Tick(ctx context.Context) (int, error) {
 			// going to contribute a watermark bump. Appending before the
 			// checks above is what made a dropped event indistinguishable
 			// from a published one (#336).
-			ids = append(ids, r.ID)
+			idsByStore[sid] = append(idsByStore[sid], r.ID)
 			axis := "products"
 			if IsOrderAggregate(r.Aggregate) {
 				axis = "orders"
@@ -128,6 +128,56 @@ func (p *Publisher) Tick(ctx context.Context) (int, error) {
 				byBucket[k] = r.CreatedAt
 			}
 		}
+		// Store-existence pre-check (#374). store_watermarks.store_id is
+		// REFERENCES stores(id), so upserting a watermark for a store that
+		// does not exist raises an FK violation — and an FK violation ABORTS
+		// the Postgres transaction, so it does not fail one row, it takes the
+		// whole batch: the good rows, the failure marks, everything. Those
+		// rows then stay pending and are re-selected forever.
+		//
+		// Checking first turns that into a per-row terminal failure, the same
+		// shape as the other two causes. One extra SELECT per tick, and only
+		// when at least one row survived validation.
+		if len(idsByStore) > 0 {
+			storeIDs := make([]string, 0, len(idsByStore))
+			for sid := range idsByStore {
+				storeIDs = append(storeIDs, sid)
+			}
+			var found []struct{ ID string }
+			if err := tx.Raw(`SELECT id FROM stores WHERE id IN ?`, storeIDs).
+				Scan(&found).Error; err != nil {
+				return err
+			}
+			present := make(map[string]struct{}, len(found))
+			for _, f := range found {
+				present[f.ID] = struct{}{}
+			}
+			for sid, rowIDs := range idsByStore {
+				if _, ok := present[sid]; ok {
+					continue
+				}
+				if p.logger != nil {
+					p.logger.Warn("outbox publisher: store not found; failing",
+						"store_id", sid, "events", len(rowIDs))
+				}
+				for _, id := range rowIDs {
+					failures = append(failures, Failure{ID: id, Reason: ReasonStoreNotFound})
+				}
+				delete(idsByStore, sid)
+			}
+			// Drop every bucket whose store is gone, both axes.
+			for k := range byBucket {
+				if _, ok := present[k.storeID]; !ok {
+					delete(byBucket, k)
+				}
+			}
+		}
+
+		ids := make([]string, 0, len(rows))
+		for _, rowIDs := range idsByStore {
+			ids = append(ids, rowIDs...)
+		}
+
 		for k, ts := range byBucket {
 			var stmt string
 			switch k.axis {

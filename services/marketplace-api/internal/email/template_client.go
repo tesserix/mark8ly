@@ -92,7 +92,7 @@ func (c *templateClient) Send(ctx context.Context, template TemplateID, to strin
 	if err != nil {
 		c.logger.Error("billing email: render failed",
 			"template", string(template), "err", err.Error())
-		return fmt.Errorf("email: render %s: %w: %v", template, ErrRender, err)
+		return fmt.Errorf("email: render %s: %w: %w", template, ErrRender, err)
 	}
 
 	msg := Message{
@@ -117,7 +117,7 @@ func (c *templateClient) Send(ctx context.Context, template TemplateID, to strin
 	if err := c.sender.Send(ctx, msg); err != nil {
 		c.logger.Error("billing email: transport failed",
 			"template", string(template), "err", err.Error())
-		return fmt.Errorf("email: send %s: %w: %v", template, ErrTransport, err)
+		return fmt.Errorf("email: send %s: %w: %w", template, ErrTransport, err)
 	}
 	return nil
 }

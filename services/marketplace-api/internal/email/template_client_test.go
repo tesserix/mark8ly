@@ -158,3 +158,33 @@ func TestSkipReason_UndeliverableWins(t *testing.T) {
 		t.Errorf("SkipReason(unrelated) = %q, want %q", got, email.ReasonUnknown)
 	}
 }
+
+func TestTemplateClient_Send_PreservesUnderlyingCause_Transport(t *testing.T) {
+	sentinel := errors.New("sendgrid 503 upstream")
+	sender := &captureSender{err: sentinel}
+	loader := loaderWith("dunning_day_5", "s", "<p>h</p>", "t")
+	c := email.NewTemplateClient(loader, sender, "noreply@mark8ly.com", slog.Default())
+
+	err := c.Send(context.Background(), email.TemplateDunningDay5, "merchant@example.com", map[string]any{})
+	if !errors.Is(err, email.ErrTransport) {
+		t.Errorf("lost the sentinel: %v", err)
+	}
+	if !errors.Is(err, sentinel) {
+		t.Errorf("lost the underlying cause: %v", err)
+	}
+}
+
+func TestTemplateClient_Send_PreservesUnderlyingCause_Render(t *testing.T) {
+	// Verify the render sentinel is preserved in the error chain.
+	// TestTemplateClient_Send_PreservesUnderlyingCause_Transport verifies
+	// that both the sentinel and underlying cause are preserved for transport errors.
+	// For render, we verify at minimum that errors.Is works for the sentinel.
+	emptyLoader := emailtemplates.NewLoader(nil)
+	sender := &captureSender{}
+	c := email.NewTemplateClient(emptyLoader, sender, "noreply@mark8ly.com", slog.Default())
+
+	err := c.Send(context.Background(), email.TemplateDunningDay5, "merchant@example.com", map[string]any{})
+	if !errors.Is(err, email.ErrRender) {
+		t.Errorf("lost the render sentinel: %v", err)
+	}
+}

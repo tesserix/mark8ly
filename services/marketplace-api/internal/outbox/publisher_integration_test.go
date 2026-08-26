@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
@@ -324,12 +326,23 @@ func TestIntegration_Publisher_MixedBatch_PublishesGoodFailsBad(t *testing.T) {
 		Repo: repo, DB: db, Logger: quietLogger(),
 		Interval: 1 * time.Second, BatchSize: 100,
 	})
+	// Captured BEFORE the tick and asserted as a delta: these are
+	// package-level globals other tests in the same process also move, so
+	// an absolute assertion would be order-dependent and flaky.
+	beforePublished := testutil.ToFloat64(metrics.OutboxEventsPublishedTotal)
+	beforeFailed := testutil.ToFloat64(metrics.OutboxEventsFailedTotal)
 	count, err := pub.Tick(context.Background())
 	if err != nil {
 		t.Fatalf("tick: %v", err)
 	}
 	if count != 2 {
 		t.Fatalf("tick saw %d rows, want 2", count)
+	}
+	if got := testutil.ToFloat64(metrics.OutboxEventsPublishedTotal) - beforePublished; got != 1 {
+		t.Fatalf("published counter delta = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(metrics.OutboxEventsFailedTotal) - beforeFailed; got != 1 {
+		t.Fatalf("failed counter delta = %v, want 1", got)
 	}
 
 	var gotGood outbox.OutboxEvent

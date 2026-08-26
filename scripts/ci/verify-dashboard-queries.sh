@@ -59,7 +59,7 @@ KNOWN_METRICS=(
     # panel querying it, and this script validates that repo's dashboards
     # against this list: removing the entry first would fail CI on a dashboard
     # this repo cannot edit. Remove this line once that panel is repointed or
-    # deleted.
+    # deleted (tesserix-k8s#631).
     outbox_events_pending
     mark8ly_trial_signup_anomaly_alerts_total
     mark8ly_trial_activation_day30_total

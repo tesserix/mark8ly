@@ -14,8 +14,14 @@
 // is NOT recovery: the watermark upsert is monotonic (GREATEST) over the
 // row's ORIGINAL created_at, so a row that sat failed while later events
 // published for the same store will publish without moving the watermark —
-// no consumer learns, and the health alarm clears. Recovery for a stale row
-// is a fresh enqueue (or bumping created_at alongside clearing error).
+// no consumer learns, and the health alarm clears. That caveat assumes a
+// later event DID publish for the same store while this row sat failed; it
+// is unavailable for a store_not_found row, since no later event can have
+// published for a store that did not exist — if the store exists by the
+// time such a row is requeued, store_watermarks has no row for it yet, so
+// the upsert INSERTs at the original created_at, a change consumers DO
+// observe. Recovery for a stale row is a fresh enqueue (or bumping
+// created_at alongside clearing error).
 // See #336.
 package outbox
 

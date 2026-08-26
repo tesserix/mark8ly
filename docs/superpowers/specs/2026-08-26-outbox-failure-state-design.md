@@ -296,14 +296,15 @@ Repeated for #331 after it deploys, to see the row as `status=failed`.
 
 ## 8. Found while reading, deliberately not in scope
 
-`metrics.OutboxEventsPending` and `metrics.OutboxEventsPublishedTotal` are declared **and
-registered** (`internal/metrics/registry.go:45,53,165-166`) and **written by nothing**. They are
-the same family of dead declaration as `outbox_events.error` itself, and as #322 and #323.
+**Done.** `metrics.OutboxEventsPending` and `metrics.OutboxEventsPublishedTotal` were declared and
+registered but written by nothing — the same family of dead declaration as `outbox_events.error`
+itself, and as #322 and #323. This was filed as its own issue, #375, and closed on this branch.
 
-Tempting to fix here, since the publisher is the only place that could set them. Kept out: it is a
-separate concern with its own contract question (what a gauge should read when the process holding
-it is one of several replicas), and bundling it would widen a correctness fix into an observability
-change. To be filed as its own issue.
+The gauge (`OutboxEventsPending`) was deleted rather than wired up: it is redundant with
+`/admin/health`, and a per-replica gauge would be reported identically by every replica running in
+`admin` or `both` mode, so any dashboard summing it across replicas would multiply the true value.
+`outbox_events_published_total` is now written by the publisher, and `outbox_events_failed_total`
+was added alongside it.
 
 Also out of scope: producer-side validation that would stop a malformed row being enqueued at all.
 Worth considering, but it is a different defence at a different layer, and it cannot help the rows

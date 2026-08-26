@@ -164,7 +164,7 @@ tax_calculation_fallback_total{provider}             counter
 
 # System metrics
 db_query_duration_seconds{operation}                 histogram
-outbox_events_pending                                gauge
+outbox_events_failed_total                           counter
 outbox_events_published_total                        counter
 ```
 

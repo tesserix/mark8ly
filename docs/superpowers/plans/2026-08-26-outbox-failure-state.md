@@ -1109,6 +1109,44 @@ git commit -m "docs: record the origin/main failing-set diff for the outbox fail
 
 ---
 
+## Verification record (Task 5, 2026-08-26)
+
+**`go vet -tags=integration ./...`**: `exit=0` (clean — build-tagged files compile).
+
+**Branch (`fix/336-outbox-failure-state`)** — full integration suite, `TEST_DATABASE_URL` LAN
+Postgres, `-tags=integration -p 1`:
+- `go test` exit=1
+- Failing packages: **22** (`/tmp/branch-fails-pkgs.txt`)
+- Failing individual tests: **191** (`/tmp/branch-fails-tests.txt`)
+
+**`origin/main`** (5413e20f, throwaway worktree at `/tmp/m8-main-baseline`) — identical command:
+- `go test` exit=1
+- Failing packages: **23** (`/tmp/main-fails-pkgs.txt`)
+- Failing individual tests: **194** (`/tmp/main-fails-tests.txt`)
+
+**Both-directions package diff:**
+- Only on `origin/main`, not on branch (fixed by this branch): `internal/outbox` — the one package
+  this plan targeted.
+- Only on branch, not on `origin/main` (would be a regression): **none**.
+
+**Both-directions individual-test diff** (within the 22 packages that fail on both):
+- Only on `origin/main`, not on branch: `TestIntegration_Publisher_BumpsWatermark`,
+  `TestIntegration_Publisher_BatchMultipleEvents_MaxCreatedAt`,
+  `TestIntegration_Publisher_MissingStoreID_DropFloor` — the three tests broken by the
+  `insertStore` helper's missing `stores.storefront_customer_portal_secret` column, fixed in Task
+  3. The third was also renamed on the branch to
+  `TestIntegration_Publisher_MissingStoreID_MarksFailedNotPublished`, which now passes (does not
+  appear in either failing-test list).
+- Only on branch, not on `origin/main`: **none**.
+
+**Verdict:** This branch added zero test failures. It strictly reduced the pre-existing failing set
+by fixing `internal/outbox` (23 → 22 failing packages, 194 → 191 failing tests), all via the
+authorised `insertStore` test-helper fix from Task 3. The remaining 22 failing packages / 191
+failing tests are identical, by package and by individual test name, between `origin/main` and this
+branch — pre-existing failures unrelated to this work, unmodified by it.
+
+---
+
 ## Not in this plan
 
 - **`GET /admin/outbox` (#331).** Separate branch, separate plan, written after this ships. The

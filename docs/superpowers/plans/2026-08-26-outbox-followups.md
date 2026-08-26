@@ -605,6 +605,29 @@ git commit -m "docs: record the verification diff for the outbox follow-ups bran
 
 ---
 
+## Verification record
+
+Executed 2026-08-26. Branch `fix/374-outbox-followups` at `cf20ea47f7f1ba27c5cc4fceebdd0bc8b7f996c9`,
+compared against baseline `main` at `0fc2763f6cdc3b3fdbaf04aa1cfe226d8e8bdace` (contains #336).
+
+- **`go vet -tags=integration ./...`** — `exit=0`, no output.
+- **Branch full-suite integration run** — `go test -tags=integration -p 1 ./...`, exit=1 (expected —
+  pre-existing failures). Failing set: **22 packages / 191 tests**.
+- **Baseline full-suite integration run** (`/tmp/m8-fu-baseline` worktree at `0fc2763f`) — same
+  command, exit=1. Failing set: **22 packages / 191 tests**.
+- **Both-directions package diff**:
+  - Failing on BRANCH but not on `0fc2763f`: empty.
+  - Failing on `0fc2763f` but not on BRANCH: empty.
+  - The two package lists are byte-identical.
+- **Test-name diff** (to rule out same-package-different-test drift): the 191 `--- FAIL:` test names
+  on each side are identical after stripping per-run timing suffixes; only timing values differed.
+
+**Verdict:** the branch introduced no new test failures and fixed none — the failing set is
+identical in both directions, as expected for a branch whose scope (#374, #375, #376) touches no
+code path covered by the pre-existing failures.
+
+---
+
 ## Not in this plan
 
 - **The #336 production verification exercise.** Still outstanding, separate, and requires explicit

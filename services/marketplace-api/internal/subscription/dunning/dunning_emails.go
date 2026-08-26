@@ -50,8 +50,8 @@ type emailRow struct {
 
 // SendDunningEmails is a daily cron that sends day-5 and day-7 nudge emails
 // to merchants whose subscription entered past_due status N days ago and is
-// still past_due. Email routing uses email.Client (NoOpClient until a real
-// adapter wires in).
+// still past_due. Email routing goes through email.Client — since #381 that
+// is the real template client (render → SendGrid → Resend), not a no-op.
 type SendDunningEmails struct {
 	db      *gorm.DB
 	emailCl email.Client

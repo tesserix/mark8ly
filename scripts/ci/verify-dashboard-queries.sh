@@ -51,8 +51,16 @@ KNOWN_METRICS=(
     http_request_duration_seconds_sum
     orders_created_total
     webhook_received_total
-    outbox_events_pending
     outbox_events_published_total
+    outbox_events_failed_total
+    # RETAINED DELIBERATELY, NOT AN OVERSIGHT. The gauge was deleted from
+    # registry.go in #375 — nothing exports it any more. This entry stays only
+    # because tesserix-k8s/grafana/dashboards/webhook-pipeline.json still has a
+    # panel querying it, and this script validates that repo's dashboards
+    # against this list: removing the entry first would fail CI on a dashboard
+    # this repo cannot edit. Remove this line once that panel is repointed or
+    # deleted.
+    outbox_events_pending
     mark8ly_trial_signup_anomaly_alerts_total
     mark8ly_trial_activation_day30_total
     mark8ly_subscription_dunning_emails_sent_total

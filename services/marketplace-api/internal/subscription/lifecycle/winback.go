@@ -32,6 +32,7 @@ type WinBackCron struct {
 	logger *slog.Logger
 	clock  func() time.Time
 	skip   SkipCounter
+	sent   SentCounter
 }
 
 // CounterIncrementer is a one-method counter so tests can stub it.
@@ -42,6 +43,14 @@ type CounterIncrementer interface{ Inc() }
 // package so lifecycle keeps its current dependency set.
 type SkipCounter interface {
 	WithTemplateReason(template, reason string) CounterIncrementer
+}
+
+// SentCounter counts win-back emails actually delivered, labeled by
+// template. Without it there would be no sent counter for win_back_day30 at
+// all, and the sent+skipped identity documented on
+// metrics.BillingEmailsSkippedTotal would be false for this template.
+type SentCounter interface {
+	WithTemplate(template string) CounterIncrementer
 }
 
 // NewWinBackCron constructs a WinBackCron.
@@ -58,6 +67,12 @@ func NewWinBackCron(db *gorm.DB, mailer email.Client, logger *slog.Logger, clock
 // WithSkipCounter attaches the skipped-delivery counter. Optional.
 func (c *WinBackCron) WithSkipCounter(sc SkipCounter) *WinBackCron {
 	c.skip = sc
+	return c
+}
+
+// WithSentCounter attaches the delivered-email counter. Optional.
+func (c *WinBackCron) WithSentCounter(sc SentCounter) *WinBackCron {
+	c.sent = sc
 	return c
 }
 
@@ -122,6 +137,9 @@ func (c *WinBackCron) sendOne(ctx context.Context, row *subscription.StoreSubscr
 			c.skip.WithTemplateReason(string(email.TemplateWinBack), email.SkipReason(err)).Inc()
 		}
 		return
+	}
+	if c.sent != nil {
+		c.sent.WithTemplate(string(email.TemplateWinBack)).Inc()
 	}
 	c.logger.Info("lifecycle: win-back email sent",
 		"store_id", row.StoreID, "tenant_id", row.TenantID)

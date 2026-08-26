@@ -107,7 +107,15 @@ predicate to `AND error IS NULL` is what makes "terminal" true rather than aspir
 ```
 ReasonPayloadUnparseable   = "payload_unparseable"
 ReasonPayloadMissingStoreID = "payload_missing_store_id"
+ReasonStoreNotFound        = "store_not_found"
 ```
+
+`ReasonStoreNotFound` (#374) covers a third row shape: a `store_id` that is well-formed and present
+but has no matching row in `stores`. Before this fix that row reached the watermark upsert and its
+FK violation (`store_watermarks.store_id REFERENCES stores(id)`) aborted the whole transaction,
+taking the batch's good rows and failure marks down with it. It is terminal for the same reason the
+other two are — a missing store is a permanent property of the row, not a transient condition to
+retry.
 
 **`err.Error()` must not be persisted.** `encoding/json`'s unmarshal errors quote the offending
 input, so storing the raw error would copy fragments of an arbitrary customer-data JSONB payload
@@ -288,14 +296,15 @@ Repeated for #331 after it deploys, to see the row as `status=failed`.
 
 ## 8. Found while reading, deliberately not in scope
 
-`metrics.OutboxEventsPending` and `metrics.OutboxEventsPublishedTotal` are declared **and
-registered** (`internal/metrics/registry.go:45,53,165-166`) and **written by nothing**. They are
-the same family of dead declaration as `outbox_events.error` itself, and as #322 and #323.
+**Done.** `metrics.OutboxEventsPending` and `metrics.OutboxEventsPublishedTotal` were declared and
+registered but written by nothing — the same family of dead declaration as `outbox_events.error`
+itself, and as #322 and #323. This was filed as its own issue, #375, and closed on this branch.
 
-Tempting to fix here, since the publisher is the only place that could set them. Kept out: it is a
-separate concern with its own contract question (what a gauge should read when the process holding
-it is one of several replicas), and bundling it would widen a correctness fix into an observability
-change. To be filed as its own issue.
+The gauge (`OutboxEventsPending`) was deleted rather than wired up: it is redundant with
+`/admin/health`, and a per-replica gauge would be reported identically by every replica running in
+`admin` or `both` mode, so any dashboard summing it across replicas would multiply the true value.
+`outbox_events_published_total` is now written by the publisher, and `outbox_events_failed_total`
+was added alongside it.
 
 Also out of scope: producer-side validation that would stop a malformed row being enqueued at all.
 Worth considering, but it is a different defence at a different layer, and it cannot help the rows

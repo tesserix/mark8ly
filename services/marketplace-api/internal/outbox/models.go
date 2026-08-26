@@ -14,8 +14,14 @@
 // is NOT recovery: the watermark upsert is monotonic (GREATEST) over the
 // row's ORIGINAL created_at, so a row that sat failed while later events
 // published for the same store will publish without moving the watermark —
-// no consumer learns, and the health alarm clears. Recovery for a stale row
-// is a fresh enqueue (or bumping created_at alongside clearing error).
+// no consumer learns, and the health alarm clears. That caveat assumes a
+// later event DID publish for the same store while this row sat failed; it
+// is unavailable for a store_not_found row, since no later event can have
+// published for a store that did not exist — if the store exists by the
+// time such a row is requeued, store_watermarks has no row for it yet, so
+// the upsert INSERTs at the original created_at, a change consumers DO
+// observe. Recovery for a stale row is a fresh enqueue (or bumping
+// created_at alongside clearing error).
 // See #336.
 package outbox
 
@@ -87,8 +93,25 @@ const (
 // that leaves this service — defeating the same reasoning that keeps
 // `payload` out of #331's response, through a field nobody would audit.
 const (
-	ReasonPayloadUnparseable    = "payload_unparseable"
+	ReasonPayloadUnparseable = "payload_unparseable"
+	// ReasonPayloadMissingStoreID is written when a payload's store_id is
+	// absent, not a string, an empty string, or a non-empty string that does
+	// not parse as a UUID. All four are the same terminal producer bug and
+	// require the same operator action, so they share one code rather than
+	// widening this closed vocabulary. The UUID case is rejected here, in
+	// the row loop, rather than left to the store pre-check below: stores.id
+	// is uuid, and passing a non-UUID value to that SELECT raises `invalid
+	// input syntax for type uuid`, which ABORTS the transaction and rolls
+	// back the whole batch — see #374.
 	ReasonPayloadMissingStoreID = "payload_missing_store_id"
+	// ReasonStoreNotFound is written when a payload's store_id is
+	// well-formed but has no matching row in `stores`. The watermark upsert
+	// would raise an FK violation (store_watermarks.store_id REFERENCES
+	// stores(id)), which ABORTS the whole transaction rather than failing
+	// one row — see #374. Permanent in practice: stores are removed only by
+	// tenant purge and hard-delete, both of which sweep this tenant's
+	// outbox_events too.
+	ReasonStoreNotFound = "store_not_found"
 	// ReasonUnknown is written when a caller supplies a reason outside this
 	// vocabulary. It exists so MarkFailedInTx can neutralise an unrecognised
 	// string WITHOUT failing the batch: returning an error there would roll

@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
@@ -324,12 +326,23 @@ func TestIntegration_Publisher_MixedBatch_PublishesGoodFailsBad(t *testing.T) {
 		Repo: repo, DB: db, Logger: quietLogger(),
 		Interval: 1 * time.Second, BatchSize: 100,
 	})
+	// Captured BEFORE the tick and asserted as a delta: these are
+	// package-level globals other tests in the same process also move, so
+	// an absolute assertion would be order-dependent and flaky.
+	beforePublished := testutil.ToFloat64(metrics.OutboxEventsPublishedTotal)
+	beforeFailed := testutil.ToFloat64(metrics.OutboxEventsFailedTotal)
 	count, err := pub.Tick(context.Background())
 	if err != nil {
 		t.Fatalf("tick: %v", err)
 	}
 	if count != 2 {
 		t.Fatalf("tick saw %d rows, want 2", count)
+	}
+	if got := testutil.ToFloat64(metrics.OutboxEventsPublishedTotal) - beforePublished; got != 1 {
+		t.Fatalf("published counter delta = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(metrics.OutboxEventsFailedTotal) - beforeFailed; got != 1 {
+		t.Fatalf("failed counter delta = %v, want 1", got)
 	}
 
 	var gotGood outbox.OutboxEvent
@@ -366,6 +379,191 @@ func TestIntegration_Publisher_MixedBatch_PublishesGoodFailsBad(t *testing.T) {
 
 	// And the failed row is not retried on the next tick.
 	count, err = pub.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("second tick: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("second tick saw %d rows, want 0 (failed rows are terminal)", count)
+	}
+}
+
+// A store_id that is well-formed but absent from `stores` used to raise an FK
+// violation on the watermark upsert, which ABORTS the whole Postgres
+// transaction — taking the good rows and the failure marks with it and
+// leaving the entire batch pending forever. #374.
+func TestIntegration_Publisher_StoreNotFound_MarksFailedAndCommits(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events", "store_watermarks", "stores")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	ghostStoreID := uuid.NewString() // deliberately never inserted
+
+	evt := enqueueForStore(t, db, tenantID, ghostStoreID)
+
+	pub := outbox.New(outbox.Config{
+		Repo: repo, DB: db, Logger: quietLogger(),
+		Interval: 1 * time.Second, BatchSize: 100,
+	})
+	if _, err := pub.Tick(context.Background()); err != nil {
+		t.Fatalf("tick must not error on a missing store: %v", err)
+	}
+
+	var got outbox.OutboxEvent
+	if err := db.First(&got, "id = ?", evt.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.PublishedAt != nil {
+		t.Fatalf("a row for a missing store must not be published, got %v", got.PublishedAt)
+	}
+	if got.Error == nil {
+		t.Fatalf("error is nil; want %q", outbox.ReasonStoreNotFound)
+	}
+	// Exact code. If the constant was added but not allowlisted in
+	// sanitizeReason, this reads "unknown" and this line is what catches it.
+	if *got.Error != outbox.ReasonStoreNotFound {
+		t.Fatalf("error = %q, want %q", *got.Error, outbox.ReasonStoreNotFound)
+	}
+
+	var n int64
+	if err := db.Raw(`SELECT count(*) FROM store_watermarks`).Scan(&n).Error; err != nil {
+		t.Fatalf("count watermarks: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("watermark rows = %d, want 0", n)
+	}
+}
+
+// The composition that matters: one good row and one ghost-store row in the
+// SAME batch. Before #374 the FK violation rolled back BOTH.
+func TestIntegration_Publisher_StoreNotFound_DoesNotRollBackGoodRows(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events", "store_watermarks", "stores")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	realStoreID := uuid.NewString()
+	insertStore(t, db, realStoreID, tenantID)
+	ghostStoreID := uuid.NewString()
+
+	good := enqueueForStore(t, db, tenantID, realStoreID)
+	ghost := enqueueForStore(t, db, tenantID, ghostStoreID)
+
+	pub := outbox.New(outbox.Config{
+		Repo: repo, DB: db, Logger: quietLogger(),
+		Interval: 1 * time.Second, BatchSize: 100,
+	})
+	count, err := pub.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("tick saw %d rows, want 2", count)
+	}
+
+	var gotGood outbox.OutboxEvent
+	if err := db.First(&gotGood, "id = ?", good.ID).Error; err != nil {
+		t.Fatalf("reload good: %v", err)
+	}
+	if gotGood.PublishedAt == nil {
+		t.Fatalf("the good row must publish even when a ghost-store row shares its batch")
+	}
+	if gotGood.Error != nil {
+		t.Fatalf("the good row must not be failed, got %q", *gotGood.Error)
+	}
+
+	var gotGhost outbox.OutboxEvent
+	if err := db.First(&gotGhost, "id = ?", ghost.ID).Error; err != nil {
+		t.Fatalf("reload ghost: %v", err)
+	}
+	if gotGhost.PublishedAt != nil {
+		t.Fatalf("the ghost row must not be published, got %v", gotGhost.PublishedAt)
+	}
+	if gotGhost.Error == nil || *gotGhost.Error != outbox.ReasonStoreNotFound {
+		t.Fatalf("ghost row error = %v, want %q", gotGhost.Error, outbox.ReasonStoreNotFound)
+	}
+
+	// The real store's watermark landed — the FK row did not suppress it.
+	var n int64
+	if err := db.Raw(`SELECT count(*) FROM store_watermarks WHERE store_id = ?`, realStoreID).
+		Scan(&n).Error; err != nil {
+		t.Fatalf("count watermarks: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("watermark rows for the real store = %d, want 1", n)
+	}
+
+	// And nothing is retried.
+	count, err = pub.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("second tick: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("second tick saw %d rows, want 0", count)
+	}
+}
+
+// A store_id that is a non-empty string but not a parseable UUID used to
+// reach the store pre-check's `SELECT id FROM stores WHERE id IN ?`, where
+// Postgres raises `invalid input syntax for type uuid` — which ABORTS the
+// transaction and rolls back the whole batch, good rows included. #374.
+func TestIntegration_Publisher_NonUUIDStoreID_MarksFailedAndCommits(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events", "store_watermarks", "stores")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	storeID := uuid.NewString()
+	insertStore(t, db, storeID, tenantID)
+
+	good := enqueueForStore(t, db, tenantID, storeID)
+
+	bad := &outbox.OutboxEvent{
+		TenantID:    tenantID,
+		Aggregate:   outbox.AggregateProduct,
+		AggregateID: uuid.NewString(),
+		EventType:   outbox.EventProductUpdated,
+		Payload:     datatypes.JSON([]byte(`{"store_id":"store-42"}`)),
+	}
+	if err := db.Create(bad).Error; err != nil {
+		t.Fatalf("enqueue bad: %v", err)
+	}
+
+	pub := outbox.New(outbox.Config{
+		Repo: repo, DB: db, Logger: quietLogger(),
+		Interval: 1 * time.Second, BatchSize: 100,
+	})
+	if _, err := pub.Tick(context.Background()); err != nil {
+		t.Fatalf("tick must not error on a non-UUID store_id: %v", err)
+	}
+
+	var gotGood outbox.OutboxEvent
+	if err := db.First(&gotGood, "id = ?", good.ID).Error; err != nil {
+		t.Fatalf("reload good: %v", err)
+	}
+	if gotGood.PublishedAt == nil {
+		t.Fatalf("the good event must be published even when a non-UUID store_id shares its batch")
+	}
+
+	var wmCount int64
+	if err := db.Raw(`SELECT count(*) FROM store_watermarks WHERE store_id = ?`, storeID).
+		Scan(&wmCount).Error; err != nil {
+		t.Fatalf("count watermarks: %v", err)
+	}
+	if wmCount != 1 {
+		t.Fatalf("watermark rows = %d, want 1", wmCount)
+	}
+
+	var gotBad outbox.OutboxEvent
+	if err := db.First(&gotBad, "id = ?", bad.ID).Error; err != nil {
+		t.Fatalf("reload bad: %v", err)
+	}
+	if gotBad.PublishedAt != nil {
+		t.Fatalf("the non-UUID store_id event must NOT be published, got published_at=%v", gotBad.PublishedAt)
+	}
+	if gotBad.Error == nil || *gotBad.Error != outbox.ReasonPayloadMissingStoreID {
+		t.Fatalf("bad event error = %v, want %q", gotBad.Error, outbox.ReasonPayloadMissingStoreID)
+	}
+
+	// And the bad row is not retried on the next tick.
+	count, err := pub.Tick(context.Background())
 	if err != nil {
 		t.Fatalf("second tick: %v", err)
 	}

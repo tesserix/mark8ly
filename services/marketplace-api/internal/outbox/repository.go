@@ -99,7 +99,7 @@ func (r *gormRepository) MarkPublishedInTx(tx *gorm.DB, ids []string) error {
 // advisory.
 func sanitizeReason(reason string) string {
 	switch reason {
-	case ReasonPayloadUnparseable, ReasonPayloadMissingStoreID:
+	case ReasonPayloadUnparseable, ReasonPayloadMissingStoreID, ReasonStoreNotFound:
 		return reason
 	default:
 		return ReasonUnknown

@@ -25,7 +25,10 @@ type Repository interface {
 	// operator action — clear error and the row re-enters the poll.
 	//
 	// Reason must be one of the Reason* constants in models.go, never a raw
-	// error string. See the comment on those constants.
+	// error string. Anything outside the vocabulary is recorded as ReasonUnknown
+	// to prevent raw error strings (which may contain customer-data JSONB) from
+	// reaching a column served cross-tenant to the platform console. See the
+	// comment on those constants.
 	MarkFailedInTx(tx *gorm.DB, failures []Failure) error
 }
 
@@ -77,16 +80,38 @@ func (r *gormRepository) MarkPublishedInTx(tx *gorm.DB, ids []string) error {
 	return nil
 }
 
+// sanitizeReason is the ONLY gate between a caller's string and the error
+// column. Anything outside the closed vocabulary becomes ReasonUnknown, so a
+// raw err.Error() — which encoding/json fills with fragments of the offending
+// payload — cannot reach a column that is served cross-tenant to the console
+// (#331), even if a future caller passes one by mistake. The interface comment
+// says "never a raw error string"; this is what makes that true rather than
+// advisory.
+func sanitizeReason(reason string) string {
+	switch reason {
+	case ReasonPayloadUnparseable, ReasonPayloadMissingStoreID:
+		return reason
+	default:
+		return ReasonUnknown
+	}
+}
+
 func (r *gormRepository) MarkFailedInTx(tx *gorm.DB, failures []Failure) error {
 	if len(failures) == 0 {
 		return nil
 	}
-	// Grouped by reason so this is one statement per DISTINCT reason (two,
-	// today) rather than one per row. Map iteration order is unspecified
-	// and irrelevant: the id sets are disjoint, so the statements commute.
 	byReason := make(map[string][]string, len(failures))
+	seen := make(map[string]struct{}, len(failures))
 	for _, f := range failures {
-		byReason[f.Reason] = append(byReason[f.Reason], f.ID)
+		// First occurrence of an id wins. Without this, one id appearing under
+		// two reasons lands in two UPDATE groups and the surviving value
+		// depends on Go's randomised map iteration order.
+		if _, dup := seen[f.ID]; dup {
+			continue
+		}
+		seen[f.ID] = struct{}{}
+		r := sanitizeReason(f.Reason)
+		byReason[r] = append(byReason[r], f.ID)
 	}
 	for reason, ids := range byReason {
 		if err := tx.Exec(`UPDATE outbox_events SET error = ? WHERE id IN ?`,

@@ -5,6 +5,7 @@ package outbox_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -335,5 +336,68 @@ func TestIntegration_MarkFailedInTx_EmptyIsNoOp(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("empty MarkFailedInTx must be a no-op, got: %v", err)
+	}
+}
+
+func TestIntegration_MarkFailedInTx_CoercesUnrecognisedReason(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	evt := makeEvent(tenantID)
+	enqueueCommitted(t, db, evt)
+
+	// Shaped like a real encoding/json error: it quotes the offending input,
+	// which is exactly how customer payload data would reach this column.
+	raw := `json: cannot unmarshal string into Go value of type map[string]interface {} "acme-secret-sku"`
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{{ID: evt.ID, Reason: raw}})
+	}); err != nil {
+		t.Fatalf("MarkFailedInTx: %v", err)
+	}
+
+	var got outbox.OutboxEvent
+	if err := db.First(&got, "id = ?", evt.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.Error == nil {
+		t.Fatalf("error is nil; want %q", outbox.ReasonUnknown)
+	}
+	if *got.Error != outbox.ReasonUnknown {
+		t.Fatalf("error = %q, want %q", *got.Error, outbox.ReasonUnknown)
+	}
+	if strings.Contains(*got.Error, "acme-secret-sku") {
+		t.Fatalf("payload fragment leaked into outbox_events.error: %q", *got.Error)
+	}
+	if got.PublishedAt != nil {
+		t.Fatalf("a failed row must stay unpublished, got published_at=%v", got.PublishedAt)
+	}
+}
+
+func TestIntegration_MarkFailedInTx_DuplicateIDFirstReasonWins(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	evt := makeEvent(tenantID)
+	enqueueCommitted(t, db, evt)
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{
+			{ID: evt.ID, Reason: outbox.ReasonPayloadUnparseable},
+			{ID: evt.ID, Reason: outbox.ReasonPayloadMissingStoreID},
+		})
+	}); err != nil {
+		t.Fatalf("MarkFailedInTx: %v", err)
+	}
+
+	var got outbox.OutboxEvent
+	if err := db.First(&got, "id = ?", evt.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	// Deterministic: the FIRST entry wins, regardless of map iteration order.
+	if got.Error == nil || *got.Error != outbox.ReasonPayloadUnparseable {
+		t.Fatalf("error = %v, want %q (first occurrence wins)", got.Error, outbox.ReasonPayloadUnparseable)
 	}
 }

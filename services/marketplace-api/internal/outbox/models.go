@@ -74,6 +74,12 @@ const (
 const (
 	ReasonPayloadUnparseable    = "payload_unparseable"
 	ReasonPayloadMissingStoreID = "payload_missing_store_id"
+	// ReasonUnknown is written when a caller supplies a reason outside this
+	// vocabulary. It exists so MarkFailedInTx can neutralise an unrecognised
+	// string WITHOUT failing the batch: returning an error there would roll
+	// back the publisher's transaction, leaving the offending rows pending
+	// and re-selected forever — the exact poison pill this work removes.
+	ReasonUnknown = "unknown"
 )
 
 // Failure is one row the publisher could not process, paired with the

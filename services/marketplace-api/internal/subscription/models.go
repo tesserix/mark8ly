@@ -154,6 +154,7 @@ type StoreSubscription struct {
 
 	// v2.3 P6 — SCA fallback + dunning refund-window guard (§4.7, §16.5).
 	// HostedInvoiceURL is populated by invoice.payment_action_required and
+	// invoice.payment_failed (the dunning ladder's emails link to it) and
 	// cleared on invoice.paid. FirstChargeAt is stamped once on the first
 	// successful invoice.paid and never updated thereafter — it anchors the
 	// 14-day refund window that blocks ladder-driven expiry.

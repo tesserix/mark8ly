@@ -547,3 +547,68 @@ func TestInvoicePaid_TrialBilledWithoutAddressDoesNotFailTheWebhook(t *testing.T
 	require.NotNil(t, sub.FirstChargeAt, "first_charge_at must be stamped even though the email failed")
 	require.Nil(t, sub.HostedInvoiceURL, "hosted_invoice_url must be cleared even though the email failed")
 }
+
+// TestDispatch_InvoicePaymentFailed_PersistsHostedInvoiceURL pins the fix for
+// the dunning cohort's missing payment link: invoice.payment_failed is the
+// handler that produces past_due, and the day-5 / day-7 dunning emails only
+// render a payment button when hosted_invoice_url is set. Before this, only
+// the SCA path (invoice.payment_action_required) ever wrote the column, so
+// the ordinary declined-card merchant got the linkless {{else}} branch.
+func TestDispatch_InvoicePaymentFailed_PersistsHostedInvoiceURL(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID)
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_pf_url",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusActive,
+	}).Error)
+
+	stripeURL := "https://invoice.stripe.com/i/acct_123/pf_xxx"
+	payload := []byte(`{"id":"evt_pf_url","type":"invoice.payment_failed","data":{"object":{"customer":"cus_pf_url","hosted_invoice_url":"` + stripeURL + `"}}}`)
+	d := dispatch.New(nil)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_pf_url", EventType: "invoice.payment_failed", Payload: payload,
+	}))
+
+	var sub subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
+	require.NotNil(t, sub.HostedInvoiceURL, "dunning emails have no payment link without this")
+	require.Equal(t, stripeURL, *sub.HostedInvoiceURL)
+	require.Equal(t, subscription.StatusPastDue, sub.Status)
+}
+
+// TestDispatch_InvoicePaymentFailed_AbsentURLKeepsExistingValue verifies an
+// event without hosted_invoice_url does not blank a URL we already hold —
+// Stripe omits the field on some payloads, and overwriting with "" would
+// re-break the dunning link for a merchant who already had one.
+func TestDispatch_InvoicePaymentFailed_AbsentURLKeepsExistingValue(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID)
+	existing := "https://invoice.stripe.com/i/acct_123/already_here"
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_pf_nourl",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusActive,
+		HostedInvoiceURL: &existing,
+	}).Error)
+
+	payload := []byte(`{"id":"evt_pf_nourl","type":"invoice.payment_failed","data":{"object":{"customer":"cus_pf_nourl"}}}`)
+	d := dispatch.New(nil)
+	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: "evt_pf_nourl", EventType: "invoice.payment_failed", Payload: payload,
+	}))
+
+	var sub subscription.StoreSubscription
+	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
+	require.NotNil(t, sub.HostedInvoiceURL, "an absent field must not blank an existing URL")
+	require.Equal(t, existing, *sub.HostedInvoiceURL)
+	require.Equal(t, subscription.StatusPastDue, sub.Status)
+}

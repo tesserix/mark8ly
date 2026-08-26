@@ -375,10 +375,50 @@ func (d *Dispatcher) countSkip(reason string) {
 // machine. Valid From states per §17.2: active, payment_action_required.
 // Idempotent replays where the status has already advanced are silently
 // dropped via ErrCASConflict.
+//
+// It also persists hosted_invoice_url from the payload, mirroring
+// handleInvoicePaymentActionRequired. This handler is the one that produces
+// past_due — i.e. the entire dunning cohort — and the dunning ladder's day-5
+// and day-7 emails render a "pay this invoice" button only when
+// hosted_invoice_url is set. Without this write the ordinary "card declined,
+// no SCA challenge" merchant reaches the two emails immediately preceding
+// suspension with no payment link at all.
+//
+// The write is unconditional and happens BEFORE the status transition, so a
+// replay (or an event arriving when the status has already advanced) still
+// refreshes the URL. An empty/absent field is left alone rather than blanking
+// a good URL; clearing on success stays where it belongs, in handleInvoicePaid.
 func (d *Dispatcher) handleInvoicePaymentFailed(ctx context.Context, tx *gorm.DB, raw []byte) error {
-	customer, err := extractCustomerID(raw)
-	if err != nil {
-		return err
+	var e struct {
+		Data struct {
+			Object struct {
+				Customer         string `json:"customer"`
+				HostedInvoiceURL string `json:"hosted_invoice_url"`
+			} `json:"object"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return fmt.Errorf("dispatch: unmarshal invoice.payment_failed: %w", err)
+	}
+	customer := e.Data.Object.Customer
+	if customer == "" {
+		return errors.New("dispatch: invoice.payment_failed missing customer")
+	}
+
+	// Persist hosted_invoice_url unconditionally so the merchant can always
+	// reach the Stripe-hosted payment page the dunning emails link to, even
+	// on event replay.
+	if e.Data.Object.HostedInvoiceURL != "" {
+		res := tx.WithContext(ctx).Exec(`
+			UPDATE store_subscriptions
+			SET hosted_invoice_url = ?,
+			    updated_at         = now()
+			WHERE stripe_customer_id = ?`,
+			e.Data.Object.HostedInvoiceURL, customer,
+		)
+		if res.Error != nil {
+			return fmt.Errorf("dispatch: persist hosted_invoice_url: %w", res.Error)
+		}
 	}
 
 	var sub subscription.StoreSubscription
@@ -391,7 +431,7 @@ func (d *Dispatcher) handleInvoicePaymentFailed(ctx context.Context, tx *gorm.DB
 		return nil
 	}
 
-	err = statemachine.Transition(ctx, statemachine.TransitionInput{
+	err := statemachine.Transition(ctx, statemachine.TransitionInput{
 		DB:       tx,
 		Emitter:  d.emitter,
 		TenantID: sub.TenantID,

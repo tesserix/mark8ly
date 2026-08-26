@@ -63,11 +63,15 @@ Three states, all **derived from existing columns**. No migration.
 console needs no renegotiation.
 
 **`failed` is terminal by design.** A failed row is never retried. Requeueing is an operator
-action — clear `error` and the row re-enters the poll on the next tick. This is the deliberate
-answer to the "retry, dead-letter or alert" question #336 leaves open: with both known causes
-deterministic, bounded retries would burn work to fail identically, and a `attempts`/backoff column
-would be machinery for a transient-failure mode that does not exist here. If a transient drop cause
-is ever introduced, that is the point to revisit this, not before.
+action — clearing `error` re-enters the row into the poll on the next tick, but re-entry is not
+recovery. `store_watermarks` is upserted with `GREATEST` over the row's *original* `created_at`, so
+a row that sat failed while later events published for the same store will publish without moving
+the watermark — leaving consumers unaware and clearing the health alarm at the same time. Recovering
+a stale row means enqueuing a fresh event, or bumping `created_at` alongside clearing `error`. This
+is the deliberate answer to the "retry, dead-letter or alert" question #336 leaves open: with both
+known causes deterministic, bounded retries would burn work to fail identically, and a
+`attempts`/backoff column would be machinery for a transient-failure mode that does not exist here.
+If a transient drop cause is ever introduced, that is the point to revisit this, not before.
 
 ### Why the poll must exclude failed rows
 
@@ -201,6 +205,16 @@ already cites #331's `payload` exclusion.
   `older_than_minutes` is the tool for the "what is stuck" question.
 - Standard envelope: `{ data, pagination { page, limit, total } }`, RFC3339 UTC timestamps, bare
   ids — the #260 conventions.
+
+### `error` is opaque outside the service, not a three-way switch
+
+`outbox_events.error` is `text` with no `CHECK` constraint (migration
+`000001_products_initial.up.sql:256`). The closed vocabulary described in §3 is enforced in Go by
+`sanitizeReason`, which only covers writes going through `MarkFailedInTx`. Both the production
+verification exercise in §7 and the operator requeue path described in §2 are manual `UPDATE`s
+against this column, and neither goes through `sanitizeReason`. So the two known reason codes are
+what the *service* can produce, not what a *consumer* can observe. #331's console must treat `error`
+as an opaque string with an unknown-value fallback, never a three-way switch.
 
 ### Known cost, accepted
 

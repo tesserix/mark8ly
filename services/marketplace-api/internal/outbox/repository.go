@@ -29,7 +29,10 @@ type Repository interface {
 	// MarkFailedInTx records why the publisher could not process each row,
 	// leaving published_at NULL. A row with error set is TERMINAL: the poll
 	// in ProcessBatch excludes it, so it is never retried. Requeueing is an
-	// operator action — clear error and the row re-enters the poll.
+	// operator action — clearing error re-enters the row into the poll.
+	// Note that is re-entry, not recovery: the watermark is monotonic over
+	// the row's original created_at, so a stale row publishes without moving
+	// it. See the package doc in models.go.
 	//
 	// Reason must be one of the Reason* constants in models.go, never a raw
 	// error string. Anything outside the vocabulary is recorded as ReasonUnknown

@@ -10,7 +10,13 @@
 //	published  published_at IS NOT NULL
 //
 // failed is terminal: ProcessBatch's poll excludes it, so it is never
-// retried. Clearing error requeues the row. See #336.
+// retried. Clearing error re-enters the row into the poll, but that alone
+// is NOT recovery: the watermark upsert is monotonic (GREATEST) over the
+// row's ORIGINAL created_at, so a row that sat failed while later events
+// published for the same store will publish without moving the watermark —
+// no consumer learns, and the health alarm clears. Recovery for a stale row
+// is a fresh enqueue (or bumping created_at alongside clearing error).
+// See #336.
 package outbox
 
 import (

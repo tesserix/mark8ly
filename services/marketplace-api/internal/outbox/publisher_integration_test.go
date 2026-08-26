@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"testing"
 	"time"
 
@@ -31,9 +30,8 @@ func insertStore(t *testing.T, db *gorm.DB, id, tenantID string) {
 	err := db.Exec(`
 		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status,
 		                    storefront_customer_portal_secret, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, now())`,
-		id, tenantID, "test-"+id[:8], "Test Store", "US", "USD", "UTC", "active",
-		strings.Repeat("0", 64)).Error
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, encode(gen_random_bytes(32), 'hex'), now())`,
+		id, tenantID, "test-"+id[:8], "Test Store", "US", "USD", "UTC", "active").Error
 	if err != nil {
 		t.Fatalf("insertStore: %v", err)
 	}

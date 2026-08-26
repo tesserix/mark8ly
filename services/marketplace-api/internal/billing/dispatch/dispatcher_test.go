@@ -435,3 +435,78 @@ func TestDispatch_InvoicePaid_NoEmailClientStillProcesses(t *testing.T) {
 	require.NoError(t, db.Where("store_id=?", storeID).First(&sub).Error)
 	require.NotNil(t, sub.FirstChargeAt, "first_charge_at must be stamped even without email client")
 }
+
+// captureEmailClient is a minimal email.Client stub that records every
+// recipient it was asked to send to. Unlike dispatchEmailRecorder above (which
+// only cares which template fired), this one exists to catch the actual bug
+// in Task 12: the recipient passed to Send was a store UUID, not an address.
+// Send honours the same contract the real client enforces — validating the
+// recipient first — so a test double here can't mask a bounce the
+// production client would have caught.
+type captureEmailClient struct {
+	recipients []string
+}
+
+func (c *captureEmailClient) Send(_ context.Context, _ email.TemplateID, to string, _ map[string]any) error {
+	if err := email.ValidateRecipient(to); err != nil {
+		return err
+	}
+	c.recipients = append(c.recipients, to)
+	return nil
+}
+
+// runInvoicePaidFirstCharge seeds a store and a store_subscriptions row with
+// first_charge_at NULL and the given email (nil leaves it unset), attaches
+// client as the dispatcher's email client, and dispatches a first-charge
+// invoice.paid event. Returns the error from Dispatch so callers can assert
+// on webhook-level failure behavior.
+func runInvoicePaidFirstCharge(t *testing.T, client email.Client, addr *string) error {
+	t.Helper()
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID)
+
+	customerID := "cus_" + uuid.NewString()[:12]
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: customerID,
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusActive,
+		Email:            addr,
+		// FirstChargeAt deliberately nil — this is the first charge.
+	}).Error)
+
+	d := dispatch.New(nil).WithEmail(client)
+	eventID := "evt_" + uuid.NewString()[:12]
+	payload := []byte(`{"id":"` + eventID + `","type":"invoice.paid","data":{"object":{"customer":"` + customerID + `"}}}`)
+	return d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+		EventID: eventID, EventType: "invoice.paid", Payload: payload,
+	})
+}
+
+// TestInvoicePaid_TrialBilledUsesRealAddress verifies the trial-billed
+// confirmation email is sent to the merchant's actual address, not the
+// store UUID that used to be passed as `to`.
+func TestInvoicePaid_TrialBilledUsesRealAddress(t *testing.T) {
+	addr := "merchant@example.com"
+	client := &captureEmailClient{}
+
+	require.NoError(t, runInvoicePaidFirstCharge(t, client, &addr))
+
+	require.Len(t, client.recipients, 1, "sent %d emails, want 1", len(client.recipients))
+	require.Equal(t, addr, client.recipients[0], "a store UUID would bounce")
+}
+
+// TestInvoicePaid_TrialBilledWithoutAddressDoesNotFailTheWebhook verifies a
+// missing/invalid recipient keeps the webhook non-fatal — Stripe must not
+// retry and re-fire every other invoice.paid side effect.
+func TestInvoicePaid_TrialBilledWithoutAddressDoesNotFailTheWebhook(t *testing.T) {
+	client := &captureEmailClient{}
+
+	err := runInvoicePaidFirstCharge(t, client, nil)
+
+	require.NoError(t, err, "webhook must stay non-fatal on email failure")
+	require.Empty(t, client.recipients, "no address means nothing should have been sent")
+}

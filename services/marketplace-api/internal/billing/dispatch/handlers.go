@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -279,20 +280,25 @@ func (d *Dispatcher) handleInvoicePaid(ctx context.Context, tx *gorm.DB, raw []b
 	}
 
 	if wasFirstCharge && d.emailCl != nil {
-		// TODO: real email recipient — see trial.ExpiryCron / SendTrialReminders.
-		// StoreID placeholder mirrors the existing convention until store_email
-		// columns land on StoreSubscription.
-		if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, sub.StoreID.String(), map[string]any{
-			"store_id":  sub.StoreID.String(),
-			"tenant_id": sub.TenantID.String(),
-			"plan":      string(sub.Plan),
-			"period":    string(sub.SubscriptionPeriod),
+		to := ""
+		if sub.Email != nil {
+			to = *sub.Email
+		}
+		if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, to, map[string]any{
+			"store_id":   sub.StoreID.String(),
+			"tenant_id":  sub.TenantID.String(),
+			"store_name": "your store",
+			"plan":       string(sub.Plan),
+			"period":     string(sub.SubscriptionPeriod),
 		}); sendErr != nil {
 			// Don't fail the webhook — Stripe would retry, double-firing every
 			// other side effect. Email failure is a soft error: log and move on.
 			// Idempotency is preserved by first_charge_at being non-nil after
 			// this UPDATE, so a retried invoice.paid event won't re-emit.
-			_ = fmt.Errorf("dispatch: trial-billed email (non-fatal): %w", sendErr)
+			slog.Default().Warn("dispatch: trial-billed email not sent",
+				"store_id", sub.StoreID.String(),
+				"reason", email.SkipReason(sendErr),
+				"err", sendErr.Error())
 		}
 	}
 	return nil

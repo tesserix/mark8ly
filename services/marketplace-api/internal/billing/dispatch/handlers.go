@@ -13,6 +13,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/email"
+	"github.com/mark8ly/marketplace-api/internal/postcommit"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 )
@@ -404,14 +405,24 @@ func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subsc
 	// The claim above stays inside the transaction on the non-transactional
 	// handle: it is what stops a rollback-then-retry from sending twice, and
 	// moving it out here would reintroduce that duplicate.
-	if col := deferredSendsFrom(ctx); col != nil {
-		col.Add(send)
+	if postcommit.Add(ctx, send) {
 		return
 	}
 
 	// No collector in ctx — a caller that did not opt in (tests, or a future
-	// entry point). Send inline rather than dropping it: the old behaviour is
-	// slow, but silently losing a merchant's billing email is worse.
+	// entry point that forgot to install one). Send inline rather than
+	// dropping it: the old behaviour is slow, but silently losing a
+	// merchant's billing email is worse.
+	//
+	// Entering this path is itself worth a warning. Without it a new call
+	// site that forgets postcommit.WithDeferredSends silently reverts to
+	// making the provider call under the advisory lock — the exact behaviour
+	// this indirection exists to remove — and looks perfectly healthy in the
+	// logs while doing it.
+	log.Warn("dispatch: no post-commit collector in context; sending trial-billed email INLINE, inside the webhook transaction — the caller of Dispatch is missing postcommit.WithDeferredSends",
+		"store_id", sub.StoreID.String(),
+		"tenant_id", sub.TenantID.String())
+
 	if sendErr := send(); sendErr != nil {
 		// Don't fail the webhook — Stripe would retry, double-firing every
 		// other side effect. Email failure is a soft error: log and move on.

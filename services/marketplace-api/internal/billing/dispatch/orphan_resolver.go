@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/postcommit"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 )
@@ -74,7 +75,7 @@ func (r *OrphanResolver) resolveOne(ctx context.Context, e webhookevents.StripeW
 	// Collector installed before the lock, drained after it commits — the
 	// dispatcher registers provider HTTP calls (e.g. the trial-billed
 	// confirmation) here rather than making them under the advisory lock.
-	ctx, deferred := WithDeferredSends(ctx)
+	ctx, deferred := postcommit.WithDeferredSends(ctx)
 	err := subscription.WithAdvisoryLock(ctx, r.cfg.DB, storeID, func(tx *gorm.DB) error {
 		return r.cfg.Dispatcher.Dispatch(ctx, tx, e)
 	})

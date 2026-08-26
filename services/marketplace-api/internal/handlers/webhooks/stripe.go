@@ -17,8 +17,8 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
-	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/postcommit"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 )
@@ -165,7 +165,7 @@ func (h *StripeHandler) dispatchLocked(ctx context.Context, evt webhookevents.St
 	// (15s, plus a possible Resend fallback) held the per-store advisory
 	// lock and one connection of a small pool against Stripe's 30s webhook
 	// budget.
-	ctx, deferred := dispatch.WithDeferredSends(ctx)
+	ctx, deferred := postcommit.WithDeferredSends(ctx)
 	if err := subscription.WithAdvisoryLock(ctx, h.cfg.DB, storeID, func(tx *gorm.DB) error {
 		return h.cfg.Dispatch(ctx, tx, evt)
 	}); err != nil {

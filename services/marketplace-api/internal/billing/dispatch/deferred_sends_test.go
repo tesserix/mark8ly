@@ -12,6 +12,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
 	"github.com/mark8ly/marketplace-api/internal/email"
+	"github.com/mark8ly/marketplace-api/internal/postcommit"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
@@ -83,7 +84,7 @@ func TestInvoicePaid_TrialBilled_SentAfterTransactionCommits(t *testing.T) {
 
 	// Exactly the production shape: collector installed before the lock,
 	// drained after it returns.
-	ctx, deferred := dispatch.WithDeferredSends(context.Background())
+	ctx, deferred := postcommit.WithDeferredSends(context.Background())
 	eventID := "evt_" + uuid.NewString()[:12]
 	payload := []byte(`{"id":"` + eventID + `","type":"invoice.paid","data":{"object":{"customer":"` + customerID + `"}}}`)
 	require.NoError(t, subscription.WithAdvisoryLock(ctx, db, storeID, func(tx *gorm.DB) error {

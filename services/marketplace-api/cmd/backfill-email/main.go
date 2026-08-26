@@ -6,6 +6,18 @@
 // Run once per environment after migration 104 lands. Idempotent — safe to
 // re-run; it always re-reads from Stripe and writes the current value.
 //
+// The UPDATE deliberately does NOT touch updated_at. On store_subscriptions
+// that column carries business semantics, not bookkeeping: the day-30
+// win-back cron (internal/subscription/lifecycle/winback.go) selects expired
+// rows by `updated_at` falling in the 30–31-day-post-expiry window and
+// derives its idempotency key from the row's own updated_at. Stamping
+// updated_at here would reset every merchant's win-back clock — nothing
+// eligible for 30 days, then the whole historical expired cohort arriving in
+// one window with a "closed for a month" claim that is false for most of
+// them, and permanent loss of the win-back for any store mid-window at
+// backfill time. Email is a bookkeeping column; writing it must be invisible
+// to lifecycle timing.
+//
 // Addresses Stripe reports that we would refuse to send to (the
 // billing+<store_id>@mark8ly.local placeholders minted by subscription
 // bootstrap) are counted as `Placeholder` and NOT written: storing one would
@@ -21,6 +33,7 @@ import (
 	"flag"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -65,12 +78,16 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
-	stats, err := run(ctx, conn, stripeClient, batchSize, throttle, dryRun, log)
+	lookup := func(ctx context.Context, customerID string) (string, error) {
+		return billingstripe.GetCustomerEmail(ctx, stripeClient, customerID)
+	}
+
+	stats, err := run(ctx, conn, lookup, batchSize, throttle, dryRun, log)
 	if err != nil {
 		log.Error("backfill-email: run failed", "err", err, "stats", stats)
 		os.Exit(1)
 	}
-	log.Info("backfill-email: done", "stats", stats)
+	log.Info("backfill-email: done", "dry_run", dryRun, "stats", stats)
 }
 
 type runStats struct {
@@ -82,7 +99,11 @@ type runStats struct {
 	Failed       int
 }
 
-func run(ctx context.Context, conn *gorm.DB, sc *billingstripe.Client, batchSize int, throttle time.Duration, dryRun bool, log *slog.Logger) (runStats, error) {
+// emailLookup resolves a Stripe customer's email address. Injected so the
+// backfill's DB behaviour is testable without a Stripe account.
+type emailLookup func(ctx context.Context, customerID string) (string, error)
+
+func run(ctx context.Context, conn *gorm.DB, lookup emailLookup, batchSize int, throttle time.Duration, dryRun bool, log *slog.Logger) (runStats, error) {
 	var stats runStats
 
 	// Keyset pagination via id ordering — avoids OFFSET drift on a live table
@@ -110,7 +131,7 @@ func run(ctx context.Context, conn *gorm.DB, sc *billingstripe.Client, batchSize
 			stats.Scanned++
 			lastID = row.ID.String()
 
-			addr, err := billingstripe.GetCustomerEmail(ctx, sc, row.StripeCustomerID)
+			addr, err := lookup(ctx, row.StripeCustomerID)
 			if err != nil {
 				stats.Failed++
 				log.Warn("backfill-email: stripe lookup failed; skipping",
@@ -138,7 +159,10 @@ func run(ctx context.Context, conn *gorm.DB, sc *billingstripe.Client, batchSize
 				continue
 			}
 
-			if row.Email != nil && *row.Email == addr {
+			// citext column: a case-only difference is the SAME address to
+			// Postgres, so `==` would report "changed" and rewrite the row on
+			// every re-run of a script documented as idempotent.
+			if row.Email != nil && strings.EqualFold(*row.Email, addr) {
 				stats.Unchanged++
 				time.Sleep(throttle)
 				continue
@@ -154,9 +178,10 @@ func run(ctx context.Context, conn *gorm.DB, sc *billingstripe.Client, batchSize
 			}
 
 			// Per-row UPDATE keyed by id — narrowest possible blast radius.
+			// updated_at is intentionally left alone; see the package comment.
 			res := conn.WithContext(ctx).Exec(`
 				UPDATE store_subscriptions
-				SET email = ?, updated_at = now()
+				SET email = ?
 				WHERE id = ?`,
 				addr, row.ID,
 			)

@@ -415,6 +415,7 @@ func handleCustomerUpdated(ctx context.Context, tx *gorm.DB, raw []byte) error {
 		Data struct {
 			Object struct {
 				Customer        string `json:"id"`
+				Email           string `json:"email"`
 				InvoiceSettings struct {
 					DefaultPaymentMethod *string `json:"default_payment_method"`
 				} `json:"invoice_settings"`
@@ -432,12 +433,19 @@ func handleCustomerUpdated(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	hasPM := e.Data.Object.InvoiceSettings.DefaultPaymentMethod != nil &&
 		*e.Data.Object.InvoiceSettings.DefaultPaymentMethod != ""
 
+	// email is written only when the event carries one. Stripe omits the
+	// field on some replays, and an absent field must not blank an address
+	// we already hold — COALESCE on the parameter, not on the column, so an
+	// empty string is treated as "no value in this event".
+	email := strings.TrimSpace(e.Data.Object.Email)
+
 	res := tx.WithContext(ctx).Exec(`
 		UPDATE store_subscriptions
 		SET has_default_payment_method = ?,
+		    email                      = COALESCE(NULLIF(?, ''), email),
 		    updated_at                 = now()
 		WHERE stripe_customer_id = ?`,
-		hasPM, customer,
+		hasPM, email, customer,
 	)
 	if res.Error != nil {
 		return fmt.Errorf("dispatch: customer.updated has_default_payment_method: %w", res.Error)

@@ -1,7 +1,16 @@
 // Package outbox holds the OutboxEvent model. Events are written in the
 // same transaction as the mutation that produces them (see spec §13.2.7).
-// Slice 1's publisher reads these rows, upserts store_watermarks, and
-// marks them published. Slice 2 adds real Pub/Sub delivery.
+// Slice 1's publisher reads these rows, upserts store_watermarks, and marks
+// them published. Slice 2 adds real Pub/Sub delivery.
+//
+// A row is in one of three states, all derived from existing columns:
+//
+//	pending    published_at IS NULL AND error IS NULL
+//	failed     published_at IS NULL AND error IS NOT NULL   (terminal)
+//	published  published_at IS NOT NULL
+//
+// failed is terminal: ProcessBatch's poll excludes it, so it is never
+// retried. Clearing error requeues the row. See #336.
 package outbox
 
 import (

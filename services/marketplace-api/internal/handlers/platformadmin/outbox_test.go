@@ -164,6 +164,30 @@ func TestOutboxUnknownParametersNarrowNothing(t *testing.T) {
 	require.Zero(t, lister.gotFilter.OlderThanMinutes, "a non-positive older_than_minutes is ignored")
 }
 
+// A row created in the same second is genuinely 0 seconds old, and must
+// report 0 rather than vanish. omitempty on a POINTER checks nilness, not
+// the pointed-to value — so this passes today, and would break the moment
+// AgeSeconds were "simplified" to a plain int64. Every other test uses a
+// non-zero age and would stay green through exactly that change.
+func TestOutboxEmitsAgeSecondsZeroRatherThanOmittingIt(t *testing.T) {
+	zero := int64(0)
+	lister := &stubOutboxLister{result: outbox.PlatformListResult{
+		Total: 1,
+		Rows: []outbox.PlatformRow{{
+			ID: "11111111-1111-1111-1111-111111111111", TenantID: "22222222-2222-2222-2222-222222222222",
+			Aggregate: "product", AggregateID: "33333333-3333-3333-3333-333333333333",
+			EventType: "product.created", Status: outbox.StatusPending,
+			CreatedAt:  time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC),
+			AgeSeconds: &zero,
+		}},
+	}}
+	rec, _ := getOutbox(t, lister, "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	// Assert on the RAW body: a parsed *int64 would read nil for both
+	// "absent" and "present as 0", which is the distinction under test.
+	require.Contains(t, rec.Body.String(), `"age_seconds":0`)
+}
+
 func TestOutboxRepositoryErrorIsFiveHundred(t *testing.T) {
 	lister := &stubOutboxLister{err: errors.New("boom")}
 	rec, body := getOutbox(t, lister, "")

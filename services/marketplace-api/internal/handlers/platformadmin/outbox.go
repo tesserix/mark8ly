@@ -88,7 +88,7 @@ func (h *OutboxHandler) List(c *gin.Context) {
 	// One instant for both the age and the older_than_minutes cutoff, so a
 	// rendered age can never disagree with the filter that selected it.
 	asOf := h.now().UTC()
-	filter := h.parseFilter(c)
+	filter := h.parseFilter(c, asOf)
 
 	result, err := h.repo.ListPlatform(c.Request.Context(), h.db, filter, asOf)
 	if err != nil {
@@ -153,8 +153,11 @@ func toOutboxRow(r outbox.PlatformRow) outboxRow {
 // parseFilter never returns an error. A missing parameter takes the
 // default, an unparseable one is ignored, and an oversized limit clamps
 // downstream rather than refusing — matching audit logs (#276), tickets
-// (#329) and notifications (#332).
-func (h *OutboxHandler) parseFilter(c *gin.Context) outbox.PlatformListFilter {
+// (#329) and notifications (#332). It takes asOf rather than reading the
+// clock so that since_hours, older_than_minutes and age_seconds are all
+// measured from the SAME instant — a response whose rendered age disagreed
+// with the window that selected it would be quietly wrong.
+func (h *OutboxHandler) parseFilter(c *gin.Context, asOf time.Time) outbox.PlatformListFilter {
 	f := outbox.PlatformListFilter{
 		Status:    strings.TrimSpace(c.Query("status")),
 		EventType: strings.TrimSpace(c.Query("event_type")),
@@ -178,7 +181,7 @@ func (h *OutboxHandler) parseFilter(c *gin.Context) outbox.PlatformListFilter {
 	}
 	if v := strings.TrimSpace(c.Query("since_hours")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			from := h.now().UTC().Add(-time.Duration(n) * time.Hour)
+			from := asOf.Add(-time.Duration(n) * time.Hour)
 			f.From = &from
 		}
 	}

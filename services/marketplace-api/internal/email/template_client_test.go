@@ -191,3 +191,36 @@ func TestTemplateClient_Send_PreservesUnderlyingCause_Render(t *testing.T) {
 		t.Errorf("render failure still reached the sender")
 	}
 }
+
+// A log-only sender delivers nothing, so Send must not report success —
+// otherwise a single missing provider key puts the delivery dashboards
+// back to the pre-#381 lie.
+func TestTemplateClient_Send_LogOnlySenderIsNotSuccess(t *testing.T) {
+	loader := loaderWith("dunning_day_5", "Subject", "<p>body</p>", "body")
+	c := email.NewTemplateClient(loader, &email.LogSender{Logger: slog.Default()},
+		"noreply@mark8ly.com", slog.Default())
+
+	err := c.Send(context.Background(), email.TemplateDunningDay5,
+		"merchant@example.com", map[string]any{"store_name": "Acme"})
+
+	if err == nil {
+		t.Fatal("Send returned nil over a log-only sender — caller would count a delivery")
+	}
+	if !errors.Is(err, email.ErrNoProvider) {
+		t.Errorf("err = %v, want ErrNoProvider", err)
+	}
+	if got := email.SkipReason(err); got != email.ReasonNoProvider {
+		t.Errorf("SkipReason = %q, want %q", got, email.ReasonNoProvider)
+	}
+}
+
+// A real provider still returns nil — the guard must not swallow success.
+func TestTemplateClient_Send_RealSenderStillSucceeds(t *testing.T) {
+	loader := loaderWith("dunning_day_5", "Subject", "<p>body</p>", "body")
+	c := email.NewTemplateClient(loader, &captureSender{}, "noreply@mark8ly.com", slog.Default())
+
+	if err := c.Send(context.Background(), email.TemplateDunningDay5,
+		"merchant@example.com", map[string]any{"store_name": "Acme"}); err != nil {
+		t.Fatalf("Send over a real sender: %v", err)
+	}
+}

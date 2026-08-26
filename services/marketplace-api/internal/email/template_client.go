@@ -11,10 +11,19 @@ package email
 // finished envelope to the shared SendGrid→Resend Sender chain.
 //
 // Contract, and the reason the delivery counters can be trusted: Send
-// returns nil if and only if a provider accepted the message. Every other
-// outcome returns a classified error. Callers map that to a
+// returns nil if and only if a real provider accepted the message. Every
+// other outcome — including the log-only dev transport, which delivers
+// nothing — returns a classified error. Callers map that to a
 // billing_emails_skipped_total{template,reason} increment; they must never
 // increment a *_sent_total counter for it.
+//
+// The log-only case is called out explicitly because it is the pre-#381
+// failure in a new costume: NewFromConfig falls back to LogSender when
+// neither SENDGRID_API_KEY nor RESEND_API_KEY is set, and LogSender.Send
+// returns nil. Reporting that as success would put dashboards back to
+// showing delivery while nothing is sent, one missing secret away. Local
+// dev still works — the send is logged exactly as before — the metric just
+// stops lying: the caller counts ErrNoProvider as a `no_provider` skip.
 
 import (
 	"context"
@@ -36,12 +45,16 @@ var (
 	ErrRender = errors.New("template render failed")
 	// ErrTransport means every configured provider refused the message.
 	ErrTransport = errors.New("transport failed")
+	// ErrNoProvider means no real provider is configured, so the message
+	// was only logged. Nothing was delivered.
+	ErrNoProvider = errors.New("no email provider configured")
 )
 
 // Additional reason labels, complementing those in recipient.go.
 const (
 	ReasonRenderFailed    = "render_failed"
 	ReasonTransportFailed = "transport_failed"
+	ReasonNoProvider      = "no_provider"
 	ReasonUnknown         = "unknown"
 )
 
@@ -55,6 +68,8 @@ func SkipReason(err error) string {
 		return ReasonRenderFailed
 	case errors.Is(err, ErrTransport):
 		return ReasonTransportFailed
+	case errors.Is(err, ErrNoProvider):
+		return ReasonNoProvider
 	default:
 		return ReasonUnknown
 	}
@@ -65,6 +80,23 @@ type templateClient struct {
 	sender Sender
 	from   string
 	logger *slog.Logger
+	// logOnly is true when sender delivers nothing (no provider key set).
+	// Send then reports ErrNoProvider instead of nil, so no caller can
+	// increment a *_sent_total for a message that never left the process.
+	logOnly bool
+}
+
+// isLogOnly reports whether s is the dev transport that logs instead of
+// delivering. Matched both by concrete type and by the Named contract, so
+// any future log-only adapter naming itself "log" is caught too.
+func isLogOnly(s Sender) bool {
+	if _, ok := s.(*LogSender); ok {
+		return true
+	}
+	if n, ok := s.(Named); ok && n.Name() == "log" {
+		return true
+	}
+	return false
 }
 
 // NewTemplateClient returns the production Client. loader and sender are
@@ -73,7 +105,13 @@ func NewTemplateClient(loader *emailtemplates.Loader, sender Sender, from string
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &templateClient{loader: loader, sender: sender, from: from, logger: logger}
+	return &templateClient{
+		loader:  loader,
+		sender:  sender,
+		from:    from,
+		logger:  logger,
+		logOnly: isLogOnly(sender),
+	}
 }
 
 // Send renders `template` with `data` and delivers it to `to`.
@@ -118,6 +156,14 @@ func (c *templateClient) Send(ctx context.Context, template TemplateID, to strin
 		c.logger.Error("billing email: transport failed",
 			"template", string(template), "err", err.Error())
 		return fmt.Errorf("email: send %s: %w: %w", template, ErrTransport, err)
+	}
+
+	// The message was logged, not delivered. Say so, rather than let the
+	// caller record a delivery.
+	if c.logOnly {
+		c.logger.Warn("billing email: logged only — no provider configured",
+			"template", string(template))
+		return fmt.Errorf("email: send %s: %w", template, ErrNoProvider)
 	}
 	return nil
 }

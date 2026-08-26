@@ -4,11 +4,13 @@ package dunning_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/email"
@@ -51,6 +53,7 @@ func TestTrialReminders_SendsAtAllNoPMOffsets(t *testing.T) {
 		tenantID := uuid.New()
 		storeID := uuid.New()
 		seedStore(t, db, tenantID, storeID)
+		merchantEmail := "merchant-" + c.desc + "@example.com"
 		sub := subscription.StoreSubscription{
 			ID:                      uuid.New(),
 			TenantID:                tenantID,
@@ -60,6 +63,7 @@ func TestTrialReminders_SendsAtAllNoPMOffsets(t *testing.T) {
 			Status:                  subscription.StatusTrialing,
 			HasDefaultPaymentMethod: c.hasPM,
 			CreatedAt:               created,
+			Email:                   &merchantEmail,
 		}
 		if err := db.Create(&sub).Error; err != nil {
 			t.Fatalf("seed sub (%s): %v", c.desc, err)
@@ -101,6 +105,7 @@ func TestTrialReminders_HasPMSendsOnlyT1(t *testing.T) {
 	tenantID := uuid.New()
 	storeID := uuid.New()
 	seedStore(t, db, tenantID, storeID)
+	merchantEmail := "merchant-haspm@example.com"
 	sub := subscription.StoreSubscription{
 		ID:                      uuid.New(),
 		TenantID:                tenantID,
@@ -110,6 +115,7 @@ func TestTrialReminders_HasPMSendsOnlyT1(t *testing.T) {
 		Status:                  subscription.StatusTrialing,
 		HasDefaultPaymentMethod: true,
 		CreatedAt:               created,
+		Email:                   &merchantEmail,
 	}
 	if err := db.Create(&sub).Error; err != nil {
 		t.Fatalf("seed: %v", err)
@@ -142,6 +148,7 @@ func TestTrialReminders_Idempotent(t *testing.T) {
 	tenantID := uuid.New()
 	storeID := uuid.New()
 	seedStore(t, db, tenantID, storeID)
+	merchantEmail := "merchant-idem@example.com"
 	sub := subscription.StoreSubscription{
 		ID:                      uuid.New(),
 		TenantID:                tenantID,
@@ -151,6 +158,7 @@ func TestTrialReminders_Idempotent(t *testing.T) {
 		Status:                  subscription.StatusTrialing,
 		HasDefaultPaymentMethod: false,
 		CreatedAt:               created,
+		Email:                   &merchantEmail,
 	}
 	if err := db.Create(&sub).Error; err != nil {
 		t.Fatalf("seed: %v", err)
@@ -191,6 +199,7 @@ func TestTrialReminders_TenantIsolation(t *testing.T) {
 		tenantID := uuid.New()
 		storeID := uuid.New()
 		seedStore(t, db, tenantID, storeID)
+		merchantEmail := "merchant-iso-" + suffix + "@example.com"
 		sub := subscription.StoreSubscription{
 			ID:                      uuid.New(),
 			TenantID:                tenantID,
@@ -200,6 +209,7 @@ func TestTrialReminders_TenantIsolation(t *testing.T) {
 			Status:                  subscription.StatusTrialing,
 			HasDefaultPaymentMethod: false,
 			CreatedAt:               created,
+			Email:                   &merchantEmail,
 		}
 		if err := db.Create(&sub).Error; err != nil {
 			t.Fatalf("seed %s: %v", suffix, err)
@@ -231,6 +241,7 @@ func TestTrialReminders_ExpiredSubsAreSkipped(t *testing.T) {
 	tenantID := uuid.New()
 	storeID := uuid.New()
 	seedStore(t, db, tenantID, storeID)
+	merchantEmail := "merchant-expired@example.com"
 	sub := subscription.StoreSubscription{
 		ID:                      uuid.New(),
 		TenantID:                tenantID,
@@ -240,6 +251,7 @@ func TestTrialReminders_ExpiredSubsAreSkipped(t *testing.T) {
 		Status:                  subscription.StatusExpired,
 		HasDefaultPaymentMethod: false,
 		CreatedAt:               created,
+		Email:                   &merchantEmail,
 	}
 	if err := db.Create(&sub).Error; err != nil {
 		t.Fatalf("seed: %v", err)
@@ -253,4 +265,46 @@ func TestTrialReminders_ExpiredSubsAreSkipped(t *testing.T) {
 	if got := client.count(); got != 0 {
 		t.Fatalf("expected 0 sends (expired sub), got %d", got)
 	}
+}
+
+// TestTrialReminders_UndeliverableCountsSkippedNotSent verifies that a trial
+// subscription seeded with a placeholder (.local) address is not mailed, and
+// that the skip is recorded on the skip counter rather than the sent
+// counter — the same #381-style lie this cron must not repeat.
+func TestTrialReminders_UndeliverableCountsSkippedNotSent(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores", "trial_reminders")
+	now := time.Now().UTC()
+
+	placeholder := "billing+7f3a@mark8ly.local"
+	// A trial ending in 7 days, with no payment method — the t_minus_7 nudge.
+	seedTrialSub(t, db, now.AddDate(0, 0, -83), nil, false, &placeholder)
+
+	client := &stubClient{}
+	sent, skipped := &stubVec{}, &stubSkip{}
+	cron := dunning.NewSendTrialReminders(db, client, nil, sent, func() time.Time { return now }).
+		WithSkipCounter(skipped)
+
+	require.NoError(t, cron.Run(context.Background()))
+
+	require.Empty(t, client.sent, "mailed a .local address")
+	require.Zero(t, sent.n["t_minus_7"], "sent counter incremented for mail never sent")
+	require.Equal(t, 1, skipped.n["trial_no_pm_t7/placeholder_address"])
+}
+
+// The claim is deliberately NOT released on failure: at-most-once beats a
+// duplicate. This pins that contract so nobody "fixes" it into at-least-once.
+func TestTrialReminders_FailedSendDoesNotReleaseTheClaim(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores", "trial_reminders")
+	now := time.Now().UTC()
+
+	addr := "merchant@example.com"
+	seedTrialSub(t, db, now.AddDate(0, 0, -83), nil, false, &addr)
+
+	client := &stubClient{err: errors.New("sendgrid 503")}
+	cron := dunning.NewSendTrialReminders(db, client, nil, &stubVec{}, func() time.Time { return now })
+	require.NoError(t, cron.Run(context.Background()))
+
+	var claims int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM trial_reminders`).Scan(&claims).Error)
+	require.EqualValues(t, 1, claims, "the burned slot must stay claimed")
 }

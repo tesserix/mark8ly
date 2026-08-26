@@ -68,6 +68,7 @@ type SendTrialReminders struct {
 	logger  *slog.Logger
 	clock   func() time.Time
 	counter CounterVecIncrementer
+	skip    SkipCounter
 }
 
 // NewSendTrialReminders constructs a SendTrialReminders cron. db and emailCl
@@ -86,6 +87,13 @@ func NewSendTrialReminders(db *gorm.DB, em email.Client, logger *slog.Logger, co
 		counter: counter,
 		clock:   clock,
 	}
+}
+
+// WithSkipCounter attaches the counter for emails deliberately not sent.
+// Optional: nil means skips are logged but not counted.
+func (s *SendTrialReminders) WithSkipCounter(c SkipCounter) *SendTrialReminders {
+	s.skip = c
+	return s
 }
 
 // Run executes one pass through every reminder target. Per-offset failures
@@ -157,24 +165,30 @@ func (s *SendTrialReminders) processOne(ctx context.Context, row *subscription.S
 		return nil
 	}
 
-	// TODO: trial reminder email recipient — the StoreSubscription row does
-	// not yet carry an email/store_name pair. Mirroring the placeholder used
-	// by trial.ExpiryCron and SendPaymentActionReminders, we pass StoreID as
-	// the recipient string for now; the real recipient is resolved by the
-	// email adapter via tenant lookup. Revisit when the columns land.
-	if err := s.emailCl.Send(ctx, t.Template, row.StoreID.String(), map[string]any{
+	to := ""
+	if row.Email != nil {
+		to = *row.Email
+	}
+
+	if err := s.emailCl.Send(ctx, t.Template, to, map[string]any{
 		"store_id":           row.StoreID.String(),
 		"tenant_id":          row.TenantID.String(),
+		"store_name":         subscription.StoreNameFor(ctx, s.db, row.StoreID),
 		"offset":             t.OffsetKey,
 		"days_remaining":     t.DaysBefore,
 		"has_payment_method": t.HasPM,
 		"plan":               string(row.Plan),
 	}); err != nil {
-		s.logger.Warn("trial reminder email failed",
+		s.logger.Warn("trial reminder not sent",
 			"store_id", row.StoreID.String(),
 			"offset", t.OffsetKey,
+			"reason", email.SkipReason(err),
 			"err", err.Error())
-		// Do not delete the idempotency row — preserves at-most-once semantics.
+		if s.skip != nil {
+			s.skip.WithTemplateReason(string(t.Template), email.SkipReason(err)).Inc()
+		}
+		// Do not delete the idempotency row — that would risk a double-send.
+		// At-most-once is the deliberate contract: see the spec, §6.
 		return nil
 	}
 

@@ -56,9 +56,15 @@ func sweepTable(ctx context.Context, tx *gorm.DB, emitter *audit.Emitter, logger
 	if res.Error != nil {
 		return fmt.Errorf("harddelete: sweep %s: %w", tableName, res.Error)
 	}
-	logger.Info("harddelete: swept table",
-		"table", tableName, "column", s.column,
-		"store_id", storeID, "rows_deleted", res.RowsAffected)
+	if s.via != nil {
+		logger.Info("harddelete: swept table",
+			"table", tableName, "via", fmt.Sprintf("%s.%s", s.via.parentTable, s.via.fkColumn),
+			"store_id", storeID, "rows_deleted", res.RowsAffected)
+	} else {
+		logger.Info("harddelete: swept table",
+			"table", tableName, "column", s.column,
+			"store_id", storeID, "rows_deleted", res.RowsAffected)
+	}
 
 	// Emit per-table audit event for compliance trail.
 	emitter.Emit(nil, audit.Event{

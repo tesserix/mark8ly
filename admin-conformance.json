@@ -1,0 +1,14 @@
+{
+  "slug": "mark8ly",
+  "contractVersion": 2,
+  "endpoints": {
+    "audit-logs": true,
+    "health": true,
+    "kpis": true,
+    "entities": { "types": ["tenants"] },
+    "billing/subscriptions": true,
+    "billing/trials": true,
+    "tenant-lifecycle": true,
+    "lifecycle/reason-codes": true
+  }
+}

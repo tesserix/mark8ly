@@ -175,16 +175,19 @@ func TestTemplateClient_Send_PreservesUnderlyingCause_Transport(t *testing.T) {
 }
 
 func TestTemplateClient_Send_PreservesUnderlyingCause_Render(t *testing.T) {
-	// Verify the render sentinel is preserved in the error chain.
-	// TestTemplateClient_Send_PreservesUnderlyingCause_Transport verifies
-	// that both the sentinel and underlying cause are preserved for transport errors.
-	// For render, we verify at minimum that errors.Is works for the sentinel.
-	emptyLoader := emailtemplates.NewLoader(nil)
+	// A loader with no registered fallback for the key: Render returns
+	// an error wrapping emailtemplates.ErrUnknownKey.
 	sender := &captureSender{}
-	c := email.NewTemplateClient(emptyLoader, sender, "noreply@mark8ly.com", slog.Default())
+	c := email.NewTemplateClient(emailtemplates.NewLoader(nil), sender, "noreply@mark8ly.com", slog.Default())
 
 	err := c.Send(context.Background(), email.TemplateDunningDay5, "merchant@example.com", map[string]any{})
 	if !errors.Is(err, email.ErrRender) {
-		t.Errorf("lost the render sentinel: %v", err)
+		t.Errorf("lost the sentinel: %v", err)
+	}
+	if !errors.Is(err, emailtemplates.ErrUnknownKey) {
+		t.Errorf("lost the underlying cause: %v", err)
+	}
+	if len(sender.msgs) != 0 {
+		t.Errorf("render failure still reached the sender")
 	}
 }

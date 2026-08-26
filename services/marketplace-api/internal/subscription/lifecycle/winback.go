@@ -17,11 +17,6 @@ const WinBackSpec = "0 10 * * *"
 // winBack30Days is the post-expiry window after which the win-back promo is sent.
 const winBack30Days = 30 * 24 * time.Hour
 
-// TemplateWinBack is the email template ID for the day-30 win-back promo.
-// The actual template lives in the email provider (SendGrid); the NoOpClient
-// logs it until the real adapter is wired.
-const TemplateWinBack email.TemplateID = "win_back_day30"
-
 // WinBackCron sends a 20%-off-6-months promo email to expired stores at day 30
 // post-expiry (§15.3). It is idempotent by design: stores already past 31 days
 // are never selected, so double-runs on the same day produce the same send.
@@ -73,7 +68,7 @@ func (c *WinBackCron) sendOne(ctx context.Context, row *subscription.StoreSubscr
 	// StripeCustomerID is the stable identity for the merchant. Email address
 	// is not on StoreSubscription (deferred per P6 comment); the NoOpClient
 	// logs the intent and the real adapter will resolve it via Stripe customer lookup.
-	err := c.mailer.Send(ctx, TemplateWinBack, row.StripeCustomerID, map[string]any{
+	err := c.mailer.Send(ctx, email.TemplateWinBack, row.StripeCustomerID, map[string]any{
 		"store_id":  row.StoreID.String(),
 		"tenant_id": row.TenantID.String(),
 		"promo":     "20%-off-6-months",

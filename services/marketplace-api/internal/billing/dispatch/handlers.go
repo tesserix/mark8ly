@@ -249,6 +249,9 @@ func (d *Dispatcher) handleSubscriptionDeleted(ctx context.Context, tx *gorm.DB,
 // Multi-pod safety: the dispatcher holds pg_advisory_xact_lock on the store
 // for the duration of webhook processing (see dispatcher.go), so two pods
 // cannot race to detect "first charge" — only one will see first_charge_at=nil.
+// The confirmation email's own at-most-once guarantee comes from a
+// billing_email_sends claim on a non-transactional handle, NOT from
+// first_charge_at — see sendTrialBilled.
 func (d *Dispatcher) handleInvoicePaid(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	customer, err := extractCustomerID(raw)
 	if err != nil {
@@ -280,28 +283,92 @@ func (d *Dispatcher) handleInvoicePaid(ctx context.Context, tx *gorm.DB, raw []b
 	}
 
 	if wasFirstCharge && d.emailCl != nil {
-		to := ""
-		if sub.Email != nil {
-			to = *sub.Email
-		}
-		if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, to, map[string]any{
-			"store_id":   sub.StoreID.String(),
-			"tenant_id":  sub.TenantID.String(),
-			"store_name": subscription.StoreNameFor(ctx, tx, sub.StoreID),
-			"plan":       string(sub.Plan),
-			"period":     string(sub.SubscriptionPeriod),
-		}); sendErr != nil {
-			// Don't fail the webhook — Stripe would retry, double-firing every
-			// other side effect. Email failure is a soft error: log and move on.
-			// Idempotency is preserved by first_charge_at being non-nil after
-			// this UPDATE, so a retried invoice.paid event won't re-emit.
-			slog.Default().Warn("dispatch: trial-billed email not sent",
-				"store_id", sub.StoreID.String(),
-				"reason", email.SkipReason(sendErr),
-				"err", sendErr.Error())
-		}
+		d.sendTrialBilled(ctx, tx, sub)
 	}
 	return nil
+}
+
+// trialBilledPeriodKey is the period_key for the trial-billed confirmation.
+//
+// It is a constant rather than the Stripe event id because the guarantee we
+// want is "at most one trial-billed confirmation per subscription, ever" —
+// which is exactly what the claim's primary key
+// (subscription_id, template_key, period_key) gives with a fixed period.
+// The event id would only deduplicate redeliveries of the *same* Stripe
+// event; a distinct invoice.paid event arriving after a rolled-back
+// transaction (first_charge_at back to NULL) would carry a different id and
+// send a second confirmation. This email fires once in a subscription's
+// life, so the period is its whole life.
+const trialBilledPeriodKey = "first_charge"
+
+// sendTrialBilled emits the trial-started-billed confirmation.
+//
+// Idempotency guarantee, and why it is NOT first_charge_at: the send happens
+// inside the locked webhook transaction, and invoice.paid is dispatched as a
+// chain (see dispatcher.go) whose later handler can fail — or the commit
+// itself can fail — rolling first_charge_at back to NULL. The email is
+// already gone at that point, and Stripe's retry would see wasFirstCharge
+// again. So the claim is written on d.db, a NON-transactional handle: it
+// survives the rollback and the retry loses the claim.
+//
+// Without d.db there is no way to make this at-most-once, so the send is
+// skipped rather than risked.
+func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subscription.StoreSubscription) {
+	log := slog.Default()
+
+	if d.db == nil {
+		log.Warn("dispatch: trial-billed email skipped — no claim store wired (WithDB)",
+			"store_id", sub.StoreID.String())
+		d.countSkip("no_claim_store")
+		return
+	}
+
+	won, claimErr := subscription.ClaimEmailSend(ctx, d.db, sub.ID,
+		string(email.TemplateTrialStartedBilled), trialBilledPeriodKey, time.Now().UTC())
+	if claimErr != nil {
+		log.Error("dispatch: trial-billed claim failed; not sending",
+			"store_id", sub.StoreID.String(), "err", claimErr.Error())
+		d.countSkip("claim_failed")
+		return
+	}
+	if !won {
+		// Already sent for this subscription — a retry after a rolled-back
+		// transaction, or a second pod. Nothing to do.
+		return
+	}
+
+	to := ""
+	if sub.Email != nil {
+		to = *sub.Email
+	}
+	if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, to, map[string]any{
+		"store_id":   sub.StoreID.String(),
+		"tenant_id":  sub.TenantID.String(),
+		"store_name": subscription.StoreNameFor(ctx, tx, sub.StoreID),
+		"plan":       string(sub.Plan),
+		"period":     string(sub.SubscriptionPeriod),
+	}); sendErr != nil {
+		// Don't fail the webhook — Stripe would retry, double-firing every
+		// other side effect. Email failure is a soft error: log and move on.
+		// The claim is deliberately NOT released: at-most-once beats a
+		// duplicate, matching the other four billing mail paths.
+		log.Warn("dispatch: trial-billed email not sent",
+			"store_id", sub.StoreID.String(),
+			"reason", email.SkipReason(sendErr),
+			"err", sendErr.Error())
+		d.countSkip(email.SkipReason(sendErr))
+		return
+	}
+	if d.sent != nil {
+		d.sent.WithTemplate(string(email.TemplateTrialStartedBilled)).Inc()
+	}
+}
+
+// countSkip increments the skipped-emails counter when one is wired.
+func (d *Dispatcher) countSkip(reason string) {
+	if d.skip != nil {
+		d.skip.WithTemplateReason(string(email.TemplateTrialStartedBilled), reason).Inc()
+	}
 }
 
 // handleInvoicePaymentFailed routes invoice.payment_failed through the state

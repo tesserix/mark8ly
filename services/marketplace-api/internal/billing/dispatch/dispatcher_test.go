@@ -202,6 +202,7 @@ func TestDispatch_InvoicePaid_StampsFirstChargeAt_ClearsHostedURL(t *testing.T) 
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
 	hostedURL := "https://invoice.stripe.com/i/acct_123/test_yyy"
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
@@ -231,6 +232,7 @@ func TestDispatch_InvoicePaid_FirstChargeAtIdempotent_SecondEventDoesNotAdvance(
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -381,9 +383,10 @@ func (r *dispatchEmailRecorder) Send(_ context.Context, t email.TemplateID, _ st
 // email client is wired. This is the merchant-facing confirmation that
 // "your chosen plan is now active and we just billed your card".
 func TestDispatch_InvoicePaid_FirstChargeEmitsTrialBilledEmail(t *testing.T) {
-	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -394,7 +397,7 @@ func TestDispatch_InvoicePaid_FirstChargeEmitsTrialBilledEmail(t *testing.T) {
 	}).Error)
 
 	rec := &dispatchEmailRecorder{}
-	d := dispatch.New(nil).WithEmail(rec)
+	d := dispatch.New(nil).WithEmail(rec).WithDB(db)
 	payload := []byte(`{"id":"evt_first","type":"invoice.paid","data":{"object":{"customer":"cus_first_charge"}}}`)
 	require.NoError(t, d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
 		EventID: "evt_first", EventType: "invoice.paid", Payload: payload,
@@ -415,9 +418,10 @@ func TestDispatch_InvoicePaid_FirstChargeEmitsTrialBilledEmail(t *testing.T) {
 // is robust to no email client being wired (e.g. dev mode without the
 // adapter): first_charge_at is still stamped, no panic, no error.
 func TestDispatch_InvoicePaid_NoEmailClientStillProcesses(t *testing.T) {
-	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -474,7 +478,7 @@ func (c *captureEmailClient) Send(_ context.Context, _ email.TemplateID, to stri
 // callers can assert on webhook-level failure behavior.
 func runInvoicePaidFirstCharge(t *testing.T, client email.Client, addr *string) (db *gorm.DB, storeID uuid.UUID, storeName string, err error) {
 	t.Helper()
-	db = testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
+	db = testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
 
 	tenantID := uuid.New()
 	storeID = uuid.New()
@@ -492,7 +496,7 @@ func runInvoicePaidFirstCharge(t *testing.T, client email.Client, addr *string) 
 		// FirstChargeAt deliberately nil — this is the first charge.
 	}).Error)
 
-	d := dispatch.New(nil).WithEmail(client)
+	d := dispatch.New(nil).WithEmail(client).WithDB(db)
 	eventID := "evt_" + uuid.NewString()[:12]
 	payload := []byte(`{"id":"` + eventID + `","type":"invoice.paid","data":{"object":{"customer":"` + customerID + `"}}}`)
 	err = d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{

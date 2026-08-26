@@ -11,9 +11,15 @@
 -- payment_action_reminders should eventually be folded in.
 --
 -- period_key disambiguates repeats of the same template for the same
--- subscription: the target date for dunning, the window-start date for
--- win-back. template_key alone would suppress a legitimate day-7 notice
--- after a day-5 one; period_key alone would collide across templates.
+-- subscription. Its meaning is per-template and chosen so that any two runs
+-- selecting the same row agree on the same key:
+--   dunning              — the target date;
+--   win_back_day30       — the row's own updated_at date (NOT the cron's
+--                          window-start, which drifts between runs);
+--   trial_started_billed — the constant 'first_charge', because that email
+--                          fires at most once in a subscription's life.
+-- template_key alone would suppress a legitimate day-7 notice after a day-5
+-- one; period_key alone would collide across templates.
 CREATE TABLE IF NOT EXISTS billing_email_sends (
     subscription_id UUID        NOT NULL,
     template_key    TEXT        NOT NULL,

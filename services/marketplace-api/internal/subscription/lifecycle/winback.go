@@ -112,6 +112,9 @@ func (c *WinBackCron) sendOne(ctx context.Context, row *subscription.StoreSubscr
 	if err != nil {
 		c.logger.Error("lifecycle: win-back claim failed; skipping",
 			"store_id", row.StoreID, "err", err.Error())
+		if c.skip != nil {
+			c.skip.WithTemplateReason(string(email.TemplateWinBack), "claim_failed").Inc()
+		}
 		return
 	}
 	if !won {

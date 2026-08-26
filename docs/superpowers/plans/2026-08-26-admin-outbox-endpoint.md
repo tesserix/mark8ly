@@ -1239,3 +1239,35 @@ git commit -m "docs: record the verification diff for the admin outbox endpoint 
 - **`total` cost for `status=published`.** Counts across a never-pruned table on a shared
   db-f1-micro. At 688 rows it is immaterial and it is the shape every sibling already has. Spec §5
   records the decision to revisit only if the table grows enough for the count to dominate.
+
+---
+
+## Verification record
+
+Run 2026-08-26 against base `e8fc6dd7`.
+
+- `go vet -tags=integration ./...` — **exit=0**.
+- Branch (`081a09bc`): **22 packages / 191 tests** failing.
+- Baseline (`e8fc6dd7`): **22 packages / 191 tests** failing.
+- Packages failing on the branch but not the baseline: **none**.
+- Packages failing on the baseline but not the branch: **none**.
+- Individual tests failing on the branch but not the baseline: **none**.
+
+**Verdict: this branch added no test failure and fixed none.** Identical sets in both directions,
+which is the expected passing result — unlike #336's branch, this work repairs no pre-existing test.
+
+### A note on how this evidence was obtained
+
+The first attempt is discarded and is not the basis of the numbers above. Two baseline suites were
+briefly started concurrently — one by the verification agent, one by the controller — against the
+single shared dev database. Overlapping suites corrupt each other's fixtures, so both results were
+thrown away rather than reported, every `go test` and `.test` process was killed, the database was
+confirmed clean (zero idle-in-transaction connections), and ONE baseline was then run with nothing
+else touching it. Those are the numbers recorded here.
+
+The branch run is unaffected: it completed before any overlap began, verified as the only suite
+process alive at the time.
+
+The lesson is the one already in the plan's Step 3 and worth repeating: the two runs share one
+database and must be strictly sequential. A diff computed over corrupted fixtures looks exactly as
+authoritative as a real one.

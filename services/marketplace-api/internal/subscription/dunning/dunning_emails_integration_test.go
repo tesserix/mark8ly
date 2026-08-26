@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/email"
@@ -46,7 +47,7 @@ func (c *capturingClient) count() int {
 // an audit entry 5 days ago receives the day-5 email, and one with a 7-day
 // audit entry receives the day-7 email.
 func TestSendDunningEmails_SendsOnDay5AndDay7(t *testing.T) {
-	db := testdb.NewDB(t, "audit_logs", "store_subscriptions")
+	db := testdb.NewDB(t, "audit_logs", "store_subscriptions", "billing_email_sends")
 
 	now := time.Now().UTC()
 	fiveDaysAgo := now.AddDate(0, 0, -5)
@@ -56,6 +57,7 @@ func TestSendDunningEmails_SendsOnDay5AndDay7(t *testing.T) {
 	storeA := uuid.New()
 	tenantA := uuid.New()
 	seedStore(t, db, tenantA, storeA)
+	emailA := "merchant-a@example.com"
 	subA := subscription.StoreSubscription{
 		ID:               uuid.New(),
 		TenantID:         tenantA,
@@ -63,6 +65,7 @@ func TestSendDunningEmails_SendsOnDay5AndDay7(t *testing.T) {
 		StripeCustomerID: "cus_a",
 		Plan:             subscription.PlanStarter,
 		Status:           subscription.StatusPastDue,
+		Email:            &emailA,
 	}
 	if err := db.Create(&subA).Error; err != nil {
 		t.Fatalf("seed subA: %v", err)
@@ -87,6 +90,7 @@ func TestSendDunningEmails_SendsOnDay5AndDay7(t *testing.T) {
 	storeB := uuid.New()
 	tenantB := uuid.New()
 	seedStore(t, db, tenantB, storeB)
+	emailB := "merchant-b@example.com"
 	subB := subscription.StoreSubscription{
 		ID:               uuid.New(),
 		TenantID:         tenantB,
@@ -94,6 +98,7 @@ func TestSendDunningEmails_SendsOnDay5AndDay7(t *testing.T) {
 		StripeCustomerID: "cus_b",
 		Plan:             subscription.PlanStarter,
 		Status:           subscription.StatusPastDue,
+		Email:            &emailB,
 	}
 	if err := db.Create(&subB).Error; err != nil {
 		t.Fatalf("seed subB: %v", err)
@@ -128,7 +133,7 @@ func TestSendDunningEmails_SendsOnDay5AndDay7(t *testing.T) {
 // TestSendDunningEmails_NoEmailIfSubNoLongerPastDue verifies that a sub that
 // entered past_due 5 days ago but is now active receives no email.
 func TestSendDunningEmails_NoEmailIfSubNoLongerPastDue(t *testing.T) {
-	db := testdb.NewDB(t, "audit_logs", "store_subscriptions")
+	db := testdb.NewDB(t, "audit_logs", "store_subscriptions", "billing_email_sends")
 
 	now := time.Now().UTC()
 	fiveDaysAgo := now.AddDate(0, 0, -5)
@@ -136,6 +141,7 @@ func TestSendDunningEmails_NoEmailIfSubNoLongerPastDue(t *testing.T) {
 	storeID := uuid.New()
 	tenantID := uuid.New()
 	seedStore(t, db, tenantID, storeID)
+	emailRecovered := "merchant-recovered@example.com"
 	sub := subscription.StoreSubscription{
 		ID:               uuid.New(),
 		TenantID:         tenantID,
@@ -143,6 +149,7 @@ func TestSendDunningEmails_NoEmailIfSubNoLongerPastDue(t *testing.T) {
 		StripeCustomerID: "cus_recovered",
 		Plan:             subscription.PlanStarter,
 		Status:           subscription.StatusActive, // recovered
+		Email:            &emailRecovered,
 	}
 	if err := db.Create(&sub).Error; err != nil {
 		t.Fatalf("seed sub: %v", err)
@@ -172,4 +179,82 @@ func TestSendDunningEmails_NoEmailIfSubNoLongerPastDue(t *testing.T) {
 	if got := client.count(); got != 0 {
 		t.Fatalf("expected 0 sends (sub recovered), got %d", got)
 	}
+}
+
+// stubClient records recipients and can fail on demand.
+type stubClient struct {
+	sent []string
+	err  error
+}
+
+func (c *stubClient) Send(_ context.Context, _ email.TemplateID, to string, _ map[string]any) error {
+	if c.err != nil {
+		return c.err
+	}
+	c.sent = append(c.sent, to)
+	return nil
+}
+
+// stubVec / stubSkip count increments by label.
+type stubVec struct{ n map[string]int }
+
+func (s *stubVec) WithDay(day string) dunning.CounterIncrementer {
+	if s.n == nil {
+		s.n = map[string]int{}
+	}
+	return stubInc{s.n, day}
+}
+
+type stubSkip struct{ n map[string]int }
+
+func (s *stubSkip) WithTemplateReason(template, reason string) dunning.CounterIncrementer {
+	if s.n == nil {
+		s.n = map[string]int{}
+	}
+	return stubInc{s.n, template + "/" + reason}
+}
+
+type stubInc struct {
+	n   map[string]int
+	key string
+}
+
+func (s stubInc) Inc() { s.n[s.key]++ }
+
+func TestDunning_UndeliverableCountsSkippedNotSent(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores", "audit_logs", "billing_email_sends")
+	now := time.Now().UTC()
+
+	placeholder := "billing+7f3a@mark8ly.local"
+	seedPastDueSubscription(t, db, now.AddDate(0, 0, -5), &placeholder)
+
+	client := &stubClient{}
+	sent, skipped := &stubVec{}, &stubSkip{}
+	cron := dunning.NewSendDunningEmails(db, client, nil, sent, func() time.Time { return now }).
+		WithSkipCounter(skipped)
+
+	require.NoError(t, cron.Run(context.Background()))
+
+	require.Empty(t, client.sent, "mailed a .local address")
+	require.Zero(t, sent.n["day_5"], "sent counter incremented for mail never sent — the #381 lie")
+	require.Equal(t, 1, skipped.n["dunning_day_5/placeholder_address"])
+}
+
+func TestDunning_SecondRunSameDayDoesNotResend(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores", "audit_logs", "billing_email_sends")
+	now := time.Now().UTC()
+
+	addr := "merchant@example.com"
+	seedPastDueSubscription(t, db, now.AddDate(0, 0, -5), &addr)
+
+	client := &stubClient{}
+	newCron := func() *dunning.SendDunningEmails {
+		return dunning.NewSendDunningEmails(db, client, nil, &stubVec{}, func() time.Time { return now })
+	}
+
+	require.NoError(t, newCron().Run(context.Background()))
+	require.Len(t, client.sent, 1, "first run should send exactly once")
+
+	require.NoError(t, newCron().Run(context.Background()))
+	require.Len(t, client.sent, 1, "second run re-sent — duplicate dunning mail")
 }

@@ -159,16 +159,6 @@ func (s *SendDunningEmails) runForDay(ctx context.Context, now time.Time, t dunn
 			invoiceURL = *r.HostedInvoiceURL
 		}
 
-		if err := email.ValidateRecipient(to); err != nil {
-			s.logger.Warn("dunning email not sent",
-				"day", t.Day, "store_id", r.StoreID,
-				"reason", email.SkipReason(err), "err", err.Error())
-			if s.skip != nil {
-				s.skip.WithTemplateReason(string(t.Template), email.SkipReason(err)).Inc()
-			}
-			continue
-		}
-
 		if err := s.emailCl.Send(ctx, t.Template, to, map[string]any{
 			"store_id":           r.StoreID,
 			"tenant_id":          r.TenantID,

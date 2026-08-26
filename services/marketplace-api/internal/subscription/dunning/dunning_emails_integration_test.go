@@ -14,6 +14,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/email"
+	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/dunning"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
@@ -31,6 +32,13 @@ type capturedSend struct {
 }
 
 func (c *capturingClient) Send(_ context.Context, tmpl email.TemplateID, to string, _ map[string]any) error {
+	// Mirror the production client's contract: it refuses an
+	// undeliverable recipient and never reports success for mail it
+	// did not send. A double that skips this would let the cron pass
+	// tests the real client would fail.
+	if err := email.ValidateRecipient(to); err != nil {
+		return err
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.sends = append(c.sends, capturedSend{Template: tmpl, To: to})
@@ -188,6 +196,13 @@ type stubClient struct {
 }
 
 func (c *stubClient) Send(_ context.Context, _ email.TemplateID, to string, _ map[string]any) error {
+	// Mirror the production client's contract: it refuses an
+	// undeliverable recipient and never reports success for mail it
+	// did not send. A double that skips this would let the cron pass
+	// tests the real client would fail.
+	if err := email.ValidateRecipient(to); err != nil {
+		return err
+	}
 	if c.err != nil {
 		return c.err
 	}
@@ -257,4 +272,48 @@ func TestDunning_SecondRunSameDayDoesNotResend(t *testing.T) {
 
 	require.NoError(t, newCron().Run(context.Background()))
 	require.Len(t, client.sent, 1, "second run re-sent — duplicate dunning mail")
+}
+
+// captureSender records every Message handed to it — a tiny email.Sender
+// double used to prove the REAL email.templateClient's contract (recipient
+// validation, error classification) end-to-end through the dunning cron,
+// rather than trusting a hand-rolled client double to imitate it correctly.
+type captureSender struct {
+	mu   sync.Mutex
+	msgs []email.Message
+}
+
+func (s *captureSender) Send(_ context.Context, msg email.Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.msgs = append(s.msgs, msg)
+	return nil
+}
+
+// TestDunning_RealClientRefusesPlaceholderAddress wires the production
+// email.Client (NewTemplateClient) instead of a test double, so this test
+// fails if recipient validation is ever removed from the real client — a
+// double-only test wouldn't catch that regression.
+func TestDunning_RealClientRefusesPlaceholderAddress(t *testing.T) {
+	db := testdb.NewDB(t, "audit_logs", "store_subscriptions", "billing_email_sends")
+	now := time.Now().UTC()
+
+	placeholder := "billing+7f3a@mark8ly.local"
+	seedPastDueSubscription(t, db, now.AddDate(0, 0, -5), &placeholder)
+
+	// The real template client over a capturing transport — not a double.
+	loader := emailtemplates.NewLoader(nil)
+	email.RegisterFallbacks(loader)
+	sender := &captureSender{}
+	client := email.NewTemplateClient(loader, sender, "noreply@mark8ly.com", nil)
+
+	sent, skipped := &stubVec{}, &stubSkip{}
+	cron := dunning.NewSendDunningEmails(db, client, nil, sent, func() time.Time { return now }).
+		WithSkipCounter(skipped)
+
+	require.NoError(t, cron.Run(context.Background()))
+
+	require.Empty(t, sender.msgs, "a .local address reached the transport")
+	require.Zero(t, sent.n["day_5"], "counted a delivery that never happened")
+	require.Equal(t, 1, skipped.n["dunning_day_5/placeholder_address"])
 }

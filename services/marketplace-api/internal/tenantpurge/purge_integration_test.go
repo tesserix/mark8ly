@@ -444,8 +444,9 @@ func TestPurge_PaymentActionReminders_DeletesOnlyPurgedTenantRowsViaStoreId(t *t
 	tenantB := uuid.NewString()
 	storeB := seedStore(t, db, tenantB)
 
-	// Create a store_subscriptions row for each store so the purge subquery
-	// can find the store_id to delete by.
+	// Seed store_subscriptions rows for each store to establish a realistic fixture.
+	// Deletion of payment_action_reminders is via direct store_id matching (storeScoped),
+	// not via subquery through store_subscriptions.
 	for storeID, tenantID := range map[string]string{storeA: tenantA, storeB: tenantB} {
 		require.NoError(t, db.Exec(`
 			INSERT INTO store_subscriptions

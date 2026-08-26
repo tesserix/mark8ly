@@ -2,6 +2,7 @@ package dunning
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -32,7 +33,7 @@ var paymentActionTargets = []paymentActionTarget{
 // reminder emails to merchants whose subscription is in payment_action_required
 // status. Idempotency is guaranteed via the payment_action_reminders table
 // (INSERT … ON CONFLICT DO NOTHING): only the first pod to insert a row for a
-// given (subscription_id, offset_key) pair sends the email.
+// given (store_id, offset_key) pair sends the email.
 type SendPaymentActionReminders struct {
 	db      *gorm.DB
 	emailCl email.Client
@@ -121,7 +122,7 @@ func (s *SendPaymentActionReminders) runForOffset(ctx context.Context, now time.
 // idempotency row after a send failure — that would risk a double-send.
 func (s *SendPaymentActionReminders) processOne(ctx context.Context, row *subscription.StoreSubscription, t paymentActionTarget, now time.Time) error {
 	res := s.db.WithContext(ctx).Exec(`
-		INSERT INTO payment_action_reminders (subscription_id, offset_key, sent_at)
+		INSERT INTO payment_action_reminders (store_id, offset_key, sent_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT DO NOTHING`,
 		row.StoreID, t.OffsetKey, now,
@@ -155,6 +156,24 @@ func (s *SendPaymentActionReminders) processOne(ctx context.Context, row *subscr
 			"reason", email.SkipReason(err), "err", err.Error())
 		if s.skip != nil {
 			s.skip.WithTemplateReason(string(email.TemplatePaymentActionReminder), email.SkipReason(err)).Inc()
+		}
+		if errors.Is(err, email.ErrUndeliverable) {
+			// The address is missing or wrong — recoverable via the
+			// backfill or a customer.updated webhook. Release the claim
+			// so a later run can still deliver this notice.
+			delErr := s.db.WithContext(ctx).Exec(`
+				DELETE FROM payment_action_reminders
+				WHERE store_id = ? AND offset_key = ?`,
+				row.StoreID, t.OffsetKey,
+			).Error
+			if delErr != nil {
+				s.logger.Error("SCA reminder: release claim failed",
+					"store_id", row.StoreID.String(), "offset", t.OffsetKey, "err", delErr.Error())
+			} else {
+				s.logger.Info("SCA reminder: claim released for retry",
+					"store_id", row.StoreID.String(), "offset", t.OffsetKey)
+			}
+			return nil
 		}
 		// Don't delete the idempotency row — we'd risk double-send on retry.
 		return nil

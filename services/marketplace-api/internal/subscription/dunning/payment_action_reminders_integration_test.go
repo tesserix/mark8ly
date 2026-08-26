@@ -4,6 +4,7 @@ package dunning_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -249,4 +250,111 @@ func TestPaymentActionReminders_UndeliverableCountsSkippedNotSent(t *testing.T) 
 	require.Empty(t, client.sent, "mailed a .local address")
 	require.Zero(t, sent.n["t_minus_14"], "sent counter incremented for mail never sent")
 	require.Equal(t, 1, skipped.n["payment_action_reminder/placeholder_address"])
+}
+
+// TestPaymentActionReminders_UndeliverableReleasesClaimSoRetryCanSend verifies
+// that a send failure caused by an undeliverable address (missing/placeholder)
+// releases the idempotency slot, so a later run (after backfill or a
+// customer.updated webhook lands a real address) can still deliver the notice.
+func TestPaymentActionReminders_UndeliverableReleasesClaimSoRetryCanSend(t *testing.T) {
+	db := testdb.NewDB(t, "payment_action_reminders", "audit_logs", "store_subscriptions", "stores")
+
+	now := time.Now().UTC()
+	hostedURL := "https://invoice.stripe.com/i/release-test"
+	storeID := uuid.New()
+	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
+	placeholder := "billing+7f3a@mark8ly.local"
+	fourteenDaysAgo := now.AddDate(0, 0, -14)
+
+	sub := subscription.StoreSubscription{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_release",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusPaymentActionRequired,
+		HostedInvoiceURL: &hostedURL,
+		Email:            &placeholder,
+	}
+	require.NoError(t, db.Create(&sub).Error)
+	auditEntry := audit.Entry{
+		ID:           uuid.New(),
+		TenantID:     tenantID,
+		StoreID:      &storeID,
+		ActorType:    audit.ActorSystem,
+		Action:       "subscription.state_transition",
+		ResourceType: "subscription",
+		Status:       audit.StatusSuccess,
+		Severity:     audit.SeverityWarning,
+		Metadata:     audit.Metadata{"to_status": "payment_action_required", "from_status": "active"},
+		CreatedAt:    fourteenDaysAgo,
+	}
+	require.NoError(t, db.Create(&auditEntry).Error)
+
+	client := &stubClient{}
+	run := func() *dunning.SendPaymentActionReminders {
+		return dunning.NewSendPaymentActionReminders(db, client, nil, &stubVec{}, func() time.Time { return now }).
+			WithSkipCounter(&stubSkip{})
+	}
+	require.NoError(t, run().Run(context.Background()))
+	require.Empty(t, client.sent, "mailed an undeliverable address")
+
+	var claims int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM payment_action_reminders`).Scan(&claims).Error)
+	require.EqualValues(t, 0, claims, "claim was burned; a later run can never deliver this notice")
+
+	good := "merchant@example.com"
+	require.NoError(t, db.Exec(`UPDATE store_subscriptions SET email = ? WHERE id = ?`, good, sub.ID).Error)
+	require.NoError(t, run().Run(context.Background()))
+	require.Equal(t, []string{good}, client.sent, "retry after backfill did not deliver")
+}
+
+// TestPaymentActionReminders_TransportFailureKeepsClaimBurned pins the
+// deliberate at-most-once contract: a transport failure must NOT release the
+// claim, or a retry could duplicate the billing notice.
+func TestPaymentActionReminders_TransportFailureKeepsClaimBurned(t *testing.T) {
+	db := testdb.NewDB(t, "payment_action_reminders", "audit_logs", "store_subscriptions", "stores")
+
+	now := time.Now().UTC()
+	hostedURL := "https://invoice.stripe.com/i/transport-test"
+	storeID := uuid.New()
+	tenantID := uuid.New()
+	seedStore(t, db, tenantID, storeID)
+	addr := "merchant@example.com"
+	fourteenDaysAgo := now.AddDate(0, 0, -14)
+
+	sub := subscription.StoreSubscription{
+		ID:               uuid.New(),
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_transport",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusPaymentActionRequired,
+		HostedInvoiceURL: &hostedURL,
+		Email:            &addr,
+	}
+	require.NoError(t, db.Create(&sub).Error)
+	auditEntry := audit.Entry{
+		ID:           uuid.New(),
+		TenantID:     tenantID,
+		StoreID:      &storeID,
+		ActorType:    audit.ActorSystem,
+		Action:       "subscription.state_transition",
+		ResourceType: "subscription",
+		Status:       audit.StatusSuccess,
+		Severity:     audit.SeverityWarning,
+		Metadata:     audit.Metadata{"to_status": "payment_action_required", "from_status": "active"},
+		CreatedAt:    fourteenDaysAgo,
+	}
+	require.NoError(t, db.Create(&auditEntry).Error)
+
+	client := &stubClient{err: errors.New("sendgrid 503")}
+	cron := dunning.NewSendPaymentActionReminders(db, client, nil, &stubVec{}, func() time.Time { return now }).
+		WithSkipCounter(&stubSkip{})
+	require.NoError(t, cron.Run(context.Background()))
+
+	var claims int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM payment_action_reminders`).Scan(&claims).Error)
+	require.EqualValues(t, 1, claims, "transport failure released the claim; a retry could duplicate")
 }

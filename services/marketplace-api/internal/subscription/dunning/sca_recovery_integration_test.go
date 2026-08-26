@@ -132,7 +132,7 @@ func TestSCARecovery_WebhookPaymentActionRequired_SCAReminders_InvoicePaidClears
 	var parRows int64
 	if err := db.Raw(`
 		SELECT COUNT(*) FROM payment_action_reminders
-		WHERE subscription_id = ? AND offset_key = 't_minus_14'`,
+		WHERE store_id = ? AND offset_key = 't_minus_14'`,
 		storeID,
 	).Scan(&parRows).Error; err != nil {
 		t.Fatalf("count payment_action_reminders: %v", err)

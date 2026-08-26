@@ -370,7 +370,7 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 			sql:   "DELETE FROM audit_logs WHERE tenant_id = ? AND actor_type <> 'operator'",
 			args:  []any{tenantID},
 		},
-		subquery("payment_action_reminders", "subscription_id", "store_subscriptions", tenantID),
+		storeScoped("payment_action_reminders", storeIDs),     // 000057+000106: store_id only, no tenant_id
 		tenantScoped("trial_reminders", tenantID),             // 000088: tenant_id, store_id
 		tenantScoped("warehouses", tenantID),                  // 000095: tenant_id, store_id
 		tenantScoped("white_label_app_lifecycle", tenantID),   // 000048ish: tenant_id, store_id

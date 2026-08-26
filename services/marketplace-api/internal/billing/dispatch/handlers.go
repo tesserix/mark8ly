@@ -13,6 +13,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/email"
+	"github.com/mark8ly/marketplace-api/internal/postcommit"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 )
@@ -306,16 +307,22 @@ const trialBilledPeriodKey = "first_charge"
 
 // sendTrialBilled emits the trial-started-billed confirmation.
 //
-// Idempotency guarantee, and why it is NOT first_charge_at: the send happens
-// inside the locked webhook transaction, and invoice.paid is dispatched as a
-// chain (see dispatcher.go) whose later handler can fail — or the commit
-// itself can fail — rolling first_charge_at back to NULL. The email is
-// already gone at that point, and Stripe's retry would see wasFirstCharge
-// again. So the claim is written on d.db, a NON-transactional handle: it
-// survives the rollback and the retry loses the claim.
+// Idempotency guarantee, and why it is NOT first_charge_at: invoice.paid is
+// dispatched as a chain (see dispatcher.go) whose later handler can fail — or
+// the commit itself can fail — rolling first_charge_at back to NULL, and
+// first_charge_at can also be reset later by a compensating correction or a
+// restore. Stripe then redelivers and wasFirstCharge is true all over again.
+// So the at-most-once guarantee comes from a billing_email_sends claim keyed
+// on the constant period trialBilledPeriodKey — one per subscription for the
+// life of the subscription, not one per event.
 //
-// Without d.db there is no way to make this at-most-once, so the send is
-// skipped rather than risked.
+// Both the claim and the send happen at drain time, after the webhook
+// transaction has committed. Do not move the claim back inside the
+// transaction: the reason is spelled out at the send closure below, and
+// getting it wrong silently costs the merchant their confirmation forever.
+//
+// Without d.db there is no claim store, and no way to make this at-most-once,
+// so the send is skipped rather than risked.
 func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subscription.StoreSubscription) {
 	log := slog.Default()
 
@@ -326,12 +333,11 @@ func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subsc
 	// route (which never persists the plan) would be told their "trial plan" is
 	// now being billed. That is a false billing statement, so skip the send.
 	//
-	// Ordering: the guard sits BEFORE the claim on purpose. The claim's job is
-	// to stop a SECOND send after the webhook transaction rolls back
-	// (first_charge_at returns to NULL and Stripe retries) — see the doc comment
-	// above. A skip sends nothing, so there is no send to deduplicate, and
-	// burning the one-per-subscription slot here would permanently suppress a
-	// correct confirmation if the plan is resolved before the retry lands.
+	// Ordering: this guard sits before the claim, which now lives in the send
+	// closure below. That is the same rule as before — a skip sends nothing,
+	// so there is nothing to deduplicate, and burning the
+	// one-per-subscription slot here would permanently suppress a correct
+	// confirmation if the plan is resolved before a later event lands.
 	if sub.Plan == subscription.PlanTrial {
 		log.Warn("dispatch: trial-billed email skipped — plan still 'trial' at first charge; no plan was ever recorded for this subscription",
 			"store_id", sub.StoreID.String(),
@@ -348,44 +354,131 @@ func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subsc
 		return
 	}
 
-	won, claimErr := subscription.ClaimEmailSend(ctx, d.db, sub.ID,
-		string(email.TemplateTrialStartedBilled), trialBilledPeriodKey, time.Now().UTC())
-	if claimErr != nil {
-		log.Error("dispatch: trial-billed claim failed; not sending",
-			"store_id", sub.StoreID.String(), "err", claimErr.Error())
-		d.countSkip("claim_failed")
-		return
-	}
-	if !won {
-		// Already sent for this subscription — a retry after a rolled-back
-		// transaction, or a second pod. Nothing to do.
-		return
-	}
-
 	to := ""
 	if sub.Email != nil {
 		to = *sub.Email
 	}
-	if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, to, map[string]any{
+	// Everything the send needs is resolved HERE, inside the transaction:
+	// tx is dead once it commits, so the store name cannot be looked up from
+	// the deferred closure.
+	data := map[string]any{
 		"store_id":   sub.StoreID.String(),
 		"tenant_id":  sub.TenantID.String(),
 		"store_name": subscription.StoreNameFor(ctx, tx, sub.StoreID),
 		"plan":       string(sub.Plan),
 		"period":     string(sub.SubscriptionPeriod),
-	}); sendErr != nil {
+	}
+
+	// send claims the one-per-subscription slot and then makes the provider
+	// HTTP call. Both run at drain time, after the transaction has committed.
+	//
+	// It takes its context as a parameter rather than capturing the request's:
+	// postcommit.Run hands it a detached, timeout-bounded context so that a
+	// request cancelled between the commit and the drain cannot fail the claim
+	// and the send. The inline fallback below passes the request context, where
+	// cancellation still should abort — nothing has committed yet there.
+	//
+	// Why the claim is HERE and not inside the transaction like the other
+	// billing mail paths: the send is deferred, and a rolled-back transaction
+	// is never drained — so on a rollback nothing is sent. A claim taken
+	// inside the transaction would be written on d.db, survive that rollback,
+	// and burn the slot for an email that never left. Stripe's retry would
+	// then find the slot taken and send nothing, and since the retry does
+	// commit first_charge_at, the template never fires again: the merchant
+	// would silently never receive their billing confirmation. Claiming here
+	// keeps the pair atomic in the only sense that matters — either both the
+	// claim and the send happen, or neither does.
+	//
+	// What still prevents a duplicate: period_key is the constant
+	// "first_charge" (see trialBilledPeriodKey), so the claim is
+	// one-per-subscription for the life of the subscription, not per event.
+	// If first_charge_at is later reset — a compensating correction, a
+	// restore — and Stripe redelivers, wasFirstCharge is true again but the
+	// claim row from the delivered send is still there and this send is
+	// suppressed.
+	//
+	// d.db is deliberately still the non-transactional handle: at drain time
+	// the webhook transaction is gone, so it is the only handle there is.
+	send := func(ctx context.Context) error {
+		won, claimErr := subscription.ClaimEmailSend(ctx, d.db, sub.ID,
+			string(email.TemplateTrialStartedBilled), trialBilledPeriodKey, time.Now().UTC())
+		if claimErr != nil {
+			d.countSkip("claim_failed")
+			return fmt.Errorf("dispatch: trial-billed claim failed for store %s; not sending: %w",
+				sub.StoreID, claimErr)
+		}
+		if !won {
+			// Already sent for this subscription — a redelivery after a
+			// compensating reset, or a second pod. Nothing to do.
+			return nil
+		}
+
+		if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, to, data); sendErr != nil {
+			d.countSkip(email.SkipReason(sendErr))
+			// An address failure releases the claim; a transport failure keeps
+			// it. Same split as the other four billing mail paths.
+			//
+			// Releasing matters more here than anywhere else: period_key is
+			// the constant "first_charge", so the claim is one-per-subscription
+			// for LIFE. A merchant still on a billing+<uuid>@mark8ly.local
+			// placeholder at first charge would otherwise burn that slot
+			// before any network call, and — because first_charge_at is
+			// committed, so wasFirstCharge is false forever after — never
+			// receive a trial-billed confirmation at all, however many real
+			// addresses arrive later.
+			if errors.Is(sendErr, email.ErrUndeliverable) {
+				if relErr := subscription.ReleaseEmailClaim(ctx, d.db, sub.ID,
+					string(email.TemplateTrialStartedBilled), trialBilledPeriodKey); relErr != nil {
+					log.Error("dispatch: trial-billed release claim failed",
+						"store_id", sub.StoreID.String(), "err", relErr.Error())
+				} else {
+					log.Info("dispatch: trial-billed claim released for retry",
+						"store_id", sub.StoreID.String())
+				}
+			}
+			return fmt.Errorf("dispatch: trial-billed email not sent for store %s (reason %s): %w",
+				sub.StoreID, email.SkipReason(sendErr), sendErr)
+		}
+		if d.sent != nil {
+			d.sent.WithTemplate(string(email.TemplateTrialStartedBilled)).Inc()
+		}
+		return nil
+	}
+
+	// Hand the send to the request's collector so the caller runs it after
+	// the advisory-lock transaction commits — a SendGrid call (15s timeout,
+	// plus a possible Resend fallback) must not hold the per-store lock and
+	// a pool connection against Stripe's 30s webhook budget.
+	//
+	// Note the claim is NOT taken here — it is the first statement of the
+	// send closure, and travels with the send. The rationale is above; the
+	// short version is that a claim written here would survive a rollback
+	// that discarded the send it paid for.
+	if postcommit.Add(ctx, send) {
+		return
+	}
+
+	// No collector in ctx — a caller that did not opt in (tests, or a future
+	// entry point that forgot to install one). Send inline rather than
+	// dropping it: the old behaviour is slow, but silently losing a
+	// merchant's billing email is worse.
+	//
+	// Entering this path is itself worth a warning. Without it a new call
+	// site that forgets postcommit.WithDeferredSends silently reverts to
+	// making the provider call under the advisory lock — the exact behaviour
+	// this indirection exists to remove — and looks perfectly healthy in the
+	// logs while doing it.
+	log.Warn("dispatch: no post-commit collector in context; sending trial-billed email INLINE, inside the webhook transaction — the caller of Dispatch is missing postcommit.WithDeferredSends",
+		"store_id", sub.StoreID.String(),
+		"tenant_id", sub.TenantID.String())
+
+	if sendErr := send(ctx); sendErr != nil {
 		// Don't fail the webhook — Stripe would retry, double-firing every
 		// other side effect. Email failure is a soft error: log and move on.
-		// The claim is deliberately NOT released: at-most-once beats a
-		// duplicate, matching the other four billing mail paths.
 		log.Warn("dispatch: trial-billed email not sent",
 			"store_id", sub.StoreID.String(),
 			"reason", email.SkipReason(sendErr),
 			"err", sendErr.Error())
-		d.countSkip(email.SkipReason(sendErr))
-		return
-	}
-	if d.sent != nil {
-		d.sent.WithTemplate(string(email.TemplateTrialStartedBilled)).Inc()
 	}
 }
 

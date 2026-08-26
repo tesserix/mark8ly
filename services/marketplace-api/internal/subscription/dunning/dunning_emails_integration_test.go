@@ -4,6 +4,7 @@ package dunning_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"testing"
@@ -316,4 +317,50 @@ func TestDunning_RealClientRefusesPlaceholderAddress(t *testing.T) {
 	require.Empty(t, sender.msgs, "a .local address reached the transport")
 	require.Zero(t, sent.n["day_5"], "counted a delivery that never happened")
 	require.Equal(t, 1, skipped.n["dunning_day_5/placeholder_address"])
+}
+
+func TestDunning_UndeliverableReleasesClaimSoRetryCanSend(t *testing.T) {
+	db := testdb.NewDB(t, "audit_logs", "store_subscriptions", "stores", "billing_email_sends")
+	now := time.Now().UTC()
+
+	// A merchant whose address has not been backfilled yet.
+	placeholder := "billing+7f3a@mark8ly.local"
+	sub := seedPastDueSubscription(t, db, now.AddDate(0, 0, -5), &placeholder)
+
+	client := &stubClient{}
+	run := func() *dunning.SendDunningEmails {
+		return dunning.NewSendDunningEmails(db, client, nil, &stubVec{}, func() time.Time { return now }).
+			WithSkipCounter(&stubSkip{})
+	}
+	require.NoError(t, run().Run(context.Background()))
+	require.Empty(t, client.sent, "mailed an undeliverable address")
+
+	var claims int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM billing_email_sends`).Scan(&claims).Error)
+	require.EqualValues(t, 0, claims, "claim was burned; a later run can never deliver this notice")
+
+	// The address lands (backfill or customer.updated), and the same day's run
+	// must now be able to deliver.
+	good := "merchant@example.com"
+	require.NoError(t, db.Exec(`UPDATE store_subscriptions SET email = ? WHERE id = ?`, good, sub.ID).Error)
+	require.NoError(t, run().Run(context.Background()))
+	require.Equal(t, []string{good}, client.sent, "retry after backfill did not deliver")
+}
+
+func TestDunning_TransportFailureKeepsClaimBurned(t *testing.T) {
+	db := testdb.NewDB(t, "audit_logs", "store_subscriptions", "stores", "billing_email_sends")
+	now := time.Now().UTC()
+
+	addr := "merchant@example.com"
+	seedPastDueSubscription(t, db, now.AddDate(0, 0, -5), &addr)
+
+	// A transport failure must NOT release the claim — at-most-once is deliberate.
+	client := &stubClient{err: errors.New("sendgrid 503")}
+	cron := dunning.NewSendDunningEmails(db, client, nil, &stubVec{}, func() time.Time { return now }).
+		WithSkipCounter(&stubSkip{})
+	require.NoError(t, cron.Run(context.Background()))
+
+	var claims int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM billing_email_sends`).Scan(&claims).Error)
+	require.EqualValues(t, 1, claims, "transport failure released the claim; a retry could duplicate")
 }

@@ -375,3 +375,31 @@ func TestTrialReminders_HasPMT1StillSendsWithRealPlan(t *testing.T) {
 	require.Equal(t, 1, client.count(), "a merchant on a real plan must still get the T-1 heads-up")
 	require.Equal(t, email.TemplateTrialHasPMT1, client.sends[0].Template)
 }
+
+// The counterpart to TestTrialReminders_FailedSendDoesNotReleaseTheClaim: an
+// undeliverable address IS recoverable — the backfill or a customer.updated
+// webhook may supply a real one later — so the claim must be released.
+func TestTrialReminders_UndeliverableReleasesClaimSoRetryCanSend(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores", "trial_reminders")
+	now := time.Now().UTC()
+
+	placeholder := "billing+7f3a@mark8ly.local"
+	sub := seedTrialSub(t, db, now.AddDate(0, 0, -83), nil, false, &placeholder)
+
+	client := &stubClient{}
+	run := func() *dunning.SendTrialReminders {
+		return dunning.NewSendTrialReminders(db, client, nil, &stubVec{}, func() time.Time { return now }).
+			WithSkipCounter(&stubSkip{})
+	}
+	require.NoError(t, run().Run(context.Background()))
+	require.Empty(t, client.sent, "mailed an undeliverable address")
+
+	var claims int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM trial_reminders`).Scan(&claims).Error)
+	require.EqualValues(t, 0, claims, "claim was burned; a later run can never deliver this notice")
+
+	good := "merchant@example.com"
+	require.NoError(t, db.Exec(`UPDATE store_subscriptions SET email = ? WHERE id = ?`, good, sub.ID).Error)
+	require.NoError(t, run().Run(context.Background()))
+	require.Equal(t, []string{good}, client.sent, "retry after backfill did not deliver")
+}

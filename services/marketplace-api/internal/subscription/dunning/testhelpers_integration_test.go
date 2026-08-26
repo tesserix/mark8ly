@@ -55,14 +55,14 @@ func seedStore(t *testing.T, db *gorm.DB, tenantID, storeID uuid.UUID) {
 // recording the transition INTO past_due at transitionedAt. It mirrors the
 // exact seeding shape used by TestSendDunningEmails_SendsOnDay5AndDay7 so
 // dunning cron tests share one source of truth for what "eligible" means.
-func seedPastDueSubscription(t *testing.T, db *gorm.DB, transitionedAt time.Time, emailAddr *string) (subscriptionID, storeID, tenantID uuid.UUID) {
+func seedPastDueSubscription(t *testing.T, db *gorm.DB, transitionedAt time.Time, emailAddr *string) subscription.StoreSubscription {
 	t.Helper()
 
-	storeID = uuid.New()
-	tenantID = uuid.New()
+	storeID := uuid.New()
+	tenantID := uuid.New()
 	seedStore(t, db, tenantID, storeID)
 
-	subscriptionID = uuid.New()
+	subscriptionID := uuid.New()
 	sub := subscription.StoreSubscription{
 		ID:               subscriptionID,
 		TenantID:         tenantID,
@@ -92,5 +92,5 @@ func seedPastDueSubscription(t *testing.T, db *gorm.DB, transitionedAt time.Time
 		t.Fatalf("seedPastDueSubscription: seed audit: %v", err)
 	}
 
-	return subscriptionID, storeID, tenantID
+	return sub
 }

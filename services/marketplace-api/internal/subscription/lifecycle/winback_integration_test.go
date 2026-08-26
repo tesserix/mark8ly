@@ -4,6 +4,7 @@ package lifecycle_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -214,4 +215,46 @@ func TestWinBack_RealClientRefusesPlaceholderAddress(t *testing.T) {
 
 	require.Empty(t, sender.msgs, "a .local address reached the transport")
 	require.Equal(t, 1, skipped.n["win_back_day30/placeholder_address"])
+}
+
+func TestWinBack_UndeliverableReleasesClaimSoRetryCanSend(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores", "billing_email_sends")
+	now := time.Now().UTC()
+
+	placeholder := "billing+7f3a@mark8ly.local"
+	sub := seedExpired(t, db, now, &placeholder)
+
+	client := &stubClient{}
+	run := func() *lifecycle.WinBackCron {
+		return lifecycle.NewWinBackCron(db, client, nil, func() time.Time { return now }).
+			WithSkipCounter(&stubSkip{})
+	}
+	require.NoError(t, run().Run(context.Background()))
+	require.Empty(t, client.sent, "mailed an undeliverable address")
+
+	var claims int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM billing_email_sends`).Scan(&claims).Error)
+	require.EqualValues(t, 0, claims, "claim was burned; a later run can never deliver this notice")
+
+	good := "merchant@example.com"
+	require.NoError(t, db.Exec(`UPDATE store_subscriptions SET email = ? WHERE id = ?`, good, sub.ID).Error)
+	require.NoError(t, run().Run(context.Background()))
+	require.Equal(t, []string{good}, client.sent, "retry after backfill did not deliver")
+}
+
+func TestWinBack_TransportFailureKeepsClaimBurned(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores", "billing_email_sends")
+	now := time.Now().UTC()
+
+	addr := "merchant@example.com"
+	seedExpired(t, db, now, &addr)
+
+	client := &stubClient{err: errors.New("sendgrid 503")}
+	cron := lifecycle.NewWinBackCron(db, client, nil, func() time.Time { return now }).
+		WithSkipCounter(&stubSkip{})
+	require.NoError(t, cron.Run(context.Background()))
+
+	var claims int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM billing_email_sends`).Scan(&claims).Error)
+	require.EqualValues(t, 1, claims, "transport failure released the claim; a retry could duplicate")
 }

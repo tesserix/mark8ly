@@ -44,10 +44,11 @@ type Dispatcher struct {
 	recorder *arbitrage.Recorder // nil-safe: arbitrage check is skipped when nil
 	emailCl  email.Client        // nil-safe: trial-billed confirmation email is skipped when nil
 	// db is a NON-transactional handle, deliberately separate from the tx
-	// passed to Dispatch. The trial-billed claim must survive a rollback of
-	// the webhook transaction (see handleInvoicePaid), which a claim written
-	// on tx would not. Nil disables the trial-billed email entirely — there
-	// is no way to make it at-most-once without a claim store.
+	// passed to Dispatch. The trial-billed claim is taken at drain time,
+	// after the webhook transaction has committed (see sendTrialBilled), so
+	// tx is long gone by then and this is the only usable handle. Nil
+	// disables the trial-billed email entirely — there is no way to make it
+	// at-most-once without a claim store.
 	db       *gorm.DB
 	skip     SkipCounter // nil-safe: skipped-send counting is optional
 	sent     SentCounter // nil-safe: delivered-send counting is optional
@@ -104,9 +105,9 @@ type SentCounter interface {
 }
 
 // WithDB attaches a non-transactional database handle used to claim a
-// billing_email_sends row before the trial-billed confirmation is sent.
-// It must NOT be the webhook transaction: the whole point is that the claim
-// outlives a rollback of that transaction.
+// billing_email_sends row immediately before the trial-billed confirmation is
+// sent. It must NOT be the webhook transaction: claim and send both run after
+// that transaction has committed, when its handle is no longer usable.
 func (d *Dispatcher) WithDB(conn *gorm.DB) *Dispatcher {
 	d.db = conn
 	return d

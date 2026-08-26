@@ -41,11 +41,37 @@ func seedFirstChargeSub(t *testing.T) (*gorm.DB, subscription.StoreSubscription,
 	return db, sub, customerID
 }
 
+// dispatchInvoicePaid dispatches one first-charge invoice.paid event through
+// the PRODUCTION shape: a post-commit collector installed in the context, and
+// drained once Dispatch returns.
+//
+// It installs a collector by default on purpose. With a bare context every
+// test here took the inline fallback instead, where the claim and the send
+// run side by side unconditionally — so a regression in the deferred path
+// (the one production actually uses) left this suite green. The fallback
+// keeps exactly one dedicated test, below.
+//
+// Returns only the Dispatch error. A deferred send that fails is non-fatal by
+// contract — the transaction has already committed — so drain errors are
+// logged, and tests assert on the observable outcome (recipients, claim rows)
+// instead.
 func dispatchInvoicePaid(t *testing.T, d *dispatch.Dispatcher, db *gorm.DB, customerID string) error {
+	t.Helper()
+	ctx, deferred := postcommit.WithDeferredSends(context.Background())
+	err := dispatchInvoicePaidOn(t, ctx, d, db, customerID)
+	for _, sendErr := range deferred.Run(ctx) {
+		t.Logf("deferred send failed (non-fatal by contract): %v", sendErr)
+	}
+	return err
+}
+
+// dispatchInvoicePaidOn is dispatchInvoicePaid without the collector, for
+// callers that supply their own context (or deliberately supply none).
+func dispatchInvoicePaidOn(t *testing.T, ctx context.Context, d *dispatch.Dispatcher, db *gorm.DB, customerID string) error {
 	t.Helper()
 	eventID := "evt_" + uuid.NewString()[:12]
 	payload := []byte(`{"id":"` + eventID + `","type":"invoice.paid","data":{"object":{"customer":"` + customerID + `"}}}`)
-	return d.Dispatch(context.Background(), db, webhookevents.StripeWebhookEvent{
+	return d.Dispatch(ctx, db, webhookevents.StripeWebhookEvent{
 		EventID: eventID, EventType: "invoice.paid", Payload: payload,
 	})
 }
@@ -58,11 +84,11 @@ func dispatchInvoicePaid(t *testing.T, d *dispatch.Dispatcher, db *gorm.DB, cust
 // then loses the claim and sends nothing. This test reproduces that by
 // resetting the column directly.
 //
-// Note what this test does NOT cover: it calls Dispatch with no post-commit
-// collector in the context, so it runs the inline fallback, where the claim
-// and the send sit next to each other. The deferred path — where the send is
-// registered and the claim is not — is covered by
-// TestInvoicePaid_TrialBilled_ClaimSurvivesRolledBackDeferredSend below.
+// Note what this test does NOT cover: it drains its collector immediately
+// after Dispatch returns, so it never sees a transaction that rolled back
+// before the drain. That case — the send discarded, and with it the claim —
+// is covered by
+// TestInvoicePaid_TrialBilled_RolledBackWebhookStillDeliversOnRetry below.
 func TestInvoicePaid_TrialBilled_NotResentAfterRollback(t *testing.T) {
 	db, sub, customerID := seedFirstChargeSub(t)
 
@@ -264,4 +290,79 @@ func claimCount(t *testing.T, db *gorm.DB, subID uuid.UUID) int64 {
 		 WHERE subscription_id = ? AND template_key = ? AND period_key = 'first_charge'`,
 		subID, string(email.TemplateTrialStartedBilled)).Scan(&n).Error)
 	return n
+}
+
+// The inline fallback, kept as one explicit test now that the helper above
+// installs a collector. A caller that never opted in (a future entry point
+// that forgets postcommit.WithDeferredSends) must still deliver the email —
+// slowly, inside the transaction, with a warning — rather than drop it.
+func TestInvoicePaid_TrialBilled_InlineFallbackStillSends(t *testing.T) {
+	db, sub, customerID := seedFirstChargeSub(t)
+
+	client := &captureEmailClient{}
+	d := dispatch.New(nil).WithEmail(client).WithDB(db)
+
+	// Bare context: no collector, so postcommit.Add reports false.
+	require.NoError(t, dispatchInvoicePaidOn(t, context.Background(), d, db, customerID))
+
+	require.Len(t, client.recipients, 1,
+		"the inline fallback dropped the email instead of sending it")
+	require.EqualValues(t, 1, claimCount(t, db, sub.ID),
+		"the inline send must leave a claim behind")
+}
+
+// An address failure must NOT burn the one-per-subscription slot.
+//
+// period_key is the constant "first_charge", so the claim is per-subscription
+// for life. A merchant still carrying a billing+<uuid>@mark8ly.local
+// placeholder at first charge is refused before any network call — and if that
+// refusal kept the claim, the real address arriving an hour later could never
+// redeem it: first_charge_at is committed, so wasFirstCharge is false forever
+// and the template never fires again. The merchant would never receive a
+// trial-billed confirmation at all.
+func TestInvoicePaid_TrialBilled_UndeliverableAddressReleasesTheClaim(t *testing.T) {
+	db, sub, customerID := seedFirstChargeSub(t)
+
+	// The exact placeholder subscription/service.go mints at bootstrap.
+	placeholder := "billing+" + uuid.NewString() + "@mark8ly.local"
+	require.NoError(t, db.Exec(
+		`UPDATE store_subscriptions SET email = ? WHERE id = ?`, placeholder, sub.ID).Error)
+
+	client := &captureEmailClient{}
+	d := dispatch.New(nil).WithEmail(client).WithDB(db)
+
+	require.NoError(t, dispatchInvoicePaid(t, d, db, customerID),
+		"an undeliverable address must not fail the webhook")
+
+	require.Empty(t, client.recipients, "a .local address must never reach a provider")
+	require.EqualValues(t, 0, claimCount(t, db, sub.ID),
+		"the address failure burned the at-most-once slot; this merchant can now "+
+			"never receive a trial-billed confirmation")
+
+	// The webhook's own side effects still ran — which is exactly why the
+	// released claim is the merchant's only remaining route to this email.
+	var reloaded subscription.StoreSubscription
+	require.NoError(t, db.Where("id = ?", sub.ID).First(&reloaded).Error)
+	require.NotNil(t, reloaded.FirstChargeAt, "webhook side effects must still run")
+
+	// The real address lands (backfill, or a customer.updated webhook), and a
+	// later qualifying event delivers.
+	//
+	// first_charge_at has to be reset for that event to qualify at all: a
+	// natural Stripe retry of the SAME charge can no longer see a first
+	// charge. Resetting it models the documented paths that do put it back —
+	// a compensating correction, a restore — and is the only way to reach the
+	// send a second time. What is being pinned is the released claim, not the
+	// reset: with the claim still held, this second attempt sends nothing.
+	require.NoError(t, db.Exec(
+		`UPDATE store_subscriptions SET email = ?, first_charge_at = NULL WHERE id = ?`,
+		"merchant@example.com", sub.ID).Error)
+
+	require.NoError(t, dispatchInvoicePaid(t, d, db, customerID))
+
+	require.Len(t, client.recipients, 1,
+		"the released claim was not redeemed — the merchant lost the confirmation for good")
+	require.Equal(t, "merchant@example.com", client.recipients[0])
+	require.EqualValues(t, 1, claimCount(t, db, sub.ID),
+		"the delivered send must leave a claim behind")
 }

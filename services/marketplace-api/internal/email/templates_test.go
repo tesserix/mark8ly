@@ -62,6 +62,15 @@ func TestRegisterFallbacks_EveryKeyRenders(t *testing.T) {
 			if strings.Contains(r.HTMLBody, "{{") || strings.Contains(r.TextBody, "{{") {
 				t.Error("unrendered template action left in output")
 			}
+			// A misspelled field renders as the literal "<no value>" rather
+			// than failing, so absence of "{{" is not enough — assert the
+			// rendered output does not contain it. html/template escapes the
+			// angle brackets, so check both forms.
+			for _, body := range []string{r.HTMLBody, r.TextBody, r.Subject} {
+				if strings.Contains(body, "<no value>") || strings.Contains(body, "&lt;no value&gt;") {
+					t.Errorf("template rendered a missing variable as <no value>: %s", body)
+				}
+			}
 		})
 	}
 }

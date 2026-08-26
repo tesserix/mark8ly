@@ -1542,9 +1542,12 @@ func main() {
 		log.Info("campaign: send worker started")
 	}
 
-	// Outbox publisher — runs in admin and both modes; the storefront
-	// process does not produce events, so running it there would just poll
-	// an always-empty table and waste a connection.
+	// Outbox publisher — runs in admin and both modes because admin owns
+	// draining, not because the storefront produces nothing. It does: public
+	// checkout in storefront mode writes outbox_events rows through
+	// orderSvcSF (see the Orders M5 wiring above), and this replica drains
+	// them. Running a second publisher there would duplicate the poll, not
+	// find an empty table.
 	publisherCtx, publisherCancel := context.WithCancel(context.Background())
 	defer publisherCancel()
 	var publisherDone <-chan struct{}

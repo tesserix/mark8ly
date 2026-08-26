@@ -248,18 +248,15 @@ Counters that record *not* sending. Without this the `.local` population is invi
 
 - [ ] **Step 1: Write the failing test**
 
-Append to the existing `internal/subscription/dunning/metrics_adapter_test.go`
-(match its package clause — do not add a second one):
+Append **only the test function** to the existing
+`internal/subscription/dunning/metrics_adapter_test.go`. Do **not** add a
+package clause and do **not** add an import block: the file is already
+`package dunning_test` and already imports `prometheus`, `prometheus/testutil`
+and `dunning` at lines 3-11. A second import of the same package in one file
+is a compile error.
 
 ```go
 // --- appended for #381 ---
-
-import (
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
-
-	"github.com/mark8ly/marketplace-api/internal/subscription/dunning"
-)
 
 func TestWrapPrometheusSkipCounter_IncrementsLabelledSeries(t *testing.T) {
 	cv := prometheus.NewCounterVec(
@@ -2415,6 +2412,43 @@ loaded — no query change needed. `StoreNameFor` is a single scalar lookup per
 row, acceptable because this cron processes a handful of rows a day; the
 dunning ladder joins instead because it is the higher-volume path.
 
+**This task creates `StoreNameFor`**, because it is its first consumer. Create
+`internal/subscription/store_name.go` — the `subscription` package, not
+`lifecycle` or `dunning`, because Task 11 needs it too and neither of those
+packages is importable from the other:
+
+```go
+package subscription
+
+// store_name.go — the merchant-facing store name for email copy.
+//
+// The crons load StoreSubscription rows, which carry no name; the name lives
+// in the local `stores` projection. A scalar lookup per row is acceptable on
+// the reminder paths, which process tens of rows daily. The dunning ladder
+// joins instead, being the higher-volume path.
+
+import (
+	"context"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
+// StoreNameFor returns the store's display name, or "your store" when the
+// local projection has no row yet. Never returns an error: a cosmetic field
+// must not be able to stop a billing email.
+func StoreNameFor(ctx context.Context, db *gorm.DB, storeID uuid.UUID) string {
+	var name string
+	err := db.WithContext(ctx).
+		Raw(`SELECT name FROM stores WHERE id = ?`, storeID).
+		Scan(&name).Error
+	if err != nil || name == "" {
+		return "your store"
+	}
+	return name
+}
+```
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
@@ -2596,41 +2630,8 @@ In `payment_action_reminders.go`, replace the `Send` call (:129-138) with:
 	}
 ```
 
-Create the shared helper in `internal/subscription/store_name.go` — the
-`subscription` package, not `dunning`, because `lifecycle` needs it too and
-does not import `dunning`:
-
-```go
-package subscription
-
-// store_name.go — the merchant-facing store name for email copy.
-//
-// Both reminder crons load full StoreSubscription rows, which carry no name;
-// the name lives in the local `stores` projection. A single scalar lookup per
-// row is acceptable here because these crons process tens of rows daily, not
-// thousands — unlike the dunning ladder, which joins instead.
-
-import (
-	"context"
-
-	"github.com/google/uuid"
-	"gorm.io/gorm"
-)
-
-// StoreNameFor returns the store's display name, or "your store" when the
-// local projection has no row yet. Never returns an error: a cosmetic field
-// must not be able to stop a billing email.
-func StoreNameFor(ctx context.Context, db *gorm.DB, storeID uuid.UUID) string {
-	var name string
-	err := db.WithContext(ctx).
-		Raw(`SELECT name FROM stores WHERE id = ?`, storeID).
-		Scan(&name).Error
-	if err != nil || name == "" {
-		return "your store"
-	}
-	return name
-}
-```
+`subscription.StoreNameFor` already exists — **Task 10 created it**. Do not
+create it again; just call it.
 
 Add `"github.com/mark8ly/marketplace-api/internal/email"` to
 `trial_reminders.go`'s imports if it is not already present.

@@ -287,7 +287,7 @@ func (d *Dispatcher) handleInvoicePaid(ctx context.Context, tx *gorm.DB, raw []b
 		if sendErr := d.emailCl.Send(ctx, email.TemplateTrialStartedBilled, to, map[string]any{
 			"store_id":   sub.StoreID.String(),
 			"tenant_id":  sub.TenantID.String(),
-			"store_name": "your store",
+			"store_name": subscription.StoreNameFor(ctx, tx, sub.StoreID),
 			"plan":       string(sub.Plan),
 			"period":     string(sub.SubscriptionPeriod),
 		}); sendErr != nil {

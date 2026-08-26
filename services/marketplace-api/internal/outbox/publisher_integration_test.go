@@ -487,3 +487,74 @@ func TestIntegration_Publisher_StoreNotFound_DoesNotRollBackGoodRows(t *testing.
 		t.Fatalf("second tick saw %d rows, want 0", count)
 	}
 }
+
+// A store_id that is a non-empty string but not a parseable UUID used to
+// reach the store pre-check's `SELECT id FROM stores WHERE id IN ?`, where
+// Postgres raises `invalid input syntax for type uuid` — which ABORTS the
+// transaction and rolls back the whole batch, good rows included. #374.
+func TestIntegration_Publisher_NonUUIDStoreID_MarksFailedAndCommits(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events", "store_watermarks", "stores")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	storeID := uuid.NewString()
+	insertStore(t, db, storeID, tenantID)
+
+	good := enqueueForStore(t, db, tenantID, storeID)
+
+	bad := &outbox.OutboxEvent{
+		TenantID:    tenantID,
+		Aggregate:   outbox.AggregateProduct,
+		AggregateID: uuid.NewString(),
+		EventType:   outbox.EventProductUpdated,
+		Payload:     datatypes.JSON([]byte(`{"store_id":"store-42"}`)),
+	}
+	if err := db.Create(bad).Error; err != nil {
+		t.Fatalf("enqueue bad: %v", err)
+	}
+
+	pub := outbox.New(outbox.Config{
+		Repo: repo, DB: db, Logger: quietLogger(),
+		Interval: 1 * time.Second, BatchSize: 100,
+	})
+	if _, err := pub.Tick(context.Background()); err != nil {
+		t.Fatalf("tick must not error on a non-UUID store_id: %v", err)
+	}
+
+	var gotGood outbox.OutboxEvent
+	if err := db.First(&gotGood, "id = ?", good.ID).Error; err != nil {
+		t.Fatalf("reload good: %v", err)
+	}
+	if gotGood.PublishedAt == nil {
+		t.Fatalf("the good event must be published even when a non-UUID store_id shares its batch")
+	}
+
+	var wmCount int64
+	if err := db.Raw(`SELECT count(*) FROM store_watermarks WHERE store_id = ?`, storeID).
+		Scan(&wmCount).Error; err != nil {
+		t.Fatalf("count watermarks: %v", err)
+	}
+	if wmCount != 1 {
+		t.Fatalf("watermark rows = %d, want 1", wmCount)
+	}
+
+	var gotBad outbox.OutboxEvent
+	if err := db.First(&gotBad, "id = ?", bad.ID).Error; err != nil {
+		t.Fatalf("reload bad: %v", err)
+	}
+	if gotBad.PublishedAt != nil {
+		t.Fatalf("the non-UUID store_id event must NOT be published, got published_at=%v", gotBad.PublishedAt)
+	}
+	if gotBad.Error == nil || *gotBad.Error != outbox.ReasonPayloadMissingStoreID {
+		t.Fatalf("bad event error = %v, want %q", gotBad.Error, outbox.ReasonPayloadMissingStoreID)
+	}
+
+	// And the bad row is not retried on the next tick.
+	count, err := pub.Tick(context.Background())
+	if err != nil {
+		t.Fatalf("second tick: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("second tick saw %d rows, want 0 (failed rows are terminal)", count)
+	}
+}

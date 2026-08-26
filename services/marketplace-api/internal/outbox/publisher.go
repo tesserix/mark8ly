@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"gorm.io/gorm"
 )
@@ -117,7 +118,12 @@ func (p *Publisher) Tick(ctx context.Context) (int, error) {
 				continue
 			}
 			sid, _ := payload["store_id"].(string)
-			if sid == "" {
+			// A non-UUID value must be rejected HERE, not left to the store
+			// pre-check below: stores.id is uuid, so passing "store-42" to that
+			// SELECT raises `invalid input syntax for type uuid`, which ABORTS
+			// the transaction and rolls back the whole batch — the very poison
+			// pill this pre-check exists to remove.
+			if _, err := uuid.Parse(sid); sid == "" || err != nil {
 				if p.logger != nil {
 					p.logger.Warn("outbox publisher: payload missing store_id; failing",
 						"event_id", r.ID, "event_type", r.EventType)

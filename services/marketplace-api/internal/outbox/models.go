@@ -87,7 +87,16 @@ const (
 // that leaves this service — defeating the same reasoning that keeps
 // `payload` out of #331's response, through a field nobody would audit.
 const (
-	ReasonPayloadUnparseable    = "payload_unparseable"
+	ReasonPayloadUnparseable = "payload_unparseable"
+	// ReasonPayloadMissingStoreID is written when a payload's store_id is
+	// absent, not a string, an empty string, or a non-empty string that does
+	// not parse as a UUID. All four are the same terminal producer bug and
+	// require the same operator action, so they share one code rather than
+	// widening this closed vocabulary. The UUID case is rejected here, in
+	// the row loop, rather than left to the store pre-check below: stores.id
+	// is uuid, and passing a non-UUID value to that SELECT raises `invalid
+	// input syntax for type uuid`, which ABORTS the transaction and rolls
+	// back the whole batch — see #374.
 	ReasonPayloadMissingStoreID = "payload_missing_store_id"
 	// ReasonStoreNotFound is written when a payload's store_id is
 	// well-formed but has no matching row in `stores`. The watermark upsert

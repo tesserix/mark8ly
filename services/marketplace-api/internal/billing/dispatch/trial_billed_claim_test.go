@@ -4,6 +4,7 @@ package dispatch_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
 	"github.com/mark8ly/marketplace-api/internal/email"
+	"github.com/mark8ly/marketplace-api/internal/postcommit"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
@@ -48,12 +50,19 @@ func dispatchInvoicePaid(t *testing.T, d *dispatch.Dispatcher, db *gorm.DB, cust
 	})
 }
 
-// The confirmation is sent inside the locked webhook transaction, and
-// invoice.paid runs a handler chain — a later handler error, or a failed
-// commit, rolls first_charge_at back to NULL while the email has already
-// left. Stripe then retries and sees a "first charge" again. The claim is
-// written on a non-transactional handle precisely so it survives that
-// rollback; this test reproduces the rollback by resetting first_charge_at.
+// first_charge_at can return to NULL after the confirmation has gone out —
+// a compensating correction, a restore, an operator undo — and Stripe can
+// redeliver invoice.paid afterwards, at which point the handler sees a
+// "first charge" again. The claim is written on a NON-transactional handle
+// precisely so it outlives whatever put first_charge_at back, and the retry
+// then loses the claim and sends nothing. This test reproduces that by
+// resetting the column directly.
+//
+// Note what this test does NOT cover: it calls Dispatch with no post-commit
+// collector in the context, so it runs the inline fallback, where the claim
+// and the send sit next to each other. The deferred path — where the send is
+// registered and the claim is not — is covered by
+// TestInvoicePaid_TrialBilled_ClaimSurvivesRolledBackDeferredSend below.
 func TestInvoicePaid_TrialBilled_NotResentAfterRollback(t *testing.T) {
 	db, sub, customerID := seedFirstChargeSub(t)
 
@@ -168,4 +177,84 @@ func TestInvoicePaid_TrialBilled_StillSendsWithRealPlan(t *testing.T) {
 	require.NoError(t, dispatchInvoicePaid(t, d, db, customerID))
 
 	require.Len(t, client.recipients, 1, "a merchant on a real plan must still get the confirmation")
+}
+
+// TestInvoicePaid_TrialBilled_ClaimSurvivesRolledBackDeferredSend pins where
+// the claim lives, on the real deferred path.
+//
+// Since the send moved out of the transaction, the two now sit on opposite
+// sides of the commit: the claim is taken inside the locked transaction on
+// the non-transactional handle d.db, and the send is registered on the
+// post-commit collector. Those two placements have different rollback
+// behaviour, and this test is what distinguishes them — the sibling test
+// above cannot, because it exercises the inline fallback where both run
+// unconditionally, one after the other.
+//
+// The scenario is a rollback: a later stage of the invoice.paid chain fails,
+// so the transaction is rolled back and — mirroring stripe.go and
+// orphan_resolver.go on their error paths — the collector is NEVER drained.
+// Anything registered on it is discarded. The claim must not be among those
+// things: it is written straight to d.db, so it survives.
+//
+// Move the claim into the deferred closure and this test fails at the claim
+// assertion (nothing was written, because the closure was discarded) and
+// again on the retry (which, finding no claim, sends).
+func TestInvoicePaid_TrialBilled_ClaimSurvivesRolledBackDeferredSend(t *testing.T) {
+	db, sub, customerID := seedFirstChargeSub(t)
+
+	client := &captureEmailClient{}
+	d := dispatch.New(nil).WithEmail(client).WithDB(db)
+
+	// Attempt 1: the transaction rolls back after the handler ran.
+	ctx, pending := postcommit.WithDeferredSends(context.Background())
+	errLaterStage := errors.New("a later stage of the chain failed")
+	eventID := "evt_" + uuid.NewString()[:12]
+	payload := []byte(`{"id":"` + eventID + `","type":"invoice.paid","data":{"object":{"customer":"` + customerID + `"}}}`)
+	err := subscription.WithAdvisoryLock(ctx, db, sub.StoreID, func(tx *gorm.DB) error {
+		if derr := d.Dispatch(ctx, tx, webhookevents.StripeWebhookEvent{
+			EventID: eventID, EventType: "invoice.paid", Payload: payload,
+		}); derr != nil {
+			return derr
+		}
+		return errLaterStage
+	})
+	require.ErrorIs(t, err, errLaterStage)
+
+	// The lock returned an error, so the collector is deliberately never
+	// drained — exactly what both production call sites do. Whatever the
+	// handler registered on it is discarded here, unrun and unreported.
+	_ = pending
+	require.Empty(t, client.recipients,
+		"a send registered on the collector must not run when the transaction rolled back")
+
+	// Confirm the rollback really happened, so the assertions below are
+	// about a rolled-back transaction and not a silently committed one.
+	var reloaded subscription.StoreSubscription
+	require.NoError(t, db.Where("id = ?", sub.ID).First(&reloaded).Error)
+	require.Nil(t, reloaded.FirstChargeAt, "the transaction did not roll back")
+
+	// THE INVARIANT: the claim was written on the non-transactional handle,
+	// so it is still there. Inside the deferred closure it would have been
+	// discarded along with the send.
+	var n int64
+	require.NoError(t, db.Raw(
+		`SELECT count(*) FROM billing_email_sends
+		 WHERE subscription_id = ? AND template_key = ? AND period_key = 'first_charge'`,
+		sub.ID, string(email.TemplateTrialStartedBilled)).Scan(&n).Error)
+	require.EqualValues(t, 1, n,
+		"the claim did not survive the rollback — it is not on the non-transactional handle")
+
+	// Attempt 2: Stripe retries. This one commits and drains.
+	ctx2, deferred2 := postcommit.WithDeferredSends(context.Background())
+	eventID2 := "evt_" + uuid.NewString()[:12]
+	payload2 := []byte(`{"id":"` + eventID2 + `","type":"invoice.paid","data":{"object":{"customer":"` + customerID + `"}}}`)
+	require.NoError(t, subscription.WithAdvisoryLock(ctx2, db, sub.StoreID, func(tx *gorm.DB) error {
+		return d.Dispatch(ctx2, tx, webhookevents.StripeWebhookEvent{
+			EventID: eventID2, EventType: "invoice.paid", Payload: payload2,
+		})
+	}))
+	require.Empty(t, deferred2.Run(ctx2))
+
+	require.Empty(t, client.recipients,
+		"the retry sent a billing confirmation the surviving claim should have suppressed")
 }

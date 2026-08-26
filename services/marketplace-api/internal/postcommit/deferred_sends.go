@@ -13,6 +13,8 @@ package postcommit
 
 import (
 	"context"
+	"fmt"
+	"runtime/debug"
 	"sync"
 )
 
@@ -84,7 +86,21 @@ func (d *DeferredSends) Add(fn func() error) {
 // Every error returned here is non-fatal by contract: the transaction has
 // already committed, so there is nothing left to roll back. Callers log them
 // and carry on — surfacing one as a request failure would, in the webhook
-// case, trigger a Stripe retry that re-fires every other side effect.
+// case, trigger a Stripe retry that re-fires every other side effect. Run
+// upholds that contract absolutely: a panicking unit of work is recovered and
+// reported as an error rather than being allowed to escape and fail the
+// request, and its siblings still run.
+//
+// Two known limits, both unreachable with a single registered unit of work
+// and both left alone deliberately — tightening the queue semantics would
+// cost more than it buys:
+//
+//   - Add after Run is silently dropped. Run swaps the slice out, so work
+//     registered afterwards has no drain to run in. Register everything
+//     before the transaction commits.
+//   - The ctx.Err() break abandons the units not yet reached, and reports a
+//     single context error however many were skipped. They were already
+//     removed from the queue, so they are lost rather than deferred again.
 func (d *DeferredSends) Run(ctx context.Context) []error {
 	if d == nil {
 		return nil
@@ -100,9 +116,23 @@ func (d *DeferredSends) Run(ctx context.Context) []error {
 			errs = append(errs, err)
 			break
 		}
-		if err := fn(); err != nil {
+		if err := runOne(fn); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errs
+}
+
+// runOne calls fn, converting a panic into an error. Without this a single
+// panicking unit of work would abandon every sibling still queued — they are
+// already off the queue and would never be run or reported — and would
+// propagate out of Run to fail the caller's request, which is exactly the
+// non-fatal guarantee this package makes.
+func runOne(fn func() error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("postcommit: deferred work panicked: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return fn()
 }

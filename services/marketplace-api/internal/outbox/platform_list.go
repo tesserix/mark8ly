@@ -43,6 +43,9 @@ type PlatformListFilter struct {
 	// old. It deliberately does NOT match published rows: this filter
 	// answers "what is stuck", and a published row is settled however old
 	// it is. Same reasoning as AgeSeconds being nil for published rows.
+	// Pairing it with Status: StatusPublished is therefore a contradiction —
+	// published_at IS NOT NULL AND published_at IS NULL — and always returns
+	// zero rows; that emptiness is intended, not a bug to investigate.
 	OlderThanMinutes int
 	From             *time.Time
 	To               *time.Time

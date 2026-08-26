@@ -179,3 +179,71 @@ func TestIntegration_ListPlatform_EmptyIsNotAnError(t *testing.T) {
 	require.Equal(t, int64(0), got.Total)
 	require.Empty(t, got.Rows)
 }
+
+// The unfiltered read must span every tenant. This is the whole reason #331
+// exists: the console asks estate-wide questions. TenantAndEventTypeNarrow
+// proves a filter EXCLUDES other tenants; only this proves the absence of a
+// filter INCLUDES them. Without it, a refactor that accidentally
+// tenant-scoped the base query would leave every other test green.
+func TestIntegration_ListPlatform_IsCrossTenantByDefault(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	tenantA := uuid.NewString()
+	tenantB := uuid.NewString()
+	tenantC := uuid.NewString()
+
+	seedRow(t, db, tenantA, "product.created", listAsOf.Add(-5*time.Minute), nil, nil)
+	seedRow(t, db, tenantB, "product.updated", listAsOf.Add(-6*time.Minute), nil, nil)
+	seedRow(t, db, tenantC, "order.placed", listAsOf.Add(-7*time.Minute), nil, nil)
+
+	got, err := outbox.ListPlatform(context.Background(), db, outbox.PlatformListFilter{}, listAsOf)
+	require.NoError(t, err)
+	require.Equal(t, int64(3), got.Total)
+
+	seen := map[string]bool{}
+	for _, r := range got.Rows {
+		seen[r.TenantID] = true
+	}
+	require.Len(t, seen, 3, "an unfiltered list must span every tenant")
+	require.True(t, seen[tenantA])
+	require.True(t, seen[tenantB])
+	require.True(t, seen[tenantC])
+}
+
+// A row carrying BOTH published_at and error. The publisher writes one or
+// the other and never both, so this is unreachable in-service — but the
+// documented operator requeue path is a manual UPDATE, so a human can
+// produce it. published must win: the row WAS delivered, whatever stale
+// error it still carries.
+func TestIntegration_ListPlatform_PublishedWinsOverError(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	tenantID := uuid.NewString()
+	pubAt := listAsOf.Add(-10 * time.Minute)
+	stale := outbox.ReasonPayloadUnparseable
+
+	id := seedRow(t, db, tenantID, "product.created", listAsOf.Add(-30*time.Minute), &pubAt, &stale)
+
+	got, err := outbox.ListPlatform(context.Background(), db, outbox.PlatformListFilter{}, listAsOf)
+	require.NoError(t, err)
+	require.Len(t, got.Rows, 1)
+	require.Equal(t, id, got.Rows[0].ID)
+	require.Equal(t, outbox.StatusPublished, got.Rows[0].Status,
+		"published_at is tested before error: a delivered row is published whatever error it carries")
+	// The two CASE expressions must agree with each other, not just each be
+	// individually right.
+	require.Nil(t, got.Rows[0].AgeSeconds,
+		"a row classified published must carry no age_seconds")
+}
+
+func TestIntegration_ListPlatform_PublishedPlusOlderThanIsDeliberatelyEmpty(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	tenantID := uuid.NewString()
+	pubAt := listAsOf.Add(-10 * time.Minute)
+	seedRow(t, db, tenantID, "product.created", listAsOf.Add(-600*time.Minute), &pubAt, nil)
+
+	got, err := outbox.ListPlatform(context.Background(), db,
+		outbox.PlatformListFilter{Status: outbox.StatusPublished, OlderThanMinutes: 30}, listAsOf)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), got.Total,
+		"older_than_minutes narrows to UNPUBLISHED rows, so pairing it with status=published is a "+
+			"contradiction that returns nothing — deliberate, not a bug")
+}

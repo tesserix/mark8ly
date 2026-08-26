@@ -370,7 +370,7 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 			sql:   "DELETE FROM audit_logs WHERE tenant_id = ? AND actor_type <> 'operator'",
 			args:  []any{tenantID},
 		},
-		subquery("payment_action_reminders", "subscription_id", "store_subscriptions", tenantID),
+		subqueryByColumn("payment_action_reminders", "store_id", "store_subscriptions", "store_id", tenantID),
 		tenantScoped("trial_reminders", tenantID),             // 000088: tenant_id, store_id
 		tenantScoped("warehouses", tenantID),                  // 000095: tenant_id, store_id
 		tenantScoped("white_label_app_lifecycle", tenantID),   // 000048ish: tenant_id, store_id
@@ -442,6 +442,23 @@ func subquery(table, fkCol, parentTable, tenantID string) deleteStep {
 		sql: fmt.Sprintf(
 			"DELETE FROM %s WHERE %s IN (SELECT id FROM %s WHERE tenant_id = ?)",
 			table, fkCol, parentTable,
+		),
+		args: []any{tenantID},
+	}
+}
+
+// subqueryByColumn builds a `DELETE FROM <table> WHERE <fkCol> IN (SELECT
+// <parentCol> FROM <parentTable> WHERE tenant_id = ?)` step, similar to
+// subquery but with explicit control over the parent table's column. Used
+// when the foreign key in the child table matches a column other than id
+// in the parent (e.g. payment_action_reminders.store_id matches
+// store_subscriptions.store_id, not store_subscriptions.id).
+func subqueryByColumn(table, fkCol, parentTable, parentCol, tenantID string) deleteStep {
+	return deleteStep{
+		table: table,
+		sql: fmt.Sprintf(
+			"DELETE FROM %s WHERE %s IN (SELECT %s FROM %s WHERE tenant_id = ?)",
+			table, fkCol, parentCol, parentTable,
 		),
 		args: []any{tenantID},
 	}

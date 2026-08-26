@@ -372,6 +372,12 @@ func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subsc
 	// send claims the one-per-subscription slot and then makes the provider
 	// HTTP call. Both run at drain time, after the transaction has committed.
 	//
+	// It takes its context as a parameter rather than capturing the request's:
+	// postcommit.Run hands it a detached, timeout-bounded context so that a
+	// request cancelled between the commit and the drain cannot fail the claim
+	// and the send. The inline fallback below passes the request context, where
+	// cancellation still should abort — nothing has committed yet there.
+	//
 	// Why the claim is HERE and not inside the transaction like the other
 	// billing mail paths: the send is deferred, and a rolled-back transaction
 	// is never drained — so on a rollback nothing is sent. A claim taken
@@ -393,7 +399,7 @@ func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subsc
 	//
 	// d.db is deliberately still the non-transactional handle: at drain time
 	// the webhook transaction is gone, so it is the only handle there is.
-	send := func() error {
+	send := func(ctx context.Context) error {
 		won, claimErr := subscription.ClaimEmailSend(ctx, d.db, sub.ID,
 			string(email.TemplateTrialStartedBilled), trialBilledPeriodKey, time.Now().UTC())
 		if claimErr != nil {
@@ -446,7 +452,7 @@ func (d *Dispatcher) sendTrialBilled(ctx context.Context, tx *gorm.DB, sub subsc
 		"store_id", sub.StoreID.String(),
 		"tenant_id", sub.TenantID.String())
 
-	if sendErr := send(); sendErr != nil {
+	if sendErr := send(ctx); sendErr != nil {
 		// Don't fail the webhook — Stripe would retry, double-firing every
 		// other side effect. Email failure is a soft error: log and move on.
 		log.Warn("dispatch: trial-billed email not sent",

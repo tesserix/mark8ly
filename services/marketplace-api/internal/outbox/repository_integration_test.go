@@ -401,3 +401,76 @@ func TestIntegration_MarkFailedInTx_DuplicateIDFirstReasonWins(t *testing.T) {
 		t.Fatalf("error = %v, want %q (first occurrence wins)", got.Error, outbox.ReasonPayloadUnparseable)
 	}
 }
+
+// A row with error set is TERMINAL. This is the poison-pill proof: nothing
+// else in the suite exercises the poll's error IS NULL term, which exists
+// precisely so a permanently-failing row cannot be re-selected forever and
+// starve real events out of the batch window.
+func TestIntegration_ProcessBatch_SkipsFailedRows(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	failed := makeEvent(tenantID)
+	fresh := makeEvent(tenantID)
+	enqueueCommitted(t, db, failed)
+	enqueueCommitted(t, db, fresh)
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{
+			{ID: failed.ID, Reason: outbox.ReasonPayloadUnparseable},
+		})
+	}); err != nil {
+		t.Fatalf("seed failed row: %v", err)
+	}
+
+	var seen []string
+	count, err := repo.ProcessBatch(context.Background(), 10,
+		func(tx *gorm.DB, rows []outbox.OutboxEvent) error {
+			for _, r := range rows {
+				seen = append(seen, r.ID)
+			}
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("ProcessBatch: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("ProcessBatch saw %d rows, want 1 (the failed row must be skipped)", count)
+	}
+	if len(seen) != 1 || seen[0] != fresh.ID {
+		t.Fatalf("ProcessBatch saw %v, want only the un-failed row %s", seen, fresh.ID)
+	}
+}
+
+// Clearing error is the documented requeue path for an operator. It must
+// actually work, or "terminal" means "lost".
+func TestIntegration_ProcessBatch_ClearingErrorRequeues(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	repo := outbox.NewRepository(db)
+
+	tenantID := uuid.NewString()
+	evt := makeEvent(tenantID)
+	enqueueCommitted(t, db, evt)
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return repo.MarkFailedInTx(tx, []outbox.Failure{
+			{ID: evt.ID, Reason: outbox.ReasonPayloadMissingStoreID},
+		})
+	}); err != nil {
+		t.Fatalf("seed failed row: %v", err)
+	}
+
+	if err := db.Exec(`UPDATE outbox_events SET error = NULL WHERE id = ?`, evt.ID).Error; err != nil {
+		t.Fatalf("clear error: %v", err)
+	}
+
+	count, err := repo.ProcessBatch(context.Background(), 10,
+		func(tx *gorm.DB, rows []outbox.OutboxEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("ProcessBatch: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("ProcessBatch saw %d rows, want 1 after error was cleared", count)
+	}
+}

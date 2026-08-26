@@ -10,12 +10,19 @@ import (
 // Repository is the data-access interface for outbox_events.
 type Repository interface {
 	EnqueueInTx(ctx context.Context, tx *gorm.DB, evt *OutboxEvent) error
-	// ProcessBatch opens its own transaction, locks up to `limit` unpublished
+	// ProcessBatch opens its own transaction, locks up to `limit` PENDING
 	// rows via FOR UPDATE SKIP LOCKED, and calls fn with the rows and the
 	// same tx. If fn returns nil the tx commits (the caller is expected to
 	// have called MarkPublishedInTx inside fn); if fn returns an error the
 	// tx rolls back and the rows become visible to the next poll. Returns
 	// the number of rows the callback saw.
+	//
+	// PENDING means published_at IS NULL *and* error IS NULL. A row with
+	// error set is terminal and is never re-selected — see MarkFailedInTx.
+	// The partial index outbox_unpublished_idx (migration 000001) is on
+	// published_at IS NULL; the error term is a filter on top of it, which
+	// is fine while failed rows are ~0. If they ever become common, that
+	// index is the thing to revisit.
 	ProcessBatch(ctx context.Context, limit int,
 		fn func(tx *gorm.DB, rows []OutboxEvent) error) (int, error)
 	MarkPublishedInTx(tx *gorm.DB, ids []string) error
@@ -54,7 +61,7 @@ func (r *gormRepository) ProcessBatch(ctx context.Context, limit int,
 			SELECT id, tenant_id, aggregate, aggregate_id, event_type,
 			       payload, created_at, published_at, error
 			FROM outbox_events
-			WHERE published_at IS NULL
+			WHERE published_at IS NULL AND error IS NULL
 			ORDER BY tenant_id, created_at
 			LIMIT ?
 			FOR UPDATE SKIP LOCKED`, limit).Scan(&rows).Error; err != nil {

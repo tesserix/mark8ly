@@ -17,16 +17,10 @@ import (
 
 func insertStoreRow(t *testing.T, tx *gorm.DB) (storeID, tenantID string) {
 	t.Helper()
-	storeID = uuid.NewString()
-	tenantID = uuid.NewString()
-	err := tx.Exec(`
-		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())`,
-		storeID, tenantID, "cat-test-"+storeID[:8], "Test Store", "US", "USD", "UTC", "active").Error
-	if err != nil {
-		t.Fatalf("insert store: %v", err)
-	}
-	return
+	storeUUID := uuid.New()
+	tenantUUID := uuid.New()
+	testdb.SeedStore(t, tx, tenantUUID, storeUUID)
+	return storeUUID.String(), tenantUUID.String()
 }
 
 func newCategory(storeID, tenantID, slug string) *category.Category {

@@ -34,8 +34,8 @@ func seedStoreFixture(t *testing.T, db *gorm.DB, slug string) seedStore {
 	tenantID, storeID := uuid.New(), uuid.New()
 	require.NoError(t, db.Exec(`
 		INSERT INTO stores
-			(id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at)
-		VALUES (?, ?, ?, 'Acme Roasters', 'US', 'USD', 'UTC', 'active', now())
+			(id, tenant_id, slug, name, country_code, currency_code, timezone, status, storefront_customer_portal_secret)
+		VALUES (?, ?, ?, 'Acme Roasters', 'US', 'USD', 'UTC', 'active', encode(gen_random_bytes(32), 'hex'))
 	`, storeID, tenantID, slug).Error)
 	return seedStore{tenantID: tenantID, storeID: storeID, slug: slug}
 }

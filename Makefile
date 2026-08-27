@@ -71,7 +71,8 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/audit/... \
 	    ./internal/handlers/platformadmin/... \
 	    ./internal/tenantpurge/... \
-	    ./internal/subscription/dunning/...
+	    ./internal/subscription/dunning/... \
+	    ./internal/handlers/internalsvc/...
 
 cover: ## Coverage report for both Go services
 	@cd services/platform-api && go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -5

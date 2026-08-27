@@ -34,15 +34,7 @@ func fakeStripeOK() *fakeStripe {
 func seedStores(t *testing.T, db *gorm.DB, tenantID uuid.UUID, count int) {
 	t.Helper()
 	for i := 0; i < count; i++ {
-		storeID := uuid.New()
-		slug := "test-store-" + uuid.NewString()[:8]
-		if err := db.Exec(
-			`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at)
-			 VALUES (?, ?, ?, 'Test Store', 'US', 'USD', 'UTC', 'active', now())`,
-			storeID, tenantID, slug,
-		).Error; err != nil {
-			t.Fatalf("seedStores: insert %d: %v", i, err)
-		}
+		testdb.SeedStore(t, db, tenantID, uuid.New())
 	}
 }
 

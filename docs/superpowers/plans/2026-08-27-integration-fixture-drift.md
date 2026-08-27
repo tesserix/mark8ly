@@ -1461,3 +1461,88 @@ git commit -m "test(product): backdate PublishedAt to avoid the transaction-froz
 - `make test-int` covers every package made green, and passes.
 - Two issues filed and read back; `models.go` references the model one.
 - Any remaining failure is either triaged in the tail doc with a named cause, or filed as its own issue. Nothing is left unexplained.
+
+---
+
+### Task 16: `handlers/webhooks` — seed the store behind the fixture subscription (1 failure)
+
+Found by Task 12, which fixed the fixture *path* for `TestFullWebhookFlow_AllAllowlistedEvents` and
+thereby let the test run far enough to hit a second, independent defect. Classic unmasking: the path
+error aborted before the seed was ever reached.
+
+**Files:**
+- Modify: `services/marketplace-api/internal/handlers/webhooks/stripe_integration_test.go:50-57`
+- Modify: `Makefile` (only if the package comes back fully green)
+
+**Interfaces:**
+- Consumes: `testdb.SeedStore(t, db, tenantID, storeID)` from Task 1.
+- Produces: nothing new.
+
+- [ ] **Step 1: Confirm the current failure**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 -run TestFullWebhookFlow_AllAllowlistedEvents \
+  ./internal/handlers/webhooks/... -v 2>&1 | grep -E '^(---|ok|FAIL)|store_id_fkey'
+```
+
+Expected: `--- FAIL`, with `store_subscriptions_store_id_fkey`.
+
+- [ ] **Step 2: Seed the store before the subscription insert**
+
+The test mints a tenant and store id and then inserts a `store_subscriptions` row referencing a
+`stores` row that was never created:
+
+```go
+	tenantID, storeID := uuid.New(), uuid.New()
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+```
+
+Add the seed between those two statements:
+
+```go
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+```
+
+`testdb` is already imported in this file (`testdb.NewDB` is called at line 47), so no import change
+is needed. Pass the same `tenantID` — a store on a different tenant would insert cleanly and leave
+the test asserting nothing about tenancy.
+
+- [ ] **Step 3: Verify by name**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 -run TestFullWebhookFlow_AllAllowlistedEvents \
+  ./internal/handlers/webhooks/... -v 2>&1 | grep -E '^(---|ok|FAIL)'
+```
+
+Expected: `--- PASS: TestFullWebhookFlow_AllAllowlistedEvents`. A `--- SKIP` means the database URL is
+wrong — fix it and re-run rather than reporting success.
+
+- [ ] **Step 4: Run the whole package and decide on the Makefile**
+
+```bash
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/handlers/webhooks/... 2>&1 | tail -5
+```
+
+Widen `make test-int` with `./internal/handlers/webhooks/...` **only** if the package is fully green.
+Append; do not replace. Verify, don't assume.
+
+- [ ] **Step 5: Verify formatting and vet**
+
+```bash
+cd services/marketplace-api
+gofmt -l . && go build ./... && go vet ./... && go vet -tags=integration ./...
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "test(webhooks): seed the store behind the fixture subscription"
+```

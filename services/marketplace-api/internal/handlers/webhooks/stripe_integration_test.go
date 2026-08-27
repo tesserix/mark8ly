@@ -39,7 +39,7 @@ const fixtureSecret = "whsec_fixture_test"
 func TestFullWebhookFlow_AllAllowlistedEvents(t *testing.T) {
 	// Fixtures live at services/marketplace-api/scripts/webhook-fixtures/
 	// relative to this file: ../../scripts/webhook-fixtures
-	dir := filepath.Join("..", "..", "scripts", "webhook-fixtures")
+	dir := filepath.Join("..", "..", "..", "scripts", "webhook-fixtures")
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err, "fixture directory must exist")
 	require.NotEmpty(t, entries, "at least one fixture file required")

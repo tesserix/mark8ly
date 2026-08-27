@@ -114,3 +114,54 @@ func TestBillingTemplatesRegisteredAfterSeeding(t *testing.T) {
 		"email.RegisterFallbacks must run AFTER SeedFromEmbedded, or the billing "+
 			"templates get seeded as published rows and go stale forever (spec §4)")
 }
+
+// TestInboxIsWiredAtBothRegisterSites is the specific guard for #280.
+//
+// TestPlatformadminRegisterSitesAgree above only proves the two Deps literals
+// AGREE; two literals that both omit Inbox agree perfectly and leave
+// GET /admin/inbox answering 404, which is exactly the state this test was
+// written to end. Naming the field explicitly is what makes the route's
+// absence a test failure rather than a silent 404.
+func TestInboxIsWiredAtBothRegisterSites(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	require.NoError(t, err)
+
+	sites := 0
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Register" {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok || pkg.Name != "platformadmin" {
+			return true
+		}
+		for _, arg := range call.Args {
+			lit, ok := arg.(*ast.CompositeLit)
+			if !ok {
+				continue
+			}
+			sites++
+			var names []string
+			for _, elt := range lit.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				if key, ok := kv.Key.(*ast.Ident); ok {
+					names = append(names, key.Name)
+				}
+			}
+			require.Containsf(t, names, "Inbox",
+				"a platformadmin.Deps literal does not set Inbox; GET /admin/inbox 404s (#280)")
+		}
+		return true
+	})
+
+	require.Equal(t, 2, sites, "expected exactly two platformadmin.Register sites")
+}

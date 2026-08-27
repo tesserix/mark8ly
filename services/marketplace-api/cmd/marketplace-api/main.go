@@ -2114,6 +2114,7 @@ func main() {
 			TrialExtender:         trial.NewExtender(trialStripe),
 			TenantTeardown:        tenantTeardownClient,
 			Purger:                tenantpurge.NewGormPurger(conn),
+			Inbox:                 inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2239,6 +2240,7 @@ func main() {
 				TrialExtender:         trial.NewExtender(trialStripe),
 				TenantTeardown:        tenantTeardownClient,
 				Purger:                tenantpurge.NewGormPurger(conn),
+				Inbox:                 inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

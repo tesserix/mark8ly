@@ -102,3 +102,32 @@ func TestAggregator_AllProvidersFailingIsAnError(t *testing.T) {
 	_, err := a.List(context.Background(), inbox.Filter{Page: 1, Limit: 10})
 	require.Error(t, err, "nothing can be rendered, so this is a real outage")
 }
+
+type recordingProvider struct {
+	kind   string
+	onList func(inbox.Filter)
+}
+
+func (r recordingProvider) Kind() string { return r.kind }
+func (r recordingProvider) List(_ context.Context, f inbox.Filter) ([]inbox.Item, error) {
+	if r.onList != nil {
+		r.onList(f)
+	}
+	return nil, nil
+}
+func (r recordingProvider) Count(context.Context, inbox.Filter) (int64, error) {
+	return 0, nil
+}
+
+func TestAggregator_SingleKindAppliesDefaultPagination(t *testing.T) {
+	var got inbox.Filter
+	rec := recordingProvider{kind: "k1", onList: func(f inbox.Filter) { got = f }}
+
+	a := inbox.NewAggregator(rec)
+	_, err := a.List(context.Background(), inbox.Filter{Kind: "k1"})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, got.Page, "a zero page must default to 1 on the delegated path")
+	require.Equal(t, 25, got.Limit,
+		"a zero limit must default, or the provider's `if f.Limit > 0` guard returns every row unbounded")
+}

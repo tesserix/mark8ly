@@ -53,11 +53,16 @@ func (a *Aggregator) List(ctx context.Context, f Filter) (Result, error) {
 			if p.Kind() != f.Kind {
 				continue
 			}
-			items, err := p.List(ctx, f)
+			// The delegated provider must receive the defaulted page/limit, not
+			// the caller's raw filter: providers guard pagination with
+			// `if f.Limit > 0`, so forwarding a zero limit returns every row.
+			d := f
+			d.Page, d.Limit = page, limit
+			items, err := p.List(ctx, d)
 			if err != nil {
 				return Result{}, fmt.Errorf("inbox: %s: %w", f.Kind, err)
 			}
-			total, err := p.Count(ctx, f)
+			total, err := p.Count(ctx, d)
 			if err != nil {
 				return Result{}, fmt.Errorf("inbox: %s count: %w", f.Kind, err)
 			}

@@ -858,6 +858,13 @@ git commit -m "feat(inbox): add the erasure_request and arbitrage_appeal provide
 - Consumes: everything from Task 1.
 - Produces: `func NewMigrationFastPathProvider(db *gorm.DB) *MigrationFastPathProvider`
 
+**Schema constraints, verified — do not re-derive:**
+- `evidence_type` is CHECK-constrained to **`('whois_domain','platform_screenshot')`**. An earlier
+  draft of this plan used `'invoice'`, which would have failed on insert.
+- `status` is CHECK-constrained to `('pending','approved','rejected')`.
+- The table has **no** foreign keys and **no** unique constraints beyond its primary key, so no parent
+  row needs seeding and repeated rows on one store are fine.
+
 **Context.** `migration.Review` is at `internal/billing/migration/repository.go:27` with `Status` defaulting to `pending`. `migration.Handler.Review` (`handler.go:148`) already implements the decision, and its route is already mounted at `cmd/marketplace-api/main.go:2148` — that is #281's part (b), already done. This provider only surfaces the pending reviews; it does not implement the decision.
 
 - [ ] **Step 1: Write the failing test**
@@ -888,7 +895,7 @@ func seedFastPath(t *testing.T, db *gorm.DB, tenantID, storeID uuid.UUID, status
 	require.NoError(t, db.Exec(`
 		INSERT INTO migration_fast_path_reviews
 			(id, tenant_id, store_id, evidence_type, evidence_url, prior_platform, status, created_at)
-		VALUES (?, ?, ?, 'invoice', 'https://example.com/e.pdf', 'shopify', ?, ?)`,
+		VALUES (?, ?, ?, 'platform_screenshot', 'https://example.com/e.png', 'shopify', ?, ?)`,
 		id, tenantID, storeID, status, createdAt,
 	).Error)
 	return id

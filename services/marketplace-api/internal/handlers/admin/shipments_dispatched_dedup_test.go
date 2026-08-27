@@ -51,6 +51,7 @@ func TestShipmentDispatchedEmailGate(t *testing.T) {
 		ShipTo:         datatypes.JSON([]byte(`{}`)),
 		CurrencyCode:   "INR",
 	}
+	seedOrderRowForSync(t, db, orderID, storeID, tenantID)
 	if err := db.Create(&ship).Error; err != nil {
 		t.Fatalf("seed shipment: %v", err)
 	}

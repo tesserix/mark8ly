@@ -20,6 +20,7 @@ func TestOrphanResolver_ResolvesStoreIDAndDispatches(t *testing.T) {
 	repo := webhookevents.NewRepository()
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,

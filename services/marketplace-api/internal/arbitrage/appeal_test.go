@@ -28,13 +28,6 @@ func (s *spyPublisher) Publish(_ context.Context, _ string, payload any) error {
 	return nil
 }
 
-func seedFlaggedAudit(t *testing.T, db interface { /* *gorm.DB */
-}, tenantID, storeID, subID uuid.UUID) {
-	t.Helper()
-	// Use the concrete *gorm.DB type in integration tests.
-	// This function is in the same build tag group as openIntegrationDB.
-}
-
 func TestAppealService_MarksAuditRowUnderReview(t *testing.T) {
 	db := openIntegrationDB(t)
 	tenantID, storeID, subID := seedPPPSubscription(t, db)

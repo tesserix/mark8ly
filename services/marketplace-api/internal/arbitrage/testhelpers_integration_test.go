@@ -12,6 +12,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
+	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
 func openIntegrationDB(t *testing.T) *gorm.DB {
@@ -51,6 +52,7 @@ func seedSubscriptionWithTier(t *testing.T, db *gorm.DB, tier subscription.Price
 	t.Helper()
 	tenantID := uuid.New()
 	storeID := uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	sub := subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,

@@ -22,6 +22,7 @@ func TestStoreSubscription_V23ColumnsRoundTrip(t *testing.T) {
 
 	tenantID := uuid.New()
 	storeID := uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	sub := subscription.StoreSubscription{
 		TenantID:              tenantID,

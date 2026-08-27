@@ -108,6 +108,10 @@ func TestShipmentsSync_AdvancesStatusLadder(t *testing.T) {
 	if err := db.Create(&cfg).Error; err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
+	// Seed the parent order before the shipment — shipments.order_id is
+	// a foreign key into orders(id), and order_events.order_id
+	// references it too.
+	seedOrderRowForSync(t, db, orderID, storeID, tenantID)
 	shipmentID := uuid.New()
 	ship := shipping.ShipmentRecord{
 		ID: shipmentID, TenantID: tenantID, StoreID: storeID, OrderID: orderID,
@@ -120,10 +124,6 @@ func TestShipmentsSync_AdvancesStatusLadder(t *testing.T) {
 	if err := db.Create(&ship).Error; err != nil {
 		t.Fatalf("seed shipment: %v", err)
 	}
-	// Also minimally seed orders so any FK constraint from order_events
-	// is satisfied. The sync doesn't read orders directly but
-	// order_events.order_id references orders(id).
-	seedOrderRowForSync(t, db, orderID, storeID, tenantID)
 
 	// Build the handler with a fake carrier that serves the ladder.
 	shippingRepo := shipping.NewRepository(db)
@@ -194,6 +194,8 @@ func TestShipmentsSync_CarrierErrorDoesNotBlockOthers(t *testing.T) {
 	// Two open shipments — A fails, B succeeds.
 	orderA := uuid.New()
 	orderB := uuid.New()
+	seedOrderRowForSync(t, db, orderA, storeID, tenantID)
+	seedOrderRowForSync(t, db, orderB, storeID, tenantID)
 	shipA := uuid.New()
 	shipB := uuid.New()
 	for _, s := range []shipping.ShipmentRecord{
@@ -210,8 +212,6 @@ func TestShipmentsSync_CarrierErrorDoesNotBlockOthers(t *testing.T) {
 			t.Fatalf("seed: %v", err)
 		}
 	}
-	seedOrderRowForSync(t, db, orderA, storeID, tenantID)
-	seedOrderRowForSync(t, db, orderB, storeID, tenantID)
 
 	shippingRepo := shipping.NewRepository(db)
 	h := admin.NewShipmentsHandler(db, shipping.NewShippingService(shippingRepo), shippingRepo, nil, nil).
@@ -273,18 +273,7 @@ func runSyncOnce(t *testing.T, h *admin.ShipmentsHandler) admin.SyncSummary {
 
 func seedStoreRowForSync(t *testing.T, db *gorm.DB, tenantID, storeID uuid.UUID) {
 	t.Helper()
-	// Direct SQL so we don't depend on the stores package test helpers —
-	// this file can run even when the stores projection table has
-	// evolved. Field list chosen to satisfy NOT NULL columns in
-	// migrations/000002_orders_initial.up.sql.
-	err := db.Exec(`
-		INSERT INTO stores (id, tenant_id, name, slug, country_code, currency_code, created_at, updated_at, storefront_customer_portal_secret)
-		VALUES (?, ?, 'Test', ?, 'IN', 'INR', now(), now(), encode(gen_random_bytes(32), 'hex'))
-		ON CONFLICT (id) DO NOTHING`,
-		storeID, tenantID, "test-"+storeID.String()[:8]).Error
-	if err != nil {
-		t.Fatalf("seed store: %v", err)
-	}
+	testdb.SeedStore(t, db, tenantID, storeID)
 }
 
 func seedOrderRowForSync(t *testing.T, db *gorm.DB, orderID, storeID, tenantID uuid.UUID) {
@@ -293,16 +282,16 @@ func seedOrderRowForSync(t *testing.T, db *gorm.DB, orderID, storeID, tenantID u
 	// sync loop doesn't read this row; we're just keeping referential
 	// integrity happy.
 	err := db.Exec(`
-		INSERT INTO orders (id, tenant_id, store_id, order_number, customer_email,
+		INSERT INTO orders (id, tenant_id, store_id, order_number, idempotency_key, customer_email,
 			status, payment_status, fulfillment_status,
 			subtotal, tax_total, shipping_total, grand_total, refunded_amount,
 			currency_code, placed_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'test@example.com',
-			'pending', 'pending', 'pending',
+		VALUES (?, ?, ?, ?, ?, 'test@example.com',
+			'pending', 'pending', 'unfulfilled',
 			'0', '0', '0', '0', '0',
 			'INR', now(), now(), now())
 		ON CONFLICT (id) DO NOTHING`,
-		orderID, tenantID, storeID, "M-SYNC-"+orderID.String()[:8]).Error
+		orderID, tenantID, storeID, "M-SYNC-"+orderID.String()[:8], "idem-"+orderID.String()).Error
 	if err != nil {
 		t.Fatalf("seed order: %v", err)
 	}

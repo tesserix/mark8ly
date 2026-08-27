@@ -33,6 +33,8 @@ func TestDowngradeRecheckCron_CommitsWhenEligible_Integration(t *testing.T) {
 	targetPlan := subscription.PlanStarter
 	targetPeriod := subscription.PeriodMonthly
 
+	testdb.SeedStore(t, db, tenantID, storeID)
+
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:                    tenantID,
 		StoreID:                     storeID,

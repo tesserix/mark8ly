@@ -65,13 +65,46 @@ test-int: ## Run integration tests against the running `make dev` stack
 	@# red target is worse than a narrow green one: this suite was dark long
 	@# enough to hide a production dunning bug (see the sql.NullTime fix in
 	@# internal/subscription/dunning/ladder.go).
+	@#
+	@# ./internal/billing/tax below is deliberately NOT ./internal/billing/tax/...
+	@# — its revalidation subpackage deadlocks (not a normal failure): Cron.Run
+	@# holds a transaction open while Svc.Submit writes the same row on a
+	@# separate pooled connection, so the two block each other forever and this
+	@# target would hang instead of failing. Filed separately; do not add the
+	@# ellipsis back until that deadlock is fixed. The missing ellipsis also
+	@# excludes internal/billing/tax/seaqueue — its status was never measured,
+	@# so it stays out until someone does.
+	@#
+	@# ./internal/subscription below is deliberately NOT ./internal/subscription/...
+	@# — recursing would pull in internal/subscription/planchange, which is
+	@# still red. Do not add the ellipsis back until that package is fixed.
+	@#
+	@# ./internal/campaignbudget/cron/... similarly leaves
+	@# internal/campaignbudget/concurrency and internal/campaignbudget/transactional
+	@# unassessed — their status was never measured, so they stay out too.
 	@cd services/marketplace-api && \
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable' \
 	  go test -tags=integration -p 1 \
+	    ./internal/apikeys/... \
 	    ./internal/audit/... \
 	    ./internal/handlers/platformadmin/... \
 	    ./internal/tenantpurge/... \
-	    ./internal/subscription/dunning/...
+	    ./internal/subscription/dunning/... \
+	    ./internal/handlers/internalsvc/... \
+	    ./internal/billing/appaddon/... \
+	    ./internal/billing/dispatch/... \
+	    ./internal/billing/tax \
+	    ./internal/billing/trial/... \
+	    ./internal/subscription \
+	    ./internal/subscription/cancel/... \
+	    ./internal/subscription/harddelete/... \
+	    ./internal/subscription/lifecycle/... \
+	    ./internal/subscription/readonly/... \
+	    ./internal/subscription/statemachine/... \
+	    ./internal/campaignbudget/cron/... \
+	    ./internal/handlers/webhooks/... \
+	    ./tests/integration/... \
+	    ./pkg/testdb/...
 
 cover: ## Coverage report for both Go services
 	@cd services/platform-api && go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -5

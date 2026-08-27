@@ -29,6 +29,7 @@ func TestPeriodSwitch_MonthlyToAnnual_Pro_CommitsImmediately(t *testing.T) {
 	tenantID := uuid.New()
 	storeID := uuid.New()
 	subID := "sub_period_switch_pro"
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:             tenantID,

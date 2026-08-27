@@ -17,6 +17,7 @@ import (
 
 func seedProSub(t *testing.T, tenantID, storeID uuid.UUID, plan subscription.SubscriptionPlan) *subscription.StoreSubscription {
 	db := testdb.NewDB(t, "store_subscriptions")
+	testdb.SeedStore(t, db, tenantID, storeID)
 	sub := &subscription.StoreSubscription{
 		ID: uuid.New(), TenantID: tenantID, StoreID: storeID,
 		StripeCustomerID: "cus_" + storeID.String()[:8],

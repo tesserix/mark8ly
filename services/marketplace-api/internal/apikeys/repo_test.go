@@ -20,7 +20,7 @@ func sampleKey(tenantID, storeID, createdBy uuid.UUID, prefix string) apikeys.AP
 		TenantID:        tenantID,
 		StoreID:         storeID,
 		KeyPrefix:       prefix,
-		KeyHash:         "$2a$12$abcdefghijklmnopqrstuv.QwertyuiopAsdfghjklZxcvbnmAsdfgh.",
+		KeyHash:         "$2a$12$abcdefghijklmnopqrstuvWXYZABCDEFGHIJKLMNOPQRSTUVwxyz0",
 		Scopes:          apikeys.ScopeSet{"products:read", "orders:read"},
 		RateLimitPerMin: 100,
 		Label:           "Integration X",

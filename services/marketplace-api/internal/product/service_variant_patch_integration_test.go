@@ -45,7 +45,7 @@ func seedProductWithTwoVariants(t *testing.T, svc *product.Service, storeID, ten
 
 func TestIntegration_Service_UpdateVariantBasics_Price(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	agg := seedProductWithTwoVariants(t, svc, storeID, tenantID)
 	v := agg.Variants[0]
@@ -65,7 +65,7 @@ func TestIntegration_Service_UpdateVariantBasics_Price(t *testing.T) {
 
 func TestIntegration_Service_UpdateVariantBasics_Inventory_TriggerSyncs(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	agg := seedProductWithTwoVariants(t, svc, storeID, tenantID)
 	v := agg.Variants[0]
@@ -95,7 +95,7 @@ func TestIntegration_Service_UpdateVariantBasics_Inventory_TriggerSyncs(t *testi
 
 func TestIntegration_Service_UpdateVariantBasics_SKUCollision(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	agg := seedProductWithTwoVariants(t, svc, storeID, tenantID)
 	firstSKU := agg.Variants[0].SKU
@@ -113,7 +113,7 @@ func TestIntegration_Service_UpdateVariantBasics_SKUCollision(t *testing.T) {
 
 func TestIntegration_Service_UpdateVariantBasics_CurrencyChange_Forbidden(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	agg := seedProductWithTwoVariants(t, svc, storeID, tenantID)
 	v := agg.Variants[0]
@@ -131,7 +131,7 @@ func TestIntegration_Service_UpdateVariantBasics_CurrencyChange_Forbidden(t *tes
 
 func TestIntegration_Service_UpdateVariantBasics_NotFound(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	agg := seedProductWithTwoVariants(t, svc, storeID, tenantID)
 

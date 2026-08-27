@@ -18,6 +18,7 @@ func TestSetPendingDowngrade_PersistsTrio(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions")
 	repo := subscription.NewRepository()
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -47,6 +48,7 @@ func TestClearPendingDowngrade_UnsetsTrio(t *testing.T) {
 	effective := time.Now().Add(24 * time.Hour)
 	studioToStarter := subscription.PlanStarter
 	monthly := subscription.PeriodMonthly
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:                    tenantID,
 		StoreID:                     storeID,
@@ -74,6 +76,7 @@ func TestCommitDowngrade_SwapsPlanAndPeriod(t *testing.T) {
 	starter := subscription.PlanStarter
 	monthly := subscription.PeriodMonthly
 	effective := time.Now().Add(-1 * time.Hour)
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:                    tenantID,
 		StoreID:                     storeID,
@@ -109,6 +112,10 @@ func TestFindPendingDowngradesReady_ReturnsExpired(t *testing.T) {
 	monthly := subscription.PeriodMonthly
 	pastDue := time.Now().Add(-1 * time.Hour)
 	future := time.Now().Add(24 * time.Hour)
+
+	testdb.SeedStore(t, db, tenantID, readyStore)
+	testdb.SeedStore(t, db, tenantID, futureStore)
+	testdb.SeedStore(t, db, tenantID, noPendingStore)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:                    tenantID,

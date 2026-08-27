@@ -160,6 +160,7 @@ func TestRepository_Create_DuplicateSlug_Errors(t *testing.T) {
 	}))
 
 	// Same store_id + same slug → must error (unique index violation)
+	require.NoError(t, tx.Exec("SAVEPOINT sp").Error)
 	err := repo.Create(context.Background(), &Page{
 		TenantID: tenantID,
 		StoreID:  storeID,
@@ -169,6 +170,7 @@ func TestRepository_Create_DuplicateSlug_Errors(t *testing.T) {
 	require.Error(t, err, "inserting duplicate (store_id, slug) should violate the unique index")
 	require.True(t, errors.Is(err, apperrors.ErrSlugTaken),
 		"expected SlugTaken, got %v", err)
+	require.NoError(t, tx.Exec("ROLLBACK TO SAVEPOINT sp").Error)
 
 	// Different store_id with same slug → must succeed
 	otherStoreID := uuid.New()

@@ -19,6 +19,7 @@ func TestMonthlyReset_SeedsAllActiveSubscriptions(t *testing.T) {
 	tenantID := uuid.New()
 	storeIDs := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
 	for _, sid := range storeIDs {
+		testdb.SeedStore(t, db, tenantID, sid)
 		require.NoError(t, db.Exec(`
 			INSERT INTO store_subscriptions (tenant_id, store_id, stripe_customer_id, plan, status)
 			VALUES ($1, $2, $3, 'starter', 'active')`, tenantID, sid, "cus_"+sid.String()).Error)
@@ -43,6 +44,7 @@ func TestMonthlyReset_IdempotentReRun(t *testing.T) {
 	db := testdb.NewDB(t, "campaign_email_budget", "store_subscriptions")
 	tenantID := uuid.New()
 	storeID := uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Exec(`
 		INSERT INTO store_subscriptions (tenant_id, store_id, stripe_customer_id, plan, status)
 		VALUES ($1, $2, 'cus_x', 'starter', 'active')`, tenantID, storeID).Error)
@@ -66,6 +68,8 @@ func TestMonthlyReset_SkipsNonActiveStatuses(t *testing.T) {
 	// expired / store_closed / pending_hard_delete subscriptions get no row.
 	db := testdb.NewDB(t, "campaign_email_budget", "store_subscriptions")
 	tenantID, activeID, expiredID := uuid.New(), uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, activeID)
+	testdb.SeedStore(t, db, tenantID, expiredID)
 	require.NoError(t, db.Exec(`
 		INSERT INTO store_subscriptions (tenant_id, store_id, stripe_customer_id, plan, status)
 		VALUES ($1, $2, 'cus_a', 'starter', 'active'),
@@ -86,6 +90,8 @@ func TestMonthlyReset_SkipsPro_Negotiated(t *testing.T) {
 	// Pro stores are excluded — ops sets limit_set manually.
 	db := testdb.NewDB(t, "campaign_email_budget", "store_subscriptions")
 	tenantID, proID, starterID := uuid.New(), uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, proID)
+	testdb.SeedStore(t, db, tenantID, starterID)
 	require.NoError(t, db.Exec(`
 		INSERT INTO store_subscriptions (tenant_id, store_id, stripe_customer_id, plan, status)
 		VALUES ($1, $2, 'cus_p', 'pro', 'active'),

@@ -26,6 +26,7 @@ func TestIntegration_PARBypass(t *testing.T) {
 	repo := subscription.NewRepository()
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -68,6 +69,7 @@ func TestIntegration_ExpiredBlocked(t *testing.T) {
 	repo := subscription.NewRepository()
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,

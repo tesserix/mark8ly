@@ -34,15 +34,7 @@ func fakeStripeOK() *fakeStripe {
 func seedStores(t *testing.T, db *gorm.DB, tenantID uuid.UUID, count int) {
 	t.Helper()
 	for i := 0; i < count; i++ {
-		storeID := uuid.New()
-		slug := "test-store-" + uuid.NewString()[:8]
-		if err := db.Exec(
-			`INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at)
-			 VALUES (?, ?, ?, 'Test Store', 'US', 'USD', 'UTC', 'active', now())`,
-			storeID, tenantID, slug,
-		).Error; err != nil {
-			t.Fatalf("seedStores: insert %d: %v", i, err)
-		}
+		testdb.SeedStore(t, db, tenantID, uuid.New())
 	}
 }
 
@@ -53,6 +45,7 @@ func TestExecute_Upgrade_StarterToStudio_CommitsImmediately(t *testing.T) {
 	tenantID := uuid.New()
 	storeID := uuid.New()
 	subID := "sub_upgrade_test"
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:             tenantID,
@@ -106,6 +99,7 @@ func TestExecute_Upgrade_Rejected_WhenStatusReadOnly(t *testing.T) {
 
 	tenantID := uuid.New()
 	storeID := uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:           tenantID,
@@ -142,6 +136,7 @@ func TestExecute_RejectsCurrencyChange(t *testing.T) {
 	tenantID := uuid.New()
 	storeID := uuid.New()
 	subID := "sub_currency_test"
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:             tenantID,
@@ -182,6 +177,7 @@ func TestExecute_Downgrade_StudioToStarter_ParksPending(t *testing.T) {
 	storeID := uuid.New()
 	subID := "sub_downgrade_test"
 	periodEnd := time.Now().Add(15 * 24 * time.Hour)
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:             tenantID,
@@ -241,6 +237,7 @@ func TestExecute_Downgrade_StudioToStarter_OverQuota_Rejected(t *testing.T) {
 	storeID := uuid.New()
 	subID := "sub_overquota_test"
 	periodEnd := time.Now().Add(15 * 24 * time.Hour)
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:             tenantID,

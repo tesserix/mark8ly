@@ -11,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/orderrefund"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
@@ -233,7 +234,7 @@ func TestGatewayFor_ActiveConfig(t *testing.T) {
 	seedStore(t, db, storeID, tenantID)
 	seedGatewayConfig(t, db, tenantID, storeID, "stripe", true)
 
-	r := orderrefund.NewResolver(db)
+	r := orderrefund.NewResolver(db).WithEncryptor(crypto.NewNoopEncryptor())
 	gw, err := r.GatewayFor(context.Background(), storeID, "stripe")
 	if err != nil {
 		t.Fatalf("GatewayFor: %v", err)

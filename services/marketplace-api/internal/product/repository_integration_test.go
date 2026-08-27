@@ -26,7 +26,7 @@ import (
 
 const testLocationID = "00000000-0000-0000-0000-000000000001"
 
-func seedStore(t *testing.T, db *gorm.DB) (storeID, tenantID string) {
+func seedStore(t *testing.T, db *gorm.DB) (storeID, tenantID, vendorID string) {
 	t.Helper()
 	storeID = uuid.NewString()
 	tenantID = uuid.NewString()
@@ -43,17 +43,19 @@ func seedStore(t *testing.T, db *gorm.DB) (storeID, tenantID string) {
 	if err := db.Create(s).Error; err != nil {
 		t.Fatalf("seed store: %v", err)
 	}
+	vendorID = testdb.SeedVendor(t, db, uuid.MustParse(tenantID)).String()
 	return
 }
 
 // minimalAggregate builds a product with 0 options + 1 default variant.
-func minimalAggregate(storeID, tenantID, handle, sku string) *product.Aggregate {
+func minimalAggregate(storeID, tenantID, vendorID, handle, sku string) *product.Aggregate {
 	variantID := uuid.NewString()
 	return &product.Aggregate{
 		Product: product.Product{
 			ID:       uuid.NewString(),
 			TenantID: tenantID,
 			StoreID:  storeID,
+			VendorID: &vendorID,
 			Handle:   handle,
 			Title:    "Test " + handle,
 			Status:   product.StatusDraft,
@@ -71,7 +73,7 @@ func minimalAggregate(storeID, tenantID, handle, sku string) *product.Aggregate 
 
 // richAggregate builds a product with 2 options × 2 values × 2 variants +
 // 2 media + 1 category link. Used by the ListAdmin query-count gate.
-func richAggregate(t *testing.T, tx *gorm.DB, storeID, tenantID, handle, skuPrefix string, categoryID string) *product.Aggregate {
+func richAggregate(t *testing.T, tx *gorm.DB, storeID, tenantID, vendorID, handle, skuPrefix string, categoryID string) *product.Aggregate {
 	t.Helper()
 	opt1ID := uuid.NewString()
 	opt2ID := uuid.NewString()
@@ -110,6 +112,7 @@ func richAggregate(t *testing.T, tx *gorm.DB, storeID, tenantID, handle, skuPref
 			ID:       uuid.NewString(),
 			TenantID: tenantID,
 			StoreID:  storeID,
+			VendorID: &vendorID,
 			Handle:   handle,
 			Title:    "Rich " + handle,
 			Status:   product.StatusDraft,
@@ -188,8 +191,8 @@ func TestIntegration_ProductRepo_CreateAggregate_MinimalRoundTrip(t *testing.T) 
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
-	agg := minimalAggregate(storeID, tenantID, "linen-shirt", "LINEN-1")
+	storeID, tenantID, vendorID := seedStore(t, tx)
+	agg := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-1")
 	if err := repo.CreateAggregateInTx(ctx, tx, agg); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -213,8 +216,8 @@ func TestIntegration_ProductRepo_GetByIDForStore_CrossTenant_NotFound(t *testing
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
-	agg := minimalAggregate(storeID, tenantID, "linen-shirt", "LINEN-1")
+	storeID, tenantID, vendorID := seedStore(t, tx)
+	agg := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-1")
 	if err := repo.CreateAggregateInTx(ctx, tx, agg); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -232,13 +235,13 @@ func TestIntegration_ProductRepo_CreateAggregate_HandleCollision_Returns_HandleT
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
-	first := minimalAggregate(storeID, tenantID, "linen-shirt", "LINEN-1")
+	storeID, tenantID, vendorID := seedStore(t, tx)
+	first := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-1")
 	if err := repo.CreateAggregateInTx(ctx, tx, first); err != nil {
 		t.Fatalf("first: %v", err)
 	}
 
-	dup := minimalAggregate(storeID, tenantID, "linen-shirt", "LINEN-2")
+	dup := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-2")
 	err := withSavepoint(t, tx, func() error {
 		return repo.CreateAggregateInTx(ctx, tx, dup)
 	})
@@ -261,13 +264,13 @@ func TestIntegration_ProductRepo_CreateAggregate_SKUCollision_Returns_SKUTaken(t
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
-	first := minimalAggregate(storeID, tenantID, "linen-shirt", "DUPED-SKU")
+	storeID, tenantID, vendorID := seedStore(t, tx)
+	first := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "DUPED-SKU")
 	if err := repo.CreateAggregateInTx(ctx, tx, first); err != nil {
 		t.Fatalf("first: %v", err)
 	}
 
-	dup := minimalAggregate(storeID, tenantID, "cotton-shirt", "DUPED-SKU")
+	dup := minimalAggregate(storeID, tenantID, vendorID, "cotton-shirt", "DUPED-SKU")
 	err := withSavepoint(t, tx, func() error {
 		return repo.CreateAggregateInTx(ctx, tx, dup)
 	})
@@ -283,8 +286,8 @@ func TestIntegration_ProductRepo_SoftDeleteThenRecreate_SameHandle_Succeeds(t *t
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
-	first := minimalAggregate(storeID, tenantID, "linen-shirt", "LINEN-1")
+	storeID, tenantID, vendorID := seedStore(t, tx)
+	first := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-1")
 	if err := repo.CreateAggregateInTx(ctx, tx, first); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -293,7 +296,7 @@ func TestIntegration_ProductRepo_SoftDeleteThenRecreate_SameHandle_Succeeds(t *t
 		t.Fatalf("soft delete: %v", err)
 	}
 
-	recreated := minimalAggregate(storeID, tenantID, "linen-shirt", "LINEN-2")
+	recreated := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-2")
 	if err := repo.CreateAggregateInTx(ctx, tx, recreated); err != nil {
 		t.Fatalf("recreate: %v", err)
 	}
@@ -306,19 +309,19 @@ func TestIntegration_ProductRepo_UnDeleteSoftDeletedRow_Returns_HandleTaken(t *t
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, vendorID := seedStore(t, tx)
 
 	// 1. Seed a row that's already soft-deleted at handle "linen-shirt".
 	softID := uuid.NewString()
 	if err := tx.Exec(`
-		INSERT INTO products (id, tenant_id, store_id, handle, title, status, deleted_at)
-		VALUES (?, ?, ?, ?, ?, 'draft', now())`,
-		softID, tenantID, storeID, "linen-shirt", "Deleted Linen").Error; err != nil {
+		INSERT INTO products (id, tenant_id, store_id, vendor_id, handle, title, status, deleted_at)
+		VALUES (?, ?, ?, ?, ?, ?, 'draft', now())`,
+		softID, tenantID, storeID, vendorID, "linen-shirt", "Deleted Linen").Error; err != nil {
 		t.Fatalf("seed deleted: %v", err)
 	}
 
 	// 2. Insert a live row with the same handle (allowed by the partial index).
-	live := minimalAggregate(storeID, tenantID, "linen-shirt", "LINEN-LIVE")
+	live := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-LIVE")
 	if err := repo.CreateAggregateInTx(ctx, tx, live); err != nil {
 		t.Fatalf("create live: %v", err)
 	}
@@ -350,12 +353,12 @@ func TestIntegration_ProductRepo_ListAdmin_QueryCount_BelowCeiling(t *testing.T)
 	tx := testdb.NewTx(t)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, vendorID := seedStore(t, tx)
 	catID := seedCategory(t, tx, storeID, tenantID, "apparel")
 
 	repo := product.NewRepository(tx)
 	for i := 0; i < 3; i++ {
-		agg := richAggregate(t, tx, storeID, tenantID,
+		agg := richAggregate(t, tx, storeID, tenantID, vendorID,
 			fmt.Sprintf("prod-%d", i), fmt.Sprintf("SKU%d", i), catID)
 		if err := repo.CreateAggregateInTx(ctx, tx, agg); err != nil {
 			t.Fatalf("create %d: %v", i, err)
@@ -394,11 +397,11 @@ func TestIntegration_ProductRepo_ListPublished_ExcludesDraftArchivedDeletedUnpub
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, vendorID := seedStore(t, tx)
 
 	// A: active + published → included
-	now := time.Now()
-	a := minimalAggregate(storeID, tenantID, "visible", "V-1")
+	now := time.Now().Add(-time.Hour)
+	a := minimalAggregate(storeID, tenantID, vendorID, "visible", "V-1")
 	a.Product.Status = product.StatusActive
 	a.Product.PublishedAt = &now
 	if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {
@@ -406,13 +409,13 @@ func TestIntegration_ProductRepo_ListPublished_ExcludesDraftArchivedDeletedUnpub
 	}
 
 	// B: draft → excluded
-	b := minimalAggregate(storeID, tenantID, "draft", "D-1")
+	b := minimalAggregate(storeID, tenantID, vendorID, "draft", "D-1")
 	if err := repo.CreateAggregateInTx(ctx, tx, b); err != nil {
 		t.Fatalf("b: %v", err)
 	}
 
 	// C: archived → excluded. Spec forbids archived+published combo.
-	c := minimalAggregate(storeID, tenantID, "archived", "A-1")
+	c := minimalAggregate(storeID, tenantID, vendorID, "archived", "A-1")
 	c.Product.Status = product.StatusArchived
 	if err := repo.CreateAggregateInTx(ctx, tx, c); err != nil {
 		t.Fatalf("c: %v", err)
@@ -420,7 +423,7 @@ func TestIntegration_ProductRepo_ListPublished_ExcludesDraftArchivedDeletedUnpub
 
 	// D: soft-deleted → excluded. Must be active+published first to
 	// prove deleted_at alone filters it out.
-	d := minimalAggregate(storeID, tenantID, "deleted", "DD-1")
+	d := minimalAggregate(storeID, tenantID, vendorID, "deleted", "DD-1")
 	d.Product.Status = product.StatusActive
 	d.Product.PublishedAt = &now
 	if err := repo.CreateAggregateInTx(ctx, tx, d); err != nil {
@@ -453,8 +456,8 @@ func TestIntegration_ProductRepo_UpdateVariantStockInTx_TriggerUpdatesInventoryQ
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
-	agg := minimalAggregate(storeID, tenantID, "linen-shirt", "LINEN-1")
+	storeID, tenantID, vendorID := seedStore(t, tx)
+	agg := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-1")
 	if err := repo.CreateAggregateInTx(ctx, tx, agg); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -492,8 +495,8 @@ func TestIntegration_ProductRepo_ReverseDirection_ProductVariantsInventory_DoesN
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
-	agg := minimalAggregate(storeID, tenantID, "linen-shirt", "LINEN-1")
+	storeID, tenantID, vendorID := seedStore(t, tx)
+	agg := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-1")
 	if err := repo.CreateAggregateInTx(ctx, tx, agg); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -528,14 +531,14 @@ func TestIntegration_ProductRepo_ApplyVariantDiffInTx_AddUpdateRemove(t *testing
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, vendorID := seedStore(t, tx)
 
 	// Product with two variants to start.
 	v1ID := uuid.NewString()
 	v2ID := uuid.NewString()
 	agg := &product.Aggregate{
 		Product: product.Product{
-			ID: uuid.NewString(), TenantID: tenantID, StoreID: storeID,
+			ID: uuid.NewString(), TenantID: tenantID, StoreID: storeID, VendorID: &vendorID,
 			Handle: "diff-test", Title: "Diff Test", Status: product.StatusDraft,
 		},
 		Variants: []product.Variant{
@@ -597,12 +600,12 @@ func TestIntegration_ProductRepo_ReplaceCategoryLinksInTx_AddsAndRemoves(t *test
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, vendorID := seedStore(t, tx)
 	cat1 := seedCategory(t, tx, storeID, tenantID, "cat-1")
 	cat2 := seedCategory(t, tx, storeID, tenantID, "cat-2")
 	cat3 := seedCategory(t, tx, storeID, tenantID, "cat-3")
 
-	agg := minimalAggregate(storeID, tenantID, "cat-test", "C-1")
+	agg := minimalAggregate(storeID, tenantID, vendorID, "cat-test", "C-1")
 	agg.CategoryLinks = []product.ProductCategory{{CategoryID: cat1}, {CategoryID: cat2}}
 	if err := repo.CreateAggregateInTx(ctx, tx, agg); err != nil {
 		t.Fatalf("create: %v", err)
@@ -632,8 +635,8 @@ func TestIntegration_ProductRepo_ReplaceMediaInTx_PreservesByStorageKey(t *testi
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
-	agg := minimalAggregate(storeID, tenantID, "media-test", "M-1")
+	storeID, tenantID, vendorID := seedStore(t, tx)
+	agg := minimalAggregate(storeID, tenantID, vendorID, "media-test", "M-1")
 	agg.Media = []product.Media{
 		{ID: uuid.NewString(), URL: "https://a", StorageKey: "key-a", MediaType: product.MediaTypeImage, Position: 0},
 		{ID: uuid.NewString(), URL: "https://b", StorageKey: "key-b", MediaType: product.MediaTypeImage, Position: 1},
@@ -701,7 +704,7 @@ func TestIntegration_ProductRepo_ConcurrentCreate_SameHandle_OneWinsOneFails(t *
 	)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, db)
+	storeID, tenantID, vendorID := seedStore(t, db)
 	repo := product.NewRepository(db)
 
 	var wg sync.WaitGroup
@@ -712,7 +715,7 @@ func TestIntegration_ProductRepo_ConcurrentCreate_SameHandle_OneWinsOneFails(t *
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			agg := minimalAggregate(storeID, tenantID, "race-handle",
+			agg := minimalAggregate(storeID, tenantID, vendorID, "race-handle",
 				fmt.Sprintf("RACE-%d", idx))
 			<-start
 			err := db.Transaction(func(tx *gorm.DB) error {
@@ -753,13 +756,13 @@ func TestIntegration_ProductRepo_ListPublished_LeakRegression(t *testing.T) {
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, vendorID := seedStore(t, tx)
 
 	past := time.Now().Add(-1 * time.Hour)
 	future := time.Now().Add(24 * time.Hour)
 
 	// 1. active + published in the past → INCLUDED
-	good := minimalAggregate(storeID, tenantID, "visible", "VIS-1")
+	good := minimalAggregate(storeID, tenantID, vendorID, "visible", "VIS-1")
 	good.Product.Status = product.StatusActive
 	good.Product.PublishedAt = &past
 	if err := repo.CreateAggregateInTx(ctx, tx, good); err != nil {
@@ -767,20 +770,20 @@ func TestIntegration_ProductRepo_ListPublished_LeakRegression(t *testing.T) {
 	}
 
 	// 2. draft → EXCLUDED
-	draft := minimalAggregate(storeID, tenantID, "draft-p", "DR-1")
+	draft := minimalAggregate(storeID, tenantID, vendorID, "draft-p", "DR-1")
 	if err := repo.CreateAggregateInTx(ctx, tx, draft); err != nil {
 		t.Fatalf("draft: %v", err)
 	}
 
 	// 3. archived → EXCLUDED
-	arch := minimalAggregate(storeID, tenantID, "arch-p", "AR-1")
+	arch := minimalAggregate(storeID, tenantID, vendorID, "arch-p", "AR-1")
 	arch.Product.Status = product.StatusArchived
 	if err := repo.CreateAggregateInTx(ctx, tx, arch); err != nil {
 		t.Fatalf("archived: %v", err)
 	}
 
 	// 4. active + published_at in the future → EXCLUDED
-	sched := minimalAggregate(storeID, tenantID, "sched-p", "SC-1")
+	sched := minimalAggregate(storeID, tenantID, vendorID, "sched-p", "SC-1")
 	sched.Product.Status = product.StatusActive
 	sched.Product.PublishedAt = &future
 	if err := repo.CreateAggregateInTx(ctx, tx, sched); err != nil {
@@ -788,7 +791,7 @@ func TestIntegration_ProductRepo_ListPublished_LeakRegression(t *testing.T) {
 	}
 
 	// 5. active + published + soft-deleted → EXCLUDED
-	del := minimalAggregate(storeID, tenantID, "del-p", "DL-1")
+	del := minimalAggregate(storeID, tenantID, vendorID, "del-p", "DL-1")
 	del.Product.Status = product.StatusActive
 	del.Product.PublishedAt = &past
 	if err := repo.CreateAggregateInTx(ctx, tx, del); err != nil {
@@ -819,7 +822,7 @@ func TestIntegration_ProductRepo_ListPublished_WithCategorySlug_Filters(t *testi
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, vendorID := seedStore(t, tx)
 	past := time.Now().Add(-1 * time.Hour)
 
 	apparelID := seedCategory(t, tx, storeID, tenantID, "apparel")
@@ -827,7 +830,7 @@ func TestIntegration_ProductRepo_ListPublished_WithCategorySlug_Filters(t *testi
 	bagsID := seedCategory(t, tx, storeID, tenantID, "bags")
 
 	mk := func(handle, sku, catID string) *product.Aggregate {
-		a := minimalAggregate(storeID, tenantID, handle, sku)
+		a := minimalAggregate(storeID, tenantID, vendorID, handle, sku)
 		a.Product.Status = product.StatusActive
 		a.Product.PublishedAt = &past
 		a.CategoryLinks = []product.ProductCategory{{CategoryID: catID}}
@@ -866,9 +869,9 @@ func TestIntegration_ProductRepo_GetPublishedByHandle_HappyPath(t *testing.T) {
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, vendorID := seedStore(t, tx)
 	past := time.Now().Add(-1 * time.Hour)
-	a := minimalAggregate(storeID, tenantID, "linen-shirt", "LS-1")
+	a := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LS-1")
 	a.Product.Status = product.StatusActive
 	a.Product.PublishedAt = &past
 	if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {
@@ -892,8 +895,8 @@ func TestIntegration_ProductRepo_GetPublishedByHandle_Draft_Returns_NotFound(t *
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
-	a := minimalAggregate(storeID, tenantID, "linen-shirt", "LS-1")
+	storeID, tenantID, vendorID := seedStore(t, tx)
+	a := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LS-1")
 	if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -909,9 +912,9 @@ func TestIntegration_ProductRepo_GetPublishedByHandle_SoftDeleted_Returns_NotFou
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, vendorID := seedStore(t, tx)
 	past := time.Now().Add(-1 * time.Hour)
-	a := minimalAggregate(storeID, tenantID, "linen-shirt", "LS-1")
+	a := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LS-1")
 	a.Product.Status = product.StatusActive
 	a.Product.PublishedAt = &past
 	if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {
@@ -932,11 +935,11 @@ func TestIntegration_ProductRepo_GetPublishedByHandle_CrossStore_NotFound(t *tes
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeA, tenantA := seedStore(t, tx)
-	storeB, _ := seedStore(t, tx)
+	storeA, tenantA, vendorA := seedStore(t, tx)
+	storeB, _, _ := seedStore(t, tx)
 	past := time.Now().Add(-1 * time.Hour)
 
-	a := minimalAggregate(storeA, tenantA, "linen-shirt", "LS-1")
+	a := minimalAggregate(storeA, tenantA, vendorA, "linen-shirt", "LS-1")
 	a.Product.Status = product.StatusActive
 	a.Product.PublishedAt = &past
 	if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {
@@ -954,9 +957,9 @@ func TestIntegration_ProductRepo_GetPublishedByHandle_Archived_NotFound(t *testi
 	repo := product.NewRepository(tx)
 	ctx := context.Background()
 
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, vendorID := seedStore(t, tx)
 	past := time.Now().Add(-1 * time.Hour)
-	a := minimalAggregate(storeID, tenantID, "linen-shirt", "LS-1")
+	a := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LS-1")
 	a.Product.Status = product.StatusArchived
 	a.Product.PublishedAt = &past
 	if err := repo.CreateAggregateInTx(ctx, tx, a); err != nil {

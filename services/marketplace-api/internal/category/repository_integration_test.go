@@ -17,16 +17,11 @@ import (
 
 func insertStoreRow(t *testing.T, tx *gorm.DB) (storeID, tenantID string) {
 	t.Helper()
-	storeID = uuid.NewString()
-	tenantID = uuid.NewString()
-	err := tx.Exec(`
-		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, synced_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, now())`,
-		storeID, tenantID, "cat-test-"+storeID[:8], "Test Store", "US", "USD", "UTC", "active").Error
-	if err != nil {
-		t.Fatalf("insert store: %v", err)
-	}
-	return
+	storeUUID := uuid.New()
+	tenantUUID := uuid.New()
+	testdb.SeedStore(t, tx, tenantUUID, storeUUID)
+	testdb.SeedVendor(t, tx, tenantUUID)
+	return storeUUID.String(), tenantUUID.String()
 }
 
 func newCategory(storeID, tenantID, slug string) *category.Category {
@@ -199,10 +194,11 @@ func TestIntegration_Category_HasProducts_TrueAndFalse(t *testing.T) {
 
 	productID := uuid.NewString()
 	handle := "p-" + productID[:8]
+	vendorID := testdb.SeedVendor(t, tx, uuid.MustParse(tenantID))
 	if err := tx.Exec(`
-		INSERT INTO products (id, tenant_id, store_id, handle, title, status)
-		VALUES (?, ?, ?, ?, ?, 'draft')`,
-		productID, tenantID, storeID, handle, "Test Product").Error; err != nil {
+		INSERT INTO products (id, tenant_id, store_id, vendor_id, handle, title, status)
+		VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
+		productID, tenantID, storeID, vendorID, handle, "Test Product").Error; err != nil {
 		t.Fatalf("insert product: %v", err)
 	}
 	if err := tx.Exec(`

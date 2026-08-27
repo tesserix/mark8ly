@@ -64,12 +64,12 @@ func (c *visibilityEmailClient) Send(_ context.Context, _ email.TemplateID, to s
 func TestInvoicePaid_TrialBilled_SentAfterTransactionCommits(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
 
-	storeID := uuid.New()
-	seedStore(t, db, storeID)
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	addr := "merchant@example.com"
 	customerID := "cus_" + uuid.NewString()[:12]
 	sub := subscription.StoreSubscription{
-		TenantID:         uuid.New(),
+		TenantID:         tenantID,
 		StoreID:          storeID,
 		StripeCustomerID: customerID,
 		Plan:             subscription.PlanStarter,

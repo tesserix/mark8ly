@@ -16,15 +16,24 @@ type SessionLister interface {
 
 // OnboardingProvider surfaces abandoned onboarding sessions.
 //
-// Upstream's ListSessions has no ordering parameter (it orders created_at
-// DESC, hardcoded) and no way to request "oldest abandoned first" directly.
-// Narrowing to Abandoned=true (see List) shrinks the population this provider
-// asks for enormously, making it far more likely the requested window
-// contains the genuinely-longest-waiting sessions, and this provider sorts
-// what it gets by WaitingSince ascending before returning it. But if abandoned
-// sessions ever exceed the page size requested from upstream, the oldest
-// ones can still be unreachable — this is a real, currently-unclosed gap in
-// the underlying API, not something this provider can paper over.
+// Upstream's ListSessions used to order created_at DESC with no way to ask
+// for anything else, which put the genuinely-stalled sessions — the least
+// recently active — deepest in the result set, exactly where a first-page
+// request could not see them. #406 added an ordering parameter; fetchStalled
+// now requests `last_activity_at_asc`, so the oldest rows arrive in the
+// window rather than behind it.
+//
+// Two things still shape what this provider can promise:
+//
+//   - Narrowing to Abandoned=true shrinks the population, and List's
+//     client-side sort by WaitingSince still runs. Both are now
+//     belt-and-braces rather than load-bearing: a client-side sort reorders
+//     the rows it was given, it does not change which rows it was given.
+//   - Count still saturates at MaxAggregateItems because there is no
+//     filtered-count endpoint upstream, so pagination.total under-reports
+//     beyond that bound. That is the second half of #406 and is deliberately
+//     still open — a total that is bounded and explicable beats one that
+//     changes as an operator pages forward.
 type OnboardingProvider struct {
 	client             SessionLister
 	idleThresholdHours float64
@@ -53,6 +62,13 @@ func (p *OnboardingProvider) fetchStalled(ctx context.Context, f Filter, limit i
 		Limit:     limit,
 		Status:    f.Status,
 		Abandoned: &abandoned,
+		// Ask upstream for least-recently-active first (#406). Without this
+		// the remote orders created_at DESC, so page 1 returns the NEWEST
+		// sessions and the genuinely stalled ones — the rows this queue
+		// exists to surface — sit deepest in the result set, off the window
+		// entirely. List's client-side sort cannot recover them: it reorders
+		// what it was given, it does not change what it was given.
+		Order: "last_activity_at_asc",
 	})
 	if err != nil {
 		return nil, err

@@ -188,3 +188,44 @@ func TestWindowParamsAreURLEncoded(t *testing.T) {
 	require.Contains(t, gotFrom, "+05:30")
 	require.Contains(t, gotTo, "+05:30")
 }
+
+// #406: the inbox needs the LEAST recently active sessions, and upstream
+// defaults to created_at DESC. The ordering has to be requested of the remote
+// — sorting the response client-side can only reorder rows already returned,
+// and the rows the inbox wants are the ones the default ordering pushes off
+// the first page entirely.
+func TestListSessionsSendsOrderWhenSet(t *testing.T) {
+	var gotOrder string
+	var sawParam bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotOrder = r.URL.Query().Get("order")
+		_, sawParam = r.URL.Query()["order"]
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"limit":50,"total":0}}`))
+	}))
+	defer srv.Close()
+
+	c := onboardingfunnel.NewClient(srv.URL, "s", srv.Client())
+	_, err := c.ListSessions(context.Background(), onboardingfunnel.SessionsParams{
+		Order: "last_activity_at_asc",
+	})
+	require.NoError(t, err)
+	require.True(t, sawParam, "order must be sent upstream")
+	require.Equal(t, "last_activity_at_asc", gotOrder)
+}
+
+// An unset Order must not send the parameter at all, so upstream applies its
+// own default. Sending order="" would rely on the remote treating empty as
+// absent, which is a second contract nobody wrote down.
+func TestListSessionsOmitsOrderWhenUnset(t *testing.T) {
+	var sawParam bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, sawParam = r.URL.Query()["order"]
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"limit":50,"total":0}}`))
+	}))
+	defer srv.Close()
+
+	c := onboardingfunnel.NewClient(srv.URL, "s", srv.Client())
+	_, err := c.ListSessions(context.Background(), onboardingfunnel.SessionsParams{})
+	require.NoError(t, err)
+	require.False(t, sawParam, "an unset Order must not send the parameter")
+}

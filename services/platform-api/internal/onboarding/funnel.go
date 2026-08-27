@@ -94,6 +94,55 @@ type FunnelFilter struct {
 	// exposed as an HTTP query parameter by Task 2's handlers — a console
 	// caller able to set it could time-travel the funnel.
 	AsOf time.Time
+	// Order selects one of a fixed set of orderings for ListSessions. The
+	// zero value is the historical `created_at DESC`, so every existing
+	// caller is unaffected (#406). GetFunnel ignores this field.
+	Order SessionOrder
+}
+
+// SessionOrder names a permitted ordering for ListSessions.
+//
+// This is an ALLOWLIST KEY, never a SQL fragment. The value arrives from an
+// HTTP query parameter, and sessionOrderSQL below is the only place a key
+// becomes SQL — an unrecognised key yields the default rather than reaching
+// the query builder as text.
+type SessionOrder string
+
+const (
+	// SessionOrderCreatedAtDesc is the zero value and the historical
+	// behaviour: newest sessions first, which is what a funnel view wants.
+	SessionOrderCreatedAtDesc SessionOrder = ""
+
+	// SessionOrderLastActivityAsc orders least-recently-active first.
+	//
+	// This exists for mark8ly's /admin/inbox (#406), which surfaces stalled
+	// onboarding as work waiting on a human. Under the default ordering, page
+	// 1 returns the NEWEST sessions, and the genuinely stalled ones — the
+	// least recently active — sit deepest in the result set, so the consumer
+	// could not see the rows it exists to show. Ordering in the database is
+	// what makes them reachable; a client-side sort can only reorder rows it
+	// was already given.
+	SessionOrderLastActivityAsc SessionOrder = "last_activity_at_asc"
+)
+
+// sessionOrderSQL maps an allowlisted key to a fixed ORDER BY clause.
+//
+// Both columns are NOT NULL, so no NULLS FIRST/LAST qualifier is needed. `id`
+// breaks ties so paging is stable: without it, two rows sharing a timestamp
+// can swap between pages and a consumer sees one twice and another never.
+var sessionOrderSQL = map[SessionOrder]string{
+	SessionOrderCreatedAtDesc:   "created_at DESC, id DESC",
+	SessionOrderLastActivityAsc: "last_activity_at ASC, id ASC",
+}
+
+// orderClause resolves the filter's ordering, falling back to the default for
+// anything unrecognised. Callers must use this rather than reading Order
+// directly — it is the boundary that keeps caller-supplied text out of SQL.
+func (f FunnelFilter) orderClause() string {
+	if clause, ok := sessionOrderSQL[f.Order]; ok {
+		return clause
+	}
+	return sessionOrderSQL[SessionOrderCreatedAtDesc]
 }
 
 // FunnelCounts is one window's worth of funnel aggregates. Completed +
@@ -319,7 +368,7 @@ func (r *gormRepository) ListSessions(ctx context.Context, f FunnelFilter) ([]Se
 			fmt.Sprintf("(%s) AS abandoned", abandoned),
 			fmt.Sprintf("(%s) AS idle_hours", idleHours),
 		).
-		Order("created_at DESC").
+		Order(f.orderClause()).
 		Offset((page - 1) * limit).
 		Limit(limit).
 		Scan(&rawRows).Error

@@ -244,6 +244,13 @@ func parseFunnelFilter(c *gin.Context) FunnelFilter {
 			f.Abandoned = &b
 		}
 	}
+	// `order` is an allowlist KEY, not a SQL fragment (#406). It is passed
+	// through unvalidated on purpose: FunnelFilter.orderClause resolves
+	// unrecognised keys to the default, so validating here would duplicate
+	// that decision in a second place and let the two drift. Rejecting an
+	// unknown value would also break the convention every other parameter in
+	// this function follows — malformed input takes the default.
+	f.Order = SessionOrder(strings.TrimSpace(c.Query("order")))
 	return f
 }
 

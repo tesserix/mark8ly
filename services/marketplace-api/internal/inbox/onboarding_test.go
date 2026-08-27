@@ -182,3 +182,40 @@ func TestOnboardingProvider_ListForwardsPage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, c.gotP.Page, "a zero page must default to 1")
 }
+
+// #406: this provider needs the LEAST recently active sessions, and upstream
+// defaults to created_at DESC. Both List and Count must ask for the ordering,
+// not just sort what comes back.
+//
+// The client-side sort in List stays, but it is now belt-and-braces rather
+// than load-bearing: it can only reorder rows the remote already returned, so
+// on its own it never made an off-page stalled session reachable.
+func TestOnboardingProvider_RequestsOldestActivityFirst(t *testing.T) {
+	now := time.Now().UTC()
+	res := &onboardingfunnel.SessionsResult{
+		Sessions: []onboardingfunnel.Session{
+			{ID: "s1", Email: "a@example.com", LastActivityAt: now.Add(-3000 * time.Hour), IdleHours: 3000},
+		},
+	}
+
+	for _, tc := range []struct {
+		name string
+		call func(p *inbox.OnboardingProvider) error
+	}{
+		{"List", func(p *inbox.OnboardingProvider) error {
+			_, err := p.List(context.Background(), inbox.Filter{Limit: 10})
+			return err
+		}},
+		{"Count", func(p *inbox.OnboardingProvider) error {
+			_, err := p.Count(context.Background(), inbox.Filter{Limit: 10})
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &recordingSessions{res: res}
+			require.NoError(t, tc.call(inbox.NewOnboardingProvider(c, 48)))
+			require.Equal(t, "last_activity_at_asc", c.gotP.Order,
+				"%s must request oldest-activity-first from upstream", tc.name)
+		})
+	}
+}

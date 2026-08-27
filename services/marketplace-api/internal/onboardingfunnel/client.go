@@ -89,6 +89,12 @@ type SessionsParams struct {
 	Abandoned   *bool
 	Page        int
 	Limit       int
+	// Order requests one of platform-api's allowlisted orderings (#406).
+	// Empty means "do not send the parameter", leaving the remote on its own
+	// default of created_at DESC — which is what every caller but the inbox
+	// wants. The value is an allowlist KEY upstream, never SQL; an
+	// unrecognised one resolves to that same default rather than erroring.
+	Order string
 }
 
 // Client calls platform-api's internal onboarding-funnel endpoints.
@@ -185,6 +191,9 @@ func (c *Client) ListSessions(ctx context.Context, p SessionsParams) (*SessionsR
 	}
 	if p.Limit > 0 {
 		q.Set("limit", strconv.Itoa(p.Limit))
+	}
+	if p.Order != "" {
+		q.Set("order", p.Order)
 	}
 
 	path := "/internal/onboarding/sessions"

@@ -42,13 +42,16 @@ const (
 
 // Product is the catalog record. No prices, no stock — see Variant.
 type Product struct {
-	ID                  string         `gorm:"primaryKey;column:id;type:uuid;default:gen_random_uuid()" json:"id"`
-	TenantID            string         `gorm:"column:tenant_id;type:uuid;not null"                      json:"tenant_id"`
-	StoreID             string         `gorm:"column:store_id;type:uuid;not null"                       json:"store_id"`
-	Handle              string         `gorm:"column:handle;type:varchar(200);not null"                 json:"handle"`
-	Title               string         `gorm:"column:title;type:varchar(300);not null"                  json:"title"`
-	Description         *string        `gorm:"column:description;type:text"                             json:"description,omitempty"`
-	Status              string         `gorm:"column:status;type:varchar(20);not null;default:draft"    json:"status"`
+	ID          string  `gorm:"primaryKey;column:id;type:uuid;default:gen_random_uuid()" json:"id"`
+	TenantID    string  `gorm:"column:tenant_id;type:uuid;not null"                      json:"tenant_id"`
+	StoreID     string  `gorm:"column:store_id;type:uuid;not null"                       json:"store_id"`
+	Handle      string  `gorm:"column:handle;type:varchar(200);not null"                 json:"handle"`
+	Title       string  `gorm:"column:title;type:varchar(300);not null"                  json:"title"`
+	Description *string `gorm:"column:description;type:text"                             json:"description,omitempty"`
+	Status      string  `gorm:"column:status;type:varchar(20);not null;default:draft"    json:"status"`
+	// VendorID is a pointer for historical reasons; the column has been NOT NULL
+	// since migration 000028. See issue #402 — tightening it to a plain string
+	// touches JSON omitempty and every nil check, so it is tracked separately.
 	VendorID            *string        `gorm:"column:vendor_id;type:uuid"                               json:"vendor_id,omitempty"`
 	Tags                pq.StringArray `gorm:"column:tags;type:text[];not null;default:'{}'"        json:"tags"`
 	SEOTitle            *string        `gorm:"column:seo_title;type:varchar(300)"                       json:"seo_title,omitempty"`
@@ -127,7 +130,10 @@ type Variant struct {
 	Position          int              `gorm:"column:position;not null;default:0"                       json:"position"`
 	CreatedAt         time.Time        `gorm:"column:created_at;not null;default:now()"                 json:"created_at"`
 	UpdatedAt         time.Time        `gorm:"column:updated_at;not null;default:now()"                 json:"updated_at"`
-	DeletedAt         *time.Time       `gorm:"column:deleted_at;index"                                  json:"deleted_at,omitempty"`
+	// DeletedAt is a plain *time.Time, not gorm.DeletedAt, so GORM's automatic
+	// soft-delete filtering does NOT apply — every Preload("Variants") returns
+	// deleted rows. See issue #395.
+	DeletedAt *time.Time `gorm:"column:deleted_at;index"                                  json:"deleted_at,omitempty"`
 
 	OptionValueLinks []VariantOptionValue `gorm:"foreignKey:VariantID" json:"option_value_links,omitempty"`
 }

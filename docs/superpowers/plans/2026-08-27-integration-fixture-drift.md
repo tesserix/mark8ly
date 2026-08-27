@@ -43,6 +43,8 @@
   - `vendors` NOT NULL: `id` (default `gen_random_uuid()`), `tenant_id`, `name`, `slug`, `status` (default `'active'`), `is_self` (default `false`), `created_at`/`updated_at` (default `now()`).
   - `vendors` unique **indexes** — `vendors_slug_key` on `slug`, and `vendors_tenant_self_idx`, a **partial unique index on `(tenant_id) WHERE is_self = true`** enforcing one self-vendor per tenant. These are `CREATE UNIQUE INDEX`, not table constraints, so **`pg_constraint` does not list them — query `pg_indexes`.** An earlier revision of this plan asserted "no unique constraint beyond the primary key" for exactly that reason and was wrong.
   - `stores.synced_at` is NOT NULL but carries a default, which is why the seed helper omits it and still inserts cleanly.
+  - `products_handle_per_store_live_unique` — unique on `(store_id, handle) WHERE deleted_at IS NULL`. **Task 3 must not give two live products the same handle within one store.** Derive handles per product rather than reusing a literal like `"linen-shirt"` when a test seeds more than one.
+  - `eak_tenant_prefix_uniq` — unique on `enterprise_api_keys (tenant_id, key_prefix)`. Task 8's fixtures mint a fresh `tenantID` per test so the shared `"USED1234"` prefix is safe; it stops being safe the moment two keys share a tenant.
   - `products.vendor_id` is `NOT NULL` with **no foreign key** — only `products_store_id_fkey` and `products_primary_category_id_fkey` exist.
   - `stores_slug_unique` exists, so seeded slugs must be derived from the store id.
 

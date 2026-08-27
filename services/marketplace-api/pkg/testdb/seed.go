@@ -1,6 +1,7 @@
 package testdb
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -44,20 +45,43 @@ func SeedStore(t *testing.T, db *gorm.DB, tenantID, storeID uuid.UUID) {
 // SeedVendor inserts a vendors row owned by tenantID and returns its id, for
 // use as products.vendor_id — NOT NULL since migration 000028.
 //
-// The column has no foreign key, so any UUID would satisfy the constraint.
-// A real row is inserted anyway so that vendor-scoped filtering and any
-// products→vendors join stay meaningful; a synthetic id would make those
+// A real row is inserted (not a synthetic UUID) so that vendor-scoped filtering
+// and any products→vendors join stay meaningful; a synthetic id would make those
 // assertions vacuous in exactly the way this plan is trying to stop.
 //
 // is_self is true because product.Create defaults a new product to the
 // tenant's self-vendor, so that is the vendor a fixture should stand in for.
+//
+// SeedVendor is idempotent per tenant. The vendors_tenant_self_idx unique
+// constraint (UNIQUE (tenant_id) WHERE (is_self = true)) enforces that only
+// one self-vendor can exist per tenant. This mirrors production's
+// EnsureSelfVendor (migration 000028), which creates it once per tenant
+// lifecycle. Repeat calls for the same tenantID return the existing self-vendor
+// without inserting or registering cleanup, so multiple tests can safely use
+// the same tenant.
 func SeedVendor(t *testing.T, db *gorm.DB, tenantID uuid.UUID) uuid.UUID {
 	t.Helper()
 
+	// Check if a self-vendor already exists for this tenant.
+	var existingID uuid.UUID
+	err := db.Raw(
+		`SELECT id FROM vendors WHERE tenant_id = ? AND is_self = true`,
+		tenantID,
+	).Scan(&existingID).Error
+	if err == nil {
+		// Row found; return it without cleanup.
+		return existingID
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		// Query failed; this is a real error.
+		t.Fatalf("testdb.SeedVendor: check for existing self-vendor: %v", err)
+	}
+
+	// No existing self-vendor; insert one.
 	vendorID := uuid.New()
 	slug := "vnd-" + strings.ReplaceAll(vendorID.String(), "-", "")[:20]
 
-	err := db.Exec(
+	err = db.Exec(
 		`INSERT INTO vendors (id, tenant_id, name, slug, status, is_self)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		vendorID, tenantID, "Test Vendor", slug, "active", true,

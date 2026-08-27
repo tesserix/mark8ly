@@ -20,6 +20,12 @@ import (
 //
 // Registers a t.Cleanup deleting the row, so packages using NewDB (which
 // truncates only the tables it was told about) still start clean.
+//
+// The cleanup is best-effort: under NewTx it's a no-op, since the row is
+// rolled back before the DELETE would run anyway. Under NewDB it can fail —
+// products.store_id and categories.store_id are ON DELETE RESTRICT, so if
+// the caller's package left rows referencing this store, the DELETE errors
+// out silently unless the package also truncates stores itself.
 func SeedStore(t *testing.T, db *gorm.DB, tenantID, storeID uuid.UUID) {
 	t.Helper()
 
@@ -37,16 +43,22 @@ func SeedStore(t *testing.T, db *gorm.DB, tenantID, storeID uuid.UUID) {
 	}
 
 	t.Cleanup(func() {
-		db.Exec("DELETE FROM stores WHERE id = ?", storeID)
+		if err := db.Exec("DELETE FROM stores WHERE id = ?", storeID).Error; err != nil {
+			t.Logf("testdb.SeedStore: cleanup DELETE stores row %s: %v", storeID, err)
+		}
 	})
 }
 
 // SeedVendor inserts a vendors row owned by tenantID and returns its id, for
 // use as products.vendor_id — NOT NULL since migration 000028.
 //
-// A real row is inserted (not a synthetic UUID) so that vendor-scoped filtering
-// and any products→vendors join stay meaningful; a synthetic id would make those
-// assertions vacuous in exactly the way this plan is trying to stop.
+// A real row is inserted (not a synthetic UUID) even though there is no FK
+// from products.vendor_id to vendors(id) — migration 000027 creates the
+// vendors table and 000028 only adds a NOT NULL constraint on vendor_id, no
+// foreign key — so the database will not catch a bogus id. The real row
+// exists purely so vendor-scoped filtering and any products→vendors join
+// stay meaningful for assertions; a synthetic id would make those assertions
+// vacuous in exactly the way this plan is trying to stop.
 //
 // is_self is true because product.Create defaults a new product to the
 // tenant's self-vendor, so that is the vendor a fixture should stand in for.

@@ -400,7 +400,7 @@ func TestIntegration_ProductRepo_ListPublished_ExcludesDraftArchivedDeletedUnpub
 	storeID, tenantID, vendorID := seedStore(t, tx)
 
 	// A: active + published → included
-	now := time.Now()
+	now := time.Now().Add(-time.Hour)
 	a := minimalAggregate(storeID, tenantID, vendorID, "visible", "V-1")
 	a.Product.Status = product.StatusActive
 	a.Product.PublishedAt = &now

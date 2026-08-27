@@ -296,12 +296,27 @@ Smallest of the three big clusters, and it exercises `SeedStore` end-to-end befo
 **Files:**
 - Modify: `services/marketplace-api/internal/category/repository_integration_test.go:64`
 - Modify: `services/marketplace-api/internal/handlers/internalsvc/storefront_status_test.go:81`
-- Modify: `services/marketplace-api/internal/subscription/planchange/criterion_39_test.go:41`
+- Modify: `services/marketplace-api/internal/subscription/planchange/planchange_integration_test.go:40` — the local `seedStores` helper
 - Modify: `Makefile:68-74`
 
 **Interfaces:**
 - Consumes: `testdb.SeedStore(t, db, tenantID, storeID)` from Task 1.
 - Produces: nothing new.
+
+**Note on `internal/subscription/planchange` — corrected site.** #317 points at
+`criterion_39_test.go:41`. That is the *call site* (`seedStores(t, db, tenantID, 1)`), not the broken
+insert. The defect is in the package-local `seedStores` helper at `planchange_integration_test.go:40`,
+whose INSERT omits `storefront_customer_portal_secret`. A second insert at
+`planchange_integration_test.go:302` already supplies it correctly — leave that one alone.
+
+Fix `seedStores` by having it call `testdb.SeedStore` in its loop, so there is one definition of a
+valid store. Keep its `(t, db, tenantID, n)` signature and its `synced_at` behaviour: `synced_at` is
+NOT NULL but carries a default, which is why `testdb.SeedStore` does not set it and still works. No
+planchange production code reads `synced_at`, so dropping the explicit `now()` is safe.
+
+Per the controller's pre-flight ruling: this task edits ONLY `planchange_integration_test.go`'s
+`seedStores` helper in that package, and does NOT widen the Makefile for planchange — the package
+stays red on cluster B until Task 5 owns it.
 
 **Note on `internal/outbox`.** #317 lists `outbox/publisher_integration_test.go:58` as a cluster-C
 site. It is **not** failing — the baseline records `ok  internal/outbox  3.002s`. The issue's site

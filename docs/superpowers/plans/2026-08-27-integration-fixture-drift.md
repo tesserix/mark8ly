@@ -493,7 +493,7 @@ git commit -m "test(fixtures): seed vendors for product inserts and widen test-i
 
 ---
 
-### Task 4: Cluster B part 1 — billing packages (19 failures)
+### Task 4: Cluster B part 1 — billing packages (21 failures)
 
 Cluster B is one root cause across 13 packages: tests insert `store_subscriptions` for a `store_id` with no `stores` row. It is split across three tasks purely so each is reviewable; the edit is identical everywhere.
 
@@ -507,6 +507,12 @@ Cluster B is one root cause across 13 packages: tests insert `store_subscription
 **Interfaces:**
 - Consumes: `testdb.SeedStore` from Task 1.
 - Produces: nothing new.
+
+**Only four billing packages are failing.** `internal/billing/trial`, `internal/billing/migration`
+and `internal/billing/tax/windowguard` are GREEN at baseline — they reference `store_subscriptions`
+but seed correctly. Running `./internal/billing/...` exercises them, which is fine and desirable, but
+**do not edit them**. The failing four are `appaddon` (4), `dispatch` (9), `tax` (4) and
+`tax/revalidation` (4) = 21.
 
 **Why these first.** `internal/billing/dispatch` is the package #384 and #389 rewrote. Its tests currently do not run in CI at all, which means the email-delivery invariant those PRs established — `Send` returns `nil` iff a provider accepted — is guarded by tests nothing executes.
 
@@ -613,7 +619,7 @@ git commit -m "test(subscription): seed stores for subscription fixtures and wid
 
 ---
 
-### Task 6: Cluster B part 3 — remaining packages (28 failures)
+### Task 6: Cluster B part 3 — remaining packages (26 failures)
 
 **Files:**
 - Modify: `services/marketplace-api/internal/arbitrage/appeal_test.go:40` and siblings (15)

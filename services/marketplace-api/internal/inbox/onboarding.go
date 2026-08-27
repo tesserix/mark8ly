@@ -7,6 +7,9 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/onboardingfunnel"
 )
 
+// SessionLister is the slice of the onboarding funnel client this provider
+// needs. Declaring it here rather than importing the concrete client keeps the
+// provider unit-testable with a fake and documents the exact dependency.
 type SessionLister interface {
 	ListSessions(ctx context.Context, p onboardingfunnel.SessionsParams) (*onboardingfunnel.SessionsResult, error)
 }
@@ -63,6 +66,11 @@ func (p *OnboardingProvider) fetchStalled(ctx context.Context, f Filter, limit i
 		if s.IdleHours < p.idleThresholdHours {
 			continue
 		}
+		// The remote SessionsParams has no tenant field, so the request cannot
+		// filter by tenant — this match happens client-side on the response.
+		// Do not "simplify" this into a SessionsParams field; it does not exist.
+		// A session with no TenantID has not been linked to a tenant yet, so it
+		// is not this tenant's when a specific tenant is requested.
 		if f.TenantID != "" && (s.TenantID == nil || *s.TenantID != f.TenantID) {
 			continue
 		}

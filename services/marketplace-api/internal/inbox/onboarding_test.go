@@ -161,6 +161,13 @@ func TestOnboardingProvider_CountIsStableAcrossPages(t *testing.T) {
 	n2, err := p.Count(context.Background(), inbox.Filter{Page: 1, Limit: 50})
 	require.NoError(t, err)
 	require.Equal(t, n1, n2, "Count must not change as the aggregator pages forward")
+	// Pinned to the fixture size (30), not just to each other: two Counts that
+	// silently agreed on the wrong number (e.g. both broken to 0) would still
+	// pass the equality check above. All 30 seeded sessions are well past the
+	// idle threshold, so 30 is the correct count, not an incidental fixture
+	// detail — pinning it here does not make the test brittle to unrelated
+	// fixture edits elsewhere in the file.
+	require.EqualValues(t, 30, n1, "Count must report the true number of stalled sessions, not just agree with itself")
 }
 
 func TestOnboardingProvider_ListForwardsPage(t *testing.T) {

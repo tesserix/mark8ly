@@ -2,6 +2,7 @@ package dunning
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -68,6 +69,7 @@ type SendTrialReminders struct {
 	logger  *slog.Logger
 	clock   func() time.Time
 	counter CounterVecIncrementer
+	skip    SkipCounter
 }
 
 // NewSendTrialReminders constructs a SendTrialReminders cron. db and emailCl
@@ -86,6 +88,13 @@ func NewSendTrialReminders(db *gorm.DB, em email.Client, logger *slog.Logger, co
 		counter: counter,
 		clock:   clock,
 	}
+}
+
+// WithSkipCounter attaches the counter for emails deliberately not sent.
+// Optional: nil means skips are logged but not counted.
+func (s *SendTrialReminders) WithSkipCounter(c SkipCounter) *SendTrialReminders {
+	s.skip = c
+	return s
 }
 
 // Run executes one pass through every reminder target. Per-offset failures
@@ -143,6 +152,30 @@ func (s *SendTrialReminders) runForOffset(ctx context.Context, now time.Time, t 
 // skip without sending. Email-send failures intentionally do NOT delete the
 // idempotency row — that would risk a double-send on the next tick.
 func (s *SendTrialReminders) processOne(ctx context.Context, row *subscription.StoreSubscription, t trialReminderTarget, now time.Time) error {
+	// The has-PM T-1 template tells the merchant "your <plan> plan begins
+	// tomorrow — we will charge the card on file". has_default_payment_method
+	// is mirrored from Stripe's invoice_settings.default_payment_method and
+	// says nothing about whether a plan was ever selected, so a merchant who
+	// attached a card but never finished plan selection is still on
+	// plan='trial' and nothing will be charged: no Stripe subscription exists.
+	// Sending would be a false billing statement, so skip it.
+	//
+	// The guard sits BEFORE the idempotency claim deliberately. The slot must
+	// stay unclaimed: if the merchant selects a plan before the trial ends, a
+	// later tick should still be able to send them a correct reminder. Nothing
+	// is sent here, so there is no double-send for the claim to protect against.
+	if t.HasPM && row.Plan == subscription.PlanTrial {
+		s.logger.Warn("trial reminder skipped: plan still 'trial' at a billing reminder — merchant has a card but never selected a plan",
+			"store_id", row.StoreID.String(),
+			"tenant_id", row.TenantID.String(),
+			"offset", t.OffsetKey,
+			"reason", "plan_unresolved")
+		if s.skip != nil {
+			s.skip.WithTemplateReason(string(t.Template), "plan_unresolved").Inc()
+		}
+		return nil
+	}
+
 	res := s.db.WithContext(ctx).Exec(`
 		INSERT INTO trial_reminders (subscription_id, tenant_id, store_id, offset_key, sent_at)
 		VALUES (?, ?, ?, ?, ?)
@@ -157,24 +190,48 @@ func (s *SendTrialReminders) processOne(ctx context.Context, row *subscription.S
 		return nil
 	}
 
-	// TODO: trial reminder email recipient — the StoreSubscription row does
-	// not yet carry an email/store_name pair. Mirroring the placeholder used
-	// by trial.ExpiryCron and SendPaymentActionReminders, we pass StoreID as
-	// the recipient string for now; the real recipient is resolved by the
-	// email adapter via tenant lookup. Revisit when the columns land.
-	if err := s.emailCl.Send(ctx, t.Template, row.StoreID.String(), map[string]any{
+	to := ""
+	if row.Email != nil {
+		to = *row.Email
+	}
+
+	if err := s.emailCl.Send(ctx, t.Template, to, map[string]any{
 		"store_id":           row.StoreID.String(),
 		"tenant_id":          row.TenantID.String(),
+		"store_name":         subscription.StoreNameFor(ctx, s.db, row.StoreID),
 		"offset":             t.OffsetKey,
 		"days_remaining":     t.DaysBefore,
 		"has_payment_method": t.HasPM,
 		"plan":               string(row.Plan),
 	}); err != nil {
-		s.logger.Warn("trial reminder email failed",
+		s.logger.Warn("trial reminder not sent",
 			"store_id", row.StoreID.String(),
 			"offset", t.OffsetKey,
+			"reason", email.SkipReason(err),
 			"err", err.Error())
-		// Do not delete the idempotency row — preserves at-most-once semantics.
+		if s.skip != nil {
+			s.skip.WithTemplateReason(string(t.Template), email.SkipReason(err)).Inc()
+		}
+		if errors.Is(err, email.ErrUndeliverable) {
+			// The address is missing or wrong — recoverable via the
+			// backfill or a customer.updated webhook. Release the claim
+			// so a later run can still deliver this notice.
+			delErr := s.db.WithContext(ctx).Exec(`
+				DELETE FROM trial_reminders
+				WHERE subscription_id = ? AND offset_key = ?`,
+				row.ID, t.OffsetKey,
+			).Error
+			if delErr != nil {
+				s.logger.Error("trial reminder: release claim failed",
+					"store_id", row.StoreID.String(), "offset", t.OffsetKey, "err", delErr.Error())
+			} else {
+				s.logger.Info("trial reminder: claim released for retry",
+					"store_id", row.StoreID.String(), "offset", t.OffsetKey)
+			}
+			return nil
+		}
+		// Do not delete the idempotency row — that would risk a double-send.
+		// At-most-once is the deliberate contract: see the spec, §6.
 		return nil
 	}
 

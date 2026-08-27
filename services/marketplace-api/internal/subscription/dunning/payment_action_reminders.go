@@ -2,6 +2,7 @@ package dunning
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -32,13 +33,14 @@ var paymentActionTargets = []paymentActionTarget{
 // reminder emails to merchants whose subscription is in payment_action_required
 // status. Idempotency is guaranteed via the payment_action_reminders table
 // (INSERT … ON CONFLICT DO NOTHING): only the first pod to insert a row for a
-// given (subscription_id, offset_key) pair sends the email.
+// given (store_id, offset_key) pair sends the email.
 type SendPaymentActionReminders struct {
 	db      *gorm.DB
 	emailCl email.Client
 	logger  *slog.Logger
 	clock   func() time.Time
 	counter CounterVecIncrementer
+	skip    SkipCounter
 }
 
 // NewSendPaymentActionReminders constructs a SendPaymentActionReminders cron.
@@ -57,6 +59,13 @@ func NewSendPaymentActionReminders(db *gorm.DB, em email.Client, logger *slog.Lo
 		counter: counter,
 		clock:   clock,
 	}
+}
+
+// WithSkipCounter attaches the counter for emails deliberately not sent.
+// Optional: nil means skips are logged but not counted.
+func (s *SendPaymentActionReminders) WithSkipCounter(c SkipCounter) *SendPaymentActionReminders {
+	s.skip = c
+	return s
 }
 
 // Run executes one pass: for each offset (14d/7d/1d), finds subscriptions in
@@ -113,7 +122,7 @@ func (s *SendPaymentActionReminders) runForOffset(ctx context.Context, now time.
 // idempotency row after a send failure — that would risk a double-send.
 func (s *SendPaymentActionReminders) processOne(ctx context.Context, row *subscription.StoreSubscription, t paymentActionTarget, now time.Time) error {
 	res := s.db.WithContext(ctx).Exec(`
-		INSERT INTO payment_action_reminders (subscription_id, offset_key, sent_at)
+		INSERT INTO payment_action_reminders (store_id, offset_key, sent_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT DO NOTHING`,
 		row.StoreID, t.OffsetKey, now,
@@ -126,13 +135,46 @@ func (s *SendPaymentActionReminders) processOne(ctx context.Context, row *subscr
 		return nil
 	}
 
-	if err := s.emailCl.Send(ctx, email.TemplatePaymentActionReminder, row.StoreID.String(), map[string]any{
+	to := ""
+	if row.Email != nil {
+		to = *row.Email
+	}
+	invoiceURL := ""
+	if row.HostedInvoiceURL != nil {
+		invoiceURL = *row.HostedInvoiceURL
+	}
+
+	if err := s.emailCl.Send(ctx, email.TemplatePaymentActionReminder, to, map[string]any{
 		"store_id":           row.StoreID.String(),
+		"tenant_id":          row.TenantID.String(),
+		"store_name":         subscription.StoreNameFor(ctx, s.db, row.StoreID),
 		"offset":             t.OffsetKey,
-		"hosted_invoice_url": row.HostedInvoiceURL,
+		"hosted_invoice_url": invoiceURL,
 	}); err != nil {
-		s.logger.Warn("SCA reminder email failed",
-			"store_id", row.StoreID.String(), "offset", t.OffsetKey, "err", err.Error())
+		s.logger.Warn("SCA reminder not sent",
+			"store_id", row.StoreID.String(), "offset", t.OffsetKey,
+			"reason", email.SkipReason(err), "err", err.Error())
+		if s.skip != nil {
+			s.skip.WithTemplateReason(string(email.TemplatePaymentActionReminder), email.SkipReason(err)).Inc()
+		}
+		if errors.Is(err, email.ErrUndeliverable) {
+			// The address is missing or wrong — recoverable via the
+			// backfill or a customer.updated webhook. Release the claim
+			// so a later run can still deliver this notice.
+			delErr := s.db.WithContext(ctx).Exec(`
+				DELETE FROM payment_action_reminders
+				WHERE store_id = ? AND offset_key = ?`,
+				row.StoreID, t.OffsetKey,
+			).Error
+			if delErr != nil {
+				s.logger.Error("SCA reminder: release claim failed",
+					"store_id", row.StoreID.String(), "offset", t.OffsetKey, "err", delErr.Error())
+			} else {
+				s.logger.Info("SCA reminder: claim released for retry",
+					"store_id", row.StoreID.String(), "offset", t.OffsetKey)
+			}
+			return nil
+		}
 		// Don't delete the idempotency row — we'd risk double-send on retry.
 		return nil
 	}

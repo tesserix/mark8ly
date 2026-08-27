@@ -43,6 +43,15 @@ type Dispatcher struct {
 	emitter  *audit.Emitter
 	recorder *arbitrage.Recorder // nil-safe: arbitrage check is skipped when nil
 	emailCl  email.Client        // nil-safe: trial-billed confirmation email is skipped when nil
+	// db is a NON-transactional handle, deliberately separate from the tx
+	// passed to Dispatch. The trial-billed claim is taken at drain time,
+	// after the webhook transaction has committed (see sendTrialBilled), so
+	// tx is long gone by then and this is the only usable handle. Nil
+	// disables the trial-billed email entirely — there is no way to make it
+	// at-most-once without a claim store.
+	db       *gorm.DB
+	skip     SkipCounter // nil-safe: skipped-send counting is optional
+	sent     SentCounter // nil-safe: delivered-send counting is optional
 	handlers map[string]Handler
 }
 
@@ -80,10 +89,49 @@ func (d *Dispatcher) WithRecorder(r *arbitrage.Recorder) *Dispatcher {
 	return d
 }
 
+// CounterIncrementer is a one-method counter so tests can stub it.
+type CounterIncrementer interface{ Inc() }
+
+// SkipCounter counts billing emails deliberately not sent, labeled by
+// template and reason. Mirrors dunning.SkipCounter and lifecycle.SkipCounter
+// so main can feed all three from metrics.BillingEmailsSkippedTotal.
+type SkipCounter interface {
+	WithTemplateReason(template, reason string) CounterIncrementer
+}
+
+// SentCounter counts billing emails actually delivered, labeled by template.
+type SentCounter interface {
+	WithTemplate(template string) CounterIncrementer
+}
+
+// WithDB attaches a non-transactional database handle used to claim a
+// billing_email_sends row immediately before the trial-billed confirmation is
+// sent. It must NOT be the webhook transaction: claim and send both run after
+// that transaction has committed, when its handle is no longer usable.
+func (d *Dispatcher) WithDB(conn *gorm.DB) *Dispatcher {
+	d.db = conn
+	return d
+}
+
+// WithSkipCounter attaches the counter for trial-billed emails deliberately
+// not sent. Optional.
+func (d *Dispatcher) WithSkipCounter(c SkipCounter) *Dispatcher {
+	d.skip = c
+	return d
+}
+
+// WithSentCounter attaches the counter for trial-billed emails delivered.
+// Optional.
+func (d *Dispatcher) WithSentCounter(c SentCounter) *Dispatcher {
+	d.sent = c
+	return d
+}
+
 // WithEmail attaches an email.Client so the dispatcher can emit the
 // trial-billed confirmation email on the first successful invoice charge.
 // emailCl may be nil — the send is then skipped without affecting other
-// invoice.paid side effects.
+// invoice.paid side effects. WithDB must be called too; without a claim
+// store the send is skipped.
 func (d *Dispatcher) WithEmail(c email.Client) *Dispatcher {
 	d.emailCl = c
 	return d

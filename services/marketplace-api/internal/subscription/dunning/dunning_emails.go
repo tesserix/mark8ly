@@ -2,10 +2,12 @@ package dunning
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/email"
@@ -36,21 +38,28 @@ var dunningEmailTargets = []dunningEmailTarget{
 }
 
 // emailRow is the minimal projection returned by the dunning email query.
+// Email and StoreName come from the merchant-facing side of the join: the
+// address to send to, and the name the templates address them by.
 type emailRow struct {
-	StoreID  string
-	TenantID string
+	SubscriptionID   uuid.UUID
+	StoreID          string
+	TenantID         string
+	Email            *string
+	StoreName        string
+	HostedInvoiceURL *string
 }
 
 // SendDunningEmails is a daily cron that sends day-5 and day-7 nudge emails
 // to merchants whose subscription entered past_due status N days ago and is
-// still past_due. Email routing uses email.Client (NoOpClient until a real
-// adapter wires in).
+// still past_due. Email routing goes through email.Client — since #381 that
+// is the real template client (render → SendGrid → Resend), not a no-op.
 type SendDunningEmails struct {
 	db      *gorm.DB
 	emailCl email.Client
 	logger  *slog.Logger
 	clock   func() time.Time
 	counter CounterVecIncrementer
+	skip    SkipCounter
 }
 
 // NewSendDunningEmails constructs a SendDunningEmails cron. All parameters
@@ -70,6 +79,13 @@ func NewSendDunningEmails(db *gorm.DB, em email.Client, logger *slog.Logger, cou
 		counter: counter,
 		clock:   clock,
 	}
+}
+
+// WithSkipCounter attaches the counter for emails deliberately not sent.
+// Optional: nil means skips are logged but not counted.
+func (s *SendDunningEmails) WithSkipCounter(c SkipCounter) *SendDunningEmails {
+	s.skip = c
+	return s
 }
 
 // Run executes one pass: for each target day, finds subscriptions that entered
@@ -97,10 +113,15 @@ func (s *SendDunningEmails) runForDay(ctx context.Context, now time.Time, t dunn
 	var rows []emailRow
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT DISTINCT
+		    ss.id   AS subscription_id,
 		    ss.store_id,
-		    ss.tenant_id
+		    ss.tenant_id,
+		    ss.email,
+		    ss.hosted_invoice_url,
+		    COALESCE(st.name, 'your store') AS store_name
 		FROM store_subscriptions ss
 		JOIN audit_logs a ON a.store_id = ss.store_id
+		LEFT JOIN stores st ON st.id = ss.store_id
 		WHERE ss.status = ?
 		  AND a.action = 'subscription.state_transition'
 		  AND a.metadata->>'to_status' = ?
@@ -113,20 +134,65 @@ func (s *SendDunningEmails) runForDay(ctx context.Context, now time.Time, t dunn
 		return fmt.Errorf("dunning emails day %d: query: %w", t.Day, err)
 	}
 
+	dayLabel := fmt.Sprintf("day_%d", t.Day)
+	periodKey := targetDay.Format("2006-01-02")
+
 	for _, r := range rows {
-		// TODO: wire real merchant email address when StoreSubscription.email
-		// column lands. Until then the store_id string is passed as the "to"
-		// address; NoOpClient logs intent without performing I/O.
-		if err := s.emailCl.Send(ctx, t.Template, r.StoreID, map[string]any{
-			"store_id": r.StoreID,
-			"day":      t.Day,
-		}); err != nil {
-			s.logger.Warn("dunning email send failed",
+		// Claim before sending. Dunning re-derives eligibility from
+		// audit_logs on every run, so without this a second run on the
+		// same day re-sends to the same merchants (#381).
+		won, err := subscription.ClaimEmailSend(ctx, s.db, r.SubscriptionID, string(t.Template), periodKey, now)
+		if err != nil {
+			s.logger.Error("dunning email: claim failed; skipping row",
 				"day", t.Day, "store_id", r.StoreID, "err", err.Error())
 			continue
 		}
+		if !won {
+			continue // already claimed by another pod or an earlier run
+		}
+
+		to := ""
+		if r.Email != nil {
+			to = *r.Email
+		}
+		invoiceURL := ""
+		if r.HostedInvoiceURL != nil {
+			invoiceURL = *r.HostedInvoiceURL
+		}
+
+		if err := s.emailCl.Send(ctx, t.Template, to, map[string]any{
+			"store_id":           r.StoreID,
+			"tenant_id":          r.TenantID,
+			"store_name":         r.StoreName,
+			"day":                t.Day,
+			"hosted_invoice_url": invoiceURL,
+		}); err != nil {
+			// Never increment the sent counter here. Before #381 this
+			// branch was unreachable because the client was a no-op that
+			// always returned nil, so the counter reported deliveries
+			// that never happened.
+			s.logger.Warn("dunning email not sent",
+				"day", t.Day, "store_id", r.StoreID,
+				"reason", email.SkipReason(err), "err", err.Error())
+			if s.skip != nil {
+				s.skip.WithTemplateReason(string(t.Template), email.SkipReason(err)).Inc()
+			}
+			if errors.Is(err, email.ErrUndeliverable) {
+				// The address is missing or wrong — recoverable via the
+				// backfill or a customer.updated webhook. Release the
+				// claim so a later run can still deliver this notice.
+				if relErr := subscription.ReleaseEmailClaim(ctx, s.db, r.SubscriptionID, string(t.Template), periodKey); relErr != nil {
+					s.logger.Error("dunning email: release claim failed",
+						"day", t.Day, "store_id", r.StoreID, "err", relErr.Error())
+				} else {
+					s.logger.Info("dunning email: claim released for retry",
+						"day", t.Day, "store_id", r.StoreID)
+				}
+			}
+			continue
+		}
 		if s.counter != nil {
-			s.counter.WithDay(fmt.Sprintf("day_%d", t.Day)).Inc()
+			s.counter.WithDay(dayLabel).Inc()
 		}
 	}
 	return nil

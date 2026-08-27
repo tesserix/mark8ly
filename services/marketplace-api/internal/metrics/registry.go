@@ -107,6 +107,35 @@ var (
 		[]string{"offset"},
 	)
 
+	// BillingEmailsSkippedTotal counts subscription emails deliberately not
+	// sent — an undeliverable recipient, a render failure, a transport
+	// failure, or no configured provider. Every billing template has a
+	// companion sent counter that increments only on a real delivery
+	// (dunning_emails_sent_total, payment_action_reminders_sent_total,
+	// trial_reminders_sent_total, and billing_emails_sent_total for
+	// win_back_day30 and trial_started_billed), so per template
+	// sent+skipped is the eligible population. #381.
+	BillingEmailsSkippedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_subscription_billing_emails_skipped_total",
+			Help: "Count of subscription emails not sent, labeled by template and reason (no_address, placeholder_address, invalid_address, render_failed, transport_failed, no_provider, claim_failed, no_claim_store). Exception: plan_unresolved is deliberately counted outside the idempotency claim, so on repeat same-day cron runs it may be incremented more than once per merchant — for that reason, sent+skipped is an inequality rather than an equality.",
+		},
+		[]string{"template", "reason"},
+	)
+
+	// BillingEmailsSentTotal counts billing emails actually delivered for the
+	// two templates with no per-feature sent counter of their own:
+	// win_back_day30 (lifecycle win-back cron) and trial_started_billed
+	// (invoice.paid dispatcher). Without it the sent+skipped identity
+	// documented on BillingEmailsSkippedTotal would be false for both. #381.
+	BillingEmailsSentTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_subscription_billing_emails_sent_total",
+			Help: "Count of billing emails delivered, labeled by template (win_back_day30, trial_started_billed).",
+		},
+		[]string{"template"},
+	)
+
 	// AuditPruneRowsDeletedTotal counts audit_logs rows hard-deleted by the
 	// retention prune cron, labeled by retention bucket
 	// (trial_starter_90d, studio_365d, operator_7y). Pro is unlimited and never pruned.
@@ -174,6 +203,8 @@ func init() {
 		DunningEmailsSentTotal,
 		PaymentActionRemindersSentTotal,
 		TrialRemindersSentTotal,
+		BillingEmailsSkippedTotal,
+		BillingEmailsSentTotal,
 		AuditPruneRowsDeletedTotal,
 		DunningSuppressedRefundWindowTotal,
 		APIKeyUsedTotal,

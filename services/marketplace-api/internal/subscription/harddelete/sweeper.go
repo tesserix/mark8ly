@@ -14,22 +14,57 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/audit"
 )
 
-// sweepTable deletes all rows in tableName where the given column = id.
+// viaParent describes how to reach a store-scoped table that has no
+// store_id column of its own: its rows are deleted by joining through a
+// parent table (already present earlier in the sweep list) that does carry
+// store_id.
+type viaParent struct {
+	fkColumn    string // column on the child referencing the parent's id, e.g. "review_id"
+	parentTable string // parent table, e.g. "reviews"
+}
+
+// sweepStep describes one table to sweep. Exactly one of column or via is
+// set: column for tables with their own store-scoped column, via for
+// tables reached only through a parent FK.
+type sweepStep struct {
+	table  string
+	column string // store-scoped column, when the table has one
+	via    *viaParent
+}
+
+// sweepTable deletes all rows in s.table that belong to storeID, either
+// directly via s.column or, for tables with no store-scoped column of
+// their own, via s.via's FK to a parent table that does carry store_id.
 // It logs the delete count via the audit emitter for compliance visibility.
 // Errors are returned so the caller can abort the transaction.
 func sweepTable(ctx context.Context, tx *gorm.DB, emitter *audit.Emitter, logger *slog.Logger,
-	tableName, column string, storeID, tenantID uuid.UUID) error {
+	s sweepStep, storeID, tenantID uuid.UUID) error {
 
-	res := tx.WithContext(ctx).Exec(
-		fmt.Sprintf("DELETE FROM %s WHERE %s = ?", tableName, column), //nolint:gosec // table/column names are internal constants
+	tableName := s.table
+
+	var query string
+	if s.via != nil {
+		query = fmt.Sprintf("DELETE FROM %s WHERE %s IN (SELECT id FROM %s WHERE store_id = ?)",
+			tableName, s.via.fkColumn, s.via.parentTable)
+	} else {
+		query = fmt.Sprintf("DELETE FROM %s WHERE %s = ?", tableName, s.column)
+	}
+
+	res := tx.WithContext(ctx).Exec(query, //nolint:gosec // table/column names are internal constants
 		storeID,
 	)
 	if res.Error != nil {
 		return fmt.Errorf("harddelete: sweep %s: %w", tableName, res.Error)
 	}
-	logger.Info("harddelete: swept table",
-		"table", tableName, "column", column,
-		"store_id", storeID, "rows_deleted", res.RowsAffected)
+	if s.via != nil {
+		logger.Info("harddelete: swept table",
+			"table", tableName, "via", fmt.Sprintf("%s.%s", s.via.parentTable, s.via.fkColumn),
+			"store_id", storeID, "rows_deleted", res.RowsAffected)
+	} else {
+		logger.Info("harddelete: swept table",
+			"table", tableName, "column", s.column,
+			"store_id", storeID, "rows_deleted", res.RowsAffected)
+	}
 
 	// Emit per-table audit event for compliance trail.
 	emitter.Emit(nil, audit.Event{
@@ -64,75 +99,87 @@ func Sweep(ctx context.Context, tx *gorm.DB, emitter *audit.Emitter, logger *slo
 	// order_items, abandoned_carts, and order_events cascade from orders.
 	// product_variants, product_options, product_media cascade from products via FK.
 	// We delete them explicitly before the parent for clarity and safety.
+	//
+	// Nine tables below (review_reactions, review_replies, review_media,
+	// loyalty_transactions, campaign_recipients, gift_card_transactions,
+	// coupon_usage, ticket_replies, product_categories) have no store_id
+	// column of their own — they carry only an FK to a parent that does
+	// (reviews, customer_loyalties, campaigns, gift_cards, coupons,
+	// tickets, products, respectively). Those are given a `via` instead of
+	// a `column`, which reaches them with
+	// `DELETE ... WHERE <fk> IN (SELECT id FROM <parent> WHERE store_id = ?)`.
+	// They stay in the sweep explicitly — rather than being dropped in
+	// favor of the parent's CASCADE — because sweepTable emits the
+	// per-table audit event that is this pipeline's compliance trail;
+	// dropping them would leave a GDPR hard-delete with no deletion record
+	// for those tables. Each keeps its original position in the list:
+	// coupon_usage must still precede orders (NO ACTION FK — surviving
+	// rows would block the orders delete), and product_categories must
+	// still precede categories (RESTRICT FK).
 
-	type tableSpec struct {
-		table  string
-		column string
-	}
-
-	sweeps := []tableSpec{
+	sweeps := []sweepStep{
 		// Audit logs for this store (compliance: deleted with the store per §15.2).
-		{"audit_logs", "store_id"},
+		{table: "audit_logs", column: "store_id"},
 		// Subscription lifecycle audit.
-		{"subscription_plan_change_audit", "store_id"},
-		{"migration_fast_path_reviews", "store_id"},
+		{table: "subscription_plan_change_audit", column: "store_id"},
+		{table: "migration_fast_path_reviews", column: "store_id"},
 		// Review-related child rows.
-		{"review_reactions", "store_id"},
-		{"review_replies", "store_id"},
-		{"review_media", "store_id"},
-		{"reviews", "store_id"},
+		{table: "review_reactions", via: &viaParent{fkColumn: "review_id", parentTable: "reviews"}},
+		{table: "review_replies", via: &viaParent{fkColumn: "review_id", parentTable: "reviews"}},
+		{table: "review_media", via: &viaParent{fkColumn: "review_id", parentTable: "reviews"}},
+		{table: "reviews", column: "store_id"},
 		// Loyalty.
-		{"loyalty_transactions", "store_id"},
-		{"customer_loyalties", "store_id"},
-		{"loyalty_programs", "store_id"},
+		{table: "loyalty_transactions", via: &viaParent{fkColumn: "loyalty_id", parentTable: "customer_loyalties"}},
+		{table: "customer_loyalties", column: "store_id"},
+		{table: "loyalty_programs", column: "store_id"},
 		// Campaigns.
-		{"campaign_recipients", "store_id"},
-		{"campaigns", "store_id"},
+		{table: "campaign_recipients", via: &viaParent{fkColumn: "campaign_id", parentTable: "campaigns"}},
+		{table: "campaigns", column: "store_id"},
 		// Gift cards.
-		{"gift_card_transactions", "store_id"},
-		{"gift_cards", "store_id"},
+		{table: "gift_card_transactions", via: &viaParent{fkColumn: "gift_card_id", parentTable: "gift_cards"}},
+		{table: "gift_cards", column: "store_id"},
 		// Coupons.
-		{"coupon_usage", "store_id"},
-		{"coupons", "store_id"},
+		{table: "coupon_usage", via: &viaParent{fkColumn: "coupon_id", parentTable: "coupons"}},
+		{table: "coupons", column: "store_id"},
 		// Orders (cascade deletes order_items, order_addresses, order_events).
-		{"abandoned_carts", "store_id"},
-		{"returns", "store_id"},
-		{"orders", "store_id"},
+		{table: "abandoned_carts", column: "store_id"},
+		{table: "returns", column: "store_id"},
+		{table: "orders", column: "store_id"},
 		// Shipping, payment, tax configs.
-		{"shipments", "store_id"},
-		{"payment_transactions", "store_id"},
-		{"payment_gateway_configs", "store_id"},
-		{"tax_provider_configs", "store_id"},
+		{table: "shipments", column: "store_id"},
+		{table: "payment_transactions", column: "store_id"},
+		{table: "payment_gateway_configs", column: "store_id"},
+		{table: "tax_provider_configs", column: "store_id"},
 		// Notifications.
-		{"notification_preferences", "store_id"},
-		{"notifications", "store_id"},
+		{table: "notification_preferences", column: "store_id"},
+		{table: "notifications", column: "store_id"},
 		// Tickets.
-		{"ticket_replies", "store_id"},
-		{"tickets", "store_id"},
+		{table: "ticket_replies", via: &viaParent{fkColumn: "ticket_id", parentTable: "tickets"}},
+		{table: "tickets", column: "store_id"},
 		// Pages.
-		{"pages", "store_id"},
+		{table: "pages", column: "store_id"},
 		// Media / product child rows (FK cascades from products).
-		{"product_categories", "store_id"},
-		{"products", "store_id"},
-		{"categories", "store_id"},
+		{table: "product_categories", via: &viaParent{fkColumn: "product_id", parentTable: "products"}},
+		{table: "products", column: "store_id"},
+		{table: "categories", column: "store_id"},
 		// Customer profiles.
-		{"customer_profiles", "store_id"},
+		{table: "customer_profiles", column: "store_id"},
 		// Wishlists.
-		{"wishlists", "store_id"},
+		{table: "wishlists", column: "store_id"},
 		// Custom domains.
-		{"custom_domains", "store_id"},
+		{table: "custom_domains", column: "store_id"},
 		// Branding.
-		{"store_branding", "store_id"},
+		{table: "store_branding", column: "store_id"},
 		// Push tokens.
-		{"admin_push_tokens", "store_id"},
+		{table: "admin_push_tokens", column: "store_id"},
 		// Subscription row.
-		{"store_subscriptions", "store_id"},
+		{table: "store_subscriptions", column: "store_id"},
 		// Outbox events (best-effort — may already be consumed).
-		{"outbox_events", "tenant_id"},
+		{table: "outbox_events", column: "tenant_id"},
 		// Idempotency keys (best-effort).
-		{"idempotency_keys", "tenant_id"},
+		{table: "idempotency_keys", column: "tenant_id"},
 		// Stores table — must be last (other tables FK to it).
-		{"stores", "id"},
+		{table: "stores", column: "id"},
 	}
 
 	for _, s := range sweeps {
@@ -140,7 +187,7 @@ func Sweep(ctx context.Context, tx *gorm.DB, emitter *audit.Emitter, logger *slo
 		if s.column == "tenant_id" {
 			id = tenantID
 		}
-		if err := sweepTable(ctx, tx, emitter, logger, s.table, s.column, id, tenantID); err != nil {
+		if err := sweepTable(ctx, tx, emitter, logger, s, id, tenantID); err != nil {
 			return err
 		}
 	}

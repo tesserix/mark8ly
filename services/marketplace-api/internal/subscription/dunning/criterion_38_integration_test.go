@@ -30,6 +30,7 @@ func TestCriterion38_DunningLeavesPaymentActionRequiredAlone(t *testing.T) {
 	tenantID := uuid.New()
 	seedStore(t, db, tenantID, storeID)
 	hostedURL := "https://stripe.example/i/criterion38"
+	merchantEmail := "merchant-c38@example.com"
 
 	// FirstChargeAt 30 days ago simulates an established sub — well outside the
 	// 14-day refund window if it were in past_due. Irrelevant for PAR logic but
@@ -46,6 +47,7 @@ func TestCriterion38_DunningLeavesPaymentActionRequiredAlone(t *testing.T) {
 		Status:           subscription.StatusPaymentActionRequired,
 		HostedInvoiceURL: &hostedURL,
 		FirstChargeAt:    &thirtyDaysAgo,
+		Email:            &merchantEmail,
 	}
 	if err := db.Create(&sub).Error; err != nil {
 		t.Fatalf("seed sub: %v", err)
@@ -105,7 +107,7 @@ func TestCriterion38_DunningLeavesPaymentActionRequiredAlone(t *testing.T) {
 	scaMailer.mu.Lock()
 	scaCall := scaMailer.Calls[0]
 	scaMailer.mu.Unlock()
-	if scaCall.To != storeID.String() {
-		t.Fatalf("SCA reminder To = %q; want store_id %q", scaCall.To, storeID.String())
+	if scaCall.To != merchantEmail {
+		t.Fatalf("SCA reminder To = %q; want merchant email %q", scaCall.To, merchantEmail)
 	}
 }

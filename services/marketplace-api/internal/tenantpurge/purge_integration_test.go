@@ -425,3 +425,61 @@ func TestPurge_StoreScopedTablesAreScopedToTheTenantsOwnStores(t *testing.T) {
 	require.EqualValues(t, 0, countA, "tenant A's store_transactional_counter row must be gone")
 	require.EqualValues(t, 1, countB, "tenant B's store_transactional_counter row must survive — cross-tenant leak")
 }
+
+// payment_action_reminders holds store_ids keyed by (store_id, offset_key),
+// but must be scoped through the tenant via store_subscriptions: the
+// payment_action_reminders.store_id column matches store_subscriptions.store_id,
+// not store_subscriptions.id. This test seeds both tenants with
+// payment_action_reminders, purges one, and verifies that only the purged
+// tenant's rows are deleted and the other tenant's rows survive. Without the
+// second assertion, a subquery comparing against the wrong column would still
+// pass (a too-broad DELETE that matches BOTH tenants would be hidden by the
+// presence of ANY rows).
+func TestPurge_PaymentActionReminders_DeletesOnlyPurgedTenantRowsViaStoreId(t *testing.T) {
+	db := testdb.NewDB(t, "payment_action_reminders", "store_subscriptions", "stores")
+	ctx := context.Background()
+
+	tenantA := uuid.NewString()
+	storeA := seedStore(t, db, tenantA)
+	tenantB := uuid.NewString()
+	storeB := seedStore(t, db, tenantB)
+
+	// Seed store_subscriptions rows for each store to establish a realistic fixture.
+	// Deletion of payment_action_reminders is via direct store_id matching (storeScoped),
+	// not via subquery through store_subscriptions.
+	for storeID, tenantID := range map[string]string{storeA: tenantA, storeB: tenantB} {
+		require.NoError(t, db.Exec(`
+			INSERT INTO store_subscriptions
+			  (id, tenant_id, store_id, stripe_customer_id, plan, status)
+			VALUES (?, ?, ?, ?, 'pro', 'active')`,
+			uuid.NewString(), tenantID, storeID, "cus_"+storeID[:8]).Error)
+	}
+
+	// Seed payment_action_reminders rows for both tenants.
+	// Each row has (store_id, offset_key) — store_id is the PK component we're testing.
+	require.NoError(t, db.Exec(`
+		INSERT INTO payment_action_reminders (store_id, offset_key, sent_at)
+		VALUES (?, 't_minus_14', now()), (?, 't_minus_7', now())`,
+		storeA, storeA).Error)
+	require.NoError(t, db.Exec(`
+		INSERT INTO payment_action_reminders (store_id, offset_key, sent_at)
+		VALUES (?, 't_minus_14', now()), (?, 't_minus_1', now())`,
+		storeB, storeB).Error)
+
+	rep, err := tenantpurge.Purge(ctx, db, tenantA, []string{storeA})
+	require.NoError(t, err)
+
+	var got int64 = -1
+	for _, tr := range rep.Tables {
+		if tr.Table == "payment_action_reminders" {
+			got = tr.RowsDeleted
+		}
+	}
+	require.EqualValues(t, 2, got, "report must show exactly 2 rows deleted from payment_action_reminders for tenant A")
+
+	var countA, countB int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM payment_action_reminders WHERE store_id = ?`, storeA).Scan(&countA).Error)
+	require.NoError(t, db.Raw(`SELECT count(*) FROM payment_action_reminders WHERE store_id = ?`, storeB).Scan(&countB).Error)
+	require.EqualValues(t, 0, countA, "tenant A's payment_action_reminders rows must be deleted")
+	require.EqualValues(t, 2, countB, "tenant B's payment_action_reminders rows must survive — cross-tenant isolation")
+}

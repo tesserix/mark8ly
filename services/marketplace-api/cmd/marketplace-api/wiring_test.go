@@ -68,3 +68,49 @@ func TestPlatformadminRegisterSitesAgree(t *testing.T) {
 		"the two platformadmin.Register sites construct different Deps field sets — "+
 			"one deployment will differ from the other (#323)")
 }
+
+// TestBillingTemplatesRegisteredAfterSeeding guards spec §4: "No seed
+// migration ... A key with no row simply renders from its embedded default."
+//
+// SeedFromEmbedded inserts every REGISTERED fallback as status='published',
+// and Loader.Render prefers a published row. If email.RegisterFallbacks ran
+// before it, the 11 billing templates would be seeded as published rows —
+// day one identical, and then permanently stale, because the seed is
+// ON CONFLICT (key) DO NOTHING: an edit to templates_content.go would
+// deploy and silently never reach a merchant.
+//
+// Ordering in a single function body is exactly the kind of thing a later
+// refactor reshuffles without noticing, so it is asserted here on source
+// position rather than left to review.
+func TestBillingTemplatesRegisteredAfterSeeding(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	require.NoError(t, err)
+
+	var registerPos, seedPos token.Pos
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "RegisterFallbacks":
+			if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "email" {
+				registerPos = call.Pos()
+			}
+		case "SeedFromEmbedded":
+			seedPos = call.Pos()
+		}
+		return true
+	})
+
+	require.NotZero(t, registerPos, "email.RegisterFallbacks call not found in main.go")
+	require.NotZero(t, seedPos, "SeedFromEmbedded call not found in main.go")
+	require.Greater(t, int(registerPos), int(seedPos),
+		"email.RegisterFallbacks must run AFTER SeedFromEmbedded, or the billing "+
+			"templates get seeded as published rows and go stale forever (spec §4)")
+}

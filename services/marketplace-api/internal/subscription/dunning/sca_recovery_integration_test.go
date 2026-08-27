@@ -38,6 +38,7 @@ func TestSCARecovery_WebhookPaymentActionRequired_SCAReminders_InvoicePaidClears
 	seedStore(t, db, tenantID, storeID)
 	stripeCustomerID := "cus_sca_recovery_" + storeID.String()[:8]
 	hostedURL := "https://stripe.example/i/test"
+	merchantEmail := "merchant-sca-recovery@example.com"
 
 	// Seed an active subscription.
 	sub := subscription.StoreSubscription{
@@ -47,6 +48,7 @@ func TestSCARecovery_WebhookPaymentActionRequired_SCAReminders_InvoicePaidClears
 		StripeCustomerID: stripeCustomerID,
 		Plan:             subscription.PlanStarter,
 		Status:           subscription.StatusActive,
+		Email:            &merchantEmail,
 	}
 	if err := db.Create(&sub).Error; err != nil {
 		t.Fatalf("seed sub: %v", err)
@@ -122,15 +124,15 @@ func TestSCARecovery_WebhookPaymentActionRequired_SCAReminders_InvoicePaidClears
 	if call.Template != email.TemplatePaymentActionReminder {
 		t.Fatalf("expected template %q, got %q", email.TemplatePaymentActionReminder, call.Template)
 	}
-	if call.To != storeID.String() {
-		t.Fatalf("expected To = store_id %q, got %q", storeID.String(), call.To)
+	if call.To != merchantEmail {
+		t.Fatalf("expected To = merchant email %q, got %q", merchantEmail, call.To)
 	}
 
 	// Assert idempotency row inserted for (store_id, t_minus_14).
 	var parRows int64
 	if err := db.Raw(`
 		SELECT COUNT(*) FROM payment_action_reminders
-		WHERE subscription_id = ? AND offset_key = 't_minus_14'`,
+		WHERE store_id = ? AND offset_key = 't_minus_14'`,
 		storeID,
 	).Scan(&parRows).Error; err != nil {
 		t.Fatalf("count payment_action_reminders: %v", err)

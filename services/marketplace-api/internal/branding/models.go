@@ -39,7 +39,11 @@ type StoreBranding struct {
 	SocialTiktok       *string        `gorm:"column:social_tiktok;type:varchar(300)"`
 	SocialYoutube      *string        `gorm:"column:social_youtube;type:varchar(300)"`
 	CustomCSS          *string        `gorm:"column:custom_css"`
-	ShowPoweredBy      bool           `gorm:"column:show_powered_by;not null;default:true"`
+	// No `default:` tag -- see page.Published (#394). The UPDATE path here
+	// was already protected with Select("*"); the CREATE path was not, so a
+	// merchant turning this off on their FIRST branding save had it silently
+	// re-enabled. defaultBranding() supplies the true default in Go.
+	ShowPoweredBy bool `gorm:"column:show_powered_by;not null"`
 	// SEO + AI SEO
 	SeoTitleTemplate      *string `gorm:"column:seo_title_template;type:varchar(200)"`
 	SeoDefaultDescription *string `gorm:"column:seo_default_description"`

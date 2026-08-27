@@ -20,12 +20,18 @@ func TestRepository_Create_GetByID(t *testing.T) {
 
 	tenantID := uuid.New()
 	storeID := uuid.New()
+	// Published is set explicitly. The repository persists exactly what it is
+	// handed; Service.Create is the layer that defaults it to true. Relying on
+	// the column default here used to pass only because the `default:` tag made
+	// GORM drop the field from the INSERT -- the same mechanism that made
+	// `Published: false` impossible to write (#394).
 	p := &Page{
-		TenantID: tenantID,
-		StoreID:  storeID,
-		Slug:     "about",
-		Title:    "About Us",
-		Body:     "hello world",
+		TenantID:  tenantID,
+		StoreID:   storeID,
+		Slug:      "about",
+		Title:     "About Us",
+		Body:      "hello world",
+		Published: true,
 	}
 	require.NoError(t, repo.Create(context.Background(), p))
 	require.NotEqual(t, uuid.Nil, p.ID)
@@ -35,7 +41,7 @@ func TestRepository_Create_GetByID(t *testing.T) {
 	require.NotNil(t, got)
 	require.Equal(t, "About Us", got.Title)
 	require.Equal(t, "hello world", got.Body)
-	require.True(t, got.Published, "default published=true")
+	require.True(t, got.Published)
 }
 
 func TestRepository_GetBySlug_PublishedOnly(t *testing.T) {
@@ -74,11 +80,12 @@ func TestRepository_ListByStore(t *testing.T) {
 	storeID := uuid.New()
 	otherStoreID := uuid.New()
 
+	// Published: true is explicit -- see TestRepository_Create_GetByID.
 	pages := []*Page{
-		{TenantID: tenantID, StoreID: storeID, Slug: "faq", Title: "FAQ", SortOrder: 2},
-		{TenantID: tenantID, StoreID: storeID, Slug: "about", Title: "About", SortOrder: 1},
-		{TenantID: tenantID, StoreID: storeID, Slug: "contact", Title: "Contact", SortOrder: 2},
-		{TenantID: tenantID, StoreID: otherStoreID, Slug: "other", Title: "Other Store Page", SortOrder: 0},
+		{TenantID: tenantID, StoreID: storeID, Slug: "faq", Title: "FAQ", SortOrder: 2, Published: true},
+		{TenantID: tenantID, StoreID: storeID, Slug: "about", Title: "About", SortOrder: 1, Published: true},
+		{TenantID: tenantID, StoreID: storeID, Slug: "contact", Title: "Contact", SortOrder: 2, Published: true},
+		{TenantID: tenantID, StoreID: otherStoreID, Slug: "other", Title: "Other Store Page", SortOrder: 0, Published: true},
 	}
 	for _, pg := range pages {
 		require.NoError(t, repo.Create(context.Background(), pg))

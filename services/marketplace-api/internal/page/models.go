@@ -18,10 +18,16 @@ type Page struct {
 	Body           string    `gorm:"column:body;type:text;not null;default:''"                json:"body"`
 	SEOTitle       *string   `gorm:"column:seo_title;type:varchar(200)"                       json:"seo_title,omitempty"`
 	SEODescription *string   `gorm:"column:seo_description;type:varchar(300)"                 json:"seo_description,omitempty"`
-	Published      bool      `gorm:"column:published;not null;default:true"                   json:"published"`
-	SortOrder      int       `gorm:"column:sort_order;not null;default:0"                     json:"sort_order"`
-	CreatedAt      time.Time `gorm:"column:created_at;not null;default:now()"                 json:"created_at"`
-	UpdatedAt      time.Time `gorm:"column:updated_at;not null;default:now()"                 json:"updated_at"`
+	// No `default:` tag, deliberately. GORM omits a zero-valued field from
+	// the INSERT when it carries one, and `false` IS the zero value for a
+	// plain bool -- so `default:true` made `Published: false` unwritable and
+	// served unpublished pages to customers (#394). Service.Create supplies
+	// the true default in Go, so nothing here depended on the column default;
+	// the column keeps its DEFAULT true in SQL for direct inserts.
+	Published bool      `gorm:"column:published;not null"                                json:"published"`
+	SortOrder int       `gorm:"column:sort_order;not null;default:0"                     json:"sort_order"`
+	CreatedAt time.Time `gorm:"column:created_at;not null;default:now()"                 json:"created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at;not null;default:now()"                 json:"updated_at"`
 }
 
 // TableName pins the Page struct to the `pages` table.

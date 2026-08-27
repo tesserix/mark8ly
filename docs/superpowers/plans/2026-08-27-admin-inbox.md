@@ -1367,6 +1367,28 @@ go test ./internal/inbox/... -run TestAggregator -v
 
 Expected: `undefined: inbox.NewAggregator`.
 
+- [ ] **Step 2b: Pin every provider to the interface at compile time**
+
+Nothing currently enforces that the five providers satisfy `Provider`. Their signatures match today,
+but a drift would only surface when Task 7 registers them — late, and with a confusing error. Add to
+`internal/inbox/provider.go`, below the interface declaration:
+
+```go
+// Compile-time proof that every provider satisfies Provider. Without these, a
+// signature drift surfaces only where a provider is registered, far from the
+// change that caused it.
+var (
+	_ Provider = (*SEAReviewProvider)(nil)
+	_ Provider = (*ErasureProvider)(nil)
+	_ Provider = (*ArbitrageProvider)(nil)
+	_ Provider = (*MigrationFastPathProvider)(nil)
+	_ Provider = (*OnboardingProvider)(nil)
+)
+```
+
+Run `go build ./...` immediately after adding this. If it fails, a provider has drifted from the
+interface and that is a real finding — report it rather than adjusting the assertion to match.
+
 - [ ] **Step 3: Write `aggregator.go`**
 
 ```go

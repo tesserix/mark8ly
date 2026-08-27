@@ -40,7 +40,9 @@
 - Do not change production code in this plan. Two production defects were found while measuring; they are filed as separate issues in Task 9, not fixed here.
 - Schema facts, verified against the migrated database — do not re-derive:
   - `stores` NOT NULL with no default: `id, tenant_id, slug, name, country_code, currency_code, timezone, status, storefront_customer_portal_secret`. **`stores` has no `created_at` column at all.**
-  - `vendors` NOT NULL: `id` (default `gen_random_uuid()`), `tenant_id`, `name`, `slug`, `status` (default `'active'`), `is_self` (default `false`), `created_at`/`updated_at` (default `now()`). **No unique constraint beyond the primary key.**
+  - `vendors` NOT NULL: `id` (default `gen_random_uuid()`), `tenant_id`, `name`, `slug`, `status` (default `'active'`), `is_self` (default `false`), `created_at`/`updated_at` (default `now()`).
+  - `vendors` unique **indexes** — `vendors_slug_key` on `slug`, and `vendors_tenant_self_idx`, a **partial unique index on `(tenant_id) WHERE is_self = true`** enforcing one self-vendor per tenant. These are `CREATE UNIQUE INDEX`, not table constraints, so **`pg_constraint` does not list them — query `pg_indexes`.** An earlier revision of this plan asserted "no unique constraint beyond the primary key" for exactly that reason and was wrong.
+  - `stores.synced_at` is NOT NULL but carries a default, which is why the seed helper omits it and still inserts cleanly.
   - `products.vendor_id` is `NOT NULL` with **no foreign key** — only `products_store_id_fkey` and `products_primary_category_id_fkey` exist.
   - `stores_slug_unique` exists, so seeded slugs must be derived from the store id.
 

@@ -25,12 +25,12 @@ func seedFirstChargeSub(t *testing.T) (*gorm.DB, subscription.StoreSubscription,
 	t.Helper()
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
 
-	storeID := uuid.New()
-	seedStore(t, db, storeID)
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	addr := "merchant@example.com"
 	customerID := "cus_" + uuid.NewString()[:12]
 	sub := subscription.StoreSubscription{
-		TenantID:         uuid.New(),
+		TenantID:         tenantID,
 		StoreID:          storeID,
 		StripeCustomerID: customerID,
 		Plan:             subscription.PlanStarter,
@@ -147,12 +147,12 @@ func seedFirstChargeSubWithPlan(t *testing.T, plan subscription.SubscriptionPlan
 	t.Helper()
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
 
-	storeID := uuid.New()
-	seedStore(t, db, storeID)
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	addr := "merchant@example.com"
 	customerID := "cus_" + uuid.NewString()[:12]
 	sub := subscription.StoreSubscription{
-		TenantID:         uuid.New(),
+		TenantID:         tenantID,
 		StoreID:          storeID,
 		StripeCustomerID: customerID,
 		Plan:             plan,

@@ -29,6 +29,7 @@ func TestService_ValidUK_FlipsRow_WritesMatched(t *testing.T) {
 	})
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Exec(`
 		INSERT INTO store_subscriptions
 			(tenant_id, store_id, stripe_customer_id, plan, status, tax_id_country, created_at, updated_at)
@@ -69,6 +70,7 @@ func TestService_SEAManualReview_EnqueuesAndPausesClockImmediately(t *testing.T)
 	})
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Exec(`
 		INSERT INTO store_subscriptions
 			(tenant_id, store_id, stripe_customer_id, plan, status, tax_id_country, created_at, updated_at)
@@ -111,6 +113,7 @@ func TestService_RegistryUnavailable_LogsOutage(t *testing.T) {
 	})
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Exec(`
 		INSERT INTO store_subscriptions
 			(tenant_id, store_id, stripe_customer_id, plan, status, tax_id_country, created_at, updated_at)
@@ -161,6 +164,7 @@ func TestService_OnFastPathApproved_FlipsWindowShortenedAt(t *testing.T) {
 	})
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Exec(`
 		INSERT INTO store_subscriptions
 			(tenant_id, store_id, stripe_customer_id, plan, status, tax_id_country, created_at, updated_at)

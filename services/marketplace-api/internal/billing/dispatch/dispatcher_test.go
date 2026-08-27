@@ -22,6 +22,7 @@ func TestDispatch_CheckoutSessionCompleted_BindsBillingCurrency(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -73,6 +74,7 @@ func TestDispatch_SubscriptionDeleted_StatusExpired(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -99,6 +101,7 @@ func TestDispatch_SubscriptionDeleted_ActiveIsNoOp(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -123,6 +126,7 @@ func TestDispatch_InvoicePaymentActionRequired_StatusUpdated(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -148,6 +152,7 @@ func TestDispatch_InvoicePaymentFailed_ActiveToPastDue(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -174,6 +179,7 @@ func TestDispatch_InvoicePaymentActionRequired_PersistsHostedInvoiceURL(t *testi
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -202,7 +208,7 @@ func TestDispatch_InvoicePaid_StampsFirstChargeAt_ClearsHostedURL(t *testing.T) 
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
-	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
+	testdb.SeedStore(t, db, tenantID, storeID)
 	hostedURL := "https://invoice.stripe.com/i/acct_123/test_yyy"
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
@@ -232,7 +238,7 @@ func TestDispatch_InvoicePaid_FirstChargeAtIdempotent_SecondEventDoesNotAdvance(
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
-	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -267,6 +273,7 @@ func TestHandleCheckoutSessionCompleted_BillingCurrencyLockedAfterFirstBind(t *t
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	bc := "GBP"
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
@@ -299,6 +306,8 @@ func TestDispatch_CustomerUpdated_SetsHasDefaultPaymentMethod(t *testing.T) {
 
 	tenantA, storeA := uuid.New(), uuid.New()
 	tenantB, storeB := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantA, storeA)
+	testdb.SeedStore(t, db, tenantB, storeB)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:                tenantA,
 		StoreID:                 storeA,
@@ -386,7 +395,7 @@ func TestDispatch_InvoicePaid_FirstChargeEmitsTrialBilledEmail(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
 
 	tenantID, storeID := uuid.New(), uuid.New()
-	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -421,7 +430,7 @@ func TestDispatch_InvoicePaid_NoEmailClientStillProcesses(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events", "billing_email_sends")
 
 	tenantID, storeID := uuid.New(), uuid.New()
-	seedStore(t, db, storeID) // store_subscriptions.store_id has an enforced FK
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -482,8 +491,8 @@ func runInvoicePaidFirstCharge(t *testing.T, client email.Client, addr *string) 
 
 	tenantID := uuid.New()
 	storeID = uuid.New()
-	seedStore(t, db, storeID)
-	storeName = "Test Store " + storeID.String() // must match seedStore's inserted name
+	testdb.SeedStore(t, db, tenantID, storeID)
+	storeName = "Test Store" // must match testdb.SeedStore's inserted name
 
 	customerID := "cus_" + uuid.NewString()[:12]
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
@@ -558,7 +567,7 @@ func TestDispatch_InvoicePaymentFailed_PersistsHostedInvoiceURL(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
-	seedStore(t, db, storeID)
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -589,7 +598,7 @@ func TestDispatch_InvoicePaymentFailed_AbsentURLKeepsExistingValue(t *testing.T)
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
-	seedStore(t, db, storeID)
+	testdb.SeedStore(t, db, tenantID, storeID)
 	existing := "https://invoice.stripe.com/i/acct_123/already_here"
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
@@ -626,7 +635,7 @@ func TestDispatch_InvoicePaymentFailed_DoesNotStampUpdatedAt(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stripe_webhook_events")
 
 	tenantID, storeID := uuid.New(), uuid.New()
-	seedStore(t, db, storeID)
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,

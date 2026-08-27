@@ -29,6 +29,7 @@ func (r *recordingNotifier) Create(_ context.Context, n *notification.Notificati
 func seedValidatedSubscription(t *testing.T, db *gorm.DB, country, taxID, businessName string, validatedAt time.Time) (uuid.UUID, uuid.UUID) {
 	t.Helper()
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Exec(`
 		INSERT INTO store_subscriptions
 			(tenant_id, store_id, stripe_customer_id, plan, status,

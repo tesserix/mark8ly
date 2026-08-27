@@ -2,7 +2,7 @@ package inbox_test
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -19,6 +19,20 @@ type fakeSessions struct {
 
 func (f fakeSessions) ListSessions(context.Context, onboardingfunnel.SessionsParams) (*onboardingfunnel.SessionsResult, error) {
 	return f.res, f.err
+}
+
+// recordingSessions captures the SessionsParams it was called with, so tests
+// can assert on the outgoing request rather than relying on the fake to
+// filter.
+type recordingSessions struct {
+	res  *onboardingfunnel.SessionsResult
+	err  error
+	gotP onboardingfunnel.SessionsParams
+}
+
+func (r *recordingSessions) ListSessions(_ context.Context, p onboardingfunnel.SessionsParams) (*onboardingfunnel.SessionsResult, error) {
+	r.gotP = p
+	return r.res, r.err
 }
 
 func TestOnboardingProvider_OnlyStalledSessions(t *testing.T) {
@@ -42,10 +56,12 @@ func TestOnboardingProvider_OnlyStalledSessions(t *testing.T) {
 }
 
 func TestOnboardingProvider_ErrorPropagatesForTheAggregatorToDegrade(t *testing.T) {
-	p := inbox.NewOnboardingProvider(fakeSessions{err: errors.New("platform-api unreachable")}, 48)
+	wrapped := fmt.Errorf("%w: platform-api unreachable", onboardingfunnel.ErrUnavailable)
+	p := inbox.NewOnboardingProvider(fakeSessions{err: wrapped}, 48)
 
 	_, err := p.List(context.Background(), inbox.Filter{Limit: 10})
-	require.Error(t, err, "the provider must not swallow the error — the aggregator degrades on it")
+	require.ErrorIs(t, err, onboardingfunnel.ErrUnavailable,
+		"the provider must not swallow the error — the aggregator degrades on it")
 }
 
 func TestOnboardingProvider_TenantFilterExcludesOtherTenantsAndUnlinkedSessions(t *testing.T) {
@@ -68,4 +84,94 @@ func TestOnboardingProvider_TenantFilterExcludesOtherTenantsAndUnlinkedSessions(
 	n, err := p.Count(context.Background(), inbox.Filter{TenantID: tenantA, Limit: 10})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, n, "Count must answer the same filter as List")
+}
+
+func TestOnboardingProvider_RequestsAbandonedSessionsOnly(t *testing.T) {
+	now := time.Now().UTC()
+	c := &recordingSessions{res: &onboardingfunnel.SessionsResult{
+		Sessions: []onboardingfunnel.Session{
+			{ID: "huge-idle", Email: "a@example.com", LastActivityAt: now.Add(-3000 * time.Hour), IdleHours: 3000},
+		},
+	}}
+
+	p := inbox.NewOnboardingProvider(c, 48)
+	_, err := p.List(context.Background(), inbox.Filter{Limit: 10})
+	require.NoError(t, err)
+	require.NotNil(t, c.gotP.Abandoned, "List must request abandoned sessions only")
+	require.True(t, *c.gotP.Abandoned)
+}
+
+func TestOnboardingProvider_ListOrdersByWaitingSinceAscending(t *testing.T) {
+	now := time.Now().UTC()
+	c := fakeSessions{res: &onboardingfunnel.SessionsResult{
+		Sessions: []onboardingfunnel.Session{
+			{ID: "middle", Email: "b@example.com", LastActivityAt: now.Add(-80 * time.Hour), IdleHours: 80},
+			{ID: "oldest", Email: "c@example.com", LastActivityAt: now.Add(-200 * time.Hour), IdleHours: 200},
+			{ID: "newest", Email: "a@example.com", LastActivityAt: now.Add(-50 * time.Hour), IdleHours: 50},
+		},
+	}}
+
+	p := inbox.NewOnboardingProvider(c, 48)
+	items, err := p.List(context.Background(), inbox.Filter{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, items, 3)
+
+	ids := make([]string, len(items))
+	for i, it := range items {
+		ids[i] = it.ID
+	}
+	require.Equal(t, []string{"oldest", "middle", "newest"}, ids,
+		"items must be sorted by WaitingSince ascending")
+}
+
+// limitHonoringSessions mimics upstream's behavior of truncating the
+// response to the requested Limit, unlike fakeSessions which always returns
+// its full fixed set regardless of what was asked for.
+type limitHonoringSessions struct {
+	sessions []onboardingfunnel.Session
+}
+
+func (l limitHonoringSessions) ListSessions(_ context.Context, p onboardingfunnel.SessionsParams) (*onboardingfunnel.SessionsResult, error) {
+	limit := p.Limit
+	if limit <= 0 || limit > len(l.sessions) {
+		limit = len(l.sessions)
+	}
+	return &onboardingfunnel.SessionsResult{Sessions: l.sessions[:limit], Total: int64(len(l.sessions))}, nil
+}
+
+func TestOnboardingProvider_CountIsStableAcrossPages(t *testing.T) {
+	now := time.Now().UTC()
+	sessions := make([]onboardingfunnel.Session, 0, 30)
+	for i := 0; i < 30; i++ {
+		sessions = append(sessions, onboardingfunnel.Session{
+			ID:             "s" + string(rune('a'+i)),
+			Email:          "s@example.com",
+			LastActivityAt: now.Add(-time.Duration(100+i) * time.Hour),
+			IdleHours:      float64(100 + i),
+		})
+	}
+	c := limitHonoringSessions{sessions: sessions}
+
+	p := inbox.NewOnboardingProvider(c, 48)
+
+	// These mirror the aggregator's fanout filters for page=1,limit=25 and
+	// page=2,limit=25 (fanout.Limit = page*limit).
+	n1, err := p.Count(context.Background(), inbox.Filter{Page: 1, Limit: 25})
+	require.NoError(t, err)
+	n2, err := p.Count(context.Background(), inbox.Filter{Page: 1, Limit: 50})
+	require.NoError(t, err)
+	require.Equal(t, n1, n2, "Count must not change as the aggregator pages forward")
+}
+
+func TestOnboardingProvider_ListForwardsPage(t *testing.T) {
+	c := &recordingSessions{res: &onboardingfunnel.SessionsResult{}}
+	p := inbox.NewOnboardingProvider(c, 48)
+
+	_, err := p.List(context.Background(), inbox.Filter{Page: 3, Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, 3, c.gotP.Page, "List must forward the caller's page")
+
+	_, err = p.List(context.Background(), inbox.Filter{Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, 1, c.gotP.Page, "a zero page must default to 1")
 }

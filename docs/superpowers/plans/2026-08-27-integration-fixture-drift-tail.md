@@ -29,14 +29,16 @@ a usable instrument on this branch**, for two independent reasons proven while m
 
 **The only trustworthy instrument found: `TRUNCATE` all ~100 tables, then run exactly one package,
 repeat for every package, never let two packages share a database state.** This was run at both the
-baseline commit (`30c3fdff`) and this branch's HEAD. Anyone re-measuring this suite without truncating
-between packages will get fiction and should be told so before they burn a day on it — this note
-exists so the next person doesn't have to rediscover it.
+baseline commit (`30c3fdff`) and a mid-branch snapshot, below. Anyone re-measuring this suite without
+truncating between packages will get fiction and should be told so before they burn a day on it — this
+note exists so the next person doesn't have to rediscover it.
 
-Per-package clean-DB result at this branch's HEAD (`/tmp/clean-iso.txt`):
+Per-package clean-DB result at a mid-branch snapshot, **not** this branch's HEAD (`/tmp/clean-iso.txt`).
+Two of the FAILs below — `apikeys` and `handlers/webhooks` — were subsequently fixed later on this same
+branch; treat this table as history, not the current state:
 
 ```
-./internal/apikeys :: FAIL
+./internal/apikeys :: FAIL (fixed later on this branch)
 ./internal/arbitrage :: FAIL
 ./internal/audit :: ok
 ./internal/billing/dispatch :: ok
@@ -46,7 +48,7 @@ Per-package clean-DB result at this branch's HEAD (`/tmp/clean-iso.txt`):
 ./internal/handlers/admin :: FAIL
 ./internal/handlers/platformadmin :: ok
 ./internal/handlers/storefront :: FAIL
-./internal/handlers/webhooks :: FAIL
+./internal/handlers/webhooks :: FAIL (fixed later on this branch)
 ./internal/orderrefund :: FAIL
 ./internal/page :: FAIL
 ./internal/product :: FAIL

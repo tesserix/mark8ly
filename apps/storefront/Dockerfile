@@ -7,7 +7,7 @@
 # apps/admin and apps/onboarding — only workspace name + port differ.
 
 # ─── deps ──────────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-node-builder-22@sha256:ac0254526efbc5bd4079193a010e9087ea722eada2f4bede2db1817b900b7a01 AS deps
+FROM ghcr.io/tesserix/base-node-builder-22@sha256:a8d70bc7af6346aeb8eef23c58a1c72b411facf6f3bb4a0924a1610fb7a730e6 AS deps
 USER 0:0
 WORKDIR /src
 
@@ -29,7 +29,7 @@ RUN --mount=type=secret,id=PACKAGE_READ_TOKEN \
     npm ci --no-audit --no-fund --legacy-peer-deps
 
 # ─── builder ───────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-node-builder-22@sha256:ac0254526efbc5bd4079193a010e9087ea722eada2f4bede2db1817b900b7a01 AS builder
+FROM ghcr.io/tesserix/base-node-builder-22@sha256:a8d70bc7af6346aeb8eef23c58a1c72b411facf6f3bb4a0924a1610fb7a730e6 AS builder
 USER 0:0
 WORKDIR /src
 COPY --from=deps /src/node_modules ./node_modules
@@ -72,7 +72,7 @@ RUN --mount=type=secret,id=APPLICATION_BUILD_SECRET \
 
 # ─── runtime ───────────────────────────────────────────────────────────
 # base-node-runtime-22: libc6-compat, tini PID 1, USER 10001 (nextjs).
-FROM ghcr.io/tesserix/base-node-runtime-22@sha256:41ad466bd1f42a02eca0a3d8c7022d2a42438b9bba31c59f65001af283feb330 AS runtime
+FROM ghcr.io/tesserix/base-node-runtime-22@sha256:077d93e0d00a269fc64a54acb796158457dd478bd97d28805768c11e7d518f34 AS runtime
 WORKDIR /app
 
 ENV PORT=4203

@@ -526,6 +526,13 @@ Two providers together because they are the same shape: a local table read filte
   - `func NewErasureProvider(db *gorm.DB) *ErasureProvider`
   - `func NewArbitrageProvider(db *gorm.DB) *ArbitrageProvider`
 
+**Schema constraints these tests must respect** — verified, do not re-derive:
+- `customer_erasure_requests` has **`UNIQUE (store_id, customer_email)`**. Seeding several rows into
+  one store therefore needs a distinct email per row; the helper below derives one from the row id.
+  An earlier draft of this plan reused one address and would have failed on insert.
+- `subscription_arbitrage_audit` has **no** unique constraint beyond its primary key, so repeated
+  rows on one store are fine there.
+
 **Design note — read before writing.** Neither provider sets `DueAt`. GDPR's 30-day window is real, and an unprocessed erasure request is exactly #259's complaint, but `customer_erasure_requests` has no due column and deriving a statutory deadline inside a read endpoint invents policy in the wrong place. The spec records this deliberately. Do not add one.
 
 - [ ] **Step 1: Write the failing tests**
@@ -553,11 +560,14 @@ import (
 func seedErasure(t *testing.T, db *gorm.DB, tenantID, storeID uuid.UUID, status string, requestedAt time.Time) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
+	// customer_erasure_requests has UNIQUE (store_id, customer_email), so the
+	// email must be distinct per row within a store. Derive it from the row id.
+	email := "buyer-" + id.String()[:8] + "@example.com"
 	require.NoError(t, db.Exec(`
 		INSERT INTO customer_erasure_requests
 			(id, tenant_id, store_id, customer_email, requested_at, status)
-		VALUES (?, ?, ?, 'buyer@example.com', ?, ?)`,
-		id, tenantID, storeID, requestedAt, status,
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		id, tenantID, storeID, email, requestedAt, status,
 	).Error)
 	return id
 }
@@ -578,6 +588,7 @@ func TestErasureProvider_OnlyPendingAndNoDueDate(t *testing.T) {
 	require.Len(t, items, 1)
 	require.Equal(t, wanted.String(), items[0].ID)
 	require.Equal(t, inbox.KindErasureRequest, items[0].Kind)
+	require.Contains(t, items[0].Title, "@example.com", "title is the customer email")
 	require.Nil(t, items[0].DueAt,
 		"no derived GDPR deadline — the table has no due column and this endpoint does not invent policy")
 	require.Equal(t, inbox.SeverityNormal, items[0].Severity)

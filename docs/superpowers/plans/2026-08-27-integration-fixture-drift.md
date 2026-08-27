@@ -830,66 +830,166 @@ git commit -m "test(apikeys): fix varchar(60) overflow in fixtures and widen tes
 
 ---
 
-### Task 9: File the two production defects found while measuring
+### Task 9: File the production defects found while relighting the suite
 
-Neither is a fixture problem and neither should be fixed inside a test-repair branch. Both were found by running the dark suite — which is the argument for this whole plan.
+*(Rewritten after Task 7's triage. This was scoped as two issues; the triage found ten defects, so it
+is now eight new issues plus one comment. None is a fixture problem, and none may be fixed inside a
+test-repair branch. Every one of them was found by running a suite that had been dark — which is the
+entire argument for this plan.)*
 
 **Files:**
-- No code changes. Two GitHub issues.
+- No code changes except one comment in `internal/product/models.go`. Eight GitHub issues, one comment.
+
+**CHECK FOR DUPLICATES BEFORE FILING ANYTHING.** `gh issue list --state all --search "<keywords>"`
+for each defect. The `audit.Emitter` panic is **already filed as #318** (created 2026-08-23) — do NOT
+re-file it; add a comment recording the independent reproduction instead. A duplicate issue is worse
+than no issue. Read back every write with `gh issue view <n>` — a `gh` write that is not read back is
+not known to have happened.
+
+**Severity order — file the customer-facing one first**, so that if anything interrupts you the most
+important one exists:
+
+1. **GORM `default:` + non-pointer `bool`: `false` can never be persisted.** `page.Published`
+   (`internal/page/models.go:21`) and `category.IsActive` (`internal/category/models.go:20`) are plain
+   `bool` fields carrying `gorm:"...default:true"`. GORM omits a zero-valued field from the INSERT
+   when it has a `default:` tag, and `false` is the zero value for `bool`, so the column default
+   `true` silently wins. `page.Repository.Create` (`repository.go:29-34`) does a plain `.Create(p)`
+   with no workaround. **Consequence: categories cannot be deactivated, and unpublished pages are
+   served to customers on the storefront.** Five failing tests across `page`, `handlers/storefront`
+   and `category` share this one root cause. Suggested fix: `*bool` fields, or `Select`/`Omit` on
+   create, or drop the `default:` tag. Note in the issue that any other model with the same
+   shape (`bool` + `default:`) is suspect and worth an audit.
+2. **`Variant.DeletedAt` is `*time.Time`, not `gorm.DeletedAt`** (`internal/product/models.go:130`;
+   `gorm.DeletedAt` appears zero times in that file). GORM's automatic soft-delete filtering
+   therefore never applies, and all five `Preload("Variants")` sites in
+   `internal/product/repository.go` (lines 209, 281, 351, 405, 447) return soft-deleted variants
+   alongside active ones on every aggregate read. Systemic — affects every caller, not one test.
+3. **The tax revalidation cron deadlocks, and takes the whole integration suite with it.**
+   `Cron.Run` (`internal/billing/tax/revalidation/cron.go:78`) opens a transaction and takes
+   `pg_advisory_xact_lock`; `processOne` UPDATEs `store_subscriptions` inside it (`cron.go:143`);
+   then `c.Svc.Submit(ctx, in)` — which takes no `tx` (`internal/billing/tax/service.go:67`) — runs on
+   a different pooled connection and writes the same row. It blocks on the uncommitted row lock while
+   the outer transaction waits for it to return. Postgres's deadlock detector sees no cycle (the
+   outer transaction is idle-in-transaction, not waiting on a lock), so there is no error — just an
+   unbounded hang. **Include the blast radius**, measured: with this package in a `-p 1` run,
+   `billing/trial`, `campaignbudget`, `campaignbudget/cron` and `category` all hit the test timeout;
+   with it absent they take 11.3s, 1.1s, 0.6s and 0.9s. In production the cron hangs forever on the
+   first stale validation, holding the advisory lock and blocking every subsequent run. It has never
+   run successfully. Note that `make test-int` deliberately lists `./internal/billing/tax`
+   non-recursively because of this.
+4. **A blocked downgrade's audit row is written and then rolled back.**
+   `internal/subscription/planchange/downgrade.go:41-50` calls `WritePlanChangeAuditRowTx` with
+   `Action: "downgrade_blocked_over_quota"` on the same `tx` the operation runs in, then returns
+   `ErrStoreCountOverQuota` at `downgrade.go:70`. That `tx` comes from `WithAdvisoryLock`
+   (`internal/subscription/advisory_lock.go:15-22`), which wraps everything in
+   `db.Transaction(...)` — a non-nil return rolls it back. The comment at `downgrade.go:40` says the
+   row exists "so ops can see why the downgrade was refused"; it is defeated by the transaction it
+   runs inside. The audit trail for the one case ops most needs never persists.
+5. **Merchant appeals cannot be recorded.** `internal/arbitrage/appeal.go:89` builds
+   `existingReason + "\n---\nMERCHANT_APPEAL jurisdiction=" + country`, then appends
+   `" justification=" + <merchant free text>` and `" doc=" + <URL>`, and writes the result to
+   `subscription_arbitrage_audit.mismatch_reason`, which is `varchar(100)`. The boilerplate alone is
+   ~40 characters on top of an existing reason, so any realistic appeal overflows and the UPDATE
+   fails with SQLSTATE 22001 — the appeal is not recorded. Unbounded by design: every appeal appends
+   to the same 100-char column. Suggested fix: widen the column, or move appeals to their own table.
+6. **`ApplyTrialRamp` is not idempotent against consumption.**
+   `internal/campaignbudget/ramp.go:56-73` runs `SET remaining = GREATEST(remaining, 2000)`. Its own
+   docstring (`ramp.go:44-46`) claims idempotency, but if a merchant spends between runs, a re-run
+   re-inflates the balance they already consumed. Seed 50 → ramp(day4) → 2000 → `Reserve(200)` → 1800
+   → ramp(day4) again → back to 2000.
+7. **`OptionValueInUse` appears unreachable through the public API.**
+   `internal/product/service_aggregate.go:445`'s guard sits behind `ValidateMatrix`
+   (`internal/product/matrix.go:52`, called at `service_aggregate.go:108`), which rejects any variant
+   referencing an option value absent from the desired spec — which is precisely the scenario the
+   guard exists for. Either loosen the validation so the intended check can run, or confirm the path
+   is dead and document it as defence-in-depth. State the uncertainty honestly; this one is
+   "appears", not "is".
+8. **Cross-package integration-test pollution.** `pkg/testdb`'s `NewDB` truncates only the tables it
+   is explicitly given, so a package doing raw inserts leaves rows that break the next package. Since
+   the fixtures were repaired, a full `./...` run reports ~46 failures that do not reproduce, and 7 of
+   19 "failing" packages actually pass on a clean database. **Any full-suite measurement must
+   TRUNCATE between packages or it reports fiction.** This did not surface before because tests
+   aborted early on FK/NOT NULL violations and never wrote enough to pollute anything — the repair
+   made it visible. Include the reproduction: run the 19 packages sequentially without a reset and
+   watch `dispatch` and `dunning` flip between pass and fail depending on order.
 
 **Interfaces:**
 - Consumes: findings from the baseline run.
 - Produces: issue numbers to reference from `internal/product/models.go` and the tail triage doc.
 
-- [ ] **Step 1: File the `audit.Emitter` nil-repo panic**
-
-Title: `audit.NewEmitter accepts a nil Repo and the worker goroutine panics, killing the process`
-
-Body must contain:
-- `NewEmitter` (`internal/audit/emitter.go:76`) defaults `QueueSize` and `Workers` but never validates `cfg.Repo` or `cfg.DB`.
-- `Emit` (`:99`) explicitly guards `e == nil` with the comment *"safe to call when wiring opted out (e.g. unit tests)"* — so nil-tolerance is an intended part of this type's contract, and the validation gap is inconsistent with it.
-- With a nil `Repo`, `write` (`:216`) dereferences it inside `worker`, on a background goroutine. A panic there cannot be recovered by the caller and takes down the whole process — it does not return an error, and no request-scoped recovery middleware sees it.
-- Reproduced by `internal/whitelabel/lifecycle` in the 2026-08-27 baseline run; the panic aborts the test binary, so that package's remaining tests never ran.
-- Suggested fix: fail fast in `NewEmitter` when `Repo` or `DB` is nil, or make `write` degrade to a log line. Fail-fast at construction is preferable — a silently dropped audit trail is its own problem.
-
-- [ ] **Step 2: File the `Product.VendorID` type mismatch**
-
-Title: `product.Product.VendorID is *string against a NOT NULL column, so invalid products only fail at insert time`
-
-Body must contain:
-- `internal/product/models.go:52` declares `VendorID *string`; migration `000028_products_vendor_id_not_null.up.sql` made the column `NOT NULL`, with a guard that aborts if any row still has a NULL.
-- The migration is deliberate and correct — it documents that `product.Create` defaults new products to the tenant's self-vendor. The struct is what is stale.
-- Consequence: nothing prevents constructing a `Product` without a vendor, so the failure surfaces as a database error at insert. This is the direct cause of 74 integration failures across three packages, fixed at the fixture level in Task 3.
-- Tightening to a non-pointer `string` touches JSON `omitempty` behaviour and every nil check, so it needs its own change and its own review.
-
-- [ ] **Step 3: Read both issues back**
+- [ ] **Step 1: Check every defect for an existing issue before filing**
 
 ```bash
-for n in <issue-a> <issue-b>; do
-  gh issue view "$n" --json number,state,title,body --jq '"#\(.number) \(.state) bodylen=\(.body|length) \(.title)"'
+for q in "Emitter nil Repo" "revalidation deadlock" "mismatch_reason" "vendor_id NOT NULL" \
+         "soft delete variant" "published default" "ApplyTrialRamp" "OptionValueInUse" \
+         "testdb truncate"; do
+  printf "\n### %s\n" "$q"
+  gh issue list --state all --search "$q" --limit 5 --json number,state,title \
+    --jq '.[]|"  #\(.number) \(.state) \(.title)"'
 done
 ```
 
-A `gh` write that is not read back is not known to have happened.
+At the time of writing only one match existed: **#318**, `audit.NewEmitter accepts a nil Repo and
+panics a worker goroutine on first write`, created 2026-08-23. Verify that is still the case — if
+someone has filed one of the others in the meantime, comment on theirs instead of opening a second.
 
-- [ ] **Step 4: Reference the model issue from the code**
+- [ ] **Step 2: File the eight new issues, in the severity order given above**
 
-Add above `internal/product/models.go:52`:
+One issue per numbered defect in this task's header. Copy the file:line evidence verbatim — it was
+verified against source by two independent reviewers, and re-deriving it risks introducing errors.
+Do not merge defects 1 and 2 into a single "GORM modelling" issue: they have different fixes, different
+blast radii, and one is customer-facing while the other is not.
+
+- [ ] **Step 3: Comment on #318 rather than re-filing it**
+
+```bash
+gh issue comment 318 --body "<reproduction note>"
+```
+
+The comment should record: reproduced independently on 2026-08-27 by `internal/whitelabel/lifecycle`
+during the integration-fixture repair; the panic aborts the whole test binary, so that package's
+remaining tests never run; and that this is why the package still shows a failure after the fixture
+work. Do not restate the diagnosis already in the issue.
+
+- [ ] **Step 4: Read back every write**
+
+```bash
+for n in <each new issue number>; do
+  gh issue view "$n" --json number,state,title,body --jq '"#\(.number) \(.state) bodylen=\(.body|length) \(.title)"'
+done
+gh issue view 318 --json comments --jq '.comments[-1].body|length'
+```
+
+A `gh` write that is not read back is not known to have happened. A body length of 0 means the issue
+was created empty — refill it with `gh issue edit <n> --body-file`.
+
+- [ ] **Step 5: Reference the model issues from the code**
+
+Above `internal/product/models.go:52`:
 
 ```go
 // VendorID is a pointer for historical reasons; the column has been NOT NULL
-// since migration 000028. See issue #<issue-b> — tightening it to a plain
-// string touches JSON omitempty and every nil check, so it is tracked
+// since migration 000028. See issue #<vendor-id-issue> — tightening it to a
+// plain string touches JSON omitempty and every nil check, so it is tracked
 // separately.
 ```
 
-Run `gofmt -l .` afterwards: inserting a comment into an aligned struct re-aligns the fields above it.
+Above `internal/product/models.go:130` (the `Variant.DeletedAt` field):
 
-- [ ] **Step 5: Commit**
+```go
+// DeletedAt is a plain *time.Time, not gorm.DeletedAt, so GORM's automatic
+// soft-delete filtering does NOT apply — every Preload("Variants") returns
+// deleted rows. See issue #<soft-delete-issue>.
+```
+
+Run `gofmt -l .` afterwards: inserting a comment into an aligned struct re-aligns the fields above
+it, and the review will not catch it if you did not run the tooling.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add services/marketplace-api/internal/product/models.go
-git commit -m "docs(product): record why VendorID is still a pointer"
+git commit -m "docs(product): record the VendorID and soft-delete modelling issues"
 ```
 
 ---

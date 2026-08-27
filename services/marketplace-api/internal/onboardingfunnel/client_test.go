@@ -229,3 +229,41 @@ func TestListSessionsOmitsOrderWhenUnset(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, sawParam, "an unset Order must not send the parameter")
 }
+
+// #406: the idle threshold has to reach upstream so it applies to the COUNT
+// as well as the page. Filtering it client-side left pagination.total counting
+// rows the consumer then discarded.
+func TestListSessionsSendsIdleHoursMin(t *testing.T) {
+	var got string
+	var sawParam bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query().Get("idle_hours_min")
+		_, sawParam = r.URL.Query()["idle_hours_min"]
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"limit":50,"total":0}}`))
+	}))
+	defer srv.Close()
+
+	c := onboardingfunnel.NewClient(srv.URL, "s", srv.Client())
+	min := 48.0
+	_, err := c.ListSessions(context.Background(), onboardingfunnel.SessionsParams{IdleHoursMin: &min})
+	require.NoError(t, err)
+	require.True(t, sawParam)
+	require.Equal(t, "48", got)
+}
+
+// Nil means "no threshold", and the parameter must be absent rather than sent
+// as 0 -- 0 is a meaningful value upstream ("idle at least 0 hours"), so
+// sending it would be a different request, not an equivalent one.
+func TestListSessionsOmitsIdleHoursMinWhenNil(t *testing.T) {
+	var sawParam bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, sawParam = r.URL.Query()["idle_hours_min"]
+		_, _ = w.Write([]byte(`{"data":[],"pagination":{"page":1,"limit":50,"total":0}}`))
+	}))
+	defer srv.Close()
+
+	c := onboardingfunnel.NewClient(srv.URL, "s", srv.Client())
+	_, err := c.ListSessions(context.Background(), onboardingfunnel.SessionsParams{})
+	require.NoError(t, err)
+	require.False(t, sawParam, "a nil threshold must not send the parameter")
+}

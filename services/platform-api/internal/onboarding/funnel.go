@@ -98,6 +98,30 @@ type FunnelFilter struct {
 	// zero value is the historical `created_at DESC`, so every existing
 	// caller is unaffected (#406). GetFunnel ignores this field.
 	Order SessionOrder
+	// IdleHoursMin, when non-nil, keeps only sessions idle for at least that
+	// many hours, measured the same way as the idle_hours column (#406).
+	//
+	// It exists so a consumer's threshold applies to the COUNT as well as the
+	// page. mark8ly's inbox previously filtered by idle hours client-side,
+	// after upstream had already paged: pagination.total then counted every
+	// abandoned session rather than the ones past the threshold, and the
+	// consumer had to fetch up to its aggregate cap purely to count, which
+	// saturated. countQ and pageQ share applySessionFilter, so filtering here
+	// fixes both at once and they cannot drift.
+	//
+	// GetFunnel ignores this field — its buckets are defined by the funnel,
+	// not by a consumer's staleness threshold.
+	IdleHoursMin *float64
+	// TenantID, when non-empty, keeps only sessions linked to that tenant
+	// (#406). Like IdleHoursMin it exists so the filter reaches the COUNT
+	// query rather than being applied to a page after the fact.
+	//
+	// Note that a session only has a tenant once it completes — the
+	// onboarding_sessions_completed_consistency CHECK forces tenant_id NULL
+	// for every non-completed row — so combining this with Abandoned=true
+	// legitimately matches nothing. That is the honest answer, and it is now
+	// the DATABASE's answer rather than an invariant a consumer has to know.
+	TenantID string
 }
 
 // SessionOrder names a permitted ordering for ListSessions.
@@ -240,6 +264,16 @@ func applySessionFilter(q *gorm.DB, f FunnelFilter) *gorm.DB {
 		} else {
 			q = q.Where("NOT " + abandoned)
 		}
+	}
+	if f.TenantID != "" {
+		q = q.Where("onboarding_sessions.tenant_id = ?", f.TenantID)
+	}
+	if f.IdleHoursMin != nil {
+		// The threshold is bound as a PARAMETER; only the column expression
+		// is interpolated, and that comes from idleHoursExpr, never from a
+		// caller. Same expression the idle_hours output column uses, so a row
+		// can never report an idle_hours below a threshold it passed.
+		q = q.Where(idleHoursExpr(asOfExpr(f))+" >= ?", *f.IdleHoursMin)
 	}
 	return q
 }

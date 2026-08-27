@@ -251,6 +251,16 @@ func parseFunnelFilter(c *gin.Context) FunnelFilter {
 	// unknown value would also break the convention every other parameter in
 	// this function follows — malformed input takes the default.
 	f.Order = SessionOrder(strings.TrimSpace(c.Query("order")))
+	// A negative or unparseable idle_hours_min takes the default (no filter),
+	// matching every other parameter here. Zero is accepted and meaningful --
+	// "idle for at least 0 hours" is every row -- so it is not treated as
+	// absent; only a missing or malformed value is.
+	if v := strings.TrimSpace(c.Query("idle_hours_min")); v != "" {
+		if h, err := strconv.ParseFloat(v, 64); err == nil && h >= 0 {
+			f.IdleHoursMin = &h
+		}
+	}
+	f.TenantID = strings.TrimSpace(c.Query("tenant_id"))
 	return f
 }
 

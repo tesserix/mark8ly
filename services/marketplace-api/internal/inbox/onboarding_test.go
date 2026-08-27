@@ -21,6 +21,36 @@ func (f fakeSessions) ListSessions(context.Context, onboardingfunnel.SessionsPar
 	return f.res, f.err
 }
 
+// upstreamSessions models what platform-api actually does since #406: it
+// applies the tenant and idle-hours filters ITSELF and reports a Total for the
+// filtered set. A fake that ignores the params and leaves Total at zero cannot
+// tell a working Count from a broken one, because Count now trusts that total.
+type upstreamSessions struct {
+	all  []onboardingfunnel.Session
+	gotP onboardingfunnel.SessionsParams
+}
+
+func (u *upstreamSessions) ListSessions(_ context.Context, p onboardingfunnel.SessionsParams) (*onboardingfunnel.SessionsResult, error) {
+	u.gotP = p
+	matched := make([]onboardingfunnel.Session, 0, len(u.all))
+	for _, s := range u.all {
+		if p.IdleHoursMin != nil && s.IdleHours < *p.IdleHoursMin {
+			continue
+		}
+		if p.TenantID != "" && (s.TenantID == nil || *s.TenantID != p.TenantID) {
+			continue
+		}
+		matched = append(matched, s)
+	}
+	// Total is the size of the whole filtered set, independent of the page --
+	// which is the property that lets Count ask for one row instead of 500.
+	total := int64(len(matched))
+	if p.Limit > 0 && len(matched) > p.Limit {
+		matched = matched[:p.Limit]
+	}
+	return &onboardingfunnel.SessionsResult{Sessions: matched, Total: total}, nil
+}
+
 // recordingSessions captures the SessionsParams it was called with, so tests
 // can assert on the outgoing request rather than relying on the fake to
 // filter.
@@ -67,12 +97,10 @@ func TestOnboardingProvider_ErrorPropagatesForTheAggregatorToDegrade(t *testing.
 func TestOnboardingProvider_TenantFilterExcludesOtherTenantsAndUnlinkedSessions(t *testing.T) {
 	now := time.Now().UTC()
 	tenantA, tenantB := "tenant-a", "tenant-b"
-	c := fakeSessions{res: &onboardingfunnel.SessionsResult{
-		Sessions: []onboardingfunnel.Session{
-			{ID: "mine", Email: "a@example.com", LastActivityAt: now.Add(-80 * time.Hour), IdleHours: 80, TenantID: &tenantA},
-			{ID: "theirs", Email: "b@example.com", LastActivityAt: now.Add(-80 * time.Hour), IdleHours: 80, TenantID: &tenantB},
-			{ID: "unlinked", Email: "c@example.com", LastActivityAt: now.Add(-80 * time.Hour), IdleHours: 80},
-		},
+	c := &upstreamSessions{all: []onboardingfunnel.Session{
+		{ID: "mine", Email: "a@example.com", LastActivityAt: now.Add(-80 * time.Hour), IdleHours: 80, TenantID: &tenantA},
+		{ID: "theirs", Email: "b@example.com", LastActivityAt: now.Add(-80 * time.Hour), IdleHours: 80, TenantID: &tenantB},
+		{ID: "unlinked", Email: "c@example.com", LastActivityAt: now.Add(-80 * time.Hour), IdleHours: 80},
 	}}
 
 	p := inbox.NewOnboardingProvider(c, 48)
@@ -84,6 +112,8 @@ func TestOnboardingProvider_TenantFilterExcludesOtherTenantsAndUnlinkedSessions(
 	n, err := p.Count(context.Background(), inbox.Filter{TenantID: tenantA, Limit: 10})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, n, "Count must answer the same filter as List")
+	require.Equal(t, tenantA, c.gotP.TenantID,
+		"the tenant filter must reach upstream, or Count's total counts other tenants' rows")
 }
 
 func TestOnboardingProvider_RequestsAbandonedSessionsOnly(t *testing.T) {
@@ -218,4 +248,44 @@ func TestOnboardingProvider_RequestsOldestActivityFirst(t *testing.T) {
 				"%s must request oldest-activity-first from upstream", tc.name)
 		})
 	}
+}
+
+// #406, second half: Count used to page up to MaxAggregateItems and count what
+// came back, so a queue with more stalled sessions than that bound silently
+// under-reported — and it cost a 500-row fetch to answer a number upstream
+// already had.
+//
+// The threshold now goes upstream, so upstream's own filtered total IS the
+// answer. The fixture returns a total far above the old cap while returning
+// almost no rows, which fails loudly under the old count-what-you-fetched
+// implementation and passes only if the total is being read.
+type totalOnlySessions struct {
+	total    int64
+	gotP     onboardingfunnel.SessionsParams
+	sessions []onboardingfunnel.Session
+}
+
+func (s *totalOnlySessions) ListSessions(_ context.Context, p onboardingfunnel.SessionsParams) (*onboardingfunnel.SessionsResult, error) {
+	s.gotP = p
+	return &onboardingfunnel.SessionsResult{Sessions: s.sessions, Total: s.total}, nil
+}
+
+func TestOnboardingProvider_CountUsesUpstreamTotalNotFetchedRows(t *testing.T) {
+	now := time.Now().UTC()
+	c := &totalOnlySessions{
+		total: 4321, // far beyond inbox.MaxAggregateItems
+		sessions: []onboardingfunnel.Session{
+			{ID: "s1", Email: "a@example.com", LastActivityAt: now.Add(-500 * time.Hour), IdleHours: 500},
+		},
+	}
+
+	p := inbox.NewOnboardingProvider(c, 48)
+	n, err := p.Count(context.Background(), inbox.Filter{Limit: 25})
+	require.NoError(t, err)
+	require.EqualValues(t, 4321, n,
+		"Count must report upstream's filtered total, not the number of rows it happened to fetch")
+
+	require.NotNil(t, c.gotP.IdleHoursMin,
+		"the idle threshold must be sent upstream, or the total counts rows the provider would discard")
+	require.EqualValues(t, 48, *c.gotP.IdleHoursMin)
 }

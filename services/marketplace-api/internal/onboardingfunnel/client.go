@@ -95,6 +95,19 @@ type SessionsParams struct {
 	// wants. The value is an allowlist KEY upstream, never SQL; an
 	// unrecognised one resolves to that same default rather than erroring.
 	Order string
+	// IdleHoursMin, when non-nil, asks upstream to return only sessions idle
+	// for at least that many hours (#406). Nil omits the parameter entirely:
+	// 0 is a meaningful value upstream ("idle at least 0 hours" = every row),
+	// so it cannot double as "unset".
+	//
+	// Sending this rather than filtering the response is what makes
+	// pagination.total exact -- upstream applies the same filter to its count
+	// query and its page query.
+	IdleHoursMin *float64
+	// TenantID, when non-empty, asks upstream to return only sessions linked
+	// to that tenant (#406). Sessions gain a tenant only on completion, so
+	// combining this with Abandoned=true legitimately matches nothing.
+	TenantID string
 }
 
 // Client calls platform-api's internal onboarding-funnel endpoints.
@@ -194,6 +207,12 @@ func (c *Client) ListSessions(ctx context.Context, p SessionsParams) (*SessionsR
 	}
 	if p.Order != "" {
 		q.Set("order", p.Order)
+	}
+	if p.IdleHoursMin != nil {
+		q.Set("idle_hours_min", strconv.FormatFloat(*p.IdleHoursMin, 'f', -1, 64))
+	}
+	if p.TenantID != "" {
+		q.Set("tenant_id", p.TenantID)
 	}
 
 	path := "/internal/onboarding/sessions"

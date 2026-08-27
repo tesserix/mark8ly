@@ -25,15 +25,16 @@ type SessionLister interface {
 //
 // Two things still shape what this provider can promise:
 //
-//   - Narrowing to Abandoned=true shrinks the population, and List's
-//     client-side sort by WaitingSince still runs. Both are now
-//     belt-and-braces rather than load-bearing: a client-side sort reorders
-//     the rows it was given, it does not change which rows it was given.
-//   - Count still saturates at MaxAggregateItems because there is no
-//     filtered-count endpoint upstream, so pagination.total under-reports
-//     beyond that bound. That is the second half of #406 and is deliberately
-//     still open — a total that is bounded and explicable beats one that
-//     changes as an operator pages forward.
+// Every filter this provider applies now reaches upstream — abandoned, the
+// idle-hours threshold and the tenant — so the remote's own total is this
+// queue's true size. Count therefore requests a single row rather than paging
+// MaxAggregateItems to count what came back, which used to under-report for
+// any queue larger than that bound.
+//
+// List's client-side sort by WaitingSince and its idle/tenant re-checks still
+// run, but they are belt-and-braces rather than load-bearing: a client-side
+// pass reorders and discards rows it was given, it cannot change which rows it
+// was given. That distinction is the whole of #406.
 type OnboardingProvider struct {
 	client             SessionLister
 	idleThresholdHours float64
@@ -51,17 +52,21 @@ func (p *OnboardingProvider) Kind() string { return KindOnboardingStalled }
 // fetchStalled requests up to limit sessions from upstream, narrowed to
 // abandoned sessions, and applies the same idle-threshold and tenant
 // filtering used by both List and Count so the two cannot drift.
-func (p *OnboardingProvider) fetchStalled(ctx context.Context, f Filter, limit int) ([]onboardingfunnel.Session, error) {
-	page := f.Page
-	if page <= 0 {
-		page = 1
-	}
+// sessionsParams builds the upstream request. Every filter this provider
+// applies is expressed HERE, not on the response: upstream runs the same
+// filter over its count query and its page query, so a filter left on the
+// client makes pagination.total count rows the provider then discards, and
+// makes rows beyond the requested window unreachable (#406).
+func (p *OnboardingProvider) sessionsParams(f Filter, page, limit int) onboardingfunnel.SessionsParams {
 	abandoned := true
-	res, err := p.client.ListSessions(ctx, onboardingfunnel.SessionsParams{
-		Page:      page,
-		Limit:     limit,
-		Status:    f.Status,
-		Abandoned: &abandoned,
+	idleMin := p.idleThresholdHours
+	return onboardingfunnel.SessionsParams{
+		Page:         page,
+		Limit:        limit,
+		Status:       f.Status,
+		Abandoned:    &abandoned,
+		TenantID:     f.TenantID,
+		IdleHoursMin: &idleMin,
 		// Ask upstream for least-recently-active first (#406). Without this
 		// the remote orders created_at DESC, so page 1 returns the NEWEST
 		// sessions and the genuinely stalled ones — the rows this queue
@@ -69,7 +74,15 @@ func (p *OnboardingProvider) fetchStalled(ctx context.Context, f Filter, limit i
 		// entirely. List's client-side sort cannot recover them: it reorders
 		// what it was given, it does not change what it was given.
 		Order: "last_activity_at_asc",
-	})
+	}
+}
+
+func (p *OnboardingProvider) fetchStalled(ctx context.Context, f Filter, limit int) ([]onboardingfunnel.Session, error) {
+	page := f.Page
+	if page <= 0 {
+		page = 1
+	}
+	res, err := p.client.ListSessions(ctx, p.sessionsParams(f, page, limit))
 	if err != nil {
 		return nil, err
 	}
@@ -77,16 +90,16 @@ func (p *OnboardingProvider) fetchStalled(ctx context.Context, f Filter, limit i
 		return nil, nil
 	}
 
+	// Both filters now run upstream (see sessionsParams). These re-checks are
+	// kept as a cheap assertion that the remote honoured them: if a future
+	// upstream silently ignores a parameter, the queue shows fewer rows rather
+	// than wrong ones, and Count -- which trusts upstream's total -- is the
+	// thing that would then visibly disagree with the list.
 	sessions := make([]onboardingfunnel.Session, 0, len(res.Sessions))
 	for _, s := range res.Sessions {
 		if s.IdleHours < p.idleThresholdHours {
 			continue
 		}
-		// The remote SessionsParams has no tenant field, so the request cannot
-		// filter by tenant — this match happens client-side on the response.
-		// Do not "simplify" this into a SessionsParams field; it does not exist.
-		// A session with no TenantID has not been linked to a tenant yet, so it
-		// is not this tenant's when a specific tenant is requested.
 		if f.TenantID != "" && (s.TenantID == nil || *s.TenantID != f.TenantID) {
 			continue
 		}
@@ -132,12 +145,20 @@ func (p *OnboardingProvider) List(ctx context.Context, f Filter) ([]Item, error)
 // counts by fetching up to MaxAggregateItems sessions and filtering
 // client-side the same way List does. A total that changes as an operator
 // pages forward is worse than a total that's honestly bounded.
+// Count reports upstream's filtered total.
+//
+// It used to page MaxAggregateItems rows and count what came back, which
+// under-reported for any queue larger than that bound and spent a 500-row
+// fetch to answer a number upstream already had. Now that the abandoned,
+// idle-threshold and tenant filters all reach the remote (see sessionsParams),
+// its total IS this queue's size, so one row is requested instead of 500 (#406).
 func (p *OnboardingProvider) Count(ctx context.Context, f Filter) (int64, error) {
-	countFilter := f
-	countFilter.Page = 1
-	sessions, err := p.fetchStalled(ctx, countFilter, MaxAggregateItems)
+	res, err := p.client.ListSessions(ctx, p.sessionsParams(f, 1, 1))
 	if err != nil {
 		return 0, err
 	}
-	return int64(len(sessions)), nil
+	if res == nil {
+		return 0, nil
+	}
+	return res.Total, nil
 }

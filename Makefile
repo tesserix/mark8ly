@@ -75,6 +75,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	@cd services/marketplace-api && \
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable' \
 	  go test -tags=integration -p 1 \
+	    ./internal/apikeys/... \
 	    ./internal/audit/... \
 	    ./internal/handlers/platformadmin/... \
 	    ./internal/tenantpurge/... \

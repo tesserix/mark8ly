@@ -26,7 +26,7 @@ func TestLastUsedWorker_PersistsUpdate(t *testing.T) {
 	key := apikeys.APIKey{
 		ID: uuid.New(), TenantID: tenantID, StoreID: storeID,
 		KeyPrefix: "USED1234",
-		KeyHash:   "$2a$12$abcdefghijklmnopqrstuv.QwertyuiopAsdfghjklZxcvbnmAsdfgh.",
+		KeyHash:   "$2a$12$abcdefghijklmnopqrstuvWXYZABCDEFGHIJKLMNOPQRSTUVwxyz0",
 		Scopes:    apikeys.ScopeSet{"products:read"},
 		Label:     "x", CreatedBy: uuid.New(),
 	}

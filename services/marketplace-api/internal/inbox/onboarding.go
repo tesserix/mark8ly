@@ -51,6 +51,14 @@ func (p *OnboardingProvider) List(ctx context.Context, f Filter) ([]Item, error)
 		if s.IdleHours < p.idleThresholdHours {
 			continue
 		}
+		// The remote SessionsParams has no tenant field, so the request cannot
+		// filter by tenant — this match happens client-side on the response.
+		// Do not "simplify" this into a SessionsParams field; it does not exist.
+		// A session with no TenantID has not been linked to a tenant yet, so it
+		// is not this tenant's when a specific tenant is requested.
+		if f.TenantID != "" && (s.TenantID == nil || *s.TenantID != f.TenantID) {
+			continue
+		}
 		items = append(items, Item{
 			ID:           s.ID,
 			Kind:         KindOnboardingStalled,

@@ -47,3 +47,25 @@ func TestOnboardingProvider_ErrorPropagatesForTheAggregatorToDegrade(t *testing.
 	_, err := p.List(context.Background(), inbox.Filter{Limit: 10})
 	require.Error(t, err, "the provider must not swallow the error — the aggregator degrades on it")
 }
+
+func TestOnboardingProvider_TenantFilterExcludesOtherTenantsAndUnlinkedSessions(t *testing.T) {
+	now := time.Now().UTC()
+	tenantA, tenantB := "tenant-a", "tenant-b"
+	c := fakeSessions{res: &onboardingfunnel.SessionsResult{
+		Sessions: []onboardingfunnel.Session{
+			{ID: "mine", Email: "a@example.com", LastActivityAt: now.Add(-80 * time.Hour), IdleHours: 80, TenantID: &tenantA},
+			{ID: "theirs", Email: "b@example.com", LastActivityAt: now.Add(-80 * time.Hour), IdleHours: 80, TenantID: &tenantB},
+			{ID: "unlinked", Email: "c@example.com", LastActivityAt: now.Add(-80 * time.Hour), IdleHours: 80},
+		},
+	}}
+
+	p := inbox.NewOnboardingProvider(c, 48)
+	items, err := p.List(context.Background(), inbox.Filter{TenantID: tenantA, Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, items, 1, "a tenant-filtered inbox must not leak other tenants' or unlinked sessions")
+	require.Equal(t, "mine", items[0].ID)
+
+	n, err := p.Count(context.Background(), inbox.Filter{TenantID: tenantA, Limit: 10})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n, "Count must answer the same filter as List")
+}

@@ -127,6 +127,10 @@ type Deps struct {
 	// series exists to close. An unmounted route is the right failure.
 	TenantTeardown TenantTeardown
 	Purger         Purger
+
+	// Inbox serves /admin/inbox (#280). Nil leaves the route unmounted,
+	// matching the nil-safe pattern used for TenantDirectory above.
+	Inbox InboxAggregator
 }
 
 // TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
@@ -227,6 +231,10 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.Outbox != nil {
 		NewOutboxHandler(deps.DB, deps.Outbox, deps.Logger).Register(group)
+	}
+
+	if deps.Inbox != nil {
+		NewInboxHandler(deps.Inbox, deps.Logger).Register(group)
 	}
 
 	switch {

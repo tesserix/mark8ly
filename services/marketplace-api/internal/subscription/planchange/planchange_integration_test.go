@@ -45,6 +45,7 @@ func TestExecute_Upgrade_StarterToStudio_CommitsImmediately(t *testing.T) {
 	tenantID := uuid.New()
 	storeID := uuid.New()
 	subID := "sub_upgrade_test"
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:             tenantID,
@@ -98,6 +99,7 @@ func TestExecute_Upgrade_Rejected_WhenStatusReadOnly(t *testing.T) {
 
 	tenantID := uuid.New()
 	storeID := uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:           tenantID,
@@ -134,6 +136,7 @@ func TestExecute_RejectsCurrencyChange(t *testing.T) {
 	tenantID := uuid.New()
 	storeID := uuid.New()
 	subID := "sub_currency_test"
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:             tenantID,
@@ -174,6 +177,7 @@ func TestExecute_Downgrade_StudioToStarter_ParksPending(t *testing.T) {
 	storeID := uuid.New()
 	subID := "sub_downgrade_test"
 	periodEnd := time.Now().Add(15 * 24 * time.Hour)
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:             tenantID,
@@ -233,6 +237,7 @@ func TestExecute_Downgrade_StudioToStarter_OverQuota_Rejected(t *testing.T) {
 	storeID := uuid.New()
 	subID := "sub_overquota_test"
 	periodEnd := time.Now().Add(15 * 24 * time.Hour)
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:             tenantID,

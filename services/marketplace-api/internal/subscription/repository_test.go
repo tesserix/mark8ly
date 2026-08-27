@@ -26,6 +26,7 @@ func TestRepository_GetByStoreID_RequiresTenantMatch(t *testing.T) {
 	tenantA := uuid.New()
 	tenantB := uuid.New()
 	store := uuid.New()
+	testdb.SeedStore(t, db, tenantA, store)
 
 	sub := subscription.StoreSubscription{
 		TenantID:         tenantA,

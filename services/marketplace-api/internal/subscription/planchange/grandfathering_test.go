@@ -38,6 +38,7 @@ func TestGrandfathering_StudioToStarter_ImagesAllowed(t *testing.T) {
 
 	// Seed 1 store — under Starter cap of 2, so scheduling succeeds.
 	seedStores(t, db, tenantID, 1)
+	testdb.SeedStore(t, db, tenantID, storeID)
 
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:             tenantID,

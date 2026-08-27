@@ -82,7 +82,13 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/handlers/internalsvc/... \
 	    ./internal/billing/appaddon/... \
 	    ./internal/billing/dispatch/... \
-	    ./internal/billing/tax
+	    ./internal/billing/tax \
+	    ./internal/subscription \
+	    ./internal/subscription/cancel/... \
+	    ./internal/subscription/harddelete/... \
+	    ./internal/subscription/lifecycle/... \
+	    ./internal/subscription/readonly/... \
+	    ./internal/subscription/statemachine/...
 
 cover: ## Coverage report for both Go services
 	@cd services/platform-api && go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -5

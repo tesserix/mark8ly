@@ -31,6 +31,7 @@ func TestConcurrentTransition_CASConflict(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,

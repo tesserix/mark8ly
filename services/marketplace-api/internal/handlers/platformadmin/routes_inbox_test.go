@@ -65,3 +65,43 @@ func TestRegisterLeavesInboxUnmountedWhenNil(t *testing.T) {
 		"/api/v1/platform/admin/inbox", nil))
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+// #281a: the action route mounts on InboxItems, independently of Inbox. A
+// deployment that can read the queue but not act on it is a legitimate state,
+// and so is the reverse — neither should silently disable the other.
+func TestRegisterMountsInboxActionsWhenItemSourceSupplied(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
+		Repo:       &stubRepo{},
+		InboxItems: stubRouteItemSource{},
+		Secret:     "test-secret",
+	})
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost,
+		"/api/v1/platform/admin/inbox/migration_fast_path/abc/actions/approve", nil))
+	require.NotEqual(t, http.StatusNotFound, rec.Code,
+		"the action route must be mounted when InboxItems is set")
+}
+
+func TestRegisterLeavesInboxActionsUnmountedWhenItemSourceNil(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
+		Repo:   &stubRepo{},
+		Inbox:  &routeInboxAggregator{},
+		Secret: "test-secret",
+	})
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost,
+		"/api/v1/platform/admin/inbox/migration_fast_path/abc/actions/approve", nil))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+type stubRouteItemSource struct{}
+
+func (stubRouteItemSource) Get(_ context.Context, _, _ string) (inbox.Item, error) {
+	return inbox.Item{}, inbox.ErrItemNotFound
+}

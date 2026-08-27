@@ -31,4 +31,9 @@ var (
 	_ Provider = (*ArbitrageProvider)(nil)
 	_ Provider = (*MigrationFastPathProvider)(nil)
 	_ Provider = (*OnboardingProvider)(nil)
+
+	// Only this kind can be acted on today (#281a). The assertion is here so
+	// that if the Get signature drifts, it breaks next to the interface it
+	// belongs to rather than at the action endpoint's type switch.
+	_ ItemGetter = (*MigrationFastPathProvider)(nil)
 )

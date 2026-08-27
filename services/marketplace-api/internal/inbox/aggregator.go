@@ -25,6 +25,45 @@ var ErrAllSourcesFailed = errors.New("inbox: every source failed")
 // ErrUnknownKind is returned when Filter.Kind names no registered provider.
 var ErrUnknownKind = errors.New("inbox: unknown kind")
 
+// ErrGetNotSupported is returned when a kind exists but its provider cannot
+// read back a single item.
+//
+// Distinct from ErrUnknownKind on purpose: "this queue does not exist" and
+// "this queue exists but cannot answer that question" are different answers,
+// and a console that conflates them tells an operator a real queue is gone.
+var ErrGetNotSupported = errors.New("inbox: kind does not support single-item reads")
+
+// ErrItemNotFound is returned when a kind's provider has no such item.
+var ErrItemNotFound = errors.New("inbox: item not found")
+
+// ItemGetter is the optional half of Provider: reading ONE item back by id.
+//
+// It is optional rather than part of Provider because acting on an item is a
+// per-kind capability, and forcing every provider to implement it would mean
+// four stubs returning "not supported" written as if they were real. A kind
+// that cannot be acted on says so through the interface it does not implement
+// (#281a).
+type ItemGetter interface {
+	Get(ctx context.Context, id string) (Item, error)
+}
+
+// Get resolves one item so a caller can read its declared Actions before
+// executing one. Executing an action the item did not declare is what turns
+// the declared list from a contract back into documentation.
+func (a *Aggregator) Get(ctx context.Context, kind, id string) (Item, error) {
+	for _, p := range a.providers {
+		if p.Kind() != kind {
+			continue
+		}
+		g, ok := p.(ItemGetter)
+		if !ok {
+			return Item{}, fmt.Errorf("%w: %q", ErrGetNotSupported, kind)
+		}
+		return g.Get(ctx, id)
+	}
+	return Item{}, fmt.Errorf("%w: %q", ErrUnknownKind, kind)
+}
+
 // Result is one page of merged work, plus the kinds that could not be reached.
 type Result struct {
 	Items    []Item

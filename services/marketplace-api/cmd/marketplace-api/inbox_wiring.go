@@ -47,6 +47,34 @@ func newInboxAggregator(db *gorm.DB, funnel inbox.SessionLister, idleThresholdHo
 	return inbox.NewAggregator(providers...)
 }
 
+// inboxItemSource exposes the same aggregator as the single-item reader the
+// action endpoint needs (#281a), with the same nil-interface discipline as
+// inboxDep below: a non-nil interface holding a nil pointer would mount the
+// action route and panic on first use.
+func inboxItemSource(agg *inbox.Aggregator) platformadmin.InboxItemSource {
+	if agg == nil {
+		return nil
+	}
+	return agg
+}
+
+// inboxActionExecutors lists the kinds that can actually be acted on.
+//
+// Only migration_fast_path today. Every other kind is readable but not
+// actionable and answers 501 — deliberately, not as an oversight:
+// sea_manual_review's underlying SEA support is only partially implemented,
+// and erasure_request's `process` action is irreversible destruction of
+// customer data. Neither should get a one-click path before the behaviour
+// beneath it is settled.
+func inboxActionExecutors(reviews platformadmin.MigrationFastPathReviewer) []platformadmin.InboxActionExecutor {
+	if reviews == nil {
+		return nil
+	}
+	return []platformadmin.InboxActionExecutor{
+		platformadmin.NewMigrationFastPathExecutor(reviews),
+	}
+}
+
 // inboxDep converts the aggregator to the interface Deps expects, preserving
 // a nil aggregator as a nil INTERFACE rather than a non-nil interface holding
 // a nil pointer — the latter would pass Register's `deps.Inbox != nil` guard

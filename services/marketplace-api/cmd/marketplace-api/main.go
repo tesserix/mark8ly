@@ -526,6 +526,10 @@ func main() {
 	// engine-switch cases below, so declare it at outer scope (same
 	// reason as brandingSeeder above).
 	var migrationHandler *migration.Handler
+	// migrationRepo is hoisted for the same reason as migrationHandler: the
+	// inbox action executor (#281a) is built in both engine-switch cases
+	// below, outside the admin wiring branch that constructs it.
+	var migrationRepo *migration.Repository
 	// downgradeCron is non-nil only when STRIPE_BILLING_SECRET_KEY is set.
 	// Declared at func scope so the cron-start block below the admin-mode
 	// block can reference it.
@@ -1022,7 +1026,7 @@ func main() {
 		cancelHandler := cancel.NewHandler(cancelSvc, log)
 
 		// P5 — Migration fast-path submit handler.
-		migrationRepo := migration.NewRepository(conn)
+		migrationRepo = migration.NewRepository(conn)
 		migrationHandler = migration.NewHandler(migrationRepo, migration.NoOpValidator{}, log).WithAudit(auditEmitter)
 
 		// P8 — Arbitrage appeal handler (§18.8.1).
@@ -2115,6 +2119,8 @@ func main() {
 			TenantTeardown:        tenantTeardownClient,
 			Purger:                tenantpurge.NewGormPurger(conn),
 			Inbox:                 inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
+			InboxItems:            inboxItemSource(newInboxAggregator(conn, onboardingFunnelClient, 0)),
+			InboxActionExecutors:  inboxActionExecutors(migrationRepo),
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2241,6 +2247,8 @@ func main() {
 				TenantTeardown:        tenantTeardownClient,
 				Purger:                tenantpurge.NewGormPurger(conn),
 				Inbox:                 inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
+				InboxItems:            inboxItemSource(newInboxAggregator(conn, onboardingFunnelClient, 0)),
+				InboxActionExecutors:  inboxActionExecutors(migrationRepo),
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

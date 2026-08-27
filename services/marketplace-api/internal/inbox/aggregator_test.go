@@ -178,3 +178,41 @@ func TestAggregator_AggregatePageTwoWindowIsNonOverlapping(t *testing.T) {
 	require.Equal(t, []string{"a1", "b1"}, ids1, "page 1 is the first window of the globally sorted order")
 	require.Equal(t, []string{"a2", "b2"}, ids2, "page 2 is the next, adjacent, non-overlapping window")
 }
+
+// #281a: executing an action requires reading back the item it belongs to, so
+// the declared `actions` array can be checked. Provider is Kind/List/Count and
+// has no Get, so the aggregator resolves one through the optional ItemGetter
+// interface — a kind whose provider does not implement it is answerable, and
+// answerably NOT supported, rather than silently pretending.
+func TestAggregatorGetUnknownKind(t *testing.T) {
+	agg := inbox.NewAggregator(fakeProvider{kind: "a"})
+	_, err := agg.Get(context.Background(), "nope", "id-1")
+	require.ErrorIs(t, err, inbox.ErrUnknownKind)
+}
+
+func TestAggregatorGetKindWithoutGetterIsNotSupported(t *testing.T) {
+	agg := inbox.NewAggregator(fakeProvider{kind: "a"})
+	_, err := agg.Get(context.Background(), "a", "id-1")
+	require.ErrorIs(t, err, inbox.ErrGetNotSupported)
+}
+
+type gettableProvider struct {
+	fakeProvider
+	item inbox.Item
+	err  error
+}
+
+func (g *gettableProvider) Get(context.Context, string) (inbox.Item, error) {
+	return g.item, g.err
+}
+
+func TestAggregatorGetDelegatesToTheKindsProvider(t *testing.T) {
+	want := inbox.Item{ID: "i1", Kind: "a", Title: "one",
+		Actions: []inbox.Action{{ID: "approve", Label: "Approve"}}}
+	agg := inbox.NewAggregator(&gettableProvider{fakeProvider: fakeProvider{kind: "a"}, item: want})
+
+	got, err := agg.Get(context.Background(), "a", "i1")
+	require.NoError(t, err)
+	require.Equal(t, want.ID, got.ID)
+	require.Len(t, got.Actions, 1)
+}

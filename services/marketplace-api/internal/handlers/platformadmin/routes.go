@@ -131,6 +131,24 @@ type Deps struct {
 	// Inbox serves /admin/inbox (#280). Nil leaves the route unmounted,
 	// matching the nil-safe pattern used for TenantDirectory above.
 	Inbox InboxAggregator
+
+	// InboxItems and InboxActionExecutors together serve
+	// POST /admin/inbox/:kind/:id/actions/:actionId (#281a).
+	//
+	// InboxItems must be non-nil for the route to mount: without a
+	// single-item read there is no way to check an action against the item's
+	// own declared actions, and validating against the executor registry
+	// instead would turn that declaration back into documentation.
+	//
+	// An EMPTY executor list still mounts. The route then answers 501 per
+	// kind, which is the honest state for a queue that is readable but not
+	// yet actionable — and it is the state most kinds are in.
+	InboxItems           InboxItemSource
+	InboxActionExecutors []InboxActionExecutor
+
+	// InboxActionIdem records idempotency keys for destructive actions. A
+	// Postgres-backed one is built from DB when nil, matching NonceStore.
+	InboxActionIdem InboxActionIdempotency
 }
 
 // TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
@@ -231,6 +249,16 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.Outbox != nil {
 		NewOutboxHandler(deps.DB, deps.Outbox, deps.Logger).Register(group)
+	}
+
+	if deps.InboxItems != nil {
+		idem := deps.InboxActionIdem
+		if idem == nil && deps.DB != nil {
+			idem = NewInboxActionIdempotency(deps.DB)
+		}
+		NewInboxActionsHandler(
+			deps.InboxItems, deps.InboxActionExecutors, idem, deps.Emitter, deps.Logger,
+		).Register(group)
 	}
 
 	if deps.Inbox != nil {

@@ -1,7 +1,6 @@
 package testdb
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -63,25 +62,27 @@ func SeedVendor(t *testing.T, db *gorm.DB, tenantID uuid.UUID) uuid.UUID {
 	t.Helper()
 
 	// Check if a self-vendor already exists for this tenant.
-	var existingID uuid.UUID
-	err := db.Raw(
+	var existing struct {
+		ID uuid.UUID `db:"id"`
+	}
+	result := db.Raw(
 		`SELECT id FROM vendors WHERE tenant_id = ? AND is_self = true`,
 		tenantID,
-	).Scan(&existingID).Error
-	if err == nil {
-		// Row found; return it without cleanup.
-		return existingID
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	).Scan(&existing)
+	if result.Error != nil {
 		// Query failed; this is a real error.
-		t.Fatalf("testdb.SeedVendor: check for existing self-vendor: %v", err)
+		t.Fatalf("testdb.SeedVendor: check for existing self-vendor: %v", result.Error)
+	}
+	if result.RowsAffected > 0 {
+		// Row found; return it without cleanup.
+		return existing.ID
 	}
 
 	// No existing self-vendor; insert one.
 	vendorID := uuid.New()
 	slug := "vnd-" + strings.ReplaceAll(vendorID.String(), "-", "")[:20]
 
-	err = db.Exec(
+	err := db.Exec(
 		`INSERT INTO vendors (id, tenant_id, name, slug, status, is_self)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		vendorID, tenantID, "Test Vendor", slug, "active", true,

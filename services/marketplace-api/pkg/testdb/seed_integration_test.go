@@ -61,6 +61,22 @@ func TestSeedVendor_ReturnsUsableSelfVendorForTenant(t *testing.T) {
 	require.True(t, got.IsSelf, "seeded vendor stands in for the tenant's self-vendor")
 }
 
+func TestSeedVendor_IsIdempotentPerTenant(t *testing.T) {
+	db := testdb.NewTx(t)
+	tenantID := uuid.New()
+
+	first := testdb.SeedVendor(t, db, tenantID)
+	second := testdb.SeedVendor(t, db, tenantID)
+
+	require.Equal(t, first, second, "repeat calls must return the tenant's existing self-vendor")
+
+	var n int64
+	require.NoError(t, db.Raw(
+		`SELECT count(*) FROM vendors WHERE tenant_id = ? AND is_self = true`, tenantID,
+	).Scan(&n).Error)
+	require.EqualValues(t, 1, n, "vendors_tenant_self_idx allows exactly one self-vendor per tenant")
+}
+
 // A product insert is the actual thing 74 baseline failures could not do.
 func TestSeededParents_AcceptAProductInsert(t *testing.T) {
 	db := testdb.NewTx(t)

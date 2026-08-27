@@ -15,6 +15,13 @@ import (
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
+// seedFastPath inserts a migration_fast_path_reviews row. The table carries a
+// partial EXCLUDE constraint, only_one_open_per_store — EXCLUDE USING btree
+// (store_id WITH =) WHERE (status = 'pending') — not a plain unique index, so
+// it won't show up in pg_indexes or a contype IN ('c','f','u') check. It
+// allows at most one 'pending' row per store_id at a time (any number of
+// approved/rejected rows on that store are fine). To seed more than one
+// pending row in a single test, give each one a different storeID.
 func seedFastPath(t *testing.T, db *gorm.DB, tenantID, storeID uuid.UUID, status string, createdAt time.Time) uuid.UUID {
 	t.Helper()
 	id := uuid.New()

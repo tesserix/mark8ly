@@ -25,6 +25,7 @@ func TestTrialRampJob_AppliesToTransitioningStores(t *testing.T) {
 
 	// Store A: day 4 today → should ramp (created 3 days ago).
 	storeA := uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeA)
 	sigA := time.Now().UTC().AddDate(0, 0, -3)
 	require.NoError(t, db.Exec(`
 		INSERT INTO store_subscriptions (tenant_id, store_id, stripe_customer_id, plan, status, created_at)
@@ -36,6 +37,7 @@ func TestTrialRampJob_AppliesToTransitioningStores(t *testing.T) {
 
 	// Store B: day 2 today → no-op (created 1 day ago).
 	storeB := uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeB)
 	sigB := time.Now().UTC().AddDate(0, 0, -1)
 	require.NoError(t, db.Exec(`
 		INSERT INTO store_subscriptions (tenant_id, store_id, stripe_customer_id, plan, status, created_at)
@@ -57,6 +59,7 @@ func TestTrialRampJob_SkipsNonTrialingStatuses(t *testing.T) {
 	// Only 'signup' and 'trialing' stores should be queried.
 	db := testdb.NewDB(t, "campaign_email_budget", "store_subscriptions")
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	// Store is 'active' so must be skipped by the cron even if day=4.
 	createdAt := time.Now().UTC().AddDate(0, 0, -3)
 	require.NoError(t, db.Exec(`

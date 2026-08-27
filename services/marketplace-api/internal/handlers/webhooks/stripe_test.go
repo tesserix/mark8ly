@@ -63,6 +63,7 @@ func TestStripeWebhook_ValidSignature_InsertsAndDispatches(t *testing.T) {
 	db := testdb.NewDB(t, "stripe_webhook_events", "store_subscriptions")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,
@@ -98,6 +99,7 @@ func TestStripeWebhook_DuplicateEvent_ReturnsDuplicateWithoutDispatch(t *testing
 	db := testdb.NewDB(t, "stripe_webhook_events", "store_subscriptions")
 
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,

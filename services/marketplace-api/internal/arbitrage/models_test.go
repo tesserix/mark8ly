@@ -25,8 +25,10 @@ func TestSubscriptionArbitrageAudit_NoRawIPColumn(t *testing.T) {
 func TestSubscriptionArbitrageAudit_RoundTrip(t *testing.T) {
 	db := testdb.NewDB(t, "subscription_arbitrage_audit", "store_subscriptions")
 
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	sub := subscription.StoreSubscription{
-		TenantID: uuid.New(), StoreID: uuid.New(),
+		TenantID: tenantID, StoreID: storeID,
 		StripeCustomerID: "cus_x", Plan: subscription.PlanStudio, Status: subscription.StatusActive,
 	}
 	require.NoError(t, db.Create(&sub).Error)

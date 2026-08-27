@@ -41,6 +41,9 @@ func setupRefundTestEnv(t *testing.T) *testEnv {
 	subRepo := subscription.NewRepository()
 	svc := refund.NewService(db, refundRepo, subRepo, (*billingstripe.Client)(nil), nil)
 	refundHandler := admin.NewRefundHandler(db, svc, nil)
+	subHandler := admin.NewSubscriptionHandler(
+		subscription.NewService(subscription.ServiceConfig{DB: db, Repo: subRepo}), nil,
+	)
 
 	fga := authz.NewFakeClient()
 	authzMW := authz.NewMiddleware(fga, nil)
@@ -53,10 +56,11 @@ func setupRefundTestEnv(t *testing.T) *testEnv {
 
 	r := gin.New()
 	admin.RegisterAdmin(r.Group("/api/v1"), admin.Deps{
-		RefundHandler:    refundHandler,
-		StoresMiddleware: storeMW,
-		AuthzMiddleware:  authzMW,
-		InternalSecret:   "",
+		RefundHandler:       refundHandler,
+		SubscriptionHandler: subHandler,
+		StoresMiddleware:    storeMW,
+		AuthzMiddleware:     authzMW,
+		InternalSecret:      "",
 	})
 
 	return &testEnv{router: r, fga: fga, db: db}

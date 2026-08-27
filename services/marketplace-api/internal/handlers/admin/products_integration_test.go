@@ -29,7 +29,9 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/product"
+	"github.com/mark8ly/marketplace-api/internal/promo"
 	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/vendor"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
@@ -110,15 +112,24 @@ func setupTestRouter(t *testing.T) *testEnv {
 	variantHandler := admin.NewVariantHandler(svc, nil)
 	mediaHandler := admin.NewMediaHandler(svc, uploader, nil)
 
+	subSvc := subscription.NewService(subscription.ServiceConfig{
+		DB:   db,
+		Repo: subscription.NewRepository(),
+	})
+	subHandler := admin.NewSubscriptionHandler(subSvc, nil)
+	promoHandler := admin.NewPromoHandler(db, promo.NewService(db, promo.NewRepository(), nil, nil), subscription.NewRepository(), nil)
+
 	r := gin.New()
 	admin.RegisterAdmin(r.Group("/api/v1"), admin.Deps{
-		ProductHandler:   handler,
-		CategoryHandler:  catHandler,
-		VariantHandler:   variantHandler,
-		MediaHandler:     mediaHandler,
-		StoresMiddleware: storeMW,
-		AuthzMiddleware:  authzMW,
-		InternalSecret:   "",
+		ProductHandler:      handler,
+		CategoryHandler:     catHandler,
+		VariantHandler:      variantHandler,
+		MediaHandler:        mediaHandler,
+		SubscriptionHandler: subHandler,
+		PromoHandler:        promoHandler,
+		StoresMiddleware:    storeMW,
+		AuthzMiddleware:     authzMW,
+		InternalSecret:      "",
 	})
 
 	return &testEnv{router: r, uploader: uploader, fga: fga, db: db}

@@ -409,11 +409,24 @@ git commit -m "test(fixtures): seed stores via testdb.SeedStore and widen test-i
 - Modify: `services/marketplace-api/internal/product/models_integration_test.go:81` and siblings in that package
 - Modify: `services/marketplace-api/internal/handlers/storefront/storefront_integration_test.go:233` and siblings
 - Modify: `services/marketplace-api/internal/handlers/admin/products_integration_test.go:223`
+- Modify: `services/marketplace-api/internal/handlers/storefront/dto_test.go`
+- Modify: `services/marketplace-api/internal/handlers/admin/dto_test.go`
+- Modify: `services/marketplace-api/internal/product/repository_integration_test.go`
+- Modify: `services/marketplace-api/internal/category/` — **added after Task 2**, see below
 - Modify: `Makefile`
 
 **Interfaces:**
 - Consumes: `testdb.SeedVendor(t, db, tenantID) uuid.UUID` and `testdb.SeedStore` from Task 1.
 - Produces: nothing new.
+
+**`internal/category` was added to this task after Task 2 landed, and the reason matters.** At
+baseline `category` showed 16 `storefront_customer_portal_secret` failures and zero `vendor_id`
+failures. With cluster C fixed, it now shows **2 `vendor_id` failures that were previously invisible**
+— the earlier insert aborted the transaction (`SQLSTATE 25P02`) before the product insert was ever
+reached. This is the masking effect this plan predicted, observed for real, and it is why Task 7
+re-measures rather than trusting the baseline's per-package attribution. Expect the same to happen
+again: after this task, packages you did not touch may reveal new signatures. That is the process
+working, not a regression.
 
 **Note on the model.** `internal/product/models.go:52` declares `VendorID *string` against a `NOT NULL` column. That mismatch is *why* these fixtures compile while producing invalid rows. Tightening it is deliberately **out of scope** — it changes production code, JSON `omitempty` behaviour and every nil check. Task 9 files it as its own issue. Here, set the pointer.
 

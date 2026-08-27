@@ -38,7 +38,7 @@ const fixtureSecret = "whsec_fixture_test"
 // skipped when TEST_DATABASE_URL is not set.
 func TestFullWebhookFlow_AllAllowlistedEvents(t *testing.T) {
 	// Fixtures live at services/marketplace-api/scripts/webhook-fixtures/
-	// relative to this file: ../../scripts/webhook-fixtures
+	// relative to this file: ../../../scripts/webhook-fixtures
 	dir := filepath.Join("..", "..", "..", "scripts", "webhook-fixtures")
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err, "fixture directory must exist")
@@ -48,6 +48,7 @@ func TestFullWebhookFlow_AllAllowlistedEvents(t *testing.T) {
 
 	// Seed the fixture subscription so customer resolution succeeds.
 	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
 	require.NoError(t, db.Create(&subscription.StoreSubscription{
 		TenantID:         tenantID,
 		StoreID:          storeID,

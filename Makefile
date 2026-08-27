@@ -91,6 +91,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/subscription/readonly/... \
 	    ./internal/subscription/statemachine/... \
 	    ./internal/campaignbudget/cron/... \
+	    ./internal/handlers/webhooks/... \
 	    ./tests/integration/...
 
 cover: ## Coverage report for both Go services

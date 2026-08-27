@@ -15,81 +15,110 @@ You are taking over work in `tesserix/mark8ly` (repo root
 Read first: `docs/superpowers/2026-08-23-platform-integration-handoff.md` (traps 1-15, conventions,
 environment). Then this document. Then the issue you pick.
 
-## YOUR FIRST TASK — two things are broken in the deploy pipeline right now
+## THE DEPLOY PIPELINE — both faults are now fixed, read them as case studies
 
-Both were found at the end of session 9, both are diagnosed, neither is fixed. **Fix these before
-picking up feature work.** Diagnosis is done; do not re-derive it.
+Session 9 found two faults and fixed neither. Session 11 fixed both, and CORRECTED THE DIAGNOSIS OF
+EACH ONE — in the second case the prescribed action would have destroyed a working check. Read both
+before you trust any other diagnosis in this document; they are the two best worked examples here of
+a failure that reports nothing.
 
-### 1. The deploy is stuck at 5 of 8 workloads, and it will happen again
+**Outstanding:** `tesserix/tesserix-workflows` PR #6 is MERGED as `92e48afa`. mark8ly still pins
+`@v2.2.0`, which is content-identical but is NOT an ancestor of that repo's `main` — the squash
+orphaned it. Cut `v2.2.1` at `92e48afa` and repin mark8ly (`ci.yml`, `mobile-admin-build.yml`, and
+`RELEASE_REF` in `.github/scripts/test-ci-contract.py` — the contract test fails if you miss it).
 
-`main` is `58344a9e`. Five workloads run `main-58344a9`. Three do not:
+### 1. Cache-hit builds published a stale `created`, and Kargo silently stopped deploying — FIXED
 
-```
-mark8ly-otto           main-a0cca46
-mark8ly-auth-bff       main-ffda99c
-mark8ly-platform-api   main-ffda99c
-```
+> **Corrected and fixed in session 11.** The session-9 diagnosis below the line was directionally
+> right and wrong in one detail that mattered. Left in place so the correction is legible.
 
-**This is not a stuck rollout and not an ArgoCD problem.** All eight ArgoCD apps are `Synced` at the
-same revision. Every pod is Ready. Kargo's promotions have all *succeeded*. The freight itself pins
-the old tags for those three.
+**What was actually wrong.** BuildKit inherits the image config's `created` field from cache. On a
+full cache-hit build the exported config keeps the ORIGINAL timestamp, so a commit that changes no
+code for a given image — a base-image repin, a dependency bump, the shape of nearly all security
+patching — publishes a NEW DIGEST ADVERTISING AN OLD BUILD TIME.
 
-**Root cause.** Every subscription in `warehouse/services` (namespace `kargo-mark8ly`) uses
-`imageSelectionStrategy: NewestBuild`. Kargo's `NewestBuild` ranks by the **OCI `created` timestamp
-baked into the image manifest**, not by registry push time. For these three the baked timestamp
-disagrees with reality:
+Reproduced locally in three builds:
 
-| image | registry push | Kargo's rank |
+| build | cache | `created` |
 |---|---|---|
-| `mark8ly-otto:main-58344a9` | 15:34 | **2nd**, behind `main-a0cca46` (pushed 06:15) |
-| `mark8ly-auth-bff:main-58344a9` | 15:34 | not in top 3 |
-| `mark8ly-platform-api:main-58344a9` | 15:34 | not in top 3 |
+| a (cold) | — | `2026-08-27T16:06:02Z` |
+| c (full cache hit, 2 min later) | hit | `2026-08-27T16:06:02Z` — inherited, stale |
+| b (full cache hit, `SOURCE_DATE_EPOCH=1700000000`) | hit | `2023-11-14T22:13:20Z` — honored |
 
-Inspect it yourself with:
+**Session 9 said the baked timestamp "disagreed with reality". The sharper fact: for `auth-bff` and
+`platform-api` FIVE DISTINCT DIGESTS all reported the identical `created` of
+`2026-08-26T05:40:42Z`.** It was not a wrong ordering, it was a TIE, and Kargo's `NewestBuild` broke
+it lexically — which is how `main-ffda99c` outranked `main-58344a9`. That distinction is why
+"refresh the warehouse" could never have worked: discovery was correct, and so was the ranking, given
+the input it was handed.
+
+**No Kargo-side strategy could fix this.** Tags are `main-<sha>`, so `Lexical` and `SemVer` are
+meaningless, and `Digest` needs a mutable tag CI does not push. The fix had to be in the build.
+
+**The fix.** `SOURCE_DATE_EPOCH` set to the commit's COMMITTER DATE — identical across a rerun of the
+same commit, strictly increasing along `main`. It overrides the inherited value on a cache hit, and
+two builds differing only in `SOURCE_DATE_EPOCH` produce IDENTICAL LAYER DIGESTS, so it costs no
+cache hits and no extra push bandwidth (verified, buildx v0.35).
+
+It lives in the SHARED workflow, `tesserix/tesserix-workflows` →
+`.github/workflows/container-release.yml`, released as `v2.2.0` with a contract test
+(`test_published_images_carry_a_build_time_that_moves`) that fails against the pre-fix workflow.
+mark8ly pins it in `3d0831d3`.
+
+**Trap: the warehouse config is in a THIRD repo.** Not `tesserix-k8s`, as session 9 guessed. The
+`services` Warehouse is `tesserix/kargo-manifests` → `projects/mark8ly/warehouses/services.yaml`,
+served by the ArgoCD app `kargo-project-mark8ly`. Find it from the cluster, not by grepping repos:
+
 ```bash
-kubectl get warehouse services -n kargo-mark8ly -o json | \
-  python3 -c "import json,sys; d=json.load(sys.stdin); [print(i['repoURL'].split('/')[-1], [r['tag'] for r in i.get('references',[])[:3]]) for i in d['status']['discoveredArtifacts']['images']]"
+kubectl get application kargo-project-mark8ly -n argocd -o jsonpath='{.spec.source}'
 ```
 
-**Why exactly those three:** they are the only services in the `58344a9` merge with **no code
-changes** — that commit only repinned their Dockerfile base images. Their builds were near-total
-cache hits, and a cache-hit build can carry an inherited or fixed `created` timestamp.
+**Trap: `tesserix-workflows` tags are immutable.** A ruleset on `refs/tags/v*` blocks BOTH `deletion`
+and `update`. I pushed `v2.2.0` before confirming `main` was reachable, then could not retract it —
+and `main` requires linear history AND a PR AND an approving review, so only a SQUASH merge is
+possible, which orphans the tag. Cut the tag only AFTER the squash lands.
 
-**Why this matters more than three lagging pods.** It fails *silently*. There is no error, no red
-CI, no unhealthy pod — the deploy simply does not happen, and you only notice by comparing image tags
-by hand. It will recur on **every base-only or dependency-only change**, which is exactly the shape of
-security patching.
+<details>
+<summary>Original session-9 text, superseded</summary>
 
-**Refreshing the warehouse does not fix it.** I tried
-(`kubectl annotate warehouse services -n kargo-mark8ly kargo.akuity.io/refresh=$(date +%s) --overwrite`);
-discovery is working correctly, the *ranking* is wrong.
+Every subscription uses `imageSelectionStrategy: NewestBuild`, which ranks by the OCI `created`
+timestamp baked into the image manifest rather than registry push time. For `mark8ly-otto`,
+`mark8ly-auth-bff` and `mark8ly-platform-api` — the only services in the `58344a9` merge with no code
+changes — the baked timestamp disagreed with reality, so the new build never ranked first. Refreshing
+the warehouse did not help. Likely fix: `Digest`, or `SemVer`/`Lexical` with a tag constraint.
 
-Likely fix: change the strategy to `Digest` (follow a mutable tag by digest) or `SemVer`/`Lexical`
-with an explicit tag constraint. **The warehouse config is NOT in this repo** — it lives with the k8s
-manifests (`tesserix-k8s` / `tesserix-infra`; `tesserix-k8s` is checked out at
-`/Users/Mahesh.Sangawar/personal/tesserix-new/tesserix-k8s`). File an issue if you cannot reach the
-config; do not leave the diagnosis only in this document.
+</details>
 
-### 2. An orphaned CronJob keeps the Kargo stage permanently unverified
+### 2. The admin-conformance CronJob is NOT an orphan — it found a real bug
+
+> **Session 9 got this wrong and the wrong action was destructive.** It said the CronJob was an orphan
+> of `d52b5cd2` (#383) and told you to remove it from the manifests. Do not.
+
+The manifest's own header says the opposite of "orphan"
+(`tesserix-k8s` → `charts/apps/mark8ly-marketplace-api-admin/templates/admin-conformance-cronjob.yaml`):
+#383 dropped the GitHub Actions job because Cloudflare serves a bot-challenge page to GitHub-hosted
+runner IPs, making every endpoint return `<!DOCTYPE html>` instead of JSON. The CronJob is the
+DELIBERATE IN-CLUSTER REPLACEMENT. It reaches the ClusterIP directly with no edge in the path, and it
+mounts the existing Kubernetes HMAC secret instead of a GitHub copy nothing would rotate.
+
+**It was failing because it was right.** Read the pod logs before touching the manifest:
 
 ```
-CronJob/mark8ly-marketplace-api-admin-admin-conformance: Degraded
-  — CronJob has not completed its last execution successfully
+3 failing checks
+  entities/tenants  §8.9  data[0] (id "78137b54…") has no label; §8.9 requires it on every row
 ```
 
-That CronJob is an **orphan from `d52b5cd2` (#383)**, which dropped the admin-conformance *workflow*
-as "unreachable from GitHub runners" but left the CronJob in the cluster. It last failed ~9h before
-this document and has kept `stage/prod` in `kargo-mark8ly` at `Healthy=False`,
-`Verified=Unknown — waiting for verification`.
+`/admin/entities/tenants` served `id, name, owner_email, status, created_at` and no `label`. §8.9
+requires a non-empty `id` AND `label` on every entity row; an empty label renders as a blank line the
+operator cannot click. Fixed in `c701f82f` — `label` with a `name → owner_email → id` fallback so an
+unnamed tenant still yields something non-empty.
 
-**The consequence is worse than one red tile:** Kargo's verification signal for this stage is
-currently meaningless. Anything that ever gates on stage health is gated on a permanently-false value.
+**The proof it is a working detector, not an orphan:** `kora-api-admin-conformance` is the same job on
+the same schedule in the same cluster, and it COMPLETES. mark8ly was simply the non-conformant product.
 
-Fix: remove the CronJob from the manifests that produce it, or restore something that can actually
-run. Whoever dropped the workflow in #383 should say which.
-
-**I did not fix either of these** because both live outside this repo and I had already merged twice
-into `main` this session. Judge whether that was the right call — see "Rulings" below.
+**The lesson worth more than the fix.** A red tile on a check you did not write reads as "the check is
+broken". Here, deleting it would have destroyed the only thing that noticed a contract violation
+already shipping to the console. Read the failing output BEFORE concluding a failing check is stale.
 
 ## READ THIS FIRST — three things that will cost you an hour each
 
@@ -121,11 +150,12 @@ keys AND exclusion constraints.**
 
 ## State of the world
 
-**`main` is `58344a9e`. CI is green. Production schema is 106, not dirty.**
+**`main` is `3d0831d3`. CI is green. Production schema is 106, not dirty.**
 
-**Deploy is 5/8 and stable** — see "YOUR FIRST TASK". The three lagging services run healthy images
-with identical application code; only their base layer is older. Not urgent, but it is a live example
-of a silent failure mode.
+**Deploy was 5/8; `3d0831d3` is the first build carrying the timestamp fix.** That commit changes no
+code in `auth-bff`, `platform-api` or `otto`, so all three are cache-hit builds — the exact shape that
+produced the stale timestamps. If they still lag after one 5-minute Kargo discovery interval, the
+diagnosis in section 1 is wrong and should be reopened, not worked around.
 
 **`GET /admin/inbox` is merged but NOT MOUNTED.** `internal/inbox` and the handler are on `main`
 (`04ef8c3d`), `Deps.Inbox` is nil, so the route 404s. **Wiring it in `cmd/marketplace-api/main.go` is
@@ -210,8 +240,13 @@ driving Stripe. Do not start those.
 - **Left #280 open** after merging its implementation. Its acceptance criteria describe endpoint
   behaviour and the route is unmounted; closing it would put a checkmark on behaviour nobody has
   exercised.
-- **Did not fix the two pipeline bugs.** Both live outside this repo and I had already merged twice.
-  Judge this one — an argument exists that a silent deploy failure outranks tidiness about scope.
+- ~~**Did not fix the two pipeline bugs.**~~ Session 11 judged this wrong and fixed both. A silent
+  deploy failure does outrank tidiness about scope, and the second "bug" was a working check whose
+  prescribed fix was to delete it — the cost of deferring was not zero, it was a wrong instruction
+  left standing in a document written to be trusted wholesale.
+- **Pushed a release tag before confirming the branch could land** (session 11, `v2.2.0` on
+  `tesserix-workflows`). A ruleset made it undeletable and the repo only allows squash merges, so the
+  tag is permanently orphaned. Cost: cosmetic. Lesson: tag AFTER the merge, never before.
 - **`Count` for `onboarding_stalled` saturates at 500** rather than being accurate. A total that is
   bounded and explicable beats one that grows as an operator pages forward.
 - **Erasure requests get no derived `due_at`** despite GDPR's 30-day window, because the table has no
@@ -256,7 +291,23 @@ New, all earned this session:
   failures that do not reproduce; 7 of 19 "failing" packages passed on a clean database. **TRUNCATE
   every table between packages or do not believe the number.** (#401.)
 - **Trap 43 — `NewestBuild` ranks by the OCI `created` timestamp, not registry push time.** A
-  cache-hit build can rank below an older image and simply never deploy, with no error anywhere.
+  cache-hit build inherits `created` from cache, so it can TIE with older images and lose the
+  lexical tie-break, and simply never deploy, with no error anywhere. Fixed at the source in
+  `tesserix-workflows` `container-release.yml` (`92e48afa` on `main`) via `SOURCE_DATE_EPOCH`;
+  see section 1 for the tag caveat.
+
+- **Trap 44 — a failing check you did not write is not therefore a stale check.** The
+  admin-conformance CronJob was documented as an orphan to delete. It was the deliberate replacement
+  for a dropped workflow, and it was red because it had found a real contract violation. READ THE
+  FAILING OUTPUT before concluding a check is obsolete. The identical job on a sibling product was
+  passing the whole time, which is the cheapest possible disproof and took one `kubectl get jobs`.
+
+- **Trap 45 — tag AFTER the merge, never before.** `tesserix-workflows` has a ruleset on
+  `refs/tags/v*` blocking `deletion` AND `update`, `main` requires linear history plus a PR plus an
+  approving review, and the repo only allows SQUASH merges. A tag pushed at a branch head is
+  therefore permanently orphaned by its own merge. Also: `enforce_admins` is on, so `gh pr merge
+  --admin` does NOT bypass `require_last_push_approval` — the merge needs admin enforcement lifted
+  and restored around it.
 
 ## Process that worked, and is worth repeating
 

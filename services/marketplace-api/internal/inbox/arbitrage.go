@@ -10,6 +10,9 @@ import (
 )
 
 // ArbitrageProvider surfaces geo-pricing arbitrage flags still under review.
+//
+// Filter.Status maps onto this table's resolution column, not a status
+// column — subscription_arbitrage_audit has no status column at all.
 type ArbitrageProvider struct{ db *gorm.DB }
 
 func NewArbitrageProvider(db *gorm.DB) *ArbitrageProvider { return &ArbitrageProvider{db: db} }
@@ -24,6 +27,9 @@ type arbitrageRow struct {
 }
 
 func (p *ArbitrageProvider) List(ctx context.Context, f Filter) ([]Item, error) {
+	if f.Status != "" && f.Status != string(arbitrage.ResolutionOngoing) {
+		return []Item{}, nil
+	}
 	q := p.db.WithContext(ctx).
 		Table("subscription_arbitrage_audit").
 		Select("id::text AS id, resolved_price_tier, mismatch_reason, flagged_at").
@@ -67,6 +73,9 @@ func (p *ArbitrageProvider) List(ctx context.Context, f Filter) ([]Item, error) 
 }
 
 func (p *ArbitrageProvider) Count(ctx context.Context, f Filter) (int64, error) {
+	if f.Status != "" && f.Status != string(arbitrage.ResolutionOngoing) {
+		return 0, nil
+	}
 	q := p.db.WithContext(ctx).
 		Table("subscription_arbitrage_audit").
 		Where("resolution = ?", string(arbitrage.ResolutionOngoing))

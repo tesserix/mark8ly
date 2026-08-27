@@ -52,3 +52,30 @@ func TestErasureProvider_OnlyPendingAndNoDueDate(t *testing.T) {
 	require.Equal(t, inbox.SeverityNormal, items[0].Severity)
 	require.WithinDuration(t, now.Add(-72*time.Hour), items[0].WaitingSince, time.Second)
 }
+
+func TestErasureProvider_FilterStatus(t *testing.T) {
+	db := testdb.NewTx(t)
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
+
+	now := time.Now().UTC()
+	seedErasure(t, db, tenantID, storeID, "pending", now.Add(-72*time.Hour))
+
+	p := inbox.NewErasureProvider(db)
+
+	items, err := p.List(context.Background(), inbox.Filter{Limit: 10, Status: "bogus"})
+	require.NoError(t, err)
+	require.Empty(t, items, "a non-matching status must short-circuit to empty, not query")
+
+	n, err := p.Count(context.Background(), inbox.Filter{Status: "bogus"})
+	require.NoError(t, err)
+	require.Zero(t, n)
+
+	items, err = p.List(context.Background(), inbox.Filter{Limit: 10, Status: "pending"})
+	require.NoError(t, err)
+	require.Len(t, items, 1, "the matching status must behave exactly as an empty status")
+
+	n, err = p.Count(context.Background(), inbox.Filter{Status: "pending"})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+}

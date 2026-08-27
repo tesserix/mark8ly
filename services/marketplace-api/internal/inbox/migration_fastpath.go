@@ -23,6 +23,9 @@ func NewMigrationFastPathProvider(db *gorm.DB) *MigrationFastPathProvider {
 func (p *MigrationFastPathProvider) Kind() string { return KindMigrationFastPath }
 
 func (p *MigrationFastPathProvider) List(ctx context.Context, f Filter) ([]Item, error) {
+	if f.Status != "" && f.Status != "pending" {
+		return []Item{}, nil
+	}
 	q := p.db.WithContext(ctx).Model(&migration.Review{}).Where("status = ?", "pending")
 	if f.TenantID != "" {
 		q = q.Where("tenant_id = ?", f.TenantID)
@@ -59,6 +62,9 @@ func (p *MigrationFastPathProvider) List(ctx context.Context, f Filter) ([]Item,
 }
 
 func (p *MigrationFastPathProvider) Count(ctx context.Context, f Filter) (int64, error) {
+	if f.Status != "" && f.Status != "pending" {
+		return 0, nil
+	}
 	q := p.db.WithContext(ctx).Model(&migration.Review{}).Where("status = ?", "pending")
 	if f.TenantID != "" {
 		q = q.Where("tenant_id = ?", f.TenantID)

@@ -26,6 +26,9 @@ type erasureRow struct {
 }
 
 func (p *ErasureProvider) List(ctx context.Context, f Filter) ([]Item, error) {
+	if f.Status != "" && f.Status != "pending" {
+		return []Item{}, nil
+	}
 	q := p.db.WithContext(ctx).
 		Table("customer_erasure_requests").
 		Select("id::text AS id, customer_email, requested_at").
@@ -65,6 +68,9 @@ func (p *ErasureProvider) List(ctx context.Context, f Filter) ([]Item, error) {
 }
 
 func (p *ErasureProvider) Count(ctx context.Context, f Filter) (int64, error) {
+	if f.Status != "" && f.Status != "pending" {
+		return 0, nil
+	}
 	q := p.db.WithContext(ctx).Table("customer_erasure_requests").Where("status = ?", "pending")
 	if f.TenantID != "" {
 		q = q.Where("tenant_id = ?", f.TenantID)

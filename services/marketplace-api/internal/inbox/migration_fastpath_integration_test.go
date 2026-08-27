@@ -51,3 +51,30 @@ func TestMigrationFastPathProvider_OnlyPending(t *testing.T) {
 	require.Equal(t, inbox.KindMigrationFastPath, items[0].Kind)
 	require.Equal(t, "shopify", items[0].Subtitle)
 }
+
+func TestMigrationFastPathProvider_FilterStatus(t *testing.T) {
+	db := testdb.NewTx(t)
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
+
+	now := time.Now().UTC()
+	seedFastPath(t, db, tenantID, storeID, "pending", now.Add(-5*time.Hour))
+
+	p := inbox.NewMigrationFastPathProvider(db)
+
+	items, err := p.List(context.Background(), inbox.Filter{Limit: 10, Status: "bogus"})
+	require.NoError(t, err)
+	require.Empty(t, items, "a non-matching status must short-circuit to empty, not query")
+
+	n, err := p.Count(context.Background(), inbox.Filter{Status: "bogus"})
+	require.NoError(t, err)
+	require.Zero(t, n)
+
+	items, err = p.List(context.Background(), inbox.Filter{Limit: 10, Status: "pending"})
+	require.NoError(t, err)
+	require.Len(t, items, 1, "the matching status must behave exactly as an empty status")
+
+	n, err = p.Count(context.Background(), inbox.Filter{Status: "pending"})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+}

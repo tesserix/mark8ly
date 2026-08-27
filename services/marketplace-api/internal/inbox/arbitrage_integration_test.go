@@ -80,3 +80,30 @@ func TestArbitrageProvider_OnlyOngoing(t *testing.T) {
 	require.Equal(t, inbox.KindArbitrageAppeal, items[0].Kind)
 	require.Nil(t, items[0].DueAt)
 }
+
+func TestArbitrageProvider_FilterStatus(t *testing.T) {
+	db := testdb.NewTx(t)
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
+
+	now := time.Now().UTC()
+	seedArbitrage(t, db, tenantID, storeID, string(arbitrage.ResolutionOngoing), now.Add(-6*time.Hour))
+
+	p := inbox.NewArbitrageProvider(db)
+
+	items, err := p.List(context.Background(), inbox.Filter{Limit: 10, Status: "bogus"})
+	require.NoError(t, err)
+	require.Empty(t, items, "a non-matching status must short-circuit to empty, not query")
+
+	n, err := p.Count(context.Background(), inbox.Filter{Status: "bogus"})
+	require.NoError(t, err)
+	require.Zero(t, n)
+
+	items, err = p.List(context.Background(), inbox.Filter{Limit: 10, Status: string(arbitrage.ResolutionOngoing)})
+	require.NoError(t, err)
+	require.Len(t, items, 1, "the matching status must behave exactly as an empty status")
+
+	n, err = p.Count(context.Background(), inbox.Filter{Status: string(arbitrage.ResolutionOngoing)})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+}

@@ -65,6 +65,13 @@ test-int: ## Run integration tests against the running `make dev` stack
 	@# red target is worse than a narrow green one: this suite was dark long
 	@# enough to hide a production dunning bug (see the sql.NullTime fix in
 	@# internal/subscription/dunning/ladder.go).
+	@#
+	@# ./internal/billing/tax below is deliberately NOT ./internal/billing/tax/...
+	@# — its revalidation subpackage deadlocks (not a normal failure): Cron.Run
+	@# holds a transaction open while Svc.Submit writes the same row on a
+	@# separate pooled connection, so the two block each other forever and this
+	@# target would hang instead of failing. Filed separately; do not add the
+	@# ellipsis back until that deadlock is fixed.
 	@cd services/marketplace-api && \
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable' \
 	  go test -tags=integration -p 1 \

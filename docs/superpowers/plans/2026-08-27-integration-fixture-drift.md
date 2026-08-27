@@ -1511,6 +1511,18 @@ Add the seed between those two statements:
 is needed. Pass the same `tenantID` — a store on a different tenant would insert cleanly and leave
 the test asserting nothing about tenancy.
 
+- [ ] **Step 2b: Fix the stale path comment in the same file**
+
+The comment above the fixture-path code (`stripe_integration_test.go:41`) still describes the old,
+wrong path:
+
+```go
+// ... relative to this file: ../../scripts/webhook-fixtures
+```
+
+Task 12 corrected the code to `../../../` but left the comment behind. Update it to match. A comment
+that contradicts the line beneath it is how the next person "fixes" working code.
+
 - [ ] **Step 3: Verify by name**
 
 ```bash

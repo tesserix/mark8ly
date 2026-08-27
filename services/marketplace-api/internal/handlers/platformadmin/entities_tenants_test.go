@@ -170,3 +170,66 @@ func TestEntitiesTenantDetailReturnsRollup(t *testing.T) {
 	require.Len(t, body.Data.Stores, 1)
 	require.Equal(t, "acme", body.Data.Stores[0].Slug)
 }
+
+// §8.9 of the Product Admin Integration Contract: every /admin/entities/{type}
+// row carries a non-empty string id and label, sublabel is optional but must be
+// OMITTED rather than sent empty, and source must not be sent at all.
+//
+// This is not a hypothetical. The in-cluster admin-conformance CronJob failed
+// on exactly this for three days — the rows served `name` and no `label`, so a
+// console rendering §8.9 rows showed a blank, unclickable line per tenant.
+func TestEntitiesTenantsRowsSatisfyContract89(t *testing.T) {
+	dir := &stubDirectory{list: &tenantdirectory.ListResult{
+		Total: 2, Page: 1, Limit: 50,
+		Tenants: []tenantdirectory.Tenant{
+			{
+				ID: "3f2504e0-4f89-11d3-9a0c-0305e82c3301", Name: "Acme Trading",
+				OwnerEmail: "founder@acme.example", Status: "active",
+				CreatedAt: time.Date(2026, 8, 22, 10, 0, 0, 0, time.UTC),
+			},
+			// A tenant with no name still has to produce a non-empty label:
+			// §8.9 rejects "" as loudly as it rejects a missing key.
+			{
+				ID: "3f2504e0-4f89-11d3-9a0c-0305e82c3302", Name: "",
+				OwnerEmail: "owner@beta.example", Status: "suspended",
+				CreatedAt: time.Date(2026, 8, 21, 9, 30, 0, 0, time.UTC),
+			},
+		},
+	}}
+
+	rec := httptest.NewRecorder()
+	tenantsRouter(t, dir).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/entities/tenants", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Data []map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Data, 2)
+
+	for i, row := range body.Data {
+		for _, field := range []string{"id", "label"} {
+			value, ok := row[field]
+			require.Truef(t, ok, "row %d has no %s; §8.9 requires it on every row", i, field)
+			s, ok := value.(string)
+			require.Truef(t, ok, "row %d has a non-string %s; §8.9 requires a string", i, field)
+			require.NotEmptyf(t, s, "row %d has an empty %s; §8.9 requires a non-empty string", i, field)
+		}
+
+		_, hasSublabel := row["sublabel"]
+		if hasSublabel {
+			s, ok := row["sublabel"].(string)
+			require.Truef(t, ok, "row %d sublabel must be a string when present", i)
+			require.NotEmptyf(t, s,
+				"row %d sends an empty sublabel; §8.9 requires omitting the key instead", i)
+		}
+
+		require.NotContainsf(t, row, "source",
+			"row %d sends source; §8.9 forbids it — the platform stamps provenance", i)
+	}
+
+	require.Equal(t, "Acme Trading", body.Data[0]["label"])
+	require.NotEmpty(t, body.Data[1]["label"], "an unnamed tenant still needs a label")
+}

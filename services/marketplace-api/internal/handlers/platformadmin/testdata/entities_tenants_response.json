@@ -2,6 +2,7 @@
   "data": [
     {
       "id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+      "label": "Acme Trading",
       "name": "Acme Trading",
       "owner_email": "founder@acme.example",
       "status": "active",
@@ -9,6 +10,7 @@
     },
     {
       "id": "3f2504e0-4f89-11d3-9a0c-0305e82c3302",
+      "label": "Beta Goods",
       "name": "Beta Goods",
       "owner_email": "owner@beta.example",
       "status": "suspended",

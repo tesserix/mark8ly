@@ -43,8 +43,14 @@ func (h *EntitiesTenantsHandler) Register(g *gin.RouterGroup) {
 }
 
 // tenantRow is the directory wire shape.
+//
+// `label` is what §8.9 of the Product Admin Integration Contract requires of
+// every /admin/entities/{type} row, alongside `id`. `name` stays because
+// existing consumers read it; §8.9 permits extra fields and forbids only
+// `source`, which the platform stamps from the authenticated request.
 type tenantRow struct {
 	ID         string `json:"id"`
+	Label      string `json:"label"`
 	Name       string `json:"name"`
 	OwnerEmail string `json:"owner_email"`
 	Status     string `json:"status"`
@@ -119,11 +125,27 @@ func toTenantRow(t tenantdirectory.Tenant) tenantRow {
 		// Bare id. The platform API namespaces as <slug>:<id> on arrival;
 		// prefixing here yields "mark8ly:mark8ly:...".
 		ID:         t.ID,
+		Label:      tenantLabel(t),
 		Name:       t.Name,
 		OwnerEmail: t.OwnerEmail,
 		Status:     t.Status,
 		CreatedAt:  t.CreatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+// tenantLabel is the operator-facing name for a tenant row.
+//
+// §8.9 rejects an empty label as firmly as a missing one — it renders as a
+// blank line the operator cannot click — so an unnamed tenant falls back to
+// its owner email and then to its id. The id is always non-empty, which makes
+// the fallback chain total.
+func tenantLabel(t tenantdirectory.Tenant) string {
+	for _, candidate := range []string{t.Name, t.OwnerEmail} {
+		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
+			return trimmed
+		}
+	}
+	return t.ID
 }
 
 // respondErr maps client errors to the surface's stable codes.

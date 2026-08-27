@@ -894,6 +894,466 @@ git commit -m "docs(product): record why VendorID is still a pointer"
 
 ---
 
+### Task 10: Wire `SubscriptionHandler`/`PromoHandler` into the admin test routers (2 failures)
+
+Source: tail triage (`docs/superpowers/plans/2026-08-27-integration-fixture-drift-tail.md`).
+
+**Files:**
+- Modify: `services/marketplace-api/internal/handlers/admin/products_integration_test.go` — `setupTestRouter` (~line 74)
+- Modify: `services/marketplace-api/internal/handlers/admin/refund_integration_test.go` — `setupRefundTestEnv` (~line 35)
+
+**Interfaces:**
+- Consumes: `admin.NewSubscriptionHandler(svc *subscription.Service, logger *slog.Logger) *SubscriptionHandler`, `admin.NewPromoHandler(db, svc PromoApplier, subRepo subscription.Repository, logger) *PromoHandler`, `subscription.NewService(subscription.ServiceConfig{...}) *Service`, `promo.NewService(db, promo.NewRepository(), nil, nil) *Service`.
+- Produces: nothing new.
+
+**Root cause, not a routing bug.** `internal/handlers/admin/routes.go:704` mounts the entire
+`/subscription` group only `if deps.SubscriptionHandler != nil`, and nests `/apply-promo`,
+`/promo`, and `/refund` further behind `if deps.PromoHandler != nil` / `if deps.RefundHandler != nil`
+respectively. Both test routers construct `admin.Deps{}` without ever setting `SubscriptionHandler`,
+so the group is never registered — the routes exist in production and would work the moment a
+`SubscriptionHandler` is wired. Do not add a route; wire the missing dependency.
+
+- [ ] **Step 1: Confirm the current failures, by name**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/handlers/admin/... \
+  -run 'TestPromoApply_BelowAbsoluteFloor_INR|TestRefund_OutsideCoolingOff' -v 2>&1 | tee /tmp/t10-before.txt
+grep -c '404 page not found' /tmp/t10-before.txt
+```
+
+Expected: non-zero.
+
+- [ ] **Step 2: Wire the missing handlers**
+
+In `products_integration_test.go`, add imports `"github.com/mark8ly/marketplace-api/internal/promo"`
+and `"github.com/mark8ly/marketplace-api/internal/subscription"`. Inside `setupTestRouter`, before
+`r := gin.New()`:
+
+```go
+subSvc := subscription.NewService(subscription.ServiceConfig{
+	DB:   db,
+	Repo: subscription.NewRepository(),
+})
+subHandler := admin.NewSubscriptionHandler(subSvc, nil)
+promoHandler := admin.NewPromoHandler(db, promo.NewService(db, promo.NewRepository(), nil, nil), subscription.NewRepository(), nil)
+```
+
+Add `SubscriptionHandler: subHandler, PromoHandler: promoHandler,` to the `admin.Deps{}` literal
+passed to `admin.RegisterAdmin`.
+
+In `refund_integration_test.go`, `subscription` is already imported and `subRepo :=
+subscription.NewRepository()` already exists. Add, before `r := gin.New()`:
+
+```go
+subHandler := admin.NewSubscriptionHandler(
+	subscription.NewService(subscription.ServiceConfig{DB: db, Repo: subRepo}), nil,
+)
+```
+
+Add `SubscriptionHandler: subHandler,` to that file's `admin.Deps{}` literal (`RefundHandler` is
+already set there).
+
+- [ ] **Step 3: Run and verify**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/handlers/admin/... \
+  -run 'TestPromoApply_BelowAbsoluteFloor_INR|TestRefund_OutsideCoolingOff' -v 2>&1 | tee /tmp/t10-after.txt
+grep -E '^(---|ok|FAIL)' /tmp/t10-after.txt
+```
+
+Expected: `--- PASS` for both, by name.
+
+- [ ] **Step 4: Widen `make test-int`**
+
+Add `./internal/handlers/admin/...` only once Task 13 (below) also lands — this package has two
+other failing tests until then. Do not widen for a partially-red package.
+
+- [ ] **Step 5: Verify formatting and vet**
+
+```bash
+cd services/marketplace-api
+gofmt -l . && go build ./... && go vet ./... && go vet -tags=integration ./...
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "test(admin): wire SubscriptionHandler and PromoHandler into test routers"
+```
+
+---
+
+### Task 11: `orderrefund` — wire a `NoopEncryptor` in the resolver test (1 failure)
+
+Source: tail triage. Exactly the "config-wiring gap at `resolver_integration_test.go:239`" named in
+the original brief for #317.
+
+**Files:**
+- Modify: `services/marketplace-api/internal/orderrefund/resolver_integration_test.go:229` (`TestGatewayFor_ActiveConfig`)
+
+**Interfaces:**
+- Consumes: `orderrefund.(*Resolver).WithEncryptor(e crypto.Encryptor) *Resolver`, `crypto.NewNoopEncryptor()` — both already exist and are already used the same way by the sibling file `resolver_creds_test.go:56` in this package.
+- Produces: nothing new.
+
+`orderrefund.NewResolver(db)` deliberately returns an unconfigured resolver — see the doc comment at
+`resolver.go:48`: "Wire `WithSecretStore` (or `WithEncryptor`) before use." `TestGatewayFor_ActiveConfig`
+never chains either, so `GatewayFor` hits the intentional guard at `resolver.go:78`. This is not a
+production defect; every other test in the package already wires one.
+
+- [ ] **Step 1: Confirm the current failure**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/orderrefund/... -run 'TestGatewayFor_ActiveConfig' -v 2>&1 | tee /tmp/t11-before.txt
+grep -c 'no secret store or encryptor wired' /tmp/t11-before.txt
+```
+
+Expected: `1`.
+
+- [ ] **Step 2: Chain `.WithEncryptor`**
+
+Add import `"github.com/mark8ly/marketplace-api/internal/crypto"`. In `TestGatewayFor_ActiveConfig`:
+
+```go
+r := orderrefund.NewResolver(db).WithEncryptor(crypto.NewNoopEncryptor())
+```
+
+- [ ] **Step 3: Run and verify**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/orderrefund/... -run 'TestGatewayFor_ActiveConfig' -v 2>&1 | tee /tmp/t11-after.txt
+grep -E '^(---|ok|FAIL)' /tmp/t11-after.txt
+```
+
+Expected: `--- PASS: TestGatewayFor_ActiveConfig`. Do not widen `make test-int` for this package —
+`internal/orderrefund` has a separate cleanup deadlock named in #317 that this task does not touch.
+
+- [ ] **Step 4: Verify formatting and vet**
+
+```bash
+cd services/marketplace-api
+gofmt -l . && go build ./... && go vet ./... && go vet -tags=integration ./...
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "test(orderrefund): wire a NoopEncryptor into the resolver active-config test"
+```
+
+---
+
+### Task 12: `handlers/webhooks` — fix the off-by-one fixture path (1 failure)
+
+Source: tail triage.
+
+**Files:**
+- Modify: `services/marketplace-api/internal/handlers/webhooks/stripe_integration_test.go:41`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: nothing new.
+
+The test file lives at `internal/handlers/webhooks/`, three directories below
+`services/marketplace-api/`. Its `filepath.Join("..", "..", "scripts", "webhook-fixtures")` only
+climbs two, landing on `internal/scripts/webhook-fixtures` — which does not exist. The fixtures are
+real, tracked, and present at `services/marketplace-api/scripts/webhook-fixtures/` (verified via
+`git ls-files` — 11 JSON files). This is a path bug, not a missing-fixture bug.
+
+- [ ] **Step 1: Confirm the current failure**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/handlers/webhooks/... -run 'TestFullWebhookFlow_AllAllowlistedEvents' -v 2>&1 | tee /tmp/t12-before.txt
+grep -c 'no such file or directory' /tmp/t12-before.txt
+```
+
+Expected: `1`.
+
+- [ ] **Step 2: Add the missing `..`**
+
+```go
+dir := filepath.Join("..", "..", "..", "scripts", "webhook-fixtures")
+```
+
+- [ ] **Step 3: Run and verify**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/handlers/webhooks/... -run 'TestFullWebhookFlow_AllAllowlistedEvents' -v 2>&1 | tee /tmp/t12-after.txt
+grep -E '^(---|ok|FAIL)' /tmp/t12-after.txt
+```
+
+Expected: `--- PASS: TestFullWebhookFlow_AllAllowlistedEvents`.
+
+- [ ] **Step 4: Widen `make test-int` for `./internal/handlers/webhooks/...`**, if the full package is green.
+
+- [ ] **Step 5: Verify formatting and vet**
+
+```bash
+cd services/marketplace-api
+gofmt -l . && go build ./... && go vet ./... && go vet -tags=integration ./...
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "test(webhooks): fix the off-by-one relative path to scripts/webhook-fixtures"
+```
+
+---
+
+### Task 13: `handlers/admin` shipments — seed the parent order and use `testdb.SeedStore` (3 failures)
+
+Source: tail triage. This is the `stores.created_at` / `shipments_order_id_fkey` cluster the original
+Task 7 brief named for `internal/handlers/admin`.
+
+**Files:**
+- Modify: `services/marketplace-api/internal/handlers/admin/shipments_dispatched_dedup_test.go:34` (`TestShipmentDispatchedEmailGate`)
+- Modify: `services/marketplace-api/internal/handlers/admin/shipments_tracking_sync_test.go:273` (`seedStoreRowForSync`)
+
+**Interfaces:**
+- Consumes: `testdb.SeedStore(t, db, tenantID, storeID)` from Task 1; `seedOrderRowForSync(t, db, orderID, storeID, tenantID)`, already defined in this package at `shipments_tracking_sync_test.go:290`.
+- Produces: nothing new.
+
+**`stores.created_at` does not exist.** `seedStoreRowForSync` hand-rolls
+`INSERT INTO stores (..., created_at, ...)`. Per this plan's verified schema facts, `stores` has no
+`created_at` column at all. Replace the hand-rolled insert with the shared helper, same as every
+other cluster-C/A site.
+
+**`shipments_order_id_fkey`.** `TestShipmentDispatchedEmailGate` mints `orderID := uuid.New()` and
+inserts a `shipments` row referencing it directly, without ever inserting the parent `orders` row.
+`seedOrderRowForSync` already exists in this same package for exactly this purpose.
+
+- [ ] **Step 1: Confirm the current failures, by name**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/handlers/admin/... \
+  -run 'TestShipmentDispatchedEmailGate|TestShipmentsSync_AdvancesStatusLadder|TestShipmentsSync_CarrierErrorDoesNotBlockOthers' -v 2>&1 | tee /tmp/t13-before.txt
+grep -cE 'created_at.*does not exist|shipments_order_id_fkey' /tmp/t13-before.txt
+```
+
+Expected: non-zero.
+
+- [ ] **Step 2: Apply both edits**
+
+In `shipments_tracking_sync_test.go`, replace `seedStoreRowForSync`'s body with a call to
+`testdb.SeedStore(t, db, tenantID, storeID)` (add the `pkg/testdb` import if not already present —
+it already is, per the file's existing `testdb.NewDB` usage). Delete the hand-rolled `INSERT INTO
+stores` and its comment about `migrations/000002_orders_initial.up.sql`.
+
+In `shipments_dispatched_dedup_test.go`, immediately before the `db.Create(&ship)` call in
+`TestShipmentDispatchedEmailGate`, add:
+
+```go
+seedOrderRowForSync(t, db, orderID, storeID, tenantID)
+```
+
+(Both files are in package `admin_test`, so the helper is already in scope — no new import needed.)
+
+- [ ] **Step 3: Run and verify**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/handlers/admin/... \
+  -run 'TestShipmentDispatchedEmailGate|TestShipmentsSync_AdvancesStatusLadder|TestShipmentsSync_CarrierErrorDoesNotBlockOthers' -v 2>&1 | tee /tmp/t13-after.txt
+grep -E '^(---|ok|FAIL)' /tmp/t13-after.txt
+```
+
+Expected: `--- PASS` for all three, by name.
+
+- [ ] **Step 4: Widen `make test-int` for `./internal/handlers/admin/...`**
+
+Only once this task's three tests and Task 10's two tests are all green — confirm with a full
+package run before widening:
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/handlers/admin/... 2>&1 | tail -5
+```
+
+Expected: `ok`.
+
+- [ ] **Step 5: Verify formatting and vet**
+
+```bash
+cd services/marketplace-api
+gofmt -l . && go build ./... && go vet ./... && go vet -tags=integration ./...
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "test(admin): seed the parent order for shipments and use testdb.SeedStore for sync tests"
+```
+
+---
+
+### Task 14: `page` — savepoint the expected-to-fail duplicate-slug insert (1 failure)
+
+Source: tail triage.
+
+**Files:**
+- Modify: `services/marketplace-api/internal/page/repository_integration_test.go:148` (`TestRepository_Create_DuplicateSlug_Errors`)
+
+**Interfaces:**
+- Consumes: nothing new — mirrors `category`'s existing `expectCreateFails` pattern at `internal/category/repository_integration_test.go:39-52`.
+- Produces: nothing new.
+
+The test runs three `repo.Create` calls inside one shared `testdb.NewTx` transaction and expects the
+second (a real duplicate-slug constraint violation) to fail while the third succeeds. Postgres aborts
+the whole transaction on any real SQL-level error until a `ROLLBACK` or a `SAVEPOINT` recovery; there
+is none here, so the third statement fails with `25P02` regardless of what it is. This is the masking
+effect the parent plan's Task 7 brief predicted, occurring within a single test instead of across
+tests.
+
+- [ ] **Step 1: Confirm the current failure**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/page/... -run 'TestRepository_Create_DuplicateSlug_Errors' -v 2>&1 | tee /tmp/t14-before.txt
+grep -c 'current transaction is aborted' /tmp/t14-before.txt
+```
+
+Expected: `1`.
+
+- [ ] **Step 2: Savepoint the expected-to-fail insert**
+
+Wrap the second `repo.Create` call (the one asserted to error) with `SAVEPOINT` /
+`ROLLBACK TO SAVEPOINT`, matching `category`'s `expectCreateFails`:
+
+```go
+require.NoError(t, tx.Exec("SAVEPOINT sp").Error)
+err := repo.Create(context.Background(), &Page{
+	TenantID: tenantID,
+	StoreID:  storeID,
+	Slug:     "dup-slug",
+	Title:    "Second",
+})
+require.Error(t, err, "inserting duplicate (store_id, slug) should violate the unique index")
+require.True(t, errors.Is(err, apperrors.ErrSlugTaken), "expected SlugTaken, got %v", err)
+require.NoError(t, tx.Exec("ROLLBACK TO SAVEPOINT sp").Error)
+```
+
+Leave the first and third `repo.Create` calls untouched — only the one expected to fail needs the
+savepoint.
+
+- [ ] **Step 3: Run and verify**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/page/... -run 'TestRepository_Create_DuplicateSlug_Errors' -v 2>&1 | tee /tmp/t14-after.txt
+grep -E '^(---|ok|FAIL)' /tmp/t14-after.txt
+```
+
+Expected: `--- PASS: TestRepository_Create_DuplicateSlug_Errors`. Do not widen `make test-int` for
+`internal/page` — the package still has two PRODUCT-class failures (see the tail triage doc) that are
+out of scope for this task.
+
+- [ ] **Step 4: Verify formatting and vet**
+
+```bash
+cd services/marketplace-api
+gofmt -l . && go build ./... && go vet ./... && go vet -tags=integration ./...
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "test(page): savepoint the expected-to-fail duplicate-slug insert"
+```
+
+---
+
+### Task 15: `product` — stop comparing against a transaction-frozen `now()` (1 failure)
+
+Source: tail triage.
+
+**Files:**
+- Modify: `services/marketplace-api/internal/product/repository_integration_test.go:403` (`TestIntegration_ProductRepo_ListPublished_ExcludesDraftArchivedDeletedUnpublished`)
+
+**Interfaces:**
+- Consumes: nothing new.
+- Produces: nothing new.
+
+Postgres freezes `now()` to the moment a transaction begins and holds that value for every statement
+inside it. `testdb.NewTx` opens the transaction before the test does anything else; the test then
+seeds a store and creates several aggregates before capturing `now := time.Now()` and using it as
+`PublishedAt` — an app-clock value captured strictly after the transaction began. `ListPublished`'s
+`WHERE ... published_at <= now()` evaluates Postgres's frozen `now()`, which is earlier than the
+freshly-captured Go timestamp, so the row reads as "published in the future" and is filtered out.
+Deterministic given any nonzero seeding time before the capture, not flaky.
+
+- [ ] **Step 1: Confirm the current failure**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/product/... -run 'TestIntegration_ProductRepo_ListPublished_ExcludesDraftArchivedDeletedUnpublished' -v 2>&1 | tee /tmp/t15-before.txt
+grep -c 'expected 1, got 0' /tmp/t15-before.txt
+```
+
+Expected: `1`.
+
+- [ ] **Step 2: Backdate `PublishedAt`**
+
+```go
+now := time.Now().Add(-time.Hour)
+```
+
+An hour is comfortably clear of any realistic transaction duration while still passing every other
+assertion in the test (the `d` aggregate's soft-delete check does not depend on the absolute value of
+`now`, only that it is a valid past timestamp).
+
+- [ ] **Step 3: Run and verify**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:55433/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/product/... -run 'TestIntegration_ProductRepo_ListPublished_ExcludesDraftArchivedDeletedUnpublished' -v 2>&1 | tee /tmp/t15-after.txt
+grep -E '^(---|ok|FAIL)' /tmp/t15-after.txt
+```
+
+Expected: `--- PASS`. Do not widen `make test-int` for `internal/product` — the package still has two
+PRODUCT-class failures (soft-deleted variants leaking through `Preload`, and an apparently-unreachable
+`OptionValueInUse` path) documented in the tail triage doc, out of scope for this task.
+
+- [ ] **Step 4: Verify formatting and vet**
+
+```bash
+cd services/marketplace-api
+gofmt -l . && go build ./... && go vet ./... && go vet -tags=integration ./...
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "test(product): backdate PublishedAt to avoid the transaction-frozen now() gotcha"
+```
+
+---
+
 ## Definition of Done
 
 - `comm -13 baseline-tests.txt after-tests.txt` is empty — this branch added zero failures.

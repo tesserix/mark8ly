@@ -46,7 +46,7 @@ func seedMediaRow(t *testing.T, svc *product.Service, agg *product.Aggregate, st
 
 func TestIntegration_RecropMedia_SignsWithGivenContentType(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	up := &capturingUploader{FakeUploader: media.NewFakeUploader()}
 	up.Register(media.Attrs{StorageKey: "orig-webp", Size: 10, ContentType: "image/webp"})
 	svc := buildService(tx, up)
@@ -70,7 +70,7 @@ func TestIntegration_RecropMedia_SignsWithGivenContentType(t *testing.T) {
 
 func TestIntegration_RecropMedia_DefaultsContentTypeToJPEG(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	up := &capturingUploader{FakeUploader: media.NewFakeUploader()}
 	up.Register(media.Attrs{StorageKey: "orig-jpg", Size: 10, ContentType: "image/jpeg"})
 	svc := buildService(tx, up)

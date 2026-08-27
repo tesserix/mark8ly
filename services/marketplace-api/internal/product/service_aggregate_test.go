@@ -59,7 +59,7 @@ func findVariantBySKU(agg *product.Aggregate, sku string) *product.Variant {
 // gap #1: options rename + value add + variant add/update all in one PATCH.
 func TestIntegration_ProductService_UpdateAggregate_FullRoundTrip(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	ctx := context.Background()
 
@@ -153,7 +153,7 @@ func TestIntegration_ProductService_UpdateAggregate_FullRoundTrip(t *testing.T) 
 // exercises gap #2: RemovedVariantIDs path soft-deletes variants.
 func TestIntegration_ProductService_UpdateAggregate_RemovedVariantIDsSoftDelete(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	ctx := context.Background()
 
@@ -211,7 +211,7 @@ func TestIntegration_ProductService_UpdateAggregate_RemovedVariantIDsSoftDelete(
 // variant still references should return OptionValueInUse and roll back.
 func TestIntegration_ProductService_UpdateAggregate_OptionValueInUseRejected(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	ctx := context.Background()
 

@@ -36,7 +36,7 @@ func seedProductForMedia(t *testing.T, svc *product.Service, storeID, tenantID s
 
 func TestIntegration_Service_AddMedia_HappyPath(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	up := media.NewFakeUploader()
 	up.Register(media.Attrs{StorageKey: "k-happy", Size: 123, ContentType: "image/jpeg"})
 	svc := buildService(tx, up)
@@ -79,7 +79,7 @@ func TestIntegration_Service_AddMedia_HappyPath(t *testing.T) {
 
 func TestIntegration_Service_AddMedia_UploadNotFound(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	agg := seedProductForMedia(t, svc, storeID, tenantID)
 
@@ -98,7 +98,7 @@ func TestIntegration_Service_AddMedia_UploadNotFound(t *testing.T) {
 
 func TestIntegration_Service_UpdateMedia_UpdatesAlt(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	up := media.NewFakeUploader()
 	up.Register(media.Attrs{StorageKey: "k1", Size: 1, ContentType: "image/jpeg"})
 	svc := buildService(tx, up)
@@ -132,7 +132,7 @@ func TestIntegration_Service_UpdateMedia_UpdatesAlt(t *testing.T) {
 
 func TestIntegration_Service_UpdateMedia_NotFound(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	agg := seedProductForMedia(t, svc, storeID, tenantID)
 
@@ -149,7 +149,7 @@ func TestIntegration_Service_UpdateMedia_NotFound(t *testing.T) {
 
 func TestIntegration_Service_DeleteMedia_Succeeds(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	up := media.NewFakeUploader()
 	up.Register(media.Attrs{StorageKey: "kd", Size: 1, ContentType: "image/jpeg"})
 	svc := buildService(tx, up)
@@ -174,7 +174,7 @@ func TestIntegration_Service_DeleteMedia_Succeeds(t *testing.T) {
 
 func TestIntegration_Service_DeleteMedia_CrossTenant_NotFound(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	up := media.NewFakeUploader()
 	up.Register(media.Attrs{StorageKey: "kx", Size: 1, ContentType: "image/jpeg"})
 	svc := buildService(tx, up)

@@ -16,19 +16,26 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/vendor"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
 // buildService wires a product.Service against the given tx with a
 // fake Uploader pre-registered against any keys the caller will use.
+//
+// VendorLookup is wired to a real vendor.Service so svc.Create defaults
+// VendorID to the tenant's self-vendor (products.vendor_id is NOT NULL).
+// Callers must seed that self-vendor first — seedStore and
+// seedStoreWithCurrency both do this via testdb.SeedVendor.
 func buildService(tx *gorm.DB, uploader media.Uploader) *product.Service {
 	return product.NewService(product.Config{
-		DB:         tx,
-		Repo:       product.NewRepository(tx),
-		StoresRepo: stores.NewRepository(tx),
-		OutboxRepo: outbox.NewRepository(tx),
-		Uploader:   uploader,
+		DB:           tx,
+		Repo:         product.NewRepository(tx),
+		StoresRepo:   stores.NewRepository(tx),
+		OutboxRepo:   outbox.NewRepository(tx),
+		Uploader:     uploader,
+		VendorLookup: vendor.NewService(vendor.NewRepository(tx)),
 	})
 }
 
@@ -47,7 +54,7 @@ func countProductOutbox(t *testing.T, tx *gorm.DB, productID, eventType string) 
 
 func TestIntegration_ProductService_Create_SimpleProduct_HappyPath(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 
 	agg, err := svc.Create(context.Background(), product.CreateRequest{
@@ -94,7 +101,7 @@ func TestIntegration_ProductService_Create_SimpleProduct_HappyPath(t *testing.T)
 // hit on australia-store 2026-04-25.
 func TestIntegration_ProductService_Create_StatusActive_SetsPublishedAt(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 
 	active := product.StatusActive
@@ -123,7 +130,7 @@ func TestIntegration_ProductService_Create_StatusActive_SetsPublishedAt(t *testi
 
 func TestIntegration_ProductService_Create_EmptyTitle_ReturnsValidationFailed(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 
 	_, err := svc.Create(context.Background(), product.CreateRequest{
@@ -137,7 +144,7 @@ func TestIntegration_ProductService_Create_EmptyTitle_ReturnsValidationFailed(t 
 
 func TestIntegration_ProductService_Create_CurrencyMismatch(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx) // store currency = USD
+	storeID, tenantID, _ := seedStore(t, tx) // store currency = USD
 	svc := buildService(tx, media.NewFakeUploader())
 
 	_, err := svc.Create(context.Background(), product.CreateRequest{
@@ -153,7 +160,7 @@ func TestIntegration_ProductService_Create_CurrencyMismatch(t *testing.T) {
 
 func TestIntegration_ProductService_Create_WithOptions_Matrix(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 
 	agg, err := svc.Create(context.Background(), product.CreateRequest{
@@ -185,7 +192,7 @@ func TestIntegration_ProductService_Create_WithOptions_Matrix(t *testing.T) {
 
 func TestIntegration_ProductService_Create_MatrixMismatch(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 
 	_, err := svc.Create(context.Background(), product.CreateRequest{
@@ -205,7 +212,7 @@ func TestIntegration_ProductService_Create_MatrixMismatch(t *testing.T) {
 
 func TestIntegration_ProductService_Create_UploadNotFound(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 
 	_, err := svc.Create(context.Background(), product.CreateRequest{
@@ -222,7 +229,7 @@ func TestIntegration_ProductService_Create_UploadNotFound(t *testing.T) {
 
 func TestIntegration_ProductService_Create_HandleCollision_ReturnsHandleTaken(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	ctx := context.Background()
 
@@ -248,7 +255,7 @@ func TestIntegration_ProductService_Create_HandleCollision_ReturnsHandleTaken(t 
 
 func TestIntegration_ProductService_UpdateBasics_ChangesTitleAndStatus(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	ctx := context.Background()
 
@@ -285,7 +292,7 @@ func TestIntegration_ProductService_UpdateBasics_ChangesTitleAndStatus(t *testin
 
 func TestIntegration_ProductService_UpdateBasics_SanitizesDescription(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	ctx := context.Background()
 
@@ -314,7 +321,7 @@ func TestIntegration_ProductService_UpdateBasics_SanitizesDescription(t *testing
 
 func TestIntegration_ProductService_UpdateBasics_NotFound(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	title := "Nope"
 	_, err := svc.UpdateBasics(context.Background(), product.UpdateBasicsRequest{
@@ -327,7 +334,7 @@ func TestIntegration_ProductService_UpdateBasics_NotFound(t *testing.T) {
 
 func TestIntegration_ProductService_UpdateMedia_ReplacesSet(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	up := media.NewFakeUploader()
 	up.Register(media.Attrs{StorageKey: "k-a", Size: 1, ContentType: "image/jpeg"})
 	up.Register(media.Attrs{StorageKey: "k-b", Size: 1, ContentType: "image/jpeg"})
@@ -362,7 +369,7 @@ func TestIntegration_ProductService_UpdateMedia_ReplacesSet(t *testing.T) {
 
 func TestIntegration_ProductService_UpdateCategoryLinks_Replaces(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	ctx := context.Background()
 
@@ -395,7 +402,7 @@ func TestIntegration_ProductService_UpdateCategoryLinks_Replaces(t *testing.T) {
 
 func TestIntegration_ProductService_Delete_SoftDelete_EnqueuesOutbox(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	ctx := context.Background()
 
@@ -426,7 +433,7 @@ func TestIntegration_ProductService_Delete_SoftDelete_EnqueuesOutbox(t *testing.
 
 func TestIntegration_ProductService_Delete_NotFound(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	svc := buildService(tx, media.NewFakeUploader())
 	err := svc.Delete(context.Background(), uuid.NewString(), storeID, tenantID)
 	if !errors.Is(err, apperrors.ErrNotFound) {
@@ -454,6 +461,9 @@ func seedStoreWithCurrency(t *testing.T, db *gorm.DB, tenantID, currency string)
 	if err := db.Create(s).Error; err != nil {
 		t.Fatalf("seed store: %v", err)
 	}
+	// Idempotent per tenant: a second store under the same tenant just
+	// returns the existing self-vendor.
+	testdb.SeedVendor(t, db, uuid.MustParse(tenantID))
 	return storeID
 }
 
@@ -589,7 +599,7 @@ func TestIntegration_ProductService_Copy_CrossStore_Success(t *testing.T) {
 
 func TestIntegration_ProductService_Copy_TargetInvalid_SameStore(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	srcCatID := seedCategory(t, tx, storeID, tenantID, "same-store-cat")
 	source := seedRichSourceProduct(t, tx, storeID, tenantID, "USD", srcCatID)
 	svc := buildService(tx, media.NewFakeUploader())
@@ -607,7 +617,7 @@ func TestIntegration_ProductService_Copy_TargetInvalid_SameStore(t *testing.T) {
 
 func TestIntegration_ProductService_Copy_TargetInvalid_NotFound(t *testing.T) {
 	tx := testdb.NewTx(t)
-	storeID, tenantID := seedStore(t, tx)
+	storeID, tenantID, _ := seedStore(t, tx)
 	srcCatID := seedCategory(t, tx, storeID, tenantID, "notfound-cat")
 	source := seedRichSourceProduct(t, tx, storeID, tenantID, "USD", srcCatID)
 	svc := buildService(tx, media.NewFakeUploader())
@@ -625,7 +635,7 @@ func TestIntegration_ProductService_Copy_TargetInvalid_NotFound(t *testing.T) {
 
 func TestIntegration_ProductService_Copy_TargetInvalid_OtherTenant(t *testing.T) {
 	tx := testdb.NewTx(t)
-	srcStoreID, srcTenantID := seedStore(t, tx)
+	srcStoreID, srcTenantID, _ := seedStore(t, tx)
 	srcCatID := seedCategory(t, tx, srcStoreID, srcTenantID, "other-tenant-cat")
 	source := seedRichSourceProduct(t, tx, srcStoreID, srcTenantID, "USD", srcCatID)
 

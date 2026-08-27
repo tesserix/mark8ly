@@ -25,6 +25,7 @@ func seedStoreForService(t *testing.T, tx *gorm.DB) (storeID, tenantID string) {
 	storeUUID := uuid.New()
 	tenantUUID := uuid.New()
 	testdb.SeedStore(t, tx, tenantUUID, storeUUID)
+	testdb.SeedVendor(t, tx, tenantUUID)
 	return storeUUID.String(), tenantUUID.String()
 }
 
@@ -193,10 +194,11 @@ func TestIntegration_CategoryService_Delete_HasProducts_Refused(t *testing.T) {
 
 	productID := uuid.NewString()
 	handle := "p-" + productID[:8]
+	vendorID := testdb.SeedVendor(t, tx, uuid.MustParse(tenantID))
 	if err := tx.Exec(`
-		INSERT INTO products (id, tenant_id, store_id, handle, title, status)
-		VALUES (?, ?, ?, ?, ?, 'draft')`,
-		productID, tenantID, storeID, handle, "Test Product").Error; err != nil {
+		INSERT INTO products (id, tenant_id, store_id, vendor_id, handle, title, status)
+		VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
+		productID, tenantID, storeID, vendorID, handle, "Test Product").Error; err != nil {
 		t.Fatalf("insert product: %v", err)
 	}
 	if err := tx.Exec(`

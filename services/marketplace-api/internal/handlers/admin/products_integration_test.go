@@ -30,6 +30,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/vendor"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
@@ -84,11 +85,12 @@ func setupTestRouter(t *testing.T) *testEnv {
 	fga := authz.NewFakeClient()
 
 	svc := product.NewService(product.Config{
-		DB:         db,
-		Repo:       productRepo,
-		StoresRepo: storesRepo,
-		OutboxRepo: outboxRepo,
-		Uploader:   uploader,
+		DB:           db,
+		Repo:         productRepo,
+		StoresRepo:   storesRepo,
+		OutboxRepo:   outboxRepo,
+		Uploader:     uploader,
+		VendorLookup: vendor.NewService(vendor.NewRepository(db)),
 	})
 
 	catSvc := category.NewService(category.Config{
@@ -145,6 +147,7 @@ func seedStoreRow(t *testing.T, db *gorm.DB, tenantID string) (string, string) {
 	if err := db.Create(s).Error; err != nil {
 		t.Fatalf("seed store: %v", err)
 	}
+	testdb.SeedVendor(t, db, uuid.MustParse(tenantID))
 	return storeID, tenantID
 }
 
@@ -349,11 +352,12 @@ func TestAPI_AdminProducts_List_EmptyPage(t *testing.T) {
 func createProductsViaService(t *testing.T, env *testEnv, storeID, tenantID string, n int, status string) {
 	t.Helper()
 	svc := product.NewService(product.Config{
-		DB:         env.db,
-		Repo:       product.NewRepository(env.db),
-		StoresRepo: stores.NewRepository(env.db),
-		OutboxRepo: outbox.NewRepository(env.db),
-		Uploader:   env.uploader,
+		DB:           env.db,
+		Repo:         product.NewRepository(env.db),
+		StoresRepo:   stores.NewRepository(env.db),
+		OutboxRepo:   outbox.NewRepository(env.db),
+		Uploader:     env.uploader,
+		VendorLookup: vendor.NewService(vendor.NewRepository(env.db)),
 	})
 	for i := 0; i < n; i++ {
 		title := "Seed " + uuid.NewString()[:8]

@@ -105,6 +105,7 @@ func seedStorefrontStore(t *testing.T, db *gorm.DB, slug, currency string) (stor
 		storeID, tenantID, slug, "Storefront Test Store", "US", currency, "UTC", stores.StatusActive).Error; err != nil {
 		t.Fatalf("seed store: %v", err)
 	}
+	testdb.SeedVendor(t, db, uuid.MustParse(tenantID))
 	return
 }
 
@@ -150,10 +151,13 @@ func seedProduct(t *testing.T, db *gorm.DB, storeID, tenantID string, opts produ
 	if opts.Title == "" {
 		opts.Title = "Product " + opts.Handle
 	}
+	// Idempotent per tenant — seedStorefrontStore already seeded this
+	// tenant's self-vendor; this just looks it up.
+	vendorID := testdb.SeedVendor(t, db, uuid.MustParse(tenantID))
 	if err := db.Exec(`
-		INSERT INTO products (id, tenant_id, store_id, handle, title, status, published_at, deleted_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, now(), now())`,
-		productID, tenantID, storeID, opts.Handle, opts.Title, opts.Status, opts.PublishedAt, opts.DeletedAt).Error; err != nil {
+		INSERT INTO products (id, tenant_id, store_id, vendor_id, handle, title, status, published_at, deleted_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, now(), now())`,
+		productID, tenantID, storeID, vendorID, opts.Handle, opts.Title, opts.Status, opts.PublishedAt, opts.DeletedAt).Error; err != nil {
 		t.Fatalf("seed product: %v", err)
 	}
 	variantID := uuid.NewString()

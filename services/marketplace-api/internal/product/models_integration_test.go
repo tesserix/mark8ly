@@ -41,6 +41,7 @@ func TestIntegration_FullProductGraph_RoundTrip(t *testing.T) {
 	if err := tx.Create(store).Error; err != nil {
 		t.Fatalf("insert store: %v", err)
 	}
+	vendorID := testdb.SeedVendor(t, tx, uuid.MustParse(tenantID)).String()
 
 	// 2. Insert two categories (one root, one nested)
 	rootCat := &category.Category{
@@ -71,6 +72,7 @@ func TestIntegration_FullProductGraph_RoundTrip(t *testing.T) {
 	prod := &product.Product{
 		TenantID:          tenantID,
 		StoreID:           storeID,
+		VendorID:          &vendorID,
 		Handle:            "linen-shirt",
 		Title:             "Linen Shirt",
 		Status:            product.StatusDraft,
@@ -270,11 +272,13 @@ func TestIntegration_PartialUnique_SoftDelete(t *testing.T) {
 	if err := tx.Create(store).Error; err != nil {
 		t.Fatalf("insert store: %v", err)
 	}
+	vendorID := testdb.SeedVendor(t, tx, uuid.MustParse(tenantID)).String()
 
 	// Insert first product (real statement; stays committed inside the outer tx)
 	p1 := &product.Product{
 		TenantID: tenantID,
 		StoreID:  storeID,
+		VendorID: &vendorID,
 		Handle:   "silk-scarf",
 		Title:    "Silk Scarf",
 		Status:   product.StatusDraft,
@@ -291,6 +295,7 @@ func TestIntegration_PartialUnique_SoftDelete(t *testing.T) {
 	p2 := &product.Product{
 		TenantID: tenantID,
 		StoreID:  storeID,
+		VendorID: &vendorID,
 		Handle:   "silk-scarf",
 		Title:    "Silk Scarf (v2)",
 		Status:   product.StatusDraft,
@@ -313,6 +318,7 @@ func TestIntegration_PartialUnique_SoftDelete(t *testing.T) {
 	p3 := &product.Product{
 		TenantID: tenantID,
 		StoreID:  storeID,
+		VendorID: &vendorID,
 		Handle:   "silk-scarf",
 		Title:    "Silk Scarf (v3)",
 		Status:   product.StatusDraft,

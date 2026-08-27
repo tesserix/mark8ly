@@ -21,3 +21,14 @@ type Provider interface {
 	List(ctx context.Context, f Filter) ([]Item, error)
 	Count(ctx context.Context, f Filter) (int64, error)
 }
+
+// Compile-time proof that every provider satisfies Provider. Without these, a
+// signature drift surfaces only where a provider is registered, far from the
+// change that caused it.
+var (
+	_ Provider = (*SEAReviewProvider)(nil)
+	_ Provider = (*ErasureProvider)(nil)
+	_ Provider = (*ArbitrageProvider)(nil)
+	_ Provider = (*MigrationFastPathProvider)(nil)
+	_ Provider = (*OnboardingProvider)(nil)
+)

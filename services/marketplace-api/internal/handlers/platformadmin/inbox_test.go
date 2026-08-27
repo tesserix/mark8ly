@@ -3,6 +3,7 @@ package platformadmin_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -70,4 +71,26 @@ func TestInboxHandler_DeepPageIsFourHundred(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/inbox?page=99&limit=50", nil))
 	require.Equal(t, http.StatusBadRequest, w.Code)
 	require.Contains(t, w.Body.String(), "kind", "the error must tell the caller how to narrow")
+}
+
+func TestInboxHandler_UnknownKindIsFourHundred(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	wrapped := fmt.Errorf("%w: %q", inbox.ErrUnknownKind, "bogus")
+	platformadmin.NewInboxHandler(fakeAgg{err: wrapped}, nil).Register(r.Group(""))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/inbox?kind=bogus", nil))
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "kind", "the response must be actionable — name a valid kind or the word kind")
+}
+
+func TestInboxHandler_AllSourcesFailedIsFiveHundred(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	platformadmin.NewInboxHandler(fakeAgg{err: inbox.ErrAllSourcesFailed}, nil).Register(r.Group(""))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/inbox", nil))
+	require.Equal(t, http.StatusInternalServerError, w.Code)
 }

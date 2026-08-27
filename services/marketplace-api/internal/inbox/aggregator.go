@@ -22,6 +22,9 @@ var ErrPageTooDeep = errors.New("inbox: page too deep for aggregate mode; narrow
 // ErrAllSourcesFailed is returned when no provider answered.
 var ErrAllSourcesFailed = errors.New("inbox: every source failed")
 
+// ErrUnknownKind is returned when Filter.Kind names no registered provider.
+var ErrUnknownKind = errors.New("inbox: unknown kind")
+
 // Result is one page of merged work, plus the kinds that could not be reached.
 type Result struct {
 	Items    []Item
@@ -68,7 +71,7 @@ func (a *Aggregator) List(ctx context.Context, f Filter) (Result, error) {
 			}
 			return Result{Items: items, Total: total}, nil
 		}
-		return Result{}, fmt.Errorf("inbox: unknown kind %q", f.Kind)
+		return Result{}, fmt.Errorf("%w: %q", ErrUnknownKind, f.Kind)
 	}
 
 	if page*limit > MaxAggregateItems {

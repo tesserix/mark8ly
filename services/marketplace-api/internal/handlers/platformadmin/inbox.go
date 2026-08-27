@@ -6,11 +6,23 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/mark8ly/marketplace-api/internal/inbox"
 )
+
+// validInboxKinds names every registered provider kind, for the
+// unknown_kind error response. Built from the exported Kind* constants so it
+// cannot drift from the provider registry.
+var validInboxKinds = []string{
+	inbox.KindSEAManualReview,
+	inbox.KindMigrationFastPath,
+	inbox.KindErasureRequest,
+	inbox.KindArbitrageAppeal,
+	inbox.KindOnboardingStalled,
+}
 
 // InboxAggregator is the slice of inbox.Aggregator this handler needs.
 type InboxAggregator interface {
@@ -55,6 +67,19 @@ func (h *InboxHandler) List(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":   "page_too_deep",
 				"message": "aggregate inbox pagination is bounded; narrow the request with ?kind=",
+			})
+		case errors.Is(err, inbox.ErrUnknownKind):
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "unknown_kind",
+				"message": "unknown kind; valid kinds are: " + strings.Join(validInboxKinds, ", "),
+			})
+		case errors.Is(err, inbox.ErrAllSourcesFailed):
+			if h.logger != nil {
+				h.logger.Error("platform inbox list", "err", err)
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "internal",
+				"message": "internal server error",
 			})
 		default:
 			if h.logger != nil {

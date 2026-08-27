@@ -29,6 +29,7 @@ import (
 	"github.com/mark8ly/platform-api/internal/auth"
 	"github.com/mark8ly/platform-api/internal/authz"
 	"github.com/mark8ly/platform-api/internal/estate"
+	"github.com/mark8ly/platform-api/internal/estateuser"
 	"github.com/mark8ly/platform-api/internal/gipadmin"
 	"github.com/mark8ly/platform-api/internal/invitation"
 	"github.com/mark8ly/platform-api/internal/location"
@@ -359,6 +360,10 @@ func main() {
 	tenantHandler.RegisterLifecycle(strictInternal)
 	onboardingHandler.RegisterAnalytics(strictInternal)
 	estate.NewHandler(estate.NewRepository(conn)).Register(strictInternal)
+	// Estate-wide staff directory (#278). Strict-internal for the same reason
+	// as the tenant directory above: it returns every staff identity on the
+	// platform.
+	estateuser.NewHandler(estateuser.NewRepository(conn)).Register(strictInternal)
 	accountHandler.RegisterOperator(strictInternal)
 
 	locationHandler.Register(v1)

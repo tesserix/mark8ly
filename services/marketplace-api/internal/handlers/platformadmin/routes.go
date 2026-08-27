@@ -149,6 +149,15 @@ type Deps struct {
 	// InboxActionIdem records idempotency keys for destructive actions. A
 	// Postgres-backed one is built from DB when nil, matching NonceStore.
 	InboxActionIdem InboxActionIdempotency
+
+	// EstateUsers serves /admin/entities/users (#278). Nil leaves the route
+	// unmounted, matching the nil-safe pattern used for TenantDirectory.
+	//
+	// Mounting this ALSO requires declaring `users` under entities in
+	// admin-conformance.json AND in the chart's declaration in tesserix-k8s.
+	// The conformance suite fails an endpoint a product serves but does not
+	// declare, so a one-sided change turns the nightly job red.
+	EstateUsers EstateUserDirectory
 }
 
 // TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
@@ -249,6 +258,10 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.Outbox != nil {
 		NewOutboxHandler(deps.DB, deps.Outbox, deps.Logger).Register(group)
+	}
+
+	if deps.EstateUsers != nil {
+		NewEntitiesUsersHandler(deps.EstateUsers, deps.Logger).Register(group)
 	}
 
 	if deps.InboxItems != nil {

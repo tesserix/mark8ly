@@ -68,6 +68,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 	"github.com/mark8ly/marketplace-api/internal/estatecounts"
+	"github.com/mark8ly/marketplace-api/internal/estateuserdir"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/gipkey"
 	"github.com/mark8ly/marketplace-api/internal/gipuser"
@@ -2075,8 +2076,11 @@ func main() {
 		var estateCountsClient platformadmin.EstateCounts
 		var tenantLifecycleClient platformadmin.TenantLifecycle
 		var tenantTeardownClient platformadmin.TenantTeardown
+		var estateUsersClient platformadmin.EstateUserDirectory
 		if cfg.PlatformAPIURL != "" {
 			tenantDirectoryClient = tenantdirectory.NewClient(
+				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+			estateUsersClient = estateuserdir.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			onboardingFunnelClient = onboardingfunnel.NewClient(
 				cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
@@ -2121,6 +2125,7 @@ func main() {
 			Inbox:                 inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 			InboxItems:            inboxItemSource(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 			InboxActionExecutors:  inboxActionExecutors(migrationRepo),
+			EstateUsers:           estateUsersClient,
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2209,8 +2214,11 @@ func main() {
 			var estateCountsClient platformadmin.EstateCounts
 			var tenantLifecycleClient platformadmin.TenantLifecycle
 			var tenantTeardownClient platformadmin.TenantTeardown
+			var estateUsersClient platformadmin.EstateUserDirectory
 			if cfg.PlatformAPIURL != "" {
 				tenantDirectoryClient = tenantdirectory.NewClient(
+					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
+				estateUsersClient = estateuserdir.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 				onboardingFunnelClient = onboardingfunnel.NewClient(
 					cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
@@ -2249,6 +2257,7 @@ func main() {
 				Inbox:                 inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 				InboxItems:            inboxItemSource(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 				InboxActionExecutors:  inboxActionExecutors(migrationRepo),
+				EstateUsers:           estateUsersClient,
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

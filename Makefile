@@ -71,7 +71,17 @@ test-int: ## Run integration tests against the running `make dev` stack
 	@# holds a transaction open while Svc.Submit writes the same row on a
 	@# separate pooled connection, so the two block each other forever and this
 	@# target would hang instead of failing. Filed separately; do not add the
-	@# ellipsis back until that deadlock is fixed.
+	@# ellipsis back until that deadlock is fixed. The missing ellipsis also
+	@# excludes internal/billing/tax/seaqueue — its status was never measured,
+	@# so it stays out until someone does.
+	@#
+	@# ./internal/subscription below is deliberately NOT ./internal/subscription/...
+	@# — recursing would pull in internal/subscription/planchange, which is
+	@# still red. Do not add the ellipsis back until that package is fixed.
+	@#
+	@# ./internal/campaignbudget/cron/... similarly leaves
+	@# internal/campaignbudget/concurrency and internal/campaignbudget/transactional
+	@# unassessed — their status was never measured, so they stay out too.
 	@cd services/marketplace-api && \
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable' \
 	  go test -tags=integration -p 1 \
@@ -84,6 +94,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/billing/appaddon/... \
 	    ./internal/billing/dispatch/... \
 	    ./internal/billing/tax \
+	    ./internal/billing/trial/... \
 	    ./internal/subscription \
 	    ./internal/subscription/cancel/... \
 	    ./internal/subscription/harddelete/... \
@@ -92,7 +103,8 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/subscription/statemachine/... \
 	    ./internal/campaignbudget/cron/... \
 	    ./internal/handlers/webhooks/... \
-	    ./tests/integration/...
+	    ./tests/integration/... \
+	    ./pkg/testdb/...
 
 cover: ## Coverage report for both Go services
 	@cd services/platform-api && go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -5

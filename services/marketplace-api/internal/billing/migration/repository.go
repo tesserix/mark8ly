@@ -34,9 +34,13 @@ type Review struct {
 	WhoisDomain   string     `gorm:"column:whois_domain"`
 	Status        string     `gorm:"column:status;not null;default:pending"`
 	ReviewerID    *uuid.UUID `gorm:"column:reviewer_id;type:uuid"`
-	ReviewerNotes string     `gorm:"column:reviewer_notes"`
-	CreatedAt     time.Time  `gorm:"column:created_at;not null;default:now()"`
-	ReviewedAt    *time.Time `gorm:"column:reviewed_at"`
+	// ReviewerOperatorID attributes a decision made through the platform
+	// console, whose operators are free-text ids rather than uuids (#281a).
+	// Exactly one of ReviewerID / ReviewerOperatorID is set per decision.
+	ReviewerOperatorID *string    `gorm:"column:reviewer_operator_id"`
+	ReviewerNotes      string     `gorm:"column:reviewer_notes"`
+	CreatedAt          time.Time  `gorm:"column:created_at;not null;default:now()"`
+	ReviewedAt         *time.Time `gorm:"column:reviewed_at"`
 }
 
 // TableName pins the GORM table name so the struct can live in any package.
@@ -94,14 +98,52 @@ func (r *Repository) Get(ctx context.Context, id uuid.UUID) (*Review, error) {
 	return &row, nil
 }
 
-// Approve marks the review approved and shortens the tax-ID window to 48h
-// (from the 14d default) by stamping store_subscriptions.tax_id_window_shortened_at.
-// Does NOT waive tax-ID validation — P7 still runs the registry lookup.
+// reviewer identifies who decided a review. Exactly one field is set: the CSM
+// route supplies a uuid from its trust header, the platform console supplies a
+// free-text operator id (#281a). Modelled as one type so decide() cannot be
+// called with neither, and so a future third caller has to say which it is.
+type reviewer struct {
+	id         *uuid.UUID
+	operatorID *string
+}
+
+// Approve marks the review approved on behalf of a uuid-identified reviewer
+// (the CSM route). Approving shortens the tax-ID window to 48h (from the 14d
+// default) by stamping store_subscriptions.tax_id_window_shortened_at. It does
+// NOT waive tax-ID validation — P7 still runs the registry lookup.
 //
 // Returns the post-update review row so callers (the Review handler) can
 // attribute an audit event to the review's tenant/store without a second
 // lookup — the row is already in hand from inside this transaction.
 func (r *Repository) Approve(ctx context.Context, id, reviewerID uuid.UUID, notes string) (*Review, error) {
+	return r.decide(ctx, id, "approved", reviewer{id: &reviewerID}, notes)
+}
+
+// Reject marks the review rejected on behalf of a uuid-identified reviewer.
+// No side effect on store_subscriptions.
+func (r *Repository) Reject(ctx context.Context, id, reviewerID uuid.UUID, notes string) (*Review, error) {
+	return r.decide(ctx, id, "rejected", reviewer{id: &reviewerID}, notes)
+}
+
+// ApproveAsOperator marks the review approved on behalf of a platform console
+// operator, whose id is a free-text string rather than a uuid (#281a).
+func (r *Repository) ApproveAsOperator(ctx context.Context, id uuid.UUID, operatorID, notes string) (*Review, error) {
+	return r.decide(ctx, id, "approved", reviewer{operatorID: &operatorID}, notes)
+}
+
+// RejectAsOperator marks the review rejected on behalf of a platform console
+// operator.
+func (r *Repository) RejectAsOperator(ctx context.Context, id uuid.UUID, operatorID, notes string) (*Review, error) {
+	return r.decide(ctx, id, "rejected", reviewer{operatorID: &operatorID}, notes)
+}
+
+// decide is the single write path for both decisions and both reviewer kinds.
+//
+// One function rather than four so the pending-status guard, the row reload
+// and the approve-only subscription side effect cannot drift between them —
+// the previous Approve/Reject pair were near-identical copies, and the
+// operator variants would have made four.
+func (r *Repository) decide(ctx context.Context, id uuid.UUID, status string, who reviewer, notes string) (*Review, error) {
 	var review Review
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.First(&review, "id = ? AND status = ?", id, "pending").Error; err != nil {
@@ -112,24 +154,33 @@ func (r *Repository) Approve(ctx context.Context, id, reviewerID uuid.UUID, note
 		}
 
 		now := time.Now().UTC()
+		trimmed := strings.TrimSpace(notes)
 		res := tx.Exec(`
 			UPDATE migration_fast_path_reviews
-			SET status = 'approved', reviewer_id = ?, reviewer_notes = ?, reviewed_at = ?
+			SET status = ?, reviewer_id = ?, reviewer_operator_id = ?,
+			    reviewer_notes = ?, reviewed_at = ?
 			WHERE id = ? AND status = 'pending'`,
-			reviewerID, strings.TrimSpace(notes), now, id,
+			status, who.id, who.operatorID, trimmed, now, id,
 		)
 		if res.Error != nil {
 			return res.Error
 		}
+		// The guard is `status = 'pending'` inside the UPDATE, not just the
+		// SELECT above: without it two concurrent decisions could both pass
+		// the read and both write.
 		if res.RowsAffected == 0 {
 			return ErrNotFound
 		}
-		review.Status = "approved"
-		review.ReviewerID = &reviewerID
-		trimmed := strings.TrimSpace(notes)
+
+		review.Status = status
+		review.ReviewerID = who.id
+		review.ReviewerOperatorID = who.operatorID
 		review.ReviewerNotes = trimmed
 		review.ReviewedAt = &now
 
+		if status != "approved" {
+			return nil
+		}
 		// Stamp tax_id_window_shortened_at — only if not already set (idempotent).
 		return tx.Exec(`
 			UPDATE store_subscriptions
@@ -137,44 +188,6 @@ func (r *Repository) Approve(ctx context.Context, id, reviewerID uuid.UUID, note
 			WHERE store_id = ? AND tax_id_window_shortened_at IS NULL`,
 			now, review.StoreID,
 		).Error
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &review, nil
-}
-
-// Reject marks the review rejected. No side effect on store_subscriptions.
-//
-// Returns the post-update review row for the same reason Approve does.
-func (r *Repository) Reject(ctx context.Context, id, reviewerID uuid.UUID, notes string) (*Review, error) {
-	var review Review
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&review, "id = ? AND status = ?", id, "pending").Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrNotFound
-			}
-			return err
-		}
-
-		now := time.Now().UTC()
-		res := tx.Exec(`
-			UPDATE migration_fast_path_reviews
-			SET status = 'rejected', reviewer_id = ?, reviewer_notes = ?, reviewed_at = ?
-			WHERE id = ? AND status = 'pending'`,
-			reviewerID, strings.TrimSpace(notes), now, id,
-		)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return ErrNotFound
-		}
-		review.Status = "rejected"
-		review.ReviewerID = &reviewerID
-		review.ReviewerNotes = strings.TrimSpace(notes)
-		review.ReviewedAt = &now
-		return nil
 	})
 	if err != nil {
 		return nil, err

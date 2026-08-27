@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -11,24 +12,26 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/inbox"
 )
 
-// ErrOperatorNotAddressable is returned when the platform operator id cannot
-// be used as a domain reviewer id.
+// ErrMissingOperator is returned when no platform operator id is present.
 //
-// migration_fast_path_reviews.reviewer_id is a uuid, and the platform surface
-// identifies operators with the free-text X-Platform-Operator header. Rather
-// than synthesise a UUID from that string, this refuses: a fabricated id in a
-// column named reviewer_id reads as a real user to everyone who queries it
-// later, and there is no FK to catch it. Attribution still lands in the audit
-// row, which carries the readable operator in actor_operator_id.
-var ErrOperatorNotAddressable = errors.New("platformadmin: operator id is not a uuid")
+// A decision that cannot be attributed to anyone must not be written: the
+// audit row and the review row would both record an anonymous approval of a
+// merchant's migration.
+var ErrMissingOperator = errors.New("platformadmin: no operator id on the request")
 
 // MigrationFastPathReviewer is the slice of migration.Repository this executor
 // needs. Both methods return the post-update row so the audit event can be
 // attributed to the review's own tenant and store rather than to whatever the
 // caller claimed.
+//
+// The *AsOperator variants are used rather than Approve/Reject because this
+// surface identifies operators with a free-text id, not a uuid — every
+// operator id production has recorded is an opaque string. They write
+// reviewer_operator_id and leave reviewer_id NULL, so nothing fabricates a
+// user that does not exist (#281a).
 type MigrationFastPathReviewer interface {
-	Approve(ctx context.Context, id, reviewerID uuid.UUID, notes string) (*migration.Review, error)
-	Reject(ctx context.Context, id, reviewerID uuid.UUID, notes string) (*migration.Review, error)
+	ApproveAsOperator(ctx context.Context, id uuid.UUID, operatorID, notes string) (*migration.Review, error)
+	RejectAsOperator(ctx context.Context, id uuid.UUID, operatorID, notes string) (*migration.Review, error)
 }
 
 // MigrationFastPathExecutor executes approve/reject for the
@@ -49,17 +52,16 @@ func (e *MigrationFastPathExecutor) Execute(
 	if err != nil {
 		return InboxActionResult{}, fmt.Errorf("migration fast-path: item id is not a uuid: %w", err)
 	}
-	reviewerID, err := uuid.Parse(operatorID)
-	if err != nil {
-		return InboxActionResult{}, ErrOperatorNotAddressable
+	if strings.TrimSpace(operatorID) == "" {
+		return InboxActionResult{}, ErrMissingOperator
 	}
 
 	var review *migration.Review
 	switch actionID {
 	case "approve":
-		review, err = e.repo.Approve(ctx, reviewID, reviewerID, notes)
+		review, err = e.repo.ApproveAsOperator(ctx, reviewID, operatorID, notes)
 	case "reject":
-		review, err = e.repo.Reject(ctx, reviewID, reviewerID, notes)
+		review, err = e.repo.RejectAsOperator(ctx, reviewID, operatorID, notes)
 	default:
 		// Unreachable through the handler, which checks the item's declared
 		// actions first. Explicit anyway: a future action added to the

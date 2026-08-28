@@ -19,6 +19,7 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 // Status constants match the CHECK constraint in migration 000001.
@@ -72,7 +73,15 @@ type Product struct {
 	UpdatedBy       *string          `gorm:"column:updated_by;type:uuid"                              json:"updated_by,omitempty"`
 	CreatedAt       time.Time        `gorm:"column:created_at;not null;default:now()"                 json:"created_at"`
 	UpdatedAt       time.Time        `gorm:"column:updated_at;not null;default:now()"                 json:"updated_at"`
-	DeletedAt       *time.Time       `gorm:"column:deleted_at;index"                                  json:"deleted_at,omitempty"`
+	// DeletedAt is a plain *time.Time, not gorm.DeletedAt, and that is
+	// intentional here: GORM applies no automatic "deleted_at IS NULL"
+	// filter to it. It is safe only because every product query filters
+	// on deleted_at IS NULL explicitly (see repository.go:212, 262, 326,
+	// 407, 450, 499). Do not "fix" this by switching to gorm.DeletedAt
+	// without auditing those call sites, and do not copy this pattern
+	// into a new model — a query that omits the explicit predicate will
+	// silently leak soft-deleted products.
+	DeletedAt *time.Time `gorm:"column:deleted_at;index"                                  json:"deleted_at,omitempty"`
 
 	// Eager-loaded relations (optional; populated via Preload)
 	Options  []Option  `gorm:"foreignKey:ProductID" json:"options,omitempty"`
@@ -130,10 +139,11 @@ type Variant struct {
 	Position          int              `gorm:"column:position;not null;default:0"                       json:"position"`
 	CreatedAt         time.Time        `gorm:"column:created_at;not null;default:now()"                 json:"created_at"`
 	UpdatedAt         time.Time        `gorm:"column:updated_at;not null;default:now()"                 json:"updated_at"`
-	// DeletedAt is a plain *time.Time, not gorm.DeletedAt, so GORM's automatic
-	// soft-delete filtering does NOT apply — every Preload("Variants") returns
-	// deleted rows. See issue #395.
-	DeletedAt *time.Time `gorm:"column:deleted_at;index"                                  json:"deleted_at,omitempty"`
+	// DeletedAt is gorm.DeletedAt, so GORM applies its automatic soft-delete
+	// filter to every query against this model, including inside Preload. A
+	// query that must see soft-deleted variants has to opt out explicitly
+	// with Unscoped().
+	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;index"                                  json:"-"`
 
 	OptionValueLinks []VariantOptionValue `gorm:"foreignKey:VariantID" json:"option_value_links,omitempty"`
 }

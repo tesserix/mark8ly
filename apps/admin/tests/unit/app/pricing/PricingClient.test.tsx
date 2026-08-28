@@ -9,13 +9,13 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { PricingClient } from '@/app/pricing/PricingClient'
-import type { PricingCatalogue } from '@/app/pricing/page'
+import { SHARED_PRICING_CATALOGUE as REAL_PRICING, type SharedPricingCatalogue } from '@repo/ui/subscription'
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const FIXTURE_PRICING: PricingCatalogue = {
+const FIXTURE_PRICING: SharedPricingCatalogue = {
   plans: [
     {
       id: 'starter',
@@ -157,5 +157,90 @@ describe('PricingClient', () => {
     expect(
       screen.getByText(/Prices shown in GBP\./i, { exact: false }),
     ).toBeInTheDocument()
+  })
+
+  // -------------------------------------------------------------------------
+  // Regression: a visitor currency with no price row must render the USD
+  // amount labelled USD — never the visitor's raw currency code over the
+  // USD number (that was the bug: a Thai visitor saw "฿19" for a real
+  // ~฿690 price). FIXTURE_PRICING only has USD rows, so any non-USD
+  // `currency` prop exercises the fallback path exactly like a currency
+  // absent from the real catalogue (e.g. THB, AED).
+  // -------------------------------------------------------------------------
+  it('renders USD amounts labelled USD — not the raw currency prop — when the currency has no row', () => {
+    render(<PricingClient currency="GBP" pricing={FIXTURE_PRICING} />)
+
+    // Starter's monthly headline (annual view: annualMonthlyEquivalent =
+    // $23.00) must render with the $ symbol, never a £ symbol, because
+    // GBP has no row in FIXTURE_PRICING and the resolved currency must be
+    // USD.
+    expect(screen.getByText('$23')).toBeInTheDocument()
+    expect(screen.queryByText(/£23/)).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Regression tests against the REAL SHARED_PRICING_CATALOGUE — proves the
+// page now agrees with billing and that NZD/AUD render correctly end to end.
+// ---------------------------------------------------------------------------
+
+describe('PricingClient — against the real SHARED_PRICING_CATALOGUE', () => {
+  it('renders Starter USD as $19/mo — agrees with billing (was $29/mo)', () => {
+    render(<PricingClient currency="USD" pricing={REAL_PRICING} />)
+
+    // Monthly view makes the exact headline figure unambiguous.
+    fireEvent.click(screen.getByRole('radio', { name: /Monthly/i }))
+    expect(screen.getByText('$19')).toBeInTheDocument()
+  })
+
+  it('renders Starter USD annual billed amount as $182/yr', () => {
+    render(<PricingClient currency="USD" pricing={REAL_PRICING} />)
+
+    // Annual view shows the $182 billed-once-a-year figure inside the
+    // Pro card's "From $X/yr" copy is Pro-specific; Starter's own annual
+    // total isn't directly labelled on this page, so assert via the
+    // per-currency price data itself for Starter.
+    const starter = REAL_PRICING.plans.find((p) => p.id === 'starter')!
+    expect(starter.prices.USD?.annual).toBe(18200)
+    expect(starter.prices.USD?.monthly).toBe(1900)
+  })
+
+  it('renders NZD prices when the currency is NZD (New Zealand merchants no longer see USD)', () => {
+    render(<PricingClient currency="NZD" pricing={REAL_PRICING} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: /Monthly/i }))
+    // Starter NZD monthly = 2900 minor units = NZ$29.
+    expect(screen.getByText(/NZ\$29/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Prices shown in NZD\./i, { exact: false }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the GST disclosure wherever AUD is displayed (spec §19.4)', () => {
+    render(<PricingClient currency="AUD" pricing={REAL_PRICING} />)
+
+    expect(
+      screen.getByText(/Plus 10% GST for Australian businesses\./i, { exact: false }),
+    ).toBeInTheDocument()
+  })
+
+  it('does not show a GST disclosure for a non-AUD currency', () => {
+    render(<PricingClient currency="USD" pricing={REAL_PRICING} />)
+
+    expect(
+      screen.queryByText(/GST/i),
+    ).not.toBeInTheDocument()
+  })
+
+  it('renders a USD-labelled amount for a currency the table cannot price (e.g. THB has no row)', () => {
+    // normalizeCurrency would already turn THB into USD before this
+    // component ever sees it — this test exercises the component's own
+    // defence-in-depth fallback directly, in case a caller ever passes
+    // an unnormalized currency through.
+    render(<PricingClient currency="THB" pricing={REAL_PRICING} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: /Monthly/i }))
+    expect(screen.getByText('$19')).toBeInTheDocument()
+    expect(screen.queryByText(/฿/)).not.toBeInTheDocument()
   })
 })

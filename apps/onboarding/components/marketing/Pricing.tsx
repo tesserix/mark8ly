@@ -150,7 +150,10 @@ function TogglePill({
 export function Pricing({ currency, catalogue }: PricingProps) {
   const [period, setPeriod] = useState<BillingPeriod>('annual')
   const plans = catalogue.plans
-  const proApp = getAddOnPrice(catalogue.proApp, currency)
+  // The add-on always bills in USD globally (spec §4.1.2) regardless of the
+  // visitor's currency, so only the amount is used here — the Money below
+  // renders `currency="USD"` literally, never the resolved currency.
+  const { price: proApp } = getAddOnPrice(catalogue.proApp, currency)
   const showUsdBilledNote = currency !== 'USD'
   const tax = taxDisclosure(currency)
 
@@ -189,7 +192,11 @@ export function Pricing({ currency, catalogue }: PricingProps) {
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.05fr_1fr_1.05fr]">
           {PLAN_META.map((meta, i) => {
             const plan = plans.find((p) => p.id === meta.id)!
-            const price = getPlanPrice(plan, currency)
+            // `resolvedCurrency` is what MUST be rendered — when `currency`
+            // has no row on this plan, getPlanPrice falls back to USD, and
+            // rendering the visitor's raw `currency` would label that USD
+            // amount with a currency it isn't priced in.
+            const { price, currency: resolvedCurrency } = getPlanPrice(plan, currency)
             const headline =
               period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
             const cadence = period === 'monthly' ? '/mo' : '/mo, billed yearly'
@@ -216,7 +223,7 @@ export function Pricing({ currency, catalogue }: PricingProps) {
                     letterSpacing: '-0.03em',
                   }}
                 >
-                  <Money amount={headline} currency={currency} showCents={false} />
+                  <Money amount={headline} currency={resolvedCurrency} showCents={false} />
                   <span
                     className="ml-1 font-sans text-base font-normal text-foreground-tertiary"
                     style={{ letterSpacing: 'normal', whiteSpace: 'nowrap' }}
@@ -226,7 +233,7 @@ export function Pricing({ currency, catalogue }: PricingProps) {
                 </p>
                 {period === 'annual' && (
                   <p className="mt-1 text-sm text-foreground-tertiary">
-                    <Money amount={price.annual} currency={currency} showCents={false} />{' '}
+                    <Money amount={price.annual} currency={resolvedCurrency} showCents={false} />{' '}
                     charged once a year
                   </p>
                 )}

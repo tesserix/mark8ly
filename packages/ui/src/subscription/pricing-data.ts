@@ -129,17 +129,34 @@ export const SHARED_PRICING_CATALOGUE: SharedPricingCatalogue = {
 }
 
 /**
- * Returns the price for `plan` in `currency`, or the USD fallback
- * when the currency isn't covered in the catalogue. USD is always
- * present — the fallback is safe.
+ * A plan or add-on price resolved to the currency it is actually
+ * denominated in. When the requested currency has no row, `currency`
+ * comes back as `'USD'` even though the caller asked for something
+ * else — callers MUST render `currency`, never the currency they
+ * requested, or a USD amount ends up mislabelled with the visitor's
+ * currency code.
  */
-export function getPlanPrice(plan: SharedPlan, currency: Currency): PlanPrice {
-  return plan.prices[currency] ?? plan.prices.USD!
+export interface ResolvedPrice {
+  price: PlanPrice
+  currency: Currency
 }
 
 /**
- * Returns the Pro+App add-on price in `currency`, or the USD fallback.
+ * Returns the price for `plan` in `currency`, or the USD fallback
+ * when the currency isn't covered in the catalogue, alongside the
+ * currency it actually resolved to. USD is always present — the
+ * fallback is safe.
  */
-export function getAddOnPrice(addOn: SharedAddOn, currency: Currency): PlanPrice {
-  return addOn.prices[currency] ?? addOn.prices.USD!
+export function getPlanPrice(plan: SharedPlan, currency: Currency): ResolvedPrice {
+  const localized = plan.prices[currency]
+  return localized ? { price: localized, currency } : { price: plan.prices.USD!, currency: 'USD' }
+}
+
+/**
+ * Returns the Pro+App add-on price in `currency`, or the USD fallback,
+ * alongside the currency it actually resolved to.
+ */
+export function getAddOnPrice(addOn: SharedAddOn, currency: Currency): ResolvedPrice {
+  const localized = addOn.prices[currency]
+  return localized ? { price: localized, currency } : { price: addOn.prices.USD!, currency: 'USD' }
 }

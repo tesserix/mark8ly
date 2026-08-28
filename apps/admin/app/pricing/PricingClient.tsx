@@ -16,9 +16,17 @@
  */
 
 import { useState } from 'react'
-import { Money, PlanBadge } from '@repo/ui/subscription'
+import {
+  Money,
+  PlanBadge,
+  getPlanPrice,
+  getAddOnPrice,
+  type Currency,
+  type SharedPlan,
+  type SharedPricingCatalogue,
+  type PlanPrice,
+} from '@repo/ui/subscription'
 import { pricingCopy } from '@/lib/copy/pricing'
-import type { PricingCatalogue, Plan, PlanPrice } from './page'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,16 +35,22 @@ import type { PricingCatalogue, Plan, PlanPrice } from './page'
 type BillingPeriod = 'monthly' | 'annual'
 
 interface PricingClientProps {
-  currency: string
-  pricing: PricingCatalogue
+  currency: Currency
+  pricing: SharedPricingCatalogue
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getPlanPrice(plan: Plan, currency: string): PlanPrice | undefined {
-  return plan.prices[currency] ?? plan.prices['USD']
+// AU prices in the catalogue are GST-exclusive (spec §19.4). Mirrors the
+// wording in apps/onboarding/components/marketing/Pricing.tsx's
+// `taxDisclosure` verbatim — one phrasing, not two.
+function taxDisclosure(currency: Currency): string {
+  if (currency === 'AUD') {
+    return 'Plus 10% GST for Australian businesses.'
+  }
+  return ''
 }
 
 // ---------------------------------------------------------------------------
@@ -61,18 +75,20 @@ function FeatureDot({ children }: FeatureDotProps) {
 }
 
 interface PlanColumnProps {
-  plan: Plan
+  plan: SharedPlan
   copy: typeof pricingCopy.plans[number]
-  currency: string
+  currency: Currency
   period: BillingPeriod
   isLast: boolean
 }
 
 function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
-  const price = getPlanPrice(plan, currency)
+  // `resolvedCurrency` is what MUST be rendered — never the raw `currency`
+  // prop. When `currency` has no row on this plan, getPlanPrice falls back
+  // to USD; rendering the raw currency would label that USD amount with a
+  // currency it isn't actually priced in.
+  const { price, currency: resolvedCurrency } = getPlanPrice(plan, currency)
   const isPro = plan.id === 'pro'
-
-  if (!price) return null
 
   const displayAmount = period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
   const isConversation = copy.cta === 'Start a conversation'
@@ -113,13 +129,13 @@ function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
         {isPro ? (
           <ProPriceBlock
             price={price}
-            currency={currency}
+            currency={resolvedCurrency}
             period={period}
           />
         ) : (
           <StandardPriceBlock
             amount={displayAmount}
-            currency={currency}
+            currency={resolvedCurrency}
             period={period}
           />
         )}
@@ -140,7 +156,7 @@ function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
         ]
           .filter(Boolean)
           .join(' ')}
-       
+
       >
         {copy.cta}
       </a>
@@ -161,7 +177,7 @@ function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
 
 interface StandardPriceBlockProps {
   amount: number
-  currency: string
+  currency: Currency
   period: BillingPeriod
 }
 
@@ -192,7 +208,7 @@ function StandardPriceBlock({ amount, currency, period }: StandardPriceBlockProp
 
 interface ProPriceBlockProps {
   price: PlanPrice
-  currency: string
+  currency: Currency
   period: BillingPeriod
 }
 
@@ -257,16 +273,21 @@ function ProPriceBlock({ price, currency, period }: ProPriceBlockProps) {
 // ---------------------------------------------------------------------------
 
 interface ProAppCardProps {
-  currency: string
+  currency: Currency
   period: BillingPeriod
-  pricing: PricingCatalogue
+  pricing: SharedPricingCatalogue
 }
 
 function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
   const addonCopy = pricingCopy.proApp
-  const price = pricing.proApp.prices[currency] ?? pricing.proApp.prices['USD']
-  if (!price) return null
+  // The add-on always bills in USD globally (spec §4.1.2), regardless of
+  // the visitor's currency — the catalogue's non-USD rows just repeat the
+  // USD figure for a consistent card layout, they are not real localized
+  // prices. So this always renders `currency="USD"` literally below, never
+  // a resolved currency from getAddOnPrice.
+  const { price } = getAddOnPrice(pricing.proApp, currency)
   const amount = period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
+  const showUsdBilledNote = currency !== 'USD'
 
   return (
     <section
@@ -298,7 +319,7 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
           <div className="flex items-baseline gap-1">
             <Money
               amount={amount}
-              currency={currency}
+              currency="USD"
               showCents={false}
               className="text-2xl font-semibold"
             />
@@ -306,6 +327,11 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
               / mo{period === 'annual' ? ' equivalent' : ''}
             </span>
           </div>
+          {showUsdBilledNote && (
+            <p className="text-xs" style={{ color: 'var(--ink-500)' }}>
+              Billed in USD globally.
+            </p>
+          )}
           <a
             href={addonCopy.ctaHref}
             className={[
@@ -313,7 +339,7 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
               'bg-[var(--ink-900)] text-[var(--paper-200)] hover:bg-[var(--moss-700)]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-1',
             ].join(' ')}
-           
+
           >
             {addonCopy.cta}
           </a>
@@ -330,6 +356,7 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
 export function PricingClient({ currency, pricing }: PricingClientProps) {
   const [period, setPeriod] = useState<BillingPeriod>('annual')
   const plans = pricingCopy.plans
+  const tax = taxDisclosure(currency)
 
   return (
     <div className="px-8 py-16 max-w-6xl mx-auto">
@@ -366,7 +393,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
                 ? 'bg-[var(--ink-900)] text-[var(--paper-200)]'
                 : 'text-[var(--ink-700)] hover:text-[var(--ink-900)]',
             ].join(' ')}
-           
+
           >
             {pricingCopy.toggle.monthly}
           </button>
@@ -383,7 +410,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
                 ? 'bg-[var(--ink-900)] text-[var(--paper-200)]'
                 : 'text-[var(--ink-700)] hover:text-[var(--ink-900)]',
             ].join(' ')}
-           
+
           >
             {pricingCopy.toggle.annual}
           </button>
@@ -443,7 +470,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
               'bg-[var(--ink-900)] text-[var(--paper-200)] hover:bg-[var(--moss-700)]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-1',
             ].join(' ')}
-           
+
           >
             {pricingCopy.proCtas.conversation}
           </a>
@@ -454,7 +481,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
               'border border-[var(--ink-900)] text-[var(--ink-900)] hover:border-[var(--moss-700)] hover:text-[var(--moss-700)]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-1',
             ].join(' ')}
-           
+
           >
             {pricingCopy.proCtas.brief}
           </a>
@@ -468,6 +495,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
           style={{ color: 'var(--ink-500)' }}
         >
           {pricingCopy.disclosureTemplate(currency)}
+          {tax ? ` ${tax}` : ''}
         </p>
       </footer>
     </div>

@@ -80,7 +80,8 @@ inbox kinds carries a real, meaningful SLA. `sea_manual_review` reads
 (`services/marketplace-api/internal/inbox/sea_review.go:12-15`) states that
 any row entering the queue immediately pauses the 14-day validation clock on
 the associated subscription, under a 5-business-day SLA
-(`sla_due_at`, populated at `sea_review.go:72`, `DueAt: &due`).
+(`sla_due_at`, read into `due` at `sea_review.go:72` and assigned to
+`DueAt: &due` at `sea_review.go:79`).
 
 But `slaDeclared: true` is a per-queue, not a per-kind, promise:
 `design-system/packages/admin-conformance/src/checks.ts:206-220` requires

@@ -1883,11 +1883,12 @@ func main() {
 			Svc:   taxService,
 			Audit: auditEmitter,
 		}
-		if _, err := trialScheduler.AddFunc(revalidation.Spec, func() {
-			if err := revalidationCron.Run(workerCtx); err != nil {
-				log.Error("tax revalidation cron failed", "err", err)
-			}
-		}); err != nil {
+		// Register (not a bare AddFunc) so the pass runs under revalidation's
+		// own 30-minute timeout. Without it the cron inherits workerCtx, which
+		// has no deadline — so a stalled pass would hang forever and every
+		// later fire would queue behind it, leaking a goroutine and a
+		// connection per day (#396).
+		if _, err := revalidation.Register(trialScheduler, *revalidationCron); err != nil {
 			log.Error("register tax revalidation cron", "err", err)
 		}
 	}

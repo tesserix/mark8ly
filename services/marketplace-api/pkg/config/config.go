@@ -93,14 +93,20 @@ type Config struct {
 	// S1 — auth-bff URL for MFA/session proxying.
 	AuthBFFURL string `envconfig:"AUTH_BFF_URL" default:""`
 	// S3 — Stripe Billing keys + webhook / orphan cron config.
-	StripeBillingSecretKey     string        `envconfig:"STRIPE_BILLING_SECRET_KEY" default:""`
-	StripeBillingWebhookSecret string        `envconfig:"STRIPE_BILLING_WEBHOOK_SECRET" default:""`
-	StripeAllowedEventTypes    []string      `envconfig:"STRIPE_ALLOWED_EVENT_TYPES" default:"checkout.session.completed,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed,invoice.payment_action_required,customer.updated,charge.refunded,payment_method.attached,payment_method.detached,radar.early_fraud_warning"`
-	WebhookMaxBodyBytes        int64         `envconfig:"WEBHOOK_MAX_BODY_BYTES" default:"524288"`
-	OrphanRetryMaxCount        int           `envconfig:"ORPHAN_RETRY_MAX_COUNT" default:"6"`
-	OrphanRetryInterval        time.Duration `envconfig:"ORPHAN_RETRY_INTERVAL" default:"5m"`
-	OrphanStaleThreshold       time.Duration `envconfig:"ORPHAN_STALE_THRESHOLD" default:"1h"`
-	PagerDutyWebhookURL        string        `envconfig:"PAGERDUTY_WEBHOOK_URL" default:""`
+	StripeBillingSecretKey     string `envconfig:"STRIPE_BILLING_SECRET_KEY" default:""`
+	StripeBillingWebhookSecret string `envconfig:"STRIPE_BILLING_WEBHOOK_SECRET" default:""`
+
+	// RESEND_WEBHOOK_SECRET verifies inbound provider delivery events
+	// (#348B). Empty leaves the endpoint mounted but inert: it answers 503
+	// not_configured rather than 404, so a missing secret is diagnosable
+	// instead of looking like a wrong URL.
+	ResendWebhookSecret     string        `envconfig:"RESEND_WEBHOOK_SECRET" default:""`
+	StripeAllowedEventTypes []string      `envconfig:"STRIPE_ALLOWED_EVENT_TYPES" default:"checkout.session.completed,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed,invoice.payment_action_required,customer.updated,charge.refunded,payment_method.attached,payment_method.detached,radar.early_fraud_warning"`
+	WebhookMaxBodyBytes     int64         `envconfig:"WEBHOOK_MAX_BODY_BYTES" default:"524288"`
+	OrphanRetryMaxCount     int           `envconfig:"ORPHAN_RETRY_MAX_COUNT" default:"6"`
+	OrphanRetryInterval     time.Duration `envconfig:"ORPHAN_RETRY_INTERVAL" default:"5m"`
+	OrphanStaleThreshold    time.Duration `envconfig:"ORPHAN_STALE_THRESHOLD" default:"1h"`
+	PagerDutyWebhookURL     string        `envconfig:"PAGERDUTY_WEBHOOK_URL" default:""`
 
 	// AUDIT — shared secret gating /internal/audit-events. When empty,
 	// the endpoint is permissive (dev convenience). Set to the SAME
@@ -280,6 +286,7 @@ func Load() (*Config, error) {
 	// trailing LF from GCP SM would make net/http reject every request
 	// with "invalid header field value".
 	cfg.SendGridAPIKey = strings.TrimSpace(cfg.SendGridAPIKey)
+	cfg.ResendWebhookSecret = strings.TrimSpace(cfg.ResendWebhookSecret)
 	cfg.ResendAPIKey = strings.TrimSpace(cfg.ResendAPIKey)
 	cfg.CustomerSessionSecret = strings.TrimSpace(cfg.CustomerSessionSecret)
 	cfg.EncryptionKey = strings.TrimSpace(cfg.EncryptionKey)

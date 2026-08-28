@@ -66,6 +66,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/customerportal"
 	"github.com/mark8ly/marketplace-api/internal/domain"
 	"github.com/mark8ly/marketplace-api/internal/email"
+	"github.com/mark8ly/marketplace-api/internal/emailevents"
 	"github.com/mark8ly/marketplace-api/internal/emaillog"
 	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 	"github.com/mark8ly/marketplace-api/internal/estatecounts"
@@ -2177,6 +2178,17 @@ func main() {
 		if migrationHandler != nil {
 			migrationHandler.RegisterInternalRoutes(r.Group("/internal"), cfg.InternalAuthSecret)
 		}
+		// Provider delivery events for outbound mail (#348B). NOT under
+		// /internal: the caller is Resend and holds no internal secret. It
+		// authenticates with the signature in svix-signature, verified over
+		// the RAW body. Mounted unconditionally — with no secret configured
+		// it answers 503 not_configured, which is diagnosable, rather than
+		// 404, which reads as a wrong URL (the failure #280 shipped).
+		if conn != nil {
+			emailevents.NewHandler(
+				emailevents.NewApplier(conn, log), cfg.ResendWebhookSecret, log,
+			).Register(r.Group(""))
+		}
 		// Cross-service audit ingest — auth-bff posts login/logout,
 		// platform-api posts staff invite/accept/revoke. Mounted on the
 		// existing /internal namespace gated by X-Internal-Auth.
@@ -2317,6 +2329,13 @@ func main() {
 			// on this route (#281, #323).
 			if migrationHandler != nil {
 				migrationHandler.RegisterInternalRoutes(engine.Group("/internal"), cfg.InternalAuthSecret)
+			}
+			// Provider delivery events (#348B) — mirrors the mount above so
+			// the two engines cannot drift (#323).
+			if conn != nil {
+				emailevents.NewHandler(
+					emailevents.NewApplier(conn, log), cfg.ResendWebhookSecret, log,
+				).Register(engine.Group(""))
 			}
 			// Audit ingest is admin-only because the audit_logs read
 			// endpoint also lives on the admin engine — keeping write

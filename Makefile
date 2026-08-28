@@ -79,9 +79,11 @@ test-int: ## Run integration tests against the running `make dev` stack
 	@# — recursing would pull in internal/subscription/planchange, which is
 	@# still red. Do not add the ellipsis back until that package is fixed.
 	@#
-	@# ./internal/campaignbudget/cron/... similarly leaves
-	@# internal/campaignbudget/concurrency and internal/campaignbudget/transactional
-	@# unassessed — their status was never measured, so they stay out too.
+	@# ./internal/campaignbudget/... is the full subtree: the parent package plus
+	@# cron, concurrency and transactional. All four were measured green against
+	@# the dev database on 2026-08-28 when the #399 trial-ramp idempotency guard
+	@# landed, so the ellipsis is safe — and the parent package must keep running
+	@# or that guard could silently regress again.
 	@cd services/marketplace-api && \
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable' \
 	  go test -tags=integration -p 1 \
@@ -101,7 +103,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/subscription/lifecycle/... \
 	    ./internal/subscription/readonly/... \
 	    ./internal/subscription/statemachine/... \
-	    ./internal/campaignbudget/cron/... \
+	    ./internal/campaignbudget/... \
 	    ./internal/handlers/webhooks/... \
 	    ./tests/integration/... \
 	    ./pkg/testdb/...

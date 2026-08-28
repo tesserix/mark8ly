@@ -2117,7 +2117,7 @@ func main() {
 			tenantTeardownClient = lifecycleClient
 		}
 		platformSubscriptionRepo := subscription.NewRepository()
-		platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
+		platformadmin.Register(r.Group(platformadmin.MountPrefix), platformadmin.Deps{
 			DB:                    conn,
 			Repo:                  auditRepo,
 			Logger:                log,
@@ -2262,7 +2262,7 @@ func main() {
 				tenantTeardownClient = lifecycleClient
 			}
 			platformSubscriptionRepo := subscription.NewRepository()
-			platformadmin.Register(engine.Group("/api/v1/platform"), platformadmin.Deps{
+			platformadmin.Register(engine.Group(platformadmin.MountPrefix), platformadmin.Deps{
 				DB:                    conn,
 				Repo:                  auditRepo,
 				Logger:                log,

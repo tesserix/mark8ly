@@ -41,11 +41,13 @@ type PlatformListFilter struct {
 // TestPlatformRowCannotCarryCredentialFields, which guards this by
 // reflection so a column added later cannot silently become reachable.
 //
-// TenantName is populated by the handler layer from tenantdirectory, not by
-// ListPlatform — break_glass_accounts has no tenant_name column.
+// Tenant name is NOT a field here: break_glass_accounts has no
+// tenant_name column, and the handler layer resolves display names from
+// tenantdirectory independently (see toBreakGlassRow in
+// internal/handlers/platformadmin/break_glass.go), keyed by TenantID
+// below — never by a field on this struct.
 type PlatformRow struct {
 	TenantID            uuid.UUID  `json:"tenant_id"`
-	TenantName          string     `json:"tenant_name"`
 	TOTPEnrolled        bool       `json:"totp_enrolled"`
 	LastUsedAt          *time.Time `json:"last_used_at"`
 	LastRotatedAt       time.Time  `json:"last_rotated_at"`
@@ -111,6 +113,18 @@ func ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter,
 		}
 	}
 
+	// Clone q for the page query BEFORE Count runs: Count(...) mutates q's
+	// underlying gorm Statement in place (q's chain calls have already
+	// collapsed to in-place mutation by this point, which is how gorm's
+	// builder pattern normally works), and gorm only resets that
+	// Statement's built SQL after a REAL execution — a query built via
+	// gorm.Session{DryRun: true} skips that reset. Reusing q for both
+	// finishers would therefore make the page query silently reuse
+	// Count's leftover SQL under DryRun, even though the two queries are
+	// independent against a live connection. Cloning here keeps that
+	// independence explicit rather than accidental.
+	pageQ := q.Session(&gorm.Session{Context: ctx})
+
 	// Count BEFORE Select: the page below adds computed lockout columns,
 	// and Total must be the full match count, not the page size.
 	if err := q.Count(&result.Total).Error; err != nil {
@@ -131,7 +145,7 @@ func ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter,
 		order = "a.last_used_at ASC NULLS LAST, a.tenant_id"
 	}
 
-	if err := q.
+	if err := pageQ.
 		Select(`a.tenant_id, a.totp_enrolled, a.last_used_at,
 			a.last_rotated_at, a.rotation_scheduled_at, a.created_at,
 			EXISTS (

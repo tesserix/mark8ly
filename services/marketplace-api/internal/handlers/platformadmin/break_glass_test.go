@@ -82,7 +82,6 @@ func TestBreakGlassResponseCannotCarryCredentialFields(t *testing.T) {
 		Total: 1,
 		Accounts: []breakglass.PlatformRow{{
 			TenantID:            tid,
-			TenantName:          "",
 			TOTPEnrolled:        true,
 			LastUsedAt:          &usedAt,
 			LastRotatedAt:       rotatedAt,

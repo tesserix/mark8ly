@@ -172,9 +172,9 @@ func TestBreakGlassIsTheOnlyDeclaredReadCapability(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	platformadmin.Register(r.Group("/api/v1/platform"), allReadRoutesDeps())
+	platformadmin.Register(r.Group(platformadmin.MountPrefix), allReadRoutesDeps())
 
-	const breakGlassPath = "/api/v1/platform/admin/break-glass"
+	const breakGlassPath = platformadmin.MountPrefix + "/admin/break-glass"
 
 	breakGlassFound := false
 	otherReadRouteCount := 0

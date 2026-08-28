@@ -99,6 +99,43 @@ func TestIntegration_ListPlatform_NeverUsedSortsLastUnderDefaultDescOrder(t *tes
 		"a never-used account must sort LAST under DESC NULLS LAST, not first")
 }
 
+// Sibling to TestIntegration_ListPlatform_NeverUsedSortsLastUnderDefaultDescOrder:
+// that test proves NULLS LAST holds under the default DESC order
+// (order.go's "a.last_used_at DESC NULLS LAST, a.tenant_id" branch). This
+// proves the OTHER branch — "a.last_used_at ASC NULLS LAST, a.tenant_id",
+// reachable only via ?sort=last_used_at (SortDesc: false) — is reachable
+// and still puts the never-used account last. Someone who "simplified"
+// that branch to plain ASC (dropping NULLS LAST) would regress ordering
+// only in Postgres, not sqlite, and only under this one query parameter —
+// exactly what this asserts against.
+func TestIntegration_ListPlatform_NeverUsedSortsLastUnderAscOrderToo(t *testing.T) {
+	db := testdb.NewTx(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	older30d, recent2h, neverUsed := uuid.New(), uuid.New(), uuid.New()
+	used30d := now.Add(-30 * 24 * time.Hour)
+	used2h := now.Add(-2 * time.Hour)
+
+	seedAccount(t, db, older30d, &used30d)
+	seedAccount(t, db, recent2h, &used2h)
+	seedAccount(t, db, neverUsed, nil)
+
+	res, err := breakglass.ListPlatform(context.Background(), db,
+		breakglass.PlatformListFilter{SortDesc: false}, now)
+	require.NoError(t, err)
+
+	idx := indexByTenant(res.Accounts)
+	posOlder, ok1 := idx[older30d]
+	posRecent, ok2 := idx[recent2h]
+	posNever, ok3 := idx[neverUsed]
+	require.True(t, ok1 && ok2 && ok3, "all three seeded accounts must appear in the page")
+
+	require.Less(t, posOlder, posRecent,
+		"an older-used account must sort before a more recently used one under ASC")
+	require.Less(t, posRecent, posNever,
+		"a never-used account must sort LAST under ASC NULLS LAST too, not first")
+}
+
 // break_glass_lockouts is keyed (ip_hash, locked_until) with a nullable
 // tenant_id: "locked_out" means "at least one active lockout row currently
 // names this tenant", not "this account is locked" in any account-level
@@ -140,6 +177,53 @@ func TestIntegration_ListPlatform_LockoutVisibilitySemantics(t *testing.T) {
 	require.False(t, resD.Accounts[0].LockedOut,
 		"a lockout row with tenant_id IS NULL must not attach to any account")
 	require.Nil(t, resD.Accounts[0].LockoutExpiresAt)
+}
+
+// TestIntegration_ListPlatform_LockedFilterMatchesTheNotExistsInversion
+// covers PlatformListFilter.Locked at the data layer: only the
+// handler→filter plumbing (parseBreakGlassBool wiring "locked" into
+// f.Locked) had coverage before this, never the NOT EXISTS inversion
+// Locked=false compiles down to in ListPlatform. Reuses the same lockout
+// fixture shapes as TestIntegration_ListPlatform_LockoutVisibilitySemantics
+// above: an active lockout naming a tenant, and an EXPIRED lockout naming
+// a different tenant.
+func TestIntegration_ListPlatform_LockedFilterMatchesTheNotExistsInversion(t *testing.T) {
+	db := testdb.NewTx(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	activelyLocked, expiredOnly := uuid.New(), uuid.New()
+	seedAccount(t, db, activelyLocked, nil)
+	seedAccount(t, db, expiredOnly, nil)
+
+	seedLockout(t, db, &activelyLocked, now.Add(1*time.Hour), "3-strike") // active
+	seedLockout(t, db, &expiredOnly, now.Add(-1*time.Hour), "3-strike")   // expired
+
+	trueVal, falseVal := true, false
+
+	resLocked, err := breakglass.ListPlatform(context.Background(), db,
+		breakglass.PlatformListFilter{Locked: &trueVal}, now)
+	require.NoError(t, err)
+	idxLocked := indexByTenant(resLocked.Accounts)
+	_, hasActive := idxLocked[activelyLocked]
+	_, hasExpired := idxLocked[expiredOnly]
+	require.True(t, hasActive,
+		"Locked:true must include the tenant with an active lockout")
+	require.False(t, hasExpired,
+		"Locked:true must exclude the tenant whose only lockout is EXPIRED — "+
+			"an expired lockout must behave as unlocked")
+
+	resUnlocked, err := breakglass.ListPlatform(context.Background(), db,
+		breakglass.PlatformListFilter{Locked: &falseVal}, now)
+	require.NoError(t, err)
+	idxUnlocked := indexByTenant(resUnlocked.Accounts)
+	_, hasActiveUnlocked := idxUnlocked[activelyLocked]
+	_, hasExpiredUnlocked := idxUnlocked[expiredOnly]
+	require.False(t, hasActiveUnlocked,
+		"Locked:false (the NOT EXISTS inversion) must exclude the actively "+
+			"locked tenant")
+	require.True(t, hasExpiredUnlocked,
+		"Locked:false must include the tenant whose only lockout is "+
+			"EXPIRED — it must behave as unlocked in BOTH directions")
 }
 
 func TestIntegration_ListPlatform_UsedAfterAndUsedBeforeNarrow(t *testing.T) {

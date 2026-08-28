@@ -65,6 +65,15 @@ func CapabilityKey(method, routeTemplate string) string {
 	return strings.ToUpper(strings.TrimSpace(method)) + " " + routeTemplate
 }
 
+// MountPrefix is the path prefix this surface is always mounted under —
+// see the Register doc comment in routes.go for why it must be
+// /api/v1/platform and never /api/v1/admin. It is the single source for
+// that literal: RequiredReadCapabilities below, cmd/marketplace-api/main.go
+// (both call sites), and routes_capability_coverage_test.go all build off
+// this constant so that changing the mount prefix in one of them cannot
+// silently drift from the others and ungate break-glass.
+const MountPrefix = "/api/v1/platform"
+
 // RequiredWriteCapabilities is the per-route capability enforcement
 // matrix. It replaces what used to be a single global RequiredWriteCapability
 // string: one value could never express that this surface's four writes
@@ -129,7 +138,7 @@ var RequiredWriteCapabilities = map[string]string{
 // requirement here, in the code, rather than discover it as a production
 // 403.
 var RequiredReadCapabilities = map[string]string{
-	CapabilityKey(http.MethodGet, "/api/v1/platform/admin/break-glass"): "rotate-credentials",
+	CapabilityKey(http.MethodGet, MountPrefix+"/admin/break-glass"): "rotate-credentials",
 }
 
 // AuthConfig configures RequirePlatformAuth.

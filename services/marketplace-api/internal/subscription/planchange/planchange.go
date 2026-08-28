@@ -152,6 +152,7 @@ func (o *Orchestrator) Execute(ctx context.Context, in Input) (Output, error) {
 	}
 
 	var out Output
+	var deferredAudit *PlanChangeAuditRow
 	err := subscription.WithAdvisoryLock(ctx, o.deps.DB, in.StoreID, func(tx *gorm.DB) error {
 		sub, err := o.deps.SubscriptionRepo.GetByStoreID(ctx, tx, in.TenantID, in.StoreID)
 		if err != nil {
@@ -190,13 +191,28 @@ func (o *Orchestrator) Execute(ctx context.Context, in Input) (Output, error) {
 		}
 
 		// Downgrade or period downgrade.
-		o2, err := o.executeDowngradeSchedule(ctx, tx, in, sub)
+		o2, blocked, err := o.executeDowngradeSchedule(ctx, tx, in, sub)
+		if blocked != nil {
+			deferredAudit = blocked
+		}
 		if err != nil {
 			return err
 		}
 		out = o2
 		return nil
 	})
+
+	// Written outside WithAdvisoryLock deliberately: this row records a
+	// REFUSAL, and the transaction that refuses is rolled back, so a row
+	// written inside it would never persist (#397). The lock is released by
+	// now, so this does not hold a second pooled connection under it.
+	if deferredAudit != nil {
+		if auditErr := WritePlanChangeAuditRowTx(ctx, o.deps.DB, *deferredAudit); auditErr != nil {
+			return Output{}, fmt.Errorf(
+				"planchange: write blocked downgrade audit row: %w (original refusal: %v)",
+				auditErr, err)
+		}
+	}
 	if err != nil {
 		return Output{}, err
 	}

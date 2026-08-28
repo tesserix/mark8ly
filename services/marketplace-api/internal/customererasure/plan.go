@@ -246,14 +246,6 @@ func erasurePlan(storeID uuid.UUID, email string, token string) []Step {
 			Args: []any{token, email, storeID},
 		},
 		{
-			// promo_redemptions has no name column; its email column is
-			// literally `email`.
-			Table:       "promo_redemptions",
-			Disposition: DispositionAnonymise,
-			SQL:         `UPDATE promo_redemptions SET email = ? WHERE store_id = ? AND email = ?`,
-			Args:        []any{token, storeID, email},
-		},
-		{
 			Table:       "customer_loyalties", // 000026
 			Disposition: DispositionAnonymise,
 			SQL: `UPDATE customer_loyalties SET customer_email = ?, customer_name = ?

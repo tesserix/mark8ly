@@ -77,6 +77,10 @@ func (r *gormRepository) ApplyVariantDiffInTx(ctx context.Context, tx *gorm.DB, 
 			"low_stock_threshold": v.LowStockThreshold,
 			"position":            v.Position,
 		}
+		// The explicit "deleted_at IS NULL" here is now redundant with
+		// Variant's gorm.DeletedAt, which GORM appends automatically for
+		// this model. Left in place deliberately — do not remove as
+		// dead code (see the Removes branch below for why it matters).
 		res := tx.Model(&Variant{}).
 			Where("id = ? AND product_id = ? AND store_id = ? AND deleted_at IS NULL",
 				v.ID, productID, storeID).
@@ -91,6 +95,10 @@ func (r *gormRepository) ApplyVariantDiffInTx(ctx context.Context, tx *gorm.DB, 
 
 	// Removes (soft delete).
 	if len(diff.Removes) > 0 {
+		// Redundant with GORM's automatic filter on gorm.DeletedAt, same
+		// as above — but here it is also load-bearing: without it, a
+		// row already soft-deleted would match and get its deleted_at
+		// re-stamped to now(), overwriting the original deletion time.
 		res := tx.Model(&Variant{}).
 			Where("id IN ? AND product_id = ? AND store_id = ? AND deleted_at IS NULL",
 				diff.Removes, productID, storeID).
@@ -113,6 +121,9 @@ func (r *gormRepository) UpdateVariantBasicsInTx(ctx context.Context, tx *gorm.D
 		return nil
 	}
 	sku, _ := fields["sku"].(string)
+	// Same deliberate redundancy as ApplyVariantDiffInTx above: GORM
+	// already appends "deleted_at IS NULL" for Variant's gorm.DeletedAt,
+	// but the explicit predicate stays for clarity and defense in depth.
 	res := tx.Model(&Variant{}).
 		Where(`id = ? AND product_id = ? AND deleted_at IS NULL AND EXISTS (
 				SELECT 1 FROM products p

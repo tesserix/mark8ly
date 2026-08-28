@@ -1,5 +1,6 @@
 -- Customer-targeted notifications. When recipient_user_id is set, the
--- notification belongs to a storefront customer (GIP string user id) and
+-- notification belongs to a storefront customer, identified by CUSTOMER
+-- PROFILE ID (customer_profiles.id) — not customer_profiles.gip_uid — and
 -- powers the customer notification bell; when NULL it is the existing
 -- store/staff notification. Nullable so existing rows are unaffected.
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS recipient_user_id VARCHAR(255);

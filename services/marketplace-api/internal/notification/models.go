@@ -35,8 +35,15 @@ type Notification struct {
 	ID       uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
 	TenantID uuid.UUID `gorm:"column:tenant_id;type:uuid;not null"`
 	StoreID  uuid.UUID `gorm:"column:store_id;type:uuid;not null"`
-	// RecipientUserID, when set, targets a storefront customer (GIP string id)
-	// for the customer notification bell. NULL = store/staff notification.
+	// RecipientUserID, when set, targets a storefront customer by CUSTOMER
+	// PROFILE ID (customer_profiles.id) for the customer notification bell.
+	// NULL = store/staff notification.
+	//
+	// NOT customer_profiles.gip_uid. Both are opaque strings in the same
+	// conceptual role, so the distinction is easy to lose: a GIP UID pasted
+	// into the /admin/notifications recipient_user_id filter matches nothing
+	// and returns an empty 200, which on a governance surface is
+	// indistinguishable from "this customer was never notified" (#350).
 	RecipientUserID *string          `gorm:"column:recipient_user_id;type:varchar(255)"`
 	Type            NotificationType `gorm:"column:type;type:varchar(40);not null"`
 	Title           string           `gorm:"column:title;type:varchar(200);not null"`

@@ -278,6 +278,26 @@ func TestExecute_Downgrade_StudioToStarter_OverQuota_Rejected(t *testing.T) {
 		Where("store_id = ? AND action = ?", storeID, "downgrade_blocked_over_quota").
 		Count(&count).Error)
 	require.Equal(t, int64(1), count)
+
+	// The row's VALUE is the point — ops reads these fields to see why the
+	// downgrade was refused. Pinning only the count would let a row with the
+	// wrong plan or actor pass (#397).
+	var blocked struct {
+		FromPlan        string
+		ToPlan          string
+		Actor           string
+		BillingCurrency string
+	}
+	require.NoError(t, db.Table("subscription_plan_change_audit").
+		Select("from_plan, to_plan, actor, billing_currency").
+		Where("store_id = ? AND action = ?", storeID, "downgrade_blocked_over_quota").
+		Scan(&blocked).Error)
+
+	require.Equal(t, "studio", blocked.FromPlan)
+	require.Equal(t, "starter", blocked.ToPlan)
+	// "user:test" is the Actor seeded on the Input above.
+	require.Equal(t, "user:test", blocked.Actor)
+	require.Equal(t, "USD", blocked.BillingCurrency)
 }
 
 // TestExecute_InitialSubscription_TrialEndSentToStripeIsEffectiveEnd proves

@@ -152,6 +152,7 @@ func (o *Orchestrator) Execute(ctx context.Context, in Input) (Output, error) {
 	}
 
 	var out Output
+	var deferredAudit *PlanChangeAuditRow
 	err := subscription.WithAdvisoryLock(ctx, o.deps.DB, in.StoreID, func(tx *gorm.DB) error {
 		sub, err := o.deps.SubscriptionRepo.GetByStoreID(ctx, tx, in.TenantID, in.StoreID)
 		if err != nil {
@@ -190,13 +191,36 @@ func (o *Orchestrator) Execute(ctx context.Context, in Input) (Output, error) {
 		}
 
 		// Downgrade or period downgrade.
-		o2, err := o.executeDowngradeSchedule(ctx, tx, in, sub)
+		o2, blocked, err := o.executeDowngradeSchedule(ctx, tx, in, sub)
+		if blocked != nil {
+			deferredAudit = blocked
+		}
 		if err != nil {
 			return err
 		}
 		out = o2
 		return nil
 	})
+
+	// Written outside WithAdvisoryLock deliberately: this row records a
+	// REFUSAL, and the transaction that refuses is rolled back, so a row
+	// written inside it would never persist (#397). The lock is released by
+	// now, so this does not hold a second pooled connection under it.
+	if deferredAudit != nil {
+		// Fresh context: the refusal has already happened, and the client
+		// disconnecting must not cancel the record of it. Matches
+		// audit.Emitter.EmitSync (internal/audit/emitter.go:186). WithoutCancel
+		// keeps tracing values while dropping cancellation.
+		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if auditErr := WritePlanChangeAuditRowTx(auditCtx, o.deps.DB, *deferredAudit); auditErr != nil {
+			// errors.Join, NOT %w on auditErr: the caller maps
+			// ErrStoreCountOverQuota to a 422, and dropping it from the chain
+			// would turn a legitimate quota refusal into an opaque 500.
+			return Output{}, errors.Join(err,
+				fmt.Errorf("planchange: write blocked downgrade audit row: %w", auditErr))
+		}
+	}
 	if err != nil {
 		return Output{}, err
 	}

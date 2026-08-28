@@ -76,8 +76,10 @@ test-int: ## Run integration tests against the running `make dev` stack
 	@# so it stays out until someone does.
 	@#
 	@# ./internal/subscription below is deliberately NOT ./internal/subscription/...
-	@# — recursing would pull in internal/subscription/planchange, which is
-	@# still red. Do not add the ellipsis back until that package is fixed.
+	@# — recursing would pull in sibling packages whose status was never
+	@# measured. internal/subscription/planchange is listed explicitly below:
+	@# it is green as of #397 and must keep running so that guard cannot
+	@# silently stop.
 	@#
 	@# ./internal/campaignbudget/cron/... similarly leaves
 	@# internal/campaignbudget/concurrency and internal/campaignbudget/transactional
@@ -99,6 +101,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/subscription/cancel/... \
 	    ./internal/subscription/harddelete/... \
 	    ./internal/subscription/lifecycle/... \
+	    ./internal/subscription/planchange/... \
 	    ./internal/subscription/readonly/... \
 	    ./internal/subscription/statemachine/... \
 	    ./internal/campaignbudget/cron/... \

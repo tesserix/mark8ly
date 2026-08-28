@@ -110,3 +110,135 @@ func TestAllWriteRoutesDeclareACapability(t *testing.T) {
 			"RequiredWriteCapabilities",
 		writeRouteCount)
 }
+
+// allReadRoutesDeps wires EVERY dependency Register (routes.go) needs to
+// mount every read route this surface has today, break-glass (#333)
+// included, alongside every write route (allWriteRoutesDeps' set, embedded
+// here too). Wiring only some read dependencies would leave some read
+// routes unmounted, and both assertions in
+// TestBreakGlassIsTheOnlyDeclaredReadCapability below would pass VACUOUSLY
+// on any route it never saw — the same hazard allWriteRoutesDeps' doc
+// comment describes for the write side. That is why this helper wires
+// everything, and why the test separately requires the break-glass route
+// was genuinely found rather than trusting an empty failure list alone.
+func allReadRoutesDeps() platformadmin.Deps {
+	deps := allWriteRoutesDeps()
+	deps.OnboardingFunnel = &stubFunnelClient{}
+	deps.EstateCounts = &stubEstateCounts{}
+	deps.Subscriptions = &stubSubscriptions{}
+	deps.Trials = &stubTrialLister{}
+	deps.AllSubscriptions = &stubSubscriptionLister{}
+	deps.Tickets = &stubTicketLister{}
+	deps.Notifications = &stubNotificationLister{}
+	deps.Outbox = &stubOutboxLister{}
+	deps.EmailSends = &stubSendLister{}
+	deps.EstateUsers = &stubUserDirectory{}
+	deps.Inbox = &routeInboxAggregator{}
+	deps.InboxItems = stubItemSource{}
+	deps.BreakGlass = &stubBreakGlassLister{}
+	return deps
+}
+
+// TestBreakGlassIsTheOnlyDeclaredReadCapability is the read-side counterpart
+// to TestAllWriteRoutesDeclareACapability, and closes the gap the previous
+// task's reviewer flagged: RequiredReadCapabilities is keyed on the LITERAL
+// STRING "GET /api/v1/platform/admin/break-glass". If the mount prefix or
+// the route path ever changed, that key would silently stop matching, the
+// read-capability gate would stop applying, and break-glass would become an
+// ungated read with NO TEST FAILING — the write side has
+// TestAllWriteRoutesDeclareACapability as a loud, by-name failure for the
+// equivalent drift; the read side had nothing.
+//
+// It builds the REAL router via platformadmin.Register with every read
+// (and write) dependency wired (allReadRoutesDeps), enumerates gin's OWN
+// route table — never a hand-written route string — and asserts two
+// things:
+//
+//  1. GET /api/v1/platform/admin/break-glass is actually mounted, and its
+//     CapabilityKey (built with the exported platformadmin.CapabilityKey,
+//     not a hand-written string) is present in
+//     platformadmin.RequiredReadCapabilities. Asserting the route was
+//     FOUND — not merely that a not-found route is absent from the map —
+//     is what keeps this from passing vacuously if the mount itself
+//     regresses.
+//  2. Every OTHER GET route this surface mounts has NO entry in
+//     RequiredReadCapabilities. A future read must not pick up an
+//     unintended gate by accident — this is what would catch it. The four
+//     reads already live in production today (/admin/audit-logs,
+//     /admin/billing/subscriptions, /admin/billing/trials, /admin/health)
+//     are asserted absent by name, since a stray entry on any of them
+//     would 403 real operator traffic.
+func TestBreakGlassIsTheOnlyDeclaredReadCapability(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	platformadmin.Register(r.Group("/api/v1/platform"), allReadRoutesDeps())
+
+	const breakGlassPath = "/api/v1/platform/admin/break-glass"
+
+	breakGlassFound := false
+	otherReadRouteCount := 0
+	for _, route := range r.Routes() {
+		if route.Method != http.MethodGet {
+			continue
+		}
+
+		key := platformadmin.CapabilityKey(route.Method, route.Path)
+
+		if route.Path == breakGlassPath {
+			breakGlassFound = true
+			required, declared := platformadmin.RequiredReadCapabilities[key]
+			require.True(t, declared,
+				"break-glass route %s %s has no entry in RequiredReadCapabilities — "+
+					"an undeclared read is ungated by design (see the map's doc "+
+					"comment), so this would silently reopen the emergency-account "+
+					"inventory to any valid signature",
+				route.Method, route.Path)
+			require.Equal(t, "rotate-credentials", required,
+				"break-glass must require exactly the capability value the "+
+					"console's break-glass module sends")
+			continue
+		}
+
+		otherReadRouteCount++
+		_, declared := platformadmin.RequiredReadCapabilities[key]
+		require.Falsef(t, declared,
+			"read route %s %s unexpectedly has an entry in RequiredReadCapabilities — "+
+				"only break-glass (#333) should be gated on this surface today; a "+
+				"stray entry here would 403 real operator traffic on this route",
+			route.Method, route.Path)
+	}
+
+	require.True(t, breakGlassFound,
+		"GET %s was never found in the route table — either it failed to "+
+			"mount (allReadRoutesDeps is missing a dependency) or its route "+
+			"template changed; without this the assertions above would pass "+
+			"vacuously",
+		breakGlassPath)
+
+	// Pins that this test actually exercised other mounted read routes too
+	// — including the four already live in production
+	// (/admin/audit-logs, /admin/billing/subscriptions,
+	// /admin/billing/trials, /admin/health) — rather than the "every OTHER
+	// route is absent" loop above passing vacuously because nothing else
+	// mounted.
+	require.Greater(t, otherReadRouteCount, 0,
+		"expected other read routes besides break-glass to be mounted; got "+
+			"none — allReadRoutesDeps is likely missing a dependency, which "+
+			"would make the absence assertions above vacuous")
+
+	for _, knownProductionRead := range []string{
+		"/api/v1/platform/admin/audit-logs",
+		"/api/v1/platform/admin/billing/subscriptions",
+		"/api/v1/platform/admin/billing/trials",
+		"/api/v1/platform/admin/health",
+	} {
+		key := platformadmin.CapabilityKey(http.MethodGet, knownProductionRead)
+		_, declared := platformadmin.RequiredReadCapabilities[key]
+		require.Falsef(t, declared,
+			"production read route GET %s must have no entry in "+
+				"RequiredReadCapabilities — an entry here would 403 real "+
+				"operator traffic that has never needed a capability before",
+			knownProductionRead)
+	}
+}

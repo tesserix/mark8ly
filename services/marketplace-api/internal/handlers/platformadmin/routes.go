@@ -163,6 +163,14 @@ type Deps struct {
 	// The conformance suite fails an endpoint a product serves but does not
 	// declare, so a one-sided change turns the nightly job red.
 	EstateUsers EstateUserDirectory
+
+	// BreakGlass serves GET /admin/break-glass (#333), the cross-tenant
+	// emergency-account inventory. Nil leaves the route unmounted, matching
+	// the nil-safe pattern used for EmailSends above. It also requires
+	// TenantDirectory (non-nil) for tenant-name enrichment, matching the
+	// Trials/AllSubscriptions pattern above: both must be non-nil for the
+	// route to mount.
+	BreakGlass BreakGlassLister
 }
 
 // TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
@@ -267,6 +275,10 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.EmailSends != nil {
 		NewEmailSendsHandler(deps.DB, deps.EmailSends, deps.Logger).Register(group)
+	}
+
+	if deps.BreakGlass != nil && deps.TenantDirectory != nil {
+		NewBreakGlassHandler(deps.DB, deps.BreakGlass, deps.TenantDirectory, deps.Logger).Register(group)
 	}
 
 	if deps.EstateUsers != nil {

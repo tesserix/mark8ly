@@ -269,6 +269,36 @@ func TestCatalog_PPPDescriptorCount(t *testing.T) {
 	require.Equal(t, 36, count, "expected 36 PPP descriptors (6 plan/period combos × 6 currencies)")
 }
 
+// TestCatalog_TotalDescriptorCount guards the total object count that
+// cmd/billing-bootstrap pushes to Stripe — the number tesserix/mark8ly#414
+// found stated as "8" in this package's doc and in the prod launch
+// checklist's B1.8 while init() produced 42.
+//
+// What this adds over the two per-tier tests above, precisely: they already
+// catch a descriptor SWAPPED between tiers (developed would read 5 and PPP
+// 37, failing both). What neither catches is a descriptor whose Tier is
+// NEITHER value — it is counted by neither loop, so both stay green while
+// len(AllDescriptors()) has moved. The last two assertions here are the
+// load-bearing ones: the total, and that developed+ppp exhausts it.
+//
+// Bump all three deliberately when the catalog shape genuinely changes.
+func TestCatalog_TotalDescriptorCount(t *testing.T) {
+	all := pricing.AllDescriptors()
+	developed, ppp := 0, 0
+	for _, d := range all {
+		switch d.Tier {
+		case pricing.TierDeveloped:
+			developed++
+		case pricing.TierPPP:
+			ppp++
+		}
+	}
+	require.Equal(t, 6, developed, "developed-tier count drifted")
+	require.Equal(t, 36, ppp, "PPP-tier count drifted")
+	require.Equal(t, 42, len(all), "total descriptor count drifted")
+	require.Equal(t, len(all), developed+ppp, "every descriptor must be exactly one of developed or PPP")
+}
+
 func TestCatalog_AllDescriptors_PPPOptionsHaveOneCurrency(t *testing.T) {
 	for _, d := range pricing.AllDescriptors() {
 		if d.Tier != pricing.TierPPP {

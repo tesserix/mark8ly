@@ -1,8 +1,15 @@
 // Package pricing is the Go source of truth for all Stripe pricing.
 //
-// Architecture: 8 developed-market Price objects (Starter+Studio+Pro × monthly+annual),
-// each with currency_options for 7 currencies. PPP tiers use separate Price objects per
-// currency (can't share currency_options amounts across PPP and developed-market tiers).
+// Architecture: developed-market tier gets one Price object per (plan, period) —
+// Starter+Studio+Pro × monthly+annual — with currency_options carrying all 7
+// developed-market currencies on that same object. PPP tiers use a separate
+// Price object per (plan, period, currency), since currency_options amounts
+// can't be shared across the PPP and developed-market tiers.
+//
+// For the exact object count by tier, see AllDescriptors and the
+// TestCatalog_DevelopedDescriptorCount / TestCatalog_PPPDescriptorCount /
+// TestCatalog_TotalDescriptorCount assertions in catalog_test.go — those tests
+// are the source of truth and fail if the shape changes without being updated.
 //
 // Spec reference: docs/superpowers/specs/2026-04-17-subscription-model-design.md §4.1 and §4.1.1.
 package pricing

@@ -131,7 +131,7 @@ WS-H        [CVE triage ──┤[critical + high remediation ─────┤
 - [ ] **B1.5** Stripe live secret key in Secret Manager as `stripe-billing-secret-key`
 - [ ] **B1.6** Radar rules reviewed — `radar.early_fraud_warning` webhook wired (P2), confirm Radar enabled in Stripe Dashboard
 - [ ] **B1.7** Test `invoice.payment_action_required` flow end-to-end on Stripe India sandbox — use test card `4000 0035 6000 0008` — spec §26.1 blocker
-- [ ] **B1.8** Run `cmd/billing-bootstrap` against **prod** Stripe to create all 8 Price objects + products
+- [ ] **B1.8** Run `cmd/billing-bootstrap` against **prod** Stripe to create every Price object + product in `pricing.AllDescriptors()` (developed-market and PPP tiers both — see `internal/billing/pricing/catalog.go` for the shape). Verify by counting Price objects with `lookup_key` prefix `mark8ly_` in the Stripe Dashboard against `len(pricing.AllDescriptors())`, not by eyeballing a fixed number — a partial run (e.g. developed tier only) must fail this check.
 - [ ] **B1.9** Stripe Australia bank account remains single-currency (split-currency USD-AU settlement deferred per §4.2.2 until $200k ARR)
 - **Owner:** Platform lead
 - **Duration:** 2-3 weeks (Stripe verification can take 2 weeks)
@@ -540,7 +540,7 @@ Check these the day of public launch. Any `✗` = no-go, investigate.
 
 **Billing**
 - [ ] Stripe AU prod verified
-- [ ] 8 Price objects exist in prod Stripe with correct lookup_keys
+- [ ] Every Price object in `pricing.AllDescriptors()` exists in prod Stripe with correct lookup_keys (developed + PPP tiers — see B1.8)
 - [ ] Webhook signing secret rotated; test event round-trips
 - [ ] Stripe India SCA test passed
 - [ ] AU Stripe Tax registration confirmed

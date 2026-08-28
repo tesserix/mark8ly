@@ -381,6 +381,7 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		tenantScoped("tax_validation_outage_log", tenantID),   // 000066: tenant_id (nullable)
 		tenantScoped("migration_fast_path_reviews", tenantID), // 000051: tenant_id, store_id
 		tenantScoped("customer_erasure_requests", tenantID),   // 000059: tenant_id, store_id
+		tenantScoped("email_sends", tenantID),                 // 000108: tenant_id (nullable), store_id — holds the customer's address in `recipient`
 		storeScoped("promo_redemptions", storeIDs),            // 000061: store_id only, no tenant_id
 		storeScoped("campaign_email_budget", storeIDs),        // 000047ish: store_id only, no tenant_id
 		storeScoped("store_transactional_counter", storeIDs),  // 000064: store_id only, no tenant_id

@@ -156,9 +156,17 @@ func developedLookupKey(plan Plan, period Period) string {
 // Spec §4.1.1: IN, MY, TH, PH, ID, VN.
 // Pro IS included in PPP per §4.1.1 (₹65,999/yr listed explicitly).
 //
-// Zero-decimal currency note (IDR, VND): Stripe stores these × 100.
-//   IDR 199,000 → UnitAmountMinor 19900000
-//   VND 329,000 → UnitAmountMinor 32900000
+// Zero-decimal currency note: this catalog stores every amount in
+// "minor units × 100" as an internal convention, regardless of currency.
+// VND is one of Stripe's zero-decimal currencies (unit_amount is the raw
+// value, not ×100), so stripeUnitAmount() divides by 100 for it at the
+// Stripe boundary. IDR is NOT zero-decimal per Stripe — its ×100 storage
+// is simply the ordinary two-decimal representation and needs no special
+// handling at the boundary.
+//   VND 329,000 → UnitAmountMinor 32900000 → stripeUnitAmount → 329000
+//   IDR 199,000 → UnitAmountMinor 19900000 → stripeUnitAmount → 19900000
+// See zeroDecimalCurrencies and stripeUnitAmount() in
+// internal/billing/stripe/price.go:12-31.
 // ---------------------------------------------------------------------------
 
 type pppKey struct {

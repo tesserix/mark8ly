@@ -150,9 +150,20 @@ function TogglePill({
 export function Pricing({ currency, catalogue }: PricingProps) {
   const [period, setPeriod] = useState<BillingPeriod>('annual')
   const plans = catalogue.plans
-  const proApp = getAddOnPrice(catalogue.proApp, currency)
+  // The add-on always bills in USD globally (spec §4.1.2) regardless of the
+  // visitor's currency, so the amount is always read from the USD row —
+  // the Money below renders `currency="USD"` literally, never the resolved
+  // currency.
+  const { price: proApp } = getAddOnPrice(catalogue.proApp, 'USD')
   const showUsdBilledNote = currency !== 'USD'
-  const tax = taxDisclosure(currency)
+  // Page-level "prices shown in X" / GST copy MUST use the currency actually
+  // resolved for the plans below, not the raw `currency` prop — otherwise a
+  // visitor whose currency has no row would read "Prices shown in THB." over
+  // amounts that are actually in USD. Every priceable currency has a row on
+  // every plan (see PRICEABLE_CURRENCIES), so any plan resolves the same way;
+  // the first plan is used as the anchor.
+  const resolvedPageCurrency = plans[0] ? getPlanPrice(plans[0], currency).currency : currency
+  const tax = taxDisclosure(resolvedPageCurrency)
 
   return (
     <section
@@ -181,7 +192,7 @@ export function Pricing({ currency, catalogue }: PricingProps) {
         <div className="mb-10 flex flex-wrap items-center justify-between gap-4">
           <TogglePill period={period} onChange={setPeriod} />
           <p className="text-sm text-foreground-tertiary">
-            Prices shown in {currency}.
+            Prices shown in {resolvedPageCurrency}.
             {tax ? ` ${tax}` : ''}
           </p>
         </div>
@@ -189,7 +200,11 @@ export function Pricing({ currency, catalogue }: PricingProps) {
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.05fr_1fr_1.05fr]">
           {PLAN_META.map((meta, i) => {
             const plan = plans.find((p) => p.id === meta.id)!
-            const price = getPlanPrice(plan, currency)
+            // `resolvedCurrency` is what MUST be rendered — when `currency`
+            // has no row on this plan, getPlanPrice falls back to USD, and
+            // rendering the visitor's raw `currency` would label that USD
+            // amount with a currency it isn't priced in.
+            const { price, currency: resolvedCurrency } = getPlanPrice(plan, currency)
             const headline =
               period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
             const cadence = period === 'monthly' ? '/mo' : '/mo, billed yearly'
@@ -216,7 +231,7 @@ export function Pricing({ currency, catalogue }: PricingProps) {
                     letterSpacing: '-0.03em',
                   }}
                 >
-                  <Money amount={headline} currency={currency} showCents={false} />
+                  <Money amount={headline} currency={resolvedCurrency} showCents={false} />
                   <span
                     className="ml-1 font-sans text-base font-normal text-foreground-tertiary"
                     style={{ letterSpacing: 'normal', whiteSpace: 'nowrap' }}
@@ -226,7 +241,7 @@ export function Pricing({ currency, catalogue }: PricingProps) {
                 </p>
                 {period === 'annual' && (
                   <p className="mt-1 text-sm text-foreground-tertiary">
-                    <Money amount={price.annual} currency={currency} showCents={false} />{' '}
+                    <Money amount={price.annual} currency={resolvedCurrency} showCents={false} />{' '}
                     charged once a year
                   </p>
                 )}

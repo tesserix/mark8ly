@@ -110,12 +110,11 @@ function resolvePricedPlan(
   plan: SharedPlan,
   currency: Currency,
 ): { monthly: number; annualMonthly: number; priceCurrency: Currency } {
-  const localized = plan.prices[currency];
-  const price = localized ?? getPlanPrice(plan, "USD");
+  const { price, currency: priceCurrency } = getPlanPrice(plan, currency);
   return {
     monthly: price.monthly,
     annualMonthly: price.annualMonthlyEquivalent,
-    priceCurrency: localized ? currency : "USD",
+    priceCurrency,
   };
 }
 
@@ -735,9 +734,13 @@ function Comparison({ currency }: ComparisonProps) {
   // Pricing and A$29 in Comparison — same plan, different cadence,
   // looks like a typo.
   const starter = SHARED_PRICING_CATALOGUE.plans.find((p) => p.id === "starter");
-  const mark8lyStarterAnnualMonthly = starter
-    ? getPlanPrice(starter, currency).annualMonthlyEquivalent
-    : null;
+  const resolvedStarter = starter ? getPlanPrice(starter, currency) : null;
+  const mark8lyStarterAnnualMonthly = resolvedStarter?.price.annualMonthlyEquivalent ?? null;
+  // MUST render this — never the raw `currency` prop — for the same
+  // reason as the Pricing section: when `currency` has no row, the
+  // fallback amount is denominated in USD, and labelling it with the
+  // visitor's raw currency code would misquote the price.
+  const mark8lyStarterCurrency = resolvedStarter?.currency ?? currency;
 
   return (
     <section
@@ -820,7 +823,7 @@ function Comparison({ currency }: ComparisonProps) {
                       <>
                         <Money
                           amount={mark8lyStarterAnnualMonthly}
-                          currency={currency}
+                          currency={mark8lyStarterCurrency}
                           showCents={false}
                         />
                         <span className="text-foreground-tertiary"> / mo</span>

@@ -1,14 +1,14 @@
 'use client'
 
 /**
- * PricingClient — interactive 4-plan grid + Pro+App add-on.
+ * PricingClient — interactive 3-plan grid + Pro+App add-on.
  *
  * Design rules (non-negotiable):
  *  - Paper / Ink / Moss only. No other decorative colours.
  *  - Hairline column separators; NO bordered card boxes.
- *  - Left-aligned, asymmetric grid at lg (1.1fr · 1fr · 1fr · 1.1fr).
+ *  - Left-aligned, asymmetric grid at lg (1.1fr · 1fr · 1.1fr).
  *    The slight width variance is intentional editorial asymmetry —
- *    Starter and Pro are the narrative anchors; Growth and Scale flank.
+ *    Starter and Pro are the narrative anchors; Studio flanks between them.
  *  - Source Serif 4 for plan names and display prices.
  *  - Source Sans 3 for body, taglines, feature lists, CTAs.
  *  - One moss-700 accent per view: Pro card border-left.
@@ -16,9 +16,17 @@
  */
 
 import { useState } from 'react'
-import { Money, PlanBadge } from '@repo/ui/subscription'
+import {
+  Money,
+  PlanBadge,
+  getPlanPrice,
+  getAddOnPrice,
+  type Currency,
+  type SharedPlan,
+  type SharedPricingCatalogue,
+  type PlanPrice,
+} from '@repo/ui/subscription'
 import { pricingCopy } from '@/lib/copy/pricing'
-import type { PricingCatalogue, Plan, PlanPrice } from './page'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,16 +35,22 @@ import type { PricingCatalogue, Plan, PlanPrice } from './page'
 type BillingPeriod = 'monthly' | 'annual'
 
 interface PricingClientProps {
-  currency: string
-  pricing: PricingCatalogue
+  currency: Currency
+  pricing: SharedPricingCatalogue
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getPlanPrice(plan: Plan, currency: string): PlanPrice | undefined {
-  return plan.prices[currency] ?? plan.prices['USD']
+// AU prices in the catalogue are GST-exclusive (spec §19.4). Mirrors the
+// wording in apps/onboarding/components/marketing/Pricing.tsx's
+// `taxDisclosure` verbatim — one phrasing, not two.
+function taxDisclosure(currency: Currency): string {
+  if (currency === 'AUD') {
+    return 'Plus 10% GST for Australian businesses.'
+  }
+  return ''
 }
 
 // ---------------------------------------------------------------------------
@@ -61,20 +75,21 @@ function FeatureDot({ children }: FeatureDotProps) {
 }
 
 interface PlanColumnProps {
-  plan: Plan
+  plan: SharedPlan
   copy: typeof pricingCopy.plans[number]
-  currency: string
+  currency: Currency
   period: BillingPeriod
   isLast: boolean
 }
 
 function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
-  const price = getPlanPrice(plan, currency)
+  // `resolvedCurrency` is what MUST be rendered — never the raw `currency`
+  // prop. When `currency` has no row on this plan, getPlanPrice falls back
+  // to USD; rendering the raw currency would label that USD amount with a
+  // currency it isn't actually priced in.
+  const { price, currency: resolvedCurrency } = getPlanPrice(plan, currency)
   const isPro = plan.id === 'pro'
 
-  if (!price) return null
-
-  const displayAmount = period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
   const isConversation = copy.cta === 'Start a conversation'
 
   return (
@@ -113,13 +128,13 @@ function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
         {isPro ? (
           <ProPriceBlock
             price={price}
-            currency={currency}
+            currency={resolvedCurrency}
             period={period}
           />
         ) : (
           <StandardPriceBlock
-            amount={displayAmount}
-            currency={currency}
+            price={price}
+            currency={resolvedCurrency}
             period={period}
           />
         )}
@@ -140,7 +155,7 @@ function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
         ]
           .filter(Boolean)
           .join(' ')}
-       
+
       >
         {copy.cta}
       </a>
@@ -160,17 +175,19 @@ function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
 // ---------------------------------------------------------------------------
 
 interface StandardPriceBlockProps {
-  amount: number
-  currency: string
+  price: PlanPrice
+  currency: Currency
   period: BillingPeriod
 }
 
-function StandardPriceBlock({ amount, currency, period }: StandardPriceBlockProps) {
+function StandardPriceBlock({ price, currency, period }: StandardPriceBlockProps) {
+  const displayAmount = period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
+
   return (
     <div>
       <div className="flex items-baseline gap-1">
         <Money
-          amount={amount}
+          amount={displayAmount}
           currency={currency}
           showCents={false}
           className="text-4xl font-semibold"
@@ -182,8 +199,14 @@ function StandardPriceBlock({ amount, currency, period }: StandardPriceBlockProp
         </span>
       </div>
       {period === 'annual' && (
+        // The equivalent above is rounded to whole units (showCents=false),
+        // so for a plan whose annual total isn't evenly divisible by 12
+        // (e.g. Starter USD: 18200/12 = 1516.67, rounded display $15) the
+        // rounded /mo figure alone reads as a different, wrong price. The
+        // exact billed total removes the ambiguity — mirrors
+        // apps/onboarding/components/marketing/Pricing.tsx's annual line.
         <p className="text-xs mt-1" style={{ color: 'var(--ink-600)' }}>
-          Billed annually
+          <Money amount={price.annual} currency={currency} showCents={false} /> billed annually
         </p>
       )}
     </div>
@@ -192,7 +215,7 @@ function StandardPriceBlock({ amount, currency, period }: StandardPriceBlockProp
 
 interface ProPriceBlockProps {
   price: PlanPrice
-  currency: string
+  currency: Currency
   period: BillingPeriod
 }
 
@@ -225,9 +248,10 @@ function ProPriceBlock({ price, currency, period }: ProPriceBlockProps) {
             )}
           </p>
           <p className="text-xs" style={{ color: 'var(--ink-600)' }}>
-            {isUSD
-              ? 'Monthly available at $119/mo.'
-              : <>Monthly available at <Money amount={price.monthly} currency={currency} showCents={false} />/mo.</>}
+            {/* Rendered from the catalogue, not a hardcoded literal — this
+                must move with catalog.go like every other number on the
+                page, USD included. */}
+            Monthly available at <Money amount={price.monthly} currency={currency} showCents={false} />/mo.
           </p>
         </>
       ) : (
@@ -257,16 +281,21 @@ function ProPriceBlock({ price, currency, period }: ProPriceBlockProps) {
 // ---------------------------------------------------------------------------
 
 interface ProAppCardProps {
-  currency: string
+  currency: Currency
   period: BillingPeriod
-  pricing: PricingCatalogue
+  pricing: SharedPricingCatalogue
 }
 
 function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
   const addonCopy = pricingCopy.proApp
-  const price = pricing.proApp.prices[currency] ?? pricing.proApp.prices['USD']
-  if (!price) return null
+  // The add-on always bills in USD globally (spec §4.1.2), regardless of
+  // the visitor's currency — the catalogue's non-USD rows just repeat the
+  // USD figure for a consistent card layout, they are not real localized
+  // prices. So the amount is always read from the USD row, and this always
+  // renders `currency="USD"` literally below, never a resolved currency.
+  const { price } = getAddOnPrice(pricing.proApp, 'USD')
   const amount = period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
+  const showUsdBilledNote = currency !== 'USD'
 
   return (
     <section
@@ -298,7 +327,7 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
           <div className="flex items-baseline gap-1">
             <Money
               amount={amount}
-              currency={currency}
+              currency="USD"
               showCents={false}
               className="text-2xl font-semibold"
             />
@@ -306,6 +335,14 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
               / mo{period === 'annual' ? ' equivalent' : ''}
             </span>
           </div>
+          <p className="text-xs" style={{ color: 'var(--ink-500)' }}>
+            {addonCopy.setupFeeNote}
+          </p>
+          {showUsdBilledNote && (
+            <p className="text-xs" style={{ color: 'var(--ink-500)' }}>
+              Billed in USD globally.
+            </p>
+          )}
           <a
             href={addonCopy.ctaHref}
             className={[
@@ -313,7 +350,7 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
               'bg-[var(--ink-900)] text-[var(--paper-200)] hover:bg-[var(--moss-700)]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-1',
             ].join(' ')}
-           
+
           >
             {addonCopy.cta}
           </a>
@@ -330,6 +367,16 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
 export function PricingClient({ currency, pricing }: PricingClientProps) {
   const [period, setPeriod] = useState<BillingPeriod>('annual')
   const plans = pricingCopy.plans
+  // Page-level disclosure copy MUST use the currency actually resolved for
+  // the plans below, not the raw `currency` prop — otherwise a visitor
+  // whose currency has no row would read "Prices shown in THB." over
+  // amounts that are actually in USD. Every priceable currency has a row on
+  // every plan (see PRICEABLE_CURRENCIES), so any plan resolves the same
+  // way; the first plan in the catalogue is used as the anchor.
+  const resolvedPageCurrency = pricing.plans[0]
+    ? getPlanPrice(pricing.plans[0], currency).currency
+    : currency
+  const tax = taxDisclosure(resolvedPageCurrency)
 
   return (
     <div className="px-8 py-16 max-w-6xl mx-auto">
@@ -366,7 +413,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
                 ? 'bg-[var(--ink-900)] text-[var(--paper-200)]'
                 : 'text-[var(--ink-700)] hover:text-[var(--ink-900)]',
             ].join(' ')}
-           
+
           >
             {pricingCopy.toggle.monthly}
           </button>
@@ -383,7 +430,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
                 ? 'bg-[var(--ink-900)] text-[var(--paper-200)]'
                 : 'text-[var(--ink-700)] hover:text-[var(--ink-900)]',
             ].join(' ')}
-           
+
           >
             {pricingCopy.toggle.annual}
           </button>
@@ -392,11 +439,11 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
 
       {/* ── Plan grid ────────────────────────────────────────────────────── */}
       {/*
-        Asymmetric 4-column grid:
-        - 1.1fr · 1fr · 1fr · 1.1fr
+        Asymmetric 3-column grid:
+        - 1.1fr · 1fr · 1.1fr
         - Starter and Pro (edges) are slightly wider — they are the narrative
-          anchors. Growth and Scale flank. This is intentional editorial asymmetry,
-          not an accident. Do not normalise to equal columns.
+          anchors. Studio flanks between them. This is intentional editorial
+          asymmetry, not an accident. Do not normalise to equal columns.
         - Hairline right-border between columns (border-r on all but last child).
         - NO rounded cards, NO box shadows.
       */}
@@ -407,8 +454,8 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
           'grid grid-cols-1',
           // Tablet: 2 columns
           'md:grid-cols-2',
-          // Desktop: intentional asymmetric 4-col split
-          'lg:grid-cols-[1.1fr_1fr_1fr_1.1fr]',
+          // Desktop: intentional asymmetric 3-col split
+          'lg:grid-cols-[1.1fr_1fr_1.1fr]',
           'border border-[var(--hairline,var(--ink-100))] rounded-md overflow-hidden',
         ].join(' ')}
       >
@@ -443,7 +490,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
               'bg-[var(--ink-900)] text-[var(--paper-200)] hover:bg-[var(--moss-700)]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-1',
             ].join(' ')}
-           
+
           >
             {pricingCopy.proCtas.conversation}
           </a>
@@ -454,7 +501,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
               'border border-[var(--ink-900)] text-[var(--ink-900)] hover:border-[var(--moss-700)] hover:text-[var(--moss-700)]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-1',
             ].join(' ')}
-           
+
           >
             {pricingCopy.proCtas.brief}
           </a>
@@ -467,7 +514,8 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
           className="text-xs"
           style={{ color: 'var(--ink-500)' }}
         >
-          {pricingCopy.disclosureTemplate(currency)}
+          {pricingCopy.disclosureTemplate(resolvedPageCurrency)}
+          {tax ? ` ${tax}` : ''}
         </p>
       </footer>
     </div>

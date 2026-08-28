@@ -9,6 +9,8 @@
  * same way, so this is the single source of truth.
  */
 
+import { SHARED_PRICING_CATALOGUE } from './pricing-data'
+
 export const SUPPORTED_CURRENCIES = [
   'USD',
   'CAD',
@@ -111,16 +113,50 @@ export function countryToCurrency(cc: string | null | undefined): Currency {
 }
 
 /**
- * Returns the supported currency for the given code, or USD if
- * the input isn't a known supported currency. Use this to validate
- * a cookie value before rendering.
+ * The subset of `SUPPORTED_CURRENCIES` that can actually be priced: a
+ * currency counts as priceable only when EVERY plan in
+ * `SHARED_PRICING_CATALOGUE.plans` carries a row for it — a currency present
+ * on one plan but missing on another would still mislabel that plan's price.
+ *
+ * Deliberately scoped to `plans` only, not `proApp`: the add-on is always
+ * billed and displayed in USD globally (spec §4.1.2) regardless of this
+ * set, so its currency coverage is irrelevant to what counts as
+ * "priceable" here — including it would only ever narrow this set for a
+ * reason that has nothing to do with plan pricing.
+ *
+ * Derived from the pricing table itself rather than hand-maintained, so it
+ * cannot drift from the prices the way a fourth hand-written list could.
+ * `SUPPORTED_CURRENCIES` stays broader on purpose: it drives
+ * `COUNTRY_TO_CURRENCY` geo-targeting, which is correct to know that (say)
+ * Thailand uses THB even though Mark8ly cannot price in it yet.
+ */
+export const PRICEABLE_CURRENCIES: ReadonlySet<Currency> = (() => {
+  const planCount = SHARED_PRICING_CATALOGUE.plans.length
+  const rowCounts = new Map<Currency, number>()
+  for (const plan of SHARED_PRICING_CATALOGUE.plans) {
+    for (const currency of Object.keys(plan.prices) as Currency[]) {
+      rowCounts.set(currency, (rowCounts.get(currency) ?? 0) + 1)
+    }
+  }
+  const priceable = new Set<Currency>()
+  for (const [currency, count] of rowCounts) {
+    if (count === planCount) priceable.add(currency)
+  }
+  return priceable
+})()
+
+/**
+ * Returns the supported currency for the given code, or USD if the input
+ * isn't one the pricing table can actually price. Use this to validate a
+ * cookie value before rendering — geo-targeting (`COUNTRY_TO_CURRENCY`)
+ * may resolve a visitor to a currency with no price row, and displaying a
+ * USD amount under that currency's label would misquote the price. `USD`
+ * is always priceable, so the fallback is safe.
  */
 export function normalizeCurrency(value: string | null | undefined): Currency {
   if (!value) return 'USD'
   const upper = value.toUpperCase() as Currency
-  return (SUPPORTED_CURRENCIES as readonly string[]).includes(upper)
-    ? upper
-    : 'USD'
+  return PRICEABLE_CURRENCIES.has(upper) ? upper : 'USD'
 }
 
 /**

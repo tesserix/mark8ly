@@ -66,14 +66,10 @@ test-int: ## Run integration tests against the running `make dev` stack
 	@# enough to hide a production dunning bug (see the sql.NullTime fix in
 	@# internal/subscription/dunning/ladder.go).
 	@#
-	@# ./internal/billing/tax below is deliberately NOT ./internal/billing/tax/...
-	@# — its revalidation subpackage deadlocks (not a normal failure): Cron.Run
-	@# holds a transaction open while Svc.Submit writes the same row on a
-	@# separate pooled connection, so the two block each other forever and this
-	@# target would hang instead of failing. Filed separately; do not add the
-	@# ellipsis back until that deadlock is fixed. The missing ellipsis also
-	@# excludes internal/billing/tax/seaqueue — its status was never measured,
-	@# so it stays out until someone does.
+	@# ./internal/billing/tax/... is fully included again: the revalidation
+	@# deadlock it used to hide was fixed in #396 — Cron.Run no longer holds a
+	@# transaction open across Svc.Submit, so the pass cannot wait on its own
+	@# row lock.
 	@#
 	@# ./internal/subscription below is deliberately NOT ./internal/subscription/...
 	@# — recursing would pull in sibling packages whose status was never
@@ -95,7 +91,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/handlers/internalsvc/... \
 	    ./internal/billing/appaddon/... \
 	    ./internal/billing/dispatch/... \
-	    ./internal/billing/tax \
+	    ./internal/billing/tax/... \
 	    ./internal/billing/trial/... \
 	    ./internal/subscription \
 	    ./internal/subscription/cancel/... \

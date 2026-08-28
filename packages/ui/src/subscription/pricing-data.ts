@@ -10,9 +10,10 @@
  *
  * The Money primitive consumes this data and formats via Intl.
  *
- * This file is the SINGLE SOURCE OF TRUTH for headline pricing across
- * admin `/pricing` AND onboarding `/#pricing`. To change a price,
- * edit it here and both apps update.
+ * The single source of truth for headline pricing is
+ * services/marketplace-api/internal/billing/pricing/catalog.go. To
+ * change a price, edit the catalog and regenerate this file with:
+ *   cd services/marketplace-api && go run ./internal/billing/pricing/cmd/genpricing > ../../packages/ui/src/subscription/pricing-data.ts
  *
  * USD is guaranteed to exist for every plan + add-on. All other
  * currencies are optional fallbacks — any missing entry falls back
@@ -58,7 +59,7 @@ export interface SharedPricingCatalogue {
  * (§4.1.2); the catalogue still offers per-currency rows for display,
  * but billing always bills in USD for the add-on.
  *
- * AED and JPY have no rows here: we do not serve the Arab or SEA
+ * AED and JPY have no rows here: we do not serve the Arab or Japanese
  * markets they represent (no tested shipping carrier), and a
  * USD-fallback row under an AED/JPY label would display as if it were
  * a real, if approximate, local price. A visitor whose currency has no

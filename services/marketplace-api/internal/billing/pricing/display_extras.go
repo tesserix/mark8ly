@@ -49,8 +49,8 @@ func PPPAmount(plan Plan, period Period, currency string) (Amount, bool) {
 // this is a presentation decision the generator needs but catalog.go has no
 // reason to encode.
 //
-// AED and JPY are deliberately absent: we do not serve the Arab or SEA
-// markets they represent (no tested shipping carrier — see
+// AED and JPY are deliberately absent: we do not serve the Arab or
+// Japanese markets they represent (no tested shipping carrier — see
 // apps/onboarding/app/onboarding/page.tsx's carrier allowlist), and the
 // rows that used to sit here carried the raw USD integer under an AED/JPY
 // label, quoting roughly 27% and a fraction of the real price

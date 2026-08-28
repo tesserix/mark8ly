@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 )
@@ -350,4 +351,213 @@ func TestConformanceDeclarationMatchesMountedRoutes(t *testing.T) {
 	}
 
 	checkEntitiesDeclaration(t, mounted, declaredEntityTypes)
+}
+
+// chartValuesPath resolves the SIBLING tesserix-k8s repo's Helm values for
+// this service, relative to THIS TEST FILE (not the working directory `go
+// test` happens to run from), the same way conformanceDeclarationPath does
+// for admin-conformance.json. This package sits five directories below
+// mark8ly's repo root; one more ".." reaches the directory that is
+// expected to hold mark8ly and tesserix-k8s as siblings (the layout this
+// task was run against: .../tesserix-new/{mark8ly,tesserix-k8s}).
+func chartValuesPath(t *testing.T) string {
+	t.Helper()
+
+	_, thisFile, _, ok := runtime.Caller(0)
+	require.True(t, ok, "runtime.Caller(0) failed to report this test file's own path")
+
+	workspaceRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "..", "..", "..")
+	return filepath.Join(workspaceRoot, "tesserix-k8s", "charts", "apps",
+		"mark8ly-marketplace-api-admin", "values.yaml")
+}
+
+// chartDeclaration is the shape of adminConformanceCron.declaration.endpoints
+// this test cares about, from charts/apps/mark8ly-marketplace-api-admin/
+// values.yaml. It deliberately does not model the rest of that values file
+// — only this one block is the second copy of the declaration that
+// admin-conformance.json duplicates (mark8ly#290). Endpoint values are kept
+// as interface{} for the same reason conformanceDoc keeps them as
+// json.RawMessage: most ids are a bare bool, `entities` and `inbox` are
+// small maps.
+type chartDeclaration struct {
+	AdminConformanceCron struct {
+		Declaration struct {
+			Endpoints map[string]interface{} `yaml:"endpoints"`
+		} `yaml:"declaration"`
+	} `yaml:"adminConformanceCron"`
+}
+
+func readChartDeclaration(t *testing.T, path string) chartDeclaration {
+	t.Helper()
+
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err, "failed to read %s", path)
+
+	var v chartDeclaration
+	require.NoErrorf(t, yaml.Unmarshal(raw, &v),
+		"%s is not valid YAML, or its shape does not match "+
+			"adminConformanceCron.declaration.endpoints", path)
+	return v
+}
+
+func chartDeclaredEndpointIDs(v chartDeclaration) map[string]bool {
+	ids := make(map[string]bool, len(v.AdminConformanceCron.Declaration.Endpoints))
+	for id := range v.AdminConformanceCron.Declaration.Endpoints {
+		ids[id] = true
+	}
+	return ids
+}
+
+// chartDeclaredEntityTypes parses the chart's entities.types list, the
+// direct counterpart to readDeclaredEntityTypes for admin-conformance.json.
+func chartDeclaredEntityTypes(t *testing.T, v chartDeclaration) map[string]bool {
+	t.Helper()
+
+	raw, present := v.AdminConformanceCron.Declaration.Endpoints["entities"]
+	types := map[string]bool{}
+	if !present {
+		return types
+	}
+
+	entry, ok := raw.(map[string]interface{})
+	require.Truef(t, ok, "chart's entities declaration is not a {types: [...]} map: %#v", raw)
+
+	rawTypes, ok := entry["types"].([]interface{})
+	require.Truef(t, ok, "chart's entities.types is not a list: %#v", entry["types"])
+
+	for _, ty := range rawTypes {
+		s, ok := ty.(string)
+		require.Truef(t, ok, "chart's entities.types contains a non-string entry: %#v", ty)
+		types[s] = true
+	}
+	return types
+}
+
+// chartInboxSLADeclared reads the chart's inbox.slaDeclared boolean. Only
+// meaningful when the caller has already confirmed "inbox" is declared on
+// both sides — see the id-set comparison in
+// TestConformanceDeclarationMatchesChartCopy, which catches "declared on
+// one side only" before this is ever called.
+func chartInboxSLADeclared(t *testing.T, v chartDeclaration) bool {
+	t.Helper()
+
+	raw, present := v.AdminConformanceCron.Declaration.Endpoints["inbox"]
+	require.True(t, present, "chartInboxSLADeclared called but the chart does not declare \"inbox\"")
+
+	entry, ok := raw.(map[string]interface{})
+	require.Truef(t, ok, "chart's inbox declaration is not a {slaDeclared: bool} map: %#v", raw)
+
+	sla, ok := entry["slaDeclared"].(bool)
+	require.Truef(t, ok, "chart's inbox.slaDeclared is not a bool: %#v", entry["slaDeclared"])
+	return sla
+}
+
+// repoInboxSLADeclared is the admin-conformance.json counterpart to
+// chartInboxSLADeclared.
+func repoInboxSLADeclared(t *testing.T, doc conformanceDoc) bool {
+	t.Helper()
+
+	raw, present := doc.Endpoints["inbox"]
+	require.True(t, present, "repoInboxSLADeclared called but admin-conformance.json does not declare \"inbox\"")
+
+	var parsed struct {
+		SlaDeclared bool `json:"slaDeclared"`
+	}
+	require.NoErrorf(t, json.Unmarshal(raw, &parsed),
+		"admin-conformance.json's \"inbox\" declaration is not the expected "+
+			"{\"slaDeclared\": bool} shape: %s", string(raw))
+	return parsed.SlaDeclared
+}
+
+// TestConformanceDeclarationMatchesChartCopy is mark8ly#290's stopgap, not
+// its fix.
+//
+// admin-conformance.json (checked by TestConformanceDeclarationMatchesMountedRoutes
+// above) is NOT the declaration the nightly conformance CronJob reads. That
+// job reads a second, hand-maintained copy: adminConformanceCron.declaration
+// in the SIBLING tesserix-k8s repo's
+// charts/apps/mark8ly-marketplace-api-admin/values.yaml, rendered into a
+// ConfigMap by that chart's admin-conformance-configmap.yaml template. That
+// template's own comment says, in bold, "If you change
+// mark8ly/admin-conformance.json, change this too" and names mark8ly#290 as
+// the follow-up to actually enforce it. Nothing did, until now — and even
+// this does not really enforce it.
+//
+// Two repos, two languages, no shared CI: mark8ly's own test suite cannot
+// see tesserix-k8s unless it happens to be checked out as a sibling
+// directory, and mark8ly's CI never has it checked out. So this test can
+// only be a REAL check for a developer who has both repos on disk locally
+// — typically the person editing one copy of the declaration, who is
+// exactly the person who most needs to be told the other copy now
+// disagrees. In mark8ly's own CI (and for anyone without the sibling
+// checked out) the chart file is absent and this test SKIPS: it reports
+// "not checked" rather than failing, because a hard failure here would make
+// every mark8ly CI run depend on a checkout this repo cannot control.
+//
+// That means this test cannot be the last line of defence against drift —
+// it says nothing to whoever only ever looks at mark8ly CI, and nothing
+// stops someone from editing the chart copy without ever running mark8ly's
+// tests at all. The true fix is removing the duplication entirely
+// (mark8ly#290: generate the ConfigMap from admin-conformance.json instead
+// of hand-copying it, or have the CronJob fetch admin-conformance.json
+// directly). Until that lands, this test's only honest claim is: it makes
+// drift visible to the person creating it, at authoring time, instead of
+// leaving it to whoever next reads a red CronJob three weeks later.
+func TestConformanceDeclarationMatchesChartCopy(t *testing.T) {
+	chartPath := chartValuesPath(t)
+	if _, err := os.Stat(chartPath); err != nil {
+		t.Skipf("sibling repo tesserix-k8s not found at %s (resolved relative to "+
+			"this test file, assuming mark8ly and tesserix-k8s are sibling "+
+			"directories) — NOT CHECKED: whether "+
+			"charts/apps/mark8ly-marketplace-api-admin/values.yaml's "+
+			"adminConformanceCron.declaration (the copy the nightly CronJob "+
+			"actually reads) agrees with this repo's admin-conformance.json. "+
+			"This is expected in mark8ly's own CI, which never has tesserix-k8s "+
+			"checked out — see this test's doc comment for why that makes it a "+
+			"stopgap, not a guarantee: %v", chartPath, err)
+	}
+
+	doc := readConformanceDoc(t, conformanceDeclarationPath(t))
+	repoIDs := readDeclaredEndpointIDs(t, doc)
+	repoEntityTypes := readDeclaredEntityTypes(t, doc)
+
+	chart := readChartDeclaration(t, chartPath)
+	chartIDs := chartDeclaredEndpointIDs(chart)
+	chartEntityTypes := chartDeclaredEntityTypes(t, chart)
+
+	for id := range repoIDs {
+		require.Truef(t, chartIDs[id],
+			"admin-conformance.json declares endpoint %q but "+
+				"charts/apps/mark8ly-marketplace-api-admin/values.yaml's "+
+				"adminConformanceCron.declaration.endpoints does not — the nightly "+
+				"CronJob reads the chart copy, so it will never check %q until the "+
+				"chart is updated to match (mark8ly#290)", id, id)
+	}
+	for id := range chartIDs {
+		require.Truef(t, repoIDs[id],
+			"the chart's adminConformanceCron.declaration.endpoints declares "+
+				"endpoint %q but admin-conformance.json does not — the nightly "+
+				"CronJob will check %q against production even though this repo's "+
+				"own declaration doesn't claim to serve it (mark8ly#290)", id, id)
+	}
+
+	for ty := range repoEntityTypes {
+		require.Truef(t, chartEntityTypes[ty],
+			"admin-conformance.json's entities.types declares %q but the chart's "+
+				"entities.types does not (mark8ly#290)", ty)
+	}
+	for ty := range chartEntityTypes {
+		require.Truef(t, repoEntityTypes[ty],
+			"the chart's entities.types declares %q but admin-conformance.json's "+
+				"entities.types does not (mark8ly#290)", ty)
+	}
+
+	if repoIDs["inbox"] && chartIDs["inbox"] {
+		repoSLA := repoInboxSLADeclared(t, doc)
+		chartSLA := chartInboxSLADeclared(t, chart)
+		require.Equalf(t, repoSLA, chartSLA,
+			"admin-conformance.json's inbox.slaDeclared (%v) disagrees with the "+
+				"chart's adminConformanceCron.declaration.endpoints.inbox.slaDeclared "+
+				"(%v) (mark8ly#290)", repoSLA, chartSLA)
+	}
 }

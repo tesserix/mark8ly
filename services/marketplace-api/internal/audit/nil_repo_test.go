@@ -209,3 +209,45 @@ func TestNewEmitter_NilLoggerDefaultsRatherThanPanics(t *testing.T) {
 type errRepoWrite struct{}
 
 func (errRepoWrite) Error() string { return "boom" }
+
+// TestEmitSync_RealRepositoryNilDB_ReturnsErrorRatherThanPanics pins the
+// second instance of the #318 failure shape, one layer down from the
+// nil-Repo guard above: gormRepository.Create's own nil-*gorm.DB check
+// (repository.go:124-131). Without it, db.WithContext(ctx) inside Create
+// dereferences a nil *gorm.DB on the calling goroutine and panics.
+//
+// Every other "DB: nil" test in this file (TestNewEmitter_ValidConfig_...,
+// TestNewEmitter_NilLoggerDefaultsRatherThanPanics) uses recordingRepo,
+// an in-memory double that never touches db — they'd pass unchanged even
+// if repository.go's guard were deleted. This test uses the real
+// audit.NewRepository() specifically so it exercises that guard, and
+// gives the event a valid TenantID so it reaches Create instead of being
+// dropped earlier by buildEntry's missing-tenant check (the only other
+// test using a real repository, TestEmit_MissingTenant_LogsDrop in
+// emitter_test.go, never reaches Create at all).
+//
+// EmitSync is used rather than the async Emit path because it returns
+// the Create error directly, giving a real assertion instead of relying
+// on a log line.
+func TestEmitSync_RealRepositoryNilDB_ReturnsErrorRatherThanPanics(t *testing.T) {
+	e, err := audit.NewEmitter(audit.EmitterConfig{
+		DB:     nil,
+		Repo:   audit.NewRepository(),
+		Logger: slog.Default(),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, e)
+	t.Cleanup(func() { e.Stop(context.Background()) })
+
+	var syncErr error
+	require.NotPanics(t, func() {
+		syncErr = e.EmitSync(nil, audit.Event{
+			Action:       "tenant.suspend",
+			ResourceType: "tenant",
+			TenantID:     uuid.New(),
+		})
+	}, "EmitSync with a real Repository and a nil *gorm.DB must not panic")
+
+	require.Error(t, syncErr, "EmitSync must surface the nil-db condition as an error")
+	require.Contains(t, syncErr.Error(), "db is nil")
+}

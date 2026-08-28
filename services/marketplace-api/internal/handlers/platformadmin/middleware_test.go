@@ -551,3 +551,162 @@ func TestCapabilityCheckedOnFailsClosedForUndeclaredRoute(t *testing.T) {
 	require.Equal(t, "capability_route_undeclared", errorCode(t, rec))
 	require.NotEqual(t, "capability_insufficient", errorCode(t, rec))
 }
+
+// newRouterWithReadCapabilityConfig is newRouter's counterpart for the read
+// gate: it lets a test override AuthConfig.RequiredReadCaps, which newRouter
+// deliberately does not expose. A nil required argument leaves
+// RequiredReadCaps unset, exactly as every production caller does, and the
+// route is mounted with the SAME GET method every read on this surface uses.
+func newRouterWithReadCapabilityConfig(t *testing.T, required map[string]string) *gin.Engine {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.Use(platformadmin.RequirePlatformAuth(platformadmin.AuthConfig{
+		Secret:           testSecret,
+		NonceStore:       newMemNonces(),
+		Now:              func() time.Time { return fixedNow },
+		RequiredReadCaps: required,
+	}))
+	r.GET("/admin/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"operator":   c.GetString("platform_operator_id"),
+			"capability": c.GetString("platform_capability"),
+		})
+	})
+	return r
+}
+
+// TestDeclaredReadWithExactCapabilityIsAdmitted: a read route declared in
+// RequiredReadCaps, presented with an operator and the exact required
+// capability, is admitted.
+func TestDeclaredReadWithExactCapabilityIsAdmitted(t *testing.T) {
+	required := map[string]string{
+		platformadmin.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
+	}
+	r := newRouterWithReadCapabilityConfig(t, required)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodGet, "/admin/ping", nil,
+		withCapability("rotate-credentials")))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+// TestDeclaredReadWithWrongCapabilityIsRefused: the same declared route,
+// presented with "platform" — the value the console's audit module
+// actually sends today — is refused. Exact string equality, no
+// implication between capabilities (#275).
+func TestDeclaredReadWithWrongCapabilityIsRefused(t *testing.T) {
+	required := map[string]string{
+		platformadmin.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
+	}
+	r := newRouterWithReadCapabilityConfig(t, required)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodGet, "/admin/ping", nil,
+		withCapability("platform")))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, "capability_insufficient", errorCode(t, rec))
+}
+
+// TestDeclaredReadWithNoCapabilityHeaderIsRefused: the declared route,
+// presented with an operator but no capability header at all, is refused
+// 401 capability_required — not silently admitted.
+func TestDeclaredReadWithNoCapabilityHeaderIsRefused(t *testing.T) {
+	required := map[string]string{
+		platformadmin.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
+	}
+	r := newRouterWithReadCapabilityConfig(t, required)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodGet, "/admin/ping", nil, withoutCapability))
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Equal(t, "capability_required", errorCode(t, rec))
+}
+
+// TestDeclaredReadWithCapabilityButNoOperatorIsRefused: the declared route,
+// presented with a capability but no operator, is refused 401
+// operator_required. Operator is checked first, mirroring the write
+// branch's ordering.
+func TestDeclaredReadWithCapabilityButNoOperatorIsRefused(t *testing.T) {
+	required := map[string]string{
+		platformadmin.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
+	}
+	r := newRouterWithReadCapabilityConfig(t, required)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodGet, "/admin/ping", nil,
+		withoutOperator, withCapability("rotate-credentials")))
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Equal(t, "operator_required", errorCode(t, rec))
+}
+
+// TestUndeclaredReadRouteWithNoCapabilityAtAllStillSucceeds is the
+// load-bearing assertion of this task: a read route that is ABSENT from
+// RequiredReadCapabilities — every shipped read on this surface today,
+// including /admin/audit-logs, /admin/health, and both billing reads — must
+// keep working with no operator and no capability header whatsoever. This
+// is the regression that would take down four routes already live in
+// production if the read gate's undeclared branch ever changed to fail
+// closed instead of proceeding.
+func TestUndeclaredReadRouteWithNoCapabilityAtAllStillSucceeds(t *testing.T) {
+	// Empty map, not nil: proves an explicitly-empty read map — the
+	// production shape before break-glass's own entry is considered —
+	// still lets an undeclared route straight through.
+	r := newRouterWithReadCapabilityConfig(t, map[string]string{})
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodGet, "/admin/ping", nil,
+		withoutOperator, withoutCapability))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+// TestRequiredReadCapabilitiesHasExactlyTheBreakGlassEntry pins the
+// production map's shape: exactly one entry, keyed on the break-glass GET
+// route's full template, requiring "rotate-credentials". A second entry
+// appearing here without a corresponding update to this test is exactly
+// the kind of silent scope creep #364's write-map coverage test guards
+// against on the write side.
+func TestRequiredReadCapabilitiesHasExactlyTheBreakGlassEntry(t *testing.T) {
+	require.Len(t, platformadmin.RequiredReadCapabilities, 1)
+
+	key := platformadmin.CapabilityKey(http.MethodGet, "/api/v1/platform/admin/break-glass")
+	required, declared := platformadmin.RequiredReadCapabilities[key]
+	require.True(t, declared, "break-glass GET route must be declared in RequiredReadCapabilities")
+	require.Equal(t, "rotate-credentials", required)
+}
+
+// TestAuthConfigRequiredReadCapsNilDefaultsToProductionMap mirrors
+// TestAuthConfigCapabilityCheckedNilDefaultsToProductionOff: leaving
+// RequiredReadCaps unset — what every production caller does — must behave
+// exactly like falling back to the real RequiredReadCapabilities map, so a
+// request against the real break-glass route template is gated even though
+// this test never set RequiredReadCaps itself.
+func TestAuthConfigRequiredReadCapsNilDefaultsToProductionMap(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(platformadmin.RequirePlatformAuth(platformadmin.AuthConfig{
+		Secret:     testSecret,
+		NonceStore: newMemNonces(),
+		Now:        func() time.Time { return fixedNow },
+	}))
+	r.GET("/api/v1/platform/admin/break-glass", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	// No capability at all against the real, undeclared-in-test-but-real
+	// production route: refused, because RequiredReadCapabilities really
+	// does declare it even though this test passed nothing for
+	// RequiredReadCaps.
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, signedRequest(t, http.MethodGet, "/api/v1/platform/admin/break-glass", nil,
+		withoutOperator, withoutCapability))
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	require.Equal(t, "operator_required", errorCode(t, rec))
+
+	// And the exact required value admits it.
+	okRec := httptest.NewRecorder()
+	r.ServeHTTP(okRec, signedRequest(t, http.MethodGet, "/api/v1/platform/admin/break-glass", nil,
+		withCapability("rotate-credentials")))
+	require.Equal(t, http.StatusOK, okRec.Code, okRec.Body.String())
+}

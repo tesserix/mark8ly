@@ -142,16 +142,9 @@ func (e *Executor) replayIfCompleted(ctx context.Context, requestID uuid.UUID, c
 		return nil, claimErr
 	}
 
-	var existing Request
-	res := e.db.WithContext(ctx).
-		Table("customer_erasure_requests").
-		Where("id = ?", requestID).
-		Take(&existing)
-	if errors.Is(res.Error, gorm.ErrRecordNotFound) {
-		return nil, ErrRequestNotFound
-	}
-	if res.Error != nil {
-		return nil, fmt.Errorf("customererasure: read request %s: %w", requestID, res.Error)
+	existing, err := e.Lookup(ctx, requestID)
+	if err != nil {
+		return nil, err
 	}
 	if existing.Status != StatusCompleted {
 		return nil, ErrAlreadyClaimed
@@ -318,6 +311,28 @@ func (e *Executor) Reject(ctx context.Context, requestID uuid.UUID, notes string
 	}
 	e.logger.Info("customer erasure rejected",
 		"request_id", req.ID.String(), "store_id", req.StoreID.String())
+	return req, nil
+}
+
+// Lookup reads one request without claiming it.
+//
+// It exists because Receipt deliberately carries no tenant or store: a
+// receipt is evidence about DATA, not about who owns it, and widening it
+// would put ownership metadata in the one artefact that must stay free of
+// anything but counts. Callers that need attribution — the inbox action,
+// which must name a tenant on its audit row — read it from here instead.
+func (e *Executor) Lookup(ctx context.Context, requestID uuid.UUID) (Request, error) {
+	var req Request
+	res := e.db.WithContext(ctx).
+		Table("customer_erasure_requests").
+		Where("id = ?", requestID).
+		Take(&req)
+	if errors.Is(res.Error, gorm.ErrRecordNotFound) {
+		return Request{}, ErrRequestNotFound
+	}
+	if res.Error != nil {
+		return Request{}, fmt.Errorf("customererasure: read request %s: %w", requestID, res.Error)
+	}
 	return req, nil
 }
 

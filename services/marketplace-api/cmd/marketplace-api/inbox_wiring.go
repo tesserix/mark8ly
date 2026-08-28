@@ -1,8 +1,11 @@
 package main
 
 import (
+	"log/slog"
+
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/customererasure"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 	"github.com/mark8ly/marketplace-api/internal/inbox"
 )
@@ -60,19 +63,58 @@ func inboxItemSource(agg *inbox.Aggregator) platformadmin.InboxItemSource {
 
 // inboxActionExecutors lists the kinds that can actually be acted on.
 //
-// Only migration_fast_path today. Every other kind is readable but not
-// actionable and answers 501 — deliberately, not as an oversight:
-// sea_manual_review's underlying SEA support is only partially implemented,
-// and erasure_request's `process` action is irreversible destruction of
-// customer data. Neither should get a one-click path before the behaviour
-// beneath it is settled.
-func inboxActionExecutors(reviews platformadmin.MigrationFastPathReviewer) []platformadmin.InboxActionExecutor {
-	if reviews == nil {
+// migration_fast_path and erasure_request. sea_manual_review and the rest are
+// readable but not actionable and answer 501 — deliberately, not as an
+// oversight: SEA's underlying support is only partially implemented, and
+// wiring a one-click approve into half-built behaviour is worse than an
+// honest "not implemented".
+//
+// erasure_request USED to be in that list, on the grounds that its `process`
+// action is irreversible destruction of customer data and should not get a
+// one-click path "before the behaviour beneath it is settled". #259 settled
+// it: internal/customererasure now runs a reviewed, store-scoped plan in one
+// transaction, writes a receipt of what it destroyed AND what it retained,
+// and refuses a request another worker holds. The 501 was the honest answer
+// while nothing existed underneath; it would be a misleading one now.
+//
+// Each executor is registered only when its dependency exists, for the same
+// reason the providers above are: an executor holding a nil dependency does
+// not degrade, it panics on the first click.
+func inboxActionExecutors(
+	reviews platformadmin.MigrationFastPathReviewer,
+	eraser platformadmin.CustomerEraser,
+) []platformadmin.InboxActionExecutor {
+	var executors []platformadmin.InboxActionExecutor
+	if reviews != nil {
+		executors = append(executors, platformadmin.NewMigrationFastPathExecutor(reviews))
+	}
+	// Typed-nil trap, as with funnel above: eraser is an interface, so a nil
+	// *customererasure.Executor stored in it would NOT be == nil here.
+	// newCustomerEraser returns an untyped nil interface for that reason.
+	if eraser != nil {
+		executors = append(executors, platformadmin.NewErasureExecutor(eraser))
+	}
+	if len(executors) == 0 {
 		return nil
 	}
-	return []platformadmin.InboxActionExecutor{
-		platformadmin.NewMigrationFastPathExecutor(reviews),
+	return executors
+}
+
+// newCustomerEraser builds the erasure executor, or an untyped nil interface
+// when there is no database to erase from.
+//
+// The error from NewExecutor is not swallowed into a nil: a nil db is a
+// WIRING bug, and this returning nil silently would turn it into a 501 that
+// reads as a deliberate product decision rather than a broken deployment.
+func newCustomerEraser(db *gorm.DB, logger *slog.Logger) (platformadmin.CustomerEraser, error) {
+	if db == nil {
+		return nil, nil
 	}
+	eraser, err := customererasure.NewExecutor(db, logger)
+	if err != nil {
+		return nil, err
+	}
+	return eraser, nil
 }
 
 // inboxDep converts the aggregator to the interface Deps expects, preserving

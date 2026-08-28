@@ -5,9 +5,13 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/billing/migration"
+	"github.com/mark8ly/marketplace-api/internal/customererasure"
+	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 	"github.com/mark8ly/marketplace-api/internal/inbox"
 	"github.com/mark8ly/marketplace-api/internal/onboardingfunnel"
 )
@@ -70,4 +74,59 @@ func TestNewInboxAggregatorCoversEveryAdvertisedKind(t *testing.T) {
 		require.Truef(t, kindIsRegistered(t, agg, kind),
 			"kind %q is advertised by the handler but not registered by the wiring", kind)
 	}
+}
+
+// stubEraser stands in for *customererasure.Executor. inboxActionExecutors
+// only needs to know whether it is nil.
+type stubEraser struct{}
+
+func (stubEraser) Process(context.Context, uuid.UUID) (customererasure.Receipt, error) {
+	return customererasure.Receipt{}, nil
+}
+func (stubEraser) Reject(context.Context, uuid.UUID, string) (customererasure.Request, error) {
+	return customererasure.Request{}, nil
+}
+func (stubEraser) Lookup(context.Context, uuid.UUID) (customererasure.Request, error) {
+	return customererasure.Request{}, nil
+}
+
+func executorKinds(executors []platformadmin.InboxActionExecutor) []string {
+	kinds := make([]string, 0, len(executors))
+	for _, e := range executors {
+		kinds = append(kinds, e.Kind())
+	}
+	return kinds
+}
+
+// #259: erasure_request used to answer 501 because no executor was wired for
+// it. This is the assertion that the 501 is genuinely replaced rather than
+// merely implemented somewhere unreachable — an executor that exists but is
+// never registered leaves the endpoint exactly as it was.
+func TestInboxActionExecutorsRegistersErasure(t *testing.T) {
+	executors := inboxActionExecutors(&migration.Repository{}, stubEraser{})
+	require.Contains(t, executorKinds(executors), inbox.KindErasureRequest,
+		"the erasure executor must be registered, or /admin/inbox/erasure_request/... still answers 501")
+	require.Contains(t, executorKinds(executors), inbox.KindMigrationFastPath,
+		"adding erasure must not displace the migration fast path")
+}
+
+// Each executor is registered only when its own dependency exists. A missing
+// eraser must not take the migration action down with it, and vice versa.
+func TestInboxActionExecutorsRegistersOnlyWhatItCanReach(t *testing.T) {
+	require.Equal(t, []string{inbox.KindMigrationFastPath},
+		executorKinds(inboxActionExecutors(&migration.Repository{}, nil)))
+	require.Equal(t, []string{inbox.KindErasureRequest},
+		executorKinds(inboxActionExecutors(nil, stubEraser{})))
+	require.Nil(t, inboxActionExecutors(nil, nil),
+		"nothing reachable means no executors, so every kind keeps its honest 501")
+}
+
+// newCustomerEraser must not hand back a non-nil INTERFACE holding a nil
+// pointer: that would pass inboxActionExecutors' nil check and register an
+// executor that panics on the first click.
+func TestNewCustomerEraserReturnsAnUntypedNilWithoutADatabase(t *testing.T) {
+	eraser, err := newCustomerEraser(nil, nil)
+	require.NoError(t, err)
+	require.Nil(t, eraser)
+	require.Nil(t, inboxActionExecutors(nil, eraser))
 }

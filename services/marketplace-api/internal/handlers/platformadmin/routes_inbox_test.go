@@ -5,10 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/emaillog"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 	"github.com/mark8ly/marketplace-api/internal/inbox"
 )
@@ -104,4 +107,45 @@ type stubRouteItemSource struct{}
 
 func (stubRouteItemSource) Get(_ context.Context, _, _ string) (inbox.Item, error) {
 	return inbox.Item{}, inbox.ErrItemNotFound
+}
+
+// #348D: the send-log route mounts on EmailSends, independently of the other
+// optional reads.
+func TestRegisterMountsEmailSendsWhenSupplied(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
+		Repo:       &stubRepo{},
+		EmailSends: &routeSendLister{},
+		Secret:     "test-secret",
+	})
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		"/api/v1/platform/admin/email-sends", nil))
+	require.NotEqual(t, http.StatusNotFound, rec.Code)
+
+	bogus := httptest.NewRecorder()
+	r.ServeHTTP(bogus, httptest.NewRequest(http.MethodGet,
+		"/api/v1/platform/admin/email-sends-nope", nil))
+	require.Equal(t, http.StatusNotFound, bogus.Code)
+}
+
+func TestRegisterLeavesEmailSendsUnmountedWhenNil(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
+		Repo: &stubRepo{}, Secret: "test-secret",
+	})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		"/api/v1/platform/admin/email-sends", nil))
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+type routeSendLister struct{}
+
+func (routeSendLister) ListPlatform(_ context.Context, _ *gorm.DB,
+	_ emaillog.PlatformListFilter, _ time.Time) (emaillog.PlatformListResult, error) {
+	return emaillog.PlatformListResult{}, nil
 }

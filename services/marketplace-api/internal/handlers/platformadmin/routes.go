@@ -150,6 +150,11 @@ type Deps struct {
 	// Postgres-backed one is built from DB when nil, matching NonceStore.
 	InboxActionIdem InboxActionIdempotency
 
+	// EmailSends serves /admin/email-sends (#348D), the cross-tenant outbound
+	// mail log. Nil leaves the route unmounted, matching the nil-safe pattern
+	// used for Outbox above.
+	EmailSends EmailSendLister
+
 	// EstateUsers serves /admin/entities/users (#278). Nil leaves the route
 	// unmounted, matching the nil-safe pattern used for TenantDirectory.
 	//
@@ -258,6 +263,10 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.Outbox != nil {
 		NewOutboxHandler(deps.DB, deps.Outbox, deps.Logger).Register(group)
+	}
+
+	if deps.EmailSends != nil {
+		NewEmailSendsHandler(deps.DB, deps.EmailSends, deps.Logger).Register(group)
 	}
 
 	if deps.EstateUsers != nil {

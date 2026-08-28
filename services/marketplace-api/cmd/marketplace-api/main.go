@@ -2140,6 +2140,7 @@ func main() {
 			InboxItems:            inboxItemSource(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 			InboxActionExecutors:  inboxActionExecutors(migrationRepo),
 			EstateUsers:           estateUsersClient,
+			EmailSends:            platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2283,6 +2284,7 @@ func main() {
 				InboxItems:            inboxItemSource(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 				InboxActionExecutors:  inboxActionExecutors(migrationRepo),
 				EstateUsers:           estateUsersClient,
+				EmailSends:            platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

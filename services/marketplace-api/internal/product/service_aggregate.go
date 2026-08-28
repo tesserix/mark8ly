@@ -224,7 +224,10 @@ func (s *Service) UpdateAggregate(ctx context.Context, req UpdateAggregateReques
 			existingByID := make(map[string]Variant, len(existing.Variants))
 			existingBySKU := make(map[string]Variant, len(existing.Variants))
 			for _, v := range existing.Variants {
-				if v.DeletedAt != nil {
+				// GORM now filters soft-deleted variants out of existing.Variants
+				// itself (#395); this check is belt-and-braces, not the primary
+				// guard — do not delete it as dead code.
+				if v.DeletedAt.Valid {
 					continue
 				}
 				existingByID[v.ID] = v
@@ -489,7 +492,10 @@ func (s *Service) applyVariantsDiff(
 	existingByTuple := make(map[string]Variant)
 	existingByID := make(map[string]Variant)
 	for _, v := range existing.Variants {
-		if v.DeletedAt != nil {
+		// GORM now filters soft-deleted variants out of existing.Variants
+		// itself (#395); this check is belt-and-braces, not the primary
+		// guard — do not delete it as dead code.
+		if v.DeletedAt.Valid {
 			continue
 		}
 		existingByID[v.ID] = v

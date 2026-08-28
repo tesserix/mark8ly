@@ -574,7 +574,7 @@ func TestIntegration_ProductRepo_ApplyVariantDiffInTx_AddUpdateRemove(t *testing
 	live := 0
 	sawV3 := false
 	for _, v := range got.Variants {
-		if v.DeletedAt != nil {
+		if v.DeletedAt.Valid {
 			continue
 		}
 		live++

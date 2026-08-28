@@ -66,6 +66,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/customerportal"
 	"github.com/mark8ly/marketplace-api/internal/domain"
 	"github.com/mark8ly/marketplace-api/internal/email"
+	"github.com/mark8ly/marketplace-api/internal/emaillog"
 	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 	"github.com/mark8ly/marketplace-api/internal/estatecounts"
 	"github.com/mark8ly/marketplace-api/internal/estateuserdir"
@@ -599,6 +600,18 @@ func main() {
 		email.ProviderSendGrid: cfg.SendGridAPIKey,
 		email.ProviderResend:   cfg.ResendAPIKey,
 	}, cfg.EmailPrimaryProvider, log)
+
+	// Wrap the transport so every outbound email is recorded (#348A). One
+	// wrap, here, is what makes coverage complete: a mailer cannot opt out of
+	// being logged without opting out of sending. Everything below — the
+	// template client, ticket, giftcard, orderdoc, shipping-label and campaign
+	// mailers — receives the wrapped sender without knowing it exists.
+	//
+	// A nil conn leaves the sender unwrapped rather than nil-panicking on the
+	// first send: mail without a log beats no mail.
+	if conn != nil {
+		emailSender = emaillog.NewSender(emailSender, conn, log)
+	}
 
 	// billingEmailClient is the production email.Client. Before #381 the only
 	// implementation was the no-op logger, wired at three sites below, so no

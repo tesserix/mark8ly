@@ -115,8 +115,14 @@ export function countryToCurrency(cc: string | null | undefined): Currency {
 /**
  * The subset of `SUPPORTED_CURRENCIES` that can actually be priced: a
  * currency counts as priceable only when EVERY plan in
- * `SHARED_PRICING_CATALOGUE` carries a row for it — a currency present on
- * one plan but missing on another would still mislabel that plan's price.
+ * `SHARED_PRICING_CATALOGUE.plans` carries a row for it — a currency present
+ * on one plan but missing on another would still mislabel that plan's price.
+ *
+ * Deliberately scoped to `plans` only, not `proApp`: the add-on is always
+ * billed and displayed in USD globally (spec §4.1.2) regardless of this
+ * set, so its currency coverage is irrelevant to what counts as
+ * "priceable" here — including it would only ever narrow this set for a
+ * reason that has nothing to do with plan pricing.
  *
  * Derived from the pricing table itself rather than hand-maintained, so it
  * cannot drift from the prices the way a fourth hand-written list could.

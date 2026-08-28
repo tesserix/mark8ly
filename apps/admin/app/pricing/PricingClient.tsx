@@ -90,7 +90,6 @@ function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
   const { price, currency: resolvedCurrency } = getPlanPrice(plan, currency)
   const isPro = plan.id === 'pro'
 
-  const displayAmount = period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
   const isConversation = copy.cta === 'Start a conversation'
 
   return (
@@ -134,7 +133,7 @@ function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
           />
         ) : (
           <StandardPriceBlock
-            amount={displayAmount}
+            price={price}
             currency={resolvedCurrency}
             period={period}
           />
@@ -176,17 +175,19 @@ function PlanColumn({ plan, copy, currency, period, isLast }: PlanColumnProps) {
 // ---------------------------------------------------------------------------
 
 interface StandardPriceBlockProps {
-  amount: number
+  price: PlanPrice
   currency: Currency
   period: BillingPeriod
 }
 
-function StandardPriceBlock({ amount, currency, period }: StandardPriceBlockProps) {
+function StandardPriceBlock({ price, currency, period }: StandardPriceBlockProps) {
+  const displayAmount = period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
+
   return (
     <div>
       <div className="flex items-baseline gap-1">
         <Money
-          amount={amount}
+          amount={displayAmount}
           currency={currency}
           showCents={false}
           className="text-4xl font-semibold"
@@ -198,8 +199,14 @@ function StandardPriceBlock({ amount, currency, period }: StandardPriceBlockProp
         </span>
       </div>
       {period === 'annual' && (
+        // The equivalent above is rounded to whole units (showCents=false),
+        // so for a plan whose annual total isn't evenly divisible by 12
+        // (e.g. Starter USD: 18200/12 = 1516.67, rounded display $15) the
+        // rounded /mo figure alone reads as a different, wrong price. The
+        // exact billed total removes the ambiguity — mirrors
+        // apps/onboarding/components/marketing/Pricing.tsx's annual line.
         <p className="text-xs mt-1" style={{ color: 'var(--ink-600)' }}>
-          Billed annually
+          <Money amount={price.annual} currency={currency} showCents={false} /> billed annually
         </p>
       )}
     </div>
@@ -241,9 +248,10 @@ function ProPriceBlock({ price, currency, period }: ProPriceBlockProps) {
             )}
           </p>
           <p className="text-xs" style={{ color: 'var(--ink-600)' }}>
-            {isUSD
-              ? 'Monthly available at $119/mo.'
-              : <>Monthly available at <Money amount={price.monthly} currency={currency} showCents={false} />/mo.</>}
+            {/* Rendered from the catalogue, not a hardcoded literal — this
+                must move with catalog.go like every other number on the
+                page, USD included. */}
+            Monthly available at <Money amount={price.monthly} currency={currency} showCents={false} />/mo.
           </p>
         </>
       ) : (
@@ -356,7 +364,16 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
 export function PricingClient({ currency, pricing }: PricingClientProps) {
   const [period, setPeriod] = useState<BillingPeriod>('annual')
   const plans = pricingCopy.plans
-  const tax = taxDisclosure(currency)
+  // Page-level disclosure copy MUST use the currency actually resolved for
+  // the plans below, not the raw `currency` prop — otherwise a visitor
+  // whose currency has no row would read "Prices shown in THB." over
+  // amounts that are actually in USD. Every priceable currency has a row on
+  // every plan (see PRICEABLE_CURRENCIES), so any plan resolves the same
+  // way; the first plan in the catalogue is used as the anchor.
+  const resolvedPageCurrency = pricing.plans[0]
+    ? getPlanPrice(pricing.plans[0], currency).currency
+    : currency
+  const tax = taxDisclosure(resolvedPageCurrency)
 
   return (
     <div className="px-8 py-16 max-w-6xl mx-auto">
@@ -494,7 +511,7 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
           className="text-xs"
           style={{ color: 'var(--ink-500)' }}
         >
-          {pricingCopy.disclosureTemplate(currency)}
+          {pricingCopy.disclosureTemplate(resolvedPageCurrency)}
           {tax ? ` ${tax}` : ''}
         </p>
       </footer>

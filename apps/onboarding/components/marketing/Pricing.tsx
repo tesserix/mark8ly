@@ -155,7 +155,14 @@ export function Pricing({ currency, catalogue }: PricingProps) {
   // renders `currency="USD"` literally, never the resolved currency.
   const { price: proApp } = getAddOnPrice(catalogue.proApp, currency)
   const showUsdBilledNote = currency !== 'USD'
-  const tax = taxDisclosure(currency)
+  // Page-level "prices shown in X" / GST copy MUST use the currency actually
+  // resolved for the plans below, not the raw `currency` prop — otherwise a
+  // visitor whose currency has no row would read "Prices shown in THB." over
+  // amounts that are actually in USD. Every priceable currency has a row on
+  // every plan (see PRICEABLE_CURRENCIES), so any plan resolves the same way;
+  // the first plan is used as the anchor.
+  const resolvedPageCurrency = plans[0] ? getPlanPrice(plans[0], currency).currency : currency
+  const tax = taxDisclosure(resolvedPageCurrency)
 
   return (
     <section
@@ -184,7 +191,7 @@ export function Pricing({ currency, catalogue }: PricingProps) {
         <div className="mb-10 flex flex-wrap items-center justify-between gap-4">
           <TogglePill period={period} onChange={setPeriod} />
           <p className="text-sm text-foreground-tertiary">
-            Prices shown in {currency}.
+            Prices shown in {resolvedPageCurrency}.
             {tax ? ` ${tax}` : ''}
           </p>
         </div>

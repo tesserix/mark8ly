@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { PricingClient } from '@/app/pricing/PricingClient'
-import { SHARED_PRICING_CATALOGUE as REAL_PRICING, type SharedPricingCatalogue } from '@repo/ui/subscription'
+import { SHARED_PRICING_CATALOGUE as REAL_PRICING, type Currency, type SharedPricingCatalogue } from '@repo/ui/subscription'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -69,9 +69,14 @@ describe('PricingClient', () => {
     ).toBeInTheDocument()
     // Multiple "Billed annually" notes appear (one per non-Pro plan) — check at least one exists
     expect(screen.getAllByText(/Billed annually/i).length).toBeGreaterThanOrEqual(1)
+    // "Monthly available at $119/mo." is rendered from the catalogue (via
+    // <Money>), not a hardcoded literal, so "$119" sits in its own element
+    // and the phrase is split across nodes — assert by fragment, matching
+    // the pattern used above for the "From ... $1,188" line.
     expect(
-      screen.getByText(/Monthly available at \$119\/mo\./i, { exact: false }),
+      screen.getByText(/Monthly available at/i, { exact: false }),
     ).toBeInTheDocument()
+    expect(screen.getByText('$119')).toBeInTheDocument()
   })
 
   it('shows "Start free trial" CTA on Starter and Studio plans', () => {
@@ -151,8 +156,10 @@ describe('PricingClient', () => {
     ).toBeInTheDocument()
   })
 
-  it('renders disclosure footnote with a non-USD currency', () => {
-    render(<PricingClient currency="GBP" pricing={FIXTURE_PRICING} />)
+  it('renders disclosure footnote with a non-USD currency that resolves cleanly', () => {
+    // Uses REAL_PRICING (not FIXTURE_PRICING, which only has USD rows) so
+    // GBP actually resolves to GBP rather than falling back to USD.
+    render(<PricingClient currency="GBP" pricing={REAL_PRICING} />)
 
     expect(
       screen.getByText(/Prices shown in GBP\./i, { exact: false }),
@@ -193,16 +200,71 @@ describe('PricingClient — against the real SHARED_PRICING_CATALOGUE', () => {
     expect(screen.getByText('$19')).toBeInTheDocument()
   })
 
-  it('renders Starter USD annual billed amount as $182/yr', () => {
+  // -------------------------------------------------------------------------
+  // Regression: Starter USD's annual-billed monthly equivalent (18200/12 =
+  // 1516.67, rounded to 1517 minor units by the generator, then displayed
+  // with showCents=false) renders as "$15/mo" — but the plan is billed at
+  // $182/yr, not $15 x 12 = $180. Showing the rounded equivalent alone with
+  // no annual total is a misleading quote on a search-indexed page. The fix
+  // must show both figures, mirroring the onboarding Pricing section.
+  // -------------------------------------------------------------------------
+  it('renders both the annual billed total AND the rounded monthly equivalent for Starter USD (default annual view)', () => {
     render(<PricingClient currency="USD" pricing={REAL_PRICING} />)
 
-    // Annual view shows the $182 billed-once-a-year figure inside the
-    // Pro card's "From $X/yr" copy is Pro-specific; Starter's own annual
-    // total isn't directly labelled on this page, so assert via the
-    // per-currency price data itself for Starter.
     const starter = REAL_PRICING.plans.find((p) => p.id === 'starter')!
-    expect(starter.prices.USD?.annual).toBe(18200)
-    expect(starter.prices.USD?.monthly).toBe(1900)
+    expect(starter.prices.USD).toEqual({ monthly: 1900, annual: 18200, annualMonthlyEquivalent: 1517 })
+
+    // Rounded equivalent headline ($15.17 -> $15) ...
+    expect(screen.getByText('$15')).toBeInTheDocument()
+    // ... AND the exact annual total, so "$15/mo" is never left standing
+    // alone as an implicit (and wrong) x12 claim.
+    expect(screen.getByText('$182')).toBeInTheDocument()
+  })
+
+  it('exposes the annual total for every plan/currency combo where annual is not evenly divisible by 12 — not just Starter USD', () => {
+    // getByText normalizes DOM text (collapsing \u00A0 to a regular space)
+    // but does NOT normalize a string matcher — Intl inserts \u00A0 between
+    // a currency code and the amount for currencies like SGD ("SGD\u00A020"),
+    // so the matcher needs the same collapse or it never matches.
+    const formatMajor = (minorUnits: number, currency: string) =>
+      new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency,
+        currencyDisplay: 'symbol',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      })
+        .format(minorUnits / 100)
+        .replace(/\u00A0/g, ' ')
+
+    // Every currency row on Starter and Studio (Pro already shows its exact
+    // annual total unconditionally via ProPriceBlock's "From $X/yr" copy —
+    // this exercises the two plans that go through StandardPriceBlock).
+    let ambiguousRowsChecked = 0
+    for (const planId of ['starter', 'studio'] as const) {
+      const plan = REAL_PRICING.plans.find((p) => p.id === planId)!
+      for (const [currency, price] of Object.entries(plan.prices)) {
+        if (price.annual % 12 === 0) continue // no rounding ambiguity for this row
+        ambiguousRowsChecked += 1
+
+        const { unmount } = render(<PricingClient currency={currency as Currency} pricing={REAL_PRICING} />)
+
+        expect(
+          screen.getByText(formatMajor(price.annualMonthlyEquivalent, currency)),
+          `${planId}/${currency}: expected rounded equivalent ${formatMajor(price.annualMonthlyEquivalent, currency)}`,
+        ).toBeInTheDocument()
+        expect(
+          screen.getByText(formatMajor(price.annual, currency)),
+          `${planId}/${currency}: expected exact annual total ${formatMajor(price.annual, currency)} alongside the equivalent`,
+        ).toBeInTheDocument()
+
+        unmount()
+      }
+    }
+
+    // Sanity: prove this scenario is common, not a one-off — Starter/Studio
+    // both have several currencies where annual isn't evenly divisible by 12.
+    expect(ambiguousRowsChecked).toBeGreaterThan(5)
   })
 
   it('renders NZD prices when the currency is NZD (New Zealand merchants no longer see USD)', () => {
@@ -242,5 +304,13 @@ describe('PricingClient — against the real SHARED_PRICING_CATALOGUE', () => {
     fireEvent.click(screen.getByRole('radio', { name: /Monthly/i }))
     expect(screen.getByText('$19')).toBeInTheDocument()
     expect(screen.queryByText(/฿/)).not.toBeInTheDocument()
+    // The footer disclosure must resolve the same way as the prices above —
+    // "Prices shown in THB." over USD amounts would be the same mislabel
+    // bug one level up. Assert the resolved label directly, not just the
+    // absence of the Thai baht symbol.
+    expect(
+      screen.getByText(/Prices shown in USD\./i, { exact: false }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Prices shown in THB\./i)).not.toBeInTheDocument()
   })
 })

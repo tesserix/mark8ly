@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -138,6 +140,22 @@ func TestChangePlan_OverQuota_Returns422(t *testing.T) {
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, "store_count_over_quota", resp["error"])
+}
+
+// A failed audit write must not change what the merchant is told: the
+// downgrade was still refused for quota, and the frontend keys on the
+// store_count_over_quota slug (#397 review finding 1).
+func TestChangePlan_OverQuota_AuditWriteFailed_Still422(t *testing.T) {
+	wrapped := errors.Join(
+		planchange.ErrStoreCountOverQuota,
+		fmt.Errorf("planchange: write blocked downgrade audit row: %w", errors.New("boom")),
+	)
+	fake := &fakeOrch{executeErr: wrapped}
+	r := newTestRouter(fake)
+	w := postChangePlan(t, r, validStoreID, validChangePlanBody())
+
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	require.Contains(t, w.Body.String(), "store_count_over_quota")
 }
 
 func TestChangePlan_NoChange_Returns409(t *testing.T) {

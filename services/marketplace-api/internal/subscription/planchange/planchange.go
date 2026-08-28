@@ -207,10 +207,18 @@ func (o *Orchestrator) Execute(ctx context.Context, in Input) (Output, error) {
 	// written inside it would never persist (#397). The lock is released by
 	// now, so this does not hold a second pooled connection under it.
 	if deferredAudit != nil {
-		if auditErr := WritePlanChangeAuditRowTx(ctx, o.deps.DB, *deferredAudit); auditErr != nil {
-			return Output{}, fmt.Errorf(
-				"planchange: write blocked downgrade audit row: %w (original refusal: %v)",
-				auditErr, err)
+		// Fresh context: the refusal has already happened, and the client
+		// disconnecting must not cancel the record of it. Matches
+		// audit.Emitter.EmitSync (internal/audit/emitter.go:186). WithoutCancel
+		// keeps tracing values while dropping cancellation.
+		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if auditErr := WritePlanChangeAuditRowTx(auditCtx, o.deps.DB, *deferredAudit); auditErr != nil {
+			// errors.Join, NOT %w on auditErr: the caller maps
+			// ErrStoreCountOverQuota to a 422, and dropping it from the chain
+			// would turn a legitimate quota refusal into an opaque 500.
+			return Output{}, errors.Join(err,
+				fmt.Errorf("planchange: write blocked downgrade audit row: %w", auditErr))
 		}
 	}
 	if err != nil {

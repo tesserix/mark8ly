@@ -367,7 +367,116 @@ git commit -m "test: run internal/subscription/planchange in test-int so the #39
 
 ---
 
+### Task 1b: Remediate the two review findings on Task 1
+
+Raised by the scoped review of `045ec8dc`. Both are in the same 8-line block at `planchange.go:205-215`. Neither undermines Task 1's core change; both are cheap and verified.
+
+**Files:**
+- Modify: `services/marketplace-api/internal/subscription/planchange/planchange.go` (the `if deferredAudit != nil { ... }` block)
+- Test: `services/marketplace-api/internal/handlers/admin/subscription_change_plan_test.go`
+
+**Interfaces:**
+- Consumes: `ErrStoreCountOverQuota` (`planchange` package), `mapChangePlanErr` (`internal/handlers/admin/subscription_change_plan.go:130-147`).
+- Produces: nothing later tasks depend on.
+
+**Finding 1 (should-fix) — a failed audit write turns a 422 into a 500.** Verified: `subscription_change_plan.go:136` maps `errors.Is(err, planchange.ErrStoreCountOverQuota)` to **HTTP 422** `store_count_over_quota`; `subscription_change_plan.go:141-146` maps everything else to **HTTP 500** `internal`. Task 1's new return wraps `auditErr` with `%w` and demotes the refusal to `%v`, so `ErrStoreCountOverQuota` leaves the chain and a legitimately-over-quota merchant gets an opaque 500. Worse, the conditions that make the audit insert fail (pool pressure, cancelled context) are exactly when a merchant is likely to hit this. The frontend keys on the `store_count_over_quota` slug, not the status alone.
+
+**Finding 2 (should-fix) — the deferred write uses the request context.** `WritePlanChangeAuditRowTx` does `tx.WithContext(ctx).Create(&row)` (`auditlog.go:52`) and `ctx` is `c.Request.Context()` (`subscription_change_plan.go:79`), cancelled by `net/http` on client disconnect. No timeout middleware wraps it. So a disconnect between the rollback and the insert loses the row — the very outcome this fix exists to prevent, in a narrower window. The codebase already documents the remedy for this exact problem at `internal/audit/emitter.go:186-190` (`EmitSync`): *"A client disconnecting mid-purge must not cancel the record of what was destroyed."*
+
+- [ ] **Step 1: Apply both fixes**
+
+Replace the `if deferredAudit != nil { ... }` block in `planchange.go` with:
+
+```go
+	if deferredAudit != nil {
+		// Fresh context: the refusal has already happened, and the client
+		// disconnecting must not cancel the record of it. Matches
+		// audit.Emitter.EmitSync (internal/audit/emitter.go:186). WithoutCancel
+		// keeps tracing values while dropping cancellation.
+		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if auditErr := WritePlanChangeAuditRowTx(auditCtx, o.deps.DB, *deferredAudit); auditErr != nil {
+			// errors.Join, NOT %w on auditErr: the caller maps
+			// ErrStoreCountOverQuota to a 422, and dropping it from the chain
+			// would turn a legitimate quota refusal into an opaque 500.
+			return Output{}, errors.Join(err,
+				fmt.Errorf("planchange: write blocked downgrade audit row: %w", auditErr))
+		}
+	}
+```
+
+Add `"errors"` and `"time"` to the file's imports if not already present (`context` already is).
+
+- [ ] **Step 2: Build and vet**
+
+```bash
+cd services/marketplace-api
+go build ./... && go vet ./... && go vet -tags=integration ./...
+```
+
+Expected: clean, exit 0.
+
+- [ ] **Step 3: Write a failing handler test for the 422 mapping**
+
+`TestChangePlan_OverQuota_Returns422` (`subscription_change_plan_test.go:131-141`) uses a `fakeOrch` returning a *bare* `ErrStoreCountOverQuota`, so it cannot catch this. Add a sibling that returns the **wrapped** form. Read the existing test and its `fakeOrch` first, and match their construction exactly:
+
+```go
+// A failed audit write must not change what the merchant is told: the
+// downgrade was still refused for quota, and the frontend keys on the
+// store_count_over_quota slug (#397 review finding 1).
+func TestChangePlan_OverQuota_AuditWriteFailed_Still422(t *testing.T) {
+	wrapped := errors.Join(
+		planchange.ErrStoreCountOverQuota,
+		fmt.Errorf("planchange: write blocked downgrade audit row: %w", errors.New("boom")),
+	)
+	// ... build the handler with a fakeOrch returning `wrapped`, mirroring
+	// TestChangePlan_OverQuota_Returns422's setup exactly ...
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	require.Contains(t, rec.Body.String(), "store_count_over_quota")
+}
+```
+
+- [ ] **Step 4: Run the test**
+
+```bash
+cd services/marketplace-api
+go test ./internal/handlers/admin/ -count=1 -run 'TestChangePlan_OverQuota' -v 2>&1 | tail -20
+```
+
+Expected: both tests PASS.
+
+- [ ] **Step 5: MUTATION TEST both fixes**
+
+*Finding 1:* temporarily change `errors.Join(err, ...)` back to the original `fmt.Errorf("...: %w (original refusal: %v)", auditErr, err)`. Re-run Step 4.
+Expected: `TestChangePlan_OverQuota_AuditWriteFailed_Still422` **FAILS** with 500 instead of 422. Restore and confirm PASS.
+
+*Finding 2:* temporarily revert `auditCtx` to plain `ctx`, then write a test-free check: confirm by reading that `WritePlanChangeAuditRowTx` receives a cancellable context. A behavioural test for disconnect is not worth building here — if you cannot construct one cheaply, say so plainly in your report rather than fabricating weak coverage. Restore.
+
+Report both mutation outcomes verbatim.
+
+- [ ] **Step 6: Re-run the integration test and the package**
+
+```bash
+cd services/marketplace-api
+TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:5432/marketplace_db?sslmode=disable' \
+  go test -tags=integration -p 1 -count=1 ./internal/subscription/planchange/
+go test ./... -count=1
+```
+
+Expected: `ok`, zero failures; no new unit failures.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add services/marketplace-api/internal/subscription/planchange/planchange.go \
+        services/marketplace-api/internal/handlers/admin/subscription_change_plan_test.go
+git commit -m "fix(planchange): keep ErrStoreCountOverQuota in the chain and shield the deferred audit write from request cancellation (#397)"
+```
+
+---
+
 ## Self-Review
+
 
 **Spec coverage.** Issue #397's mechanism → Task 1. Its "suggested fix" (write outside the rolled-back transaction) → Task 1 Step 3, using the "restructure so the write happens after" variant, chosen over an inline second connection for the pool reason in finding 9. Finding 4 (discarded error) → Task 1 Step 3's error handling. Findings 2-3 (a real failing test, and it being the package's only failure) → Tasks 1 and 3. Finding 7 (arbitrage sibling) is explicitly out of scope and routed to a new issue.
 

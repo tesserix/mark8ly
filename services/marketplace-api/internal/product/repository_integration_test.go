@@ -569,24 +569,22 @@ func TestIntegration_ProductRepo_ApplyVariantDiffInTx_AddUpdateRemove(t *testing
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	// Soft-deleted v2 should not be preloaded (preload has no deleted filter,
-	// so sanity-check by iterating and ignoring deleted).
-	live := 0
+	// Soft-deleted v2 must be absent from the preload — GORM's implicit
+	// deleted_at filter applies to Variant, including inside Preload.
+	if len(got.Variants) != 2 {
+		t.Fatalf("variants = %d, want 2: %+v", len(got.Variants), got.Variants)
+	}
 	sawV3 := false
 	for _, v := range got.Variants {
-		if v.DeletedAt.Valid {
-			continue
+		if v.ID == v2ID {
+			t.Fatalf("soft-deleted variant v2 leaked into preload")
 		}
-		live++
 		if v.ID == v1ID && !v.Price.Equal(decimal.NewFromInt(15)) {
 			t.Fatalf("v1 price = %s", v.Price.String())
 		}
 		if v.ID == v3ID {
 			sawV3 = true
 		}
-	}
-	if live != 2 {
-		t.Fatalf("live variants = %d, want 2", live)
 	}
 	if !sawV3 {
 		t.Fatalf("v3 not added")

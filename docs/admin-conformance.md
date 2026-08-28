@@ -104,12 +104,15 @@ read endpoint would be inventing policy in the wrong place."* Adding
 (a migration, out of scope for this change) or inventing a policy value this
 endpoint has no authority to invent. Neither belongs in this fix.
 
-<!-- TODO(#415): design-system issue number — file an upstream issue in
-     design-system/packages/admin-conformance proposing per-kind SLA
-     declaration (e.g. a map of kind -> slaDeclared) instead of one flag for
-     the whole queue, so a product with a genuinely mixed SLA posture (like
-     mark8ly's) can declare accurately instead of being forced to `false`
-     for the whole surface. -->
+This tension is filed upstream as
+[design-system#36](https://github.com/tesserix/design-system/issues/36):
+`slaDeclared` is one boolean per product, but SLA reality is per queue kind,
+so for a product whose queues differ neither value is honest. `true` fails,
+and `false` — what this file declares — understates a real
+subscription-clock-pausing deadline on the one queue that has one. Kora
+declares `false` with no SLA anywhere, so today the flag renders the two
+products identical when they are not. Until that is resolved, `false` is
+the accurate-enough answer and this paragraph is the record of why.
 
 ## Implemented ≠ declared ≠ wired
 

@@ -85,7 +85,30 @@ Verified against the code, not assumed. Several contradict the obvious reading.
 
 **Verify:** `go test ./... -count=1`; the byte-identity diff; the captured failure and restore.
 
-### Task 3 — Point `/pricing` at the shared table, and disclose GST
+### Task 3 — Retire AED and JPY, through the generator
+
+Context: we do not serve Arab or SEA markets. `country-map.ts` nonetheless maps `AE→AED`,
+`JP→JPY`, `SA→SAR` and the five SEA countries to their own currencies, and the shared table
+carries AED/JPY rows whose values are the **USD numbers**. So a UAE visitor is quoted
+`AED 19.00` where the real price is ~AED 70 — roughly 27% of it, on an indexed page.
+Removing those rows makes AE/JP fall through to the USD row, which Task 4 then renders
+*labelled USD*. That is the honest answer for a market we do not sell in.
+
+- [ ] Remove the AED and JPY entries from `display_extras.go` — they exist only because the
+      committed file had them.
+- [ ] Regenerate `pricing-data.ts`. The diff must contain **exactly** the AED and JPY rows,
+      nothing else. Paste it in your report; any other changed line means the generator is
+      not faithful and this task stops.
+- [ ] Update the file's doc comment, which currently explains AED/JPY as retained fallbacks.
+- [ ] Confirm no consumer indexes `AED`/`JPY` directly (`country-map.ts` may still map to
+      them — that is Task 4's fallback path, not a compile-time reference).
+
+This is deliberately the generator's first real change: it demonstrates that a pricing edit
+now flows through `catalog.go` + `display_extras.go` and arrives as a reviewable diff.
+
+**Verify:** `go test ./... -count=1`; the AED/JPY-only diff; the staleness guard still green.
+
+### Task 4 — Point `/pricing` at the shared table, fix the fallback, disclose GST
 
 - [ ] Delete `STATIC_PRICING_CATALOGUE` from `apps/admin/app/pricing/page.tsx` and consume `SHARED_PRICING_CATALOGUE` from `@repo/ui` (already exported from the barrel; already used by onboarding).
 - [ ] Reconcile the types: the page's `PricingCatalogue` uses `Record<string, PlanPrice>`, the shared one `Partial<Record<Currency, PlanPrice>>`. Adapt at the boundary; do not weaken the shared type.
@@ -95,7 +118,52 @@ Verified against the code, not assumed. Several contradict the obvious reading.
 
 **Verify:** build the admin app; typecheck; confirm the six currencies render and AUD carries the disclosure.
 
-### Task 4 — Close out
+- [ ] **The fallback must carry its own currency.** `PricingClient.tsx:39` returns
+      `plan.prices[currency] ?? plan.prices['USD']` and line 213 renders it with
+      `currency={currency}` — so a Thai visitor sees the USD *number* labelled `฿`, about 3%
+      of the real price. Change the resolver to return the price **and the currency it
+      actually resolved to**, and render that. `apps/onboarding/components/marketing/Pricing.tsx:253`
+      already does this correctly for the USD-only add-on (`currency="USD"` hardcoded) —
+      follow that precedent rather than inventing a second approach.
+- [ ] Apply the same fix to `apps/onboarding/components/marketing/Pricing.tsx` (:219, :229),
+      which shares the shape.
+- [ ] Verify concretely: a visitor whose currency has no row sees **$19 / USD**, never `฿19`
+      or `AED 19`.
+
+### Task 5 — Make an unpriceable currency unreachable
+
+Root cause of the mislabelling: **three lists disagree.** 12 countries can onboard
+(`apps/onboarding/app/onboarding/page.tsx:18-27`, gated on a tested shipping carrier), the
+pricing table has 10 currencies, and `SUPPORTED_CURRENCIES`
+(`packages/ui/src/subscription/country-map.ts:12`) has **24** — including THB, VND, IDR,
+MYR, PHP, SAR, KRW, HKD, BRL, MXN, ZAR, NGN, KES, none of which has a price row.
+`normalizeCurrency` passes all 24 through, so an unpriceable currency reaches a renderer.
+
+**Do NOT add a fourth hand-maintained list.** Derive the priceable set from the pricing
+table itself, so it cannot drift from the prices by construction.
+
+- [ ] Export the set of currencies that actually have rows, derived from
+      `SHARED_PRICING_CATALOGUE` (every plan must have the currency, not merely one plan).
+- [ ] `normalizeCurrency` returns `USD` for any currency without a price row. Keep
+      `COUNTRY_TO_CURRENCY` complete — geo knowing that TH uses THB is correct and useful;
+      what must not happen is *displaying* a price in a currency we cannot price. Narrowing
+      the `Currency` type instead would ripple through that map and is not the goal.
+- [ ] Defence in depth: `getPlanPrice` / `getAddOnPrice` (`pricing-data.ts:142-150`) return
+      the price **and the currency actually resolved**, mirroring `resolvePricedPlan`
+      (`apps/onboarding/app/page.tsx:104-118`), whose comment already names this exact bug:
+      *"would otherwise let us label a USD amount with the visitor's currency code — a wrong
+      price in the schema."* Update `Pricing.tsx:219,229` to render the resolved currency.
+- [ ] Add `NZD` to `/pricing`'s allowlist (`apps/admin/app/pricing/page.tsx:103`). NZ is a
+      supported onboarding country (ShipEngine) and the shared table has NZD rows, so a New
+      Zealand merchant is currently shown USD for no reason. Better: derive that allowlist
+      from the same exported set rather than restating it.
+- [ ] Tests: a visitor currency with no row renders **USD amounts labelled USD** on both
+      surfaces; NZD renders NZD; the derived set matches the table's actual coverage.
+
+**Verify:** typecheck and build both apps; the new tests; confirm no consumer of
+`COUNTRY_TO_CURRENCY` broke.
+
+### Task 6 — Close out
 
 - [ ] Comment on #413 with what shipped and the drift guard; comment on #393 confirming code was correct and only the comment changed.
 - [ ] Note in #305's thread that the generator exists and that its **input** is the only thing #305 needs to swap — the emitted file, the staleness check and the deploy path are already in place.

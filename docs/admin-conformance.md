@@ -116,11 +116,24 @@ the gap upstream as
 arguing for exactly the `erasure_request` reasoning above: a product whose
 queue mixes SLA-bearing and non-SLA-bearing kinds needs a way to say so per
 kind, not one boolean for the whole queue. That argument won upstream —
-design-system#36 shipped in `@tesserix/admin-conformance` 0.6.0 — and this
-file now declares `slaKinds` instead. Declaring `slaKinds` requires suite
-`>=0.6.0`; the nightly CronJob resolves `@tesserix/admin-conformance` against
-the range `>=0.5.0 <1.0.0`, which is satisfied today but would break this
-declaration if ever pinned below 0.6.0.
+design-system#36 shipped in `@tesserix/admin-conformance` **0.7.0** — and
+this file now declares `slaKinds` instead.
+
+Declaring `slaKinds` requires suite **`>=0.7.0`**, and the version matters
+more than it looks. The feature commit (design-system `41be1f7`) left the
+package at 0.6.0 in source; the release that carries it is the following
+`chore: version packages` (`2be4dfc`), published as 0.7.0. Verified against
+the published tarballs rather than the repo: 0.6.0 contains **no** occurrence
+of `slaKinds`, 0.7.0 contains it throughout. So a suite pinned to 0.6.0 would
+not merely ignore this key — `assertKnownOptions`
+(`design-system/packages/admin-conformance/src/declaration.ts`) throws on an
+unrecognised option, and a throw at declaration-parse time fails the ENTIRE
+run, every endpoint with it.
+
+The nightly CronJob resolves the range `>=0.5.0 <1.0.0`
+(`tesserix-k8s/charts/apps/mark8ly-marketplace-api-admin/values.yaml`, key
+`adminConformanceCron.version`), which picks the newest published release and
+so satisfies this today.
 
 ## Implemented ≠ declared ≠ wired
 

@@ -234,12 +234,15 @@ func assertNineTablesEmpty(t *testing.T, db *gorm.DB, f nineTableFixture) {
 	require.Zero(t, countRows(t, db, "product_categories", "product_id", f.productID), "product_categories")
 }
 
-func newEmitter(db *gorm.DB) *audit.Emitter {
-	return audit.NewEmitter(audit.EmitterConfig{
+func newEmitter(t *testing.T, db *gorm.DB) *audit.Emitter {
+	t.Helper()
+	em, err := audit.NewEmitter(audit.EmitterConfig{
 		DB:     db,
 		Repo:   audit.NewRepository(),
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
+	require.NoError(t, err)
+	return em
 }
 
 // TestSweep_NineOrphanTables_DeletesViaParent is the test that fails on
@@ -255,7 +258,7 @@ func TestSweep_NineOrphanTables_DeletesViaParent(t *testing.T) {
 	storeID := uuid.New()
 	fixture := seedNineTableFixture(t, db, tenantID, storeID)
 
-	emitter := newEmitter(db)
+	emitter := newEmitter(t, db)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tx := db.Begin()
@@ -293,7 +296,7 @@ func TestSweep_CrossStoreIsolation(t *testing.T) {
 	survivorStoreID := uuid.New()
 	survivorFixture := seedNineTableFixture(t, db, survivorTenantID, survivorStoreID)
 
-	emitter := newEmitter(db)
+	emitter := newEmitter(t, db)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tx := db.Begin()
@@ -338,7 +341,7 @@ func TestSweep_EmitsAuditEventPerTable(t *testing.T) {
 	storeID := uuid.New()
 	seedNineTableFixture(t, db, tenantID, storeID)
 
-	emitter := newEmitter(db)
+	emitter := newEmitter(t, db)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	tx := db.Begin()

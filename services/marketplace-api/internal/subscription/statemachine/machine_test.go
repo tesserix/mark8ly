@@ -114,11 +114,12 @@ func TestTransition_InvalidTransition_Rejected(t *testing.T) {
 func TestTransition_EmitsAuditEvent(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "audit_logs")
 
-	em := audit.NewEmitter(audit.EmitterConfig{
+	em, err := audit.NewEmitter(audit.EmitterConfig{
 		DB:     db,
 		Repo:   audit.NewRepository(),
 		Logger: testLogger(t),
 	})
+	require.NoError(t, err)
 
 	tenantID, storeID := uuid.New(), uuid.New()
 	testdb.SeedStore(t, db, tenantID, storeID)

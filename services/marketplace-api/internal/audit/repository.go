@@ -121,6 +121,14 @@ func (gormRepository) List(ctx context.Context, db *gorm.DB, f ListFilter) (List
 }
 
 func (gormRepository) Create(ctx context.Context, db *gorm.DB, e *Entry) error {
+	if db == nil {
+		// A real Repository (this one) paired with a nil *gorm.DB is a
+		// wiring error — see NewEmitter's doc comment. Without this guard
+		// db.WithContext below panics on the worker goroutine and takes
+		// down the process (byte-for-byte the #318 failure shape); an
+		// error here turns it into a logged insert failure instead.
+		return fmt.Errorf("audit create: db is nil")
+	}
 	if e.TenantID == uuid.Nil {
 		return fmt.Errorf("audit create: tenant_id is required")
 	}

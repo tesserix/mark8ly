@@ -50,11 +50,15 @@ func main() {
 	// Audit emitter — fire-and-forget. A nil emitter is safe (recordDrift
 	// nil-checks it).
 	auditRepo := audit.NewRepository()
-	auditEmitter := audit.NewEmitter(audit.EmitterConfig{
+	auditEmitter, err := audit.NewEmitter(audit.EmitterConfig{
 		DB:     conn,
 		Repo:   auditRepo,
 		Logger: log,
 	})
+	if err != nil {
+		log.Error("reconciliation-cron: audit emitter init failed", "err", err)
+		os.Exit(1)
+	}
 
 	r := reconciliation.New(conn, stripeClient, auditEmitter, log)
 

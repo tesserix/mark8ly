@@ -73,12 +73,37 @@ type EmitterConfig struct {
 
 // NewEmitter constructs an Emitter and starts its worker goroutines.
 // Call Stop() at process shutdown to drain the queue.
-func NewEmitter(cfg EmitterConfig) *Emitter {
+//
+// cfg.Repo is required: it is dereferenced on every write (Emit's worker
+// and EmitSync both call repo.Create). A nil Repo returns an error instead
+// of a broken Emitter. If auditing is intentionally disabled — e.g. in a
+// unit test — do not pass a nil Repo here; use a nil *Emitter instead
+// (var em *audit.Emitter). Every exported method (all eleven — see
+// nil_repo_test.go's TestNilEmitter_AllExportedMethodsAreSafe) is
+// nil-receiver-safe, so that is the supported opt-out, not a nil Repo.
+//
+// cfg.DB may legitimately be nil: the Emitter never dereferences it
+// itself — it is opaque data forwarded to Repo.Create on each write, so
+// whether nil is safe depends on the Repository implementation (a test
+// double may not need it at all). Note that the shipped Repository —
+// audit.NewRepository()'s gormRepository — DOES dereference it
+// (db.WithContext(ctx).Create(e)); pairing a real Repo from
+// NewRepository() with a nil DB is a wiring error. gormRepository.Create
+// returns an error for a nil db rather than panicking, so that wiring
+// error surfaces as a logged insert failure instead of a worker-goroutine
+// panic, but it is still a bug to fix, not a supported configuration.
+func NewEmitter(cfg EmitterConfig) (*Emitter, error) {
+	if cfg.Repo == nil {
+		return nil, errors.New("audit.NewEmitter: cfg.Repo is nil; to disable auditing, use a nil *audit.Emitter instead of NewEmitter with a nil Repo")
+	}
 	if cfg.QueueSize <= 0 {
 		cfg.QueueSize = 1000
 	}
 	if cfg.Workers <= 0 {
 		cfg.Workers = 1
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
 	}
 	e := &Emitter{
 		db:     cfg.DB,
@@ -91,7 +116,7 @@ func NewEmitter(cfg EmitterConfig) *Emitter {
 		e.wg.Add(1)
 		go e.worker()
 	}
-	return e
+	return e, nil
 }
 
 // Emit enqueues an event for async write. Returns immediately. Safe to

@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 	"github.com/mark8ly/marketplace-api/internal/tenantdirectory"
 )
@@ -27,14 +26,14 @@ import (
 // ones it never saw. That is why this helper wires every dependency, and
 // why the test separately asserts the mounted write-route count is exactly
 // 4 rather than trusting an empty failure list alone.
-func allWriteRoutesDeps() platformadmin.Deps {
+func allWriteRoutesDeps(t *testing.T) platformadmin.Deps {
 	return platformadmin.Deps{
 		Repo:            &stubRepo{},
 		Secret:          testSecret,
 		DB:              &gorm.DB{},
 		NonceStore:      newMemNonces(),
 		TenantDirectory: &stubDirectory{detail: &tenantdirectory.TenantDetail{}},
-		Emitter:         audit.NewEmitter(audit.EmitterConfig{Repo: &recordingRepo{}}),
+		Emitter:         mustEmitter(t, &recordingRepo{}),
 		TenantLifecycle: &stubLifecycle{},
 		TrialExtender:   &stubExtender{},
 		TenantTeardown:  &fakeTeardown{seq: &seq{}},
@@ -78,7 +77,7 @@ func TestAllWriteRoutesDeclareACapability(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	platformadmin.Register(r.Group("/api/v1/platform"), allWriteRoutesDeps())
+	platformadmin.Register(r.Group("/api/v1/platform"), allWriteRoutesDeps(t))
 
 	writeRouteCount := 0
 	for _, route := range r.Routes() {
@@ -121,8 +120,8 @@ func TestAllWriteRoutesDeclareACapability(t *testing.T) {
 // comment describes for the write side. That is why this helper wires
 // everything, and why the test separately requires the break-glass route
 // was genuinely found rather than trusting an empty failure list alone.
-func allReadRoutesDeps() platformadmin.Deps {
-	deps := allWriteRoutesDeps()
+func allReadRoutesDeps(t *testing.T) platformadmin.Deps {
+	deps := allWriteRoutesDeps(t)
 	deps.OnboardingFunnel = &stubFunnelClient{}
 	deps.EstateCounts = &stubEstateCounts{}
 	deps.Subscriptions = &stubSubscriptions{}
@@ -172,7 +171,7 @@ func TestBreakGlassIsTheOnlyDeclaredReadCapability(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	platformadmin.Register(r.Group(platformadmin.MountPrefix), allReadRoutesDeps())
+	platformadmin.Register(r.Group(platformadmin.MountPrefix), allReadRoutesDeps(t))
 
 	const breakGlassPath = platformadmin.MountPrefix + "/admin/break-glass"
 

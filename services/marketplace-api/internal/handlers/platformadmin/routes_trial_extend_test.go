@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 )
 
@@ -28,7 +27,7 @@ func TestRegisterMountsTrialExtendWhenFullyWired(t *testing.T) {
 		Secret:        "test-secret",
 		DB:            &gorm.DB{},
 		TrialExtender: &stubExtender{},
-		Emitter:       audit.NewEmitter(audit.EmitterConfig{Repo: &recordingRepo{}}),
+		Emitter:       mustEmitter(t, &recordingRepo{}),
 	})
 
 	require.True(t, hasRoute(r, http.MethodPost, "/api/v1/platform/admin/billing/trials/:storeID/extend"),

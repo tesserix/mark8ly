@@ -56,11 +56,15 @@ func main() {
 
 	// Audit emitter — fire-and-forget. nil is safe downstream.
 	auditRepo := audit.NewRepository()
-	auditEmitter := audit.NewEmitter(audit.EmitterConfig{
+	auditEmitter, err := audit.NewEmitter(audit.EmitterConfig{
 		DB:     conn,
 		Repo:   auditRepo,
 		Logger: log,
 	})
+	if err != nil {
+		log.Error("break-glass-rotation: audit emitter init failed", "err", err)
+		os.Exit(1)
+	}
 
 	// Slack — optional. Local dev without a webhook silently no-ops.
 	slack := breakglass.NewSlackClient(

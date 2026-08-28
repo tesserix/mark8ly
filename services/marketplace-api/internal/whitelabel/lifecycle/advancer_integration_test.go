@@ -58,9 +58,9 @@ func newAdvancer(t *testing.T, fakes struct {
 func newCredsSvc(t *testing.T) (*appcreds.Service, *appcreds.FakeSM) {
 	t.Helper()
 	fake := appcreds.NewFakeSM()
-	em := audit.NewEmitter(audit.EmitterConfig{
-		DB: nil, Repo: nil, Logger: slog.Default(),
-	})
+	// Auditing intentionally off for this test — the supported opt-out is
+	// a nil *audit.Emitter, not a nil Repo (see audit.NewEmitter).
+	var em *audit.Emitter
 	return appcreds.NewService(appcreds.Config{
 		ProjectID: "test-proj", SM: fake, Emitter: em,
 	}), fake

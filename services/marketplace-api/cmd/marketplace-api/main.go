@@ -557,11 +557,15 @@ func main() {
 	// storefront pod (MODE=storefront) ran with auditEmitter == nil and
 	// silently dropped every storefront event.
 	auditRepo := audit.NewRepository()
-	auditEmitter := audit.NewEmitter(audit.EmitterConfig{
+	auditEmitter, err := audit.NewEmitter(audit.EmitterConfig{
 		DB:     conn,
 		Repo:   auditRepo,
 		Logger: log,
 	})
+	if err != nil {
+		log.Error("audit: new emitter", "err", err)
+		os.Exit(1)
+	}
 
 	// Settings S5 — Notifications. Constructed early so both admin and
 	// storefront modes can share a single service instance: storefront

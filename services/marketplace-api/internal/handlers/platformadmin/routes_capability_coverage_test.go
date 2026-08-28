@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 	"github.com/mark8ly/marketplace-api/internal/tenantdirectory"
 )
@@ -34,7 +33,7 @@ func allWriteRoutesDeps() platformadmin.Deps {
 		DB:              &gorm.DB{},
 		NonceStore:      newMemNonces(),
 		TenantDirectory: &stubDirectory{detail: &tenantdirectory.TenantDetail{}},
-		Emitter:         audit.NewEmitter(audit.EmitterConfig{Repo: &recordingRepo{}}),
+		Emitter:         mustEmitter(&recordingRepo{}),
 		TenantLifecycle: &stubLifecycle{},
 		TrialExtender:   &stubExtender{},
 		TenantTeardown:  &fakeTeardown{seq: &seq{}},

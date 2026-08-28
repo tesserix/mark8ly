@@ -214,7 +214,8 @@ func newPurgeIntegrationRouter(t *testing.T, db *gorm.DB, td platformadmin.Tenan
 		Now:        func() time.Time { return fixedNow },
 	}))
 
-	emitter := audit.NewEmitter(audit.EmitterConfig{DB: db, Repo: audit.NewRepository(), Logger: slog.Default()})
+	emitter, err := audit.NewEmitter(audit.EmitterConfig{DB: db, Repo: audit.NewRepository(), Logger: slog.Default()})
+	require.NoError(t, err)
 	t.Cleanup(func() { emitter.Stop(context.Background()) })
 
 	purger := tenantpurge.NewGormPurger(db)
@@ -613,7 +614,8 @@ func TestPurge_Integration_IncompletePurgeIsRecordedAsAFailure(t *testing.T) {
 		NonceStore: newMemNonces(),
 		Now:        func() time.Time { return fixedNow },
 	}))
-	emitter := audit.NewEmitter(audit.EmitterConfig{DB: db, Repo: audit.NewRepository(), Logger: slog.Default()})
+	emitter, err := audit.NewEmitter(audit.EmitterConfig{DB: db, Repo: audit.NewRepository(), Logger: slog.Default()})
+	require.NoError(t, err)
 	t.Cleanup(func() { emitter.Stop(context.Background()) })
 	h := platformadmin.NewTenantPurgeHandler(
 		tenantlifecycle.NewClient(stub.URL, "", nil),

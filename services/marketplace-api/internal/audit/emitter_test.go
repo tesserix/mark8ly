@@ -26,10 +26,11 @@ func TestEmit_MissingTenant_LogsDrop(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	em := audit.NewEmitter(audit.EmitterConfig{
+	em, err := audit.NewEmitter(audit.EmitterConfig{
 		Repo:   audit.NewRepository(),
 		Logger: logger,
 	})
+	require.NoError(t, err)
 	t.Cleanup(func() { em.Stop(t.Context()) })
 
 	em.Emit(nil, audit.Event{
@@ -88,13 +89,14 @@ func ginContextWithOperator(t *testing.T, operatorID, capability string) *gin.Co
 
 func TestEmitSync_WritesBeforeReturning(t *testing.T) {
 	repo := &recordingRepo{}
-	e := audit.NewEmitter(audit.EmitterConfig{DB: nil, Repo: repo, Logger: slog.Default()})
+	e, err := audit.NewEmitter(audit.EmitterConfig{DB: nil, Repo: repo, Logger: slog.Default()})
+	require.NoError(t, err)
 	t.Cleanup(func() { e.Stop(context.Background()) })
 
 	c := ginContextWithOperator(t, "op-7", "tenants.purge")
 	tenantID := uuid.New()
 
-	err := e.EmitSync(c, audit.Event{
+	err = e.EmitSync(c, audit.Event{
 		Action: "tenant.purged", ResourceType: "tenant",
 		TenantID: tenantID, Metadata: map[string]any{"total_rows": 42},
 	})
@@ -111,10 +113,11 @@ func TestEmitSync_WritesBeforeReturning(t *testing.T) {
 
 func TestEmitSync_ReturnsTheRepositoryError(t *testing.T) {
 	repo := &recordingRepo{createErr: errors.New("boom")}
-	e := audit.NewEmitter(audit.EmitterConfig{DB: nil, Repo: repo, Logger: slog.Default()})
+	e, err := audit.NewEmitter(audit.EmitterConfig{DB: nil, Repo: repo, Logger: slog.Default()})
+	require.NoError(t, err)
 	t.Cleanup(func() { e.Stop(context.Background()) })
 
-	err := e.EmitSync(ginContextWithOperator(t, "op-7", "tenants.purge"),
+	err = e.EmitSync(ginContextWithOperator(t, "op-7", "tenants.purge"),
 		audit.Event{Action: "tenant.purged", ResourceType: "tenant", TenantID: uuid.New()})
 
 	require.Error(t, err, "an unrecorded irreversible action must be surfaced, never swallowed")
@@ -123,10 +126,11 @@ func TestEmitSync_ReturnsTheRepositoryError(t *testing.T) {
 
 func TestEmitSync_MissingTenantIsAnError(t *testing.T) {
 	repo := &recordingRepo{}
-	e := audit.NewEmitter(audit.EmitterConfig{DB: nil, Repo: repo, Logger: slog.Default()})
+	e, err := audit.NewEmitter(audit.EmitterConfig{DB: nil, Repo: repo, Logger: slog.Default()})
+	require.NoError(t, err)
 	t.Cleanup(func() { e.Stop(context.Background()) })
 
-	err := e.EmitSync(ginContextWithOperator(t, "op-7", "c"),
+	err = e.EmitSync(ginContextWithOperator(t, "op-7", "c"),
 		audit.Event{Action: "tenant.purged", ResourceType: "tenant"}) // no TenantID
 
 	require.Error(t, err)

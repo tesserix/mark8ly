@@ -28,6 +28,20 @@ func withCurrentTimestamp(in *platformadmin.SignatureInput) {
 	in.Timestamp = strconv.FormatInt(time.Now().Unix(), 10)
 }
 
+// mustEmitter builds an audit.Emitter for test-fixture Deps literals where
+// the Repo is always a hardcoded non-nil fake, so the only error
+// audit.NewEmitter can return (nil Repo) is not reachable here. Panicking
+// instead of threading *testing.T through every Deps-builder in this
+// package keeps those builders usable from table-driven setups that don't
+// carry a *testing.T.
+func mustEmitter(repo audit.Repository) *audit.Emitter {
+	em, err := audit.NewEmitter(audit.EmitterConfig{Repo: repo})
+	if err != nil {
+		panic(err)
+	}
+	return em
+}
+
 // fullPurgeDeps returns a Deps literal with every dependency the purge
 // routes require present and wired, so individual tests can start from a
 // fully-mounted baseline and knock out one field at a time.
@@ -51,7 +65,7 @@ func fullPurgeDeps() platformadmin.Deps {
 		TenantTeardown:  &fakeTeardown{seq: &seq{}},
 		Purger:          &fakePurger{seq: &seq{}},
 		TenantDirectory: &stubDirectory{detail: &tenantdirectory.TenantDetail{}},
-		Emitter:         audit.NewEmitter(audit.EmitterConfig{Repo: &recordingRepo{}}),
+		Emitter:         mustEmitter(&recordingRepo{}),
 		TenantLifecycle: &stubLifecycle{},
 	}
 }
@@ -75,7 +89,7 @@ func purgeOnlyDeps() platformadmin.Deps {
 		TenantTeardown:  &fakeTeardown{seq: &seq{}},
 		Purger:          &fakePurger{seq: &seq{}},
 		TenantDirectory: &stubDirectory{detail: &tenantdirectory.TenantDetail{}},
-		Emitter:         audit.NewEmitter(audit.EmitterConfig{Repo: &recordingRepo{}}),
+		Emitter:         mustEmitter(&recordingRepo{}),
 	}
 }
 

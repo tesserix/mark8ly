@@ -60,10 +60,11 @@ func (r *recordingRepo) first() audit.Entry {
 
 func newTestEmitter(t *testing.T, repo audit.Repository) *audit.Emitter {
 	t.Helper()
-	em := audit.NewEmitter(audit.EmitterConfig{
+	em, err := audit.NewEmitter(audit.EmitterConfig{
 		Repo:   repo,
 		Logger: slog.New(slog.NewTextHandler(httptest.NewRecorder().Body, nil)),
 	})
+	require.NoError(t, err)
 	t.Cleanup(func() { em.Stop(context.Background()) })
 	return em
 }

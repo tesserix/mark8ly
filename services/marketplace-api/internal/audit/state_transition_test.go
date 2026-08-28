@@ -17,11 +17,12 @@ import (
 
 func TestEmitStateTransition_WritesCanonicalEvent(t *testing.T) {
 	db := testdb.NewDB(t, "audit_logs")
-	em := audit.NewEmitter(audit.EmitterConfig{
+	em, err := audit.NewEmitter(audit.EmitterConfig{
 		DB:     db,
 		Repo:   audit.NewRepository(),
 		Logger: testLogger(t),
 	})
+	require.NoError(t, err)
 
 	tenantID := uuid.New()
 	storeID := uuid.New()
@@ -41,7 +42,7 @@ func TestEmitStateTransition_WritesCanonicalEvent(t *testing.T) {
 	em.Stop(ctx)
 
 	var entry audit.Entry
-	err := db.Where("tenant_id = ? AND store_id = ?", tenantID, storeID).First(&entry).Error
+	err = db.Where("tenant_id = ? AND store_id = ?", tenantID, storeID).First(&entry).Error
 	require.NoError(t, err, "audit row must be written")
 
 	require.Equal(t, "subscription.state_transition", entry.Action)
@@ -60,11 +61,12 @@ func TestEmitStateTransition_WritesCanonicalEvent(t *testing.T) {
 
 func TestEmitStateTransition_TerminalStatesGetWarning(t *testing.T) {
 	db := testdb.NewDB(t, "audit_logs")
-	em := audit.NewEmitter(audit.EmitterConfig{
+	em, err := audit.NewEmitter(audit.EmitterConfig{
 		DB:     db,
 		Repo:   audit.NewRepository(),
 		Logger: testLogger(t),
 	})
+	require.NoError(t, err)
 
 	tenantID := uuid.New()
 	storeID := uuid.New()
@@ -82,18 +84,19 @@ func TestEmitStateTransition_TerminalStatesGetWarning(t *testing.T) {
 	em.Stop(ctx)
 
 	var entry audit.Entry
-	err := db.Where("tenant_id = ? AND store_id = ?", tenantID, storeID).First(&entry).Error
+	err = db.Where("tenant_id = ? AND store_id = ?", tenantID, storeID).First(&entry).Error
 	require.NoError(t, err)
 	require.Equal(t, audit.SeverityWarning, entry.Severity)
 }
 
 func TestEmitPlanChange_WritesCanonicalEvent(t *testing.T) {
 	db := testdb.NewDB(t, "audit_logs")
-	em := audit.NewEmitter(audit.EmitterConfig{
+	em, err := audit.NewEmitter(audit.EmitterConfig{
 		DB:     db,
 		Repo:   audit.NewRepository(),
 		Logger: testLogger(t),
 	})
+	require.NoError(t, err)
 
 	tenantID := uuid.New()
 	storeID := uuid.New()
@@ -129,11 +132,12 @@ func TestEmitPlanChange_WritesCanonicalEvent(t *testing.T) {
 
 func TestEmitPlanChange_BlockedOverQuota_SeverityWarning(t *testing.T) {
 	db := testdb.NewDB(t, "audit_logs")
-	em := audit.NewEmitter(audit.EmitterConfig{
+	em, err := audit.NewEmitter(audit.EmitterConfig{
 		DB:     db,
 		Repo:   audit.NewRepository(),
 		Logger: testLogger(t),
 	})
+	require.NoError(t, err)
 
 	tenantID := uuid.New()
 	storeID := uuid.New()

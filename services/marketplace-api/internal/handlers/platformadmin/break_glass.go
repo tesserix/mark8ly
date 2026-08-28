@@ -135,8 +135,10 @@ func (h *BreakGlassHandler) List(c *gin.Context) {
 // directory instead of nothing. Mirrors
 // BillingSubscriptionsHandler.lookupTenantNames — with one deliberate
 // difference: this surface is a security control, and a platform-api outage
-// must not hide it. A directory error therefore DEGRADES to the bare tenant
-// id standing in for its own name, rather than failing the request.
+// must not hide it. A directory error therefore DEGRADES to rows still
+// identified by tenant_id with the name OMITTED (dropped by omitempty),
+// rather than failing the request — and never to a fabricated name, which
+// would read as real and is worse than none.
 func (h *BreakGlassHandler) lookupTenantNames(ctx context.Context, accounts []breakglass.PlatformRow) map[string]string {
 	names := map[string]string{}
 	if len(accounts) == 0 {
@@ -155,11 +157,16 @@ func (h *BreakGlassHandler) lookupTenantNames(ctx context.Context, accounts []br
 
 	res, err := h.dir.List(ctx, tenantdirectory.ListParams{IDs: ids, Limit: len(ids)})
 	if err != nil {
+		// Degrade to rows identified by tenant_id with the name OMITTED —
+		// NOT a fabricated name. The console renders tenant_name as a
+		// display string, so putting the raw uuid there would read as a
+		// real (if odd) name rather than "unknown", which is worse than
+		// omitting it. The request still returns 200: the whole point of
+		// deviating from BillingSubscriptionsHandler here is that a
+		// platform-api outage must not hide a security control, and that
+		// is satisfied by returning the rows with ids and no names.
 		if h.logger != nil {
-			h.logger.Warn("break-glass: tenant directory unavailable, degrading to ids", "err", err)
-		}
-		for _, id := range ids {
-			names[id] = id
+			h.logger.Warn("break-glass: tenant directory unavailable, omitting names", "err", err)
 		}
 		return names
 	}
@@ -170,14 +177,11 @@ func (h *BreakGlassHandler) lookupTenantNames(ctx context.Context, accounts []br
 
 	// A tenant id present on a break-glass row but absent from the
 	// directory response means the two services disagree about which
-	// tenants exist. The row still appears, falling back to the bare id
-	// rather than an anonymous row, but this is worth a log line.
+	// tenants exist. The row still appears with its name simply omitted
+	// (never a fabricated fallback), but this is worth a log line.
 	for _, id := range ids {
-		if _, ok := names[id]; !ok {
-			if h.logger != nil {
-				h.logger.Warn("break-glass: tenant missing from directory", "tenant_id", id)
-			}
-			names[id] = id
+		if _, ok := names[id]; !ok && h.logger != nil {
+			h.logger.Warn("break-glass: tenant missing from directory", "tenant_id", id)
 		}
 	}
 

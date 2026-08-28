@@ -264,6 +264,11 @@ func TestBreakGlassReportsTheClampedLimit(t *testing.T) {
 	require.EqualValues(t, 900, body.Pagination.Total)
 }
 
+// A directory failure must not put a fabricated name (the raw tenant uuid)
+// where the console renders a display string. It degrades to the row still
+// being returned, identified by tenant_id, with tenant_name OMITTED
+// (dropped by omitempty) — not present as empty string, not present as the
+// id — and the request still 200.
 func TestBreakGlassTenantNameEnrichmentDegradesOnDirectoryError(t *testing.T) {
 	tid := uuid.New()
 	repo := &stubBreakGlassLister{res: breakglass.PlatformListResult{
@@ -282,15 +287,11 @@ func TestBreakGlassTenantNameEnrichmentDegradesOnDirectoryError(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	var body struct {
-		Data []struct {
-			TenantID   string `json:"tenant_id"`
-			TenantName string `json:"tenant_name"`
-		} `json:"data"`
+		Data []map[string]any `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Len(t, body.Data, 1)
-	require.Equal(t, tid.String(), body.Data[0].TenantID)
-	// A directory failure degrades to the bare id rather than failing the
-	// request or leaving the row anonymous.
-	require.Equal(t, tid.String(), body.Data[0].TenantName)
+	require.Equal(t, tid.String(), body.Data[0]["tenant_id"])
+	require.NotContains(t, body.Data[0], "tenant_name",
+		"a directory outage must omit the name, never fabricate one from the uuid")
 }

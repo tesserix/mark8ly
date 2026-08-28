@@ -196,3 +196,21 @@ Not a plan, but the shape one would take:
 Live schema queried via `information_schema` (92 tables) plus the full FK graph; migrations read directly; repo-wide greps for retention, anonymisation and `customer_erasure_requests` usage. No tests were run. Claims are marked in the source survey as verified-by-reading, verified-by-query, or inferred; the three items in §4 marked "unclassified" are genuinely unresolved and are flagged rather than guessed.
 
 One environment note found along the way, relevant to anyone testing this: **the dev database is at schema version 106 while the migration files go to 110.** `inbox_action_idempotency` (000107) is therefore absent from it — which is the real cause of the two `internal/handlers/platformadmin` integration failures previously recorded as a "migration gap in the test environment". The gap is that the dev database has not been migrated, not that a migration is missing.
+
+---
+
+## Corrections found during implementation (2026-08-29)
+
+Implementing the plan meant verifying every column against the live schema, which found four errors in the survey above. They are recorded here rather than silently edited, because the survey's method — and where it fell short — is the useful part.
+
+1. **`promo_redemptions` is NOT customer data.** §4 lists it under "Direct — the row names the customer". It is the *subscription* promo-code engine (§7): `promo.Service` writes `normaliseEmail(in.MerchantEmail)` (`internal/promo/service.go:156`) and the row carries `subscription_id NOT NULL`, not an order. Its `email` is the **merchant's billing address**. Anonymising it during a customer erasure would have rewritten a merchant's own billing record. It is now a declared exclusion with that justification.
+
+2. **Four of the five "anonymise via `order_id`" tables have no personal column at all.** `payment_transactions`, `refund_transactions`, `platform_fee_ledger` and `shipments` hold none — their only PII is inside JSONB (`payment_transactions.metadata`, `shipments.ship_from`/`ship_to`), which is out of scope per decision 5. They therefore carry **no erasure step**. They still take the 7-year retention `COMMENT` from migration 000113, because the retention basis applies to the rows regardless.
+
+3. **`returns.pickup_details` is `text`, not JSONB.** §4 lists it among the uninspected blobs. It is a free-text customer pickup address and nullable, so it is **in scope** and is cleared.
+
+4. **Two tables have no name column.** §6.1 groups "`coupon_usage`, `promo_redemptions`, `customer_loyalties`: email → token, name → RedactedName". Only `customer_loyalties` has a name column. `coupon_usage` has only `customer_email`.
+
+Also worth recording, since it changes how the console should think about scoping: `campaign_recipients` has no `store_id` (only `tenant_id` + `campaign_id`, scoped through `campaigns`), and `storefront_push_tokens` / `product_notify_subscriptions` carry `store_slug` rather than `store_id` and have no FK to `customer_profiles`.
+
+**The blocking question in §3 is answered.** `orders.customer_id` is populated only when a logged-in profile is in request context (`internal/handlers/storefront/checkout.go:175-181`); guest checkouts leave it NULL while `customer_email` is `NOT NULL`. Erasure therefore keys on **email**, matching `customer_id` only as a supplementary predicate.

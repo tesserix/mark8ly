@@ -77,6 +77,13 @@ test-int: ## Run integration tests against the running `make dev` stack
 	@# it is green as of #397 and must keep running so that guard cannot
 	@# silently stop.
 	@#
+	@# ./internal/customererasure/... is included from #259. It was measured
+	@# green against the dev database (schema 113) before being added, which is
+	@# the precondition for widening this list at all. It carries the GDPR
+	@# art.17 schema-coverage guard: a table added later that names a customer
+	@# fails this target rather than silently escaping erasure, so it must keep
+	@# running or the guard stops guarding.
+	@#
 	@# ./internal/campaignbudget/... is the full subtree: the parent package plus
 	@# cron, concurrency and transactional. All four were measured green against
 	@# the dev database on 2026-08-28 when the #399 trial-ramp idempotency guard
@@ -87,6 +94,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	  go test -tags=integration -p 1 \
 	    ./internal/apikeys/... \
 	    ./internal/audit/... \
+	    ./internal/customererasure/... \
 	    ./internal/arbitrage/... \
 	    ./internal/handlers/platformadmin/... \
 	    ./internal/tenantpurge/... \

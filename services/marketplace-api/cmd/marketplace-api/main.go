@@ -534,6 +534,11 @@ func main() {
 	// inbox action executor (#281a) is built in both engine-switch cases
 	// below, outside the admin wiring branch that constructs it.
 	var migrationRepo *migration.Repository
+	// customerEraser is hoisted for the same reason: the erasure inbox action
+	// (#259) is built in both engine-switch cases below. It is an INTERFACE,
+	// not a *customererasure.Executor, so the "no database" case stays an
+	// untyped nil that inboxActionExecutors can actually test.
+	var customerEraser platformadmin.CustomerEraser
 	// downgradeCron is non-nil only when STRIPE_BILLING_SECRET_KEY is set.
 	// Declared at func scope so the cron-start block below the admin-mode
 	// block can reference it.
@@ -1047,6 +1052,16 @@ func main() {
 
 		// P5 — Migration fast-path submit handler.
 		migrationRepo = migration.NewRepository(conn)
+
+		// #259 — the erasure inbox action. A construction failure is a wiring
+		// bug and is fatal: degrading to a 501 here would present a broken
+		// deployment as a deliberate "not implemented", which is exactly the
+		// misreading this action was added to remove.
+		customerEraser, err = newCustomerEraser(conn, log)
+		if err != nil {
+			log.Error("marketplace-api: customer erasure executor could not be built", "err", err)
+			os.Exit(1)
+		}
 		migrationHandler = migration.NewHandler(migrationRepo, migration.NoOpValidator{}, log).WithAudit(auditEmitter)
 
 		// P8 — Arbitrage appeal handler (§18.8.1).
@@ -2144,7 +2159,7 @@ func main() {
 			Purger:                tenantpurge.NewGormPurger(conn),
 			Inbox:                 inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 			InboxItems:            inboxItemSource(newInboxAggregator(conn, onboardingFunnelClient, 0)),
-			InboxActionExecutors:  inboxActionExecutors(migrationRepo),
+			InboxActionExecutors:  inboxActionExecutors(migrationRepo, customerEraser),
 			EstateUsers:           estateUsersClient,
 			EmailSends:            platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
 			BreakGlass:            platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),
@@ -2289,7 +2304,7 @@ func main() {
 				Purger:                tenantpurge.NewGormPurger(conn),
 				Inbox:                 inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 				InboxItems:            inboxItemSource(newInboxAggregator(conn, onboardingFunnelClient, 0)),
-				InboxActionExecutors:  inboxActionExecutors(migrationRepo),
+				InboxActionExecutors:  inboxActionExecutors(migrationRepo, customerEraser),
 				EstateUsers:           estateUsersClient,
 				EmailSends:            platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
 				BreakGlass:            platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),

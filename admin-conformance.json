@@ -2,15 +2,20 @@
   "slug": "mark8ly",
   "contractVersion": 2,
   "endpoints": {
-    "audit-logs": true,
-    "health": true,
     "kpis": true,
+    "inbox": {
+      "slaKinds": [
+        "sea_manual_review"
+      ]
+    },
+    "audit-logs": true,
     "entities": {
       "types": [
         "tenants",
         "users"
       ]
     },
+    "health": true,
     "billing/subscriptions": true,
     "billing/trials": true,
     "tenant-lifecycle": true,

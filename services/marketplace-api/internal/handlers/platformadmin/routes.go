@@ -160,8 +160,9 @@ type Deps struct {
 	//
 	// Mounting this ALSO requires declaring `users` under entities in
 	// admin-conformance.json AND in the chart's declaration in tesserix-k8s.
-	// The conformance suite fails an endpoint a product serves but does not
-	// declare, so a one-sided change turns the nightly job red.
+	// See docs/admin-conformance.md for why that declaration is required and
+	// what this surface can and cannot declare; conformance_declaration_test.go
+	// is the guard that catches the two drifting apart (#415).
 	EstateUsers EstateUserDirectory
 
 	// BreakGlass serves GET /admin/break-glass (#333), the cross-tenant

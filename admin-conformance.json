@@ -4,7 +4,9 @@
   "endpoints": {
     "kpis": true,
     "inbox": {
-      "slaDeclared": false
+      "slaKinds": [
+        "sea_manual_review"
+      ]
     },
     "audit-logs": true,
     "entities": {

@@ -66,53 +66,61 @@ the contract were ever extended to include them, would need to happen
 upstream in `design-system/packages/admin-conformance/src/contract.ts` first,
 not here.
 
-## Why `slaDeclared` is `false` despite a real SLA
+## Why `inbox` declares `slaKinds`, not `slaDeclared`
 
 `inbox` is declared as:
 
 ```json
-"inbox": { "slaDeclared": false }
+"inbox": { "slaKinds": ["sea_manual_review"] }
 ```
 
-This is deliberate, not an oversight, even though one of mark8ly's five
-inbox kinds carries a real, meaningful SLA. `sea_manual_review` reads
-`sea_manual_review_queue`, whose migration comment
-(`services/marketplace-api/internal/inbox/sea_review.go:12-15`) states that
+`sea_manual_review` is the only one of mark8ly's five inbox kinds that carries
+a real SLA. It reads `sea_manual_review_queue`, whose type comment
+(`services/marketplace-api/internal/inbox/sea_review.go:10-15`) states that
 any row entering the queue immediately pauses the 14-day validation clock on
-the associated subscription, under a 5-business-day SLA
-(`sla_due_at`, read into `due` at `sea_review.go:72` and assigned to
-`DueAt: &due` at `sea_review.go:79`).
+the associated subscription, under a 5-business-day SLA (`SLADueAt`, read
+into `due` at `sea_review.go:72` and assigned to `DueAt: &due` at
+`sea_review.go:79`). The other four kinds — `arbitrage_appeal`,
+`migration_fast_path`, `onboarding_stalled`, and `erasure_request`
+(`services/marketplace-api/internal/inbox/provider.go:6-11`) — never set
+`DueAt`.
 
-But `slaDeclared: true` is a per-queue, not a per-kind, promise:
-`design-system/packages/admin-conformance/src/checks.ts:206-220` requires
-that when `slaDeclared` is true, **every** item returned by `GET
-/admin/inbox` — not just the ones from one kind — carries `due_at`. mark8ly's
-queue aggregates five kinds
-(`sea_manual_review`, `arbitrage`, `migration_fastpath`, `onboarding`,
-`erasure`), and `sea_manual_review` is the *only* one of the five that ever
-sets `DueAt`. The other four never do.
+`slaKinds` and `slaDeclared` are two different promises and the parser
+enforces that a product picks exactly one: declaring both throws
+`endpoints["inbox"] declares both slaDeclared and slaKinds`
+(`design-system/packages/admin-conformance/src/declaration.ts:215`).
+`slaDeclared` is a per-queue promise — the conformance suite's `checkDueAt`
+requires `due_at` on *every* item `GET /admin/inbox` returns when it is true
+(`design-system/packages/admin-conformance/src/checks.ts:280-296`).
+`slaKinds` is a per-kind promise: `due_at` is required only of items whose
+`kind` is in the declared list, and the check is skipped rather than passed
+on any page where no item of a declared kind appears, so it never claims
+coverage a run did not actually exercise
+(`design-system/packages/admin-conformance/src/checks.ts:242-277`).
 
-Flipping `slaDeclared` to `true` today would therefore fail conformance the
-first time the queue holds anything other than a SEA review item — which,
-given five active kinds, is the common case, not the edge case. Doing it
-correctly requires `due_at` on all five kinds, and the erasure kind is not a
-"just add it" gap: `services/marketplace-api/internal/inbox/erasure.go:13`
-states the omission is a deliberate refusal — *"GDPR's 30-day window is
-real, but the table has no due column and deriving a statutory deadline in a
-read endpoint would be inventing policy in the wrong place."* Adding
-`due_at` to erasure means either a schema change to carry a real deadline
-(a migration, out of scope for this change) or inventing a policy value this
-endpoint has no authority to invent. Neither belongs in this fix.
+Declaring `slaDeclared: true` would force every item on the queue to carry
+`due_at`, including `erasure_request`, whose provider deliberately sets none:
+`services/marketplace-api/internal/inbox/erasure.go:12-15` states the
+omission is a refusal, not a gap — *"GDPR's 30-day window is real, but the
+table has no due column and deriving a statutory deadline in a read endpoint
+would be inventing policy in the wrong place."* `slaDeclared: false` would
+have understated a real, subscription-clock-pausing SLA on the one kind that
+has one. Neither boolean was honest for a queue that merges five kinds with
+only one of them time-bound — a per-kind declaration is what the queue
+actually needed.
 
-This tension is filed upstream as
-[design-system#36](https://github.com/tesserix/design-system/issues/36):
-`slaDeclared` is one boolean per product, but SLA reality is per queue kind,
-so for a product whose queues differ neither value is honest. `true` fails,
-and `false` — what this file declares — understates a real
-subscription-clock-pausing deadline on the one queue that has one. Kora
-declares `false` with no SLA anywhere, so today the flag renders the two
-products identical when they are not. Until that is resolved, `false` is
-the accurate-enough answer and this paragraph is the record of why.
+That option did not exist when this endpoint first shipped, so this file
+carried `slaDeclared: false` as a documented, unhappy compromise and filed
+the gap upstream as
+[design-system#36](https://github.com/tesserix/design-system/issues/36),
+arguing for exactly the `erasure_request` reasoning above: a product whose
+queue mixes SLA-bearing and non-SLA-bearing kinds needs a way to say so per
+kind, not one boolean for the whole queue. That argument won upstream —
+design-system#36 shipped in `@tesserix/admin-conformance` 0.6.0 — and this
+file now declares `slaKinds` instead. Declaring `slaKinds` requires suite
+`>=0.6.0`; the nightly CronJob resolves `@tesserix/admin-conformance` against
+the range `>=0.5.0 <1.0.0`, which is satisfied today but would break this
+declaration if ever pinned below 0.6.0.
 
 ## Implemented ≠ declared ≠ wired
 

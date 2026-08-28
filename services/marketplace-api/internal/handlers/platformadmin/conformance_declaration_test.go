@@ -433,40 +433,87 @@ func chartDeclaredEntityTypes(t *testing.T, v chartDeclaration) map[string]bool 
 	return types
 }
 
-// chartInboxSLADeclared reads the chart's inbox.slaDeclared boolean. Only
-// meaningful when the caller has already confirmed "inbox" is declared on
-// both sides — see the id-set comparison in
-// TestConformanceDeclarationMatchesChartCopy, which catches "declared on
-// one side only" before this is ever called.
-func chartInboxSLADeclared(t *testing.T, v chartDeclaration) bool {
+// inboxSLADeclaration is one side's answer to "which inbox kinds carry an
+// SLA" — design-system's declaration.ts accepts either slaKinds (a per-kind
+// set) or slaDeclared (a per-queue boolean), and treats them as mutually
+// exclusive: declaring both is a parse error there. usesSlaKinds records
+// which shape this side actually used, so the comparison below can catch
+// "one side moved to slaKinds and the other is still on slaDeclared" as its
+// own disagreement, not silently compare an empty set against another.
+type inboxSLADeclaration struct {
+	usesSlaKinds bool
+	kinds        map[string]bool // meaningful only when usesSlaKinds is true
+}
+
+func inboxSLAModeName(usesSlaKinds bool) string {
+	if usesSlaKinds {
+		return "slaKinds"
+	}
+	return "slaDeclared"
+}
+
+// chartInboxSLA reads the chart's inbox declaration and reports which shape
+// it used. Only meaningful when the caller has already confirmed "inbox" is
+// declared on both sides — see the id-set comparison in
+// TestConformanceDeclarationMatchesChartCopy, which catches "declared on one
+// side only" before this is ever called.
+func chartInboxSLA(t *testing.T, v chartDeclaration) inboxSLADeclaration {
 	t.Helper()
 
 	raw, present := v.AdminConformanceCron.Declaration.Endpoints["inbox"]
-	require.True(t, present, "chartInboxSLADeclared called but the chart does not declare \"inbox\"")
+	require.True(t, present, "chartInboxSLA called but the chart does not declare \"inbox\"")
 
 	entry, ok := raw.(map[string]interface{})
-	require.Truef(t, ok, "chart's inbox declaration is not a {slaDeclared: bool} map: %#v", raw)
+	require.Truef(t, ok, "chart's inbox declaration is not a map: %#v", raw)
 
-	sla, ok := entry["slaDeclared"].(bool)
-	require.Truef(t, ok, "chart's inbox.slaDeclared is not a bool: %#v", entry["slaDeclared"])
-	return sla
+	if rawKinds, present := entry["slaKinds"]; present {
+		list, ok := rawKinds.([]interface{})
+		require.Truef(t, ok, "chart's inbox.slaKinds is not a list: %#v", rawKinds)
+
+		kinds := make(map[string]bool, len(list))
+		for _, k := range list {
+			s, ok := k.(string)
+			require.Truef(t, ok, "chart's inbox.slaKinds contains a non-string entry: %#v", k)
+			kinds[s] = true
+		}
+		return inboxSLADeclaration{usesSlaKinds: true, kinds: kinds}
+	}
+
+	_, present = entry["slaDeclared"]
+	require.Truef(t, present,
+		"chart's inbox declaration has neither slaKinds nor slaDeclared: %#v", entry)
+	return inboxSLADeclaration{usesSlaKinds: false}
 }
 
-// repoInboxSLADeclared is the admin-conformance.json counterpart to
-// chartInboxSLADeclared.
-func repoInboxSLADeclared(t *testing.T, doc conformanceDoc) bool {
+// repoInboxSLA is the admin-conformance.json counterpart to chartInboxSLA.
+func repoInboxSLA(t *testing.T, doc conformanceDoc) inboxSLADeclaration {
 	t.Helper()
 
 	raw, present := doc.Endpoints["inbox"]
-	require.True(t, present, "repoInboxSLADeclared called but admin-conformance.json does not declare \"inbox\"")
+	require.True(t, present, "repoInboxSLA called but admin-conformance.json does not declare \"inbox\"")
 
-	var parsed struct {
-		SlaDeclared bool `json:"slaDeclared"`
-	}
+	var parsed map[string]json.RawMessage
 	require.NoErrorf(t, json.Unmarshal(raw, &parsed),
-		"admin-conformance.json's \"inbox\" declaration is not the expected "+
-			"{\"slaDeclared\": bool} shape: %s", string(raw))
-	return parsed.SlaDeclared
+		"admin-conformance.json's \"inbox\" declaration is not a JSON object: %s", string(raw))
+
+	if rawKinds, present := parsed["slaKinds"]; present {
+		var list []string
+		require.NoErrorf(t, json.Unmarshal(rawKinds, &list),
+			"admin-conformance.json's \"inbox\".\"slaKinds\" is not an array of strings: %s",
+			string(rawKinds))
+
+		kinds := make(map[string]bool, len(list))
+		for _, k := range list {
+			kinds[k] = true
+		}
+		return inboxSLADeclaration{usesSlaKinds: true, kinds: kinds}
+	}
+
+	_, present = parsed["slaDeclared"]
+	require.Truef(t, present,
+		"admin-conformance.json's \"inbox\" declaration has neither slaKinds nor "+
+			"slaDeclared: %s", string(raw))
+	return inboxSLADeclaration{usesSlaKinds: false}
 }
 
 // TestConformanceDeclarationMatchesChartCopy is mark8ly#290's stopgap, not
@@ -553,11 +600,31 @@ func TestConformanceDeclarationMatchesChartCopy(t *testing.T) {
 	}
 
 	if repoIDs["inbox"] && chartIDs["inbox"] {
-		repoSLA := repoInboxSLADeclared(t, doc)
-		chartSLA := chartInboxSLADeclared(t, chart)
-		require.Equalf(t, repoSLA, chartSLA,
-			"admin-conformance.json's inbox.slaDeclared (%v) disagrees with the "+
-				"chart's adminConformanceCron.declaration.endpoints.inbox.slaDeclared "+
-				"(%v) (mark8ly#290)", repoSLA, chartSLA)
+		repoSLA := repoInboxSLA(t, doc)
+		chartSLA := chartInboxSLA(t, chart)
+
+		// A mode mismatch (one side on slaKinds, the other still on
+		// slaDeclared) is a disagreement in its own right, independent of
+		// which kinds either side names — comparing an empty kind set
+		// against a populated one would otherwise silently pass.
+		require.Equalf(t, repoSLA.usesSlaKinds, chartSLA.usesSlaKinds,
+			"admin-conformance.json's inbox declares its SLA via %q but the chart's "+
+				"adminConformanceCron.declaration.endpoints.inbox declares it via %q "+
+				"(mark8ly#290)", inboxSLAModeName(repoSLA.usesSlaKinds), inboxSLAModeName(chartSLA.usesSlaKinds))
+
+		if repoSLA.usesSlaKinds && chartSLA.usesSlaKinds {
+			for kind := range repoSLA.kinds {
+				require.Truef(t, chartSLA.kinds[kind],
+					"admin-conformance.json's inbox.slaKinds declares %q but the chart's "+
+						"adminConformanceCron.declaration.endpoints.inbox.slaKinds does not "+
+						"(mark8ly#290)", kind)
+			}
+			for kind := range chartSLA.kinds {
+				require.Truef(t, repoSLA.kinds[kind],
+					"the chart's adminConformanceCron.declaration.endpoints.inbox.slaKinds "+
+						"declares %q but admin-conformance.json's inbox.slaKinds does not "+
+						"(mark8ly#290)", kind)
+			}
+		}
 	}
 }

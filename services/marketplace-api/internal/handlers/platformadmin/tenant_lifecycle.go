@@ -265,7 +265,14 @@ func (h *TenantLifecycleHandler) handle(
 			ResourceType: "tenant",
 			ResourceID:   tenantIDStr,
 			Metadata: map[string]any{
-				"reason_code":     req.ReasonCode,
+				"reason_code": req.ReasonCode,
+				// `reason` is FREE TEXT and expires after
+				// audit.OperatorFreeTextRetentionDays (180 days), separately
+				// from the row, which lives audit.OperatorRetentionYears.
+				// An operator may put a person's name or email here, and it
+				// must not outlive a GDPR art.17 erasure of this tenant by
+				// seven years (#369). `reason_code` above is structural and
+				// is kept for the full window.
 				"reason":          req.Reason,
 				"stores_affected": res.StoresAffected,
 				"capability":      c.GetString(CtxCapability),

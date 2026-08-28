@@ -273,7 +273,14 @@ func (h *BillingTrialExtendHandler) extend(c *gin.Context) {
 			// in this literal would be overwritten with the same value and
 			// would imply the caller owns a field the helper owns.
 			Metadata: map[string]any{
-				"reason_code":            req.ReasonCode,
+				"reason_code": req.ReasonCode,
+				// `reason` is FREE TEXT and expires after
+				// audit.OperatorFreeTextRetentionDays (180 days), separately
+				// from the row, which lives audit.OperatorRetentionYears.
+				// An operator may put a person's name or email here, and it
+				// must not outlive a GDPR art.17 erasure of this tenant by
+				// seven years (#369). `reason_code` above is structural and
+				// is kept for the full window.
 				"reason":                 reason,
 				"previous_trial_ends_at": prev,
 				"trial_ends_at":          next,

@@ -151,9 +151,10 @@ export function Pricing({ currency, catalogue }: PricingProps) {
   const [period, setPeriod] = useState<BillingPeriod>('annual')
   const plans = catalogue.plans
   // The add-on always bills in USD globally (spec §4.1.2) regardless of the
-  // visitor's currency, so only the amount is used here — the Money below
-  // renders `currency="USD"` literally, never the resolved currency.
-  const { price: proApp } = getAddOnPrice(catalogue.proApp, currency)
+  // visitor's currency, so the amount is always read from the USD row —
+  // the Money below renders `currency="USD"` literally, never the resolved
+  // currency.
+  const { price: proApp } = getAddOnPrice(catalogue.proApp, 'USD')
   const showUsdBilledNote = currency !== 'USD'
   // Page-level "prices shown in X" / GST copy MUST use the currency actually
   // resolved for the plans below, not the raw `currency` prop — otherwise a

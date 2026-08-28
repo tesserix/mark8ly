@@ -1,14 +1,14 @@
 'use client'
 
 /**
- * PricingClient — interactive 4-plan grid + Pro+App add-on.
+ * PricingClient — interactive 3-plan grid + Pro+App add-on.
  *
  * Design rules (non-negotiable):
  *  - Paper / Ink / Moss only. No other decorative colours.
  *  - Hairline column separators; NO bordered card boxes.
- *  - Left-aligned, asymmetric grid at lg (1.1fr · 1fr · 1fr · 1.1fr).
+ *  - Left-aligned, asymmetric grid at lg (1.1fr · 1fr · 1.1fr).
  *    The slight width variance is intentional editorial asymmetry —
- *    Starter and Pro are the narrative anchors; Growth and Scale flank.
+ *    Starter and Pro are the narrative anchors; Studio flanks between them.
  *  - Source Serif 4 for plan names and display prices.
  *  - Source Sans 3 for body, taglines, feature lists, CTAs.
  *  - One moss-700 accent per view: Pro card border-left.
@@ -291,9 +291,9 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
   // The add-on always bills in USD globally (spec §4.1.2), regardless of
   // the visitor's currency — the catalogue's non-USD rows just repeat the
   // USD figure for a consistent card layout, they are not real localized
-  // prices. So this always renders `currency="USD"` literally below, never
-  // a resolved currency from getAddOnPrice.
-  const { price } = getAddOnPrice(pricing.proApp, currency)
+  // prices. So the amount is always read from the USD row, and this always
+  // renders `currency="USD"` literally below, never a resolved currency.
+  const { price } = getAddOnPrice(pricing.proApp, 'USD')
   const amount = period === 'monthly' ? price.monthly : price.annualMonthlyEquivalent
   const showUsdBilledNote = currency !== 'USD'
 
@@ -335,6 +335,9 @@ function ProAppCard({ currency, period, pricing }: ProAppCardProps) {
               / mo{period === 'annual' ? ' equivalent' : ''}
             </span>
           </div>
+          <p className="text-xs" style={{ color: 'var(--ink-500)' }}>
+            {addonCopy.setupFeeNote}
+          </p>
           {showUsdBilledNote && (
             <p className="text-xs" style={{ color: 'var(--ink-500)' }}>
               Billed in USD globally.
@@ -436,11 +439,11 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
 
       {/* ── Plan grid ────────────────────────────────────────────────────── */}
       {/*
-        Asymmetric 4-column grid:
-        - 1.1fr · 1fr · 1fr · 1.1fr
+        Asymmetric 3-column grid:
+        - 1.1fr · 1fr · 1.1fr
         - Starter and Pro (edges) are slightly wider — they are the narrative
-          anchors. Growth and Scale flank. This is intentional editorial asymmetry,
-          not an accident. Do not normalise to equal columns.
+          anchors. Studio flanks between them. This is intentional editorial
+          asymmetry, not an accident. Do not normalise to equal columns.
         - Hairline right-border between columns (border-r on all but last child).
         - NO rounded cards, NO box shadows.
       */}
@@ -451,8 +454,8 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
           'grid grid-cols-1',
           // Tablet: 2 columns
           'md:grid-cols-2',
-          // Desktop: intentional asymmetric 4-col split
-          'lg:grid-cols-[1.1fr_1fr_1fr_1.1fr]',
+          // Desktop: intentional asymmetric 3-col split
+          'lg:grid-cols-[1.1fr_1fr_1.1fr]',
           'border border-[var(--hairline,var(--ink-100))] rounded-md overflow-hidden',
         ].join(' ')}
       >

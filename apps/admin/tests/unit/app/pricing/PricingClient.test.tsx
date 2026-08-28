@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { PricingClient } from '@/app/pricing/PricingClient'
 import { SHARED_PRICING_CATALOGUE as REAL_PRICING, type Currency, type SharedPricingCatalogue } from '@repo/ui/subscription'
 
@@ -312,5 +312,42 @@ describe('PricingClient — against the real SHARED_PRICING_CATALOGUE', () => {
       screen.getByText(/Prices shown in USD\./i, { exact: false }),
     ).toBeInTheDocument()
     expect(screen.queryByText(/Prices shown in THB\./i)).not.toBeInTheDocument()
+  })
+
+  // -------------------------------------------------------------------------
+  // Regression: the old private pricing table advertised the White-label
+  // App add-on at $49/mo, and quoted only the recurring half of its
+  // two-part price (missing the $2,000 one-time setup fee onboarding
+  // states in full). Neither number had a test. Assert both here, and
+  // assert the add-on always reads the USD row regardless of the visitor's
+  // currency (spec §4.1.2 — it bills in USD globally).
+  // -------------------------------------------------------------------------
+  it('renders the White-label App add-on at $199/mo plus the $2,000 one-time setup fee', () => {
+    render(<PricingClient currency="USD" pricing={REAL_PRICING} />)
+
+    const addOn = REAL_PRICING.proApp.prices.USD!
+    expect(addOn.monthly).toBe(19900)
+
+    fireEvent.click(screen.getByRole('radio', { name: /Monthly/i }))
+
+    const addOnSection = screen.getByRole('region', { name: /White-label App add-on/i })
+    expect(within(addOnSection).getByText('$199')).toBeInTheDocument()
+    expect(
+      within(addOnSection).getByText(/\$2,000 one-time setup/i),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the add-on at $199/mo even for a visitor whose page currency is not USD', () => {
+    // The add-on always bills in USD globally — its amount must not shift
+    // when the surrounding plan prices resolve to a different currency.
+    render(<PricingClient currency="NZD" pricing={REAL_PRICING} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: /Monthly/i }))
+
+    const addOnSection = screen.getByRole('region', { name: /White-label App add-on/i })
+    expect(within(addOnSection).getByText('$199')).toBeInTheDocument()
+    expect(
+      within(addOnSection).getByText(/\$2,000 one-time setup/i),
+    ).toBeInTheDocument()
   })
 })

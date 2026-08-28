@@ -51,6 +51,8 @@ export const pricingCopy = {
     name: 'White-label App',
     tagline: 'Publish a branded iOS and Android app for your storefront.',
     requirement: 'Add-on — requires Studio plan or higher.',
+    /** The $2,000 setup fee is a separate one-off charge, not part of the monthly price above. */
+    setupFeeNote: 'Plus a $2,000 one-time setup.',
     cta: 'Add to plan',
     ctaHref: '/admin/settings/billing/pro-app-purchase',
   },

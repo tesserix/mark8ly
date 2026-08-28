@@ -19,7 +19,7 @@ import { PricingClient } from './PricingClient'
 export const metadata: Metadata = {
   title: 'Pricing',
   description:
-    'Four plans for merchants at every stage. Clear limits, no surprise fees. Change plans any time.',
+    'Three plans for merchants at every stage. Clear limits, no surprise fees. Change plans any time.',
   robots: { index: true, follow: true },
 }
 

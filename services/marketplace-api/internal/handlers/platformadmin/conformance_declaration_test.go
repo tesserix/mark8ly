@@ -197,8 +197,8 @@ func readDeclaredEntityTypes(t *testing.T, doc conformanceDoc) map[string]bool {
 // exactly this reason (its own doc comment explains the vacuous-pass trap:
 // wiring only some dependencies mounts only some routes, and any assertion
 // over "what's mounted" would silently pass on the routes it never saw).
-func declarationRouterDeps() platformadmin.Deps {
-	return allReadRoutesDeps()
+func declarationRouterDeps(t *testing.T) platformadmin.Deps {
+	return allReadRoutesDeps(t)
 }
 
 // mountedRouteSet returns, from gin's own route table, the set of route
@@ -297,7 +297,7 @@ func TestConformanceDeclarationMatchesMountedRoutes(t *testing.T) {
 	declaredEntityTypes := readDeclaredEntityTypes(t, doc)
 
 	r := gin.New()
-	platformadmin.Register(r.Group(platformadmin.MountPrefix), declarationRouterDeps())
+	platformadmin.Register(r.Group(platformadmin.MountPrefix), declarationRouterDeps(t))
 
 	routes := r.Routes()
 	require.NotEmpty(t, routes,

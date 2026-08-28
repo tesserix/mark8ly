@@ -1,6 +1,7 @@
 package platformadmin_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -30,15 +31,21 @@ func withCurrentTimestamp(in *platformadmin.SignatureInput) {
 
 // mustEmitter builds an audit.Emitter for test-fixture Deps literals where
 // the Repo is always a hardcoded non-nil fake, so the only error
-// audit.NewEmitter can return (nil Repo) is not reachable here. Panicking
-// instead of threading *testing.T through every Deps-builder in this
-// package keeps those builders usable from table-driven setups that don't
-// carry a *testing.T.
-func mustEmitter(repo audit.Repository) *audit.Emitter {
+// audit.NewEmitter can return (nil Repo) is not reachable here — the
+// panic is unreachable in practice, kept only so a future call site that
+// DOES manage to pass a nil Repo fails loudly instead of silently.
+//
+// t.Cleanup stops the emitter's worker goroutine at the end of the test
+// that (transitively, via a Deps builder) constructed it, so this
+// package's test binary doesn't accumulate one leaked worker goroutine
+// per mustEmitter call for the life of the run.
+func mustEmitter(t *testing.T, repo audit.Repository) *audit.Emitter {
+	t.Helper()
 	em, err := audit.NewEmitter(audit.EmitterConfig{Repo: repo})
 	if err != nil {
 		panic(err)
 	}
+	t.Cleanup(func() { em.Stop(context.Background()) })
 	return em
 }
 
@@ -53,10 +60,10 @@ func mustEmitter(repo audit.Repository) *audit.Emitter {
 // enforces that the two files agree on the wildcard name — if one drifted
 // (e.g. someone renamed tenant_lifecycle.go's :id to :tenantID), gin would
 // panic at Register() time on the SHARED group. Mounting both here means
-// every test built on fullPurgeDeps() incidentally re-proves that
+// every test built on fullPurgeDeps(t) incidentally re-proves that
 // agreement on every run, rather than only the one dedicated collision
 // test below.
-func fullPurgeDeps() platformadmin.Deps {
+func fullPurgeDeps(t *testing.T) platformadmin.Deps {
 	return platformadmin.Deps{
 		Repo:            &stubRepo{},
 		Secret:          testSecret,
@@ -65,7 +72,7 @@ func fullPurgeDeps() platformadmin.Deps {
 		TenantTeardown:  &fakeTeardown{seq: &seq{}},
 		Purger:          &fakePurger{seq: &seq{}},
 		TenantDirectory: &stubDirectory{detail: &tenantdirectory.TenantDetail{}},
-		Emitter:         mustEmitter(&recordingRepo{}),
+		Emitter:         mustEmitter(t, &recordingRepo{}),
 		TenantLifecycle: &stubLifecycle{},
 	}
 }
@@ -80,7 +87,7 @@ func fullPurgeDeps() platformadmin.Deps {
 // purge's own wildcard is, so mutating purge's wildcard alone could never
 // decide the test's outcome. Every other test in this file should keep
 // using fullPurgeDeps, not this.
-func purgeOnlyDeps() platformadmin.Deps {
+func purgeOnlyDeps(t *testing.T) platformadmin.Deps {
 	return platformadmin.Deps{
 		Repo:            &stubRepo{},
 		Secret:          testSecret,
@@ -89,7 +96,7 @@ func purgeOnlyDeps() platformadmin.Deps {
 		TenantTeardown:  &fakeTeardown{seq: &seq{}},
 		Purger:          &fakePurger{seq: &seq{}},
 		TenantDirectory: &stubDirectory{detail: &tenantdirectory.TenantDetail{}},
-		Emitter:         mustEmitter(&recordingRepo{}),
+		Emitter:         mustEmitter(t, &recordingRepo{}),
 	}
 }
 
@@ -99,7 +106,7 @@ func TestRegister_MountsPurgeRoutesWhenWired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps())
+	platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps(t))
 
 	req := signedRequest(t, http.MethodGet, "/api/v1/platform/admin/tenants/"+tenantID+"/purge/preview", nil, withCurrentTimestamp)
 	rec := httptest.NewRecorder()
@@ -116,7 +123,7 @@ func TestRegister_PurgeRequiresOperatorAndCapability(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps())
+	platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps(t))
 
 	target := "/api/v1/platform/admin/tenants/" + tenantID + "/purge"
 	body := []byte(`{"store_slugs":[],"reason_code":"merchant_request"}`)
@@ -140,7 +147,7 @@ func TestRegister_PreviewDoesNotRequireOperator(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps())
+	platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps(t))
 
 	target := "/api/v1/platform/admin/tenants/" + tenantID + "/purge/preview"
 	req := signedRequest(t, http.MethodGet, target, nil, withoutOperator, withoutCapability, withCurrentTimestamp)
@@ -156,7 +163,7 @@ func TestRegister_PreviewDoesNotRequireOperator(t *testing.T) {
 func TestRegister_DoesNotMountPurgeWithoutAnEmitter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	deps := fullPurgeDeps()
+	deps := fullPurgeDeps(t)
 	deps.Emitter = nil
 
 	r := gin.New()
@@ -182,7 +189,7 @@ func TestRegister_DoesNotMountPurgeWithoutTeardownOrPurger(t *testing.T) {
 
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
-			deps := fullPurgeDeps()
+			deps := fullPurgeDeps(t)
 			mutate(&deps)
 
 			r := gin.New()
@@ -209,7 +216,7 @@ func TestRegister_BogusSiblingUnderTenantsStays404(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps())
+	platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps(t))
 
 	req := signedRequest(t, http.MethodPost, "/api/v1/platform/admin/tenants/"+tenantID+"/incinerate", []byte(`{}`), withCurrentTimestamp)
 	rec := httptest.NewRecorder()
@@ -250,7 +257,7 @@ func TestRegister_BothTenantRouteTreesCoexistOnOneEngine(t *testing.T) {
 			AuthzMiddleware:  authz.NewMiddleware(authz.NewFakeClient(), nil),
 		})
 
-		platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps())
+		platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps(t))
 	})
 }
 
@@ -295,6 +302,6 @@ func TestRegister_SharingTheMerchantPrefixPanicsAtRouterBuild(t *testing.T) {
 		// routes mounted, purge's wildcard is the ONLY platformadmin
 		// wildcard in play, so mutating it alone genuinely decides whether
 		// this test panics — see the mutation proof in the Task 11 report.
-		platformadmin.Register(g, purgeOnlyDeps())
+		platformadmin.Register(g, purgeOnlyDeps(t))
 	})
 }

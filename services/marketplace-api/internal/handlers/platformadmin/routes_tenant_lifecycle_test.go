@@ -63,7 +63,7 @@ func TestRegisterMountsTenantLifecycleWhenFullyWired(t *testing.T) {
 		Secret:          "test-secret",
 		DB:              &gorm.DB{},
 		TenantLifecycle: &stubLifecycle{},
-		Emitter:         mustEmitter(&recordingRepo{}),
+		Emitter:         mustEmitter(t, &recordingRepo{}),
 	})
 
 	require.True(t, hasRoute(r, http.MethodPost, "/api/v1/platform/admin/tenants/:id/suspend"),

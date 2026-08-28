@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,36 +14,38 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/audit"
 )
 
-// waitForGoroutineCountSettle polls runtime.NumGoroutine() until two
-// consecutive samples agree, so a baseline/after comparison isn't thrown
-// off by unrelated goroutines (GC, finalizers, test runner bookkeeping)
-// that happen to be mid-exit. Goroutine counts are inherently racy; this
-// does not eliminate that, it just avoids sampling mid-churn.
-func waitForGoroutineCountSettle(t *testing.T) int {
+// countWorkerFrames reports how many goroutines currently have an
+// audit.(*Emitter).worker frame on their stack. It parses a full stack
+// dump (runtime.Stack(buf, all=true)) rather than comparing
+// runtime.NumGoroutine() snapshots: a raw goroutine count is a global
+// counter that any unrelated goroutine (GC, finalizers, another test in
+// the package, a future t.Parallel) can perturb, making a
+// before/after-count comparison a coin flip under any of those
+// conditions. Grepping the dump for the specific frame this test cares
+// about is immune to all of that — it is a deterministic zero-or-nonzero
+// check, not a statistical one.
+func countWorkerFrames(t *testing.T) int {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	last := runtime.NumGoroutine()
-	for time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-		cur := runtime.NumGoroutine()
-		if cur == last {
-			return cur
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
 		}
-		last = cur
+		buf = make([]byte, 2*len(buf))
 	}
-	return last
+	return strings.Count(string(buf), "audit.(*Emitter).worker(")
 }
 
 // TestNewEmitter_NilRepo_ReturnsErrorAndStartsNoWorkers pins the actual
 // defect from #318: NewEmitter stored a nil Repo unguarded and had
 // already started cfg.Workers goroutines that would panic on first
 // dereference. An error return alone doesn't prove the fix — a version
-// that errored *after* starting the workers would also pass a
-// error-only test. This asserts the goroutine count as well, using a
-// large Workers value so a leak is unmistakable.
+// that errored *after* starting the workers would also pass an
+// error-only test. This asserts no audit.(*Emitter).worker frame exists
+// after the call, using a large Workers value so a leak is unmistakable.
 func TestNewEmitter_NilRepo_ReturnsErrorAndStartsNoWorkers(t *testing.T) {
-	before := waitForGoroutineCountSettle(t)
-
 	em, err := audit.NewEmitter(audit.EmitterConfig{
 		Repo:    nil,
 		Logger:  slog.Default(),
@@ -52,20 +55,26 @@ func TestNewEmitter_NilRepo_ReturnsErrorAndStartsNoWorkers(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, em)
 
-	after := waitForGoroutineCountSettle(t)
-	require.Equal(t, before, after,
+	require.Equal(t, 0, countWorkerFrames(t),
 		"NewEmitter with a nil Repo must not leave any worker goroutines running")
 }
 
-// TestNilEmitter_AllSixExportedMethodsAreSafe pins the documented
-// opt-out contract: a nil *Emitter is safe to call every exported
-// method on. Emit, EmitSync and Stop guard the receiver explicitly;
-// EmitStateTransition, EmitAPIKeyEvent and EmitPlanChange are safe only
-// because they delegate to Emit without dereferencing e themselves — an
-// implementation detail nothing else currently pins. If a future
-// refactor made any of the three delegating methods touch e directly
-// before calling Emit, this test is what would catch it.
-func TestNilEmitter_AllSixExportedMethodsAreSafe(t *testing.T) {
+// TestNilEmitter_AllExportedMethodsAreSafe pins the documented opt-out
+// contract: a nil *Emitter is safe to call every exported method on —
+// all eleven, enumerated by grepping the PACKAGE (every "func (e
+// *Emitter)" across every file in internal/audit), not just emitter.go.
+// A narrower enumeration is exactly how #318's follow-up review found
+// EmitCredentialAccess, EmitPromoApplied, EmitPromoCancelled,
+// EmitRefundIssued and EmitBillingArchived were pinned nowhere even
+// though they live outside emitter.go and share the same delegation
+// pattern.
+//
+// Emit, EmitSync and Stop guard the receiver explicitly; the other eight
+// are safe only because they delegate to Emit without dereferencing e
+// themselves — an implementation detail nothing else currently pins. If
+// a future refactor made any of them touch e directly before calling
+// Emit, this test is what would catch it.
+func TestNilEmitter_AllExportedMethodsAreSafe(t *testing.T) {
 	var e *audit.Emitter
 
 	require.NotPanics(t, func() {
@@ -104,6 +113,46 @@ func TestNilEmitter_AllSixExportedMethodsAreSafe(t *testing.T) {
 			Actor: "system:cron:downgrade_recheck",
 		})
 	}, "EmitPlanChange on a nil *Emitter must not panic")
+
+	// The five below live outside emitter.go (credential_events.go,
+	// promo_events.go, refund_events.go) and were the ones missed by the
+	// original "AllSix" enumeration.
+
+	require.NotPanics(t, func() {
+		e.EmitCredentialAccess(nil, audit.CredentialAccess{
+			TenantID: uuid.New(), StoreID: uuid.New(),
+			CredentialType: "firebase_service_account", Operation: "read",
+			Actor: "system:cron:lifecycle",
+		})
+	}, "EmitCredentialAccess on a nil *Emitter must not panic")
+
+	require.NotPanics(t, func() {
+		e.EmitPromoApplied(nil, audit.PromoApplied{
+			TenantID: uuid.New(), StoreID: uuid.New(),
+			Code: "LAUNCH20", Actor: "user:" + uuid.New().String(), Accepted: true,
+		})
+	}, "EmitPromoApplied on a nil *Emitter must not panic")
+
+	require.NotPanics(t, func() {
+		e.EmitPromoCancelled(nil, audit.PromoCancelled{
+			TenantID: uuid.New(), StoreID: uuid.New(), PromoCodeID: uuid.New(),
+			Actor: "user:" + uuid.New().String(),
+		})
+	}, "EmitPromoCancelled on a nil *Emitter must not panic")
+
+	require.NotPanics(t, func() {
+		e.EmitRefundIssued(nil, audit.RefundIssued{
+			TenantID: uuid.New(), StoreID: uuid.New(),
+			StripeChargeID: "ch_123", Actor: "user:" + uuid.New().String(), Accepted: true,
+		})
+	}, "EmitRefundIssued on a nil *Emitter must not panic")
+
+	require.NotPanics(t, func() {
+		e.EmitBillingArchived(nil, audit.BillingArchived{
+			TenantID: uuid.New(), StoreID: uuid.New(), ArchiveID: uuid.New(),
+			Op: "created", Actor: "system:cron:archive",
+		})
+	}, "EmitBillingArchived on a nil *Emitter must not panic")
 }
 
 // TestNewEmitter_ValidConfig_StartsWorkersAndWrites is the happy-path
@@ -134,3 +183,29 @@ func TestNewEmitter_ValidConfig_StartsWorkersAndWrites(t *testing.T) {
 	require.Equal(t, tenantID, repo.created[0].TenantID)
 	require.Equal(t, "tenant.suspend", repo.created[0].Action)
 }
+
+// TestNewEmitter_NilLoggerDefaultsRatherThanPanics pins Important 4: a
+// caller that omits cfg.Logger (as mustEmitter and several other
+// call-sites do) must not get a nil e.logger — every write-path log call
+// (Emit's drop/queue-full warnings, write()'s insert-failure error, both
+// on the worker goroutine) would nil-deref and take down the process,
+// the same failure shape as #318, the moment the repo returns an error.
+func TestNewEmitter_NilLoggerDefaultsRatherThanPanics(t *testing.T) {
+	repo := &recordingRepo{createErr: errRepoWrite{}}
+	e, err := audit.NewEmitter(audit.EmitterConfig{Repo: repo}) // no Logger
+	require.NoError(t, err)
+
+	require.NotPanics(t, func() {
+		e.Emit(nil, audit.Event{
+			Action: "tenant.suspend", ResourceType: "tenant", TenantID: uuid.New(),
+		})
+		e.Stop(context.Background())
+	}, "a nil cfg.Logger must default rather than panic when the worker logs an insert failure")
+}
+
+// errRepoWrite is a stand-in error so the insert-failure path (write()'s
+// e.logger.Error call) actually executes in
+// TestNewEmitter_NilLoggerDefaultsRatherThanPanics.
+type errRepoWrite struct{}
+
+func (errRepoWrite) Error() string { return "boom" }

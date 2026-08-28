@@ -51,6 +51,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/billingarchive"
 	"github.com/mark8ly/marketplace-api/internal/branding"
+	"github.com/mark8ly/marketplace-api/internal/breakglass"
 	"github.com/mark8ly/marketplace-api/internal/campaign"
 	"github.com/mark8ly/marketplace-api/internal/campaignbudget"
 	"github.com/mark8ly/marketplace-api/internal/campaignbudget/concurrency"
@@ -2116,7 +2117,7 @@ func main() {
 			tenantTeardownClient = lifecycleClient
 		}
 		platformSubscriptionRepo := subscription.NewRepository()
-		platformadmin.Register(r.Group("/api/v1/platform"), platformadmin.Deps{
+		platformadmin.Register(r.Group(platformadmin.MountPrefix), platformadmin.Deps{
 			DB:                    conn,
 			Repo:                  auditRepo,
 			Logger:                log,
@@ -2141,6 +2142,7 @@ func main() {
 			InboxActionExecutors:  inboxActionExecutors(migrationRepo),
 			EstateUsers:           estateUsersClient,
 			EmailSends:            platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
+			BreakGlass:            platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2260,7 +2262,7 @@ func main() {
 				tenantTeardownClient = lifecycleClient
 			}
 			platformSubscriptionRepo := subscription.NewRepository()
-			platformadmin.Register(engine.Group("/api/v1/platform"), platformadmin.Deps{
+			platformadmin.Register(engine.Group(platformadmin.MountPrefix), platformadmin.Deps{
 				DB:                    conn,
 				Repo:                  auditRepo,
 				Logger:                log,
@@ -2285,6 +2287,7 @@ func main() {
 				InboxActionExecutors:  inboxActionExecutors(migrationRepo),
 				EstateUsers:           estateUsersClient,
 				EmailSends:            platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
+				BreakGlass:            platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

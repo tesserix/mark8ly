@@ -65,6 +65,15 @@ func CapabilityKey(method, routeTemplate string) string {
 	return strings.ToUpper(strings.TrimSpace(method)) + " " + routeTemplate
 }
 
+// MountPrefix is the path prefix this surface is always mounted under —
+// see the Register doc comment in routes.go for why it must be
+// /api/v1/platform and never /api/v1/admin. It is the single source for
+// that literal: RequiredReadCapabilities below, cmd/marketplace-api/main.go
+// (both call sites), and routes_capability_coverage_test.go all build off
+// this constant so that changing the mount prefix in one of them cannot
+// silently drift from the others and ungate break-glass.
+const MountPrefix = "/api/v1/platform"
+
 // RequiredWriteCapabilities is the per-route capability enforcement
 // matrix. It replaces what used to be a single global RequiredWriteCapability
 // string: one value could never express that this surface's four writes
@@ -97,6 +106,39 @@ var RequiredWriteCapabilities = map[string]string{
 	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/tenants/:id/suspend"):            "",
 	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/tenants/:id/unsuspend"):          "",
 	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/tenants/:id/purge"):              "",
+}
+
+// RequiredReadCapabilities declares reads that require a specific
+// capability VALUE, not merely a valid signature.
+//
+// Unlike RequiredWriteCapabilities this map is NOT gated on
+// CapabilityValueChecked and its values are NOT empty: it is opt-in per
+// route, and a read route ABSENT from it keeps today's behaviour —
+// signature only, no operator required, no capability required. That
+// undeclared-route behaviour is load-bearing: every read this surface
+// already serves in production (/admin/audit-logs, /admin/billing/subscriptions,
+// /admin/billing/trials, /admin/health) has no entry here and must keep
+// working exactly as it does today.
+//
+// That asymmetry with the write map is deliberate, not an oversight:
+// flipping value enforcement on for every write at once is #364's problem,
+// and it needs the console to send more than one capability value before
+// that switch can be turned on safely. Requiring one named capability on
+// one route does not carry that same requirement, so this map can enforce
+// today without waiting on #364.
+//
+// What this pins on the console: platform-api has no break-glass module
+// yet, so nothing that succeeds today is refused by this entry. But the
+// audit module currently sends "platform" as its X-Platform-Capability
+// value, and that is NOT the value break-glass must send. When the
+// break-glass module is built, it MUST send "rotate-credentials" — matching
+// what the console's own route config already declares for
+// platform.breakGlass — or every request it makes will be refused with 403
+// capability_insufficient. Whoever builds that module should find this
+// requirement here, in the code, rather than discover it as a production
+// 403.
+var RequiredReadCapabilities = map[string]string{
+	CapabilityKey(http.MethodGet, MountPrefix+"/admin/break-glass"): "rotate-credentials",
 }
 
 // AuthConfig configures RequirePlatformAuth.
@@ -133,6 +175,14 @@ type AuthConfig struct {
 	// without touching the production matrix, whose values #364 requires
 	// stay empty until #333.
 	RequiredCapabilities map[string]string
+
+	// RequiredReadCaps overrides RequiredReadCapabilities for this
+	// instance of RequirePlatformAuth. Nil — again, every production
+	// caller's value — falls back to the real RequiredReadCapabilities map
+	// declared above. Tests use this to exercise declared-and-matched,
+	// declared-and-mismatched, and undeclared-read behaviour without
+	// touching the production map, which only break-glass needs today.
+	RequiredReadCaps map[string]string
 }
 
 // RequirePlatformAuth verifies the gateway signature, enforces the replay
@@ -291,6 +341,43 @@ func RequirePlatformAuth(cfg AuthConfig) gin.HandlerFunc {
 						"this route has not declared a required capability")
 					return
 				}
+				if in.Capability != required {
+					abort(c, http.StatusForbidden, "capability_insufficient",
+						"the presented capability does not authorize this request")
+					return
+				}
+			}
+		} else {
+			// Reads are ungated by default — see RequiredReadCapabilities'
+			// doc comment. Only a route with an entry in that map requires
+			// an operator and a matching capability; every other read on
+			// this surface (audit logs, billing subscriptions, billing
+			// trials, health) has no entry and must proceed exactly as it
+			// does today. This is the reverse posture from the write branch
+			// above, deliberately: an UNDECLARED write fails closed because
+			// every write must declare; an undeclared READ is simply an
+			// ungated read, because gating every read has never been
+			// required and this map exists to opt specific routes in, not
+			// to opt every route out by default.
+			readRequirements := RequiredReadCapabilities
+			if cfg.RequiredReadCaps != nil {
+				readRequirements = cfg.RequiredReadCaps
+			}
+
+			if required, declared := readRequirements[CapabilityKey(writeMethod, c.FullPath())]; declared {
+				if in.Operator == "" {
+					abort(c, http.StatusUnauthorized, "operator_required",
+						"this read requires an operator identity")
+					return
+				}
+				if in.Capability == "" {
+					abort(c, http.StatusUnauthorized, "capability_required",
+						"this read requires a capability")
+					return
+				}
+				// Same exact-match rule as the write branch: no lattice, no
+				// prefix match, no implication between capabilities — see
+				// RequiredWriteCapabilities' doc comment and #275.
 				if in.Capability != required {
 					abort(c, http.StatusForbidden, "capability_insufficient",
 						"the presented capability does not authorize this request")

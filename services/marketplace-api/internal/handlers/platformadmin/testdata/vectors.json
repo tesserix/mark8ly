@@ -58,5 +58,20 @@
     "capability": "audit.read",
     "canonical": "GET\n/api/v1/platform/admin/audit-logs\naction=product.deleted&actor=Jane+Smith\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1755859200\n018f3c2a-0000-7000-8000-000000000004\nop_7f3a\naudit.read",
     "signature": "4998e740617f47c75e1279d5588bb72aebb45cbec9031d92bc537841cf830072"
+  },
+  {
+    "name": "query-value-with-sub-delims",
+    "secret": "reference-secret-do-not-use",
+    "method": "GET",
+    "request_target": "/api/v1/platform/admin/audit-logs?actor=O'Brien%20(ops)!&note=a%2Bb*",
+    "path": "/api/v1/platform/admin/audit-logs",
+    "raw_query": "actor=O'Brien%20(ops)!&note=a%2Bb*",
+    "body": "",
+    "timestamp": "1755859200",
+    "nonce": "018f3c2a-0000-7000-8000-000000000005",
+    "operator": "op_7f3a",
+    "capability": "audit.read",
+    "canonical": "GET\n/api/v1/platform/admin/audit-logs\nactor=O%27Brien+%28ops%29%21&note=a%2Bb%2A\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1755859200\n018f3c2a-0000-7000-8000-000000000005\nop_7f3a\naudit.read",
+    "signature": "c97844f09e4653c046a69e7e15517d91d226854836a59e588d9e4781e52d6e23"
   }
 ]

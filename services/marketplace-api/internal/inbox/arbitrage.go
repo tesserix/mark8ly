@@ -53,7 +53,10 @@ func (p *ArbitrageProvider) List(ctx context.Context, f Filter) ([]Item, error) 
 	for _, r := range rows {
 		subtitle := "Price tier " + r.ResolvedPriceTier
 		if r.MismatchReason != nil && *r.MismatchReason != "" {
-			subtitle = *r.MismatchReason
+			// mismatch_reason is an unbounded append-only narrative since
+			// #398 widened it to TEXT — varchar(100) used to cap this by
+			// accident. A subtitle is one line, so truncate for display.
+			subtitle = truncateSubtitle(*r.MismatchReason, 120)
 		}
 		items = append(items, Item{
 			ID:           r.ID,
@@ -84,4 +87,14 @@ func (p *ArbitrageProvider) Count(ctx context.Context, f Filter) (int64, error) 
 	}
 	var n int64
 	return n, q.Count(&n).Error
+}
+
+// truncateSubtitle shortens s to at most max runes, appending an ellipsis
+// when it cuts. Rune-based so a multi-byte character is never split.
+func truncateSubtitle(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "…"
 }

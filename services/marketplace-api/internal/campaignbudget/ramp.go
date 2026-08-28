@@ -45,9 +45,12 @@ func IsRampTransitionDay(day int) bool {
 //     remaining = GREATEST(remaining, plan_allowance)
 //   - all other days: no-op
 //
-// Idempotency: re-running on the same transition day with a smaller remaining
-// uses GREATEST semantics so consumed balance is never re-inflated. The UPDATE
-// is a single atomic statement; concurrent runs produce the same result.
+// Idempotency: each transition day is applied AT MOST ONCE per budget row,
+// enforced by the `ramp_step_applied < N` guard in the WHERE clause. GREATEST
+// alone is NOT sufficient — it is a floor, so a re-run after the merchant has
+// spent budget would raise the balance back to the ceiling and refund consumed
+// spend (#399). The guard is part of the same single atomic UPDATE, so
+// concurrent runs on multiple pods still apply the step exactly once.
 //
 // Uses plangate.Limit to resolve the plan allowance; on plangate.Negotiated
 // (Pro — contact sales) the function increments PlanRecomputeWarningTotal and
@@ -58,19 +61,24 @@ func ApplyTrialRamp(ctx context.Context, db *gorm.DB, storeID uuid.UUID, day int
 		return nil
 	}
 
+	var applied bool
 	switch day {
 	case 4:
-		// Single SQL does GREATEST(remaining, 2000) atomically.
-		// Idempotent: if remaining already >= 2000, no change.
+		// Applied at most once: the ramp_step_applied guard, not GREATEST, is
+		// what makes this idempotent.
 		const sql = `
 			UPDATE campaign_email_budget
-			SET limit_set  = GREATEST(remaining, 2000),
-			    remaining  = GREATEST(remaining, 2000)
+			SET limit_set         = GREATEST(remaining, 2000),
+			    remaining         = GREATEST(remaining, 2000),
+			    ramp_step_applied = 4
 			WHERE store_id = $1
-			  AND month    = date_trunc('month', (now() AT TIME ZONE 'utc'))::date`
-		if err := db.WithContext(ctx).Exec(sql, storeID).Error; err != nil {
-			return fmt.Errorf("ramp day-4: %w", err)
+			  AND month    = date_trunc('month', (now() AT TIME ZONE 'utc'))::date
+			  AND ramp_step_applied < 4`
+		res := db.WithContext(ctx).Exec(sql, storeID)
+		if res.Error != nil {
+			return fmt.Errorf("ramp day-4: %w", res.Error)
 		}
+		applied = res.RowsAffected > 0
 	case 8:
 		allowance := plangate.Limit(subscription.SubscriptionPlan(plan), plangate.FeatureCampaignEmailsPerMonth)
 		if allowance == plangate.Negotiated {
@@ -79,14 +87,20 @@ func ApplyTrialRamp(ctx context.Context, db *gorm.DB, storeID uuid.UUID, day int
 		}
 		const sql = `
 			UPDATE campaign_email_budget
-			SET limit_set = $1,
-			    remaining = GREATEST(remaining, $1)
+			SET limit_set         = $1,
+			    remaining         = GREATEST(remaining, $1),
+			    ramp_step_applied = 8
 			WHERE store_id = $2
-			  AND month    = date_trunc('month', (now() AT TIME ZONE 'utc'))::date`
-		if err := db.WithContext(ctx).Exec(sql, allowance, storeID).Error; err != nil {
-			return fmt.Errorf("ramp day-8: %w", err)
+			  AND month    = date_trunc('month', (now() AT TIME ZONE 'utc'))::date
+			  AND ramp_step_applied < 8`
+		res := db.WithContext(ctx).Exec(sql, allowance, storeID)
+		if res.Error != nil {
+			return fmt.Errorf("ramp day-8: %w", res.Error)
 		}
+		applied = res.RowsAffected > 0
 	}
-	TrialRampAppliedTotal.WithLabelValues(strconv.Itoa(day)).Inc()
+	if applied {
+		TrialRampAppliedTotal.WithLabelValues(strconv.Itoa(day)).Inc()
+	}
 	return nil
 }

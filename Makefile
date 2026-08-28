@@ -66,42 +66,44 @@ test-int: ## Run integration tests against the running `make dev` stack
 	@# enough to hide a production dunning bug (see the sql.NullTime fix in
 	@# internal/subscription/dunning/ladder.go).
 	@#
-	@# ./internal/billing/tax below is deliberately NOT ./internal/billing/tax/...
-	@# — its revalidation subpackage deadlocks (not a normal failure): Cron.Run
-	@# holds a transaction open while Svc.Submit writes the same row on a
-	@# separate pooled connection, so the two block each other forever and this
-	@# target would hang instead of failing. Filed separately; do not add the
-	@# ellipsis back until that deadlock is fixed. The missing ellipsis also
-	@# excludes internal/billing/tax/seaqueue — its status was never measured,
-	@# so it stays out until someone does.
+	@# ./internal/billing/tax/... is fully included again: the revalidation
+	@# deadlock it used to hide was fixed in #396 — Cron.Run no longer holds a
+	@# transaction open across Svc.Submit, so the pass cannot wait on its own
+	@# row lock.
 	@#
 	@# ./internal/subscription below is deliberately NOT ./internal/subscription/...
-	@# — recursing would pull in internal/subscription/planchange, which is
-	@# still red. Do not add the ellipsis back until that package is fixed.
+	@# — recursing would pull in sibling packages whose status was never
+	@# measured. internal/subscription/planchange is listed explicitly below:
+	@# it is green as of #397 and must keep running so that guard cannot
+	@# silently stop.
 	@#
-	@# ./internal/campaignbudget/cron/... similarly leaves
-	@# internal/campaignbudget/concurrency and internal/campaignbudget/transactional
-	@# unassessed — their status was never measured, so they stay out too.
+	@# ./internal/campaignbudget/... is the full subtree: the parent package plus
+	@# cron, concurrency and transactional. All four were measured green against
+	@# the dev database on 2026-08-28 when the #399 trial-ramp idempotency guard
+	@# landed, so the ellipsis is safe — and the parent package must keep running
+	@# or that guard could silently regress again.
 	@cd services/marketplace-api && \
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable' \
 	  go test -tags=integration -p 1 \
 	    ./internal/apikeys/... \
 	    ./internal/audit/... \
+	    ./internal/arbitrage/... \
 	    ./internal/handlers/platformadmin/... \
 	    ./internal/tenantpurge/... \
 	    ./internal/subscription/dunning/... \
 	    ./internal/handlers/internalsvc/... \
 	    ./internal/billing/appaddon/... \
 	    ./internal/billing/dispatch/... \
-	    ./internal/billing/tax \
+	    ./internal/billing/tax/... \
 	    ./internal/billing/trial/... \
 	    ./internal/subscription \
 	    ./internal/subscription/cancel/... \
 	    ./internal/subscription/harddelete/... \
 	    ./internal/subscription/lifecycle/... \
+	    ./internal/subscription/planchange/... \
 	    ./internal/subscription/readonly/... \
 	    ./internal/subscription/statemachine/... \
-	    ./internal/campaignbudget/cron/... \
+	    ./internal/campaignbudget/... \
 	    ./internal/handlers/webhooks/... \
 	    ./tests/integration/... \
 	    ./pkg/testdb/...

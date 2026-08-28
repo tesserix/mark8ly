@@ -96,6 +96,21 @@ func main() {
 				Operator: "op_7f3a", Capability: "audit.read",
 			},
 		},
+		{
+			// Covers the FIVE sub-delimiter characters where url.QueryEscape
+			// diverges from encodeURIComponent beyond the space: ! * ' ( ).
+			// The other four vectors contain none of them, so a port that
+			// applies only the documented %20 -> + fix passes all of them and
+			// still 401s on a name like O'Brien (#372).
+			name:          "query-value-with-sub-delims",
+			requestTarget: "/api/v1/platform/admin/audit-logs?actor=O'Brien%20(ops)!&note=a%2Bb*",
+			in: platformadmin.SignatureInput{
+				Method: "GET", Path: "/api/v1/platform/admin/audit-logs",
+				RawQuery:  "actor=O'Brien%20(ops)!&note=a%2Bb*",
+				Timestamp: "1755859200", Nonce: "018f3c2a-0000-7000-8000-000000000005",
+				Operator: "op_7f3a", Capability: "audit.read",
+			},
+		},
 	}
 
 	const secret = "reference-secret-do-not-use"

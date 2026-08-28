@@ -20,18 +20,12 @@
 //     testdata vector "repeated-query-and-encoded-path", whose "path" field
 //     is the decoded form actually signed and whose "request_target" field
 //     is the raw wire form shown only for illustration.
-//   - Query values are escaped with application/x-www-form-urlencoded
-//     semantics (Go's url.QueryEscape): a space becomes "+", and a literal
-//     "+" becomes "%2B". This diverges from encodeURIComponent-style
-//     escaping (JavaScript, Python's urllib.parse.quote), which encodes a
-//     space as "%20" and leaves "+" as data. An implementation built on
-//     encodeURIComponent must convert "%20" to "+" (and must not
-//     double-escape an existing "+") to match this canonicaliser, or every
-//     query value containing a space silently 401s — see testdata vector
-//     "query-value-with-space". Only the *output* escaping diverges:
-//     url.ParseQuery decodes both "%20" and "+" to a space on input, so the
-//     raw query string the caller happened to build with is irrelevant —
-//     what matters is how CanonicalQuery re-escapes it on the way out.
+//   - Query keys AND values are escaped with application/x-www-form-urlencoded
+//     semantics (Go's url.QueryEscape), which diverges from
+//     encodeURIComponent-style escaping (JavaScript, Python's
+//     urllib.parse.quote) on SIX characters, not just the space. Getting
+//     this wrong is a silent 401 on every affected query value — see
+//     "Query escaping" below for the full table.
 //   - Method, Path, Timestamp, Nonce, Operator and Capability must not
 //     contain '\n' or '\r'. CanonicalString enforces this and returns an
 //     error otherwise. The canonical string joins fields with "\n" and has
@@ -50,6 +44,33 @@
 //   - Sign and Verify reject an empty secret. An unconfigured secret
 //     reaching this layer is a misconfiguration, not something that should
 //     silently produce a valid-looking HMAC.
+//
+// # Query escaping
+//
+// CanonicalQuery escapes both keys and values with url.QueryEscape
+// (application/x-www-form-urlencoded semantics). That diverges from
+// encodeURIComponent-style escaping on exactly six characters:
+//
+//	char   url.QueryEscape   encodeURIComponent
+//	space  +                 %20
+//	!      %21               !
+//	*      %2A               *
+//	'      %27               '
+//	(      %28               (
+//	)      %29               )
+//
+// "~ - _ ." agree, and "+" is "%2B" on both sides. An implementation built
+// on encodeURIComponent must therefore convert "%20" to "+" (and must not
+// double-escape an existing "+") AND percent-escape the five sub-delimiters
+// "!*'()" — otherwise every query value containing one silently 401s. An
+// apostrophe in a person's name reaches this through the audit-log actor
+// filter, so this is not an edge case (#372). See testdata vectors
+// "query-value-with-space" and "query-value-with-sub-delims".
+//
+// Only the *output* escaping diverges: url.ParseQuery decodes both "%20"
+// and "+" to a space on input, so the raw query string the caller happened
+// to build with is irrelevant — what matters is how CanonicalQuery
+// re-escapes it on the way out.
 package platformadmin
 
 import (

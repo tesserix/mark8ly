@@ -58,9 +58,11 @@ export interface SharedPricingCatalogue {
  * (§4.1.2); the catalogue still offers per-currency rows for display,
  * but billing always bills in USD for the add-on.
  *
- * AED and JPY are NOT in the v2.3 launch scope (§4.1 — UAE deferred,
- * JPY not in 18-country list). Retained for fallback display only;
- * signup will be blocked for those countries until v2.
+ * AED and JPY have no rows here: we do not serve the Arab or SEA
+ * markets they represent (no tested shipping carrier), and a
+ * USD-fallback row under an AED/JPY label would display as if it were
+ * a real, if approximate, local price. A visitor whose currency has no
+ * row here falls back to USD and is shown that — labelled USD.
  */
 export const SHARED_PRICING_CATALOGUE: SharedPricingCatalogue = {
   plans: [
@@ -76,8 +78,6 @@ export const SHARED_PRICING_CATALOGUE: SharedPricingCatalogue = {
         NZD: { monthly: 2900, annual: 27800, annualMonthlyEquivalent: 2317 },
         SGD: { monthly: 2500, annual: 23900, annualMonthlyEquivalent: 1992 },
         INR: { monthly: 99900, annual: 959900, annualMonthlyEquivalent: 79992 },
-        AED: { monthly: 1900, annual: 18200, annualMonthlyEquivalent: 1517 }, // USD fallback, deferred
-        JPY: { monthly: 1900, annual: 18200, annualMonthlyEquivalent: 1517 }, // USD fallback, not in scope
       },
     },
     {
@@ -92,8 +92,6 @@ export const SHARED_PRICING_CATALOGUE: SharedPricingCatalogue = {
         NZD: { monthly: 7500, annual: 71900, annualMonthlyEquivalent: 5992 },
         SGD: { monthly: 6500, annual: 62300, annualMonthlyEquivalent: 5192 },
         INR: { monthly: 249900, annual: 2399900, annualMonthlyEquivalent: 199992 },
-        AED: { monthly: 4900, annual: 47000, annualMonthlyEquivalent: 3917 }, // USD fallback
-        JPY: { monthly: 4900, annual: 47000, annualMonthlyEquivalent: 3917 }, // USD fallback
       },
     },
     {
@@ -109,8 +107,6 @@ export const SHARED_PRICING_CATALOGUE: SharedPricingCatalogue = {
         NZD: { monthly: 17900, annual: 178800, annualMonthlyEquivalent: 14900 },
         SGD: { monthly: 15500, annual: 154800, annualMonthlyEquivalent: 12900 },
         INR: { monthly: 659900, annual: 6599900, annualMonthlyEquivalent: 549992 },
-        AED: { monthly: 11900, annual: 118800, annualMonthlyEquivalent: 9900 }, // USD fallback
-        JPY: { monthly: 11900, annual: 118800, annualMonthlyEquivalent: 9900 }, // USD fallback
       },
     },
   ],
@@ -128,8 +124,6 @@ export const SHARED_PRICING_CATALOGUE: SharedPricingCatalogue = {
       NZD: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
       SGD: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
       INR: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
-      AED: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
-      JPY: { monthly: 19900, annual: 238800, annualMonthlyEquivalent: 19900 },
     },
   },
 }

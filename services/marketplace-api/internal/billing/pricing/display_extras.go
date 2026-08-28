@@ -6,12 +6,12 @@ package pricing
 //  1. Thin accessors onto catalog.go's unexported tables (developedAmounts,
 //     pppAmounts). They live here, not in catalog.go, so the #393 comment
 //     fix in catalog.go stays comment-only.
-//  2. The display-only values billing genuinely does not own: AED/JPY have
-//     no Stripe Price object (out of v2.3 launch scope), the Pro+App add-on
-//     has no billing.Plan of its own, and there is no catalog concept of
-//     "which currencies does the public pricing page show, in what order."
-//     These are declared here, explicitly, rather than invented inside the
-//     generator where they would be invisible to the next reader.
+//  2. The display-only values billing genuinely does not own: the Pro+App
+//     add-on has no billing.Plan of its own, and there is no catalog
+//     concept of "which currencies does the public pricing page show, in
+//     what order." These are declared here, explicitly, rather than
+//     invented inside the generator where they would be invisible to the
+//     next reader.
 
 // DevelopedAmount returns the developed-tier amount for (plan, period,
 // currency) and whether it exists. Accessor onto catalog.go's unexported
@@ -48,40 +48,33 @@ func PPPAmount(plan Plan, period Period, currency string) (Amount, bool) {
 // Billing's catalog has no notion of "display order for a public page" —
 // this is a presentation decision the generator needs but catalog.go has no
 // reason to encode.
+//
+// AED and JPY are deliberately absent: we do not serve the Arab or SEA
+// markets they represent (no tested shipping carrier — see
+// apps/onboarding/app/onboarding/page.tsx's carrier allowlist), and the
+// rows that used to sit here carried the raw USD integer under an AED/JPY
+// label, quoting roughly 27% and a fraction of the real price
+// respectively. Removing them lets an AE/JP visitor fall through to the
+// USD row, which the display layer renders labelled USD — the honest
+// answer for a market we do not sell in.
 var DisplayCurrencyOrder = []string{
-	"usd", "cad", "gbp", "eur", "aud", "nzd", "sgd", "inr", "aed", "jpy",
+	"usd", "cad", "gbp", "eur", "aud", "nzd", "sgd", "inr",
 }
 
-// FallbackCurrencies lists the TS-table currencies with no Stripe Price
-// object at all. Per spec §4.1, AED (UAE) and JPY (not in the 18-country
-// list) are out of v2.3 launch scope; the TS table retains them only as
-// USD-fallback rows for display, with signup blocked for those countries
-// until a later version. Because billing never bills in these currencies,
-// catalog.go correctly has no data for them — cmd/genpricing falls back to
-// each plan's USD developed-tier amount for every currency in this list.
-var FallbackCurrencies = []string{"aed", "jpy"}
+// FallbackCurrencies lists TS-table currencies with no Stripe Price object
+// at all, for which cmd/genpricing falls back to each plan's USD
+// developed-tier amount. Empty today: AED and JPY were the only such
+// currencies, and both were removed from DisplayCurrencyOrder above rather
+// than kept as fallback rows, because a fallback row displays as if it
+// were a real, if approximate, local price. Kept as a mechanism (not
+// deleted) because a future currency may legitimately need the same
+// USD-fallback treatment.
+var FallbackCurrencies []string
 
 // FallbackComment names the exact trailing comment cmd/genpricing must emit
-// for a given plan's fallback-currency row. The committed pricing-data.ts
-// uses different wording per plan: Starter's AED says "USD fallback,
-// deferred" and its JPY says "USD fallback, not in scope", while Studio and
-// Pro just say "USD fallback" for both currencies. That asymmetry is
-// pre-existing prose with no derivable rule behind it, so it is pinned here
-// verbatim rather than invented by the generator.
-var FallbackComment = map[Plan]map[string]string{
-	PlanStarter: {
-		"aed": "USD fallback, deferred",
-		"jpy": "USD fallback, not in scope",
-	},
-	PlanStudio: {
-		"aed": "USD fallback",
-		"jpy": "USD fallback",
-	},
-	PlanPro: {
-		"aed": "USD fallback",
-		"jpy": "USD fallback",
-	},
-}
+// for a given plan's fallback-currency row, keyed by plan then currency.
+// Empty today — see FallbackCurrencies.
+var FallbackComment = map[Plan]map[string]string{}
 
 // ProAppMonthly and ProAppAnnual are the Pro+App add-on's single global
 // price, per spec §4.1.2: billed in USD only, everywhere. There is no

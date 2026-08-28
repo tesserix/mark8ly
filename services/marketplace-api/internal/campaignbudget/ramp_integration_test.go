@@ -97,3 +97,36 @@ func TestApplyTrialRamp_Idempotent_ReRunSameDay(t *testing.T) {
 	require.Equal(t, 1800, remaining, "idempotent: re-running the ramp must not re-inflate remaining")
 	require.Equal(t, 2000, limitSet)
 }
+
+func TestApplyTrialRamp_Day8_Idempotent_ReRunSameDay(t *testing.T) {
+	// Day 8 has the same GREATEST shape as day 4 and the same defect (#399):
+	// ramp to the plan allowance, spend some of it, re-run — the balance must
+	// NOT climb back to the allowance.
+	db := testdb.NewDB(t, "campaign_email_budget")
+	storeID := uuid.New()
+	month := firstOfMonthUTC(time.Now())
+	require.NoError(t, db.Exec(`
+		INSERT INTO campaign_email_budget (store_id, month, remaining, limit_set)
+		VALUES ($1, $2, 1500, 2000)`, storeID, month).Error)
+
+	require.NoError(t, campaignbudget.ApplyTrialRamp(context.Background(), db, storeID, 8, "trial"))
+
+	var afterRamp int
+	require.NoError(t, db.Raw(
+		`SELECT remaining FROM campaign_email_budget WHERE store_id=$1`, storeID,
+	).Row().Scan(&afterRamp))
+
+	// Consume a chunk of the ramped budget.
+	require.NoError(t, db.Exec(`
+		UPDATE campaign_email_budget SET remaining = remaining - 3000
+		WHERE store_id = $1`, storeID).Error)
+
+	require.NoError(t, campaignbudget.ApplyTrialRamp(context.Background(), db, storeID, 8, "trial"))
+
+	var remaining int
+	require.NoError(t, db.Raw(
+		`SELECT remaining FROM campaign_email_budget WHERE store_id=$1`, storeID,
+	).Row().Scan(&remaining))
+	require.Equal(t, afterRamp-3000, remaining,
+		"idempotent: re-running the day-8 ramp must not re-inflate remaining")
+}

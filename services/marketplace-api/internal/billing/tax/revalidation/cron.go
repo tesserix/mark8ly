@@ -11,8 +11,9 @@
 //     boot the merchant off billing for a tax registry hiccup; we just gate
 //     the storefront until they fix it.
 //
-// Idempotency: the whole pass runs under a pg_advisory_xact_lock so multiple
-// pods serialize. Per-row work uses a CAS sentinel on
+// Idempotency: the pass holds a session-scoped pg_try_advisory_lock on a
+// dedicated connection so multiple pods serialize. Per-row work runs as its
+// own auto-committed statement and uses a CAS sentinel on
 // revalidation_attempted_at so a partial pass resumes cleanly.
 package revalidation
 
@@ -75,15 +76,51 @@ func (c *Cron) Run(ctx context.Context) error {
 		c.BatchSize = 500
 	}
 
-	return c.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext('tax_revalidation_cron'))`).Error; err != nil {
-			return fmt.Errorf("revalidation: advisory lock: %w", err)
+	// The cron lock is SESSION-scoped and held on its own dedicated
+	// connection, NOT pg_advisory_xact_lock inside a pass-long transaction
+	// (#396). The old shape kept a transaction open across c.Svc.Submit,
+	// which writes the same store_subscriptions row on a second pooled
+	// connection — that write blocked on this transaction's uncommitted row
+	// lock while this transaction waited for Submit to return. Postgres saw
+	// one waiter and one idle-in-transaction session, not a cycle, so the
+	// deadlock detector never fired and the cron hung forever.
+	sqlDB, err := c.DB.DB()
+	if err != nil {
+		return fmt.Errorf("revalidation: db handle: %w", err)
+	}
+	conn, err := sqlDB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("revalidation: dedicated conn: %w", err)
+	}
+	defer conn.Close()
+
+	var acquired bool
+	if err := conn.QueryRowContext(ctx,
+		`SELECT pg_try_advisory_lock(hashtext('tax_revalidation_cron'))`,
+	).Scan(&acquired); err != nil {
+		return fmt.Errorf("revalidation: advisory lock: %w", err)
+	}
+	if !acquired {
+		// Another pass is still running. Skipping is correct for a daily
+		// sweep: blocking would just queue passes behind each other.
+		slog.Info("revalidation: another pass holds the cron lock, skipping")
+		return nil
+	}
+	defer func() {
+		// WithoutCancel: the lock must be released even if ctx is done,
+		// otherwise it is held until this connection is closed.
+		if _, err := conn.ExecContext(context.WithoutCancel(ctx),
+			`SELECT pg_advisory_unlock(hashtext('tax_revalidation_cron'))`); err != nil {
+			slog.Warn("revalidation: advisory unlock", "err", err)
 		}
-		if err := c.recheckStaleValidations(ctx, tx); err != nil {
-			return err
-		}
-		return c.unpublishAfter14Days(ctx, tx)
-	})
+	}()
+
+	// Each unit of work below runs as its own auto-committed statement on the
+	// pool. Nothing holds a transaction across Submit.
+	if err := c.recheckStaleValidations(ctx, c.DB); err != nil {
+		return err
+	}
+	return c.unpublishAfter14Days(ctx, c.DB)
 }
 
 type staleRow struct {
@@ -94,8 +131,8 @@ type staleRow struct {
 	BusinessName       string
 }
 
-func (c *Cron) recheckStaleValidations(ctx context.Context, tx *gorm.DB) error {
-	rows, err := tx.WithContext(ctx).Raw(`
+func (c *Cron) recheckStaleValidations(ctx context.Context, db *gorm.DB) error {
+	rows, err := db.WithContext(ctx).Raw(`
 		SELECT tenant_id::text, store_id::text,
 		       COALESCE(tax_id_country, ''),
 		       COALESCE(reverse_charge_tax_id, ''),
@@ -126,12 +163,12 @@ func (c *Cron) recheckStaleValidations(ctx context.Context, tx *gorm.DB) error {
 	}
 
 	for _, r := range stale {
-		c.processOne(ctx, tx, r)
+		c.processOne(ctx, db, r)
 	}
 	return nil
 }
 
-func (c *Cron) processOne(ctx context.Context, tx *gorm.DB, r staleRow) {
+func (c *Cron) processOne(ctx context.Context, db *gorm.DB, r staleRow) {
 	tenantID, err1 := uuid.Parse(r.TenantIDStr)
 	storeID, err2 := uuid.Parse(r.StoreIDStr)
 	if err1 != nil || err2 != nil || r.TaxIDCountry == "" || r.ReverseChargeTaxID == "" {
@@ -139,7 +176,7 @@ func (c *Cron) processOne(ctx context.Context, tx *gorm.DB, r staleRow) {
 	}
 
 	// CAS-like sentinel: stamp attempted_at first so retries skip this row.
-	if err := tx.WithContext(ctx).Exec(`
+	if err := db.WithContext(ctx).Exec(`
 		UPDATE store_subscriptions
 		   SET revalidation_attempted_at = now()
 		 WHERE tenant_id = ? AND store_id = ?
@@ -166,7 +203,7 @@ func (c *Cron) processOne(ctx context.Context, tx *gorm.DB, r staleRow) {
 		return
 	}
 
-	if err := tx.WithContext(ctx).Exec(`
+	if err := db.WithContext(ctx).Exec(`
 		UPDATE store_subscriptions
 		   SET tax_id_validated            = false,
 		       tax_revalidation_started_at = COALESCE(tax_revalidation_started_at, now()),
@@ -208,8 +245,8 @@ func (c *Cron) processOne(ctx context.Context, tx *gorm.DB, r staleRow) {
 // unpublishAfter14Days flips storefront_published=false on subscriptions that
 // failed revalidation more than 14 days ago. Status column intentionally
 // untouched — billing continues per §19.5.
-func (c *Cron) unpublishAfter14Days(ctx context.Context, tx *gorm.DB) error {
-	r := tx.WithContext(ctx).Exec(`
+func (c *Cron) unpublishAfter14Days(ctx context.Context, db *gorm.DB) error {
+	r := db.WithContext(ctx).Exec(`
 		UPDATE store_subscriptions
 		   SET storefront_published         = false,
 		       storefront_unpublished_at    = now(),

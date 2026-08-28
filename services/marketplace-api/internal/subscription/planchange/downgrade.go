@@ -21,7 +21,9 @@ import (
 // gormRepository holds only a *gorm.DB handle so construction is allocation-
 // trivial. Using tx ensures the count is consistent with any uncommitted rows
 // in the same advisory-lock transaction.
-func (o *Orchestrator) executeDowngradeSchedule(ctx context.Context, tx *gorm.DB, in Input, sub *subscription.StoreSubscription) (Output, error) {
+func (o *Orchestrator) executeDowngradeSchedule(
+	ctx context.Context, tx *gorm.DB, in Input, sub *subscription.StoreSubscription,
+) (Output, *PlanChangeAuditRow, error) {
 	// Store-count preflight — only required for transitions that reduce the
 	// store limit (currently only Studio→Starter per §4.5.1).
 	if RequiresStoreCountCheck(sub.Plan, in.TargetPlan) {
@@ -31,14 +33,18 @@ func (o *Orchestrator) executeDowngradeSchedule(ctx context.Context, tx *gorm.DB
 		storeRepo := stores.NewRepository(tx)
 		count, err := storeRepo.CountActiveOrSoftDeletedRestorableTx(ctx, tx, in.TenantID)
 		if err != nil {
-			return Output{}, fmt.Errorf("planchange: count stores for preflight: %w", err)
+			return Output{}, nil, fmt.Errorf("planchange: count stores for preflight: %w", err)
 		}
 
 		// storeLimit == plangate.Unlimited (-1) means no cap; skip the check.
 		if storeLimit != plangate.Unlimited && count > storeLimit {
-			// Write a blocked audit row so ops can see why the downgrade was refused.
+			// The audit row must OUTLIVE this transaction: we are about to
+			// return ErrStoreCountOverQuota, and WithAdvisoryLock rolls the tx
+			// back on any non-nil return — which would discard a row written on
+			// tx here (#397). Hand it to Execute, which writes it on the pooled
+			// handle after the lock is released.
 			auditCurrency := buildAuditCurrency(sub)
-			_ = WritePlanChangeAuditRowTx(ctx, tx, PlanChangeAuditRow{
+			blocked := &PlanChangeAuditRow{
 				TenantID:        in.TenantID,
 				StoreID:         in.StoreID,
 				FromPlan:        sub.Plan,
@@ -50,7 +56,7 @@ func (o *Orchestrator) executeDowngradeSchedule(ctx context.Context, tx *gorm.DB
 				Actor:           in.Actor,
 				Reason:          in.Reason,
 				EffectiveAt:     in.Now,
-			})
+			}
 
 			if o.deps.Emitter != nil {
 				o.deps.Emitter.EmitPlanChange(in.GinCtx, audit.PlanChange{
@@ -67,7 +73,7 @@ func (o *Orchestrator) executeDowngradeSchedule(ctx context.Context, tx *gorm.DB
 				})
 			}
 
-			return Output{}, ErrStoreCountOverQuota
+			return Output{}, blocked, ErrStoreCountOverQuota
 		}
 	}
 
@@ -84,7 +90,7 @@ func (o *Orchestrator) executeDowngradeSchedule(ctx context.Context, tx *gorm.DB
 		in.TargetPlan, in.TargetPeriod,
 		effective, in.Reason,
 	); err != nil {
-		return Output{}, fmt.Errorf("planchange: set pending downgrade: %w", err)
+		return Output{}, nil, fmt.Errorf("planchange: set pending downgrade: %w", err)
 	}
 
 	auditCurrency := buildAuditCurrency(sub)
@@ -102,7 +108,7 @@ func (o *Orchestrator) executeDowngradeSchedule(ctx context.Context, tx *gorm.DB
 		Reason:          in.Reason,
 		EffectiveAt:     effective,
 	}); err != nil {
-		return Output{}, fmt.Errorf("planchange: write downgrade audit row: %w", err)
+		return Output{}, nil, fmt.Errorf("planchange: write downgrade audit row: %w", err)
 	}
 
 	if o.deps.Emitter != nil {
@@ -124,7 +130,7 @@ func (o *Orchestrator) executeDowngradeSchedule(ctx context.Context, tx *gorm.DB
 		Result:        ResultDowngradeScheduled,
 		EffectiveAt:   effective,
 		StripeUpdated: false,
-	}, nil
+	}, nil, nil
 }
 
 // buildAuditCurrency returns the upper-cased billing currency for audit rows.

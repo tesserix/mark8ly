@@ -95,6 +95,10 @@ type PruneStats struct {
 	// (#365), kept separate from RowsDeleted so the two retention rules stay
 	// distinguishable in logs and telemetry.
 	OperatorRowsDeleted int64
+
+	// OperatorFreeTextStripped counts operator rows whose free-text `reason`
+	// was removed by the 180-day window (#369). These rows are NOT deleted.
+	OperatorFreeTextStripped int64
 }
 
 // Run executes one prune pass over every retention bucket. Per-bucket
@@ -159,6 +163,32 @@ func (c *PruneCron) Run(ctx context.Context) (PruneStats, error) {
 		c.logger.Info("audit prune: operator path complete",
 			"cutoff", opCutoff.Format(time.RFC3339),
 			"rows_deleted", opDeleted, "batches", opBatches)
+	}
+
+	// #369 — operator FREE TEXT, 180 days. The row itself stays for
+	// OperatorRetentionYears; only the incidental personal data in `reason`
+	// expires early. Same failure handling as the operator path above: a
+	// lock conflict must not fail the whole pass.
+	ftCutoff := now.AddDate(0, 0, -OperatorFreeTextRetentionDays)
+	ftStripped, ftBatches, ftErr := c.pruneOperatorFreeText(ctx, ftCutoff)
+	stats.OperatorFreeTextStripped = ftStripped
+	stats.BatchesRun += ftBatches
+	if c.counter != nil && ftStripped > 0 {
+		c.counter(OperatorFreeTextMetricLabel, ftStripped)
+	}
+	if ftErr != nil {
+		stats.ErrorsByPlan["operator free text (180 day retention)"]++
+		if errors.Is(ftErr, context.Canceled) || errors.Is(ftErr, context.DeadlineExceeded) {
+			c.logger.Info("audit prune: operator free-text path interrupted by shutdown",
+				"stripped_so_far", ftStripped, "err", ftErr.Error())
+		} else {
+			c.logger.Error("audit prune: operator free-text path failed",
+				"stripped_so_far", ftStripped, "err", ftErr.Error())
+		}
+	} else {
+		c.logger.Info("audit prune: operator free-text path complete",
+			"cutoff", ftCutoff.Format(time.RFC3339),
+			"rows_stripped", ftStripped, "batches", ftBatches)
 	}
 
 	return stats, nil

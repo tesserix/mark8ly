@@ -220,6 +220,10 @@ func (w *SendWorker) dispatchCampaign(ctx context.Context, c Campaign) error {
 			}
 		}
 
+		// progressed counts recipients that left `pending` this batch. See the
+		// guard below the loop for why it is the loop's real termination
+		// condition (#348C).
+		progressed := 0
 		for _, r := range recipients {
 			outbound := OutboundEmail{
 				Recipient:  r.CustomerEmail,
@@ -235,15 +239,45 @@ func (w *SendWorker) dispatchCampaign(ctx context.Context, c Campaign) error {
 					"email", r.CustomerEmail,
 					"err", err)
 				_ = w.repo.IncrementAnalytics(w.db, c.ID, AnalyticsFailed)
+				// Move the row to a TERMINAL state (#348C). Leaving it
+				// `pending` was not merely a reporting gap: GetPendingRecipients
+				// selects on that status and the batch loop below only exits on
+				// an EMPTY batch, so a permanently-failing recipient was
+				// re-fetched and re-attempted forever, re-reserving campaign
+				// budget on every pass. Measured before this fix: 3 recipients,
+				// 45 dispatch attempts in 15 seconds.
+				if uErr := w.repo.UpdateRecipientStatus(w.db, r.ID, RecipientFailed); uErr != nil {
+					w.logger.Error("campaign: mark recipient failed",
+						"id", r.ID, "err", uErr)
+					continue
+				}
+				progressed++
 				continue
 			}
 
 			if err := w.repo.UpdateRecipientStatus(w.db, r.ID, RecipientSent); err != nil {
+				// The email WAS sent; only recording it failed. Deliberately
+				// NOT marked failed — that would misreport a delivered
+				// message. The row stays `pending`, which the no-progress
+				// guard below turns into a halt rather than a resend loop.
 				w.logger.Error("campaign: update recipient", "id", r.ID, "err", err)
 				_ = w.repo.IncrementAnalytics(w.db, c.ID, AnalyticsFailed)
 				continue
 			}
+			progressed++
 			_ = w.repo.IncrementAnalytics(w.db, c.ID, AnalyticsDelivered)
+		}
+
+		// A batch that moved nobody out of `pending` will return the SAME rows
+		// next time, forever. Halting is the only safe answer: continuing
+		// re-sends to everyone the dispatcher already accepted, and burns the
+		// store's monthly email budget one batch at a time. Whatever caused it
+		// needs a human, so this surfaces as an error rather than a silent
+		// return (#348C).
+		if progressed == 0 {
+			return fmt.Errorf(
+				"campaign %s: batch of %d recipients made no progress; halting to avoid resending",
+				c.ID, len(recipients))
 		}
 
 		// Check for pause/cancel.

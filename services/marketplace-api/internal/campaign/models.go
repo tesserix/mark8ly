@@ -25,12 +25,16 @@ const (
 
 // Recipient status constants.
 const (
-	RecipientPending      = "pending"
-	RecipientSent         = "sent"
-	RecipientDelivered    = "delivered"
-	RecipientOpened       = "opened"
-	RecipientClicked      = "clicked"
-	RecipientBounced      = "bounced"
+	RecipientPending   = "pending"
+	RecipientSent      = "sent"
+	RecipientDelivered = "delivered"
+	RecipientOpened    = "opened"
+	RecipientClicked   = "clicked"
+	RecipientBounced   = "bounced"
+	// RecipientFailed is TERMINAL: dispatch was attempted and permanently
+	// refused. Distinct from bounced, which is the provider rejecting a
+	// message it already accepted (#348C).
+	RecipientFailed       = "failed"
 	RecipientUnsubscribed = "unsubscribed"
 )
 

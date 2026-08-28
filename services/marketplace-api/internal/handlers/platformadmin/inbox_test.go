@@ -22,7 +22,12 @@ type fakeAgg struct {
 
 func (f fakeAgg) List(context.Context, inbox.Filter) (inbox.Result, error) { return f.res, f.err }
 
-func TestInboxHandler_RendersEnvelopeWithDegraded(t *testing.T) {
+// TestInboxHandler_EnvelopeIsExactlyItemsTotal is the point of this task: the
+// Product Admin Integration Contract's "items-total" envelope requires the
+// body to have EXACTLY the keys items and total — no pagination, no
+// degraded, nothing else. Decoding into a map so a future added field fails
+// here rather than overnight against production.
+func TestInboxHandler_EnvelopeIsExactlyItemsTotal(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	platformadmin.NewInboxHandler(fakeAgg{res: inbox.Result{
@@ -35,22 +40,21 @@ func TestInboxHandler_RendersEnvelopeWithDegraded(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/inbox", nil))
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var body struct {
-		Data       []inbox.Item `json:"data"`
-		Pagination struct {
-			Page, Limit int
-			Total       int64
-		} `json:"pagination"`
-		Degraded []string `json:"degraded"`
-	}
+	var body map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	require.Len(t, body.Data, 1)
-	require.EqualValues(t, 1, body.Pagination.Total)
-	require.Equal(t, []string{"onboarding_stalled"}, body.Degraded,
-		"a degraded source must reach the console, not be swallowed")
+	require.ElementsMatch(t, []string{"items", "total"}, keysOf(body),
+		"the contract requires exactly { items, total } — no pagination, no degraded, nothing else")
+
+	items, ok := body["items"].([]any)
+	require.True(t, ok, "items must be an array")
+	require.Len(t, items, 1)
+	require.EqualValues(t, 1, body["total"])
+
+	require.Equal(t, "onboarding_stalled", w.Header().Get(platformadmin.InboxDegradedHeader),
+		"a degraded source must reach the console via the header, not be swallowed")
 }
 
-func TestInboxHandler_EmptyIsTwoHundredWithEmptyArray(t *testing.T) {
+func TestInboxHandler_EmptyIsTwoHundredWithEmptyArrayAndNoDegradedHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	platformadmin.NewInboxHandler(fakeAgg{res: inbox.Result{}}, nil).Register(r.Group(""))
@@ -58,8 +62,34 @@ func TestInboxHandler_EmptyIsTwoHundredWithEmptyArray(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/inbox", nil))
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Contains(t, w.Body.String(), `"data":[]`,
+	require.Contains(t, w.Body.String(), `"items":[]`,
 		"empty must serialise as [] not null — the console renders an array")
+
+	_, present := w.Result().Header[http.CanonicalHeaderKey(platformadmin.InboxDegradedHeader)]
+	require.False(t, present, "the degraded header must be absent, not empty-string, when nothing is degraded")
+}
+
+func TestInboxHandler_DegradedHeaderHasCommaSeparatedKinds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	platformadmin.NewInboxHandler(fakeAgg{res: inbox.Result{
+		Items:    []inbox.Item{},
+		Total:    0,
+		Degraded: []string{"onboarding_stalled", "erasure_request"},
+	}}, nil).Register(r.Group(""))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/inbox", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "onboarding_stalled,erasure_request", w.Header().Get(platformadmin.InboxDegradedHeader))
+}
+
+func keysOf(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func TestInboxHandler_DeepPageIsFourHundred(t *testing.T) {

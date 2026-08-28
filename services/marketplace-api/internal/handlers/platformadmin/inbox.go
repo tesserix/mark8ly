@@ -45,16 +45,31 @@ func (h *InboxHandler) Register(g *gin.RouterGroup) {
 	g.GET("/admin/inbox", h.List)
 }
 
-// inboxListResponse is the house envelope plus Degraded.
+// inboxListResponse is fixed by the Product Admin Integration Contract's
+// "items-total" envelope for this endpoint (design-system
+// packages/admin-conformance/src/contract.ts:29-36). The conformance check
+// requires the body to have EXACTLY these two top-level keys — a missing key
+// fails, and so does an extra one, because an extra key is how a second,
+// undeclared envelope starts and the console has no way to know which one to
+// read (packages/admin-conformance/src/assertions/envelope.ts:64-89).
 //
-// Degraded names the kinds that could not be reached. It is omitted when
-// empty, so a healthy response is the same shape every other list endpoint
-// returns.
+// That leaves no room in the body for Degraded, which names the inbox kinds
+// that could not be reached. It is NOT dropped: dropping it silently would
+// let a partially-failed aggregation read as a healthy short queue, which is
+// worse than an error. Instead it is carried on the response header
+// X-Inbox-Degraded (comma-separated kind names, set only when non-empty). If
+// you came here looking for "degraded" in the JSON body, it isn't there by
+// contract — read the header instead.
 type inboxListResponse struct {
-	Data       []inbox.Item `json:"data"`
-	Pagination pagination   `json:"pagination"`
-	Degraded   []string     `json:"degraded,omitempty"`
+	Items []inbox.Item `json:"items"`
+	Total int64        `json:"total"`
 }
+
+// InboxDegradedHeader is the header name that replaces the old body-level
+// "degraded" field. See inboxListResponse for why it moved. Exported so
+// callers (including tests in the external platformadmin_test package) don't
+// hardcode the header name.
+const InboxDegradedHeader = "X-Inbox-Degraded"
 
 // List handles GET /admin/inbox.
 func (h *InboxHandler) List(c *gin.Context) {
@@ -94,15 +109,16 @@ func (h *InboxHandler) List(c *gin.Context) {
 	}
 
 	// A nil slice marshals to null; the console renders an array.
-	items := res.Items
-	if items == nil {
-		items = []inbox.Item{}
+	items := make([]inbox.Item, 0, len(res.Items))
+	items = append(items, res.Items...)
+
+	if len(res.Degraded) > 0 {
+		c.Header(InboxDegradedHeader, strings.Join(res.Degraded, ","))
 	}
 
 	c.JSON(http.StatusOK, inboxListResponse{
-		Data:       items,
-		Pagination: pagination{Page: f.Page, Limit: f.Limit, Total: res.Total},
-		Degraded:   res.Degraded,
+		Items: items,
+		Total: res.Total,
 	})
 }
 

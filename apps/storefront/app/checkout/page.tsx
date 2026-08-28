@@ -248,8 +248,8 @@ export default function CheckoutPage() {
         setPaymentMethods(methods);
         // Pre-select the merchant's preferred gateway. The API returns methods
         // ordered by the country's payment_providers array, so methods[0] is
-        // the intended default (Razorpay in India) and the rest — Cashfree
-        // included — render beneath it as options the buyer can pick instead.
+        // the intended default (Razorpay in India) and the rest — render
+        // beneath it as options the buyer can pick instead.
         // Previously this only auto-selected when exactly one method existed,
         // which left every multi-gateway store starting on "Choose a payment
         // method" — an extra required click for the option we already know we
@@ -524,7 +524,7 @@ export default function CheckoutPage() {
 
     // Safety net: every checkout response must give us a way to actually
     // collect payment. Hosted providers (Stripe) ship a redirect URL;
-    // embedded providers (Razorpay, Cashfree) ship a payment_token + a known
+    // embedded providers (Razorpay) ship a payment_token + a known
     // client integration. Without one of those, the buyer has nowhere to
     // pay — bail out before clearing the cart so the merchant doesn't
     // end up with an unpaid "completed" order.
@@ -584,9 +584,9 @@ export default function CheckoutPage() {
       publicKey: pm?.public_key ?? "",
       amount: grandTotal,
       currencyCode: items[0]?.currencyCode ?? "INR",
-      // Cashfree selects sandbox vs production from the gateway mode rather
-      // than from a key prefix, so the retry path on /orders/[id] needs it
-      // stashed alongside the token.
+      // An embedded SDK selects sandbox vs production from the gateway mode
+      // rather than from a key prefix, so the retry path on /orders/[id]
+      // needs it stashed alongside the token.
       mode: pm?.mode,
       customerName: customerName.trim() || undefined,
       customerEmail: email.trim() || undefined,
@@ -1484,7 +1484,6 @@ function providerLabel(provider: string): string {
   switch (provider) {
     case "stripe": return "Credit / Debit card";
     case "razorpay": return "Card, UPI, or Netbanking";
-    case "cashfree": return "Card, UPI, Netbanking, or Wallet";
     case "paypal": return "PayPal";
     default: return provider.charAt(0).toUpperCase() + provider.slice(1);
   }
@@ -1697,7 +1696,6 @@ function providerBrand(provider: string): string {
   switch (provider) {
     case "stripe": return "Stripe";
     case "razorpay": return "Razorpay";
-    case "cashfree": return "Cashfree";
     case "paypal": return "PayPal";
     default: return provider.charAt(0).toUpperCase() + provider.slice(1);
   }

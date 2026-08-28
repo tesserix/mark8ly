@@ -1,5 +1,5 @@
 // Package payment defines the payment gateway provider abstraction.
-// Concrete implementations (Stripe, Razorpay, PayPal, Cashfree) live in
+// Concrete implementations (Stripe, Razorpay, PayPal) live in
 // separate files and are wired in P2.
 package payment
 
@@ -33,7 +33,7 @@ type CheckoutGateway interface {
 // OrderStatusGateway is an optional capability interface for providers whose
 // client SDK returns no signed payment receipt. Razorpay Checkout hands the
 // browser an HMAC of order_id|payment_id that the server re-derives (see
-// handlers/storefront/payment_verify.go); Cashfree's SDK returns nothing
+// handlers/storefront/payment_verify.go); a gateway whose SDK returns nothing
 // signed at all, so the only authority on "did this actually get paid" is the
 // provider itself. Polling here is a STRONGER gate than the Razorpay path, not
 // a weaker one — it never trusts a client-supplied value — but it means the
@@ -86,7 +86,7 @@ type CreateIntentInput struct {
 	CurrencyCode  string
 	CustomerEmail string
 	// CustomerName and CustomerPhone are optional for Stripe/Razorpay/PayPal
-	// but customer_phone is MANDATORY at Cashfree — it is what UPI intent
+	// but customer_phone is MANDATORY at some UPI gateways — it is what intent
 	// keys off, so a blank one fails order creation outright rather than
 	// degrading to a card-only checkout.
 	CustomerName  string
@@ -115,11 +115,11 @@ type Capture struct {
 type RefundInput struct {
 	ProviderPaymentID string
 	// OrderID is OUR internal order id. Stripe, Razorpay and PayPal refund
-	// against ProviderPaymentID and ignore this field; Cashfree scopes refunds
+	// against ProviderPaymentID and ignore this field; an order-scoped gateway
 	// by order (POST /pg/orders/{order_id}/refunds) with no payment-level
 	// endpoint, so it needs the provider-side order id. The two always agree
-	// because Cashfree's CreateIntent submits this same value as its order_id
-	// — that is what makes a Cashfree refund resolvable from the ledger.
+	// because such a gateway's CreateIntent submits this same value as its
+	// order_id — that is what makes its refund resolvable from the ledger.
 	OrderID        string
 	Amount         decimal.Decimal
 	CurrencyCode   string

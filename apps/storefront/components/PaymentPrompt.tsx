@@ -9,7 +9,7 @@
 //      provider-side payment token stashed at checkout.
 //   3. Confirms the outcome SERVER-SIDE before treating the order as paid —
 //      Razorpay by re-deriving the checkout HMAC over the returned triplet,
-//      Cashfree by polling the gateway (its SDK returns nothing signed). Both
+//      over the returned triplet. Both
 //      reuse the same handler the webhook flow uses, so this works even when
 //      no provider webhook reaches the cluster.
 //   4. Clears the local sessionStorage context and refreshes the page.
@@ -29,7 +29,7 @@ interface PendingPayment {
   publicKey: string;
   amount: string;
   currencyCode: string;
-  /** Gateway mode ("test" | "live") — Cashfree needs it to pick its environment. */
+  /** Gateway mode ("test" | "live") — an embedded SDK picks its environment from it. */
   mode?: string;
   customerName?: string;
   customerEmail?: string;

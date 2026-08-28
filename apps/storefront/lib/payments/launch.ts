@@ -7,7 +7,6 @@
 // place and crashes in the other.
 
 import { openRazorpayCheckout } from "./razorpay";
-import { openCashfreeCheckout } from "./cashfree";
 
 /**
  * Providers we can collect payment from with an in-page SDK. Hosted providers
@@ -19,14 +18,14 @@ import { openCashfreeCheckout } from "./cashfree";
  * fail loudly before the cart is cleared rather than leaving the merchant an
  * unpaid "completed" order.
  */
-export const EMBEDDED_PROVIDERS = new Set(["razorpay", "cashfree"]);
+export const EMBEDDED_PROVIDERS = new Set(["razorpay"]);
 
 export function isEmbeddedProvider(provider: string): boolean {
   return EMBEDDED_PROVIDERS.has(provider);
 }
 
 /** Everything any embedded launcher might need. Extra fields are ignored by
- * providers that don't use them (Cashfree needs no public key: its
+ * providers that don't use them (an embedded SDK may need no public key: its
  * payment_session_id already identifies the merchant and the order). */
 export interface EmbeddedCheckoutContext {
   orderId: string;
@@ -35,7 +34,7 @@ export interface EmbeddedCheckoutContext {
   amount: string;
   currencyCode: string;
   storeName: string;
-  /** Gateway mode ("test" | "live") — Cashfree picks sandbox vs production from it. */
+  /** Gateway mode ("test" | "live") — an SDK may pick sandbox vs production from it. */
   mode?: string;
   customerName?: string;
   customerEmail?: string;
@@ -53,7 +52,7 @@ export interface EmbeddedCheckoutCallbacks {
 /**
  * Opens the payment sheet for `provider`. Both launchers only call onSuccess
  * after the server has independently confirmed the payment — Razorpay by
- * re-deriving the checkout HMAC, Cashfree by polling the gateway — so a caller
+ * re-deriving the checkout HMAC — so a caller
  * can treat onSuccess as "this order is paid" without further checks.
  */
 export async function openEmbeddedCheckout(
@@ -73,15 +72,6 @@ export async function openEmbeddedCheckout(
           storeName: ctx.storeName,
           customerName: ctx.customerName,
           customerEmail: ctx.customerEmail,
-        },
-        callbacks,
-      );
-    case "cashfree":
-      return openCashfreeCheckout(
-        {
-          orderId: ctx.orderId,
-          paymentToken: ctx.paymentToken,
-          mode: ctx.mode,
         },
         callbacks,
       );

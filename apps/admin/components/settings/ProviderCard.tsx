@@ -263,14 +263,13 @@ function ModeBadge({ mode }: { mode: string }) {
 
 function formatProviderName(provider: string): string {
   // Only the providers that appear in supported_countries (seeded by migration
-  // 000008, extended by later ones — Cashfree in 000099) are listed;
+  // 000008, extended by later ones) are listed;
   // everything else the admin could theoretically send falls through to the
   // title-case fallback. Keep in sync with the seed.
   const names: Record<string, string> = {
     // Payments
     stripe: "Stripe",
     razorpay: "Razorpay",
-    cashfree: "Cashfree",
     paypal: "PayPal",
     // Shipping — 3 carriers cover all 15 supported countries
     delhivery: "Delhivery",

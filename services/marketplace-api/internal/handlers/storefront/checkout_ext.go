@@ -758,7 +758,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	// truth here even when the request goes through Cloudflare / Istio.
 	returnBase := strings.TrimRight(c.GetHeader("Origin"), "/")
 	// The shipping address is the only place a phone number is captured at
-	// checkout (orders has no phone column), and Cashfree requires one to
+	// checkout (orders has no phone column), and UPI gateways require one to
 	// create an order at all.
 	var customerPhone string
 	if req.ShippingAddress.Phone != nil {

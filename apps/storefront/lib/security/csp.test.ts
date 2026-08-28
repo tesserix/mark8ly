@@ -24,7 +24,6 @@ describe("buildCsp", () => {
     const scriptSrc = directives(buildCsp("n")).get("script-src")!;
     expect(scriptSrc).not.toContain("'strict-dynamic'");
     expect(scriptSrc).toContain("https://*.razorpay.com");
-    expect(scriptSrc).toContain("https://*.cashfree.com");
     expect(scriptSrc).toContain("https://accounts.google.com/gsi/client");
     expect(scriptSrc).toContain("https://analytics.tesserix.app");
   });
@@ -42,7 +41,6 @@ describe("buildCsp", () => {
   it("keeps the payment modal frame sources and the injection guards", () => {
     const d = directives(buildCsp("n"));
     expect(d.get("frame-src")).toContain("https://*.razorpay.com");
-    expect(d.get("frame-src")).toContain("https://*.cashfree.com");
     expect(d.get("object-src")).toBe("'none'");
     expect(d.get("base-uri")).toBe("'self'");
     expect(d.get("form-action")).toBe("'self'");

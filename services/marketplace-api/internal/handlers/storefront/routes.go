@@ -143,12 +143,6 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		if deps.WebhookHandler != nil {
 			group.POST("/orders/:id/verify-payment",
 				deps.WebhookHandler.HandleVerifyPayment)
-			// Cashfree client-side checkout callback. Cashfree's SDK returns
-			// nothing signed, so instead of verifying a client value this
-			// endpoint asks the gateway what was captured and reuses the same
-			// handler on a confirmed capture. See payment_confirm.go.
-			group.POST("/orders/:id/confirm-payment",
-				deps.WebhookHandler.HandleConfirmPayment)
 		}
 
 		// Coupon validation — Marketing M1.

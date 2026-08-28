@@ -91,10 +91,10 @@ func (r *Resolver) resolveCred(ctx context.Context, ref string) (string, error) 
 // provider_payment_id and fall back to provider_intent_id for legacy rows
 // captured before that fix (Stripe rows, where intent == the refund target).
 //
-// Cashfree is the exception: it has no payment-level refund endpoint, so its
-// adapter refunds against RefundInput.OrderID (our order id, which CreateIntent
-// submitted as the Cashfree order_id) and ignores ProviderPaymentID entirely.
-// The Coordinator passes both, so nothing here needs to branch on provider.
+// An order-scoped gateway — one with no payment-level refund endpoint — would
+// refund against RefundInput.OrderID instead and ignore ProviderPaymentID. The
+// Coordinator passes both, so nothing here needs to branch on provider; no
+// current adapter takes that path.
 func (r *Resolver) PaymentContextForOrder(ctx context.Context, orderID uuid.UUID) (PaymentContext, error) {
 	type row struct {
 		Provider          string

@@ -26,8 +26,6 @@ func NewGateway(provider, apiKey, secretKey, mode string) (Gateway, error) {
 		return NewStripeGateway(apiKey, secretKey, m), nil
 	case "razorpay":
 		return NewRazorpayGateway(apiKey, secretKey, m), nil
-	case "cashfree":
-		return NewCashfreeGateway(apiKey, secretKey, m), nil
 	case "paypal":
 		return NewPayPalGateway(apiKey, secretKey, m), nil
 	default:

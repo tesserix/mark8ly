@@ -193,8 +193,8 @@ func (h *PaymentMethodsHandler) ListPaymentMethods(c *gin.Context) {
 // intentional in testing, and free to change under a plan flip or a row update.
 // Sorting here makes "which gateway is the default in India" a property of the
 // seed data rather than an accident of row layout, which is what lets the
-// decision be reversed by a one-row migration: 000099 promoted Cashfree, 000100
-// put Razorpay back in front with Cashfree kept as a selectable option.
+// decision be reversed by a one-row migration, as 000099 and 000100 did when
+// they reordered the India preference list.
 func sortByPreference(methods []paymentMethodResponse, preference []string) {
 	rank := make(map[string]int, len(preference))
 	for i, p := range preference {
@@ -220,8 +220,6 @@ func methodsForProvider(provider string) []string {
 		return []string{"card"}
 	case "razorpay":
 		return []string{"card", "upi", "netbanking"}
-	case "cashfree":
-		return []string{"card", "upi", "netbanking", "wallet"}
 	case "paypal":
 		return []string{"paypal"}
 	default:

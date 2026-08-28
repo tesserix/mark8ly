@@ -34,39 +34,40 @@ func TestSortByPreference_FirstAllowlistEntryWins(t *testing.T) {
 		want       string
 	}{
 		{
-			// India's live seed after 000100: Razorpay is the default and
-			// Cashfree is a selectable secondary option.
-			name:       "india post-000100 — razorpay preferred, cashfree selectable",
-			preference: []string{"razorpay", "paypal", "cashfree"},
-			methods:    methodList("cashfree", "paypal", "razorpay"),
-			want:       "razorpay,paypal,cashfree",
+			// India's live seed after 000110 dropped Stripe: Razorpay is
+			// the default and PayPal is the selectable secondary.
+			name:       "india post-000110 — razorpay preferred, paypal selectable",
+			preference: []string{"razorpay", "paypal"},
+			methods:    methodList("paypal", "razorpay"),
+			want:       "razorpay,paypal",
 		},
 		{
-			// The same function must honour the OPPOSITE seed (000099's order)
-			// with no code change. This is what makes the "which gateway is
-			// default" decision a one-row migration rather than a deploy.
-			name:       "a cashfree-first seed is honoured too — order is data, not code",
-			preference: []string{"cashfree", "razorpay", "paypal"},
-			methods:    methodList("paypal", "razorpay", "cashfree"),
-			want:       "cashfree,razorpay,paypal",
+			// The same function must honour the OPPOSITE order with no code
+			// change. This is what makes "which gateway is default" a one-row
+			// migration rather than a deploy — the property 000099, 000100 and
+			// 000110 all relied on.
+			name:       "a paypal-first seed is honoured too — order is data, not code",
+			preference: []string{"paypal", "razorpay", "stripe"},
+			methods:    methodList("stripe", "razorpay", "paypal"),
+			want:       "paypal,razorpay,stripe",
 		},
 		{
 			name:       "already in order stays put",
-			preference: []string{"razorpay", "paypal", "cashfree"},
-			methods:    methodList("razorpay", "paypal", "cashfree"),
-			want:       "razorpay,paypal,cashfree",
+			preference: []string{"razorpay", "paypal", "stripe"},
+			methods:    methodList("razorpay", "paypal", "stripe"),
+			want:       "razorpay,paypal,stripe",
 		},
 		{
 			name:       "only some providers configured",
-			preference: []string{"razorpay", "paypal", "cashfree"},
-			methods:    methodList("cashfree", "razorpay"),
-			want:       "razorpay,cashfree",
+			preference: []string{"razorpay", "paypal", "stripe"},
+			methods:    methodList("stripe", "razorpay"),
+			want:       "razorpay,stripe",
 		},
 		{
-			name:       "a store with no razorpay config falls to paypal, not cashfree",
-			preference: []string{"razorpay", "paypal", "cashfree"},
-			methods:    methodList("cashfree", "paypal"),
-			want:       "paypal,cashfree",
+			name:       "a store with no razorpay config falls to paypal, not stripe",
+			preference: []string{"razorpay", "paypal", "stripe"},
+			methods:    methodList("stripe", "paypal"),
+			want:       "paypal,stripe",
 		},
 		{
 			name:       "unrelated country order is honoured, not hardcoded",
@@ -76,13 +77,13 @@ func TestSortByPreference_FirstAllowlistEntryWins(t *testing.T) {
 		},
 		{
 			name:       "case differences in the seed do not break ranking",
-			preference: []string{"Cashfree", "RAZORPAY"},
-			methods:    methodList("razorpay", "cashfree"),
-			want:       "cashfree,razorpay",
+			preference: []string{"Stripe", "RAZORPAY"},
+			methods:    methodList("razorpay", "stripe"),
+			want:       "stripe,razorpay",
 		},
 		{
 			name:       "single method is unchanged",
-			preference: []string{"cashfree", "razorpay"},
+			preference: []string{"stripe", "razorpay"},
 			methods:    methodList("razorpay"),
 			want:       "razorpay",
 		},
@@ -103,10 +104,10 @@ func TestSortByPreference_FirstAllowlistEntryWins(t *testing.T) {
 // storefront pre-selects. Sorting it last keeps an unexpected row visible
 // without letting it become the default payment method.
 func TestSortByPreference_UnknownProviderSortsLast(t *testing.T) {
-	methods := methodList("mystery", "cashfree", "razorpay")
-	sortByPreference(methods, []string{"cashfree", "razorpay"})
-	if got := providersOf(methods); got != "cashfree,razorpay,mystery" {
-		t.Fatalf("order = %q, want cashfree,razorpay,mystery", got)
+	methods := methodList("mystery", "stripe", "razorpay")
+	sortByPreference(methods, []string{"stripe", "razorpay"})
+	if got := providersOf(methods); got != "stripe,razorpay,mystery" {
+		t.Fatalf("order = %q, want stripe,razorpay,mystery", got)
 	}
 }
 
@@ -114,9 +115,9 @@ func TestSortByPreference_UnknownProviderSortsLast(t *testing.T) {
 // no allowlist to rank against, the input order is preserved rather than
 // shuffled into something arbitrary.
 func TestSortByPreference_EmptyPreferenceIsStable(t *testing.T) {
-	methods := methodList("razorpay", "cashfree", "paypal")
+	methods := methodList("razorpay", "stripe", "paypal")
 	sortByPreference(methods, nil)
-	if got := providersOf(methods); got != "razorpay,cashfree,paypal" {
+	if got := providersOf(methods); got != "razorpay,stripe,paypal" {
 		t.Fatalf("order = %q, want the input order preserved", got)
 	}
 }
@@ -124,6 +125,6 @@ func TestSortByPreference_EmptyPreferenceIsStable(t *testing.T) {
 // TestSortByPreference_EmptyListDoesNotPanic — a store with no configured
 // gateway reaches this path on every checkout page load.
 func TestSortByPreference_EmptyListDoesNotPanic(t *testing.T) {
-	sortByPreference(nil, []string{"cashfree"})
-	sortByPreference([]paymentMethodResponse{}, []string{"cashfree"})
+	sortByPreference(nil, []string{"stripe"})
+	sortByPreference([]paymentMethodResponse{}, []string{"stripe"})
 }

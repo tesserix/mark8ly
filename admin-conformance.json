@@ -2,15 +2,18 @@
   "slug": "mark8ly",
   "contractVersion": 2,
   "endpoints": {
-    "audit-logs": true,
-    "health": true,
     "kpis": true,
+    "inbox": {
+      "slaDeclared": false
+    },
+    "audit-logs": true,
     "entities": {
       "types": [
         "tenants",
         "users"
       ]
     },
+    "health": true,
     "billing/subscriptions": true,
     "billing/trials": true,
     "tenant-lifecycle": true,

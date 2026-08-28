@@ -31,7 +31,7 @@ type SubscriptionArbitrageAudit struct {
 	IPCountry         *string    `gorm:"column:ip_country;type:char(2)"`
 	IPHash            *string    `gorm:"column:ip_hash;type:varchar(64)"`
 	ResolvedPriceTier string     `gorm:"column:resolved_price_tier;type:varchar(20);not null"`
-	MismatchReason    *string    `gorm:"column:mismatch_reason;type:varchar(100)"`
+	MismatchReason    *string    `gorm:"column:mismatch_reason;type:text"`
 	FlaggedAt         time.Time  `gorm:"column:flagged_at;not null;default:now()"`
 	ReviewedBy        *uuid.UUID `gorm:"column:reviewed_by;type:uuid"`
 	ReviewedAt        *time.Time `gorm:"column:reviewed_at"`

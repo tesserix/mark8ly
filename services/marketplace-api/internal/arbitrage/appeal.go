@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,6 +105,13 @@ func (s *AppealService) Submit(ctx context.Context, in AppealInput) error {
 			"mismatch_reason": appended,
 			// resolution stays "ongoing" until billing-ops closes it.
 		}).Error; err != nil {
+		// This path lost an appeal silently for as long as the column was too
+		// narrow (#398): the merchant got a 500, but nothing logged the cause,
+		// billing-ops was never notified (the Publish below is skipped), and
+		// the PII log above already recorded a "submitted" appeal.
+		slog.Default().Error("arbitrage appeal: update audit row failed",
+			"audit_id", row.ID, "tenant_id", in.TenantID, "store_id", in.StoreID,
+			"appended_len", len(appended), "err", err)
 		return fmt.Errorf("update audit row: %w", err)
 	}
 

@@ -16,6 +16,7 @@ package tenantpurge_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -482,4 +483,78 @@ func TestPurge_PaymentActionReminders_DeletesOnlyPurgedTenantRowsViaStoreId(t *t
 	require.NoError(t, db.Raw(`SELECT count(*) FROM payment_action_reminders WHERE store_id = ?`, storeB).Scan(&countB).Error)
 	require.EqualValues(t, 0, countA, "tenant A's payment_action_reminders rows must be deleted")
 	require.EqualValues(t, 2, countB, "tenant B's payment_action_reminders rows must survive — cross-tenant isolation")
+}
+
+// countSequencesForStore returns how many of the two per-store sequences
+// migration 000004's trigger creates still exist for storeID.
+func countSequencesForStore(t *testing.T, db *gorm.DB, storeID string) int64 {
+	t.Helper()
+	underscored := strings.ReplaceAll(storeID, "-", "_")
+	var n int64
+	require.NoError(t, db.Raw(
+		`SELECT count(*) FROM pg_class WHERE relkind = 'S' AND relname IN (?, ?)`,
+		"mk_seq_order_"+underscored, "mk_seq_return_"+underscored,
+	).Scan(&n).Error)
+	return n
+}
+
+// A purged tenant must leave no per-store sequences behind. The trigger
+// creates two per store on INSERT and has no ON DELETE counterpart, and a
+// sequence is a catalog relation that the stores CASCADE does not reach —
+// so before #436's fix every purge orphaned two catalog objects per store,
+// permanently.
+//
+// The name is spelled out from the raw uuid here rather than taken from
+// storeSequenceNames, so the assertion cannot pass by agreeing with a bug
+// in the helper it is checking.
+func TestIntegration_Purge_DropsPerStoreSequences(t *testing.T) {
+	db := testdb.NewDB(t, domainTablesToCleanup...)
+	ctx := context.Background()
+
+	tenantID := uuid.NewString()
+	storeID := seedStore(t, db, tenantID)
+	t.Cleanup(func() {
+		underscored := strings.ReplaceAll(storeID, "-", "_")
+		db.Exec("DROP SEQUENCE IF EXISTS mk_seq_order_" + underscored)
+		db.Exec("DROP SEQUENCE IF EXISTS mk_seq_return_" + underscored)
+	})
+
+	require.EqualValues(t, 2, countSequencesForStore(t, db, storeID),
+		"the stores AFTER INSERT trigger must have created both sequences")
+
+	if _, err := tenantpurge.Purge(ctx, db, tenantID, []string{storeID}); err != nil {
+		t.Fatalf("Purge: %v", err)
+	}
+
+	require.EqualValues(t, 0, countSequencesForStore(t, db, storeID),
+		"Purge must drop both per-store sequences; leaving them behind is the #436 leak")
+
+	// Idempotent: the drops are IF EXISTS, so a second purge is still a
+	// nil-error no-op.
+	if _, err := tenantpurge.Purge(ctx, db, tenantID, []string{storeID}); err != nil {
+		t.Fatalf("second Purge (idempotency check): %v", err)
+	}
+}
+
+// A store id that is not a uuid can never reach an identifier position in
+// the DROP: Purge fails, and — because the drops run inside the purge
+// transaction — the deletes roll back with them rather than leaving the
+// tenant half-purged.
+func TestIntegration_Purge_RejectsNonUUIDStoreIDAndRollsBack(t *testing.T) {
+	db := testdb.NewDB(t, domainTablesToCleanup...)
+	ctx := context.Background()
+
+	tenantID := uuid.NewString()
+	storeID := seedStore(t, db, tenantID)
+	t.Cleanup(func() {
+		underscored := strings.ReplaceAll(storeID, "-", "_")
+		db.Exec("DROP SEQUENCE IF EXISTS mk_seq_order_" + underscored)
+		db.Exec("DROP SEQUENCE IF EXISTS mk_seq_return_" + underscored)
+	})
+
+	_, err := tenantpurge.Purge(ctx, db, tenantID, []string{"not-a-uuid"})
+	require.Error(t, err, "a non-uuid store id must abort the purge")
+
+	require.EqualValues(t, 1, countRows(t, db, "stores", "tenant_id", tenantID),
+		"the failed purge must roll back, leaving the tenant's store intact")
 }

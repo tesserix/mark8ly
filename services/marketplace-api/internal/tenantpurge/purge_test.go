@@ -284,3 +284,53 @@ func TestCountPlan_SelectsRatherThanDeletes(t *testing.T) {
 			"a preview step must contain no DELETE at all: %q", s.sql)
 	}
 }
+
+// storeSequenceNames is the whole safety argument for the one part of the
+// purge that cannot be parameterized, so it is tested directly: both kinds
+// per store, in the trigger's format, and nothing but [a-z0-9_] reaching
+// the SQL.
+
+func TestStoreSequenceNames_TwoPerStoreInTriggerFormat(t *testing.T) {
+	names, err := storeSequenceNames(testStoreIDs)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"mk_seq_order_22222222_2222_2222_2222_222222222222",
+		"mk_seq_return_22222222_2222_2222_2222_222222222222",
+		"mk_seq_order_33333333_3333_3333_3333_333333333333",
+		"mk_seq_return_33333333_3333_3333_3333_333333333333",
+	}, names, "must match mk_create_store_sequences() in migration 000004 exactly")
+}
+
+func TestStoreSequenceNames_EmptyStoreListIsANoOpNotAnError(t *testing.T) {
+	names, err := storeSequenceNames(nil)
+	require.NoError(t, err)
+	require.Empty(t, names, "a tenant with no stores has no sequences to drop")
+}
+
+func TestStoreSequenceNames_RejectsAnythingThatIsNotAUUID(t *testing.T) {
+	// The names go into an identifier position in DDL. A non-uuid id is a
+	// caller bug; failing the purge is correct, silently dropping nothing
+	// would re-create the leak this step exists to close.
+	for _, bad := range []string{
+		"",
+		"not-a-uuid",
+		"22222222-2222-2222-2222-222222222222; DROP TABLE stores; --",
+		"22222222_2222_2222_2222_222222222222",
+	} {
+		_, err := storeSequenceNames([]string{bad})
+		require.Error(t, err, "store id %q must be rejected", bad)
+	}
+}
+
+func TestStoreSequenceNames_ProduceOnlyIdentifierSafeCharacters(t *testing.T) {
+	names, err := storeSequenceNames(testStoreIDs)
+	require.NoError(t, err)
+	require.NotEmpty(t, names)
+	for _, name := range names {
+		for _, r := range name {
+			require.Truef(t,
+				(r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_',
+				"sequence name %q contains %q, outside the [a-z0-9_] set that makes interpolation safe", name, r)
+		}
+	}
+}

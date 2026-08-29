@@ -88,7 +88,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/mark8ly/marketplace-api/internal/order"
 )
 
 // deleteStep is one DELETE statement in the purge plan.
@@ -125,9 +128,15 @@ type Report struct {
 // retention/append-only tables — see the package doc comment for the full
 // list and rationale.
 //
+// After the last delete, and inside the same transaction, Purge drops the
+// per-store Postgres sequences migration 000004's AFTER INSERT trigger
+// created for each of storeIDs — see dropStoreSequences. That step is not a
+// deleteStep and does not appear in the returned Report; both facts are
+// explained there.
+//
 // Purge is idempotent: every delete is a `WHERE` clause that matches zero
-// rows on a second run, so calling Purge twice for the same tenant is safe
-// and returns nil both times.
+// rows on a second run and the sequence drops use IF EXISTS, so calling
+// Purge twice for the same tenant is safe and returns nil both times.
 func Purge(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string) (Report, error) {
 	if db == nil {
 		return Report{}, fmt.Errorf("tenantpurge: db must not be nil")
@@ -150,7 +159,12 @@ func Purge(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string)
 			rep.Tables = append(rep.Tables, TableResult{Table: step.table, RowsDeleted: res.RowsAffected})
 			rep.TotalRows += res.RowsAffected
 		}
-		return nil
+		// AFTER the final `stores` delete, and inside the same transaction:
+		// DDL is transactional in Postgres, so the drops commit or roll back
+		// atomically with the deletes above. Doing it before the delete would
+		// leave a live store whose sequences NextDocumentNumber needs, for as
+		// long as the transaction ran.
+		return dropStoreSequences(tx, storeIDs)
 	})
 	if err != nil {
 		return Report{}, err
@@ -468,4 +482,77 @@ func toAnySlice(ss []string) []any {
 		out[i] = s
 	}
 	return out
+}
+
+// sequenceKinds are the two document kinds migration 000004's
+// stores_after_insert_create_sequences trigger creates a sequence for on
+// every stores INSERT. Kept as data so storeSequenceNames and any future
+// caller cannot disagree about how many there are.
+var sequenceKinds = []string{"order", "return"}
+
+// storeSequenceNames maps store ids to the Postgres sequence names that
+// migration 000004's AFTER INSERT trigger created for them — two per store,
+// mk_seq_order_<id> and mk_seq_return_<id>.
+//
+// Pure and unit-testable, deliberately: the names go into an identifier
+// position in DDL (see dropStoreSequences), which is the one place a bind
+// value cannot go, so the safety of the whole step rests on this function
+// and nothing else. Every id is parsed as a uuid before it is used, so the
+// only characters that can reach the SQL are the [a-z0-9_] that
+// order.SequenceName produces from a canonical uuid. An unparseable id is
+// an error, not a skip: it means the caller handed Purge something that was
+// never a store id, and quietly dropping nothing would leave the sequences
+// orphaned exactly as before.
+//
+// The name format is order.SequenceName's, not a second copy of it — the
+// trigger, the nextval caller and the drop must all agree, and a
+// hand-written duplicate is how they would stop agreeing.
+func storeSequenceNames(storeIDs []string) ([]string, error) {
+	names := make([]string, 0, len(storeIDs)*len(sequenceKinds))
+	for _, id := range storeIDs {
+		parsed, err := uuid.Parse(id)
+		if err != nil {
+			return nil, fmt.Errorf("tenantpurge: store id %q is not a uuid: %w", id, err)
+		}
+		for _, kind := range sequenceKinds {
+			names = append(names, order.SequenceName(parsed, kind))
+		}
+	}
+	return names, nil
+}
+
+// dropStoreSequences drops the per-store sequences for storeIDs. It runs as
+// a step of the purge transaction rather than as a deleteStep in purgePlan,
+// for a structural reason: every deleteStep is a parameterized statement,
+// and `DROP SEQUENCE ?` is not valid SQL — a sequence name is an
+// identifier, never a bind value. purgePlan stays pure and fully
+// parameterized; this is the one thing that cannot be expressed there.
+//
+// Nothing in the database does this for us. The trigger creates the
+// sequences on INSERT and has no ON DELETE counterpart, and a sequence is a
+// catalog relation, so the `stores` delete's CASCADE does not reach it.
+// Before this step a purged tenant orphaned two catalog objects per store,
+// permanently and monotonically (#436).
+//
+// IF EXISTS keeps the step idempotent, matching Purge's contract: a second
+// purge of the same tenant drops nothing and returns nil.
+//
+// The result is deliberately NOT reported. Report lists TableResults —
+// (table, rows) pairs — and a DROP has neither: there is no table, and
+// RowsAffected is meaningless for DDL. Report is documented as listing
+// every step of the PLAN including the zero-row ones, and this is not a
+// plan step; countPlan derives from purgePlan, so Count could not preview a
+// DROP either. A synthetic zero-row entry would read to an operator as "a
+// table that held nothing", which is a different and false claim.
+func dropStoreSequences(tx *gorm.DB, storeIDs []string) error {
+	names, err := storeSequenceNames(storeIDs)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if err := tx.Exec("DROP SEQUENCE IF EXISTS " + name).Error; err != nil {
+			return fmt.Errorf("tenantpurge: drop sequence %s: %w", name, err)
+		}
+	}
+	return nil
 }

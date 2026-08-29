@@ -13,10 +13,44 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/email"
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/postcommit"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 )
+
+// arbitrageFailureReason is the stripe_webhook_failed_total reason label used
+// when the arbitrage recorder fails on a checkout event. The failure is
+// non-fatal to the webhook, so it never reaches Dispatch()'s classifier and has
+// to be counted at the call site (#423).
+const arbitrageFailureReason = "arbitrage_record"
+
+// arbitrageFailureEventType is the event_type label for the counter above.
+// Only checkout.session.completed drives the recorder today.
+const arbitrageFailureEventType = "checkout.session.completed"
+
+// reportArbitrageFailure logs and counts a non-fatal arbitrage recorder
+// failure. Dispatch() only classifies errors a handler RETURNS, and this one is
+// deliberately swallowed, so the counter has to be incremented here or the
+// failure is invisible (#423).
+//
+// Note for whoever picks up #438: today this branch is unreachable in
+// production, because checkout.session.completed carries no IP country and
+// arbitrage.Evaluate never flags without one. It is still wired — and tested —
+// so that moving the recorder call somewhere with an IP signal does not
+// silently reintroduce the swallow.
+func reportArbitrageFailure(sub subscription.StoreSubscription, recErr error) {
+	slog.Default().Error("dispatch: arbitrage record failed (non-fatal)",
+		"event_type", arbitrageFailureEventType,
+		"subscription_id", sub.ID.String(),
+		"tenant_id", sub.TenantID.String(),
+		"store_id", sub.StoreID.String(),
+		"err", recErr.Error())
+	if metrics.Subscription != nil {
+		metrics.Subscription.StripeWebhookFailedTotal.
+			WithLabelValues(arbitrageFailureEventType, arbitrageFailureReason).Inc()
+	}
+}
 
 // handleCheckoutSessionCompleted routes checkout.session.completed through
 // two stages:
@@ -108,10 +142,12 @@ func (d *Dispatcher) handleCheckoutSessionCompleted(ctx context.Context, tx *gor
 			RawIP:          "", // no raw IP at webhook time
 		})
 		if recErr != nil {
-			// Arbitrage write failure must NOT block the subscription lifecycle.
-			// Log via fmt.Errorf wrapping so the error surfaces in webhook metrics
-			// but we swallow it here to preserve Stripe idempotency.
-			_ = fmt.Errorf("dispatch: arbitrage record (non-fatal): %w", recErr)
+			// Arbitrage write failure must NOT block the subscription
+			// lifecycle, so the error is still swallowed here to preserve
+			// Stripe idempotency. Silence is what was wrong: the previous
+			// `_ = fmt.Errorf(...)` produced no log, no metric and no return,
+			// so every arbitrage failure vanished (#423).
+			reportArbitrageFailure(sub, recErr)
 		}
 	}
 

@@ -27,11 +27,15 @@ type SubscriptionCollectors struct {
 	StripeWebhookProcessingDuration *prometheus.HistogramVec
 
 	// StripeWebhookFailedTotal counts Stripe webhook handler failures.
-	// Labels: event_type, reason ("cas_conflict"|"invalid_transition"|"db"|"stripe_api"|"unknown").
+	// Labels: event_type, reason ("cas_conflict"|"invalid_transition"|"db"|"stripe_api"|"arbitrage_record"|"unknown").
+	// "arbitrage_record" is emitted at the call site rather than by
+	// Dispatch()'s classifier — that failure is non-fatal and never returned.
 	StripeWebhookFailedTotal *prometheus.CounterVec
 
 	// SubscriptionArbitrageFlaggedTotal counts subscriptions flagged for
-	// arbitrage. Labels: reason. Wired to a placeholder; P8 populates.
+	// arbitrage. Labels: reason ("ppp_developed_signal"|"false_positive_cleared"|
+	// "tenant_mismatch"). "tenant_mismatch" is a refused write, not a flag —
+	// it means a caller passed a tenant that does not own the subscription.
 	SubscriptionArbitrageFlaggedTotal *prometheus.CounterVec
 
 	// PromoAppliedTotal counts promo code applications. Labels: plan, currency,

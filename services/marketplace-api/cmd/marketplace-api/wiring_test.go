@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
+	"github.com/mark8ly/marketplace-api/internal/tenantgate"
 )
 
 // TestPlatformadminRegisterSitesAgree guards one narrow slice of the
@@ -164,4 +167,73 @@ func TestInboxIsWiredAtBothRegisterSites(t *testing.T) {
 	})
 
 	require.Equal(t, 2, sites, "expected exactly two platformadmin.Register sites")
+}
+
+// TestTenantGateInvalidatorIsNilInterfaceWhenUnwired covers #341.
+//
+// tenantGate stays nil when MARKETPLACE_PLATFORM_API_URL is empty. A nil
+// *tenantgate.Gate stored in a TenantGateInvalidator interface makes the
+// INTERFACE value non-nil, so the guard at tenant_lifecycle.go:244
+// (`if h.invalidate != nil`) always fires and dispatches Invalidate on a
+// nil receiver. That is safe today only because Invalidate happens to
+// check its own receiver — nothing enforces it for the next
+// implementation of this interface.
+//
+// require.Nil is deliberately NOT used: testify unwraps the interface and
+// reports a typed-nil pointer as nil, so it would pass against the very
+// bug this test exists to catch. The comparison must be `== nil` on the
+// interface value itself.
+func TestTenantGateInvalidatorIsNilInterfaceWhenUnwired(t *testing.T) {
+	got := tenantGateInvalidator(nil)
+	require.True(t, got == nil,
+		"an unwired gate must produce a nil interface, not a typed-nil *Gate; "+
+			"a typed-nil makes every downstream `!= nil` guard dead code")
+}
+
+// The non-nil case must still pass the gate through.
+func TestTenantGateInvalidatorPassesThroughWiredGate(t *testing.T) {
+	g := &tenantgate.Gate{}
+	require.Equal(t, tenantGateInvalidator(g), platformadmin.TenantGateInvalidator(g))
+}
+
+// TestTenantGateInvalidatorWrappedAtEveryRegisterSite is the regression
+// half of #341. The behavioural test above proves the helper normalises a
+// nil gate; this proves both platformadmin.Deps literals actually go
+// through it, so a future call site cannot quietly reintroduce the
+// typed-nil by assigning `tenantGate` directly.
+//
+// Same narrow scope as TestPlatformadminRegisterSitesAgree: it reads the
+// expression each literal assigns to TenantGateInvalidator and requires it
+// to be a call, not a bare identifier.
+func TestTenantGateInvalidatorWrappedAtEveryRegisterSite(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", nil, 0)
+	require.NoError(t, err)
+
+	var sites int
+	ast.Inspect(file, func(n ast.Node) bool {
+		kv, ok := n.(*ast.KeyValueExpr)
+		if !ok {
+			return true
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok || key.Name != "TenantGateInvalidator" {
+			return true
+		}
+		sites++
+		call, ok := kv.Value.(*ast.CallExpr)
+		require.True(t, ok,
+			"TenantGateInvalidator at %s must be wrapped by tenantGateInvalidator(), "+
+				"not assigned a *tenantgate.Gate directly — a nil one becomes a non-nil interface",
+			fset.Position(kv.Pos()))
+		fn, ok := call.Fun.(*ast.Ident)
+		require.True(t, ok && fn.Name == "tenantGateInvalidator",
+			"TenantGateInvalidator at %s must be wrapped by tenantGateInvalidator()",
+			fset.Position(kv.Pos()))
+		return true
+	})
+
+	require.Equal(t, 2, sites,
+		"expected the mode.Both and mode.Admin Deps literals; a changed count means "+
+			"this test is looking at the wrong thing")
 }

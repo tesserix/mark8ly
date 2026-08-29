@@ -80,14 +80,6 @@ func (f *fakeRepo) ListRefundsByPaymentID(ctx context.Context, providerPaymentID
 	return nil, nil
 }
 
-func (f *fakeRepo) CreateWebhookEvent(ctx context.Context, evt *WebhookEventRecord) error {
-	return nil
-}
-
-func (f *fakeRepo) GetWebhookEventByProviderID(ctx context.Context, providerEventID string) (*WebhookEventRecord, error) {
-	return nil, nil
-}
-
 func (f *fakeRepo) InsertRefundPending(tx *gorm.DB, row *RefundTransaction) (*RefundTransaction, bool, error) {
 	// Not used directly by unit tests below — repository-level fake logic
 	// isn't exercised because ReserveRefund's idempotency guarantee is

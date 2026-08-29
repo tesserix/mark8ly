@@ -64,13 +64,23 @@ func (r *recordingCarrier) SupportedCountries() []string { return []string{"IN"}
 // seedShipmentWithStatus inserts a delhivery shipment for the order in the
 // given lifecycle status ('pending' = pre-pickup, 'in_transit' = picked up,
 // etc). ship_from/ship_to are NOT NULL jsonb on the table.
+//
+// They are seeded with REAL addresses, in the eight-key shape
+// handlers/admin/shipments.go writes. They used to be '{}', which was
+// scaffolding rather than intent — but since #435 an address with no line1
+// is refused by shipmentcancel.parseShipmentAddress, because a GDPR erasure
+// strips these very columns to '{}' and a blank address must never reach a
+// carrier as a pickup point. A '{}' fixture would now exercise that refusal
+// instead of the reverse-pickup path these tests are about.
 func seedShipmentWithStatus(t *testing.T, db *gorm.DB, tenantID, storeID, orderID uuid.UUID, waybill, status string) {
 	t.Helper()
+	const warehouse = `{"name":"Test Warehouse","line1":"12 Depot Road","city":"Mumbai","region":"MH","postal_code":"400001","country_code":"IN","phone":"+911100000000"}`
+	const customer = `{"name":"Test Customer","line1":"9 Buyer Street","city":"Pune","region":"MH","postal_code":"411001","country_code":"IN","phone":"+911122222222"}`
 	err := db.Exec(
 		`INSERT INTO shipments
 			(id, tenant_id, store_id, order_id, carrier, tracking_number, status, ship_from, ship_to, currency_code, created_at, updated_at)
-		 VALUES (gen_random_uuid(), ?, ?, ?, 'delhivery', ?, ?, '{}'::jsonb, '{}'::jsonb, 'INR', now(), now())`,
-		tenantID, storeID, orderID, waybill, status,
+		 VALUES (gen_random_uuid(), ?, ?, ?, 'delhivery', ?, ?, ?::jsonb, ?::jsonb, 'INR', now(), now())`,
+		tenantID, storeID, orderID, waybill, status, warehouse, customer,
 	).Error
 	if err != nil {
 		t.Fatalf("seedShipmentWithStatus(%s): %v", status, err)

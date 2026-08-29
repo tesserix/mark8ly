@@ -23,6 +23,7 @@
     "outbox": true,
     "email-sends": true,
     "notifications": true,
+    "break-glass": true,
     "conversions": true,
     "onboarding/funnel": true,
     "onboarding/sessions": true,

@@ -6,14 +6,16 @@ declaration `mark8ly`'s nightly conformance run (design-system's
 is parsed with `JSON.parse` and cannot carry comments, so every "why" that
 isn't self-evident from the key/value pair goes here instead. Issue: #415.
 
-## The declarable vocabulary is closed to nine ids
+## The declarable vocabulary is closed to seventeen ids
 
 `admin-conformance.json`'s `endpoints` map may only contain keys drawn from
 the Product Admin Integration Contract's fixed id list. That list is defined
-once, in the design-system monorepo, and is exactly nine entries:
+once, in the design-system monorepo, and is exactly seventeen entries:
 
-`design-system/packages/admin-conformance/src/contract.ts:13-126` —
+`design-system/packages/admin-conformance/src/contract.ts:35-311` —
 `ENDPOINTS` (and the derived `ENDPOINT_IDS`) define exactly:
+
+Contract v2's nine:
 
 1. `kpis`
 2. `inbox`
@@ -25,46 +27,99 @@ once, in the design-system monorepo, and is exactly nine entries:
 8. `tenant-lifecycle`
 9. `lifecycle/reason-codes`
 
-There is no tenth id, and there is no way to add a private one: the parser
+Contract v3's eight, added in `@tesserix/admin-conformance` 0.8.0
+(design-system#40) — six of them are routes this document previously listed
+as structurally undeclarable:
+
+10. `outbox`
+11. `email-sends`
+12. `notifications`
+13. `break-glass`
+14. `conversions`
+15. `onboarding/funnel`
+16. `onboarding/sessions`
+17. `tenant-purge`
+
+`conversions` and `tenant-purge` are declared with `probe: false` upstream and
+are deliberately never called: a run that purged a real tenant is
+unrecoverable, and one that looked a person up by email is a scheduled PII
+read. They are declared so the suite knows they exist, not so it exercises
+them.
+
+Declaring these requires the suite at **0.8.1 or newer**, not merely 0.8.0.
+0.8.0 introduced the ids but inferred `onboarding/funnel`'s envelope as
+`data-flat-map`; 0.8.1 (design-system#43) corrected it to `free`. Against
+0.8.0 this product's correct, unchanged handler fails two §4.1 checks. The
+chart's `adminConformanceCron.suite.version` floor carries that constraint.
+
+There is no eighteenth id, and there is no way to add a private one: the parser
 that reads this file, `design-system/packages/admin-conformance/src/declaration.ts`
-(`parseEndpoints`), **throws** on any key that is not one of the nine —
+(`parseEndpoints`), **throws** on any key that is not one of the seventeen —
 `unknown endpoint ${key}; valid ids are: ...` — which fails the *entire*
 conformance run, not just the offending entry. A product cannot partially
 declare; an unrecognised key takes every other declared endpoint down with
-it. This is why the file must stay strictly inside the nine ids and nothing
-else, and why the guard in
+it. This is why the file must stay strictly inside the seventeen ids and
+nothing else, and why the guard in
 `services/marketplace-api/internal/handlers/platformadmin/conformance_declaration_test.go`
 independently mirrors this same closed set and asserts every key in this
 file is a member of it — a typo here should fail in mark8ly's own CI, not
 overnight against production.
 
-## The seven mounted-but-undeclarable routes
+## The mounted-but-undeclarable routes
 
-mark8ly's platform-admin surface (`services/marketplace-api/internal/handlers/platformadmin/routes.go`)
-mounts several `/admin/*` reads that the console consumes directly but that
-have **no corresponding id in the nine above**. Because the vocabulary is
-closed and an unknown key throws (see above), these routes structurally
-*cannot* appear in `admin-conformance.json` — not "were not gotten around
-to," but "there is nowhere to put them." This is one structural fact, not
-seven separate omissions to justify individually:
+Contract v3 (0.8.0) closed most of this gap. Six of the seven routes this
+section used to list — `outbox`, `email-sends`, `notifications`,
+`break-glass`, `conversions` and the `onboarding/*` pair — now have ids and
+are declared in `admin-conformance.json`. `tenant-purge`, a write, gained one
+too.
 
-| route | handler |
-|---|---|
-| `GET /admin/outbox` | `outbox.go:59` |
-| `GET /admin/email-sends` | `email_sends.go:56` |
-| `GET /admin/notifications` | `notifications.go:50` |
-| `GET /admin/tickets` | `tickets.go:40` |
-| `GET /admin/break-glass` | `break_glass.go:65` |
-| `GET /admin/conversions` (the issue's "entities/conversions") | `conversions.go:31` |
-| `GET /admin/onboarding/funnel`, `GET /admin/onboarding/sessions` (the issue's "onboarding-funnel") | `onboarding.go:41-42` |
+What remains genuinely undeclarable is smaller, and it is worth keeping the
+reasoning rather than deleting the section, because the *shape* of the
+argument is what recurs:
 
-These are mark8ly-specific reads the console UI calls directly against this
-product's federated base URL — they were never meant to be part of the
-cross-product contract the conformance suite checks, and adding them to this
-file would either throw at parse time (killing the whole nightly run) or, if
-the contract were ever extended to include them, would need to happen
-upstream in `design-system/packages/admin-conformance/src/contract.ts` first,
-not here.
+| route | handler | why |
+|---|---|---|
+| `GET /admin/tickets` | `tickets.go:40` | mark8ly-specific support read; no id in the seventeen |
+| `POST /admin/inbox/:kind/:id/actions/:actionId` | `inbox_actions.go` | the inbox **write**; `inbox` declares the read only |
+
+Because the vocabulary is closed and an unknown key throws (see above), these
+structurally *cannot* appear in `admin-conformance.json` — not "were not
+gotten around to," but "there is nowhere to put them."
+
+The history is the useful part. This document previously argued that the
+seven were "never meant to be part of the cross-product contract" and that
+extending it "would need to happen upstream in
+`design-system/packages/admin-conformance/src/contract.ts` first, not here."
+The second half was right and is exactly what happened: design-system#40 added
+the ids upstream, mark8ly#455 declared them, and tesserix-k8s#699 updated the
+chart copy the nightly CronJob actually reads. The first half was wrong — they
+*were* contract material, and describing a closed vocabulary as a design
+decision rather than a current limit is how "structurally impossible" outlives
+the structure.
+
+`conformance_declaration_test.go` mirrors the seventeen ids and asserts every
+key here is a member. That mirror is cross-repo and cross-language, so nothing
+but the comment in that file links it to `contract.ts` — an eighteenth id
+upstream requires updating the slice in the same change, or the guard silently
+stops covering it.
+
+Its companion, `TestConformanceDeclarationMatchesChartCopy`, compares this file
+against the chart copy the CronJob actually reads. **It resolves that chart by
+filesystem path**, relative to its own source file, expecting `mark8ly` and
+`tesserix-k8s` as siblings — so it skips whenever that layout does not hold.
+Two consequences worth knowing before trusting a green run:
+
+- It skips in mark8ly's own CI, which never checks out `tesserix-k8s`. The
+  test says so in its skip message.
+- It also skips in a **git worktree**, because the relative walk lands inside
+  `.claude/worktrees/` rather than the workspace root. A run from the main
+  checkout and a run from a worktree therefore disagree, and only the former
+  is checking anything.
+- Conversely, when it does run it reads the sibling's **working tree**, not
+  its default branch. A checkout sitting on an unrelated feature branch will
+  report drift that does not exist on `main` — verified the hard way on
+  2026-08-29, where a stale sibling made a correctly-updated chart look
+  eight endpoints behind.
 
 ## Why `inbox` declares `slaKinds`, not `slaDeclared`
 
@@ -130,10 +185,20 @@ not merely ignore this key — `assertKnownOptions`
 unrecognised option, and a throw at declaration-parse time fails the ENTIRE
 run, every endpoint with it.
 
-The nightly CronJob resolves the range `>=0.5.0 <1.0.0`
-(`tesserix-k8s/charts/apps/mark8ly-marketplace-api-admin/values.yaml`, key
-`adminConformanceCron.version`), which picks the newest published release and
+The nightly CronJob resolves a range from
+`tesserix-k8s/charts/apps/mark8ly-marketplace-api-admin/values.yaml`, key
+`adminConformanceCron.version`, which picks the newest published release and
 so satisfies this today.
+
+That floor is load-bearing twice over now, and for the same reason each time:
+a version below it does not degrade gracefully, it throws at parse time and
+takes the whole run down. `slaKinds` needs ≥0.7.0 (above); contract v3's ids
+need ≥0.8.1 (see the vocabulary section — 0.8.0 has the ids but mis-declares
+`onboarding/funnel`'s envelope). The chart's range was still `>=0.5.0 <1.0.0`
+when contract v3 landed, which resolves correctly today only because npm picks
+the newest match; raising the floor to `>=0.8.1` is tracked separately in
+tesserix-k8s. Prefer citing the constraint over the literal range here — the
+range moves, the reason it exists does not.
 
 ## Implemented ≠ declared ≠ wired
 

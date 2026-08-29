@@ -142,6 +142,18 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/wishlist/... \
 	    ./pkg/testdb/... \
 	    ./tests/integration/...
+	@# A green suite is not the same as a clean database. testdb.NewDB
+	@# truncates only the tables a test names, so one that raw-INSERTs
+	@# elsewhere leaves rows for whatever package runs next — which is how
+	@# #401's phantom failures happened, packages passing or failing on run
+	@# order alone. #446's promo fixture and #436's per-store sequences were
+	@# both this, and both were found by accident. This makes the next one
+	@# loud, at the only point the invariant can be checked: after every
+	@# package has run.
+	@echo "▶ marketplace-api leak check"
+	@cd services/marketplace-api && \
+	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable' \
+	  go run ./cmd/testdb-leakcheck
 
 cover: ## Coverage report for both Go services
 	@cd services/platform-api && go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -5

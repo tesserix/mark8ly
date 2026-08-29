@@ -38,6 +38,13 @@ test-unit: ## Run unit tests across every Go service and TS workspace
 	@cd services/platform-api && go test ./...
 	@echo "▶ auth-bff"
 	@cd services/auth-bff && go test ./...
+	@# marketplace-api was missing here while the target's own help text claimed
+	@# "every Go service" (#446). CI covered it, so nothing was unverified — but
+	@# it meant the untagged guards in this service, including the test-int
+	@# coverage guard below, could not go red on a developer's machine. A guard
+	@# nobody sees locally is only half a guard.
+	@echo "▶ marketplace-api"
+	@cd services/marketplace-api && go test ./...
 	@echo "▶ turbo (TS workspaces)"
 	@npx turbo run test
 

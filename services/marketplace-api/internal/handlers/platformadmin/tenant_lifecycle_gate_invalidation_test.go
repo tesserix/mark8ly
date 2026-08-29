@@ -116,19 +116,39 @@ func TestUnsuspend_InvalidatesGate_NoTTLWait(t *testing.T) {
 		"unsuspend must invalidate the gate cache so the very next admin request is served, with no TTL wait")
 }
 
-// TestLifecycle_NoopDoesNotInvalidateGate asserts the negative: a call
-// upstream reports as unchanged (Changed: false) must NOT touch the
-// cache, consistent with the audit side effect also being skipped for a
-// no-op.
-func TestLifecycle_NoopDoesNotInvalidateGate(t *testing.T) {
+// TestLifecycle_NoopStillInvalidatesGate replaces an earlier assertion
+// that a no-op must NOT invalidate the cache (#344).
+//
+// That assertion justified itself as "consistent with the audit side
+// effect also being skipped for a no-op". The consistency is superficial
+// and the two are not alike: an audit row RECORDS a change, so skipping
+// it for a no-op is right; cache invalidation ENFORCES a status, and the
+// status is a fact about the tenant whether or not this particular call
+// is what changed it.
+//
+// Read the scenario below and the old expectation is plainly wrong.
+// Upstream is suspended. The gate holds a cached "active". The old test
+// required the admin gate to keep serving that tenant as active — for up
+// to the TTL, five minutes in production — and called that correct. It
+// pinned under-enforcement in place.
+//
+// It also made #344 unfixable: after a failed projection update the only
+// recourse is a retry, and a retry always reports Changed: false, so
+// every repair path was closed.
+//
+// Invalidation is cheap — it drops one cache entry and costs one refetch
+// — so there is no reason to withhold it from the call that is trying to
+// make enforcement true.
+func TestLifecycle_NoopStillInvalidatesGate(t *testing.T) {
 	lookup := &switchableLookup{status: "active"}
 	gate := tenantgate.New(lookup, nil, time.Hour)
 	adminRouter := buildAdminGateRouter(t, gate)
 
 	require.Equal(t, http.StatusOK, doAdminGet(adminRouter).Code)
 
-	// Upstream is now suspended, but this call reports Changed: false (the
-	// tenant was already suspended, say) — the cache must stay untouched.
+	// Upstream is now suspended, but this call reports Changed: false —
+	// the tenant was already suspended, e.g. an operator retrying after a
+	// failed local projection update.
 	lookup.set("suspended")
 	stub := &stubLifecycle{res: &tenantlifecycle.Result{
 		TenantID: testTenant, Status: "suspended", StoresAffected: 0, Changed: false}}
@@ -136,8 +156,9 @@ func TestLifecycle_NoopDoesNotInvalidateGate(t *testing.T) {
 	rec := postLifecycleTenant(t, h, testTenant, "suspend", `{"reason_code":"abuse"}`)
 	require.Equal(t, http.StatusOK, rec.Code)
 
-	require.Equal(t, http.StatusOK, doAdminGet(adminRouter).Code,
-		"a no-op (Changed: false) must not invalidate the gate cache")
+	require.Equal(t, http.StatusForbidden, doAdminGet(adminRouter).Code,
+		"a retry must drop the stale cached status so the suspension is enforced "+
+			"on the very next admin request, rather than lingering for the TTL")
 }
 
 // TestLifecycle_NilInvalidatorDoesNotPanic asserts the handler degrades

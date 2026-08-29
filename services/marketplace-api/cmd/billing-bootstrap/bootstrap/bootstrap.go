@@ -49,6 +49,14 @@ func Run(ctx context.Context, c *stripec.Client, descriptors []pricing.PriceDesc
 			logger.Info("bootstrap: creating price", "lookup_key", d.LookupKey, "plan", d.Plan, "period", d.Period, "tier", d.Tier)
 			_, err = stripec.CreatePrice(ctx, c, prodID, d)
 		} else if err == nil {
+			if mismatch := stripec.DescribeMismatch(d, existing); mismatch != "" {
+				return fmt.Errorf(
+					"bootstrap: refusing to reuse price %s (%s): %s. "+
+						"lookup_key is stable identity, and a Stripe Price is immutable in amount — "+
+						"changing one means creating a new Price and migrating subscribers, which is "+
+						"a deliberate operation, not a side effect of a bootstrap run (#459)",
+					d.LookupKey, existing.ID, mismatch)
+			}
 			logger.Info("bootstrap: reusing price", "lookup_key", d.LookupKey, "price_id", existing.ID)
 		}
 		if err != nil {

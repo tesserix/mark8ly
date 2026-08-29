@@ -139,9 +139,20 @@ func PriceIDFor(
 	return p.ID, nil
 }
 
-// lookupKeyFor derives the Stripe price lookup key from subscription-layer types.
-// It mirrors the catalog key format without importing the full descriptor (which
-// would require a currency argument that MustGetDescriptor does not accept for PPP).
+// lookupKeyFor resolves the Stripe price lookup key for subscription-layer
+// types by ASKING THE CATALOG for it (#459).
+//
+// It deliberately does not build the key itself. It used to: it called
+// MustGetDescriptor only to validate the descriptor existed, discarded it,
+// and rebuilt the string with its own fmt.Sprintf — leaving the format
+// literal in two packages with nothing checking they agreed. A change to
+// the catalog format would have left this path writing the old key,
+// pointing subscription updates at prices that are stale or absent, and it
+// would have rotted longest in the unattended downgrade cron.
+//
+// pricing.LookupKeyFor takes the currency that MustGetDescriptor could not,
+// which was the stated reason for the second copy.
+// TestLookupKeyFor_AgreesWithEveryCatalogDescriptor holds the invariant.
 func lookupKeyFor(
 	plan subscription.SubscriptionPlan,
 	period subscription.SubscriptionPeriod,
@@ -153,15 +164,17 @@ func lookupKeyFor(
 
 	switch tier {
 	case subscription.PriceTierDeveloped:
-		// Validate (plan, period) exist in the catalog.
-		pricing.MustGetDescriptor(p, per, pricing.TierDeveloped)
-		return fmt.Sprintf("mark8ly_%s_%s_developed_v1", p, per), nil
+		key, ok := pricing.LookupKeyFor(p, per, pricing.TierDeveloped, currency)
+		if !ok {
+			return "", fmt.Errorf("stripe: no developed price for plan=%s period=%s", plan, period)
+		}
+		return key, nil
 	case subscription.PriceTierPPP:
-		// Validate the (plan, period, currency) combination exists in the PPP catalog.
-		if _, ok := pricing.LookupPPPOption(p, per, currency); !ok {
+		key, ok := pricing.LookupKeyFor(p, per, pricing.TierPPP, currency)
+		if !ok {
 			return "", fmt.Errorf("stripe: no PPP price for plan=%s period=%s currency=%s", plan, period, currency)
 		}
-		return fmt.Sprintf("mark8ly_%s_%s_ppp_%s_v1", p, per, currency), nil
+		return key, nil
 	default:
 		return "", fmt.Errorf("stripe: unknown price tier %q", tier)
 	}

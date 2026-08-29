@@ -2,6 +2,7 @@ package stripe
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	sdk "github.com/stripe/stripe-go/v82"
@@ -28,6 +29,43 @@ func stripeUnitAmount(currency string, catalogMinor int64) int64 {
 		return catalogMinor / 100
 	}
 	return catalogMinor
+}
+
+// DescribeMismatch reports how an existing Stripe Price disagrees with the
+// descriptor claiming the same lookup_key, or "" when they agree.
+//
+// It lives HERE, beside stripeUnitAmount, deliberately. The catalog stores
+// zero-decimal currencies pre-multiplied by 100 and that conversion is
+// applied on the way into Stripe, so a comparison written anywhere else
+// would have to re-implement it — which is the exact second-derivation
+// mistake #459 exists to remove. Keeping the check next to the conversion
+// means the two cannot drift.
+//
+// # Known limit: currency_options are not compared
+//
+// A developed-tier Price carries currency_options for seven currencies, and
+// Stripe does not return them unless the read expands them — which
+// FindPriceByLookupKey does not do and Price does not map. A change confined
+// to a NON-baseline currency is therefore still undetected. That is a much
+// narrower hole than the one this closes; it is stated so it is not
+// mistaken for covered.
+func DescribeMismatch(d pricing.PriceDescriptor, existing *Price) string {
+	if existing == nil {
+		return ""
+	}
+	want := stripeUnitAmount(d.Baseline.Currency, d.Baseline.UnitAmountMinor)
+	if existing.UnitAmount != want {
+		return fmt.Sprintf("catalog says unit_amount=%d, Stripe holds %d", want, existing.UnitAmount)
+	}
+	if !strings.EqualFold(existing.Currency, d.Baseline.Currency) {
+		return fmt.Sprintf("catalog says currency=%q, Stripe holds %q", d.Baseline.Currency, existing.Currency)
+	}
+	// An empty TaxBehavior in the catalog means "Stripe's default", which
+	// Stripe reports back as "unspecified" — not a divergence.
+	if d.Baseline.TaxBehavior != "" && !strings.EqualFold(existing.TaxBehavior, d.Baseline.TaxBehavior) {
+		return fmt.Sprintf("catalog says tax_behavior=%q, Stripe holds %q", d.Baseline.TaxBehavior, existing.TaxBehavior)
+	}
+	return ""
 }
 
 // Price represents a Stripe Price object (fields used by billing-bootstrap).

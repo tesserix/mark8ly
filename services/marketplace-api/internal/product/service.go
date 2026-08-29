@@ -325,7 +325,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Aggregate, er
 			TaxCode:           req.TaxCode,
 			TaxRateOverride:   req.TaxRateOverride,
 			TaxCategory:       req.TaxCategory,
-			VendorID:          req.VendorID,
+			VendorID:          *req.VendorID, // non-nil and non-empty: resolveVendorID guarantees it above
 			CreatedBy:         req.CreatedBy,
 			UpdatedBy:         req.CreatedBy,
 		},
@@ -577,8 +577,14 @@ func resolveVendorID(ctx context.Context, lookup SelfVendorLookup, in *CreateReq
 	if in.VendorID != nil && *in.VendorID != "" {
 		return nil
 	}
+	// No explicit vendor AND no way to resolve one. This used to be a
+	// silent no-op, which left VendorID nil all the way to the insert and
+	// turned a wiring bug into a NOT NULL violation from Postgres (#402).
+	// The nil lookup is for callers that always supply an explicit vendor —
+	// and those have already returned above.
 	if lookup == nil {
-		return nil
+		return apperrors.ValidationFailed("vendor_id",
+			"no vendor supplied and no self-vendor lookup is configured")
 	}
 	vid, err := lookup.GetSelfVendorID(ctx, in.TenantID)
 	if err != nil {

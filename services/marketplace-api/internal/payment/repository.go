@@ -66,28 +66,6 @@ func (r *RefundTransaction) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-// WebhookEventRecord represents a row in the webhook_events table.
-type WebhookEventRecord struct {
-	ID              string    `gorm:"column:id;type:uuid;primaryKey"                       json:"id"`
-	TenantID        string    `gorm:"column:tenant_id;type:uuid;not null;index"             json:"tenant_id"`
-	StoreID         string    `gorm:"column:store_id;type:uuid;not null;index"              json:"store_id"`
-	Provider        string    `gorm:"column:provider;type:varchar(20);not null"              json:"provider"`
-	ProviderEventID string    `gorm:"column:provider_event_id;type:varchar(255);not null;uniqueIndex" json:"provider_event_id"`
-	EventType       string    `gorm:"column:event_type;type:varchar(50);not null"            json:"event_type"`
-	OrderID         string    `gorm:"column:order_id;type:uuid"                              json:"order_id,omitempty"`
-	RawPayload      []byte    `gorm:"column:raw_payload;type:jsonb"                          json:"-"`
-	CreatedAt       time.Time `gorm:"column:created_at;autoCreateTime"                       json:"created_at"`
-}
-
-func (WebhookEventRecord) TableName() string { return "webhook_events" }
-
-func (w *WebhookEventRecord) BeforeCreate(_ *gorm.DB) error {
-	if w.ID == "" {
-		w.ID = uuid.New().String()
-	}
-	return nil
-}
-
 // ---------------------------------------------------------------------------
 // Repository interface + GORM implementation
 // ---------------------------------------------------------------------------
@@ -109,9 +87,6 @@ type Repository interface {
 	UpdateRefundOutcome(tx *gorm.DB, ledgerID, providerRefundID, status string) error
 	// GetRefundByIdempotencyKey reads a ledger row by its unique key.
 	GetRefundByIdempotencyKey(ctx context.Context, key string) (*RefundTransaction, error)
-
-	CreateWebhookEvent(ctx context.Context, evt *WebhookEventRecord) error
-	GetWebhookEventByProviderID(ctx context.Context, providerEventID string) (*WebhookEventRecord, error)
 }
 
 type gormRepository struct{ db *gorm.DB }
@@ -217,23 +192,4 @@ func (r *gormRepository) GetRefundByIdempotencyKey(ctx context.Context, key stri
 		return nil, err
 	}
 	return &row, nil
-}
-
-// ---------------------------------------------------------------------------
-// WebhookEventRecord CRUD
-// ---------------------------------------------------------------------------
-
-func (r *gormRepository) CreateWebhookEvent(ctx context.Context, evt *WebhookEventRecord) error {
-	return r.db.WithContext(ctx).Create(evt).Error
-}
-
-func (r *gormRepository) GetWebhookEventByProviderID(ctx context.Context, providerEventID string) (*WebhookEventRecord, error) {
-	var evt WebhookEventRecord
-	err := r.db.WithContext(ctx).
-		Where("provider_event_id = ?", providerEventID).
-		First(&evt).Error
-	if err != nil {
-		return nil, err
-	}
-	return &evt, nil
 }

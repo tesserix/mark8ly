@@ -59,51 +59,6 @@ func (s *Service) CreatePaymentIntent(
 	return intent, nil
 }
 
-// ProcessWebhook verifies and processes a provider webhook callback.
-// It persists the event for idempotency and updates the related
-// transaction status.
-func (s *Service) ProcessWebhook(
-	ctx context.Context,
-	provider string,
-	payload []byte,
-	signature string,
-	gateway Gateway,
-) (*WebhookEvent, error) {
-	evt, err := gateway.VerifyWebhook(ctx, payload, signature)
-	if err != nil {
-		return nil, fmt.Errorf("payment service: process webhook: %w", err)
-	}
-
-	// Check idempotency — skip if we have already processed this event.
-	existing, _ := s.repo.GetWebhookEventByProviderID(ctx, evt.ProviderEventID)
-	if existing != nil {
-		return evt, nil
-	}
-
-	record := WebhookEventRecord{
-		Provider:        provider,
-		ProviderEventID: evt.ProviderEventID,
-		EventType:       evt.EventType,
-		OrderID:         evt.OrderID,
-		RawPayload:      evt.RawPayload,
-	}
-	if err := s.repo.CreateWebhookEvent(ctx, &record); err != nil {
-		return nil, fmt.Errorf("payment service: persist webhook event: %w", err)
-	}
-
-	// Update the corresponding transaction status when we can correlate it.
-	if evt.OrderID != "" {
-		statusUpdate := webhookEventToStatus(evt.EventType)
-		if statusUpdate != "" {
-			if err := s.repo.UpdateTransactionStatus(ctx, evt.OrderID, statusUpdate); err != nil {
-				return nil, fmt.Errorf("payment service: update transaction: %w", err)
-			}
-		}
-	}
-
-	return evt, nil
-}
-
 // ReserveRefundInput describes a refund reservation — the first step of the
 // refund saga (ledger row inserted before any provider call is made). It
 // carries CurrencyCode for later gateway use; refund_transactions has no

@@ -209,6 +209,18 @@ func TestIntegration_ProductService_UpdateAggregate_RemovedVariantIDsSoftDelete(
 // TestIntegration_ProductService_UpdateAggregate_OptionValueInUseRejected
 // exercises semantics (c): removing an option value that a surviving
 // variant still references should return OptionValueInUse and roll back.
+//
+// This is deliberately an options-ONLY PATCH. It used to also send Variants,
+// and that made the assertion structurally unreachable: two variants against a
+// one-value Size option is a cartesian product of 1 against 2 rows, so
+// ValidateMatrix rejected the request with variant_matrix_mismatch before the
+// transaction opened, and the OptionValueInUse guard was never reached. The
+// test never passed once (#446). Whenever req.Variants != nil the surviving
+// variants are the ones the caller just sent, so a request that both drops a
+// value and keeps a variant on it can only ever fail the matrix check —
+// variant_matrix_mismatch already has coverage in service_integration_test.go.
+// Sending options alone is the only shape that reaches this guard: the stored
+// variants survive untouched and one of them still references Size=S.
 func TestIntegration_ProductService_UpdateAggregate_OptionValueInUseRejected(t *testing.T) {
 	tx := testdb.NewTx(t)
 	storeID, tenantID, _ := seedStore(t, tx)
@@ -231,26 +243,20 @@ func TestIntegration_ProductService_UpdateAggregate_OptionValueInUseRejected(t *
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	sVar := findVariantBySKU(agg, "S-1")
-	mVar := findVariantBySKU(agg, "S-2")
+	if findVariantBySKU(agg, "S-1") == nil || findVariantBySKU(agg, "S-2") == nil {
+		t.Fatalf("seed lookup failed")
+	}
 
-	// Act: remove value "S" from Size while still including a variant
-	// that references Size=S. This is a client contract violation.
+	// Act: remove value "S" from Size and send nothing else. The stored
+	// variant S-1 survives the PATCH and still references Size=S, so the
+	// value cannot be deleted.
 	newOptions := []product.OptionSpec{
 		{Name: "Size", Values: []product.OptionValueSpec{{Value: "M"}}},
-	}
-	newVariants := []product.VariantInput{
-		// Still referencing Size=S — should be rejected.
-		{ID: sVar.ID, SKU: "S-1", Price: decimal.NewFromInt(10), CurrencyCode: "USD",
-			OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "S"}}},
-		{ID: mVar.ID, SKU: "S-2", Price: decimal.NewFromInt(11), CurrencyCode: "USD",
-			OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "M"}}},
 	}
 
 	_, err = svc.UpdateAggregate(ctx, product.UpdateAggregateRequest{
 		ID: agg.Product.ID, StoreID: storeID, TenantID: tenantID,
-		Options:  &newOptions,
-		Variants: &newVariants,
+		Options: &newOptions,
 	})
 	if err == nil {
 		t.Fatalf("expected error, got nil")

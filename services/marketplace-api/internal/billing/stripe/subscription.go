@@ -2,6 +2,7 @@ package stripe
 
 import (
 	"context"
+	"errors"
 
 	sdk "github.com/stripe/stripe-go/v82"
 )
@@ -26,7 +27,12 @@ type Subscription struct {
 	// is bounded at two years FROM THE ANCHOR, not from now.
 	TrialEnd           int64 `json:"trial_end"`
 	BillingCycleAnchor int64 `json:"billing_cycle_anchor"`
-	Items              struct {
+	// Metadata carries the keys CreateSubscription stamps on the object
+	// (mark8ly_store_id / _plan / _period). Reconciliation uses
+	// mark8ly_store_id to attribute a Stripe subscription back to a local
+	// store when the local row never recorded its id.
+	Metadata map[string]string `json:"metadata"`
+	Items    struct {
 		Data []SubscriptionItem `json:"data"`
 	} `json:"items"`
 }
@@ -57,6 +63,7 @@ func mapSubscription(s *sdk.Subscription) *Subscription {
 		Customer:           customerID,
 		TrialEnd:           s.TrialEnd,
 		BillingCycleAnchor: s.BillingCycleAnchor,
+		Metadata:           s.Metadata,
 	}
 
 	if s.Items != nil {
@@ -79,4 +86,31 @@ func mapSubscription(s *sdk.Subscription) *Subscription {
 	}
 
 	return out
+}
+
+// ListSubscriptionsByCustomer returns every subscription Stripe currently
+// holds for customerID that is not canceled (Stripe's default list filter).
+//
+// Used by reconciliation to find subscriptions that exist at Stripe but that
+// no local row points at — the orphan left behind when a subscription is
+// created and the transaction that would have persisted its id then rolls
+// back. Canceled subscriptions are deliberately excluded: they bill nothing,
+// so they are not the divergence worth alerting on.
+func ListSubscriptionsByCustomer(ctx context.Context, c *Client, customerID string) ([]*Subscription, error) {
+	if customerID == "" {
+		return nil, errors.New("stripe: ListSubscriptionsByCustomer: customer required")
+	}
+
+	params := &sdk.SubscriptionListParams{Customer: sdk.String(customerID)}
+	params.Context = ctx
+	params.Limit = sdk.Int64(100)
+
+	var out []*Subscription
+	for s, err := range c.sdk.V1Subscriptions.List(ctx, params) {
+		if err != nil {
+			return nil, toAPIError(err)
+		}
+		out = append(out, mapSubscription(s))
+	}
+	return out, nil
 }

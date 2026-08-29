@@ -113,6 +113,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/subscription/statemachine/... \
 	    ./internal/campaignbudget/... \
 	    ./internal/handlers/webhooks/... \
+	    ./internal/reconciliation/... \
 	    ./tests/integration/... \
 	    ./pkg/testdb/...
 

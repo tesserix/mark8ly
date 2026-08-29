@@ -32,6 +32,17 @@ var contractEndpointIDs = []string{
 	"billing/trials",
 	"tenant-lifecycle",
 	"lifecycle/reason-codes",
+	// contract v3 (design-system#…, 2026-08-29). Same rule as above: whoever
+	// adds an eighteenth id to contract.ts updates this slice in the same
+	// change, or this guard silently stops covering it.
+	"outbox",
+	"email-sends",
+	"notifications",
+	"break-glass",
+	"conversions",
+	"onboarding/funnel",
+	"onboarding/sessions",
+	"tenant-purge",
 }
 
 // routeToContractID maps every route TEMPLATE (as gin's own route table
@@ -51,22 +62,43 @@ var contractEndpointIDs = []string{
 // for one to mount without the other, so — unlike entities — a single
 // mounted/declared bit for the id is accurate here.
 //
-// Routes this surface mounts that have NO entry here (outbox, email-sends,
-// notifications, tickets, break-glass, conversions, onboarding/funnel,
-// onboarding/sessions, the inbox actions write, tenant purge) are exactly
-// the mark8ly-specific reads and writes docs/admin-conformance.md documents
-// as structurally undeclarable — this test deliberately has nothing to say
-// about them, because the nine-id vocabulary has nowhere to put them.
+// Routes this surface mounts that have NO entry here (tickets, the inbox
+// actions write) are exactly the mark8ly-specific reads and writes
+// docs/admin-conformance.md documents as structurally undeclarable — this
+// test deliberately has nothing to say about them, because the seventeen-id
+// vocabulary has nowhere to put them.
+//
+// contract v3 additions (design-system#…, 2026-08-29): outbox, email-sends,
+// notifications, break-glass, conversions each mount a single route.
+// onboarding/funnel mounts BOTH /onboarding/funnel and /onboarding/sessions
+// atomically — routes.go's NewOnboardingFunnelHandler(...).Register(group)
+// call is gated on a single `deps.OnboardingFunnel != nil` check that mounts
+// both, so a single id covers both templates the same way tenant-lifecycle
+// covers suspend+unsuspend above. tenant-purge mounts BOTH
+// /tenants/:id/purge/preview (GET) and /tenants/:id/purge (POST)
+// atomically for the same reason — routes.go's tenant-purge switch case
+// registers both from one NewTenantPurgeHandler(...).Register(group) call
+// gated on one non-nil check (TenantTeardown, Purger, Emitter, DB,
+// TenantDirectory all non-nil).
 var routeToContractID = map[string]string{
-	platformadmin.MountPrefix + "/admin/kpis":                   "kpis",
-	platformadmin.MountPrefix + "/admin/inbox":                  "inbox",
-	platformadmin.MountPrefix + "/admin/audit-logs":             "audit-logs",
-	platformadmin.MountPrefix + "/admin/health":                 "health",
-	platformadmin.MountPrefix + "/admin/billing/subscriptions":  "billing/subscriptions",
-	platformadmin.MountPrefix + "/admin/billing/trials":         "billing/trials",
-	platformadmin.MountPrefix + "/admin/tenants/:id/suspend":    "tenant-lifecycle",
-	platformadmin.MountPrefix + "/admin/tenants/:id/unsuspend":  "tenant-lifecycle",
-	platformadmin.MountPrefix + "/admin/lifecycle/reason-codes": "lifecycle/reason-codes",
+	platformadmin.MountPrefix + "/admin/kpis":                      "kpis",
+	platformadmin.MountPrefix + "/admin/inbox":                     "inbox",
+	platformadmin.MountPrefix + "/admin/audit-logs":                "audit-logs",
+	platformadmin.MountPrefix + "/admin/health":                    "health",
+	platformadmin.MountPrefix + "/admin/billing/subscriptions":     "billing/subscriptions",
+	platformadmin.MountPrefix + "/admin/billing/trials":            "billing/trials",
+	platformadmin.MountPrefix + "/admin/tenants/:id/suspend":       "tenant-lifecycle",
+	platformadmin.MountPrefix + "/admin/tenants/:id/unsuspend":     "tenant-lifecycle",
+	platformadmin.MountPrefix + "/admin/lifecycle/reason-codes":    "lifecycle/reason-codes",
+	platformadmin.MountPrefix + "/admin/outbox":                    "outbox",
+	platformadmin.MountPrefix + "/admin/email-sends":               "email-sends",
+	platformadmin.MountPrefix + "/admin/notifications":             "notifications",
+	platformadmin.MountPrefix + "/admin/break-glass":               "break-glass",
+	platformadmin.MountPrefix + "/admin/conversions":               "conversions",
+	platformadmin.MountPrefix + "/admin/onboarding/funnel":         "onboarding/funnel",
+	platformadmin.MountPrefix + "/admin/onboarding/sessions":       "onboarding/sessions",
+	platformadmin.MountPrefix + "/admin/tenants/:id/purge/preview": "tenant-purge",
+	platformadmin.MountPrefix + "/admin/tenants/:id/purge":         "tenant-purge",
 }
 
 // entitySubtypeRoutes maps each `entities` subtype this product can declare

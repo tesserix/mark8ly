@@ -1,6 +1,6 @@
 {
   "slug": "mark8ly",
-  "contractVersion": 2,
+  "contractVersion": 3,
   "endpoints": {
     "kpis": true,
     "inbox": {
@@ -19,6 +19,14 @@
     "billing/subscriptions": true,
     "billing/trials": true,
     "tenant-lifecycle": true,
-    "lifecycle/reason-codes": true
+    "lifecycle/reason-codes": true,
+    "outbox": true,
+    "email-sends": true,
+    "notifications": true,
+    "break-glass": true,
+    "conversions": true,
+    "onboarding/funnel": true,
+    "onboarding/sessions": true,
+    "tenant-purge": true
   }
 }

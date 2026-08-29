@@ -392,6 +392,32 @@ func AllDescriptors() []PriceDescriptor {
 
 // MustGetDescriptor returns the PriceDescriptor for (plan, period, tier). Panics on miss.
 // For TierPPP with multiple currencies, returns the first match — prefer direct map access.
+// LookupKeyFor returns the canonical Stripe lookup_key for one price, and
+// is the ONLY way anything outside this package should obtain one (#459).
+//
+// It exists because MustGetDescriptor keys on (plan, period, tier) alone,
+// which is ambiguous for TierPPP: PPP descriptors are one-per-currency, so
+// that lookup returns whichever happens to sort first. Callers worked
+// around this by re-deriving the key with their own fmt.Sprintf, putting a
+// second copy of the format in another package with nothing enforcing
+// agreement. Change the format here and the copy kept writing the old
+// string: no compile error, no failing test, prices silently missed.
+//
+// currency is ignored for TierDeveloped (one Price object carries all
+// currency_options) and required for TierPPP.
+func LookupKeyFor(p Plan, period Period, tier Tier, currency string) (string, bool) {
+	for _, d := range allDescriptors {
+		if d.Plan != p || d.Period != period || d.Tier != tier {
+			continue
+		}
+		if tier == TierPPP && d.Currency != currency {
+			continue
+		}
+		return d.LookupKey, true
+	}
+	return "", false
+}
+
 func MustGetDescriptor(p Plan, period Period, tier Tier) PriceDescriptor {
 	for _, d := range allDescriptors {
 		if d.Plan == p && d.Period == period && d.Tier == tier {

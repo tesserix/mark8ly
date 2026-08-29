@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -111,6 +112,13 @@ func (m *stripeMock) handler() http.Handler {
 				"currency":   v.Get("currency"),
 				"active":     true,
 			}
+			if ua := v.Get("unit_amount"); ua != "" {
+				n, _ := strconv.ParseInt(ua, 10, 64)
+				price["unit_amount"] = n
+			}
+			if tb := v.Get("tax_behavior"); tb != "" {
+				price["tax_behavior"] = tb
+			}
 			m.pricesByLookup[lookup] = price
 			m.priceCreates++
 			_ = json.NewEncoder(w).Encode(price)
@@ -169,4 +177,77 @@ func TestBootstrap_AbortsOnErrorEarly(t *testing.T) {
 
 	err := bootstrap.Run(context.Background(), c, pricing.AllDescriptors(), nil)
 	require.Error(t, err)
+}
+
+// #459: bootstrap was create-only. An existing lookup_key meant "reuse",
+// full stop — the amount was never compared. So a price change whose key
+// does not change was SILENTLY a no-op: bootstrap logged "reusing price"
+// and exited 0, Stripe kept charging the old amount, and the console
+// showed the new one. The operator saw a successful publish.
+//
+// The parity check cannot catch this either: it compares the console's
+// catalog to Stripe, so it is structurally blind to a divergence the
+// console does not know about.
+//
+// Resolved 2026-08-29: lookup_key is STABLE IDENTITY, and bootstrap
+// REFUSES on a differing amount rather than updating. Stripe Prices are
+// immutable in amount, so "change the price" really means create-new-and-
+// migrate-subscribers — something mark8ly has never done and has no
+// runbook for. Refusing turns a silent no-op into a loud stop.
+func TestBootstrap_RefusesWhenExistingPriceAmountDiffers(t *testing.T) {
+	m := newStripeMock()
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	c := stripec.New("sk_test_x")
+	c.SetBaseURLForTesting(srv.URL)
+
+	descriptors := []pricing.PriceDescriptor{oneDescriptor(t)}
+
+	// First run creates the price at the catalog's amount.
+	require.NoError(t, bootstrap.Run(context.Background(), c, descriptors, nil))
+	require.Equal(t, 1, m.priceCreates)
+
+	// Stripe now holds a DIFFERENT amount under the same lookup_key —
+	// exactly the state a changed catalog amount produces.
+	m.mu.Lock()
+	m.pricesByLookup[descriptors[0].LookupKey]["unit_amount"] = int64(999999)
+	m.mu.Unlock()
+	m.resetCounters()
+
+	err := bootstrap.Run(context.Background(), c, descriptors, nil)
+
+	require.Error(t, err, "a differing amount must not be silently reused")
+	require.Contains(t, err.Error(), descriptors[0].LookupKey,
+		"the error must name the key so an operator knows which price to look at")
+	require.Contains(t, err.Error(), "999999", "the error must show what Stripe holds")
+	require.Equal(t, 0, m.priceCreates,
+		"refusing means creating nothing — not quietly creating a second price")
+}
+
+// The other half: an unchanged amount must still be a clean no-op, or
+// every re-run of a correct bootstrap would now fail.
+func TestBootstrap_ReusesWhenAmountMatches(t *testing.T) {
+	m := newStripeMock()
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	c := stripec.New("sk_test_x")
+	c.SetBaseURLForTesting(srv.URL)
+
+	descriptors := []pricing.PriceDescriptor{oneDescriptor(t)}
+
+	require.NoError(t, bootstrap.Run(context.Background(), c, descriptors, nil))
+	m.resetCounters()
+
+	require.NoError(t, bootstrap.Run(context.Background(), c, descriptors, nil),
+		"an unchanged catalog must remain idempotent")
+	require.Equal(t, 0, m.priceCreates)
+}
+
+// oneDescriptor returns a single real catalog descriptor, so the test runs
+// against the shape bootstrap actually receives rather than a fabricated one.
+func oneDescriptor(t *testing.T) pricing.PriceDescriptor {
+	t.Helper()
+	all := pricing.AllDescriptors()
+	require.NotEmpty(t, all)
+	return all[0]
 }

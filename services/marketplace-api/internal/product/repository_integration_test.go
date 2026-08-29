@@ -55,7 +55,7 @@ func minimalAggregate(storeID, tenantID, vendorID, handle, sku string) *product.
 			ID:       uuid.NewString(),
 			TenantID: tenantID,
 			StoreID:  storeID,
-			VendorID: &vendorID,
+			VendorID: vendorID,
 			Handle:   handle,
 			Title:    "Test " + handle,
 			Status:   product.StatusDraft,
@@ -112,7 +112,7 @@ func richAggregate(t *testing.T, tx *gorm.DB, storeID, tenantID, vendorID, handl
 			ID:       uuid.NewString(),
 			TenantID: tenantID,
 			StoreID:  storeID,
-			VendorID: &vendorID,
+			VendorID: vendorID,
 			Handle:   handle,
 			Title:    "Rich " + handle,
 			Status:   product.StatusDraft,
@@ -538,7 +538,7 @@ func TestIntegration_ProductRepo_ApplyVariantDiffInTx_AddUpdateRemove(t *testing
 	v2ID := uuid.NewString()
 	agg := &product.Aggregate{
 		Product: product.Product{
-			ID: uuid.NewString(), TenantID: tenantID, StoreID: storeID, VendorID: &vendorID,
+			ID: uuid.NewString(), TenantID: tenantID, StoreID: storeID, VendorID: vendorID,
 			Handle: "diff-test", Title: "Diff Test", Status: product.StatusDraft,
 		},
 		Variants: []product.Variant{

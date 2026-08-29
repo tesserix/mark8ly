@@ -50,10 +50,25 @@ type Product struct {
 	Title       string  `gorm:"column:title;type:varchar(300);not null"                  json:"title"`
 	Description *string `gorm:"column:description;type:text"                             json:"description,omitempty"`
 	Status      string  `gorm:"column:status;type:varchar(20);not null;default:draft"    json:"status"`
-	// VendorID is a pointer for historical reasons; the column has been NOT NULL
-	// since migration 000028. See issue #402 — tightening it to a plain string
-	// touches JSON omitempty and every nil check, so it is tracked separately.
-	VendorID            *string        `gorm:"column:vendor_id;type:uuid"                               json:"vendor_id,omitempty"`
+	// VendorID matches the column, which has been NOT NULL since migration
+	// 000028 (#402). It was a *string long after that stopped being true.
+	//
+	// products.vendor_id carries NO foreign key — only store_id and
+	// primary_category_id do — so any non-empty value satisfies the
+	// database. That makes this type the only structural guard there is,
+	// and as a pointer it guarded nothing: a Product could be built with no
+	// vendor at all and the failure surfaced as a NOT NULL violation at
+	// insert time. It cost 74 integration-test failures across three
+	// packages before anyone asked why.
+	//
+	// A plain string does not make an INVALID vendor impossible — "" is
+	// still constructible, and would reach Postgres as a malformed uuid.
+	// What it removes is the nil case and every nil check that came with
+	// it; resolveVendorID closes the empty case at the point of entry.
+	//
+	// json has no omitempty: the field is always present in the database,
+	// so hiding it from a response would misrepresent the row.
+	VendorID            string         `gorm:"column:vendor_id;type:uuid;not null"                      json:"vendor_id"`
 	Tags                pq.StringArray `gorm:"column:tags;type:text[];not null;default:'{}'"        json:"tags"`
 	SEOTitle            *string        `gorm:"column:seo_title;type:varchar(300)"                       json:"seo_title,omitempty"`
 	SEODescription      *string        `gorm:"column:seo_description;type:varchar(500)"                 json:"seo_description,omitempty"`

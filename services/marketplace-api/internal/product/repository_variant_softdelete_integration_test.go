@@ -49,7 +49,7 @@ func TestIntegration_ProductRepo_Preload_FiltersSoftDeletedVariants(t *testing.T
 			ID:          uuid.NewString(),
 			TenantID:    tenantID,
 			StoreID:     storeID,
-			VendorID:    &vendorID,
+			VendorID:    vendorID,
 			Handle:      "leak-check",
 			Title:       "Leak Check",
 			Status:      product.StatusActive,

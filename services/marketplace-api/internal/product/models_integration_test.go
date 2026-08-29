@@ -72,7 +72,7 @@ func TestIntegration_FullProductGraph_RoundTrip(t *testing.T) {
 	prod := &product.Product{
 		TenantID:          tenantID,
 		StoreID:           storeID,
-		VendorID:          &vendorID,
+		VendorID:          vendorID,
 		Handle:            "linen-shirt",
 		Title:             "Linen Shirt",
 		Status:            product.StatusDraft,
@@ -278,7 +278,7 @@ func TestIntegration_PartialUnique_SoftDelete(t *testing.T) {
 	p1 := &product.Product{
 		TenantID: tenantID,
 		StoreID:  storeID,
-		VendorID: &vendorID,
+		VendorID: vendorID,
 		Handle:   "silk-scarf",
 		Title:    "Silk Scarf",
 		Status:   product.StatusDraft,
@@ -295,7 +295,7 @@ func TestIntegration_PartialUnique_SoftDelete(t *testing.T) {
 	p2 := &product.Product{
 		TenantID: tenantID,
 		StoreID:  storeID,
-		VendorID: &vendorID,
+		VendorID: vendorID,
 		Handle:   "silk-scarf",
 		Title:    "Silk Scarf (v2)",
 		Status:   product.StatusDraft,
@@ -318,7 +318,7 @@ func TestIntegration_PartialUnique_SoftDelete(t *testing.T) {
 	p3 := &product.Product{
 		TenantID: tenantID,
 		StoreID:  storeID,
-		VendorID: &vendorID,
+		VendorID: vendorID,
 		Handle:   "silk-scarf",
 		Title:    "Silk Scarf (v3)",
 		Status:   product.StatusDraft,

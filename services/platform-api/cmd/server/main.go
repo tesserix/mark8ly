@@ -23,6 +23,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
+	"github.com/gin-gonic/gin"
 	platformapi "github.com/mark8ly/platform-api"
 	"github.com/mark8ly/platform-api/internal/account"
 	"github.com/mark8ly/platform-api/internal/audit"
@@ -34,11 +35,12 @@ import (
 	"github.com/mark8ly/platform-api/internal/invitation"
 	"github.com/mark8ly/platform-api/internal/location"
 	"github.com/mark8ly/platform-api/internal/marketplaceapi"
-	"github.com/mark8ly/platform-api/internal/middleware"
+
 	"github.com/mark8ly/platform-api/internal/notification"
 	"github.com/mark8ly/platform-api/internal/observability"
 	"github.com/mark8ly/platform-api/internal/onboarding"
 	"github.com/mark8ly/platform-api/internal/outbox"
+	"github.com/mark8ly/platform-api/internal/routes"
 	"github.com/mark8ly/platform-api/internal/store"
 	"github.com/mark8ly/platform-api/internal/tenant"
 	testhelper "github.com/mark8ly/platform-api/internal/test"
@@ -339,46 +341,34 @@ func main() {
 	r.Use(otelgin.Middleware(serviceName))
 	v1 := r.Group("/api/v1")
 	// /internal/* is the in-cluster trust surface — admin BFF, auth-bff,
-	// marketplace-api call into here. RequireInternalAuth gates every
-	// route with a constant-time X-Internal-Auth check; an empty
-	// secret no-ops the gate so the binary stays bootable in dev and
-	// during the cutover before the secret is provisioned.
-	internal := r.Group("/internal", middleware.RequireInternalAuth(cfg.InternalAuthSecret))
+	// marketplace-api call into here. The route-to-guard mapping lives in
+	// internal/routes so it can be TESTED (#323): while it was inline
+	// here, moving an estate-wide handler onto the permissive guard left
+	// the build and the whole test suite green, and the downgrade would
+	// have shipped undetected.
+	//
+	// Handlers that also mount on /api/v1 are wrapped so that both halves
+	// stay at their original call sites; MountInternal only decides which
+	// /internal guard each one sits behind.
+	routes.MountInternal(r, cfg.InternalAuthSecret, routes.InternalHandlers{
+		TenantDirectory:     tenantHandler.RegisterDirectory,
+		TenantLifecycle:     tenantHandler.RegisterLifecycle,
+		OnboardingAnalytics: onboardingHandler.RegisterAnalytics,
+		EstateCounts:        estate.NewHandler(estate.NewRepository(conn)).Register,
+		EstateUsers:         estateuser.NewHandler(estateuser.NewRepository(conn)).Register,
+		AccountOperator:     accountHandler.RegisterOperator,
 
-	// The tenant directory (#277) returns EVERY tenant on the platform,
-	// unscoped, so it gets the fail-closed guard rather than the permissive
-	// one above: an unconfigured deploy must refuse, not serve the lot.
-	// Deliberately a different group with different middleware — see
-	// middleware.RequireInternalAuthStrict. The onboarding funnel/sessions
-	// analytics routes (#283) share this guard for the same reason: both
-	// are estate-wide reads with no tenant scoping. The estate counts
-	// endpoint (#282) joins them here too — GET /estate/counts reads
-	// across every tenant and store on the platform, same fail-closed
-	// requirement.
-	strictInternal := r.Group("/internal", middleware.RequireInternalAuthStrict(cfg.InternalAuthSecret))
-	tenantHandler.RegisterDirectory(strictInternal)
-	tenantHandler.RegisterLifecycle(strictInternal)
-	onboardingHandler.RegisterAnalytics(strictInternal)
-	estate.NewHandler(estate.NewRepository(conn)).Register(strictInternal)
-	// Estate-wide staff directory (#278). Strict-internal for the same reason
-	// as the tenant directory above: it returns every staff identity on the
-	// platform.
-	estateuser.NewHandler(estateuser.NewRepository(conn)).Register(strictInternal)
-	accountHandler.RegisterOperator(strictInternal)
+		Tenant:          func(g *gin.RouterGroup) { tenantHandler.Register(v1, g) },
+		Store:           func(g *gin.RouterGroup) { storeHandler.Register(v1, g) },
+		Invitation:      func(g *gin.RouterGroup) { invitationHandler.Register(v1, g) },
+		Auth:            authInternalRegistrar(authHandler),
+		MerchantAccount: merchantAccountRegistrar(merchantAccountRoutes, accountHandler),
+		Notification:    notification.NewHandler(templateLoader, sender, cfg.EmailFrom).Register,
+	})
 
 	locationHandler.Register(v1)
-	tenantHandler.Register(v1, internal)
-	storeHandler.Register(v1, internal)
 	verifHandler.Register(v1)
 	onboardingHandler.Register(v1)
-	invitationHandler.Register(v1, internal)
-	if authHandler != nil {
-		authHandler.Register(internal)
-	}
-	if merchantAccountRoutes {
-		accountHandler.Register(internal)
-	}
-	notification.NewHandler(templateLoader, sender, cfg.EmailFrom).Register(internal)
 
 	// e2e helper routes — only mounted outside production. Gives Playwright
 	// a way to grab the latest magic-link token for an email without
@@ -398,4 +388,27 @@ func main() {
 		log.Error("http server", "err", err)
 		panic(err)
 	}
+}
+
+// authInternalRegistrar returns nil when the auth handler is not
+// configured, preserving main.go's original `if authHandler != nil`
+// guard. A nil Registrar is skipped by routes.MountInternal — the typed
+// nil is deliberate here: returning a non-nil closure that wraps a nil
+// handler would make the skip unreachable and dispatch on a nil receiver
+// (the shape #341 was filed for).
+func authInternalRegistrar(h *auth.Handler) routes.Registrar {
+	if h == nil {
+		return nil
+	}
+	return h.Register
+}
+
+// merchantAccountRegistrar mirrors main.go's `if merchantAccountRoutes`
+// guard: the merchant-facing account routes are mounted only when both
+// FGA and the GIP admin client are available.
+func merchantAccountRegistrar(enabled bool, h *account.Handler) routes.Registrar {
+	if !enabled || h == nil {
+		return nil
+	}
+	return h.Register
 }

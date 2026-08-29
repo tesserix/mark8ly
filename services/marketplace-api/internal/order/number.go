@@ -37,7 +37,7 @@ func NextDocumentNumber(ctx context.Context, tx *gorm.DB, storeID uuid.UUID, kin
 		return 0, fmt.Errorf("order: NextDocumentNumber requires a transaction handle")
 	}
 
-	seqName := buildSequenceName(storeID, kind)
+	seqName := SequenceName(storeID, kind)
 
 	// nextval() is not parameterizable (it takes a regclass, not a text
 	// bind variable), so we format the name into the SQL. The name is
@@ -53,14 +53,26 @@ func NextDocumentNumber(ctx context.Context, tx *gorm.DB, storeID uuid.UUID, kin
 	return next, nil
 }
 
-// buildSequenceName returns the Postgres sequence name for a given
+// SequenceName returns the Postgres sequence name for a given
 // (store_id, kind) pair. MUST stay in lockstep with the SQL trigger
 // function mk_create_store_sequences() in migration 000004 — both sides
 // produce the same name from the same inputs.
 //
 // Format: mk_seq_<kind>_<uuid with dashes replaced by underscores>
 // Example: mk_seq_order_11111111_1111_1111_1111_111111111111
-func buildSequenceName(storeID uuid.UUID, kind string) string {
+//
+// Exported because the trigger creates these sequences but nothing in the
+// database drops them: every caller that destroys a store — the tenant
+// purge (internal/tenantpurge) and the test fixtures (pkg/testdb) — has to
+// name the sequences to DROP them, and a second hand-written copy of this
+// format is exactly how the two sides would drift apart. The returned name
+// draws only on a uuid and a kind, so its character set is [a-z0-9_]; it is
+// safe to interpolate into an identifier position, which is the only place
+// it can go (a sequence name is an identifier, never a bind value).
+//
+// kind must be one of "order" or "return"; callers pass a literal, so this
+// is not validated here.
+func SequenceName(storeID uuid.UUID, kind string) string {
 	return "mk_seq_" + kind + "_" + strings.ReplaceAll(storeID.String(), "-", "_")
 }
 

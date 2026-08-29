@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
@@ -107,4 +108,41 @@ func TestSeededParents_AcceptAProductInsert(t *testing.T) {
 		uuid.New(), tenantID, storeID, vendorID, "seed-probe", "Seed Probe", "draft",
 	).Error
 	require.NoError(t, err)
+}
+
+// SeedStore's cleanup must reclaim the two per-store sequences migration
+// 000004's AFTER INSERT trigger creates, not just the stores row. This is
+// the regression guard for #436: a sequence is a catalog relation, so
+// neither the cleanup DELETE nor NewDB's TRUNCATE ... CASCADE reaches it,
+// and without an explicit DROP every run of every NewDB-based integration
+// test leaked two sequences permanently.
+//
+// NewDB (not NewTx) is essential here. Under NewTx the CREATE SEQUENCE the
+// trigger issues is rolled back with the rest of the transaction, so the
+// assertion would hold with or without the DROP and the test would prove
+// nothing.
+func TestSeedStore_CleanupDropsPerStoreSequences(t *testing.T) {
+	db := testdb.NewDB(t, "stores")
+	tenantID, storeID := uuid.New(), uuid.New()
+
+	countSequences := func() int64 {
+		t.Helper()
+		var n int64
+		require.NoError(t, db.Raw(
+			`SELECT count(*) FROM pg_class WHERE relkind = 'S' AND relname IN (?, ?)`,
+			order.SequenceName(storeID, "order"), order.SequenceName(storeID, "return"),
+		).Scan(&n).Error)
+		return n
+	}
+
+	// The nested subtest scopes SeedStore's t.Cleanup: it runs when the
+	// subtest returns, so the outer test can observe the post-cleanup state.
+	t.Run("fixture", func(st *testing.T) {
+		testdb.SeedStore(st, db, tenantID, storeID)
+		require.EqualValues(t, 2, countSequences(),
+			"the stores AFTER INSERT trigger must have created both sequences")
+	})
+
+	require.EqualValues(t, 0, countSequences(),
+		"SeedStore cleanup must DROP both per-store sequences; leaving them behind is the #436 leak")
 }

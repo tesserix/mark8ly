@@ -14,6 +14,7 @@ package testdb
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"gorm.io/driver/postgres"
@@ -66,8 +67,61 @@ func NewDB(t *testing.T, tablesToCleanup ...string) *gorm.DB {
 
 	t.Cleanup(func() {
 		truncate(t, db, tablesToCleanup)
+		dropOrphanStoreSequences(t, db, tablesToCleanup)
 	})
 	return db
+}
+
+// dropOrphanStoreSequences reclaims per-store sequences whose store no longer
+// exists, but only when this fixture truncated `stores` — which is precisely
+// the operation that orphans them.
+//
+// SeedStore drops the sequences it created, but it is not the only source:
+// nineteen test files INSERT INTO stores directly and handler tests create
+// stores over HTTP, so a per-fixture drop cannot reach them all and the next
+// fixture added leaks again with nothing failing. A sweep here is self-healing
+// and needs no discipline from whoever writes the next test (#436).
+//
+// Why this matters: migration 000004's AFTER INSERT trigger creates two
+// sequences per store, TRUNCATE does not touch catalog objects, and nothing
+// ever dropped them — the dev database reached 27,990, at which point pg_dump
+// failed with "out of shared memory" because it locks every relation in one
+// transaction. One suite pass alone put 4,152 back.
+//
+// Best-effort by design: a sweep failure must never fail a test that passed.
+func dropOrphanStoreSequences(t *testing.T, db *gorm.DB, tablesToCleanup []string) {
+	t.Helper()
+	if !slices.Contains(tablesToCleanup, "stores") {
+		return
+	}
+
+	// LIMIT bounds the work so this stays cheap once the catalog is healthy;
+	// a large backlog drains over successive runs rather than stalling one.
+	var names []string
+	if err := db.Raw(`
+		SELECT c.relname
+		  FROM pg_class c
+		  JOIN pg_namespace n ON n.oid = c.relnamespace
+		 WHERE c.relkind = 'S'
+		   AND n.nspname = 'public'
+		   AND (c.relname LIKE 'mk\_seq\_order\_%' OR c.relname LIKE 'mk\_seq\_return\_%')
+		   AND NOT EXISTS (
+		       SELECT 1 FROM stores s
+		        WHERE s.id::text = translate(
+		              regexp_replace(c.relname, '^mk_seq_(order|return)_', ''), '_', '-'))
+		 LIMIT 500`).Scan(&names).Error; err != nil {
+		t.Logf("testdb: sweep orphan store sequences: %v", err)
+		return
+	}
+
+	for _, name := range names {
+		// Identifier, not a bind value. Safe to interpolate: every name came
+		// from pg_class and matched the mk_seq_(order|return)_ pattern above,
+		// so the charset is [a-z0-9_] only.
+		if err := db.Exec(`DROP SEQUENCE IF EXISTS ` + name).Error; err != nil {
+			t.Logf("testdb: drop orphan sequence %s: %v", name, err)
+		}
+	}
 }
 
 func openOrSkip(t *testing.T) *gorm.DB {

@@ -22,7 +22,7 @@ BEGIN;
 -- Trigger function: create both per-store sequences (order + return) whenever
 -- a new store row is inserted.
 --
--- Naming convention MUST match internal/order/number.go buildSequenceName:
+-- Naming convention MUST match internal/order/number.go SequenceName:
 --     mk_seq_<kind>_<uuid-with-dashes-replaced-by-underscores>
 -- with kind ∈ {'order','return'}.
 --

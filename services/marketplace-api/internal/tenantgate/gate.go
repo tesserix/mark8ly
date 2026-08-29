@@ -62,14 +62,20 @@ type cacheEntry struct {
 // stay invisible, on any pod that didn't see the invalidation, for up to
 // ttl. Correctness currently depends on replicas: 1; multi-replica would
 // need a shared cache (e.g. Redis) or a pub/sub invalidation fan-out.
+//
+// Cache growth is bounded by sweepLocked, which evicts idle ACTIVE entries
+// past ttl (#345). Non-active entries are deliberately never evicted — see
+// sweepLocked for why dropping one would be a security regression rather
+// than a memory saving.
 type Gate struct {
 	lookup Lookup
 	logger *slog.Logger
 	ttl    time.Duration
 
-	mu     sync.Mutex
-	cache  map[string]cacheEntry
-	flight singleflight.Group
+	mu        sync.Mutex
+	cache     map[string]cacheEntry
+	lastSweep time.Time
+	flight    singleflight.Group
 }
 
 // New builds a Gate. ttl controls how long a cached ACTIVE status is
@@ -189,10 +195,54 @@ func (g *Gate) refresh(ctx context.Context, tenantID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	now := time.Now()
 	g.mu.Lock()
-	g.cache[tenantID] = cacheEntry{status: detail.Status, fetchedAt: time.Now()}
+	g.cache[tenantID] = cacheEntry{status: detail.Status, fetchedAt: now}
+	g.sweepLocked(now)
 	g.mu.Unlock()
 	return detail.Status, nil
+}
+
+// sweepLocked drops idle ACTIVE entries, bounding a cache that otherwise
+// grew with the number of distinct tenants ever seen by the process rather
+// than with active load (#345). The caller holds g.mu.
+//
+// # Only active entries, and this is the whole point
+//
+// A non-active entry is authoritative at ANY age — that is what stops a
+// failed refresh decaying a suspension into access. Evicting one would
+// drop the next request into the cold-cache branch of RequireActiveTenant,
+// which fails OPEN, handing a suspended tenant access during exactly the
+// platform-api outage where enforcement matters most. So non-active
+// entries are kept indefinitely. That set is bounded by how many tenants
+// are actually suspended, which is small, and losing one is a security
+// regression rather than a memory saving.
+//
+// # Why dropping an idle active entry changes nothing
+//
+// An active entry past ttl is re-fetched on its next request regardless.
+// If that refresh fails, the request fails open either way: with the entry
+// present via the "cached active, refresh failed" branch, without it via
+// the cold-cache branch. Same outcome, different log line. So this is a
+// memory bound, not a change to the gate's access behaviour — the
+// deliberate absence of an absolute staleness ceiling documented on
+// RequireActiveTenant is untouched.
+//
+// # Throttled
+//
+// Scanning the map on every refresh would be O(entries) per cache miss.
+// Once per ttl is enough: entries only become evictable after ttl, so a
+// tighter interval could not find more of them.
+func (g *Gate) sweepLocked(now time.Time) {
+	if now.Sub(g.lastSweep) < g.ttl {
+		return
+	}
+	g.lastSweep = now
+	for id, entry := range g.cache {
+		if entry.status == statusActive && now.Sub(entry.fetchedAt) >= g.ttl {
+			delete(g.cache, id)
+		}
+	}
 }
 
 // Invalidate drops tenantID's cached status, so a suspend or unsuspend

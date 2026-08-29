@@ -1,8 +1,9 @@
 // Command reconciliation-cron runs the daily Stripe subscription status
 // reconciliation job (P17 Task 10).
 //
-// It fetches up to 500 active StoreSubscriptions with a stripe_subscription_id,
-// compares each against Stripe's authoritative status, and emits:
+// It fetches up to 500 live StoreSubscriptions (active, signup or trialing)
+// that we hold either a Stripe subscription id or a Stripe customer id for,
+// compares each against Stripe, and emits:
 //   - mark8ly_subscription_reconciliation_drift_total{drift_type} counter
 //   - audit_logs rows via the audit.Emitter for ops triage
 //

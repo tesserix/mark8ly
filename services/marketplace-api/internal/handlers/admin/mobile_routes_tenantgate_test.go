@@ -8,10 +8,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/tenantdirectory"
 	"github.com/mark8ly/marketplace-api/internal/tenantgate"
 )
@@ -28,6 +31,52 @@ func (s *stubTenantLookup) Get(_ context.Context, id string) (*tenantdirectory.T
 	}, nil
 }
 
+// stubStoresRepo implements stores.Repository. Only ListForTenant — the
+// one method StoresHandler.List calls — returns anything; the rest are
+// inert stubs, mirroring fakeLifecycleStoreRepo in
+// internal/handlers/platformadmin/tenant_lifecycle_test.go.
+//
+// It exists so the route below has a WORKING terminus: with it wired, a
+// request that gets past the tenant gate reaches the handler and is
+// answered 200. That is what makes the 403 assertion the thing that
+// fails when the gate is removed (#342) rather than a nil-dereference
+// somewhere in the middleware chain.
+type stubStoresRepo struct{}
+
+func (r *stubStoresRepo) GetByIDForTenant(_ context.Context, _, _ string) (*stores.Store, error) {
+	return nil, stores.ErrNotFound
+}
+func (r *stubStoresRepo) GetBySlug(_ context.Context, _ string) (*stores.Store, error) {
+	return nil, stores.ErrNotFound
+}
+func (r *stubStoresRepo) ListForTenant(_ context.Context, tenantID string) ([]stores.Store, error) {
+	return []stores.Store{{
+		ID: "store-1", TenantID: tenantID, Slug: "the-bondi-store",
+		Name: "The Bondi Store", CountryCode: "AU", CurrencyCode: "AUD",
+		Timezone: "Australia/Sydney", Status: "active",
+	}}, nil
+}
+func (r *stubStoresRepo) Upsert(_ context.Context, _ *stores.Store) error { return nil }
+func (r *stubStoresRepo) GetProductsWatermark(_ context.Context, _ string) (time.Time, error) {
+	return time.Time{}, nil
+}
+func (r *stubStoresRepo) CountActiveOrSoftDeletedRestorable(_ context.Context, _ uuid.UUID) (int, error) {
+	return 0, nil
+}
+func (r *stubStoresRepo) CountActiveOrSoftDeletedRestorableTx(_ context.Context, _ *gorm.DB, _ uuid.UUID) (int, error) {
+	return 0, nil
+}
+func (r *stubStoresRepo) ListActiveOrSoftDeletedRestorable(_ context.Context, _ uuid.UUID) ([]stores.Store, error) {
+	return nil, nil
+}
+func (r *stubStoresRepo) InFlightOrderCount(_ context.Context, _ uuid.UUID) (int, error) {
+	return 0, nil
+}
+func (r *stubStoresRepo) SuspendActiveForTenant(_ context.Context, _ string) error { return nil }
+func (r *stubStoresRepo) MarkStaleForTenant(_ context.Context, _ string) error     { return nil }
+
+var _ stores.Repository = (*stubStoresRepo)(nil)
+
 // TestRegisterAdminMobile_SuspendedTenantRefusedOnNonStoreRoute is the F1
 // regression test (#287 review): mobile_routes.go is the FIFTH admin route
 // group, and it never applied deps.TenantGate — so a suspended tenant's
@@ -38,16 +87,26 @@ func (s *stubTenantLookup) Get(_ context.Context, id string) (*tenantdirectory.T
 // This exercises GET /api/v1/mobile/admin/stores specifically: it is
 // tenant-wide, NOT store-scoped, so deps.StoresMiddleware never runs on
 // it and only deps.TenantGate can catch a suspended tenant here.
+//
+// Everything downstream of the gate is wired to WORK (#342): a real FGA
+// fake granting the caller staff on the tenant, and a stores repo that
+// returns a row. Delete the TenantGate line from mobile_routes.go and
+// this request is answered 200 — so the assertion that fails is the 403
+// below, not a panic on a nil FGA client. A mutation that crashes proves
+// only that something crashed; this one proves the assertion discriminates.
 func TestRegisterAdminMobile_SuspendedTenantRefusedOnNonStoreRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 
 	gate := tenantgate.New(&stubTenantLookup{status: "suspended"}, nil, time.Minute)
 
+	fga := authz.NewFakeClient()
+	fga.Grant("user-1", authz.RoleStaff, "tenant-1")
+
 	RegisterAdminMobile(r.Group("/api/v1"), MobileDeps{
 		Deps: Deps{
-			StoresHandler:   &StoresHandler{},
-			AuthzMiddleware: authz.NewMiddleware(nil, nil),
+			StoresHandler:   NewStoresHandler(&stubStoresRepo{}, nil),
+			AuthzMiddleware: authz.NewMiddleware(fga, nil),
 			TenantGate:      gate.RequireActiveTenant(),
 			StoresMiddleware: func(c *gin.Context) {
 				c.Next()

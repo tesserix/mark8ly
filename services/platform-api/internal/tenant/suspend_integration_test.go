@@ -78,13 +78,21 @@ func TestSuspendThenUnsuspendPreservesIndividuallySuspendedStore(t *testing.T) {
 	res, err = repo.Unsuspend(ctx, tenantID)
 	require.NoError(t, err)
 	require.True(t, res.Changed)
-	require.Equal(t, 1, res.StoresAffected)
 
-	require.Equal(t, "active", storeStatus(t, db, activeStore),
-		"the store the cascade suspended must be restored")
+	// Order matters here (#342). Under the naive cascade — Unsuspend's
+	// UPDATE reduced to `WHERE tenant_id = ?`, dropping
+	// `AND suspended_by_tenant` — BOTH the per-store status below and
+	// res.StoresAffected are wrong, and require aborts on whichever runs
+	// first. The count is a symptom; the per-store status is the property
+	// this test is named after, so it is asserted first and the count is
+	// checked afterwards as corroboration.
 	require.Equal(t, "suspended", storeStatus(t, db, alreadySuspended),
 		"a store suspended individually BEFORE the tenant suspension must stay suspended")
+	require.Equal(t, "active", storeStatus(t, db, activeStore),
+		"the store the cascade suspended must be restored")
 	require.False(t, suspendedByTenant(t, db, activeStore), "flag must be cleared after unsuspend")
+	require.Equal(t, 1, res.StoresAffected,
+		"only the store the cascade suspended is restored")
 }
 
 // A second suspend is a no-op: no extra stores affected, Changed false, and

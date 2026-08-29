@@ -32,6 +32,11 @@ import (
 var trackingSyncTables = []string{
 	"order_events",
 	"shipments",
+	// orders has NO foreign key to stores, so truncating stores does not
+	// reach it — the exact shape cmd/testdb-leakcheck's help text warns
+	// about. seedOrderRowForSync INSERTs here and, until this entry, every
+	// run committed rows that outlived the fixture (#342 caught it).
+	"orders",
 	"shipping_carrier_configs",
 	"stores",
 }

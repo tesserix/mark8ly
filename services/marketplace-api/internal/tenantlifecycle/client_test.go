@@ -25,6 +25,14 @@ func TestSuspend_MapsStatusCodes(t *testing.T) {
 		{"conflict", 409, `{"error":"invalid_status_transition"}`, tenantlifecycle.ErrConflict},
 		{"server error", 500, `{"error":"internal_error"}`, tenantlifecycle.ErrUnavailable},
 		{"bad gateway", 502, ``, tenantlifecycle.ErrUnavailable},
+		// The contract is "200, 404 and 409 are the only recognised
+		// statuses; anything else is ErrUnavailable". Without a case
+		// outside {200, 404, 409, 5xx} the `default:` branch is never
+		// pinned to that answer for a NON-5xx status (#342). 400 is the
+		// error-shaped one; 204 is the success-shaped one — a 2xx that is
+		// still not a result, which is the easier of the two to get wrong.
+		{"bad request", 400, `{"error":"bad_request"}`, tenantlifecycle.ErrUnavailable},
+		{"no content", 204, ``, tenantlifecycle.ErrUnavailable},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

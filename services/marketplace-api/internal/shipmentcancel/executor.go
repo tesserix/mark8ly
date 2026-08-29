@@ -14,6 +14,13 @@ import (
 
 // errEmptyAddress is returned by parseShipmentAddress when the stored ship_from
 // / ship_to JSONB blob is empty — a shipment we can't build a reverse leg from.
+//
+// "Empty" means EITHER no bytes at all OR a blob with no line1. The second
+// case is not hypothetical: a GDPR art.17 erasure strips ship_to/ship_from to
+// '{}' (customererasure/plan.go), and those columns are NOT NULL so the
+// erasure cannot null them instead. Two bytes of valid JSON would otherwise
+// decode into a wholly blank Address and be handed to a carrier as a real
+// pickup point, which is worse than failing (#435).
 var errEmptyAddress = errors.New("empty address")
 
 // ShipmentStore is the narrow persistence surface the executor needs.
@@ -284,6 +291,12 @@ func parseShipmentAddress(raw []byte) (shipping.Address, error) {
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return shipping.Address{}, err
+	}
+	// line1 is the one field no deliverable address can omit; every writer
+	// of these blobs supplies it. Its absence means the blob is a placeholder
+	// — erased, or never populated — not an address.
+	if a.Line1 == "" {
+		return shipping.Address{}, errEmptyAddress
 	}
 	return shipping.Address{
 		Name: a.Name, Line1: a.Line1, Line2: a.Line2, City: a.City,

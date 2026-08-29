@@ -350,3 +350,26 @@ func TestExecutor_Delivered_NoReverseCapability_Unsupported(t *testing.T) {
 		t.Fatalf("out = %+v, want reverse_pickup/unsupported for a carrier without the capability", out)
 	}
 }
+
+// TestParseShipmentAddress_RejectsAnErasedBlob pins the guard added for #435.
+//
+// A GDPR art.17 erasure strips shipments.ship_to / ship_from to '{}' — the
+// columns are NOT NULL, so it cannot use NULL. That is two bytes of perfectly
+// valid JSON, and without the line1 check it would decode into a blank
+// Address and be handed to a carrier as a real pickup point. The reverse-leg
+// path must instead fail and tell the operator to arrange the return by hand.
+func TestParseShipmentAddress_RejectsAnErasedBlob(t *testing.T) {
+	for _, raw := range []string{"", "{}", `{"country_code":"IE"}`} {
+		if _, err := parseShipmentAddress([]byte(raw)); !errors.Is(err, errEmptyAddress) {
+			t.Fatalf("parseShipmentAddress(%q) = %v, want errEmptyAddress — a blob with no line1 is not an address", raw, err)
+		}
+	}
+
+	got, err := parseShipmentAddress([]byte(`{"name":"A Person","line1":"1 Test Lane","city":"Dublin","country_code":"IE"}`))
+	if err != nil {
+		t.Fatalf("a populated blob must still parse: %v", err)
+	}
+	if got.Line1 != "1 Test Lane" || got.Name != "A Person" {
+		t.Fatalf("populated address decoded wrong: %+v", got)
+	}
+}

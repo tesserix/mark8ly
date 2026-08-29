@@ -90,15 +90,15 @@ const RetentionBasis = "financial record; anonymised and retained 7 years under 
 // named in the receipt anyway: a table absent from both halves of a receipt
 // is indistinguishable, to a reader, from one the plan never considered.
 //
-// Their only residual PII risk is JSONB (payment_transactions.metadata,
-// shipments.ship_from/ship_to), which is out of scope for #259 and recorded
-// as such in the package doc.
+// payment_transactions.metadata (JSONB) is the one blob among them, and it
+// is a dead column — nothing writes it — as #435 established. shipments used
+// to be listed here; it now carries its own step, because its ship_to /
+// ship_from blobs do hold the subject.
 var retainedWithoutStep = []string{
 	"order_items",
 	"payment_transactions",
 	"platform_fee_ledger",
 	"refund_transactions",
-	"shipments",
 }
 
 // ErrRequestNotFound — no such erasure request.

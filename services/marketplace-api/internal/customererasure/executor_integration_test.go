@@ -33,6 +33,12 @@ type customer struct {
 	mediaID   uuid.UUID
 	orderID   uuid.UUID
 	emailSend uuid.UUID
+	// The JSONB half (#435): each of these rows SURVIVES the erasure with
+	// its non-personal fields intact, and loses only the named keys.
+	shipmentID uuid.UUID
+	auditID    uuid.UUID
+	cartID     uuid.UUID
+	outboxID   uuid.UUID
 }
 
 type fixture struct {
@@ -59,6 +65,10 @@ const (
 	orderTotal  = "42.50"
 	orderCcy    = "EUR"
 	addrCountry = "IE"
+	// cartRecoveryURL embeds a per-customer token, so it is personal data in
+	// its own right: anyone holding it can reopen that person's cart.
+	cartRecoveryURLPrefix = "https://shop.test/recover/"
+	auditAction           = "customer.updated"
 )
 
 func newFixture(t *testing.T) fixture {
@@ -111,6 +121,7 @@ func seedCustomer(t *testing.T, db *gorm.DB, tenantID, storeID, productID uuid.U
 		email: email, name: name,
 		profileID: uuid.New(), addressID: uuid.New(), wishlist: uuid.New(),
 		reviewID: uuid.New(), mediaID: uuid.New(), orderID: uuid.New(), emailSend: uuid.New(),
+		shipmentID: uuid.New(), auditID: uuid.New(), cartID: uuid.New(), outboxID: uuid.New(),
 	}
 
 	exec := func(sql string, args ...any) {
@@ -156,7 +167,78 @@ func seedCustomer(t *testing.T, db *gorm.DB, tenantID, storeID, productID uuid.U
 	      VALUES (?, ?, ?, ?, 'order_confirmation', 'sent')`,
 		c.emailSend, tenantID, storeID, email)
 
+	// ---- the JSONB blobs (#435) ------------------------------------------
+	// A shipment whose ship_to is the customer's delivery address. ship_from
+	// is seeded as the customer's address too, which is exactly what
+	// shipmentcancel writes onto a reverse leg — the case that makes
+	// stripping BOTH columns necessary rather than fussy.
+	exec(`INSERT INTO shipments (id, tenant_id, store_id, order_id, carrier, tracking_number,
+	                             status, ship_from, ship_to, currency_code)
+	      VALUES (?, ?, ?, ?, 'delhivery', ?, 'pending', ?::jsonb, ?::jsonb, ?)`,
+		c.shipmentID, tenantID, storeID, c.orderID, "TRK-"+c.shipmentID.String()[:8],
+		shipmentAddressJSON(name), shipmentAddressJSON(name), orderCcy)
+
+	// An audit row whose metadata names the customer. store_id is set, and
+	// `action` is the structural field that must survive the strip.
+	exec(`INSERT INTO audit_logs (id, tenant_id, store_id, actor_type, action, resource_type, resource_id, metadata)
+	      VALUES (?, ?, ?, 'user', ?, 'customer', ?, ?::jsonb)`,
+		c.auditID, tenantID, storeID, auditAction, c.profileID.String(), auditMetadataJSON(email))
+
+	exec(`INSERT INTO abandoned_carts (id, tenant_id, store_id, cart_session_id, customer_email,
+	                                   customer_name, item_count, subtotal, currency_code,
+	                                   items_snapshot, recovery_url, last_active_at)
+	      VALUES (?, ?, ?, ?, ?, ?, 2, ?, ?, '[]'::jsonb, ?, now())`,
+		c.cartID, tenantID, storeID, c.cartID.String(), email, name,
+		orderTotal, orderCcy, cartRecoveryURLPrefix+c.cartID.String())
+
+	exec(`INSERT INTO outbox_events (id, tenant_id, aggregate, aggregate_id, event_type, payload)
+	      VALUES (?, ?, 'abandoned_cart', ?, 'abandoned_cart.recovery_email', ?::jsonb)`,
+		c.outboxID, tenantID, c.cartID, outboxPayloadJSON(storeID, c.cartID, email))
+
 	return c
+}
+
+// shipmentAddressJSON is the eight-key blob handlers/admin/shipments.go:694
+// writes into ship_to / ship_from.
+func shipmentAddressJSON(name string) string {
+	b, _ := json.Marshal(map[string]any{
+		"name": name, "line1": "1 Test Lane", "line2": "Apt 2", "city": "Dublin",
+		"region": "Leinster", "postal_code": "D01 X1X1", "country_code": addrCountry,
+		"phone": "+353100000000",
+	})
+	return string(b)
+}
+
+// auditMetadataJSON carries the customer under ALL SIX stripped key names at
+// once, plus a structural key that must survive. One row exercising every
+// name is stronger than six rows each exercising one: a step that strips only
+// the first key still fails here.
+func auditMetadataJSON(email string) string {
+	b, _ := json.Marshal(map[string]any{
+		"customer_email":  email,
+		"email":           email,
+		"recipient_email": email,
+		"submitter_email": email,
+		"author_email":    email,
+		"actor_email":     email,
+		"source":          "storefront",
+	})
+	return string(b)
+}
+
+// outboxPayloadJSON is what order/abandoned_cart_service.go:128 enqueues.
+// store_id and item_count are the routing/reporting fields that must survive
+// — outbox/publisher.go:112 fails a batch whose payload has no store_id.
+func outboxPayloadJSON(storeID, cartID uuid.UUID, email string) string {
+	b, _ := json.Marshal(map[string]any{
+		"store_id":          storeID.String(),
+		"abandoned_cart_id": cartID.String(),
+		"customer_email":    email,
+		"recovery_url":      cartRecoveryURLPrefix + cartID.String(),
+		"item_count":        2,
+		"currency":          orderCcy,
+	})
+	return string(b)
 }
 
 func newExecutor(t *testing.T, db *gorm.DB) *Executor {
@@ -309,6 +391,100 @@ func assertCustomerIntact(t *testing.T, db *gorm.DB, c customer) {
 	require.EqualValues(t, 1, count(t, db,
 		`SELECT count(*) FROM order_addresses WHERE order_id = ? AND name = ? AND line1 = '1 Test Lane' AND city = 'Dublin'`,
 		c.orderID, c.name))
+
+	// The JSONB blobs (#435). Asserted key-by-key, not by row count: a strip
+	// that lost its predicate leaves the row present and empty, and count(*)
+	// would call that intact.
+	require.EqualValues(t, 1, count(t, db,
+		`SELECT count(*) FROM shipments
+		  WHERE id = ? AND ship_to ->> 'name' = ? AND ship_from ->> 'name' = ?
+		    AND ship_to ->> 'phone' = '+353100000000'`,
+		c.shipmentID, c.name, c.name))
+	require.EqualValues(t, 1, count(t, db,
+		`SELECT count(*) FROM audit_logs
+		  WHERE id = ? AND metadata ->> 'customer_email' = ? AND metadata ->> 'actor_email' = ?`,
+		c.auditID, c.email, c.email))
+	require.EqualValues(t, 1, count(t, db,
+		`SELECT count(*) FROM abandoned_carts WHERE id = ? AND customer_email = ?`,
+		c.cartID, c.email))
+	require.EqualValues(t, 1, count(t, db,
+		`SELECT count(*) FROM outbox_events
+		  WHERE id = ? AND payload ->> 'customer_email' = ? AND payload ->> 'recovery_url' <> ''`,
+		c.outboxID, c.email))
+}
+
+// TestProcess_StripsPersonalKeysFromJSONBBlobsAndKeepsTheRest is the #435
+// test.
+//
+// Three blobs outlive every other copy of the subject's address:
+// shipments.ship_to/ship_from, audit_logs.metadata (retained FOREVER on a Pro
+// plan — audit/prune_cron.go:42) and outbox_events.payload. Each row must
+// survive with its operational fields byte-identical and lose only the keys
+// that name the person. A step that emptied the whole blob would pass a
+// "the PII is gone" assertion and destroy a governance record; that is why
+// every assertion below has a matching "and this survived".
+func TestProcess_StripsPersonalKeysFromJSONBBlobsAndKeepsTheRest(t *testing.T) {
+	f := newFixture(t)
+	_, err := newExecutor(t, f.db).Process(context.Background(), f.request)
+	require.NoError(t, err)
+
+	// ---- shipments -------------------------------------------------------
+	var ship struct {
+		ShipTo, ShipFrom, Carrier, TrackingNumber, Status string
+	}
+	require.NoError(t, f.db.Raw(
+		`SELECT ship_to::text AS ship_to, ship_from::text AS ship_from,
+		        carrier, tracking_number, status
+		   FROM shipments WHERE id = ?`, f.subject.shipmentID).Scan(&ship).Error)
+
+	require.Equal(t, "{}", ship.ShipTo, "ship_to is the customer's delivery address and must be emptied")
+	require.Equal(t, "{}", ship.ShipFrom,
+		"ship_from carries the customer on a reverse leg (shipmentcancel/executor.go:254) and must be emptied too")
+	require.Equal(t, "delhivery", ship.Carrier, "the shipment itself must survive: it is the carrier record")
+	require.NotEmpty(t, ship.TrackingNumber, "the waybill is not personal data and must not be destroyed")
+	require.Equal(t, "pending", ship.Status)
+
+	// ---- audit_logs ------------------------------------------------------
+	var audit struct {
+		Metadata, Action, ResourceType string
+	}
+	require.NoError(t, f.db.Raw(
+		`SELECT metadata::text AS metadata, action, resource_type
+		   FROM audit_logs WHERE id = ?`, f.subject.auditID).Scan(&audit).Error)
+
+	require.Equal(t, auditAction, audit.Action, "the governance record must survive the strip")
+	require.Equal(t, "customer", audit.ResourceType)
+	require.NotContains(t, audit.Metadata, subjectAddr,
+		"no stripped key may leave the subject's address behind in the metadata")
+	for _, key := range []string{
+		"customer_email", "\"email\"", "recipient_email",
+		"submitter_email", "author_email", "actor_email",
+	} {
+		require.NotContains(t, audit.Metadata, key, "metadata still carries the %s key", key)
+	}
+	require.Contains(t, audit.Metadata, "storefront",
+		"the strip must remove named keys only — the rest of the object is the audit record")
+
+	// ---- outbox_events ---------------------------------------------------
+	var evt struct {
+		Payload, Aggregate, EventType string
+	}
+	require.NoError(t, f.db.Raw(
+		`SELECT payload::text AS payload, aggregate, event_type
+		   FROM outbox_events WHERE id = ?`, f.subject.outboxID).Scan(&evt).Error)
+
+	require.Equal(t, "abandoned_cart", evt.Aggregate, "the event row must survive; only its payload keys go")
+	require.Equal(t, "abandoned_cart.recovery_email", evt.EventType)
+	require.NotContains(t, evt.Payload, subjectAddr)
+	require.NotContains(t, evt.Payload, "customer_email")
+	require.NotContains(t, evt.Payload, "recovery_url",
+		"the recovery URL is a bearer token for the person's cart")
+	require.Contains(t, evt.Payload, f.storeID.String(),
+		"store_id must survive: outbox/publisher.go:112 fails a batch whose payload has no store_id")
+	require.Contains(t, evt.Payload, "item_count")
+
+	// The cart itself is deleted outright, taking items_snapshot with it.
+	require.Zero(t, count(t, f.db, `SELECT count(*) FROM abandoned_carts WHERE id = ?`, f.subject.cartID))
 }
 
 // TestProcess_WritesAReceiptCarryingNoPersonalData. The receipt is the

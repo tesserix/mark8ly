@@ -917,6 +917,18 @@ func main() {
 		} else {
 			log.Warn("STRIPE_BILLING_SECRET_KEY not set — subscription checkout/portal will fail")
 		}
+		// #304 / #392 — the plan-catalog parallel run.
+		//
+		// Reads the console's published catalog and compares it against the one
+		// compiled into internal/billing/pricing, logging differences. It
+		// DECIDES NOTHING: prices still come from the compiled catalog. The
+		// cutover is a separate change, gated on this reporting durably zero.
+		//
+		// Runs on its own ticker rather than on any request path, so a slow or
+		// unreachable console cannot touch a customer payment — BACKLOG §P's
+		// invariant. Unconfigured, nothing is started at all.
+		startCatalogParityRun(cfg, log)
+
 		subscriptionSvc := subscription.NewService(subscription.ServiceConfig{
 			DB:     conn,
 			Repo:   subscriptionRepo,

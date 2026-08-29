@@ -38,12 +38,26 @@ func IsRampTransitionDay(day int) bool {
 	return day == 4 || day == 8
 }
 
-// ApplyTrialRamp mutates the current-month budget row per spec §5.1:
-//   - day 4 (transition from D3): limit_set = GREATEST(remaining, 2000),
-//     remaining = limit_set
+// ApplyTrialRamp mutates the current-month budget row per spec §5.1, which
+// documents the tiers as D1-3 = 500, D4-7 = 2000, D8+ = plan allowance
+// (migration 000047's COMMENT on limit_set):
+//   - day 4 (transition from D3): limit_set = GREATEST(limit_set, 2000),
+//     remaining = GREATEST(remaining, 2000)
 //   - day 8 (transition from D7): limit_set = plan_allowance,
 //     remaining = GREATEST(remaining, plan_allowance)
 //   - all other days: no-op
+//
+// limit_set is the TIER CEILING and is raised from its own previous value,
+// never derived from remaining. Deriving it (`GREATEST(remaining, 2000)`)
+// made the ceiling a function of how much the merchant had SPENT: a store
+// that had burned its balance down to 100 got its ceiling cut to 2000, while
+// an identical store that had spent nothing kept a higher one. Same plan,
+// same day, different ceiling (#424).
+//
+// GREATEST(limit_set, 2000) rather than a flat 2000 so the step can only
+// ever RAISE a ceiling. A row seeded at the full allowance before #424 fixed
+// the seeding must not be cut to 2000 on day 4 — a merchant's ceiling going
+// backwards mid-month is a worse outcome than an over-generous legacy row.
 //
 // Idempotency: each transition day is applied AT MOST ONCE per budget row,
 // enforced by the `ramp_step_applied < N` guard in the WHERE clause. GREATEST
@@ -68,7 +82,7 @@ func ApplyTrialRamp(ctx context.Context, db *gorm.DB, storeID uuid.UUID, day int
 		// what makes this idempotent.
 		const sql = `
 			UPDATE campaign_email_budget
-			SET limit_set         = GREATEST(remaining, 2000),
+			SET limit_set         = GREATEST(limit_set, 2000),
 			    remaining         = GREATEST(remaining, 2000),
 			    ramp_step_applied = 4
 			WHERE store_id = $1

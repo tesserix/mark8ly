@@ -54,7 +54,6 @@ var declaredExclusions = map[string]string{
 	"warehouses":                "merchant facility contact, not a customer",
 	"tenant_sso_user_mappings":  "merchant SSO identity, not a customer",
 	"promo_redemptions":         "subscription promo-code redemption (§7). Its `email` is the MERCHANT's billing address — promo.Service writes normaliseEmail(in.MerchantEmail) (internal/promo/service.go:156) and the row references a subscription_id, not an order. Anonymising it during a customer erasure would rewrite a merchant's own billing record",
-	"audit_logs":                "governance record; operator rows are retained deliberately under their own retention path (#288, #365). Its actor_email is an operator, and its metadata JSONB is known residual PII, out of scope (#259)",
 	"customer_erasure_requests": "the request itself — its own status and receipt are the evidence the erasure happened, and destroying it would destroy the proof",
 }
 

@@ -35,21 +35,30 @@
 // TABLES DELIBERATELY CARRYING NO STEP, verified column-by-column against
 // the live schema rather than assumed:
 //   - payment_transactions, refund_transactions, platform_fee_ledger hold no
-//     personal column at all. Their only PII risk is
-//     payment_transactions.metadata (JSONB), which is out of scope below.
-//   - shipments holds personal data only in ship_from/ship_to (JSONB).
+//     personal column at all. payment_transactions.metadata (JSONB) is a
+//     DEAD column — payment.PaymentTransaction declares no Metadata field
+//     and no production statement writes it, so it is always '{}' (#435).
 //   - order_items, order_tax_lines, return_items, loyalty_transactions,
 //     gift_card_transactions and referrals hold no personal column; they
 //     survive attached to rows that have been anonymised.
 //
-// OUT OF SCOPE, deliberately: nine JSONB columns can embed a customer email
-// or address (stripe_webhook_events.payload, payment_transactions.metadata,
-// shipments.ship_from/ship_to, abandoned_carts.items_snapshot,
-// audit_logs.metadata, outbox_events.payload and others). None are inspected
-// here — safely key-stripping nine differently-shaped payloads is its own
-// effort and guessing at their shapes risks corrupting payment metadata.
-// abandoned_carts is deleted outright so its snapshot goes with it; the rest
-// are known residual PII, tracked separately.
+// JSONB COLUMNS. #435 audited the nine blobs that can embed a customer email
+// or address and resolved each one:
+//   - shipments.ship_to / ship_from, audit_logs.metadata and
+//     outbox_events.payload carry the subject and are key-stripped by steps
+//     below. Keys are stripped by NAME — never a wholesale rewrite — so a
+//     blob's non-personal structure survives intact.
+//   - abandoned_carts.items_snapshot goes with the row, which is deleted.
+//   - returns.pickup_details is text, not JSONB, and is already nulled.
+//   - payment_transactions.metadata is the dead column described above.
+//   - stripe_webhook_events.payload is merchant subscription billing: its
+//     "customer" is the tenant, not a shopper, and a tenant purge already
+//     destroys it.
+//   - idempotency_keys.response is platform-operator only and self-expires
+//     on a 24h TTL.
+//   - webhook_events.payload is genuinely unscopable — the table has no
+//     tenant, store or order column, so a subject's rows cannot be found. It
+//     needs an age-based prune, tracked separately as #440.
 package customererasure
 
 import (
@@ -73,6 +82,15 @@ const (
 // subject's personal data and must not be touched. Value verified against
 // the live CHECK constraints on review_replies and support_ticket_replies.
 const authorTypeCustomer = "customer"
+
+// aggregateAbandonedCart is the outbox_events.aggregate discriminator for the
+// one event whose payload names a shopper. It is the value of
+// outbox.AggregateAbandonedCart, duplicated as a local const rather than
+// imported so the plan stays a pure, dependency-free description of
+// statements. There is NO CHECK constraint on outbox_events.aggregate, so
+// nothing but this pairing keeps the two in step — the integration test seeds
+// a row with the literal the producer writes and asserts the strip reaches it.
+const aggregateAbandonedCart = "abandoned_cart"
 
 // Step is one parameterised statement in the erasure plan.
 type Step struct {
@@ -133,6 +151,28 @@ func erasurePlan(storeID uuid.UUID, email string, token string) []Step {
 			Disposition: DispositionDelete,
 			SQL:         `DELETE FROM customer_addresses WHERE customer_id IN (` + profileIDs + `)`,
 			Args:        []any{storeID, email},
+		},
+		{
+			// outbox_events has NO store_id column — only tenant_id — so it
+			// is scoped through abandoned_carts, the one aggregate whose
+			// payload names a shopper: order/abandoned_cart_service.go:128
+			// writes customer_email and recovery_url into it.
+			//
+			// MUST RUN BEFORE the abandoned_carts DELETE immediately below,
+			// which destroys the very rows this subquery reads. Same
+			// ordering hazard as review_media/reviews, and pinned by a test.
+			//
+			// Only those two keys go; store_id, item_count, subtotal and
+			// currency stay, because outbox/publisher.go:112 reads store_id
+			// to route the event and an unroutable row poisons its batch. On
+			// an unpublished row this degrades to a recovery email that is
+			// never sent, which is the correct outcome for an erased person.
+			Table:       "outbox_events", // 000001
+			Disposition: DispositionAnonymise,
+			SQL: `UPDATE outbox_events SET payload = payload - 'customer_email' - 'recovery_url'
+				WHERE aggregate = ? AND aggregate_id IN (
+					SELECT id FROM abandoned_carts WHERE store_id = ? AND customer_email = ?)`,
+			Args: []any{aggregateAbandonedCart, storeID, email},
 		},
 		{
 			// Deleting the cart takes items_snapshot (JSONB) with it, which
@@ -214,6 +254,76 @@ func erasurePlan(storeID uuid.UUID, email string, token string) []Step {
 			SQL: `UPDATE returns SET pickup_details = NULL
 				WHERE store_id = ? AND order_id IN (` + subjectOrders + `)`,
 			Args: []any{storeID, storeID, email},
+		},
+		{
+			// ship_to is the customer's delivery address — eight keys
+			// written at handlers/admin/shipments.go:694. ship_from is
+			// normally the MERCHANT's warehouse, but
+			// shipmentcancel/executor.go:254 persists reverse-leg rows with
+			// ShipFrom = the forward row's ShipTo, i.e. the customer's
+			// address. Which column holds whom is not decidable per row
+			// without re-deriving the leg, so BOTH are stripped: a merchant
+			// warehouse address is recoverable from warehouses, a person's
+			// is not recoverable at all once erasure is due.
+			//
+			// Both are NOT NULL, so they are emptied, not nulled. The one
+			// reader, shipmentcancel.parseShipmentAddress, treats an
+			// address with no line1 as unusable and the reverse pickup
+			// fails cleanly with "arrange the return manually".
+			//
+			// Scoped through orders, so it MUST run before orders is
+			// anonymised.
+			Table:       "shipments", // 000008
+			Disposition: DispositionAnonymise,
+			SQL: `UPDATE shipments SET ship_to = '{}'::jsonb, ship_from = '{}'::jsonb
+				WHERE store_id = ? AND order_id IN (` + subjectOrders + `)`,
+			Args: []any{storeID, storeID, email},
+		},
+		{
+			// audit_logs.metadata is the highest-value blob in this plan,
+			// because it is the longest-lived: retention is plan-tiered
+			// (audit/prune_cron.go:42) at 90d trial/starter, 365d studio,
+			// and NEVER for Pro. A Pro merchant's audit metadata outlives
+			// every other copy of the address.
+			//
+			// Six keys, each traced to a writer: customer_email
+			// (storefront/checkout.go:242, checkout_ext.go:681), email
+			// (customer/service.go:103), recipient_email
+			// (admin/gift_cards.go:127), submitter_email / author_email /
+			// actor_email (storefront/tickets.go:189,501,628).
+			//
+			// The audit_logs.actor_EMAIL COLUMN is deliberately untouched:
+			// it names the operator or staff member who performed the
+			// action, which is the governance record itself and is not the
+			// subject's personal data. Only the metadata key of that name is
+			// stripped.
+			//
+			// The row is matched by the subject's address appearing in any
+			// of those six keys AND by store. `->> = ?` rather than
+			// jsonb_exists: existence alone would strip a bystander's email
+			// out of the subject's audit rows, and there is no key by which
+			// a row "belongs to" one shopper other than the address itself.
+			// Absent keys yield NULL, which is not equal to anything, so a
+			// row with none of them is never rewritten. Deliberately NOT the
+			// infix `metadata ? 'k'` operator — GORM consumes `?` as a bind
+			// placeholder and would misbind the statement (#369).
+			//
+			// store_id is NULLABLE here (operator rows carry NULL by
+			// design); `store_id = ?` excludes them, which is correct: an
+			// operator row is not a customer record.
+			Table:       "audit_logs", // 000035
+			Disposition: DispositionAnonymise,
+			SQL: `UPDATE audit_logs
+				SET metadata = metadata - 'customer_email' - 'email' - 'recipient_email'
+					- 'submitter_email' - 'author_email' - 'actor_email'
+				WHERE store_id = ?
+				  AND (metadata ->> 'customer_email' = ?
+					OR metadata ->> 'email' = ?
+					OR metadata ->> 'recipient_email' = ?
+					OR metadata ->> 'submitter_email' = ?
+					OR metadata ->> 'author_email' = ?
+					OR metadata ->> 'actor_email' = ?)`,
+			Args: []any{storeID, email, email, email, email, email, email},
 		},
 		{
 			// Anonymised, not deleted: deleting retroactively changes the

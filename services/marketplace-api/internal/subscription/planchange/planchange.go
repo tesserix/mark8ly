@@ -317,30 +317,6 @@ func (o *Orchestrator) executeUpgrade(ctx context.Context, tx *gorm.DB, in Input
 		return Output{}, fmt.Errorf("planchange: resolve price id: %w", err)
 	}
 
-	// Idempotency key scoped to (store, target plan, target period, 5-min bucket).
-	// The 5-min window matches the advisory lock TTL — duplicate requests within
-	// the same minute get deduplicated by Stripe rather than creating double charges.
-	idempotencyKey := fmt.Sprintf("plan-change:%s:%s:%s:%d",
-		in.StoreID, in.TargetPlan, in.TargetPeriod,
-		in.Now.Truncate(5*time.Minute).Unix(),
-	)
-
-	stripeSub, err := o.deps.Stripe.UpdateSubscription(ctx, billingstripe.UpdateSubscriptionParams{
-		SubscriptionID:    *sub.StripeSubscriptionID,
-		PriceID:           priceID,
-		ProrationBehavior: billingstripe.ProrationAlwaysInvoice,
-		IdempotencyKey:    idempotencyKey,
-		Metadata: map[string]string{
-			"tenant_id":     in.TenantID.String(),
-			"store_id":      in.StoreID.String(),
-			"target_plan":   string(in.TargetPlan),
-			"target_period": string(in.TargetPeriod),
-		},
-	})
-	if err != nil {
-		return Output{}, fmt.Errorf("planchange: stripe update subscription: %w", err)
-	}
-
 	// Determine action label: upgrade_committed when plan changes, period_switch_committed
 	// when only the billing period changes within the same plan tier.
 	action := "upgrade_committed"
@@ -350,20 +326,6 @@ func (o *Orchestrator) executeUpgrade(ctx context.Context, tx *gorm.DB, in Input
 		result = ResultPeriodSwitchCommitted
 	}
 
-	if err := o.deps.SubscriptionRepo.CommitUpgrade(ctx, tx, in.TenantID, in.StoreID,
-		in.TargetPlan, in.TargetPeriod, action); err != nil {
-		return Output{}, fmt.Errorf("planchange: commit upgrade: %w", err)
-	}
-
-	// P9 — recompute campaign email budget limit inside the same transaction
-	// so plan row and budget row always commit atomically. Nil-safe: existing
-	// callers that don't inject BudgetRecomputer are unaffected.
-	if o.deps.BudgetRecomputer != nil {
-		if err := o.deps.BudgetRecomputer.RecomputeLimitForPlan(ctx, tx, in.StoreID, string(in.TargetPlan)); err != nil {
-			return Output{}, fmt.Errorf("planchange: recompute budget limit: %w", err)
-		}
-	}
-
 	// BillingCurrency is stored upper-cased to satisfy the CHAR(3) NOT NULL
 	// constraint with canonical ISO-4217 form (e.g. "USD" not "usd").
 	auditCurrency := strings.ToUpper(currency)
@@ -371,14 +333,31 @@ func (o *Orchestrator) executeUpgrade(ctx context.Context, tx *gorm.DB, in Input
 		auditCurrency = "USD" // fallback for subscriptions without explicit currency
 	}
 
-	// TODO: backfill proration fields from invoice webhook — ProrationCents and
-	// StripeInvoiceID are set to zero/"" here and populated when
-	// invoice.payment_succeeded arrives from the Stripe webhook handler.
-	stripeSubID := ""
-	if stripeSub != nil {
-		stripeSubID = stripeSub.ID
-	}
+	// --- everything fallible that CAN happen before Stripe, DOES (#425) -----
+	//
+	// Stripe's UpdateSubscription is an external side effect with
+	// proration_behavior=always_invoice: it issues a real invoice, and no
+	// error path here can un-issue it. Every non-nil return from this closure
+	// rolls the local transaction back, so each fallible statement standing
+	// AFTER the Stripe call is a way for Stripe and the database to end up
+	// disagreeing. This ordering leaves exactly one — CommitUpgrade.
+	//
+	// Moving these two earlier is NOT a behaviour change on the failure path:
+	// both write through tx, so if the Stripe call below fails the rows
+	// written here roll back with everything else. That is what makes the
+	// move safe. It is the opposite of the #397 refusal row, which had to
+	// move OUT of the transaction precisely because rollback erased it.
 
+	// The subscription id is known before the call and does not change across
+	// it: Stripe returns the same subscription it was asked to update, and
+	// the guard at the top of this function proves the local value is set.
+	// Reading it from sub rather than from the response is what lets the
+	// audit row be written first.
+	stripeSubID := *sub.StripeSubscriptionID
+
+	// ProrationCents and StripeInvoiceID stay zero/"" here and are backfilled
+	// when invoice.payment_succeeded arrives from the Stripe webhook handler
+	// — the same deferred-backfill approach this row already used for them.
 	if err := WritePlanChangeAuditRowTx(ctx, tx, PlanChangeAuditRow{
 		TenantID:             in.TenantID,
 		StoreID:              in.StoreID,
@@ -396,6 +375,50 @@ func (o *Orchestrator) executeUpgrade(ctx context.Context, tx *gorm.DB, in Input
 		EffectiveAt:          in.Now,
 	}); err != nil {
 		return Output{}, fmt.Errorf("planchange: write audit row: %w", err)
+	}
+
+	// P9 — recompute campaign email budget limit inside the same transaction
+	// so plan row and budget row always commit atomically. Nil-safe: existing
+	// callers that don't inject BudgetRecomputer are unaffected.
+	if o.deps.BudgetRecomputer != nil {
+		if err := o.deps.BudgetRecomputer.RecomputeLimitForPlan(ctx, tx, in.StoreID, string(in.TargetPlan)); err != nil {
+			return Output{}, fmt.Errorf("planchange: recompute budget limit: %w", err)
+		}
+	}
+
+	// --- the irreversible step ---------------------------------------------
+
+	// Idempotency key scoped to (store, target plan, target period, 5-min bucket).
+	// The 5-min window matches the advisory lock TTL — duplicate requests within
+	// the same minute get deduplicated by Stripe rather than creating double charges.
+	idempotencyKey := fmt.Sprintf("plan-change:%s:%s:%s:%d",
+		in.StoreID, in.TargetPlan, in.TargetPeriod,
+		in.Now.Truncate(5*time.Minute).Unix(),
+	)
+
+	if _, err := o.deps.Stripe.UpdateSubscription(ctx, billingstripe.UpdateSubscriptionParams{
+		SubscriptionID:    stripeSubID,
+		PriceID:           priceID,
+		ProrationBehavior: billingstripe.ProrationAlwaysInvoice,
+		IdempotencyKey:    idempotencyKey,
+		Metadata: map[string]string{
+			"tenant_id":     in.TenantID.String(),
+			"store_id":      in.StoreID.String(),
+			"target_plan":   string(in.TargetPlan),
+			"target_period": string(in.TargetPeriod),
+		},
+	}); err != nil {
+		return Output{}, fmt.Errorf("planchange: stripe update subscription: %w", err)
+	}
+
+	// --- the only fallible statement left after the Stripe call -------------
+	//
+	// A failure here still diverges (Stripe re-priced, local plan did not);
+	// the reconciliation sweep reports that as plan_mismatch drift (#425).
+	// Nothing may be added below this line without reopening the window.
+	if err := o.deps.SubscriptionRepo.CommitUpgrade(ctx, tx, in.TenantID, in.StoreID,
+		in.TargetPlan, in.TargetPeriod, action); err != nil {
+		return Output{}, fmt.Errorf("planchange: commit upgrade: %w", err)
 	}
 
 	// Emit to audit log (non-blocking; nil emitter is safe).

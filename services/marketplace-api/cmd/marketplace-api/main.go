@@ -126,6 +126,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/userprofile"
 	"github.com/mark8ly/marketplace-api/internal/vendor"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
+	"github.com/mark8ly/marketplace-api/internal/webhookprune"
 	wlapple "github.com/mark8ly/marketplace-api/internal/whitelabel/apple"
 	wlfirebase "github.com/mark8ly/marketplace-api/internal/whitelabel/firebase"
 	wlgoogleplay "github.com/mark8ly/marketplace-api/internal/whitelabel/googleplay"
@@ -1819,6 +1820,26 @@ func main() {
 		}
 	}); err != nil {
 		log.Error("register audit prune cron", "err", err)
+	}
+
+	// webhook_events retention — daily prune at 03:30 UTC (#440). Two
+	// windows, in the table's own vocabulary: status='processed' rows go at
+	// 30 days, everything else (in practice 'received' — the unprocessed,
+	// stuck case someone may still want to inspect or replay) at 90 days.
+	// This table has no tenant_id, store_id or customer link, so neither
+	// GDPR erasure nor tenant purge can reach the raw provider payloads it
+	// stores; age is the only axis available. 03:30 is clear of every other
+	// daily cron in the service.
+	webhookPruneCron := webhookprune.NewPruneCron(conn, log, nil, 0).
+		WithCounter(func(label string, n int64) {
+			metrics.WebhookPruneRowsDeletedTotal.WithLabelValues(label).Add(float64(n))
+		})
+	if _, err := trialScheduler.AddFunc(webhookprune.PruneSpec, func() {
+		if _, err := webhookPruneCron.Run(workerCtx); err != nil {
+			log.Error("webhook prune cron failed", "err", err)
+		}
+	}); err != nil {
+		log.Error("register webhook prune cron", "err", err)
 	}
 
 	// Platform admin nonce sweep — daily at 09:45 UTC, deletes

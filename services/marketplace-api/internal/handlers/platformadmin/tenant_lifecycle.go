@@ -234,31 +234,54 @@ func (h *TenantLifecycleHandler) handle(
 		return
 	}
 
+	// Local enforcement runs REGARDLESS of res.Changed (#344).
+	//
+	// These two side effects are what make the upstream status real on
+	// this side. They used to run only under `if res.Changed`, which left
+	// no way to repair a failed one: the projection update is
+	// best-effort, so when it fails the request still returns 200 and
+	// changed:true while local enforcement has not been applied. The
+	// operator's only recourse is to retry — but platform-api has already
+	// suspended the tenant, so the retry returns changed:false and, under
+	// the old guard, did nothing at all. Re-enforcement was unreachable
+	// through the API.
+	//
+	// Running them unconditionally is safe because both are idempotent:
+	// SuspendActiveForTenant filters on `status = active` and so matches
+	// no rows on a genuine no-op, and MarkStaleForTenant only backdates
+	// synced_at to force a refetch. A retry therefore costs a cheap
+	// no-op write in the common case and repairs the divergence in the
+	// case this exists for.
+	//
+	// The audit emission below stays under res.Changed: #287's acceptance
+	// is that a no-op writes no audit row, and a retry that re-applies
+	// local state has not changed the tenant's status.
+
+	// #287 fix-round-1: drop the admin gate's cached status for this
+	// tenant so the suspend/unsuspend takes effect on the very next
+	// admin request, instead of lagging behind by up to the gate's
+	// TTL. Best-effort like projectionUpdate below: nil-safe, and its
+	// absence is a degraded-lag, not a failure worth surfacing to the
+	// caller — the upstream write already succeeded.
+	if h.invalidate != nil {
+		h.invalidate.Invalidate(tenantIDStr)
+	}
+
+	if err := projectionUpdate(c.Request.Context(), tenantIDStr); err != nil {
+		// The upstream call already SUCCEEDED. A projection-update
+		// failure must not turn that into an error response — log
+		// loudly and let the response reflect the real outcome. The
+		// local projection will still catch up: suspend's worst case
+		// is a brief window of under-enforcement (same as before this
+		// endpoint existed), and unsuspend never enforces off local
+		// rows without a refresh anyway.
+		if h.logger != nil {
+			h.logger.Error("tenant lifecycle: local projection update failed",
+				"action", action, "tenant_id", tenantIDStr, "err", err)
+		}
+	}
+
 	if res.Changed {
-		// #287 fix-round-1: drop the admin gate's cached status for this
-		// tenant so the suspend/unsuspend takes effect on the very next
-		// admin request, instead of lagging behind by up to the gate's
-		// TTL. Best-effort like projectionUpdate below: nil-safe, and its
-		// absence is a degraded-lag, not a failure worth surfacing to the
-		// caller — the upstream write already succeeded.
-		if h.invalidate != nil {
-			h.invalidate.Invalidate(tenantIDStr)
-		}
-
-		if err := projectionUpdate(c.Request.Context(), tenantIDStr); err != nil {
-			// The upstream call already SUCCEEDED. A projection-update
-			// failure must not turn that into an error response — log
-			// loudly and let the response reflect the real outcome. The
-			// local projection will still catch up: suspend's worst case
-			// is a brief window of under-enforcement (same as before this
-			// endpoint existed), and unsuspend never enforces off local
-			// rows without a refresh anyway.
-			if h.logger != nil {
-				h.logger.Error("tenant lifecycle: local projection update failed",
-					"action", action, "tenant_id", tenantIDStr, "err", err)
-			}
-		}
-
 		tenantUUID, _ := uuid.Parse(tenantIDStr) // already validated above
 		if err := h.emit(c, tenantUUID, audit.Event{
 			Action:       auditAction,

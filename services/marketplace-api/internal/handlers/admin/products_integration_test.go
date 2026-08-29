@@ -50,8 +50,19 @@ func (stubClient) GetStoreBySlug(_ context.Context, _ string) (*stores.Store, er
 
 // productsTables is the dependency-ordered truncate list for tests that
 // run through the admin products surface.
+//
+// promo_redemptions/promo_codes are here even though no products test touches
+// them: promo_integration_test.go shares this fixture and seeds a promo code
+// with a fixed literal `code`. Nothing else reclaims those rows — promo_codes
+// has no FK to `stores`, so the TRUNCATE ... CASCADE below never reaches it —
+// and the seed therefore committed permanently, so the second-ever run of that
+// test collided on promo_codes_code_uidx. It passed exactly once (2026-08-23)
+// and its own success is what broke it (#446). Truncating the pair fixes the
+// whole class rather than one test's literal.
 var productsTables = []string{
 	"outbox_events",
+	"promo_redemptions",
+	"promo_codes",
 	"product_media",
 	"variant_option_values",
 	"variant_stock",

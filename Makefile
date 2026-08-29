@@ -38,6 +38,13 @@ test-unit: ## Run unit tests across every Go service and TS workspace
 	@cd services/platform-api && go test ./...
 	@echo "▶ auth-bff"
 	@cd services/auth-bff && go test ./...
+	@# marketplace-api was missing here while the target's own help text claimed
+	@# "every Go service" (#446). CI covered it, so nothing was unverified — but
+	@# it meant the untagged guards in this service, including the test-int
+	@# coverage guard below, could not go red on a developer's machine. A guard
+	@# nobody sees locally is only half a guard.
+	@echo "▶ marketplace-api"
+	@cd services/marketplace-api && go test ./...
 	@echo "▶ turbo (TS workspaces)"
 	@npx turbo run test
 
@@ -54,68 +61,85 @@ test-int: ## Run integration tests against the running `make dev` stack
 	@# -p 1: these share one local Postgres, and parallel package execution
 	@# exhausts its connection limit ("sorry, too many clients already").
 	@#
-	@# Scoped to the packages whose fixtures are currently correct, NOT ./... —
-	@# the rest fail on schema drift: migrations added NOT NULL columns and FKs
-	@# without updating test fixtures (products.vendor_id, store_subscriptions'
-	@# store FK, stores.storefront_customer_portal_secret, an apikeys varchar(60)
-	@# overflow, orderrefund cleanup deadlocks, and a nil-Repo panic in
-	@# whitelabel/lifecycle). Tracked separately.
+	@# This list covers EVERY package in the service that has integration tests.
+	@# It is hand-maintained but not hand-audited: the untagged unit test
+	@# TestEveryIntegrationPackageIsInTheTestIntTarget (services/marketplace-api/
+	@# testint_coverage_test.go) parses this target and fails on any package
+	@# carrying a `//go:build integration` file that is missing from it. Add a
+	@# package here and `go test ./...` goes green; forget to, and it goes red.
 	@#
-	@# Widen this one package at a time as each cluster is fixed. A permanently
-	@# red target is worse than a narrow green one: this suite was dark long
-	@# enough to hide a production dunning bug (see the sql.NullTime fix in
-	@# internal/subscription/dunning/ladder.go).
+	@# It was not always complete. 32 of 60 integration packages — more than
+	@# half — were absent, and four defects (#397, #398, #399, #446) survived in
+	@# them because the test that caught each one had never been executed. The
+	@# earlier text here justified the omissions with schema drift
+	@# (products.vendor_id, a nil-Repo panic in whitelabel/lifecycle, an apikeys
+	@# varchar(60) overflow); those causes were fixed by #403, #318 and #395, and
+	@# the exclusions simply outlived their reasons. That is the failure mode the
+	@# guard above now prevents: a stale justification cannot keep a package dark,
+	@# because the guard checks the list, not the prose.
 	@#
-	@# ./internal/billing/tax/... is fully included again: the revalidation
-	@# deadlock it used to hide was fixed in #396 — Cron.Run no longer holds a
-	@# transaction open across Svc.Submit, so the pass cannot wait on its own
-	@# row lock.
-	@#
-	@# ./internal/subscription below is deliberately NOT ./internal/subscription/...
-	@# — recursing would pull in sibling packages whose status was never
-	@# measured. internal/subscription/planchange is listed explicitly below:
-	@# it is green as of #397 and must keep running so that guard cannot
-	@# silently stop.
-	@#
-	@# ./internal/customererasure/... is included from #259. It was measured
-	@# green against the dev database (schema 113) before being added, which is
-	@# the precondition for widening this list at all. It carries the GDPR
-	@# art.17 schema-coverage guard: a table added later that names a customer
-	@# fails this target rather than silently escaping erasure, so it must keep
-	@# running or the guard stops guarding.
-	@#
-	@# ./internal/campaignbudget/... is the full subtree: the parent package plus
-	@# cron, concurrency and transactional. All four were measured green against
-	@# the dev database on 2026-08-28 when the #399 trial-ramp idempotency guard
-	@# landed, so the ellipsis is safe — and the parent package must keep running
-	@# or that guard could silently regress again.
+	@# ./internal/subscription is deliberately NOT ./internal/subscription/... —
+	@# its siblings are listed individually so adding one is a visible decision.
+	@# Whole list is green and takes ~5 minutes (4m54s, measured 2026-08-29).
 	@cd services/marketplace-api && \
 	  TEST_DATABASE_URL='postgres://dev:dev@localhost:5432/marketplace_db?sslmode=disable' \
 	  go test -tags=integration -p 1 \
+	    ./cmd/backfill-email/... \
 	    ./internal/apikeys/... \
-	    ./internal/audit/... \
-	    ./internal/customererasure/... \
 	    ./internal/arbitrage/... \
-	    ./internal/handlers/platformadmin/... \
-	    ./internal/tenantpurge/... \
-	    ./internal/subscription/dunning/... \
-	    ./internal/handlers/internalsvc/... \
+	    ./internal/attestation/... \
+	    ./internal/audit/... \
+	    ./internal/authz/... \
 	    ./internal/billing/appaddon/... \
+	    ./internal/billing/attestations/... \
 	    ./internal/billing/dispatch/... \
+	    ./internal/billing/migration/... \
 	    ./internal/billing/tax/... \
 	    ./internal/billing/trial/... \
+	    ./internal/branding/... \
+	    ./internal/breakglass/... \
+	    ./internal/campaign/... \
+	    ./internal/campaignbudget/... \
+	    ./internal/category/... \
+	    ./internal/csvjob/... \
+	    ./internal/customererasure/... \
+	    ./internal/email/... \
+	    ./internal/emailevents/... \
+	    ./internal/emaillog/... \
+	    ./internal/giftcard/... \
+	    ./internal/handlers/admin/... \
+	    ./internal/handlers/internalsvc/... \
+	    ./internal/handlers/platformadmin/... \
+	    ./internal/handlers/storefront/... \
+	    ./internal/handlers/webhooks/... \
+	    ./internal/idempotency/... \
+	    ./internal/inbox/... \
+	    ./internal/notification/... \
+	    ./internal/order/... \
+	    ./internal/orderrefund/... \
+	    ./internal/outbox/... \
+	    ./internal/page/... \
+	    ./internal/payment/... \
+	    ./internal/product/... \
+	    ./internal/reconciliation/... \
+	    ./internal/shipping/... \
+	    ./internal/signup/... \
+	    ./internal/stores/... \
 	    ./internal/subscription \
 	    ./internal/subscription/cancel/... \
+	    ./internal/subscription/dunning/... \
 	    ./internal/subscription/harddelete/... \
 	    ./internal/subscription/lifecycle/... \
 	    ./internal/subscription/planchange/... \
 	    ./internal/subscription/readonly/... \
 	    ./internal/subscription/statemachine/... \
-	    ./internal/campaignbudget/... \
-	    ./internal/handlers/webhooks/... \
-	    ./internal/reconciliation/... \
-	    ./tests/integration/... \
-	    ./pkg/testdb/...
+	    ./internal/tenantpurge/... \
+	    ./internal/ticket/... \
+	    ./internal/vendor/... \
+	    ./internal/webhookevents/... \
+	    ./internal/whitelabel/lifecycle/... \
+	    ./pkg/testdb/... \
+	    ./tests/integration/...
 
 cover: ## Coverage report for both Go services
 	@cd services/platform-api && go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -5

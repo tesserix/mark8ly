@@ -75,10 +75,12 @@
 //     the record of the destruction it is backing up. See the inline
 //     comment on the audit_logs step in group 5.
 //
-// break_glass_lockouts is the one table where the privilege claim IS
-// true: it is owned by `postgres` in production, so marketplace_api has
-// no DELETE and including it would abort the whole single-tx purge
-// (SQLSTATE 42501). See the inline comment in group 5.
+// break_glass_lockouts was the one table where the privilege claim was
+// true — owned by `postgres` in production, so marketplace_api had no
+// DELETE and including it would abort the whole single-tx purge
+// (SQLSTATE 42501). Ownership was transferred to marketplace_api on
+// 2026-08-30 (#457), so it is now excluded by choice rather than by
+// privilege. See the inline comment in group 5.
 //
 // See task-1-report.md for the full per-table FK/scoping audit.
 package tenantpurge
@@ -353,13 +355,20 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		tenantScoped("tenant_sso_configs", tenantID),       // 000070: tenant_id (PK)
 		tenantScoped("storefront_push_tokens", tenantID),   // 000022: tenant_id
 		tenantScoped("admin_push_tokens", tenantID),        // 000021: tenant_id, store_id
-		// break_glass_lockouts is intentionally NOT purged: in prod it is owned by
-		// `postgres` (a manual-migration anomaly), so the marketplace_api role has
-		// no DELETE privilege and including it aborts the whole single-tx purge
-		// (SQLSTATE 42501). Its rows are ephemeral, HMAC'd-IP rate-limit lockouts
-		// (self-expiring via locked_until) — safe to retain. See protectedTables
-		// in purge_test.go. break_glass_accounts (below) IS owned by marketplace_api
-		// and is still purged.
+		// break_glass_lockouts is intentionally NOT purged — by choice since
+		// #457, having previously been by necessity.
+		//
+		// The table was owned by `postgres` in prod (a manual-migration
+		// anomaly), so marketplace_api had no DELETE and including it aborted
+		// the whole single-tx purge. Ownership moved to marketplace_api on
+		// 2026-08-30 and a DELETE would now succeed.
+		//
+		// It stays excluded because tenant_id is NULLABLE: rows with no tenant
+		// are IP-level lockouts belonging to nobody, and the rows are ephemeral
+		// and self-expiring via locked_until. Re-adding it is now possible and
+		// is a deliberate decision, not a tidy-up. See protectedTables in
+		// purge_test.go. break_glass_accounts (below) IS owned by
+		// marketplace_api and is still purged.
 		tenantScoped("break_glass_accounts", tenantID), // 000072: tenant_id (PK)
 		tenantScoped("enterprise_api_keys", tenantID),  // 000068: tenant_id, store_id
 		// audit_logs is tenant-scoped EXCEPT for operator rows. A platform

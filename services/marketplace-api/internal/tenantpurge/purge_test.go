@@ -40,15 +40,30 @@ var protectedTables = []string{
 	"user_profiles",
 	"promo_codes",
 	"signup_anomaly_log",
-	// break_glass_lockouts is owned by `postgres` in prod (a manual-migration
-	// anomaly — migration 000073 intends marketplace_api ownership, but the row
-	// was created out-of-band), so marketplace_api has NO privileges on it and a
-	// DELETE aborts the whole single-tx purge (SQLSTATE 42501). Excluded here so
-	// the purge succeeds; its rows are ephemeral rate-limit lockouts (HMAC'd IP,
-	// nullable tenant_id, self-expiring via locked_until) — safe to retain.
-	// NOTE: break_glass_ACCOUNTS (the sensitive emergency-admin row) is owned by
-	// marketplace_api and IS still purged. If the ownership anomaly is ever fixed,
-	// break_glass_lockouts can be re-added to the plan.
+	// break_glass_lockouts is excluded by CHOICE, not by privilege (#457).
+	//
+	// It used to be excluded because it could not be deleted: the table was
+	// owned by `postgres` in prod — a manual-migration anomaly, since
+	// migration 000073 creates it as marketplace_api like every sibling table
+	// — so marketplace_api held NO privileges and a DELETE would abort the
+	// whole single-tx purge (SQLSTATE 42501).
+	//
+	// Ownership was transferred to marketplace_api on 2026-08-30 (see
+	// docs/ops/2026-08-30-break-glass-lockouts-ownership.md), so that reason
+	// is gone and a DELETE would now succeed.
+	//
+	// The exclusion stands on its own merits: the rows are ephemeral
+	// rate-limit lockouts (HMAC'd IP, self-expiring via locked_until) and
+	// tenant_id is NULLABLE — rows with no tenant are IP-level lockouts
+	// belonging to nobody, which a tenant-scoped purge must not touch.
+	//
+	// Re-adding it as tenantScoped() is now POSSIBLE and is a deliberate
+	// decision rather than a cleanup: it deletes a tenant's lockout rows on
+	// purge, which is defensible under art.17 and changes rate-limit state.
+	// Not made here — see the follow-up issue.
+	//
+	// break_glass_ACCOUNTS (the sensitive emergency-admin row) is owned by
+	// marketplace_api and IS still purged.
 	"break_glass_lockouts",
 }
 

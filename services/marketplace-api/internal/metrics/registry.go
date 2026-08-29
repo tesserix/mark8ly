@@ -149,6 +149,19 @@ var (
 		[]string{"bucket"},
 	)
 
+	// WebhookPruneRowsDeletedTotal counts webhook_events rows hard-deleted by
+	// the retention prune cron, labeled by retention class (processed_30d,
+	// unprocessed_90d). The table holds raw provider event bodies carrying
+	// customer PII and cannot be scoped to a tenant or customer, so this
+	// age-based prune is the only path that expires it (#440).
+	WebhookPruneRowsDeletedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_webhook_prune_rows_deleted_total",
+			Help: "Count of webhook_events rows deleted by the retention prune cron.",
+		},
+		[]string{"class"},
+	)
+
 	// DunningSuppressedRefundWindowTotal counts past_due→expired ladder steps
 	// skipped due to the 14-day refund window (§16.5). P6 dunning metrics.
 	DunningSuppressedRefundWindowTotal = prometheus.NewCounter(
@@ -206,6 +219,7 @@ func init() {
 		BillingEmailsSkippedTotal,
 		BillingEmailsSentTotal,
 		AuditPruneRowsDeletedTotal,
+		WebhookPruneRowsDeletedTotal,
 		DunningSuppressedRefundWindowTotal,
 		APIKeyUsedTotal,
 		APIKeyAuthFailedTotal,

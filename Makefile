@@ -139,6 +139,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/webhookevents/... \
 	    ./internal/webhookprune/... \
 	    ./internal/whitelabel/lifecycle/... \
+	    ./internal/wishlist/... \
 	    ./pkg/testdb/... \
 	    ./tests/integration/...
 

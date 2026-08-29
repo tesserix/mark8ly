@@ -77,6 +77,20 @@ func (r *Repo) ListForStore(ctx context.Context, tenantID, storeID uuid.UUID) ([
 
 // CountActiveForStore counts active (non-revoked) keys for a tenant+store.
 // Used for plan-ceiling enforcement.
+// CountActiveForStore counts keys still usable for a store.
+//
+// This is the ONLY place in this package that compares a Go-written
+// `revoked_at` against Postgres's own `now()`. Everywhere revocation actually
+// gates access — IsUsable (model.go), the auth middleware (middleware.go:74),
+// Rotate and Revoke (service.go) — both sides come from the same application
+// clock, so those paths cannot disagree with themselves.
+//
+// That asymmetry is deliberate and worth keeping in mind rather than
+// "fixing": making Revoke write the database's now() instead would introduce
+// a mixed-clock comparison on the AUTH path, where today there is none. The
+// cost is confined here, to a quota count, where a few milliseconds of skew
+// between the app and the database cannot matter — no caller revokes a key
+// and counts it in the same instant. A test did, and was flaky for it (#447).
 func (r *Repo) CountActiveForStore(ctx context.Context, tenantID, storeID uuid.UUID) (int64, error) {
 	var n int64
 	err := r.dbCtx(ctx).Model(&APIKey{}).

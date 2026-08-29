@@ -94,7 +94,19 @@ func TestRepo_CountActiveForStore_ExcludesRevoked(t *testing.T) {
 	b := sampleKey(tenantID, storeID, by, "BBBB2222")
 	require.NoError(t, repo.Create(context.Background(), &a))
 	require.NoError(t, repo.Create(context.Background(), &b))
-	require.NoError(t, repo.Revoke(context.Background(), b.ID, time.Now(), "test"))
+
+	// A minute in the past, not time.Now(). Revoke's `at` is an EXPIRY, not a
+	// revocation stamp (see its doc), and CountActiveForStore is the one query
+	// in this package that compares a Go-written timestamp against Postgres's
+	// own now() (repo.go:83) — every other check is Go clock against Go clock.
+	//
+	// With `at` = time.Now() the assertion is decided by which of two
+	// independent clocks is ahead. That is not hypothetical: the dev Postgres
+	// runs in a VM whose clock was measured ~45ms from the host's and drifts
+	// either way, so this failed twice and then passed six times unchanged
+	// (#447). A margin tests what the name says — a revoked key is excluded —
+	// without racing. Same shape as security_test.go:96.
+	require.NoError(t, repo.Revoke(context.Background(), b.ID, time.Now().Add(-time.Minute), "test"))
 
 	n, err := repo.CountActiveForStore(context.Background(), tenantID, storeID)
 	require.NoError(t, err)

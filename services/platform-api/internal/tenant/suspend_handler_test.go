@@ -18,17 +18,21 @@ const testTenantID = "11111111-1111-1111-1111-111111111111"
 // stubLifecycleRepo returns canned results for Suspend/Unsuspend.
 type stubLifecycleRepo struct {
 	Repository
-	suspend      *SuspendResult
-	suspendErr   error
-	unsuspend    *SuspendResult
-	unsuspendErr error
+	suspend         *SuspendResult
+	suspendErr      error
+	suspendCalled   bool
+	unsuspend       *SuspendResult
+	unsuspendErr    error
+	unsuspendCalled bool
 }
 
 func (s *stubLifecycleRepo) Suspend(_ context.Context, _ string) (*SuspendResult, error) {
+	s.suspendCalled = true
 	return s.suspend, s.suspendErr
 }
 
 func (s *stubLifecycleRepo) Unsuspend(_ context.Context, _ string) (*SuspendResult, error) {
+	s.unsuspendCalled = true
 	return s.unsuspend, s.unsuspendErr
 }
 
@@ -128,4 +132,37 @@ func TestUnsuspendHandler_UnknownTenantIs404(t *testing.T) {
 	})
 	rec := doPost(t, h, "/tenants/"+testTenantID+"/unsuspend")
 	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// A malformed :id is a caller error. Without validation it reaches Postgres,
+// which raises 22P02 (invalid input syntax for type uuid), and that surfaces
+// as a 500 that pages someone. marketplace-api's console-facing handler
+// already rejects it (internal/handlers/platformadmin/tenant_lifecycle.go,
+// uuid.Parse -> 400); the two halves of the same operation must agree.
+//
+// The repository assertion is the point of the test: 400 alone could be
+// produced by the same query failing differently. The id must not reach the
+// database at all.
+func TestSuspendHandler_MalformedIDIs400AndNeverReachesRepo(t *testing.T) {
+	repo := &stubLifecycleRepo{suspend: &SuspendResult{
+		Status: StatusSuspended, StoresAffected: 1, Changed: true,
+	}}
+	rec := doPost(t, newTestHandler(repo), "/tenants/not-a-uuid/suspend")
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.False(t, repo.suspendCalled,
+		"a malformed id must be rejected before the repository sees it")
+	require.Contains(t, rec.Body.String(), `"error":"invalid_tenant_id"`)
+}
+
+func TestUnsuspendHandler_MalformedIDIs400AndNeverReachesRepo(t *testing.T) {
+	repo := &stubLifecycleRepo{unsuspend: &SuspendResult{
+		Status: StatusActive, StoresAffected: 1, Changed: true,
+	}}
+	rec := doPost(t, newTestHandler(repo), "/tenants/not-a-uuid/unsuspend")
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.False(t, repo.unsuspendCalled,
+		"a malformed id must be rejected before the repository sees it")
+	require.Contains(t, rec.Body.String(), `"error":"invalid_tenant_id"`)
 }

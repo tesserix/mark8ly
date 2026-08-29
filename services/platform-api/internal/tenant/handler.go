@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/mark8ly/platform-api/internal/authz"
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
@@ -306,6 +307,14 @@ func (h *Handler) unsuspendTenant(c *gin.Context) {
 // returns current state, not an error.
 func (h *Handler) lifecycle(c *gin.Context, op func(context.Context, string) (*SuspendResult, error)) {
 	id := c.Param("id")
+	// A malformed id is a caller error, not a server error. Unvalidated it
+	// reaches Postgres, which raises 22P02 and surfaces as a 500 that pages
+	// someone (#343). marketplace-api's console-facing half already rejects
+	// it with the same code, so the two halves of one operation agree.
+	if _, err := uuid.Parse(id); err != nil {
+		respondError(c, apperrors.BadRequest("invalid_tenant_id", "id must be a UUID"))
+		return
+	}
 	res, err := op(c.Request.Context(), id)
 	if err != nil {
 		respondError(c, err)

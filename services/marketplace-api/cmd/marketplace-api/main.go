@@ -2539,6 +2539,16 @@ func (c *arbitragePrometheusCounter) IncArbitrageFlagged() {
 	}
 }
 
+// IncArbitrageTenantMismatch records a refused audit write where the caller's
+// tenant does not own the subscription (#423). Distinct reason label so P17
+// can alert on it independently — it is a bug or a probe, never routine.
+func (c *arbitragePrometheusCounter) IncArbitrageTenantMismatch() {
+	if metrics.Subscription != nil {
+		metrics.Subscription.SubscriptionArbitrageFlaggedTotal.
+			WithLabelValues("tenant_mismatch").Inc()
+	}
+}
+
 func (c *arbitragePrometheusCounter) IncArbitrageFalsePositiveCleared() {
 	// P17 dashboard reads the arbitrage_flagged counter; false-positive-cleared
 	// is a separate counter that P17 alert rules reference. Emit on the same

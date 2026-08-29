@@ -96,6 +96,29 @@ type Config struct {
 	StripeBillingSecretKey     string `envconfig:"STRIPE_BILLING_SECRET_KEY" default:""`
 	StripeBillingWebhookSecret string `envconfig:"STRIPE_BILLING_WEBHOOK_SECRET" default:""`
 
+	// Console plan-catalog read (#304). The console is becoming the single
+	// place a price is maintained; these configure the parallel run that
+	// compares its catalog against the one compiled into
+	// internal/billing/pricing, ahead of the cutover.
+	//
+	// ALL OF THESE ARE OPTIONAL BY DESIGN. Unset, no console read is
+	// attempted and prices come from the compiled catalog exactly as they do
+	// today — BACKLOG §P requires that nothing on a customer payment path
+	// depend on the console being reachable, and an unconfigured deploy is
+	// the strongest form of that guarantee.
+	ConsoleCatalogURL          string `envconfig:"CONSOLE_CATALOG_URL" default:""`
+	ConsoleCatalogTokenURL     string `envconfig:"CONSOLE_CATALOG_TOKEN_URL" default:""`
+	ConsoleCatalogClientID     string `envconfig:"CONSOLE_CATALOG_CLIENT_ID" default:""`
+	ConsoleCatalogClientSecret string `envconfig:"CONSOLE_CATALOG_CLIENT_SECRET" default:""`
+	// Scope must carry BOTH the project-audience scope and the roles scope.
+	// The first puts the project in the token's `aud`, which is what proves
+	// the token was minted for this route; the second makes it carry the
+	// roles claim, without which it verifies but holds no capability. Kept in
+	// config rather than compiled in so the project id is not hardcoded here.
+	ConsoleCatalogScope    string        `envconfig:"CONSOLE_CATALOG_SCOPE" default:""`
+	ConsoleCatalogMode     string        `envconfig:"CONSOLE_CATALOG_MODE" default:"test"`
+	ConsoleCatalogInterval time.Duration `envconfig:"CONSOLE_CATALOG_INTERVAL" default:"15m"`
+
 	// RESEND_WEBHOOK_SECRET verifies inbound provider delivery events
 	// (#348B). Empty leaves the endpoint mounted but inert: it answers 503
 	// not_configured rather than 404, so a missing secret is diagnosable

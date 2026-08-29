@@ -64,10 +64,40 @@ func (r *gormRepo) List(ctx context.Context, customerID string, page, limit int)
 			p.title AS product_title,
 			p.handle AS product_handle,
 			(SELECT url FROM product_media WHERE product_id = p.id ORDER BY position LIMIT 1) AS product_image_url,
-			COALESCE((SELECT MIN(price)::text FROM product_variants WHERE product_id = p.id), '0') AS product_min_price,
-			COALESCE((SELECT MAX(price)::text FROM product_variants WHERE product_id = p.id), '0') AS product_max_price,
+			-- deleted_at IS NULL is load-bearing, not defensive: variants are
+			-- SOFT-deleted (repository_variants.go), so a withdrawn variant's
+			-- row survives with deleted_at set. Without the predicate a
+			-- merchant who removes a $10 variant from a $10/$30 product keeps
+			-- advertising "from $10" here for a product whose cheapest
+			-- purchasable variant is now $30 — a price checkout will not
+			-- honour. It errs low, which is the bad direction (#420).
+			--
+			-- #395 made GORM add this predicate implicitly by moving
+			-- Variant.DeletedAt to gorm.DeletedAt, but this is RAW SQL against
+			-- the table, so no implicit predicate reaches it.
+			COALESCE((SELECT MIN(price)::text FROM product_variants
+			           WHERE product_id = p.id AND deleted_at IS NULL), '0') AS product_min_price,
+			COALESCE((SELECT MAX(price)::text FROM product_variants
+			           WHERE product_id = p.id AND deleted_at IS NULL), '0') AS product_max_price,
 			COALESCE(s.currency_code, 'AUD') AS currency_code,
-			p.status = 'active' AS in_stock
+			-- in_stock means what its name says: the product is purchasable.
+			-- This was a bare p.status = 'active' test, so an active product whose
+			-- every variant had zero inventory advertised itself as in stock —
+			-- and disagreed with its OWN product page, which derives the flag
+			-- per variant from InventoryQuantity > 0 (handlers/storefront/
+			-- dto.go:139). Two surfaces, one word, opposite answers (#420).
+			--
+			-- Both halves are required: an inactive product is not purchasable
+			-- however much stock it has, and an active one with none is not
+			-- purchasable either. deleted_at IS NULL for the same reason as
+			-- the price subqueries above — a withdrawn variant's stock must
+			-- not keep a product looking available.
+			(p.status = 'active' AND EXISTS (
+				SELECT 1 FROM product_variants
+				 WHERE product_id = p.id
+				   AND deleted_at IS NULL
+				   AND inventory_quantity > 0
+			)) AS in_stock
 		FROM wishlists w
 		JOIN products p ON p.id = w.product_id
 		LEFT JOIN stores s ON s.id = w.store_id

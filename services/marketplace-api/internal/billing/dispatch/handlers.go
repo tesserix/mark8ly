@@ -52,6 +52,68 @@ func reportArbitrageFailure(sub subscription.StoreSubscription, recErr error) {
 	}
 }
 
+// recordArbitrage hands the arbitrage recorder call to the request's
+// post-commit collector so it runs AFTER the webhook's advisory-lock
+// transaction commits, instead of inside it.
+//
+// Why it cannot run inline (#438). The caller is inside
+// subscription.WithAdvisoryLock, and handleCheckoutSessionCompleted has
+// already run `UPDATE store_subscriptions ... WHERE stripe_customer_id = ?`
+// on tx, which holds a FOR NO KEY UPDATE row lock on the subscription row for
+// the rest of the transaction. The recorder writes on its own *gorm.DB — the
+// pool handle, a DIFFERENT connection — and its step 3 is
+// `UPDATE store_subscriptions ... SET arbitrage_flag = true` on that same row.
+// The recorder's connection blocks on the uncommitted row lock while the
+// transaction that holds it is blocked in Go waiting for the recorder to
+// return. Postgres sees one waiter and one idle-in-transaction session: no
+// cycle, so deadlock_timeout never fires, and no lock_timeout or
+// statement_timeout is configured. The webhook hangs indefinitely.
+//
+// This is latent today only because the call site hard-codes IPCountry: "" and
+// arbitrage.Evaluate never flags without an IP country, so the recorder's
+// writes are never reached. The first caller to supply a real IP country arms
+// the stall. Deferring the call removes the overlap regardless.
+//
+// Passing the caller's tx into the recorder would also remove the overlap, but
+// it would put the audit row back inside the webhook transaction — undoing
+// #423/#442, which deliberately moved it out so a failed flag toggle cannot
+// destroy the fraud record.
+//
+// Semantics are otherwise unchanged: a recorder failure stays NON-FATAL to the
+// webhook and still goes through reportArbitrageFailure so it is logged and
+// counted (#423).
+func (d *Dispatcher) recordArbitrage(ctx context.Context, sub subscription.StoreSubscription, in arbitrage.RecordInput) {
+	// runCtx is the context the collector hands us at drain time (request
+	// cancellation stripped, own timeout applied) — never the captured one.
+	record := func(runCtx context.Context) error {
+		if recErr := d.recorder.RecordIfFlagged(runCtx, in); recErr != nil {
+			// Swallowed on purpose: the arbitrage write must not block the
+			// subscription lifecycle or trigger a Stripe redelivery that
+			// re-fires every other side effect. Silence is what was wrong
+			// before (#423), so it is logged and counted instead.
+			reportArbitrageFailure(sub, recErr)
+		}
+		return nil
+	}
+
+	if postcommit.Add(ctx, record) {
+		return
+	}
+
+	// No collector in ctx — a caller that did not opt in (tests, or a future
+	// entry point that forgot postcommit.WithDeferredSends). Run inline
+	// rather than dropping the fraud signal, but say so loudly: a call site
+	// that silently reverts to the inline path is exactly how the stall
+	// above comes back, and it looks perfectly healthy in the logs while
+	// doing it.
+	slog.Default().Warn("dispatch: no post-commit collector in context; recording arbitrage INLINE, inside the webhook transaction — the caller of Dispatch is missing postcommit.WithDeferredSends (#438)",
+		"store_id", sub.StoreID.String(),
+		"tenant_id", sub.TenantID.String(),
+		"subscription_id", sub.ID.String())
+
+	_ = record(ctx)
+}
+
 // handleCheckoutSessionCompleted routes checkout.session.completed through
 // two stages:
 //  1. Raw UPDATE of NON-status columns (stripe_subscription_id,
@@ -131,7 +193,7 @@ func (d *Dispatcher) handleCheckoutSessionCompleted(ctx context.Context, tx *gor
 	// header), so the evaluator returns ReasonIPUnknown and does not flag on
 	// card alone — preventing false positives for travelers/dual-citizens.
 	if d.recorder != nil {
-		recErr := d.recorder.RecordIfFlagged(ctx, arbitrage.RecordInput{
+		d.recordArbitrage(ctx, sub, arbitrage.RecordInput{
 			SubscriptionID: sub.ID,
 			TenantID:       sub.TenantID,
 			StoreID:        sub.StoreID,
@@ -141,14 +203,6 @@ func (d *Dispatcher) handleCheckoutSessionCompleted(ctx context.Context, tx *gor
 			IPCountry:      "", // unknown at webhook time — evaluated as "??"
 			RawIP:          "", // no raw IP at webhook time
 		})
-		if recErr != nil {
-			// Arbitrage write failure must NOT block the subscription
-			// lifecycle, so the error is still swallowed here to preserve
-			// Stripe idempotency. Silence is what was wrong: the previous
-			// `_ = fmt.Errorf(...)` produced no log, no metric and no return,
-			// so every arbitrage failure vanished (#423).
-			reportArbitrageFailure(sub, recErr)
-		}
 	}
 
 	if sub.Status != subscription.StatusSignup {

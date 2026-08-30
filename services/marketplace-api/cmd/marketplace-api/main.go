@@ -109,6 +109,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/shipmentcancel"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/signup"
+	"github.com/mark8ly/marketplace-api/internal/stockhold"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/cancel"
@@ -1513,6 +1514,9 @@ func main() {
 			ReviewsHandler: sfReviewsHandler,
 			// C4 wishlists.
 			WishlistHandler: wishlistHandler,
+			// #232 — server-side stock holds. Placed at cart-add for
+			// HoldTTL, committed inside the order transaction at checkout.
+			CartHoldsHandler: storefront.NewCartHoldsHandler(conn, stockhold.NewRepository(), log),
 			// B1 branding.
 			BrandingHandler:       sfBrandingHandler,
 			PagesHandler:          sfPagesHandler,

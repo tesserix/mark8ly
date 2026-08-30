@@ -41,6 +41,8 @@ type Deps struct {
 	ReviewsHandler *ReviewsHandler
 	// C4 wishlists.
 	WishlistHandler *WishlistHandler
+	// #232 server-side stock holds.
+	CartHoldsHandler *CartHoldsHandler
 	// B1 branding.
 	BrandingHandler *BrandingHandler
 	// Content pages.
@@ -95,6 +97,15 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		group.GET("/products", deps.Handler.List)
 		group.GET("/products/:handle", deps.Handler.GetByHandle)
 		group.GET("/categories", deps.Handler.ListCategories)
+
+		// #232 — server-side stock holds. Mounted on the same key+store
+		// middleware as the rest of the storefront surface; the handler
+		// additionally checks each variant belongs to THIS store, because
+		// the shared key is not a per-store credential.
+		if deps.CartHoldsHandler != nil {
+			group.POST("/cart/holds", deps.CartHoldsHandler.Place)
+			group.DELETE("/cart/holds/:cartToken", deps.CartHoldsHandler.Release)
+		}
 		group.GET("/categories/:slug/products", deps.Handler.ListByCategorySlug)
 
 		// Checkout — use extended handler (with payment/tax/shipping) if

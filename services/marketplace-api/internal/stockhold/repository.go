@@ -109,6 +109,41 @@ func (r *Repository) Hold(ctx context.Context, tx *gorm.DB, cartToken, variantID
 		variantID, locationID, cartToken, qty, time.Now().Add(ttl)).Error
 }
 
+// Available reports how many units a cart could still hold, live holds
+// subtracted.
+//
+// It excludes the calling cart's own holds for the same reason Hold does: a
+// cart asking what it can have must not be told its own reservation is
+// competition.
+//
+// This is a READ for display — "only 2 left" beats a bare refusal. It takes
+// no lock and must not be used to decide whether a hold may be placed: by
+// the time a caller acted on it, the answer could be stale. Hold does its
+// own check under FOR UPDATE, and that is the one that counts.
+func (r *Repository) Available(ctx context.Context, tx *gorm.DB, variantID, locationID, exceptCart string) (int, error) {
+	var available int
+	err := tx.WithContext(ctx).Raw(
+		`SELECT COALESCE(vs.quantity, 0) - COALESCE((
+		            SELECT SUM(h.qty) FROM stock_holds h
+		             WHERE h.variant_id = vs.variant_id AND h.location_id = vs.location_id
+		               AND h.state = 'held' AND h.expires_at > now()
+		               AND h.cart_token <> ?
+		        ), 0)
+		   FROM variant_stock vs
+		  WHERE vs.variant_id = ? AND vs.location_id = ?`,
+		exceptCart, variantID, locationID).Scan(&available).Error
+	if err != nil {
+		return 0, fmt.Errorf("stockhold: available: %w", err)
+	}
+	if available < 0 {
+		// Defensive: a committed sale already decremented the stock row, so
+		// arithmetic cannot normally go below zero. Reporting a negative
+		// count to a storefront would render as nonsense.
+		return 0, nil
+	}
+	return available, nil
+}
+
 // Commit decrements variant_stock for every live hold on the cart and flips
 // those holds to 'committed', in the caller's transaction.
 //

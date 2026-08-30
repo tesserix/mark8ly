@@ -76,6 +76,13 @@ export function ShippingConfigForm({
     phone: existing?.warehouse_phone ?? "",
   });
 
+  const [warehouseContactPerson, setWarehouseContactPerson] = useState(
+    existing?.warehouse_contact_person ?? "",
+  );
+  const [warehouseEmail, setWarehouseEmail] = useState(
+    existing?.warehouse_email ?? "",
+  );
+
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -101,6 +108,8 @@ export function ShippingConfigForm({
         warehouse_postal: address.postal || undefined,
         warehouse_country: address.country || undefined,
         warehouse_phone: address.phone || undefined,
+        warehouse_contact_person: warehouseContactPerson || undefined,
+        warehouse_email: warehouseEmail || undefined,
         auto_schedule_pickup: autoSchedulePickup,
         default_pickup_slot_start: defaultPickupSlotStart,
         // Slot end mirrors the start + 4h — kept implicit because the UI
@@ -218,6 +227,36 @@ export function ShippingConfigForm({
           disabled={pending}
           idPrefix={`${provider}-wh`}
         />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Contact person (optional)" htmlFor={`${provider}-wh-contact`}>
+            <input
+              id={`${provider}-wh-contact`}
+              type="text"
+              value={warehouseContactPerson}
+              onChange={(e) => { setWarehouseContactPerson(e.target.value); setSuccess(false); }}
+              disabled={pending}
+              className={inputClass}
+            />
+            <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
+              Who the courier should ask for when picking up. Falls back to the
+              warehouse name if left blank.
+            </p>
+          </Field>
+          <Field label="Contact email (optional)" htmlFor={`${provider}-wh-email`}>
+            <input
+              id={`${provider}-wh-email`}
+              type="email"
+              value={warehouseEmail}
+              onChange={(e) => { setWarehouseEmail(e.target.value); setSuccess(false); }}
+              disabled={pending}
+              className={inputClass}
+            />
+            <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
+              Used for shipping label pickup notifications. Falls back to the
+              customer's email if left blank.
+            </p>
+          </Field>
+        </div>
       </fieldset>
 
       {/* Pickup automation — Delhivery only, but the form is

@@ -1041,15 +1041,7 @@ func (h *ShippingSettingsHandler) syncWarehouseAsync(
 			// silently no-op. Delhivery is the only implementor today.
 			return
 		}
-		wh := shipping.Warehouse{
-			Name:        cfg.WarehouseName,
-			Phone:       cfg.WarehousePhone,
-			Address:     strings.TrimSpace(cfg.WarehouseLine1 + " " + cfg.WarehouseLine2),
-			City:        cfg.WarehouseCity,
-			PinCode:     cfg.WarehousePostal,
-			CountryCode: cfg.WarehouseCountry,
-			Region:      cfg.WarehouseRegion,
-		}
+		wh := h.resolveWarehouseForSync(ctx, cfg)
 		if err := syncer.UpsertWarehouse(ctx, wh); err != nil {
 			h.logger.Warn("warehouse sync: upsert failed",
 				"provider", provider, "store_id", cfg.StoreID.String(),
@@ -1060,6 +1052,51 @@ func (h *ShippingSettingsHandler) syncWarehouseAsync(
 			"provider", provider, "store_id", cfg.StoreID.String(),
 			"warehouse", cfg.WarehouseName)
 	}()
+}
+
+// resolveWarehouseForSync builds the shipping.Warehouse pushed to the
+// carrier, preferring the store-level warehouses row (#177, the read
+// half) over the legacy warehouse_* columns cfg was loaded from.
+//
+// cfg is read back from the DB inside the same Upsert transaction that
+// just wrote it (see Upsert above), so cfg.WarehouseID is already
+// populated when this runs. The fallback still matters here: this
+// function's caller only skips the sync entirely for a blank
+// WarehouseName, so a config saved by an older build of this handler —
+// legacy columns only, no warehouse_id — still reaches this path.
+//
+// Preferring the warehouses row is also what lets ContactPerson and Email
+// flow through to Delhivery: those fields have no equivalent among the
+// legacy columns, so the fallback below leaves them empty, same as before
+// #177.
+func (h *ShippingSettingsHandler) resolveWarehouseForSync(ctx context.Context, cfg ShippingCarrierConfigRow) shipping.Warehouse {
+	if cfg.WarehouseID != nil {
+		wh, err := h.warehouseRepo.ByID(ctx, h.db, cfg.WarehouseID.String())
+		if err == nil {
+			return shipping.Warehouse{
+				Name:          wh.Name,
+				Phone:         wh.Phone,
+				Email:         wh.Email,
+				Address:       strings.TrimSpace(wh.Line1 + " " + wh.Line2),
+				City:          wh.City,
+				PinCode:       wh.PostalCode,
+				CountryCode:   wh.CountryCode,
+				Region:        wh.Region,
+				ContactPerson: wh.ContactPerson,
+			}
+		}
+		h.logger.Warn("warehouse sync: warehouse_id has no matching row, falling back to legacy columns",
+			"store_id", cfg.StoreID.String(), "warehouse_id", cfg.WarehouseID.String(), "err", err)
+	}
+	return shipping.Warehouse{
+		Name:        cfg.WarehouseName,
+		Phone:       cfg.WarehousePhone,
+		Address:     strings.TrimSpace(cfg.WarehouseLine1 + " " + cfg.WarehouseLine2),
+		City:        cfg.WarehouseCity,
+		PinCode:     cfg.WarehousePostal,
+		CountryCode: cfg.WarehouseCountry,
+		Region:      cfg.WarehouseRegion,
+	}
 }
 
 // buildCarrierForSync resolves the stored credential references to

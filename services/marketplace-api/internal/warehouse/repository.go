@@ -148,6 +148,24 @@ func (r *Repository) DefaultForStore(ctx context.Context, db *gorm.DB, storeID s
 	return w, nil
 }
 
+// ByID loads a warehouse by its primary key. This is the read side of
+// #177's expand/contract migration: every site that used to read the
+// pickup address off shipping_carrier_configs.warehouse_* now resolves it
+// via a config's warehouse_id through this method instead, falling back to
+// the legacy columns when warehouse_id is NULL or (rarely — the FK is ON
+// DELETE SET NULL) points at a row that no longer exists.
+func (r *Repository) ByID(ctx context.Context, db *gorm.DB, id string) (Warehouse, error) {
+	var w Warehouse
+	err := db.WithContext(ctx).Where("id = ?", id).First(&w).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return Warehouse{}, ErrNotFound
+	}
+	if err != nil {
+		return Warehouse{}, fmt.Errorf("warehouse: by id: %w", err)
+	}
+	return w, nil
+}
+
 func (r *Repository) byStoreAndName(ctx context.Context, db *gorm.DB, storeID, name string) (Warehouse, error) {
 	var w Warehouse
 	err := db.WithContext(ctx).

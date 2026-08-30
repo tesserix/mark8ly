@@ -159,3 +159,37 @@ func TestDefaultForStore_ReadsABackfilledRowWithNullContactColumns(t *testing.T)
 	require.Empty(t, got.Email)
 	require.Empty(t, got.ContactPerson)
 }
+
+// ByID is the read half of #177: every site that used to read the pickup
+// address off shipping_carrier_configs.warehouse_* now looks it up by
+// primary key via a config's warehouse_id. These two tests pin its
+// contract directly, ahead of the handler-level tests that build on it.
+
+func TestByID_ReturnsTheWarehouse(t *testing.T) {
+	db := testdb.NewDB(t, "warehouses")
+	repo := warehouse.NewRepository()
+	ctx := context.Background()
+	tenantID, storeID := seedStore(t, db)
+
+	created, err := repo.Upsert(ctx, db, sample(tenantID, storeID, "Main"))
+	require.NoError(t, err)
+
+	got, err := repo.ByID(ctx, db, created.ID)
+	require.NoError(t, err)
+	require.Equal(t, created.ID, got.ID)
+	require.Equal(t, "Mumbai", got.City)
+	require.Equal(t, "Warehouse Manager", got.ContactPerson)
+}
+
+// A dangling id (the FK is ON DELETE SET NULL, so this should be rare, but
+// not impossible under concurrent writes) must be distinguishable from a
+// zero-value warehouse, exactly like DefaultForStore's ErrNotFound — every
+// read-site caller falls back to the legacy columns on this error rather
+// than failing the request outright.
+func TestByID_ReturnsNotFoundForAMissingID(t *testing.T) {
+	db := testdb.NewDB(t, "warehouses")
+	repo := warehouse.NewRepository()
+
+	_, err := repo.ByID(context.Background(), db, uuid.NewString())
+	require.ErrorIs(t, err, warehouse.ErrNotFound)
+}

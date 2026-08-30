@@ -18,6 +18,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/warehouse"
 )
 
 // ShippingRatesHandler serves shipping rate quotes for a store.
@@ -26,11 +27,15 @@ type ShippingRatesHandler struct {
 	encryptor   crypto.Encryptor
 	secretStore carriersecrets.Store
 	logger      *slog.Logger
+	// warehouseRepo resolves a carrier config's warehouse_id (#177, the
+	// read half) to the store-level warehouses row. Stateless, so
+	// constructing it here costs nothing.
+	warehouseRepo *warehouse.Repository
 }
 
 // NewShippingRatesHandler constructs a ShippingRatesHandler.
 func NewShippingRatesHandler(db *gorm.DB, enc crypto.Encryptor, logger *slog.Logger) *ShippingRatesHandler {
-	return &ShippingRatesHandler{db: db, encryptor: enc, logger: logger}
+	return &ShippingRatesHandler{db: db, encryptor: enc, logger: logger, warehouseRepo: warehouse.NewRepository()}
 }
 
 // WithSecretStore wires a carriersecrets.Store so the storefront
@@ -113,6 +118,10 @@ type carrierConfigRow struct {
 	WarehousePostal  *string          `gorm:"column:warehouse_postal"`
 	WarehouseCountry *string          `gorm:"column:warehouse_country"`
 	WarehousePhone   *string          `gorm:"column:warehouse_phone"`
+	// WarehouseID points at the store-level warehouses row (migration
+	// 000095, #177) when one has been linked. Nullable — see
+	// resolveWarehouseAddress for the fallback this requires.
+	WarehouseID *string `gorm:"column:warehouse_id"`
 }
 
 func (carrierConfigRow) TableName() string { return "shipping_carrier_configs" }
@@ -222,8 +231,10 @@ func (h *ShippingRatesHandler) GetRates(c *gin.Context) {
 		return
 	}
 
-	// Build origin address from warehouse config.
-	fromAddr := warehouseAddress(cfg)
+	// Build origin address, preferring the store-level warehouses row over
+	// the legacy warehouse_* columns it was copied from (#177, the read
+	// half).
+	fromAddr := h.resolveWarehouseAddress(ctx, cfg)
 
 	// Build parcel items from request.
 	parcels := make([]shipping.ParcelItem, 0, len(req.Items))
@@ -341,8 +352,42 @@ func (h *ShippingRatesHandler) maybeRewrapRow(ctx context.Context, cfg carrierCo
 	}
 }
 
+// resolveWarehouseAddress loads cfg's pickup address, preferring the
+// store-level warehouses row (#177, the read half) and falling back to
+// warehouseAddress's legacy warehouse_* columns.
+//
+// The fallback is required, not defensive: rows written before the write
+// path in #177 landed, or by any writer that hasn't been updated, still
+// only have the legacy columns and cfg.WarehouseID is nil for them. A
+// non-nil WarehouseID pointing at a row that no longer exists (the FK is
+// ON DELETE SET NULL, so this is unlikely but not impossible) also falls
+// back rather than erroring the request — a rates quote with a stale
+// address beats no quote at all.
+func (h *ShippingRatesHandler) resolveWarehouseAddress(ctx context.Context, cfg carrierConfigRow) shipping.Address {
+	if cfg.WarehouseID != nil {
+		wh, err := h.warehouseRepo.ByID(ctx, h.db, *cfg.WarehouseID)
+		if err == nil {
+			return shipping.Address{
+				Name:        wh.Name,
+				Line1:       wh.Line1,
+				Line2:       wh.Line2,
+				City:        wh.City,
+				Region:      wh.Region,
+				PostalCode:  wh.PostalCode,
+				CountryCode: wh.CountryCode,
+				Phone:       wh.Phone,
+			}
+		}
+		if h.logger != nil {
+			h.logger.Warn("shipping_rates: carrier config's warehouse_id has no matching row, falling back to legacy columns",
+				"provider", cfg.Provider, "warehouse_id", *cfg.WarehouseID, "err", err)
+		}
+	}
+	return warehouseAddress(cfg)
+}
+
 // warehouseAddress builds a shipping.Address from the carrier config's
-// warehouse fields. Returns a zero-value address if fields are nil.
+// legacy warehouse_* columns. Returns a zero-value address if fields are nil.
 func warehouseAddress(cfg carrierConfigRow) shipping.Address {
 	addr := shipping.Address{}
 	if cfg.WarehouseName != nil {

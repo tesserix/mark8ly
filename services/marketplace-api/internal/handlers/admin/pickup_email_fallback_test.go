@@ -24,9 +24,9 @@ func TestPickupEmailOrBuyerFallback_PrefersTheWarehouseEmail(t *testing.T) {
 }
 
 // TestPickupEmailOrBuyerFallback_FallsBackToTheBuyerEmailWhenBlank covers
-// the case that still matters after #483: a pickup resolved from the
-// legacy warehouse_* columns (see resolvePickupAddress) has no email
-// column at all, so the buyer's order email is the only usable contact.
+// the case that still matters after #483: a pickup with no warehouse (or
+// an unresolvable warehouse_id — see resolvePickupAddress) has no email at
+// all, so the buyer's order email is the only usable contact.
 func TestPickupEmailOrBuyerFallback_FallsBackToTheBuyerEmailWhenBlank(t *testing.T) {
 	pickup := pickupAddress{Email: ""}
 

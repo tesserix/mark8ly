@@ -26,7 +26,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/authz"
-	"github.com/mark8ly/marketplace-api/internal/warehouse"
 )
 
 // loadWarehouseContact reads contact_person/email directly off the
@@ -146,12 +145,19 @@ func TestShippingUpsert_OmittingContactPersonAndEmailDoesNotWipeExistingValues(t
 
 // TestShippingUpsert_ExistingWarehouseWithNullContactColumnsStillSavesFine
 // covers migration 000095's own backfill state: every pre-#483 warehouses
-// row has contact_person/email as NULL (the backfill never set them). A
-// save that resolves to this warehouse and still doesn't touch these two
-// fields must succeed (200, not an error) and must NOT populate them with
-// garbage — there's nothing to preserve on a row that never had a value,
-// so the fields stay blank, matching blankPreservesExistingWarehouseField's
-// documented behavior for "nothing to fall back to".
+// row has contact_person/email as NULL (the backfill never set them), and
+// the UPDATE path in Upsert only looks up a prior warehouse row to fall
+// back to (blankPreservesExistingWarehouseField) when !isCreate &&
+// existing.WarehouseID != nil. A single PUT never reaches that branch — the
+// first save for a (store, provider) is always a create — so this test does
+// TWO PUTs for the same store/provider, neither touching contact/email:
+// the first creates the config and links a fresh (NULL-contact) warehouse
+// row, the second is the real UPDATE that exercises the "look up the prior
+// row" branch. It must succeed (200, not an error) and must NOT populate
+// the fields with garbage — there's nothing to preserve on a row that never
+// had a value, so they stay blank, matching
+// blankPreservesExistingWarehouseField's documented behavior for "nothing
+// to fall back to".
 func TestShippingUpsert_ExistingWarehouseWithNullContactColumnsStillSavesFine(t *testing.T) {
 	env := setupShippingWarehouseRouter(t)
 	seedShippingCountry(t, env.db)
@@ -159,31 +165,29 @@ func TestShippingUpsert_ExistingWarehouseWithNullContactColumnsStillSavesFine(t 
 	userID := uuid.NewString()
 	env.fga.Grant(userID, authz.RoleOwner, tenantID)
 
-	// Seed a warehouse row directly, simulating the 000095 backfill state:
-	// ContactPerson/Email left at their Go zero value (never set).
-	whRepo := warehouse.NewRepository()
-	wh, err := whRepo.Upsert(t.Context(), env.db, warehouse.Warehouse{
-		TenantID:    tenantID,
-		StoreID:     storeID,
-		Name:        "Main Warehouse",
-		Line1:       "12 Industrial Estate",
-		City:        "Mumbai",
-		Region:      "MH",
-		PostalCode:  "400001",
-		CountryCode: "IN",
-		Phone:       "+912200000000",
-	})
-	require.NoError(t, err)
-
-	// Link a carrier config to it the same way the handler's own Upsert
-	// would, so the PUT below resolves existing.WarehouseID and takes the
-	// "look up the prior row" branch this test is targeting.
+	// First PUT: create path. No contact/email in the body, so the linked
+	// warehouse row lands with NULL contact_person/email — the 000095
+	// backfill state this test targets.
 	body := warehouseUpsertBody("Main Warehouse")
-	w := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+	w1 := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
 		body, authHeaders(userID, tenantID))
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, http.StatusOK, w1.Code, w1.Body.String())
 
-	contactPerson, email := loadWarehouseContact(t, env.db, wh.ID)
+	rows := loadWarehousesForStore(t, env.db, storeID)
+	require.Len(t, rows, 1)
+	contactPerson, email := loadWarehouseContact(t, env.db, rows[0].ID)
+	require.Empty(t, contactPerson, "the freshly-created warehouse must have no contact person")
+	require.Empty(t, email, "the freshly-created warehouse must have no email")
+
+	// Second PUT: same store, same provider, still no contact/email. This
+	// is the UPDATE — existing.WarehouseID is now set from the first PUT —
+	// so it's the one that actually exercises the "look up the prior row"
+	// branch in Upsert.
+	w2 := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+		body, authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusOK, w2.Code, w2.Body.String())
+
+	contactPerson, email = loadWarehouseContact(t, env.db, rows[0].ID)
 	require.Empty(t, contactPerson, "a NULL-backfilled row with no submitted value must stay blank, not error or fabricate a value")
 	require.Empty(t, email, "a NULL-backfilled row with no submitted value must stay blank, not error or fabricate a value")
 }

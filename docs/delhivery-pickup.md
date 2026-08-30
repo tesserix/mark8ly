@@ -105,7 +105,10 @@ shipping label" path), the handler:
 2. Persists the shipment row with the waybill.
 3. If `carrier_configs.auto_schedule_pickup = TRUE` AND the carrier
    implements `shipping.PickupScheduler`, calls `SchedulePickup` with:
-   - `WarehouseName = carrier_config.warehouse_name`
+   - `WarehouseName = warehouses.name`, resolved from
+     `carrier_config.warehouse_id` (it was `carrier_config.warehouse_name`
+     until #177 moved the address to the store-level `warehouses` table
+     and migration 000117 dropped the old column)
    - `Date         = nextBusinessDay(time.Now().UTC())`
    - `TimeStart    = carrier_config.default_pickup_slot_start` (or
      `14:00:00` if blank)

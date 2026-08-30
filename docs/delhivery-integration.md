@@ -270,9 +270,15 @@ regress.
 
 ## 5. Database schema (shipping-relevant columns)
 
+> The pickup address used to be 8 `warehouse_*` columns on
+> `shipping_carrier_configs`, duplicated per carrier. #177 moved it to the
+> store-level `warehouses` table, #486 moved every reader onto
+> `warehouse_id`, and migration 000117 dropped the old columns.
+
 ```mermaid
 erDiagram
     shipping_carrier_configs ||--o{ shipments : "by store_id + provider"
+    warehouses ||--o{ shipping_carrier_configs : "warehouse_id (pickup address)"
     shipments ||--|| orders : "order_id"
     orders ||--o{ order_events : "order_id"
 
@@ -283,14 +289,22 @@ erDiagram
         string provider
         string api_key_encrypted "gsm:// ref OR legacy ciphertext"
         string secret_key_encrypted "webhook verification secret"
-        string warehouse_name "must match Delhivery Pickup Location name"
-        string warehouse_line1
-        string warehouse_city
-        string warehouse_postal
-        string warehouse_phone
+        uuid warehouse_id "FK -> warehouses; the pickup address lives there (#177)"
         bool auto_schedule_pickup
         string default_pickup_slot_start "HH:MM:SS"
         string default_pickup_slot_end
+    }
+
+    warehouses {
+        uuid id PK
+        uuid store_id
+        string name "must match Delhivery Pickup Location name"
+        string line1
+        string city
+        string postal_code
+        string phone
+        string contact_person
+        string email
     }
 
     shipments {

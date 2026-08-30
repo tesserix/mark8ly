@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -622,22 +623,24 @@ func (h *ShippingSettingsHandler) maskKeyField(ctx context.Context, ref string) 
 
 // shippingConfigResponse is the safe wire DTO for carrier configs.
 type shippingConfigResponse struct {
-	ID                    string `json:"id"`
-	Provider              string `json:"provider"`
-	APIKey                string `json:"api_key"`
-	SecretKey             string `json:"secret_key"`
-	Mode                  string `json:"mode"`
-	Enabled               bool   `json:"enabled"`
-	HandlingFee           string `json:"handling_fee"`
-	FreeShippingThreshold string `json:"free_shipping_threshold"`
-	WarehouseName         string `json:"warehouse_name,omitempty"`
-	WarehouseLine1        string `json:"warehouse_line1,omitempty"`
-	WarehouseLine2        string `json:"warehouse_line2,omitempty"`
-	WarehouseCity         string `json:"warehouse_city,omitempty"`
-	WarehouseRegion       string `json:"warehouse_region,omitempty"`
-	WarehousePostal       string `json:"warehouse_postal,omitempty"`
-	WarehouseCountry      string `json:"warehouse_country,omitempty"`
-	WarehousePhone        string `json:"warehouse_phone,omitempty"`
+	ID                     string `json:"id"`
+	Provider               string `json:"provider"`
+	APIKey                 string `json:"api_key"`
+	SecretKey              string `json:"secret_key"`
+	Mode                   string `json:"mode"`
+	Enabled                bool   `json:"enabled"`
+	HandlingFee            string `json:"handling_fee"`
+	FreeShippingThreshold  string `json:"free_shipping_threshold"`
+	WarehouseName          string `json:"warehouse_name,omitempty"`
+	WarehouseLine1         string `json:"warehouse_line1,omitempty"`
+	WarehouseLine2         string `json:"warehouse_line2,omitempty"`
+	WarehouseCity          string `json:"warehouse_city,omitempty"`
+	WarehouseRegion        string `json:"warehouse_region,omitempty"`
+	WarehousePostal        string `json:"warehouse_postal,omitempty"`
+	WarehouseCountry       string `json:"warehouse_country,omitempty"`
+	WarehousePhone         string `json:"warehouse_phone,omitempty"`
+	WarehouseContactPerson string `json:"warehouse_contact_person,omitempty"`
+	WarehouseEmail         string `json:"warehouse_email,omitempty"`
 	// Pickup automation — surfaced so the admin UI can render the
 	// "Auto-schedule Delhivery pickup" checkbox + slot selector and
 	// preserve the merchant's choice across saves.
@@ -686,6 +689,23 @@ type ShippingCarrierConfigRow struct {
 func (ShippingCarrierConfigRow) TableName() string { return "shipping_carrier_configs" }
 
 func (h *ShippingSettingsHandler) toShippingResponse(ctx context.Context, cfg ShippingCarrierConfigRow) shippingConfigResponse {
+	// contact_person and email have no legacy-column equivalent on
+	// shipping_carrier_configs (unlike warehouse_name/warehouse_line1/etc.,
+	// which predate #177) — they only ever live on the warehouses row, so
+	// the response can only source them via cfg.WarehouseID. Mirrors
+	// resolveWarehouseForSync's fallback below: a missing/unresolvable
+	// warehouse just means blank values, not a failed response.
+	var contactPerson, email string
+	if cfg.WarehouseID != nil {
+		wh, err := h.warehouseRepo.ByID(ctx, h.db, cfg.WarehouseID.String())
+		if err == nil {
+			contactPerson = wh.ContactPerson
+			email = wh.Email
+		} else {
+			h.logger.Warn("shipping settings response: warehouse_id has no matching row",
+				"store_id", cfg.StoreID.String(), "warehouse_id", cfg.WarehouseID.String(), "err", err)
+		}
+	}
 	return shippingConfigResponse{
 		ID:                     cfg.ID.String(),
 		Provider:               cfg.Provider,
@@ -703,6 +723,8 @@ func (h *ShippingSettingsHandler) toShippingResponse(ctx context.Context, cfg Sh
 		WarehousePostal:        cfg.WarehousePostal,
 		WarehouseCountry:       cfg.WarehouseCountry,
 		WarehousePhone:         cfg.WarehousePhone,
+		WarehouseContactPerson: contactPerson,
+		WarehouseEmail:         email,
 		AutoSchedulePickup:     cfg.AutoSchedulePickup,
 		DefaultPickupSlotStart: cfg.DefaultPickupSlotStart,
 		DefaultPickupSlotEnd:   cfg.DefaultPickupSlotEnd,
@@ -748,20 +770,22 @@ func (h *ShippingSettingsHandler) List(c *gin.Context) {
 // keeps the previously-encrypted value. A blank submit on a new row (no
 // existing row) still fails — validated after the lookup below.
 type shippingUpsertRequest struct {
-	APIKey           string  `json:"api_key"`
-	SecretKey        string  `json:"secret_key"`
-	Mode             string  `json:"mode"       binding:"required,oneof=test live"`
-	IsActive         bool    `json:"is_active"`
-	HandlingFee      float64 `json:"handling_fee"`
-	FreeShippingMin  float64 `json:"free_shipping_min"`
-	WarehouseName    string  `json:"warehouse_name"`
-	WarehouseLine1   string  `json:"warehouse_line1"`
-	WarehouseLine2   string  `json:"warehouse_line2"`
-	WarehouseCity    string  `json:"warehouse_city"`
-	WarehouseRegion  string  `json:"warehouse_region"`
-	WarehousePostal  string  `json:"warehouse_postal"`
-	WarehouseCountry string  `json:"warehouse_country"`
-	WarehousePhone   string  `json:"warehouse_phone"`
+	APIKey                 string  `json:"api_key"`
+	SecretKey              string  `json:"secret_key"`
+	Mode                   string  `json:"mode"       binding:"required,oneof=test live"`
+	IsActive               bool    `json:"is_active"`
+	HandlingFee            float64 `json:"handling_fee"`
+	FreeShippingMin        float64 `json:"free_shipping_min"`
+	WarehouseName          string  `json:"warehouse_name"`
+	WarehouseLine1         string  `json:"warehouse_line1"`
+	WarehouseLine2         string  `json:"warehouse_line2"`
+	WarehouseCity          string  `json:"warehouse_city"`
+	WarehouseRegion        string  `json:"warehouse_region"`
+	WarehousePostal        string  `json:"warehouse_postal"`
+	WarehouseCountry       string  `json:"warehouse_country"`
+	WarehousePhone         string  `json:"warehouse_phone"`
+	WarehouseContactPerson string  `json:"warehouse_contact_person"`
+	WarehouseEmail         string  `json:"warehouse_email"`
 	// Pickup automation. AutoSchedulePickup is a *bool so zero-value
 	// (JSON omitted) keeps the DB default instead of forcing false
 	// on every save — we don't want the checkbox to flip itself off
@@ -770,6 +794,21 @@ type shippingUpsertRequest struct {
 	AutoSchedulePickup     *bool  `json:"auto_schedule_pickup"`
 	DefaultPickupSlotStart string `json:"default_pickup_slot_start"`
 	DefaultPickupSlotEnd   string `json:"default_pickup_slot_end"`
+}
+
+// blankPreservesExistingWarehouseField resolves what to write for a warehouse
+// contact_person/email field on save: a non-blank submitted value always wins: a
+// blank one means "the merchant didn't touch this field" and must NOT overwrite a
+// previously-saved value, because warehouse.Repository.Upsert's ON CONFLICT clause
+// unconditionally overwrites both columns and has no "leave unchanged" mode of its
+// own. Every pre-#483 warehouses row has these NULL (migration 000095's backfill
+// never set them), so falling through to "" on a genuinely new/untouched warehouse
+// is correct too — there is nothing to preserve yet.
+func blankPreservesExistingWarehouseField(submitted, existing string) string {
+	if v := strings.TrimSpace(submitted); v != "" {
+		return v
+	}
+	return existing
 }
 
 // Upsert handles PUT /settings/shipping/:provider — create or update a shipping
@@ -795,6 +834,20 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 			"message": err.Error(),
 		})
 		return
+	}
+
+	// warehouse_contact_person is a free-text name — no format validation.
+	// warehouse_email only gets checked when non-blank; a blank submit
+	// means "leave it unchanged" (see blankPreservesExistingWarehouseField
+	// below) and isn't a value to validate at all.
+	if v := strings.TrimSpace(req.WarehouseEmail); v != "" {
+		if _, err := mail.ParseAddress(v); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error":   "validation_failed",
+				"message": "warehouse_email is not a valid email address",
+			})
+			return
+		}
 	}
 
 	// Validate carrier is supported for the store's country.
@@ -929,17 +982,38 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 		// Leave warehouse_id untouched (nil on create, whatever it already
 		// was on update) rather than manufacturing an empty warehouse row.
 		if strings.TrimSpace(req.WarehouseName) != "" {
+			// A blank contact_person/email in this save means "the merchant
+			// didn't touch this field", not "clear it" — warehouseRepo.Upsert's
+			// ON CONFLICT clause overwrites both columns unconditionally, so we
+			// resolve what to actually write ourselves before calling it. Only
+			// look up the prior row on an update with a warehouse already
+			// attached; a lookup failure just means nothing to fall back to,
+			// same as the create path — log and continue rather than failing
+			// the whole save over it.
+			var existingContactPerson, existingEmail string
+			if !isCreate && existing.WarehouseID != nil {
+				prior, err := h.warehouseRepo.ByID(c.Request.Context(), tx, existing.WarehouseID.String())
+				if err == nil {
+					existingContactPerson = prior.ContactPerson
+					existingEmail = prior.Email
+				} else {
+					h.logger.Warn("shipping settings upsert: warehouse_id has no matching row",
+						"store_id", store.ID, "warehouse_id", existing.WarehouseID.String(), "err", err)
+				}
+			}
 			wh, err := h.warehouseRepo.Upsert(c.Request.Context(), tx, warehouse.Warehouse{
-				TenantID:    store.TenantID,
-				StoreID:     store.ID,
-				Name:        req.WarehouseName,
-				Line1:       req.WarehouseLine1,
-				Line2:       req.WarehouseLine2,
-				City:        req.WarehouseCity,
-				Region:      req.WarehouseRegion,
-				PostalCode:  req.WarehousePostal,
-				CountryCode: req.WarehouseCountry,
-				Phone:       req.WarehousePhone,
+				TenantID:      store.TenantID,
+				StoreID:       store.ID,
+				Name:          req.WarehouseName,
+				Line1:         req.WarehouseLine1,
+				Line2:         req.WarehouseLine2,
+				City:          req.WarehouseCity,
+				Region:        req.WarehouseRegion,
+				PostalCode:    req.WarehousePostal,
+				CountryCode:   req.WarehouseCountry,
+				Phone:         req.WarehousePhone,
+				ContactPerson: blankPreservesExistingWarehouseField(req.WarehouseContactPerson, existingContactPerson),
+				Email:         blankPreservesExistingWarehouseField(req.WarehouseEmail, existingEmail),
 			})
 			if err != nil {
 				return err

@@ -110,17 +110,11 @@ type carrierConfigRow struct {
 	HandlingFee      decimal.Decimal  `gorm:"column:handling_fee"`
 	FreeShippingMin  *decimal.Decimal `gorm:"column:free_shipping_min"`
 	IsActive         bool             `gorm:"column:is_active"`
-	WarehouseName    *string          `gorm:"column:warehouse_name"`
-	WarehouseLine1   *string          `gorm:"column:warehouse_line1"`
-	WarehouseLine2   *string          `gorm:"column:warehouse_line2"`
-	WarehouseCity    *string          `gorm:"column:warehouse_city"`
-	WarehouseRegion  *string          `gorm:"column:warehouse_region"`
-	WarehousePostal  *string          `gorm:"column:warehouse_postal"`
-	WarehouseCountry *string          `gorm:"column:warehouse_country"`
-	WarehousePhone   *string          `gorm:"column:warehouse_phone"`
 	// WarehouseID points at the store-level warehouses row (migration
-	// 000095, #177) when one has been linked. Nullable — see
-	// resolveWarehouseAddress for the fallback this requires.
+	// 000095, #177). Nullable — see resolveWarehouseAddress for what
+	// happens when it's nil or dangling. #484 dropped the legacy
+	// warehouse_* column fields from this projection; they are no
+	// longer read anywhere.
 	WarehouseID *string `gorm:"column:warehouse_id"`
 }
 
@@ -352,67 +346,35 @@ func (h *ShippingRatesHandler) maybeRewrapRow(ctx context.Context, cfg carrierCo
 	}
 }
 
-// resolveWarehouseAddress loads cfg's pickup address, preferring the
-// store-level warehouses row (#177, the read half) and falling back to
-// warehouseAddress's legacy warehouse_* columns.
+// resolveWarehouseAddress loads cfg's pickup address from the store-level
+// warehouses row. #484 (the contract half of #177) removed the legacy
+// warehouse_* column fallback: those columns are no longer read anywhere,
+// which is what makes dropping them in a later migration safe.
 //
-// The fallback is required, not defensive: rows written before the write
-// path in #177 landed, or by any writer that hasn't been updated, still
-// only have the legacy columns and cfg.WarehouseID is nil for them. A
-// non-nil WarehouseID pointing at a row that no longer exists (the FK is
-// ON DELETE SET NULL, so this is unlikely but not impossible) also falls
-// back rather than erroring the request — a rates quote with a stale
-// address beats no quote at all.
+// When cfg has no WarehouseID, or WarehouseID points at a row that no
+// longer exists (the FK is ON DELETE SET NULL, so this is unlikely but not
+// impossible), this returns the zero shipping.Address — same as a blank
+// legacy address used to produce.
 func (h *ShippingRatesHandler) resolveWarehouseAddress(ctx context.Context, cfg carrierConfigRow) shipping.Address {
-	if cfg.WarehouseID != nil {
-		wh, err := h.warehouseRepo.ByID(ctx, h.db, *cfg.WarehouseID)
-		if err == nil {
-			return shipping.Address{
-				Name:        wh.Name,
-				Line1:       wh.Line1,
-				Line2:       wh.Line2,
-				City:        wh.City,
-				Region:      wh.Region,
-				PostalCode:  wh.PostalCode,
-				CountryCode: wh.CountryCode,
-				Phone:       wh.Phone,
-			}
-		}
+	if cfg.WarehouseID == nil {
+		return shipping.Address{}
+	}
+	wh, err := h.warehouseRepo.ByID(ctx, h.db, *cfg.WarehouseID)
+	if err != nil {
 		if h.logger != nil {
-			h.logger.Warn("shipping_rates: carrier config's warehouse_id has no matching row, falling back to legacy columns",
+			h.logger.Warn("shipping_rates: carrier config's warehouse_id has no matching row",
 				"provider", cfg.Provider, "warehouse_id", *cfg.WarehouseID, "err", err)
 		}
+		return shipping.Address{}
 	}
-	return warehouseAddress(cfg)
-}
-
-// warehouseAddress builds a shipping.Address from the carrier config's
-// legacy warehouse_* columns. Returns a zero-value address if fields are nil.
-func warehouseAddress(cfg carrierConfigRow) shipping.Address {
-	addr := shipping.Address{}
-	if cfg.WarehouseName != nil {
-		addr.Name = *cfg.WarehouseName
+	return shipping.Address{
+		Name:        wh.Name,
+		Line1:       wh.Line1,
+		Line2:       wh.Line2,
+		City:        wh.City,
+		Region:      wh.Region,
+		PostalCode:  wh.PostalCode,
+		CountryCode: wh.CountryCode,
+		Phone:       wh.Phone,
 	}
-	if cfg.WarehouseLine1 != nil {
-		addr.Line1 = *cfg.WarehouseLine1
-	}
-	if cfg.WarehouseLine2 != nil {
-		addr.Line2 = *cfg.WarehouseLine2
-	}
-	if cfg.WarehouseCity != nil {
-		addr.City = *cfg.WarehouseCity
-	}
-	if cfg.WarehouseRegion != nil {
-		addr.Region = *cfg.WarehouseRegion
-	}
-	if cfg.WarehousePostal != nil {
-		addr.PostalCode = *cfg.WarehousePostal
-	}
-	if cfg.WarehouseCountry != nil {
-		addr.CountryCode = *cfg.WarehouseCountry
-	}
-	if cfg.WarehousePhone != nil {
-		addr.Phone = *cfg.WarehousePhone
-	}
-	return addr
 }

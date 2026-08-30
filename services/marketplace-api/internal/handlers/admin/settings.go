@@ -663,18 +663,16 @@ type ShippingCarrierConfigRow struct {
 	SecretKeyEncrypted string    `gorm:"column:secret_key_encrypted;type:text"`
 	Mode               string    `gorm:"column:mode;type:varchar(10);not null;default:test"`
 	IsActive           bool      `gorm:"column:is_active;type:boolean;not null;default:false"`
-	WarehouseName      string    `gorm:"column:warehouse_name;type:varchar(200)"`
-	WarehouseLine1     string    `gorm:"column:warehouse_line1;type:varchar(300)"`
-	WarehouseLine2     string    `gorm:"column:warehouse_line2;type:varchar(300)"`
-	WarehouseCity      string    `gorm:"column:warehouse_city;type:varchar(200)"`
-	WarehouseRegion    string    `gorm:"column:warehouse_region;type:varchar(200)"`
-	WarehousePostal    string    `gorm:"column:warehouse_postal;type:varchar(40)"`
-	WarehouseCountry   string    `gorm:"column:warehouse_country;type:char(2)"`
-	WarehousePhone     string    `gorm:"column:warehouse_phone;type:varchar(40)"`
 	// WarehouseID points at the store-level warehouses row (migration
 	// 000095, #177). Nullable: a config saved with a blank warehouse name
 	// never gets one, and the FK is ON DELETE SET NULL. *uuid.UUID rather
 	// than uuid.UUID so GORM writes SQL NULL instead of the zero UUID.
+	//
+	// #484 dropped the WarehouseName/Line1/Line2/City/Region/Postal/
+	// Country/Phone fields that used to mirror this row's legacy
+	// warehouse_* columns: they are no longer read anywhere (see
+	// toShippingResponse and resolveWarehouseForSync), which is what
+	// makes dropping those columns in a later migration safe.
 	WarehouseID     *uuid.UUID      `gorm:"column:warehouse_id;type:uuid"`
 	HandlingFee     decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
 	FreeShippingMin decimal.Decimal `gorm:"column:free_shipping_min;type:numeric(12,2)"`
@@ -689,18 +687,18 @@ type ShippingCarrierConfigRow struct {
 func (ShippingCarrierConfigRow) TableName() string { return "shipping_carrier_configs" }
 
 func (h *ShippingSettingsHandler) toShippingResponse(ctx context.Context, cfg ShippingCarrierConfigRow) shippingConfigResponse {
-	// contact_person and email have no legacy-column equivalent on
-	// shipping_carrier_configs (unlike warehouse_name/warehouse_line1/etc.,
-	// which predate #177) — they only ever live on the warehouses row, so
-	// the response can only source them via cfg.WarehouseID. Mirrors
-	// resolveWarehouseForSync's fallback below: a missing/unresolvable
-	// warehouse just means blank values, not a failed response.
-	var contactPerson, email string
+	// #484 removed the legacy warehouse_* columns as a read source: every
+	// warehouse_* field on the wire response (the JSON shape is kept
+	// unchanged for the admin frontend — see PR description) now comes
+	// from the warehouses row via cfg.WarehouseID, or stays blank when
+	// there isn't one. A missing/unresolvable warehouse just means blank
+	// values, not a failed response — same behaviour a blank legacy
+	// address used to produce.
+	var wh warehouse.Warehouse
 	if cfg.WarehouseID != nil {
-		wh, err := h.warehouseRepo.ByID(ctx, h.db, cfg.WarehouseID.String())
+		resolved, err := h.warehouseRepo.ByID(ctx, h.db, cfg.WarehouseID.String())
 		if err == nil {
-			contactPerson = wh.ContactPerson
-			email = wh.Email
+			wh = resolved
 		} else {
 			h.logger.Warn("shipping settings response: warehouse_id has no matching row",
 				"store_id", cfg.StoreID.String(), "warehouse_id", cfg.WarehouseID.String(), "err", err)
@@ -715,16 +713,16 @@ func (h *ShippingSettingsHandler) toShippingResponse(ctx context.Context, cfg Sh
 		Enabled:                cfg.IsActive,
 		HandlingFee:            cfg.HandlingFee.String(),
 		FreeShippingThreshold:  cfg.FreeShippingMin.String(),
-		WarehouseName:          cfg.WarehouseName,
-		WarehouseLine1:         cfg.WarehouseLine1,
-		WarehouseLine2:         cfg.WarehouseLine2,
-		WarehouseCity:          cfg.WarehouseCity,
-		WarehouseRegion:        cfg.WarehouseRegion,
-		WarehousePostal:        cfg.WarehousePostal,
-		WarehouseCountry:       cfg.WarehouseCountry,
-		WarehousePhone:         cfg.WarehousePhone,
-		WarehouseContactPerson: contactPerson,
-		WarehouseEmail:         email,
+		WarehouseName:          wh.Name,
+		WarehouseLine1:         wh.Line1,
+		WarehouseLine2:         wh.Line2,
+		WarehouseCity:          wh.City,
+		WarehouseRegion:        wh.Region,
+		WarehousePostal:        wh.PostalCode,
+		WarehouseCountry:       wh.CountryCode,
+		WarehousePhone:         wh.Phone,
+		WarehouseContactPerson: wh.ContactPerson,
+		WarehouseEmail:         wh.Email,
 		AutoSchedulePickup:     cfg.AutoSchedulePickup,
 		DefaultPickupSlotStart: cfg.DefaultPickupSlotStart,
 		DefaultPickupSlotEnd:   cfg.DefaultPickupSlotEnd,
@@ -959,14 +957,6 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 		IsActive:               req.IsActive,
 		HandlingFee:            decimal.NewFromFloat(req.HandlingFee),
 		FreeShippingMin:        decimal.NewFromFloat(req.FreeShippingMin),
-		WarehouseName:          req.WarehouseName,
-		WarehouseLine1:         req.WarehouseLine1,
-		WarehouseLine2:         req.WarehouseLine2,
-		WarehouseCity:          req.WarehouseCity,
-		WarehouseRegion:        req.WarehouseRegion,
-		WarehousePostal:        req.WarehousePostal,
-		WarehouseCountry:       req.WarehouseCountry,
-		WarehousePhone:         req.WarehousePhone,
 		AutoSchedulePickup:     autoSchedule,
 		DefaultPickupSlotStart: slotStart,
 		DefaultPickupSlotEnd:   slotEnd,
@@ -1041,25 +1031,16 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 			"is_active":                 req.IsActive,
 			"handling_fee":              decimal.NewFromFloat(req.HandlingFee),
 			"free_shipping_min":         decimal.NewFromFloat(req.FreeShippingMin),
-			"warehouse_name":            req.WarehouseName,
-			"warehouse_line1":           req.WarehouseLine1,
-			"warehouse_line2":           req.WarehouseLine2,
-			"warehouse_city":            req.WarehouseCity,
-			"warehouse_region":          req.WarehouseRegion,
-			"warehouse_postal":          req.WarehousePostal,
-			"warehouse_country":         req.WarehouseCountry,
-			"warehouse_phone":           req.WarehousePhone,
 			"auto_schedule_pickup":      autoSchedule,
 			"default_pickup_slot_start": slotStart,
 			"default_pickup_slot_end":   slotEnd,
 			"updated_at":                time.Now(),
 		}
-		// warehouse_id tracks the legacy columns exactly, including when
-		// they are blanked: this map is a full overwrite, so a merchant
-		// clearing warehouse_name today clears the pickup address, and the
-		// read path must keep behaving that way once it prefers
-		// warehouse_id over the columns. Leaving a stale id here would
-		// mean a cleared address silently kept shipping from the old one.
+		// #484: the legacy warehouse_* columns are no longer written here.
+		// warehouse_id is still updated on every save, including when it's
+		// cleared (a blank warehouse_name leaves cfg.WarehouseID nil — see
+		// above): this map is a full overwrite, so a merchant clearing
+		// warehouse_name today must still clear the pickup address.
 		//
 		// This only clears THIS config's pointer. The warehouses row is
 		// untouched and other carriers for the store keep their own
@@ -1100,13 +1081,23 @@ func (h *ShippingSettingsHandler) syncWarehouseAsync(
 	provider, mode, apiKeyRef, secretKeyRef string,
 	cfg ShippingCarrierConfigRow,
 ) {
-	if strings.TrimSpace(cfg.WarehouseName) == "" {
-		// Without a name we have nothing to key on — skip silently.
+	if cfg.WarehouseID == nil {
+		// No linked warehouse — nothing to key the carrier sync on. Upsert
+		// only sets WarehouseID when req.WarehouseName was non-blank, so
+		// this mirrors the old "skip on blank name" guard exactly.
 		return
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		wh, err := h.resolveWarehouseForSync(ctx, cfg)
+		if err != nil {
+			// warehouse_id set but the row is gone (FK is ON DELETE SET
+			// NULL, so unlikely but possible) — nothing to sync.
+			h.logger.Warn("warehouse sync: warehouse_id has no matching row",
+				"store_id", cfg.StoreID.String(), "warehouse_id", cfg.WarehouseID.String(), "err", err)
+			return
+		}
 		carrier, err := h.buildCarrierForSync(ctx, provider, mode, apiKeyRef, secretKeyRef)
 		if err != nil {
 			h.logger.Warn("warehouse sync: build carrier failed",
@@ -1119,62 +1110,44 @@ func (h *ShippingSettingsHandler) syncWarehouseAsync(
 			// silently no-op. Delhivery is the only implementor today.
 			return
 		}
-		wh := h.resolveWarehouseForSync(ctx, cfg)
 		if err := syncer.UpsertWarehouse(ctx, wh); err != nil {
 			h.logger.Warn("warehouse sync: upsert failed",
 				"provider", provider, "store_id", cfg.StoreID.String(),
-				"warehouse", cfg.WarehouseName, "err", err)
+				"warehouse", wh.Name, "err", err)
 			return
 		}
 		h.logger.Info("warehouse sync: upsert succeeded",
 			"provider", provider, "store_id", cfg.StoreID.String(),
-			"warehouse", cfg.WarehouseName)
+			"warehouse", wh.Name)
 	}()
 }
 
 // resolveWarehouseForSync builds the shipping.Warehouse pushed to the
-// carrier, preferring the store-level warehouses row (#177, the read
-// half) over the legacy warehouse_* columns cfg was loaded from.
+// carrier from the store-level warehouses row. #484 (the contract half of
+// #177) removed the legacy warehouse_* column fallback: those columns are
+// no longer read anywhere, which is what makes dropping them in a later
+// migration safe.
 //
 // cfg is read back from the DB inside the same Upsert transaction that
 // just wrote it (see Upsert above), so cfg.WarehouseID is already
-// populated when this runs. The fallback still matters here: this
-// function's caller only skips the sync entirely for a blank
-// WarehouseName, so a config saved by an older build of this handler —
-// legacy columns only, no warehouse_id — still reaches this path.
-//
-// Preferring the warehouses row is also what lets ContactPerson and Email
-// flow through to Delhivery: those fields have no equivalent among the
-// legacy columns, so the fallback below leaves them empty, same as before
-// #177.
-func (h *ShippingSettingsHandler) resolveWarehouseForSync(ctx context.Context, cfg ShippingCarrierConfigRow) shipping.Warehouse {
-	if cfg.WarehouseID != nil {
-		wh, err := h.warehouseRepo.ByID(ctx, h.db, cfg.WarehouseID.String())
-		if err == nil {
-			return shipping.Warehouse{
-				Name:          wh.Name,
-				Phone:         wh.Phone,
-				Email:         wh.Email,
-				Address:       strings.TrimSpace(wh.Line1 + " " + wh.Line2),
-				City:          wh.City,
-				PinCode:       wh.PostalCode,
-				CountryCode:   wh.CountryCode,
-				Region:        wh.Region,
-				ContactPerson: wh.ContactPerson,
-			}
-		}
-		h.logger.Warn("warehouse sync: warehouse_id has no matching row, falling back to legacy columns",
-			"store_id", cfg.StoreID.String(), "warehouse_id", cfg.WarehouseID.String(), "err", err)
+// populated when this runs — the caller (syncWarehouseAsync) already
+// skips the sync entirely when it's nil.
+func (h *ShippingSettingsHandler) resolveWarehouseForSync(ctx context.Context, cfg ShippingCarrierConfigRow) (shipping.Warehouse, error) {
+	wh, err := h.warehouseRepo.ByID(ctx, h.db, cfg.WarehouseID.String())
+	if err != nil {
+		return shipping.Warehouse{}, err
 	}
 	return shipping.Warehouse{
-		Name:        cfg.WarehouseName,
-		Phone:       cfg.WarehousePhone,
-		Address:     strings.TrimSpace(cfg.WarehouseLine1 + " " + cfg.WarehouseLine2),
-		City:        cfg.WarehouseCity,
-		PinCode:     cfg.WarehousePostal,
-		CountryCode: cfg.WarehouseCountry,
-		Region:      cfg.WarehouseRegion,
-	}
+		Name:          wh.Name,
+		Phone:         wh.Phone,
+		Email:         wh.Email,
+		Address:       strings.TrimSpace(wh.Line1 + " " + wh.Line2),
+		City:          wh.City,
+		PinCode:       wh.PostalCode,
+		CountryCode:   wh.CountryCode,
+		Region:        wh.Region,
+		ContactPerson: wh.ContactPerson,
+	}, nil
 }
 
 // buildCarrierForSync resolves the stored credential references to

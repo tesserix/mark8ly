@@ -3,15 +3,33 @@
 // "many small files over few large files" convention — checkout_ext.go is
 // already large.
 //
-// A customer purchase decrements stock via a DB trigger (see
-// internal/product/models.go: Variant.InventoryQuantity is
-// trigger-maintained from variant_stock; do not write it directly), so this
-// package can only observe the POST-sale quantity, never a directly
-// snapshotted pre-sale quantity the way the admin manual variant-edit PATCH
-// does (internal/handlers/admin/variants.go). crossedLowStock reformulates
-// the same "did this write cross the threshold" predicate purely in terms
-// of post-sale stock plus the quantity just sold, since
-// preSaleQty == postSaleQty + qty always holds for a single sale.
+// # Corrected 2026-08-30 (#230)
+//
+// This file used to claim "a customer purchase decrements stock via a DB
+// trigger". No such trigger ever existed. `grep 'CREATE TRIGGER' migrations`
+// returns eleven triggers and the only stock one is sync_variant_inventory(),
+// which mirrors variant_stock into the denormalised
+// product_variants.inventory_quantity and does nothing on order insert. A
+// storefront sale changed no stock at all, and two customers could buy the
+// same last unit.
+//
+// A sale now decrements variant_stock inside the ORDER TRANSACTION, via
+// stockhold.Commit from checkout_stock.go. So the post-sale reading below is
+// finally true — but by a different mechanism than the one this file
+// originally described, which is worth stating because the old comment was
+// load-bearing in the wrong direction: it explained away the absence of the
+// thing it claimed existed.
+//
+// crossedLowStock still reformulates "did this write cross the threshold"
+// purely in terms of post-sale stock plus the quantity just sold, since
+// preSaleQty == postSaleQty + qty holds for a single sale.
+//
+// # Not wired
+//
+// crossedLowStock has no non-test caller. The predicate is correct and
+// tested; nothing calls it, so no low-stock notification fires for a
+// storefront sale today. Wiring it is out of scope for #230, whose
+// acceptance was the decrement and this correction.
 package storefront
 
 import (

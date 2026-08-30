@@ -32,6 +32,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
+	"github.com/mark8ly/marketplace-api/internal/stockhold"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/tax"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -47,6 +48,7 @@ type CheckoutExtHandler struct {
 	loyaltySvc  *loyalty.Service      // nil-safe: no-ops when nil
 	audit       *audit.Emitter        // optional — nil-safe
 	notify      *notification.Service // optional — nil-safe
+	stockHolds  *stockhold.Repository // #230 — nil leaves the storefront unenforced
 	encryptor   crypto.Encryptor      // decrypts API keys for payment/tax/shipping
 	// secretStore, when non-nil, resolves gsm:// references as well as
 	// legacy inline ciphertext. Tracks the same pattern as shipments /
@@ -63,6 +65,14 @@ func NewCheckoutExtHandler(db *gorm.DB, orderSvc *order.Service, couponSvc *coup
 
 // WithAudit attaches an audit emitter so extended storefront checkouts
 // emit order.created as system events. Nil-safe.
+// WithStockHolds enables stock enforcement (#230). This is the handler
+// production uses, so main.go must call it; TestMainWiresStockHoldsIntoCheckout
+// asserts that it does.
+func (h *CheckoutExtHandler) WithStockHolds(r *stockhold.Repository) *CheckoutExtHandler {
+	h.stockHolds = r
+	return h
+}
+
 func (h *CheckoutExtHandler) WithAudit(e *audit.Emitter) *CheckoutExtHandler {
 	h.audit = e
 	return h
@@ -598,7 +608,23 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	// logWarn + respondErr + return and NO compensation — so a gift card that
 	// failed to debit left a real, committed order discounted by money the
 	// merchant never received. Do not move them back out.
+	// #230 — stock is taken in the SAME transaction as the order and the
+	// discount consumption below, for the same reason those moved here: a
+	// failure must roll the order back entirely rather than leave a
+	// committed order whose stock was never taken.
+	//
+	// This is the handler production actually uses — routes.go prefers the
+	// ext handler whenever it is wired — so enforcement living only on the
+	// simple CheckoutHandler would have fixed nothing.
+	stockLines := stockLinesFromItems(req.Items)
+	stockCartToken := cartTokenForCheckout(c)
+
 	consumeDiscounts := func(tx *gorm.DB, o *order.Order) error {
+		if h.stockHolds != nil {
+			if err := commitStock(ctx, tx, h.stockHolds, stockCartToken, stockLines); err != nil {
+				return err
+			}
+		}
 		if appliedCouponCode != nil && h.couponSvc != nil {
 			applier := coupon.NewCouponApplier(h.couponSvc, *appliedCouponCode, req.CustomerEmail)
 			if _, err := applier.Apply(ctx, tx, discount.ApplyInput{
@@ -1231,6 +1257,20 @@ func (paymentGatewayConfigRow) TableName() string { return "payment_gateway_conf
 
 // respondErr mirrors the checkout.go error response pattern.
 func (h *CheckoutExtHandler) respondErr(c *gin.Context, err error) {
+	// #230 — a sold-out line is a 409 naming the variant, never a 500. It
+	// arrives here as an ordinary error from the order transaction, so it
+	// must be matched before the apperrors switch or it falls through to
+	// internal_error and the shopper is told nothing actionable.
+	var oos outOfStockError
+	if errors.As(err, &oos) {
+		c.AbortWithStatusJSON(http.StatusConflict, map[string]any{
+			"error":      "out_of_stock",
+			"message":    "one or more items are no longer available in the requested quantity",
+			"variant_id": oos.VariantID,
+		})
+		return
+	}
+
 	// Amendment LOW FIX 9: use errors.As instead of manual type assertion.
 	var ae *apperrors.Error
 	if errors.As(err, &ae) {

@@ -1341,7 +1341,10 @@ func main() {
 		returnSvcSF := order.NewReturnService(conn, returnRepoSF, orderRepoSF, orderSvcSF, outboxRepoSF)
 		checkoutHandler := storefront.NewCheckoutHandler(conn, orderSvcSF, orderRepoSF, log).
 			WithAudit(auditEmitter).
-			WithNotifier(notificationSvc)
+			WithNotifier(notificationSvc).
+			// #230 — without this a storefront sale does not touch
+			// inventory and oversells without limit.
+			WithStockHolds(stockhold.NewRepository())
 
 		countryRepo := country.NewRepository(conn)
 		countryHandler := country.NewHandler(countryRepo)
@@ -1403,6 +1406,9 @@ func main() {
 
 		// P5b — extended checkout, payment methods, shipping rates, webhooks.
 		checkoutExtHandler := storefront.NewCheckoutExtHandler(conn, orderSvcSF, couponSvc, giftCardSvcSF, apiKeyEncryptor, log).
+			// #230 — this is the handler routes.go actually mounts when
+			// wired, so enforcement here is what stops the oversell.
+			WithStockHolds(stockhold.NewRepository()).
 			WithAudit(auditEmitter).
 			WithSecretStore(carrierSecretStore).
 			WithNotifier(notificationSvc)

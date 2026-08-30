@@ -6,6 +6,7 @@
 package storefront
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/internal/stockhold"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -27,12 +29,13 @@ import (
 // CheckoutHandler is the public storefront checkout endpoint. Constructed
 // in cmd/marketplace-api/main.go for storefront and both modes.
 type CheckoutHandler struct {
-	db        *gorm.DB
-	orderSvc  *order.Service
-	orderRepo order.Repository
-	audit     *audit.Emitter        // optional — nil-safe
-	notify    *notification.Service // optional — nil-safe
-	logger    *slog.Logger
+	db         *gorm.DB
+	orderSvc   *order.Service
+	stockHolds *stockhold.Repository
+	orderRepo  order.Repository
+	audit      *audit.Emitter        // optional — nil-safe
+	notify     *notification.Service // optional — nil-safe
+	logger     *slog.Logger
 }
 
 // NewCheckoutHandler constructs a CheckoutHandler.
@@ -42,6 +45,17 @@ func NewCheckoutHandler(db *gorm.DB, orderSvc *order.Service, orderRepo order.Re
 
 // WithAudit attaches an audit emitter so storefront checkouts emit
 // order.created as system events. Nil-safe.
+// WithStockHolds enables stock enforcement on checkout (#230).
+//
+// Without it a sale does not touch inventory and the storefront oversells,
+// which is the bug this exists to fix — so main.go must call it, and
+// TestMainWiresStockHoldsIntoCheckout asserts that it does. A nil repository
+// here is not a supported configuration, it is an unenforced storefront.
+func (h *CheckoutHandler) WithStockHolds(r *stockhold.Repository) *CheckoutHandler {
+	h.stockHolds = r
+	return h
+}
+
 func (h *CheckoutHandler) WithAudit(e *audit.Emitter) *CheckoutHandler {
 	h.audit = e
 	return h
@@ -202,6 +216,17 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 		CurrencyCode:   store.CurrencyCode,
 	}
 
+	// #230 — take the stock inside the order transaction. Before this,
+	// checkout never read inventory at all and two customers could buy the
+	// same last unit.
+	if h.stockHolds != nil {
+		lines := stockLinesFromItems(req.Items)
+		cartToken := cartTokenForCheckout(c)
+		in.WithinTx = func(tx *gorm.DB, _ *order.Order) error {
+			return commitStock(c.Request.Context(), tx, h.stockHolds, cartToken, lines)
+		}
+	}
+
 	result, err := h.orderSvc.Create(c.Request.Context(), in)
 	if err != nil {
 		h.respondErr(c, err)
@@ -274,6 +299,20 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 // surface deliberately collapses any not_found into 404 with no body
 // detail to prevent existence leaks (mirrors RequireStorefrontKey behavior).
 func (h *CheckoutHandler) respondErr(c *gin.Context, err error) {
+	// #230 — a sold-out line is a 409 naming the variant, never a 500. The
+	// shopper can act on it: remove that line and retry. It is checked
+	// first because it travels up through order.Create's transaction as an
+	// ordinary error and would otherwise fall through to internal_error.
+	var oos outOfStockError
+	if errors.As(err, &oos) {
+		c.AbortWithStatusJSON(http.StatusConflict, map[string]any{
+			"error":      "out_of_stock",
+			"message":    "one or more items are no longer available in the requested quantity",
+			"variant_id": oos.VariantID,
+		})
+		return
+	}
+
 	var ae *apperrors.Error
 	if asErr, ok := err.(*apperrors.Error); ok {
 		ae = asErr

@@ -26,6 +26,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/shipmentcancel"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
+	"github.com/mark8ly/marketplace-api/internal/warehouse"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -65,6 +66,12 @@ type ShipmentsHandler struct {
 	// shipment (manual button). Nil-safe: the endpoint returns 503 when unwired.
 	canceller *shipmentcancel.Executor
 	logger    *slog.Logger
+	// warehouseRepo resolves a carrier config's warehouse_id (#177, the
+	// read half) to the store-level warehouses row. Stateless, so
+	// constructing it here — rather than threading it through every
+	// caller of NewShipmentsHandler — costs nothing, matching
+	// ShippingSettingsHandler's warehouseRepo on the write side.
+	warehouseRepo *warehouse.Repository
 }
 
 // NewShipmentsHandler constructs a ShipmentsHandler. docMailer is
@@ -76,7 +83,7 @@ func NewShipmentsHandler(
 	docMailer *orderdoc.Service,
 	logger *slog.Logger,
 ) *ShipmentsHandler {
-	return &ShipmentsHandler{db: db, svc: svc, repo: repo, docMailer: docMailer, logger: logger}
+	return &ShipmentsHandler{db: db, svc: svc, repo: repo, docMailer: docMailer, logger: logger, warehouseRepo: warehouse.NewRepository()}
 }
 
 // WithNotifier attaches the notification service so delivery events fire
@@ -179,6 +186,71 @@ func (h *ShipmentsHandler) decryptCarrierCreds(cfg *shipping.CarrierConfig) (api
 		}
 	}
 	return apiKey, secretKey, nil
+}
+
+// pickupAddress is the merchant's origin address for a shipment label,
+// resolved by resolvePickupAddress. It exists so this file has one shape
+// to build shipping.Address / shipping.Warehouse from, regardless of
+// whether the data came from the warehouses table or the legacy columns.
+type pickupAddress struct {
+	Name          string
+	Line1         string
+	Line2         string
+	City          string
+	Region        string
+	PostalCode    string
+	CountryCode   string
+	Phone         string
+	ContactPerson string
+	Email         string
+}
+
+// resolvePickupAddress loads cfg's pickup address, preferring the
+// store-level warehouses row (#177, the read half) and falling back to
+// the legacy warehouse_* columns on shipping_carrier_configs.
+//
+// The fallback is required, not defensive: rows written before the write
+// path in #177 landed, or by any writer that hasn't been updated, still
+// only have the legacy columns and cfg.WarehouseID is nil for them. A
+// non-nil WarehouseID pointing at a row that no longer exists (the FK is
+// ON DELETE SET NULL, so this is unlikely but not impossible) also falls
+// back rather than failing the request — shipping a label matters more
+// than strictness here.
+func (h *ShipmentsHandler) resolvePickupAddress(ctx context.Context, cfg *shipping.CarrierConfig) pickupAddress {
+	if cfg.WarehouseID != nil {
+		wh, err := h.warehouseRepo.ByID(ctx, h.db, cfg.WarehouseID.String())
+		if err == nil {
+			return pickupAddress{
+				Name:          wh.Name,
+				Line1:         wh.Line1,
+				Line2:         wh.Line2,
+				City:          wh.City,
+				Region:        wh.Region,
+				PostalCode:    wh.PostalCode,
+				CountryCode:   wh.CountryCode,
+				Phone:         wh.Phone,
+				ContactPerson: wh.ContactPerson,
+				Email:         wh.Email,
+			}
+		}
+		if h.logger != nil {
+			h.logger.Warn("shipments: carrier config's warehouse_id has no matching row, falling back to legacy columns",
+				"store_id", cfg.StoreID.String(), "provider", cfg.Provider,
+				"warehouse_id", cfg.WarehouseID.String(), "err", err)
+		}
+	}
+	return pickupAddress{
+		Name:        cfg.WarehouseName,
+		Line1:       cfg.WarehouseLine1,
+		Line2:       cfg.WarehouseLine2,
+		City:        cfg.WarehouseCity,
+		Region:      cfg.WarehouseRegion,
+		PostalCode:  cfg.WarehousePostal,
+		CountryCode: cfg.WarehouseCountry,
+		Phone:       cfg.WarehousePhone,
+		// ContactPerson and Email have no equivalent among the legacy
+		// columns — they stay empty on this path, same as before #177.
+	}
 }
 
 // resolveCarrierCreds is the store-aware sibling of decryptCarrierCreds.
@@ -462,8 +534,13 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Resolve the pickup address, preferring the store-level warehouses row
+	// over the legacy warehouse_* columns it was copied from (#177, the
+	// read half). See resolvePickupAddress for why the fallback matters.
+	pickup := h.resolvePickupAddress(ctx, carrierCfg)
+
 	// Validate warehouse address is configured.
-	if carrierCfg.WarehouseLine1 == "" || carrierCfg.WarehouseCity == "" || carrierCfg.WarehouseCountry == "" {
+	if pickup.Line1 == "" || pickup.City == "" || pickup.CountryCode == "" {
 		RespondErr(c, apperrors.ValidationFailed("provider",
 			"warehouse address is not configured for this carrier"), h.logger)
 		return
@@ -500,14 +577,14 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	// shipping_carrier_configs and surface it in admin → Settings →
 	// Shipping; this fallback unblocks label generation in the meantime.
 	fromAddress := shipping.Address{
-		Name:        carrierCfg.WarehouseName,
-		Line1:       carrierCfg.WarehouseLine1,
-		Line2:       carrierCfg.WarehouseLine2,
-		City:        carrierCfg.WarehouseCity,
-		Region:      carrierCfg.WarehouseRegion,
-		PostalCode:  carrierCfg.WarehousePostal,
-		CountryCode: carrierCfg.WarehouseCountry,
-		Phone:       carrierCfg.WarehousePhone,
+		Name:        pickup.Name,
+		Line1:       pickup.Line1,
+		Line2:       pickup.Line2,
+		City:        pickup.City,
+		Region:      pickup.Region,
+		PostalCode:  pickup.PostalCode,
+		CountryCode: pickup.CountryCode,
+		Phone:       pickup.Phone,
 		Email:       o.CustomerEmail,
 	}
 
@@ -621,15 +698,31 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	var whErr *shipping.WarehouseNotRegisteredError
 	if errors.As(err, &whErr) {
 		if syncer, ok := carrier.(shipping.WarehouseSyncer); ok {
+			// Email falls back to the buyer's order email, same as
+			// fromAddress above, when the resolved pickup has none (the
+			// legacy-columns fallback never does — that data only exists
+			// on the warehouses row).
+			whEmail := pickup.Email
+			if whEmail == "" {
+				whEmail = o.CustomerEmail
+			}
 			wh := shipping.Warehouse{
-				Name:        carrierCfg.WarehouseName,
-				Phone:       carrierCfg.WarehousePhone,
-				Email:       o.CustomerEmail,
-				Address:     strings.TrimSpace(carrierCfg.WarehouseLine1 + " " + carrierCfg.WarehouseLine2),
-				City:        carrierCfg.WarehouseCity,
-				PinCode:     carrierCfg.WarehousePostal,
-				CountryCode: carrierCfg.WarehouseCountry,
-				Region:      carrierCfg.WarehouseRegion,
+				Name:        pickup.Name,
+				Phone:       pickup.Phone,
+				Email:       whEmail,
+				Address:     strings.TrimSpace(pickup.Line1 + " " + pickup.Line2),
+				City:        pickup.City,
+				PinCode:     pickup.PostalCode,
+				CountryCode: pickup.CountryCode,
+				Region:      pickup.Region,
+				// ContactPerson is Delhivery clientwarehouse registration's
+				// own requirement (#177's root cause: it had no home on the
+				// legacy columns at all, so registration failed with
+				// "ClientWarehouse matching query does not exist"). Only
+				// populated when the resolved pickup came from the
+				// warehouses row — the legacy fallback leaves it empty,
+				// same as before this change.
+				ContactPerson: pickup.ContactPerson,
 			}
 			if regErr := syncer.UpsertWarehouse(ctx, wh); regErr != nil {
 				// Registration itself failed — that's the real blocker, so
@@ -637,7 +730,7 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 				if h.logger != nil {
 					h.logger.Error("shipments: warehouse auto-register failed",
 						"order_id", orderID.String(), "provider", provider,
-						"warehouse", carrierCfg.WarehouseName, "err", regErr.Error())
+						"warehouse", pickup.Name, "err", regErr.Error())
 				}
 				c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
 					"error":   "warehouse_register_failed",
@@ -648,7 +741,7 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 			if h.logger != nil {
 				h.logger.Info("shipments: warehouse auto-registered, retrying label",
 					"order_id", orderID.String(), "provider", provider,
-					"warehouse", carrierCfg.WarehouseName)
+					"warehouse", pickup.Name)
 			}
 			shipment, err = h.svc.CreateShipment(
 				ctx, orderID.String(), fromAddress, toAddress,
@@ -683,14 +776,14 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	// shipments table. Build them from the warehouse + customer address
 	// we already loaded.
 	fromJSON, _ := json.Marshal(map[string]any{
-		"name":         carrierCfg.WarehouseName,
-		"line1":        carrierCfg.WarehouseLine1,
-		"line2":        carrierCfg.WarehouseLine2,
-		"city":         carrierCfg.WarehouseCity,
-		"region":       carrierCfg.WarehouseRegion,
-		"postal_code":  carrierCfg.WarehousePostal,
-		"country_code": carrierCfg.WarehouseCountry,
-		"phone":        carrierCfg.WarehousePhone,
+		"name":         pickup.Name,
+		"line1":        pickup.Line1,
+		"line2":        pickup.Line2,
+		"city":         pickup.City,
+		"region":       pickup.Region,
+		"postal_code":  pickup.PostalCode,
+		"country_code": pickup.CountryCode,
+		"phone":        pickup.Phone,
 	})
 	toJSON, _ := json.Marshal(map[string]any{
 		"name":         shippingAddr.Name,

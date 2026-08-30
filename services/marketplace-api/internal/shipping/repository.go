@@ -103,6 +103,12 @@ type CarrierConfig struct {
 	WarehousePostal       string          `gorm:"column:warehouse_postal;type:varchar(40)"`
 	WarehouseCountry      string          `gorm:"column:warehouse_country;type:char(2)"`
 	WarehousePhone        string          `gorm:"column:warehouse_phone;type:varchar(40)"`
+	// WarehouseID points at the store-level warehouses row (migration
+	// 000095, #177) when one has been linked. Nullable: rows written before
+	// #177's write path landed, or by any writer that hasn't been updated,
+	// still only have the columns above. *uuid.UUID rather than uuid.UUID
+	// so GORM writes/reads SQL NULL instead of the zero UUID.
+	WarehouseID *uuid.UUID `gorm:"column:warehouse_id;type:uuid"`
 	// Pickup automation. AutoSchedulePickup is the master toggle; rows
 	// default to TRUE in SQL so existing configs auto-opt-in when the
 	// shipping_pickup.sql ALTERs apply. DefaultPickupSlotStart is fed

@@ -22,6 +22,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/warehouse"
 )
 
 // ---------------------------------------------------------------------------
@@ -577,11 +578,16 @@ type ShippingSettingsHandler struct {
 	encryptor   crypto.Encryptor
 	secretStore carriersecrets.Store
 	logger      *slog.Logger
+	// warehouseRepo upserts the store-level warehouse row (#177, the cheap
+	// half) alongside the legacy warehouse_* columns below. Stateless, so
+	// constructing it here rather than threading it through every caller
+	// of NewShippingSettingsHandler costs nothing.
+	warehouseRepo *warehouse.Repository
 }
 
 // NewShippingSettingsHandler constructs a ShippingSettingsHandler.
 func NewShippingSettingsHandler(db *gorm.DB, countryRepo country.Repository, enc crypto.Encryptor, logger *slog.Logger) *ShippingSettingsHandler {
-	return &ShippingSettingsHandler{db: db, countryRepo: countryRepo, encryptor: enc, logger: logger}
+	return &ShippingSettingsHandler{db: db, countryRepo: countryRepo, encryptor: enc, logger: logger, warehouseRepo: warehouse.NewRepository()}
 }
 
 // WithSecretStore wires a carriersecrets.Store so carrier credential
@@ -646,24 +652,29 @@ type shippingConfigResponse struct {
 // columns including warehouse fields. The shipping.CarrierConfig model is
 // already available but we define a local view to cover all DB columns.
 type ShippingCarrierConfigRow struct {
-	ID                 uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	TenantID           uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null"`
-	StoreID            uuid.UUID       `gorm:"column:store_id;type:uuid;not null"`
-	Provider           string          `gorm:"column:provider;type:varchar(20);not null"`
-	APIKeyEncrypted    string          `gorm:"column:api_key_encrypted;type:text;not null"`
-	SecretKeyEncrypted string          `gorm:"column:secret_key_encrypted;type:text"`
-	Mode               string          `gorm:"column:mode;type:varchar(10);not null;default:test"`
-	IsActive           bool            `gorm:"column:is_active;type:boolean;not null;default:false"`
-	WarehouseName      string          `gorm:"column:warehouse_name;type:varchar(200)"`
-	WarehouseLine1     string          `gorm:"column:warehouse_line1;type:varchar(300)"`
-	WarehouseLine2     string          `gorm:"column:warehouse_line2;type:varchar(300)"`
-	WarehouseCity      string          `gorm:"column:warehouse_city;type:varchar(200)"`
-	WarehouseRegion    string          `gorm:"column:warehouse_region;type:varchar(200)"`
-	WarehousePostal    string          `gorm:"column:warehouse_postal;type:varchar(40)"`
-	WarehouseCountry   string          `gorm:"column:warehouse_country;type:char(2)"`
-	WarehousePhone     string          `gorm:"column:warehouse_phone;type:varchar(40)"`
-	HandlingFee        decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
-	FreeShippingMin    decimal.Decimal `gorm:"column:free_shipping_min;type:numeric(12,2)"`
+	ID                 uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID           uuid.UUID `gorm:"column:tenant_id;type:uuid;not null"`
+	StoreID            uuid.UUID `gorm:"column:store_id;type:uuid;not null"`
+	Provider           string    `gorm:"column:provider;type:varchar(20);not null"`
+	APIKeyEncrypted    string    `gorm:"column:api_key_encrypted;type:text;not null"`
+	SecretKeyEncrypted string    `gorm:"column:secret_key_encrypted;type:text"`
+	Mode               string    `gorm:"column:mode;type:varchar(10);not null;default:test"`
+	IsActive           bool      `gorm:"column:is_active;type:boolean;not null;default:false"`
+	WarehouseName      string    `gorm:"column:warehouse_name;type:varchar(200)"`
+	WarehouseLine1     string    `gorm:"column:warehouse_line1;type:varchar(300)"`
+	WarehouseLine2     string    `gorm:"column:warehouse_line2;type:varchar(300)"`
+	WarehouseCity      string    `gorm:"column:warehouse_city;type:varchar(200)"`
+	WarehouseRegion    string    `gorm:"column:warehouse_region;type:varchar(200)"`
+	WarehousePostal    string    `gorm:"column:warehouse_postal;type:varchar(40)"`
+	WarehouseCountry   string    `gorm:"column:warehouse_country;type:char(2)"`
+	WarehousePhone     string    `gorm:"column:warehouse_phone;type:varchar(40)"`
+	// WarehouseID points at the store-level warehouses row (migration
+	// 000095, #177). Nullable: a config saved with a blank warehouse name
+	// never gets one, and the FK is ON DELETE SET NULL. *uuid.UUID rather
+	// than uuid.UUID so GORM writes SQL NULL instead of the zero UUID.
+	WarehouseID     *uuid.UUID      `gorm:"column:warehouse_id;type:uuid"`
+	HandlingFee     decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
+	FreeShippingMin decimal.Decimal `gorm:"column:free_shipping_min;type:numeric(12,2)"`
 	// Pickup automation. See shipping.CarrierConfig for the rationale.
 	AutoSchedulePickup     bool      `gorm:"column:auto_schedule_pickup;type:boolean;not null;default:true"`
 	DefaultPickupSlotStart string    `gorm:"column:default_pickup_slot_start;type:varchar(8);default:14:00:00"`
@@ -908,17 +919,43 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 		DefaultPickupSlotEnd:   slotEnd,
 	}
 
-	if isCreate {
-		cfg.ID = uuid.New()
-		if err := h.db.WithContext(c.Request.Context()).Create(&cfg).Error; err != nil {
-			h.logger.Error("create shipping config", "store_id", store.ID, "provider", provider, "err", err)
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-				"error":   "internal",
-				"message": "failed to save shipping configuration",
+	// The carrier-config write and the warehouse upsert share a transaction:
+	// a warehouse created here for a config that then failed to save would
+	// be a row nothing references, and warehouse.Repository.Upsert takes a
+	// *gorm.DB precisely so it can join a caller's transaction like this one.
+	txErr := h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// A blank name was never a usable warehouse — the migration's own
+		// backfill skips those rows too, and Delhivery keys on the name.
+		// Leave warehouse_id untouched (nil on create, whatever it already
+		// was on update) rather than manufacturing an empty warehouse row.
+		if strings.TrimSpace(req.WarehouseName) != "" {
+			wh, err := h.warehouseRepo.Upsert(c.Request.Context(), tx, warehouse.Warehouse{
+				TenantID:    store.TenantID,
+				StoreID:     store.ID,
+				Name:        req.WarehouseName,
+				Line1:       req.WarehouseLine1,
+				Line2:       req.WarehouseLine2,
+				City:        req.WarehouseCity,
+				Region:      req.WarehouseRegion,
+				PostalCode:  req.WarehousePostal,
+				CountryCode: req.WarehouseCountry,
+				Phone:       req.WarehousePhone,
 			})
-			return
+			if err != nil {
+				return err
+			}
+			whID, err := uuid.Parse(wh.ID)
+			if err != nil {
+				return err
+			}
+			cfg.WarehouseID = &whID
 		}
-	} else {
+
+		if isCreate {
+			cfg.ID = uuid.New()
+			return tx.Create(&cfg).Error
+		}
+
 		updates := map[string]any{
 			"api_key_encrypted":         apiKeyEnc,
 			"secret_key_encrypted":      secretKeyEnc,
@@ -939,20 +976,31 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 			"default_pickup_slot_end":   slotEnd,
 			"updated_at":                time.Now(),
 		}
-		if err := h.db.WithContext(c.Request.Context()).
-			Model(&ShippingCarrierConfigRow{}).
+		// warehouse_id tracks the legacy columns exactly, including when
+		// they are blanked: this map is a full overwrite, so a merchant
+		// clearing warehouse_name today clears the pickup address, and the
+		// read path must keep behaving that way once it prefers
+		// warehouse_id over the columns. Leaving a stale id here would
+		// mean a cleared address silently kept shipping from the old one.
+		//
+		// This only clears THIS config's pointer. The warehouses row is
+		// untouched and other carriers for the store keep their own
+		// warehouse_id, so nothing is orphaned by it.
+		updates["warehouse_id"] = cfg.WarehouseID
+		if err := tx.Model(&ShippingCarrierConfigRow{}).
 			Where("store_id = ? AND provider = ?", storeUUID, provider).
 			Updates(updates).Error; err != nil {
-			h.logger.Error("update shipping config", "store_id", store.ID, "provider", provider, "err", err)
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-				"error":   "internal",
-				"message": "failed to save shipping configuration",
-			})
-			return
+			return err
 		}
-		h.db.WithContext(c.Request.Context()).
-			Where("store_id = ? AND provider = ?", storeUUID, provider).
-			First(&cfg)
+		return tx.Where("store_id = ? AND provider = ?", storeUUID, provider).First(&cfg).Error
+	})
+	if txErr != nil {
+		h.logger.Error("save shipping config", "store_id", store.ID, "provider", provider, "err", txErr)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal",
+			"message": "failed to save shipping configuration",
+		})
+		return
 	}
 
 	// Push the merchant's pickup location to the carrier so one.delhivery.com
@@ -993,15 +1041,7 @@ func (h *ShippingSettingsHandler) syncWarehouseAsync(
 			// silently no-op. Delhivery is the only implementor today.
 			return
 		}
-		wh := shipping.Warehouse{
-			Name:        cfg.WarehouseName,
-			Phone:       cfg.WarehousePhone,
-			Address:     strings.TrimSpace(cfg.WarehouseLine1 + " " + cfg.WarehouseLine2),
-			City:        cfg.WarehouseCity,
-			PinCode:     cfg.WarehousePostal,
-			CountryCode: cfg.WarehouseCountry,
-			Region:      cfg.WarehouseRegion,
-		}
+		wh := h.resolveWarehouseForSync(ctx, cfg)
 		if err := syncer.UpsertWarehouse(ctx, wh); err != nil {
 			h.logger.Warn("warehouse sync: upsert failed",
 				"provider", provider, "store_id", cfg.StoreID.String(),
@@ -1012,6 +1052,51 @@ func (h *ShippingSettingsHandler) syncWarehouseAsync(
 			"provider", provider, "store_id", cfg.StoreID.String(),
 			"warehouse", cfg.WarehouseName)
 	}()
+}
+
+// resolveWarehouseForSync builds the shipping.Warehouse pushed to the
+// carrier, preferring the store-level warehouses row (#177, the read
+// half) over the legacy warehouse_* columns cfg was loaded from.
+//
+// cfg is read back from the DB inside the same Upsert transaction that
+// just wrote it (see Upsert above), so cfg.WarehouseID is already
+// populated when this runs. The fallback still matters here: this
+// function's caller only skips the sync entirely for a blank
+// WarehouseName, so a config saved by an older build of this handler —
+// legacy columns only, no warehouse_id — still reaches this path.
+//
+// Preferring the warehouses row is also what lets ContactPerson and Email
+// flow through to Delhivery: those fields have no equivalent among the
+// legacy columns, so the fallback below leaves them empty, same as before
+// #177.
+func (h *ShippingSettingsHandler) resolveWarehouseForSync(ctx context.Context, cfg ShippingCarrierConfigRow) shipping.Warehouse {
+	if cfg.WarehouseID != nil {
+		wh, err := h.warehouseRepo.ByID(ctx, h.db, cfg.WarehouseID.String())
+		if err == nil {
+			return shipping.Warehouse{
+				Name:          wh.Name,
+				Phone:         wh.Phone,
+				Email:         wh.Email,
+				Address:       strings.TrimSpace(wh.Line1 + " " + wh.Line2),
+				City:          wh.City,
+				PinCode:       wh.PostalCode,
+				CountryCode:   wh.CountryCode,
+				Region:        wh.Region,
+				ContactPerson: wh.ContactPerson,
+			}
+		}
+		h.logger.Warn("warehouse sync: warehouse_id has no matching row, falling back to legacy columns",
+			"store_id", cfg.StoreID.String(), "warehouse_id", cfg.WarehouseID.String(), "err", err)
+	}
+	return shipping.Warehouse{
+		Name:        cfg.WarehouseName,
+		Phone:       cfg.WarehousePhone,
+		Address:     strings.TrimSpace(cfg.WarehouseLine1 + " " + cfg.WarehouseLine2),
+		City:        cfg.WarehouseCity,
+		PinCode:     cfg.WarehousePostal,
+		CountryCode: cfg.WarehouseCountry,
+		Region:      cfg.WarehouseRegion,
+	}
 }
 
 // buildCarrierForSync resolves the stored credential references to

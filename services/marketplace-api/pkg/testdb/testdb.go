@@ -138,8 +138,44 @@ func openOrSkip(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("testdb: open: %v", err)
 	}
+
+	// Cap and release the pool.
+	//
+	// Every call here opens a NEW pool, and nothing used to close one. Go's
+	// default is unlimited max-open connections, so a package simply
+	// accumulated pools until the shared server refused them:
+	//
+	//	FATAL: sorry, too many clients already (SQLSTATE 53300)
+	//
+	// That surfaces on whichever test happens to run once the ceiling is
+	// reached, which makes it read as that test's own bug. It is not — it
+	// is the tests before it never having given their connections back.
+	// Adding four tests to internal/handlers/admin was enough to cross it.
+	//
+	// The cleanup registered here runs AFTER the caller's truncate cleanup
+	// (t.Cleanup is LIFO and NewDB registers its own after this one), so the
+	// connection stays usable for the truncate that needs it.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("testdb: pool handle: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(testPoolMaxOpen)
+	sqlDB.SetMaxIdleConns(testPoolMaxIdle)
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Logf("testdb: close pool: %v", err)
+		}
+	})
 	return db
 }
+
+// Pool bounds for a single test. Tests run sequentially (-p 1) and a handler
+// test holds only a handful of connections at once, so these are generous;
+// the point is that they are BOUNDED, not that they are large.
+const (
+	testPoolMaxOpen = 4
+	testPoolMaxIdle = 1
+)
 
 func truncate(t *testing.T, db *gorm.DB, tables []string) {
 	t.Helper()

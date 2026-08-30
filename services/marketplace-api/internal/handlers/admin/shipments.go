@@ -205,6 +205,18 @@ type pickupAddress struct {
 	Email         string
 }
 
+// pickupEmailOrBuyerFallback resolves the label's pickup contact email: the
+// warehouse's own email when the resolved pickup address has one, falling back to
+// the buyer's order email otherwise. The fallback still matters after #483 — a
+// pickup resolved from the legacy warehouse_* columns (see resolvePickupAddress)
+// has no email at all, since those columns never carried one.
+func pickupEmailOrBuyerFallback(pickup pickupAddress, buyerEmail string) string {
+	if e := strings.TrimSpace(pickup.Email); e != "" {
+		return e
+	}
+	return buyerEmail
+}
+
 // resolvePickupAddress loads cfg's pickup address, preferring the
 // store-level warehouses row (#177, the read half) and falling back to
 // the legacy warehouse_* columns on shipping_carrier_configs.
@@ -570,12 +582,12 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Build origin address from warehouse config. Email defaults to the
-	// buyer's order email so CouriersPlease (and any other carrier that
-	// validates pickup_email format) accepts the label. Long-term we
-	// should add a dedicated warehouse_email column on
-	// shipping_carrier_configs and surface it in admin → Settings →
-	// Shipping; this fallback unblocks label generation in the meantime.
+	// Build origin address from warehouse config. Email prefers the
+	// warehouse's own email (#483 — collected via admin → Settings →
+	// Shipping and stored on the warehouses row), falling back to the
+	// buyer's order email for pickups still resolved from the legacy
+	// warehouse_* columns, which never carried an email at all (see
+	// resolvePickupAddress).
 	fromAddress := shipping.Address{
 		Name:        pickup.Name,
 		Line1:       pickup.Line1,
@@ -585,7 +597,7 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		PostalCode:  pickup.PostalCode,
 		CountryCode: pickup.CountryCode,
 		Phone:       pickup.Phone,
-		Email:       o.CustomerEmail,
+		Email:       pickupEmailOrBuyerFallback(pickup, o.CustomerEmail),
 	}
 
 	// Build destination address from order. Email comes from the order
@@ -698,14 +710,7 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	var whErr *shipping.WarehouseNotRegisteredError
 	if errors.As(err, &whErr) {
 		if syncer, ok := carrier.(shipping.WarehouseSyncer); ok {
-			// Email falls back to the buyer's order email, same as
-			// fromAddress above, when the resolved pickup has none (the
-			// legacy-columns fallback never does — that data only exists
-			// on the warehouses row).
-			whEmail := pickup.Email
-			if whEmail == "" {
-				whEmail = o.CustomerEmail
-			}
+			whEmail := pickupEmailOrBuyerFallback(pickup, o.CustomerEmail)
 			wh := shipping.Warehouse{
 				Name:        pickup.Name,
 				Phone:       pickup.Phone,

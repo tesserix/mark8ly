@@ -66,6 +66,8 @@ export interface ShippingConfig {
   warehouse_postal?: string;
   warehouse_country?: string;
   warehouse_phone?: string;
+  warehouse_contact_person?: string;
+  warehouse_email?: string;
   /** Whether a Delhivery pickup is auto-scheduled when a label is created. */
   auto_schedule_pickup?: boolean;
   /** "HH:MM:SS" — pickup slot start; fed back to Delhivery as pickup_time. */
@@ -91,6 +93,8 @@ export interface ShippingConfigUpsertInput {
   warehouse_postal?: string;
   warehouse_country?: string;
   warehouse_phone?: string;
+  warehouse_contact_person?: string;
+  warehouse_email?: string;
   auto_schedule_pickup?: boolean;
   default_pickup_slot_start?: string;
   default_pickup_slot_end?: string;

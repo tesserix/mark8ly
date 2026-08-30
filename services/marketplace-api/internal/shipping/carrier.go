@@ -47,7 +47,13 @@ type Warehouse struct {
 	Region      string
 	// ContactPerson and RegisteredName are Delhivery clientwarehouse
 	// requirements. Optional here — carriers that don't need them ignore
-	// them, and Delhivery defaults both to Name when empty.
+	// them, and Delhivery defaults both to Name when empty (see
+	// firstNonEmpty in delhivery.go's UpsertWarehouse). Email has no such
+	// default: Delhivery validates its format, so an empty Email is
+	// simply omitted from the request rather than defaulted to Name,
+	// which would fail validation. Collected from the merchant via the
+	// admin shipping settings form (#483) — see settings.go's
+	// shippingUpsertRequest.
 	ContactPerson  string
 	RegisteredName string
 }

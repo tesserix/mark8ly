@@ -25,6 +25,7 @@ import {
   count,
   type CartItem,
 } from "@/lib/cart";
+import { placeCartHolds, releaseCartHolds } from "@/lib/api/checkout-api";
 
 // ---------------------------------------------------------------------------
 // Context shape
@@ -38,6 +39,12 @@ interface CartContextValue {
   clear: () => void;
   count: number;
   subtotal: number;
+  /**
+   * ISO timestamp when this cart's stock holds lapse, or null when nothing
+   * is reserved (#232). Null is a normal state, not an error: a failed hold
+   * is silent by design, because checkout enforces availability anyway.
+   */
+  holdExpiresAt: string | null;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -111,12 +118,21 @@ export interface CartProviderProps {
 
 const PERSIST_DEBOUNCE_MS = 250;
 
+// Long enough that a qty stepper collapses into one call, short enough that
+// a shopper who adds and immediately opens checkout is already holding.
+const HOLD_SYNC_DEBOUNCE_MS = 700;
+
 export function CartProvider({ storeSlug, children }: CartProviderProps) {
   const [items, dispatch] = useReducer(reducer, []);
   // Gate the persist effect until after hydration has run — otherwise
   // the first render (items=[]) overwrites a non-empty stored cart in
   // the milliseconds before HYDRATE lands.
   const [hydrated, setHydrated] = useState(false);
+  // When the current cart's stock holds expire, for the checkout countdown.
+  // Null means "no hold" — either nothing is reserved yet, or the last
+  // attempt failed, which is not an error the shopper needs to see.
+  const [holdExpiresAt, setHoldExpiresAt] = useState<string | null>(null);
+  const heldRef = useRef(false);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Hydrate from localStorage on mount (client-only).
@@ -165,6 +181,46 @@ export function CartProvider({ storeSlug, children }: CartProviderProps) {
     };
   }, [storeSlug, items, hydrated]);
 
+  // #232 — mirror the cart to server-side stock holds.
+  //
+  // Holds are placed AT CART-ADD for the full TTL: the shopper who adds
+  // first keeps the unit. Debounced for the same reason the persist effect
+  // is — a qty stepper should produce one hold call, not one per click —
+  // and the API is idempotent per (cart, variant), so re-posting the whole
+  // cart refreshes rather than stacking.
+  //
+  // Deliberately best-effort and silent. A failed hold must never block
+  // shopping: checkout enforces availability regardless (#230), so the worst
+  // case is the shopper finds out at checkout instead of now. Blocking the
+  // add would turn a backend blip into a store that cannot sell.
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const variants = items
+      .filter((i) => i.variantId && i.qty > 0)
+      .map((i) => ({ variantId: i.variantId, qty: i.qty }));
+
+    if (variants.length === 0) {
+      // Emptied cart: give the units back rather than making the next
+      // shopper wait out the TTL.
+      if (heldRef.current) {
+        heldRef.current = false;
+        setHoldExpiresAt(null);
+        void releaseCartHolds(storeSlug);
+      }
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void placeCartHolds(storeSlug, variants).then((res) => {
+        if (!res) return;
+        heldRef.current = true;
+        setHoldExpiresAt(res.expires_at);
+      });
+    }, HOLD_SYNC_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [storeSlug, items, hydrated]);
+
   const add = useCallback(
     (item: CartItem) => dispatch({ type: "ADD", item }),
     [],
@@ -190,8 +246,9 @@ export function CartProvider({ storeSlug, children }: CartProviderProps) {
       clear,
       count: count(items),
       subtotal: subtotal(items),
+      holdExpiresAt,
     }),
-    [items, add, remove, updateQty, clear],
+    [items, add, remove, updateQty, clear, holdExpiresAt],
   );
 
   return <CartContext value={value}>{children}</CartContext>;

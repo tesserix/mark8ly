@@ -373,10 +373,31 @@ export async function fetchTaxPreview(
  * Submits the checkout. Returns the checkout result with payment token
  * and computed totals. Returns null on failure.
  */
+/**
+ * A checkout that failed because someone else took the stock (#230/#232).
+ *
+ * Distinguished from every other failure on purpose. The backend answers
+ * 409 `out_of_stock` naming the variant, and a shopper can act on that —
+ * remove the line and retry. Collapsing it into the generic "something went
+ * wrong" path, which is what this function used to do for every non-2xx,
+ * tells a buyer nothing and reads as a site fault rather than a sold-out
+ * item.
+ */
+export interface CheckoutOutOfStock {
+  outOfStock: true;
+  variantId?: string;
+}
+
+export type CheckoutOutcome = CheckoutResult | CheckoutOutOfStock | null;
+
+export function isOutOfStock(o: CheckoutOutcome): o is CheckoutOutOfStock {
+  return o !== null && (o as CheckoutOutOfStock).outOfStock === true;
+}
+
 export async function submitCheckout(
   storeSlug: string,
   body: CheckoutBody,
-): Promise<CheckoutResult | null> {
+): Promise<CheckoutOutcome> {
   const url = IS_BROWSER
     ? proxyUrl("submit", storeSlug)
     : `${storeUrl(storeSlug)}/checkout`;
@@ -386,6 +407,21 @@ export async function submitCheckout(
       headers: commonHeaders(),
       body: JSON.stringify(body),
     });
+    if (res.status === 409) {
+      // Read the variant so the page can name the item. A body we cannot
+      // parse still yields outOfStock: the status is the fact that
+      // matters, and losing it would drop the shopper back into the
+      // generic error they cannot act on.
+      try {
+        const parsed = (await res.json()) as { error?: string; variant_id?: string };
+        if (parsed?.error === "out_of_stock") {
+          return { outOfStock: true, variantId: parsed.variant_id };
+        }
+      } catch {
+        return { outOfStock: true };
+      }
+      return { outOfStock: true };
+    }
     if (!res.ok) return null;
     return (await res.json()) as CheckoutResult;
   } catch {
@@ -455,4 +491,67 @@ export async function checkGiftCardBalance(
 
   const json = await res.json();
   return json.data as GiftCardBalanceResult;
+}
+
+// ---------------------------------------------------------------------------
+// Stock holds (#232)
+// ---------------------------------------------------------------------------
+
+export interface CartHoldItemResult {
+  variant_id: string;
+  /** "held" or "insufficient". */
+  status: string;
+  /** What the shopper can actually have right now. */
+  available: number;
+}
+
+export interface CartHoldsResult {
+  cart_token: string;
+  expires_at: string;
+  items: CartHoldItemResult[];
+}
+
+/**
+ * Place or refresh stock holds for the cart.
+ *
+ * Browser-only: the cart identity is an httpOnly cookie owned by the
+ * `/api/checkout/cart-holds` route handler, so there is nothing useful this
+ * can do server-side.
+ *
+ * Returns null on any failure, and callers treat that as "no reservation" —
+ * NOT as an error to show. A failed hold must never block adding to a cart:
+ * checkout enforces availability regardless (#230), so the worst case is the
+ * shopper learns at checkout instead of at add-time. Blocking the add would
+ * turn a backend blip into a store that cannot sell.
+ */
+export async function placeCartHolds(
+  storeSlug: string,
+  items: ReadonlyArray<{ variantId: string; qty: number }>,
+): Promise<CartHoldsResult | null> {
+  if (!IS_BROWSER || items.length === 0) return null;
+  try {
+    const res = await fetch(proxyUrl("cart-holds", storeSlug), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: items.map((i) => ({ variant_id: i.variantId, quantity: i.qty })),
+      }),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data?: CartHoldsResult };
+    return body?.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Release the cart's holds. Best-effort: an unreleased hold expires anyway. */
+export async function releaseCartHolds(storeSlug: string): Promise<void> {
+  if (!IS_BROWSER) return;
+  try {
+    await fetch(proxyUrl("cart-holds", storeSlug), { method: "DELETE" });
+  } catch {
+    // Nothing to do: holds expire by the clock, so a failed release costs
+    // at most one TTL of a reservation nobody is using.
+  }
 }

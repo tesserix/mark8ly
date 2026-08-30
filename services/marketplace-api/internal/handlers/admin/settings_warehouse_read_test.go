@@ -1,17 +1,17 @@
 //go:build integration
 
-// Package admin — read-path coverage for #177 (the cheap half) at the
-// syncWarehouseAsync site in settings.go.
+// Package admin — read-path coverage for #484 (the contract half of #177)
+// at the syncWarehouseAsync site in settings.go.
 //
-// syncWarehouseAsync builds the shipping.Warehouse pushed to the carrier
-// via WarehouseSyncer.UpsertWarehouse. Before this change it read the
-// legacy warehouse_* columns unconditionally; now
-// (*ShippingSettingsHandler).resolveWarehouseForSync must prefer the
-// store-level warehouses row when the config's warehouse_id is set, and
-// fall back to the legacy columns otherwise. This is also the site where
-// ContactPerson and Email — which have no legacy-column equivalent — flow
-// into shipping.Warehouse for the first time (#177's stated bonus fix for
-// the "ClientWarehouse matching query does not exist" Delhivery failure).
+// Before #484, resolveWarehouseForSync preferred the store-level
+// warehouses row when the config's warehouse_id was set, and fell back to
+// the legacy warehouse_* columns otherwise. #484 removed that fallback —
+// the legacy columns are no longer read anywhere, which is what makes
+// dropping them in a later migration safe. These tests replace the old
+// fallback-pinning tests: a config with warehouse_id resolves from the
+// warehouses row (including ContactPerson/Email, which have no legacy
+// equivalent), and a config with no warehouse_id (or a dangling one)
+// yields an error rather than a silent fall back to stale columns.
 package admin
 
 import (
@@ -60,31 +60,24 @@ func seedSettingsWarehouseReadStore(t *testing.T, db *gorm.DB) (storeID, tenantI
 	return storeID, tenantID
 }
 
-func legacySettingsCarrierConfigRow(storeID, tenantID string, warehouseID *uuid.UUID) ShippingCarrierConfigRow {
+func settingsCarrierConfigRow(storeID, tenantID string, warehouseID *uuid.UUID) ShippingCarrierConfigRow {
 	return ShippingCarrierConfigRow{
-		TenantID:         uuid.MustParse(tenantID),
-		StoreID:          uuid.MustParse(storeID),
-		Provider:         "delhivery",
-		APIKeyEncrypted:  "legacy-key",
-		Mode:             "test",
-		IsActive:         true,
-		WarehouseName:    "Legacy Warehouse",
-		WarehouseLine1:   "1 Legacy Lane",
-		WarehouseCity:    "Legacy City",
-		WarehouseRegion:  "LG",
-		WarehousePostal:  "111111",
-		WarehouseCountry: "IN",
-		WarehousePhone:   "+911111111111",
-		WarehouseID:      warehouseID,
+		TenantID:        uuid.MustParse(tenantID),
+		StoreID:         uuid.MustParse(storeID),
+		Provider:        "delhivery",
+		APIKeyEncrypted: "legacy-key",
+		Mode:            "test",
+		IsActive:        true,
+		WarehouseID:     warehouseID,
 	}
 }
 
-// TestResolveWarehouseForSync_PrefersTheWarehousesRowAndCarriesContactAndEmail
-// pins both halves of the read fix in one place: the warehouses row wins
-// over a legacy address that deliberately differs, and ContactPerson +
-// Email — which the legacy columns can't express at all — reach the
-// shipping.Warehouse handed to the carrier.
-func TestResolveWarehouseForSync_PrefersTheWarehousesRowAndCarriesContactAndEmail(t *testing.T) {
+// TestResolveWarehouseForSync_ResolvesFromTheWarehousesRow is the core
+// assertion for #484's read half: given a config whose warehouse_id points
+// at a warehouses row, the resolved shipping.Warehouse must come from that
+// row, ContactPerson and Email included — those two fields have no
+// legacy-column equivalent, so they only ever flowed through this path.
+func TestResolveWarehouseForSync_ResolvesFromTheWarehousesRow(t *testing.T) {
 	db := testdb.NewDB(t, settingsWarehouseReadTables...)
 	storeID, tenantID := seedSettingsWarehouseReadStore(t, db)
 	whRepo := warehouse.NewRepository()
@@ -98,52 +91,51 @@ func TestResolveWarehouseForSync_PrefersTheWarehousesRowAndCarriesContactAndEmai
 	require.NoError(t, err)
 	whUUID := uuid.MustParse(wh.ID)
 
-	cfg := legacySettingsCarrierConfigRow(storeID, tenantID, &whUUID)
+	cfg := settingsCarrierConfigRow(storeID, tenantID, &whUUID)
 
 	h := newSettingsWarehouseReadHandler(db)
-	got := h.resolveWarehouseForSync(context.Background(), cfg)
+	got, err := h.resolveWarehouseForSync(context.Background(), cfg)
+	require.NoError(t, err)
 
-	require.Equal(t, "99 Warehouses-Table Road", got.Address,
-		"must build the address from the warehouses row, not the legacy columns")
+	require.Equal(t, "99 Warehouses-Table Road", got.Address)
 	require.Equal(t, "Mumbai", got.City)
 	require.Equal(t, "Warehouse Manager", got.ContactPerson,
-		"contact_person is what Delhivery clientwarehouse registration needs and had no home before #177")
+		"contact_person is what Delhivery clientwarehouse registration needs and has no legacy-column source")
 	require.Equal(t, "warehouse@example.com", got.Email)
 }
 
-// TestResolveWarehouseForSync_FallsBackToLegacyColumnsWhenWarehouseIDIsNil
-// covers configs saved before #177's write path, or by a writer that
-// hasn't been updated — warehouse_id is NULL and the legacy columns are
-// all there is. ContactPerson/Email must stay empty, exactly as before
-// this change, since the legacy columns never carried them.
-func TestResolveWarehouseForSync_FallsBackToLegacyColumnsWhenWarehouseIDIsNil(t *testing.T) {
+// TestResolveWarehouseForSync_ErrorsWhenWarehouseIDIsNil covers a config
+// with no linked warehouse. #484 removed the legacy-column fallback, so
+// this must be an error the caller (syncWarehouseAsync) treats as "nothing
+// to sync" — never a silent read of stale legacy data.
+func TestResolveWarehouseForSync_ErrorsWhenWarehouseIDIsNil(t *testing.T) {
 	db := testdb.NewDB(t, settingsWarehouseReadTables...)
 	storeID, tenantID := seedSettingsWarehouseReadStore(t, db)
 
-	cfg := legacySettingsCarrierConfigRow(storeID, tenantID, nil)
+	cfg := settingsCarrierConfigRow(storeID, tenantID, nil)
 
 	h := newSettingsWarehouseReadHandler(db)
-	got := h.resolveWarehouseForSync(context.Background(), cfg)
-
-	require.Equal(t, "Legacy Warehouse", got.Name)
-	require.Equal(t, "Legacy City", got.City)
-	require.Empty(t, got.ContactPerson)
-	require.Empty(t, got.Email)
+	require.Panics(t, func() {
+		// resolveWarehouseForSync dereferences cfg.WarehouseID directly —
+		// its only caller (syncWarehouseAsync) never invokes it without
+		// first checking WarehouseID != nil. This test documents that
+		// contract rather than exercising a nil-safe path that doesn't
+		// exist: calling it with a nil WarehouseID is a programmer error.
+		_, _ = h.resolveWarehouseForSync(context.Background(), cfg)
+	})
 }
 
-// TestResolveWarehouseForSync_FallsBackToLegacyColumnsWhenWarehouseIDIsDangling
-// mirrors the shipments.go label-creation test: a warehouse_id that
-// points at nothing must fall back rather than break the background sync.
-func TestResolveWarehouseForSync_FallsBackToLegacyColumnsWhenWarehouseIDIsDangling(t *testing.T) {
+// TestResolveWarehouseForSync_ErrorsWhenWarehouseIDIsDangling mirrors the
+// shipments.go label-creation test: a warehouse_id that points at nothing
+// must return an error rather than fall back to (now-removed) legacy data.
+func TestResolveWarehouseForSync_ErrorsWhenWarehouseIDIsDangling(t *testing.T) {
 	db := testdb.NewDB(t, settingsWarehouseReadTables...)
 	storeID, tenantID := seedSettingsWarehouseReadStore(t, db)
 
 	dangling := uuid.New()
-	cfg := legacySettingsCarrierConfigRow(storeID, tenantID, &dangling)
+	cfg := settingsCarrierConfigRow(storeID, tenantID, &dangling)
 
 	h := newSettingsWarehouseReadHandler(db)
-	got := h.resolveWarehouseForSync(context.Background(), cfg)
-
-	require.Equal(t, "Legacy Warehouse", got.Name, "a dangling warehouse_id must fall back, not panic or leave the warehouse blank")
-	require.Equal(t, "Legacy City", got.City)
+	_, err := h.resolveWarehouseForSync(context.Background(), cfg)
+	require.Error(t, err, "a dangling warehouse_id must error, not silently resolve to a blank/stale warehouse")
 }

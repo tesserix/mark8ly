@@ -217,51 +217,40 @@ func pickupEmailOrBuyerFallback(pickup pickupAddress, buyerEmail string) string 
 	return buyerEmail
 }
 
-// resolvePickupAddress loads cfg's pickup address, preferring the
-// store-level warehouses row (#177, the read half) and falling back to
-// the legacy warehouse_* columns on shipping_carrier_configs.
+// resolvePickupAddress loads cfg's pickup address from the store-level
+// warehouses row. #484 (the contract half of #177) removed the legacy
+// warehouse_* column fallback: those columns are no longer read anywhere,
+// which is what makes dropping them in a later migration safe.
 //
-// The fallback is required, not defensive: rows written before the write
-// path in #177 landed, or by any writer that hasn't been updated, still
-// only have the legacy columns and cfg.WarehouseID is nil for them. A
-// non-nil WarehouseID pointing at a row that no longer exists (the FK is
-// ON DELETE SET NULL, so this is unlikely but not impossible) also falls
-// back rather than failing the request — shipping a label matters more
-// than strictness here.
+// When cfg has no WarehouseID, or WarehouseID points at a row that no
+// longer exists (the FK is ON DELETE SET NULL, so this is unlikely but not
+// impossible), this returns the zero pickupAddress — the same shape a blank
+// legacy address used to produce — so the "warehouse address is not
+// configured" check below still fires correctly.
 func (h *ShipmentsHandler) resolvePickupAddress(ctx context.Context, cfg *shipping.CarrierConfig) pickupAddress {
-	if cfg.WarehouseID != nil {
-		wh, err := h.warehouseRepo.ByID(ctx, h.db, cfg.WarehouseID.String())
-		if err == nil {
-			return pickupAddress{
-				Name:          wh.Name,
-				Line1:         wh.Line1,
-				Line2:         wh.Line2,
-				City:          wh.City,
-				Region:        wh.Region,
-				PostalCode:    wh.PostalCode,
-				CountryCode:   wh.CountryCode,
-				Phone:         wh.Phone,
-				ContactPerson: wh.ContactPerson,
-				Email:         wh.Email,
-			}
-		}
+	if cfg.WarehouseID == nil {
+		return pickupAddress{}
+	}
+	wh, err := h.warehouseRepo.ByID(ctx, h.db, cfg.WarehouseID.String())
+	if err != nil {
 		if h.logger != nil {
-			h.logger.Warn("shipments: carrier config's warehouse_id has no matching row, falling back to legacy columns",
+			h.logger.Warn("shipments: carrier config's warehouse_id has no matching row",
 				"store_id", cfg.StoreID.String(), "provider", cfg.Provider,
 				"warehouse_id", cfg.WarehouseID.String(), "err", err)
 		}
+		return pickupAddress{}
 	}
 	return pickupAddress{
-		Name:        cfg.WarehouseName,
-		Line1:       cfg.WarehouseLine1,
-		Line2:       cfg.WarehouseLine2,
-		City:        cfg.WarehouseCity,
-		Region:      cfg.WarehouseRegion,
-		PostalCode:  cfg.WarehousePostal,
-		CountryCode: cfg.WarehouseCountry,
-		Phone:       cfg.WarehousePhone,
-		// ContactPerson and Email have no equivalent among the legacy
-		// columns — they stay empty on this path, same as before #177.
+		Name:          wh.Name,
+		Line1:         wh.Line1,
+		Line2:         wh.Line2,
+		City:          wh.City,
+		Region:        wh.Region,
+		PostalCode:    wh.PostalCode,
+		CountryCode:   wh.CountryCode,
+		Phone:         wh.Phone,
+		ContactPerson: wh.ContactPerson,
+		Email:         wh.Email,
 	}
 }
 
@@ -546,9 +535,9 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Resolve the pickup address, preferring the store-level warehouses row
-	// over the legacy warehouse_* columns it was copied from (#177, the
-	// read half). See resolvePickupAddress for why the fallback matters.
+	// Resolve the pickup address from the store-level warehouses row
+	// (#484, the contract half). No legacy-column fallback anymore — see
+	// resolvePickupAddress.
 	pickup := h.resolvePickupAddress(ctx, carrierCfg)
 
 	// Validate warehouse address is configured.
@@ -885,13 +874,17 @@ func (h *ShipmentsHandler) tryAutoSchedulePickup(
 	ps shipping.PickupScheduler,
 	cfg *shipping.CarrierConfig,
 ) string {
+	// #484: WarehouseName used to come straight off cfg's legacy column;
+	// it now goes through the same warehouses-row resolution as the rest
+	// of this file.
+	warehouseName := h.resolvePickupAddress(ctx, cfg).Name
 	slot := strings.TrimSpace(cfg.DefaultPickupSlotStart)
 	if slot == "" {
 		slot = "14:00:00"
 	}
 	date := nextBusinessDay(time.Now().UTC())
 	req := shipping.PickupRequest{
-		WarehouseName:        cfg.WarehouseName,
+		WarehouseName:        warehouseName,
 		Date:                 date,
 		TimeStart:            slot,
 		ExpectedPackageCount: 1,
@@ -902,7 +895,7 @@ func (h *ShipmentsHandler) tryAutoSchedulePickup(
 			h.logger.Warn("shipments: auto-schedule pickup failed",
 				"shipment_id", rec.ID.String(),
 				"carrier", rec.Carrier,
-				"warehouse", cfg.WarehouseName,
+				"warehouse", warehouseName,
 				"date", date.Format("2006-01-02"),
 				"err", err)
 		}
@@ -1066,8 +1059,11 @@ func (h *ShipmentsHandler) SchedulePickup(c *gin.Context) {
 		slot = "14:00:00"
 	}
 
+	// #484: WarehouseName used to come straight off carrierCfg's legacy
+	// column; it now goes through the same warehouses-row resolution as
+	// the rest of this file.
 	p, schedErr := ps.SchedulePickup(ctx, shipping.PickupRequest{
-		WarehouseName:        carrierCfg.WarehouseName,
+		WarehouseName:        h.resolvePickupAddress(ctx, carrierCfg).Name,
 		Date:                 date,
 		TimeStart:            slot,
 		ExpectedPackageCount: 1,

@@ -95,19 +95,16 @@ type CarrierConfig struct {
 	HandlingFee           decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
 	FreeShippingThreshold decimal.Decimal `gorm:"column:free_shipping_min;type:numeric(12,2)"`
 	Enabled               bool            `gorm:"column:is_active;not null;default:false"`
-	WarehouseName         string          `gorm:"column:warehouse_name;type:varchar(200)"`
-	WarehouseLine1        string          `gorm:"column:warehouse_line1;type:varchar(300)"`
-	WarehouseLine2        string          `gorm:"column:warehouse_line2;type:varchar(300)"`
-	WarehouseCity         string          `gorm:"column:warehouse_city;type:varchar(200)"`
-	WarehouseRegion       string          `gorm:"column:warehouse_region;type:varchar(200)"`
-	WarehousePostal       string          `gorm:"column:warehouse_postal;type:varchar(40)"`
-	WarehouseCountry      string          `gorm:"column:warehouse_country;type:char(2)"`
-	WarehousePhone        string          `gorm:"column:warehouse_phone;type:varchar(40)"`
 	// WarehouseID points at the store-level warehouses row (migration
-	// 000095, #177) when one has been linked. Nullable: rows written before
-	// #177's write path landed, or by any writer that hasn't been updated,
-	// still only have the columns above. *uuid.UUID rather than uuid.UUID
-	// so GORM writes/reads SQL NULL instead of the zero UUID.
+	// 000095, #177) when one has been linked. Nullable: a config saved
+	// with a blank warehouse name never gets one, and the FK is ON DELETE
+	// SET NULL. *uuid.UUID rather than uuid.UUID so GORM writes/reads SQL
+	// NULL instead of the zero UUID.
+	//
+	// #484 dropped the WarehouseName/Line1/Line2/City/Region/Postal/
+	// Country/Phone fields that used to mirror this row's legacy
+	// warehouse_* columns: nothing reads them anymore, which is what
+	// makes dropping those columns in a later migration safe.
 	WarehouseID *uuid.UUID `gorm:"column:warehouse_id;type:uuid"`
 	// Pickup automation. AutoSchedulePickup is the master toggle; rows
 	// default to TRUE in SQL so existing configs auto-opt-in when the
@@ -341,14 +338,20 @@ func (r *gormRepository) UpsertCarrierConfig(ctx context.Context, cfg *CarrierCo
 			HandlingFee:           cfg.HandlingFee,
 			FreeShippingThreshold: cfg.FreeShippingThreshold,
 			Enabled:               cfg.Enabled,
-			WarehouseName:         cfg.WarehouseName,
-			WarehouseLine1:        cfg.WarehouseLine1,
-			WarehouseLine2:        cfg.WarehouseLine2,
-			WarehouseCity:         cfg.WarehouseCity,
-			WarehouseRegion:       cfg.WarehouseRegion,
-			WarehousePostal:       cfg.WarehousePostal,
-			WarehouseCountry:      cfg.WarehouseCountry,
-			WarehousePhone:        cfg.WarehousePhone,
+			// #484: this used to write the 8 legacy warehouse_* columns
+			// from cfg's now-removed fields. UpsertCarrierConfig has no
+			// production caller (see the package doc on this method), so
+			// there was no live divergence to fix — but if it's ever
+			// wired up, it must maintain warehouse_id, the only field any
+			// reader still looks at, or a caller pointing at a real
+			// warehouse would silently write an id the read path then
+			// ignores. Note GORM's Updates(struct) skips zero-value
+			// fields, so a caller passing a nil WarehouseID here leaves
+			// the stored value untouched rather than clearing it — unlike
+			// the admin settings handler's map-based Updates, which does
+			// clear it. That's acceptable for now given there is no
+			// caller to observe the difference.
+			WarehouseID: cfg.WarehouseID,
 		}).Error
 	if err != nil {
 		return fmt.Errorf("shipping: update carrier config: %w", err)

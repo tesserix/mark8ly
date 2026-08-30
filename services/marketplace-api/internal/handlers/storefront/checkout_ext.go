@@ -35,6 +35,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/stockhold"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/tax"
+	"github.com/mark8ly/marketplace-api/internal/warehouse"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -56,11 +57,19 @@ type CheckoutExtHandler struct {
 	// fallback so unit tests and inline-mode deployments keep working.
 	secretStore carriersecrets.Store
 	logger      *slog.Logger
+	// warehouseRepo resolves a carrier config's warehouse_id to the
+	// store-level warehouses row, used by calculateTax to source the
+	// seller's region for India GST intra/inter-state determination
+	// (#484 — this used to read the legacy warehouse_region column
+	// directly off shipping_carrier_configs). Stateless, so constructing
+	// it here costs nothing, matching the other shipping-adjacent
+	// handlers' warehouseRepo field.
+	warehouseRepo *warehouse.Repository
 }
 
 // NewCheckoutExtHandler constructs a CheckoutExtHandler.
 func NewCheckoutExtHandler(db *gorm.DB, orderSvc *order.Service, couponSvc *coupon.Service, giftCardSvc *giftcard.Service, enc crypto.Encryptor, logger *slog.Logger) *CheckoutExtHandler {
-	return &CheckoutExtHandler{db: db, orderSvc: orderSvc, couponSvc: couponSvc, giftCardSvc: giftCardSvc, encryptor: enc, logger: logger}
+	return &CheckoutExtHandler{db: db, orderSvc: orderSvc, couponSvc: couponSvc, giftCardSvc: giftCardSvc, encryptor: enc, logger: logger, warehouseRepo: warehouse.NewRepository()}
 }
 
 // WithAudit attaches an audit emitter so extended storefront checkouts
@@ -944,7 +953,29 @@ func (h *CheckoutExtHandler) calculateShipping(
 		parcels = append(parcels, p)
 	}
 
-	fromAddr := warehouseAddress(cfg)
+	// #484 removed the legacy-column warehouseAddress() helper — the
+	// checkout-time shipping origin now resolves the same way the rates
+	// quote does (see (*ShippingRatesHandler).resolveWarehouseAddress):
+	// via the store-level warehouses row, or the zero Address when there
+	// isn't a linked/resolvable one.
+	fromAddr := shipping.Address{}
+	if cfg.WarehouseID != nil && h.warehouseRepo != nil {
+		if wh, whErr := h.warehouseRepo.ByID(ctx, h.db, *cfg.WarehouseID); whErr == nil {
+			fromAddr = shipping.Address{
+				Name:        wh.Name,
+				Line1:       wh.Line1,
+				Line2:       wh.Line2,
+				City:        wh.City,
+				Region:      wh.Region,
+				PostalCode:  wh.PostalCode,
+				CountryCode: wh.CountryCode,
+				Phone:       wh.Phone,
+			}
+		} else if h.logger != nil {
+			h.logger.Warn("checkout: carrier config's warehouse_id has no matching row",
+				"store_id", store.ID, "warehouse_id", *cfg.WarehouseID, "err", whErr)
+		}
+	}
 	rateReq := shipping.RateRequest{
 		FromAddress: fromAddr,
 		ToAddress: shipping.Address{
@@ -1071,12 +1102,23 @@ func (h *CheckoutExtHandler) calculateTax(
 
 	// C5 fix: populate SellerAddress.Region from the store's warehouse config
 	// so India GST can determine intra-state vs inter-state correctly.
+	//
+	// #484 removed the legacy warehouse_region column as a read source —
+	// the region now only comes from the store-level warehouses row via
+	// cfg.WarehouseID. No active carrier config, no linked warehouse, or
+	// an unresolvable warehouse_id all just leave sellerRegion blank,
+	// same as before.
 	sellerRegion := ""
 	var cfg carrierConfigRow
 	if err := h.db.WithContext(ctx).
 		Where("store_id = ? AND is_active = true", store.ID).
-		First(&cfg).Error; err == nil && cfg.WarehouseRegion != nil {
-		sellerRegion = *cfg.WarehouseRegion
+		First(&cfg).Error; err == nil && cfg.WarehouseID != nil && h.warehouseRepo != nil {
+		if wh, whErr := h.warehouseRepo.ByID(ctx, h.db, *cfg.WarehouseID); whErr == nil {
+			sellerRegion = wh.Region
+		} else if h.logger != nil {
+			h.logger.Warn("checkout: carrier config's warehouse_id has no matching row",
+				"store_id", store.ID, "warehouse_id", *cfg.WarehouseID, "err", whErr)
+		}
 	}
 
 	// H10 fix: route through tax.Service.CalculateOrderTax instead of

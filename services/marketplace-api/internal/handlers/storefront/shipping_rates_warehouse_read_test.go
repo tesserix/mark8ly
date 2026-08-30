@@ -1,16 +1,17 @@
 //go:build integration
 
-// Package storefront — read-path coverage for #177 (the cheap half) at
-// the shipping-rates quote site.
+// Package storefront — read-path coverage for #484 (the contract half of
+// #177) at the shipping-rates quote site.
 //
 // (*ShippingRatesHandler).GetRates loads a carrierConfigRow and used to
-// build its rate-quote origin address exclusively from the legacy
-// warehouse_* columns. It must now prefer the store-level warehouses row
-// via warehouse_id, falling back to the legacy columns otherwise — see
-// resolveWarehouseAddress. Testing that function directly, rather than
-// driving GetRates end-to-end, avoids needing a live carrier for a rates
-// call; resolveWarehouseAddress is the single seam that decides which
-// address source wins.
+// build its rate-quote origin address from the legacy warehouse_* columns,
+// then from the store-level warehouses row with a legacy fallback (#480).
+// #484 removes that fallback: resolveWarehouseAddress now sources the
+// origin exclusively from the warehouses row via warehouse_id — those
+// columns are no longer read anywhere, which is what makes dropping them
+// in a later migration safe. Testing resolveWarehouseAddress directly,
+// rather than driving GetRates end-to-end, avoids needing a live carrier
+// for a rates call.
 package storefront
 
 import (
@@ -23,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/warehouse"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
@@ -54,7 +56,11 @@ func seedShippingRatesWarehouseReadStore(t *testing.T, db *gorm.DB) (storeID, te
 // raw SQL rather than the carrierConfigRow GORM model — that model
 // deliberately omits store_id (it's only ever used for reads keyed by the
 // gin-context store), so it can't Create() a row that satisfies the
-// table's NOT NULL store_id.
+// table's NOT NULL store_id. The legacy warehouse_* columns are still
+// populated here (they still exist on the table — #484 stops reading
+// them, it doesn't drop them) precisely so a test that fails to switch
+// off the fallback would still be caught: these values deliberately
+// differ from the warehouses-row address used below.
 func seedShippingRatesCarrierConfig(t *testing.T, db *gorm.DB, storeID, tenantID string, warehouseID *string) {
 	t.Helper()
 	require.NoError(t, db.Exec(
@@ -75,12 +81,12 @@ func loadShippingRatesCarrierConfigRow(t *testing.T, db *gorm.DB, storeID string
 	return cfg
 }
 
-// TestResolveWarehouseAddress_PrefersTheWarehousesRowWhenLinked proves the
-// rates-quote origin comes from the warehouses row when warehouse_id is
-// set — with an address that deliberately differs from the legacy
-// columns, so the test can't pass by accident regardless of which source
-// actually won.
-func TestResolveWarehouseAddress_PrefersTheWarehousesRowWhenLinked(t *testing.T) {
+// TestResolveWarehouseAddress_ResolvesFromTheWarehousesRowWhenLinked proves
+// the rates-quote origin comes from the warehouses row when warehouse_id
+// is set — with an address that deliberately differs from the row's own
+// (still-populated, no-longer-read) legacy columns, so the test can't pass
+// by accident if the fallback were somehow still wired in.
+func TestResolveWarehouseAddress_ResolvesFromTheWarehousesRowWhenLinked(t *testing.T) {
 	db := testdb.NewDB(t, shippingRatesWarehouseReadTables...)
 	storeID, tenantID := seedShippingRatesWarehouseReadStore(t, db)
 	whRepo := warehouse.NewRepository()
@@ -101,10 +107,11 @@ func TestResolveWarehouseAddress_PrefersTheWarehousesRowWhenLinked(t *testing.T)
 	require.Equal(t, "Mumbai", got.City)
 }
 
-// TestResolveWarehouseAddress_FallsBackToLegacyColumnsWhenWarehouseIDIsNil
-// covers a config saved before #177's write path, or by a writer that
-// hasn't been updated — warehouse_id is NULL.
-func TestResolveWarehouseAddress_FallsBackToLegacyColumnsWhenWarehouseIDIsNil(t *testing.T) {
+// TestResolveWarehouseAddress_ZeroValueWhenWarehouseIDIsNil covers a
+// config with no linked warehouse. #484 removed the legacy-column
+// fallback: this must yield the zero shipping.Address, never the (still
+// populated on the row) legacy data.
+func TestResolveWarehouseAddress_ZeroValueWhenWarehouseIDIsNil(t *testing.T) {
 	db := testdb.NewDB(t, shippingRatesWarehouseReadTables...)
 	storeID, tenantID := seedShippingRatesWarehouseReadStore(t, db)
 	seedShippingRatesCarrierConfig(t, db, storeID, tenantID, nil)
@@ -113,22 +120,22 @@ func TestResolveWarehouseAddress_FallsBackToLegacyColumnsWhenWarehouseIDIsNil(t 
 	h := newShippingRatesWarehouseReadHandler(db)
 	got := h.resolveWarehouseAddress(context.Background(), cfg)
 
-	require.Equal(t, "1 Legacy Lane", got.Line1)
-	require.Equal(t, "Legacy City", got.City)
+	require.Equal(t, shipping.Address{}, got, "no warehouse_id must yield the zero address, not the legacy columns")
 }
 
-// TestResolveWarehouseAddress_FallsBackToLegacyColumnsWhenWarehouseIDIsDangling
-// covers a warehouse_id that points at a row that no longer exists — the
-// FK is ON DELETE SET NULL, so this should be rare, but resolving to
-// "no quote" rather than the legacy address would be a worse failure mode
-// for what is a best-effort estimate anyway.
+// TestResolveWarehouseAddress_ZeroValueWhenWarehouseIDIsDangling covers a
+// warehouse_id that points at a row that no longer exists — the FK is ON
+// DELETE SET NULL, so this should be rare, but resolving to the zero
+// address (which GetRates would then report as "no active carrier
+// config"-shaped zero data) is the correct behaviour now that there is no
+// legacy data left to fall back to.
 //
 // The dangling id is built directly on an in-memory carrierConfigRow
 // rather than persisted: the real FK (plus ON DELETE SET NULL) means
-// Postgres won't let an actual row go dangling, but
-// resolveWarehouseAddress only reads cfg's fields to decide what to look
-// up, so this still exercises the fallback a hypothetical race would hit.
-func TestResolveWarehouseAddress_FallsBackToLegacyColumnsWhenWarehouseIDIsDangling(t *testing.T) {
+// Postgres won't let an actual row go dangling, but resolveWarehouseAddress
+// only reads cfg's fields to decide what to look up, so this still
+// exercises the code path a hypothetical race would hit.
+func TestResolveWarehouseAddress_ZeroValueWhenWarehouseIDIsDangling(t *testing.T) {
 	db := testdb.NewDB(t, shippingRatesWarehouseReadTables...)
 	storeID, tenantID := seedShippingRatesWarehouseReadStore(t, db)
 	seedShippingRatesCarrierConfig(t, db, storeID, tenantID, nil)
@@ -139,6 +146,5 @@ func TestResolveWarehouseAddress_FallsBackToLegacyColumnsWhenWarehouseIDIsDangli
 	h := newShippingRatesWarehouseReadHandler(db)
 	got := h.resolveWarehouseAddress(context.Background(), cfg)
 
-	require.Equal(t, "1 Legacy Lane", got.Line1, "a dangling warehouse_id must fall back, not return a blank origin")
-	require.Equal(t, "Legacy City", got.City)
+	require.Equal(t, shipping.Address{}, got, "a dangling warehouse_id must yield the zero address, not a stale one")
 }

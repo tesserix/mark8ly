@@ -73,7 +73,19 @@ func (h *BreakGlassLoginHandler) Login(c *gin.Context) {
 	// so timing can't distinguish locked vs. unlocked states.
 	locked, err := h.deps.Repo.IsIPLocked(ctx, ipHash)
 	if err != nil {
-		h.logger().Warn("break-glass: lockout lookup failed", "err", err)
+		// The lockout store is unreachable. This used to fail open
+		// unconditionally: the error was logged at Warn and `locked` stayed
+		// false, so an existing lockout went unenforced (#468). #457 showed
+		// that is not hypothetical — every read failed for weeks and the
+		// only sign was a Warn line nobody read.
+		//
+		// Degrade to the in-memory limiter rather than choosing one extreme.
+		// It is per-pod and resets on deploy, but it is the signal still
+		// available, and it refuses exactly the IPs that have earned it.
+		recent := h.deps.RateLimiter.Count(rlKey(ipHash))
+		locked = degradedLockDecision(recent)
+		h.logger().Error("break-glass: lockout lookup failed; degraded to the in-memory limiter",
+			"err", err, "recent_failures", recent, "treated_as_locked", locked)
 	}
 	if locked {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "locked"})
@@ -182,7 +194,12 @@ func (h *BreakGlassLoginHandler) recordFailure(c *gin.Context, ipHash []byte, te
 			tidPtr = &tenantID
 		}
 		if err := h.deps.Repo.LockIP(c.Request.Context(), ipHash, tidPtr, reason, breakglass.LoginLockoutDuration); err != nil {
-			h.logger().Warn("break-glass: LockIP failed", "err", err)
+			// Error, not Warn (#468). This is the durable half of a security
+			// control failing: the 24h lockout is not persisted, so it will
+			// not survive this pod, and every other replica remains unaware.
+			// It was logged at Warn while broken for weeks and nobody saw it.
+			h.logger().Error("break-glass: lockout NOT persisted; the 24h hard lockout is not in effect",
+				"err", err, "failures_in_window", count)
 		}
 	}
 
@@ -226,4 +243,24 @@ var breakGlassNamespace = uuid.MustParse("1ffb2c0e-8c3a-4d78-9aee-62267a3c110a")
 // collides with a real user).
 func BreakGlassUserID(tenantID uuid.UUID) uuid.UUID {
 	return uuid.NewSHA1(breakGlassNamespace, []byte(tenantID.String()))
+}
+
+// degradedLockDecision decides whether to treat a login as locked when the
+// lockout store could not be read (#468).
+//
+// Neither extreme is right. Failing open unconditionally — the old
+// behaviour — means an existing lockout is silently unenforced for as long
+// as the store is unreachable, which #457 showed can be weeks. Failing
+// closed unconditionally turns a database blip into "nobody can break-glass
+// in", precisely when break-glass is most likely to be needed: this
+// endpoint is mounted outside the store-scoped group specifically to
+// survive states other paths cannot.
+//
+// So it falls back to the in-memory limiter. That counter is per-pod and
+// resets on deploy, so it is a weaker signal than the table — but it is the
+// signal still available, and it refuses only IPs that have already reached
+// the same threshold a persisted lockout would have used. An operator whose
+// IP has done nothing wrong is unaffected.
+func degradedLockDecision(recentFailures int) bool {
+	return recentFailures >= breakglass.LoginMaxFailures
 }

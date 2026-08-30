@@ -22,7 +22,9 @@ RUN go build -trimpath -ldflags="-s -w" \
  && go build -trimpath -ldflags="-s -w" \
       -o /out/migrate ./cmd/migrate \
  && go build -trimpath -ldflags="-s -w" \
-      -o /out/refund-sweep-cron ./cmd/refund-sweep-cron
+      -o /out/refund-sweep-cron ./cmd/refund-sweep-cron \
+ && go build -trimpath -ldflags="-s -w" \
+      -o /out/stock-hold-sweep-cron ./cmd/stock-hold-sweep-cron
 
 # ─── migrate ────────────────────────────────────────────────────────────
 # Standalone image used by the K8s Job pattern.
@@ -31,14 +33,15 @@ COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
 CMD ["/usr/local/bin/migrate"]
 
 # ─── runtime ────────────────────────────────────────────────────────────
-# Runtime image carries all three binaries — server (default ENTRYPOINT),
-# the migrate CLI at /usr/local/bin/migrate, and the refund-sweep-cron at
-# /usr/local/bin/refund-sweep-cron — so the Helm init container and the
-# refund-sweep CronJob can override ENTRYPOINT to run migrations / the
-# stuck-refund sweeper from the same image.
+# Runtime image carries every binary — server (default ENTRYPOINT), the
+# migrate CLI at /usr/local/bin/migrate, the refund-sweep-cron and the
+# stock-hold-sweep-cron — so the Helm init container and the CronJobs can
+# override ENTRYPOINT and run migrations / the stuck-refund sweeper / the
+# expired-hold sweeper from the same image.
 FROM ghcr.io/tesserix/base-distroless-static@sha256:ccf26e72c62d53b69caae2ab73f3b059fe46785c0e5c18868e103b63c52a729f AS runtime
 COPY --from=builder --chown=10001:10001 /out/marketplace-api /usr/local/bin/marketplace-api
 COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
 COPY --from=builder --chown=10001:10001 /out/refund-sweep-cron /usr/local/bin/refund-sweep-cron
+COPY --from=builder --chown=10001:10001 /out/stock-hold-sweep-cron /usr/local/bin/stock-hold-sweep-cron
 EXPOSE 8091
 CMD ["/usr/local/bin/marketplace-api"]

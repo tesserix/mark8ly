@@ -1,0 +1,7 @@
+-- No-op on purpose. This is a data backfill, not a schema change: reversing
+-- it would mean deciding which warehouses rows and warehouse_id links to
+-- delete, and there is no reliable way to tell a row this migration
+-- created/linked apart from one 000095 or a later admin save already
+-- created — undoing it risks deleting warehouses (and unlinking configs)
+-- that are in active use. Leaving the backfilled data in place is always
+-- safe: it is exactly what the write path would have produced anyway.

@@ -137,6 +137,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/tenantpurge/... \
 	    ./internal/ticket/... \
 	    ./internal/vendor/... \
+	    ./internal/warehouse/... \
 	    ./internal/webhookevents/... \
 	    ./internal/webhookprune/... \
 	    ./internal/whitelabel/lifecycle/... \

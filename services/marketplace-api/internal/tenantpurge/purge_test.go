@@ -40,31 +40,14 @@ var protectedTables = []string{
 	"user_profiles",
 	"promo_codes",
 	"signup_anomaly_log",
-	// break_glass_lockouts is excluded by CHOICE, not by privilege (#457).
-	//
-	// It used to be excluded because it could not be deleted: the table was
-	// owned by `postgres` in prod — a manual-migration anomaly, since
-	// migration 000073 creates it as marketplace_api like every sibling table
-	// — so marketplace_api held NO privileges and a DELETE would abort the
-	// whole single-tx purge (SQLSTATE 42501).
-	//
-	// Ownership was transferred to marketplace_api on 2026-08-30 (see
-	// docs/ops/2026-08-30-break-glass-lockouts-ownership.md), so that reason
-	// is gone and a DELETE would now succeed.
-	//
-	// The exclusion stands on its own merits: the rows are ephemeral
-	// rate-limit lockouts (HMAC'd IP, self-expiring via locked_until) and
-	// tenant_id is NULLABLE — rows with no tenant are IP-level lockouts
-	// belonging to nobody, which a tenant-scoped purge must not touch.
-	//
-	// Re-adding it as tenantScoped() is now POSSIBLE and is a deliberate
-	// decision rather than a cleanup: it deletes a tenant's lockout rows on
-	// purge, which is defensible under art.17 and changes rate-limit state.
-	// Not made here — see the follow-up issue.
+	// break_glass_lockouts is NO LONGER protected: #457 removed the
+	// ownership constraint and #469 added it to the plan, because the row
+	// links a tenant to an HMAC'd client IP. Its NULL-tenant rows are
+	// guarded by TestPurgePlan_BreakGlassLockoutsNeverTouchesNullTenantRows
+	// rather than by exclusion.
 	//
 	// break_glass_ACCOUNTS (the sensitive emergency-admin row) is owned by
-	// marketplace_api and IS still purged.
-	"break_glass_lockouts",
+	// marketplace_api and has always been purged.
 }
 
 func stepIndex(steps []deleteStep, table string) int {

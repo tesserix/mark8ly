@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { HoldCountdown } from "@/components/HoldCountdown";
 import { useCart } from "@/components/CartProvider";
 import { StorefrontNav } from "@/components/StorefrontNav";
 import { toast } from "@/lib/toast";
@@ -28,6 +29,7 @@ import {
   fetchShippingRates,
   fetchTaxPreview,
   submitCheckout,
+  isOutOfStock,
   type PaymentMethod,
   type ShippingOption,
   type ShippingRate,
@@ -166,7 +168,7 @@ function formatPrice(amount: number, currencyCode: string): string {
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { items, subtotal, count, clear } = useCart();
+  const { items, subtotal, count, clear, holdExpiresAt } = useCart();
   const storeSlug = useMemo(() => resolveSlugClient(), []);
   const currencyCode = items[0]?.currencyCode ?? "USD";
 
@@ -511,6 +513,31 @@ export default function CheckoutPage() {
     };
 
     const result = await submitCheckout(storeSlug, body);
+
+    // Someone else took the stock while this buyer was checking out
+    // (#230/#232). This is not a site fault and must not read as one: the
+    // shopper can remove that line and try again. Before this, every
+    // non-2xx collapsed into "something went wrong", which told them
+    // nothing and looked like the store was broken.
+    if (isOutOfStock(result)) {
+      const item = result.variantId
+        ? items.find((i) => i.variantId === result.variantId)
+        : undefined;
+      const named = item ? `"${item.title}"` : "One of your items";
+      setError(
+        `${named} just sold out while you were checking out. Remove it from your cart to continue — your card was not charged.`,
+      );
+      toast({
+        title: "Someone else took the last one",
+        description: item
+          ? `${item.title} is no longer available in that quantity.`
+          : "An item in your cart is no longer available in that quantity.",
+        tone: "error",
+      });
+      setSubmitting(false);
+      return;
+    }
+
     if (!result) {
       setError("Something went wrong placing your order. Please try again.");
       toast({
@@ -727,6 +754,12 @@ export default function CheckoutPage() {
         <h1 className="mt-4 font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
           Checkout
         </h1>
+
+        {/* #232 — how long these items stay reserved. Renders nothing when
+            there is no hold, which is a normal state. */}
+        <div className="mt-2">
+          <HoldCountdown expiresAt={holdExpiresAt} />
+        </div>
 
         {/* Step indicator */}
         <CheckoutSteps

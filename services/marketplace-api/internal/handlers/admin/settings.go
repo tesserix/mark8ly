@@ -985,21 +985,25 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 			// A blank contact_person/email in this save means "the merchant
 			// didn't touch this field", not "clear it" — warehouseRepo.Upsert's
 			// ON CONFLICT clause overwrites both columns unconditionally, so we
-			// resolve what to actually write ourselves before calling it. Only
-			// look up the prior row on an update with a warehouse already
-			// attached; a lookup failure just means nothing to fall back to,
-			// same as the create path — log and continue rather than failing
-			// the whole save over it.
-			var existingContactPerson, existingEmail string
-			if !isCreate && existing.WarehouseID != nil {
-				prior, err := h.warehouseRepo.ByID(c.Request.Context(), tx, existing.WarehouseID.String())
-				if err == nil {
-					existingContactPerson = prior.ContactPerson
-					existingEmail = prior.Email
-				} else {
-					h.logger.Warn("shipping settings upsert: warehouse_id has no matching row",
-						"store_id", store.ID, "warehouse_id", existing.WarehouseID.String(), "err", err)
-				}
+			// resolve what to actually write ourselves before calling it.
+			//
+			// Resolved by (store_id, name) — the SAME key Upsert conflicts on
+			// below — not by existing.WarehouseID. The two can disagree:
+			// clearing warehouse_name on a config nils cfg.WarehouseID (see
+			// the block below this one) while the underlying warehouses row
+			// survives untouched, so a later re-save of the SAME name must
+			// still find that row to preserve its contact fields, even though
+			// nothing currently points at it by id. A lookup miss (brand new
+			// name) or any other error just means nothing to fall back to —
+			// log and continue with blanks rather than failing the save.
+			existingContactPerson, existingEmail := "", ""
+			prior, err := h.warehouseRepo.ByStoreAndName(c.Request.Context(), tx, store.ID, strings.TrimSpace(req.WarehouseName))
+			if err == nil {
+				existingContactPerson = prior.ContactPerson
+				existingEmail = prior.Email
+			} else if !errors.Is(err, warehouse.ErrNotFound) {
+				h.logger.Warn("shipping settings upsert: warehouse lookup by name failed",
+					"store_id", store.ID, "warehouse_name", req.WarehouseName, "err", err)
 			}
 			wh, err := h.warehouseRepo.Upsert(c.Request.Context(), tx, warehouse.Warehouse{
 				TenantID:      store.TenantID,

@@ -125,7 +125,7 @@ func (r *Repository) Upsert(ctx context.Context, db *gorm.DB, w Warehouse) (Ware
 	// Read back rather than trusting the in-memory struct: on the conflict
 	// path the row's id is the EXISTING one, not the id GORM generated for
 	// this call, and callers use it as a foreign key.
-	return r.byStoreAndName(ctx, db, w.StoreID, w.Name)
+	return r.ByStoreAndName(ctx, db, w.StoreID, w.Name)
 }
 
 // DefaultForStore returns the store's warehouse.
@@ -166,7 +166,16 @@ func (r *Repository) ByID(ctx context.Context, db *gorm.DB, id string) (Warehous
 	return w, nil
 }
 
-func (r *Repository) byStoreAndName(ctx context.Context, db *gorm.DB, storeID, name string) (Warehouse, error) {
+// ByStoreAndName loads a warehouse by the same key Upsert conflicts on
+// (store_id, name) — the table's unique index. Exported so callers that
+// need to resolve "the warehouse a given name currently maps to" can use
+// the identical key Upsert itself uses, rather than going through a
+// config's warehouse_id, which can go stale relative to that key: clearing
+// warehouse_name on a config nils its warehouse_id (see settings.go's
+// Upsert) while the underlying warehouses row survives untouched, so a
+// later re-save of the SAME name must find that same row again even
+// though nothing currently points at it by id.
+func (r *Repository) ByStoreAndName(ctx context.Context, db *gorm.DB, storeID, name string) (Warehouse, error) {
 	var w Warehouse
 	err := db.WithContext(ctx).
 		Where("store_id = ? AND name = ?", storeID, name).First(&w).Error

@@ -191,3 +191,63 @@ func TestShippingUpsert_ExistingWarehouseWithNullContactColumnsStillSavesFine(t 
 	require.Empty(t, contactPerson, "a NULL-backfilled row with no submitted value must stay blank, not error or fabricate a value")
 	require.Empty(t, email, "a NULL-backfilled row with no submitted value must stay blank, not error or fabricate a value")
 }
+
+// TestShippingUpsert_ClearingThenRestoringTheWarehouseNamePreservesContactFields
+// pins the real-world trigger for the bug the by-ID lookup had: clearing a
+// config's warehouse_name (existing, documented pre-#483 behavior) sets
+// cfg.WarehouseID back to nil, even though the underlying warehouses row is
+// untouched and still holds its contact_person/email. A merchant who then
+// re-enters the SAME warehouse name is doing an UPDATE (isCreate is false),
+// but a lookup keyed on existing.WarehouseID would find nothing — that
+// pointer is still nil from the clear — so it would resolve "nothing to
+// preserve" and blankPreservesExistingWarehouseField would return "", which
+// warehouseRepo.Upsert's ON CONFLICT DO UPDATE on (store_id, name) would
+// then write straight over the still-existing row, wiping its contact
+// fields. Resolving the prior row by (store_id, name) instead — the same
+// key Upsert conflicts on — finds it correctly across this clear/restore
+// cycle. This is also reachable within a single store once two carriers
+// share one warehouse row (see internal/warehouse's own package doc), not
+// just via this clear-then-restore sequence.
+func TestShippingUpsert_ClearingThenRestoringTheWarehouseNamePreservesContactFields(t *testing.T) {
+	env := setupShippingWarehouseRouter(t)
+	seedShippingCountry(t, env.db)
+	storeID, tenantID := seedShippingWarehouseStore(t, env.db)
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleOwner, tenantID)
+
+	// 1. Save the warehouse with a contact person.
+	withContact := warehouseUpsertBody("Main Warehouse")
+	withContact["warehouse_contact_person"] = "Priya Sharma"
+	withContact["warehouse_email"] = "priya@example.com"
+	w1 := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+		withContact, authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusOK, w1.Code, w1.Body.String())
+
+	rows := loadWarehousesForStore(t, env.db, storeID)
+	require.Len(t, rows, 1)
+	warehouseID := rows[0].ID
+
+	// 2. Clear the warehouse name. warehouse_id must go NULL on the config,
+	// but the warehouses row itself (and its contact fields) survives.
+	w2 := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+		warehouseUpsertBody(""), authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusOK, w2.Code, w2.Body.String())
+	require.Nil(t, warehouseIDForConfig(t, env.db, storeID, "delhivery"),
+		"clearing the name must clear the config's warehouse_id link")
+
+	// 3. Re-enter the SAME warehouse name, still omitting contact/email.
+	// isCreate is false here, but the config's warehouse_id has been nil
+	// since step 2 — a by-ID lookup would miss entirely. The fix must
+	// still find the row by (store_id, name) and preserve its fields.
+	w3 := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+		warehouseUpsertBody("Main Warehouse"), authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusOK, w3.Code, w3.Body.String())
+
+	require.Len(t, loadWarehousesForStore(t, env.db, storeID), 1,
+		"re-entering the same name must reuse the existing warehouse row, not create a second one")
+	contactPerson, email := loadWarehouseContact(t, env.db, warehouseID)
+	require.Equal(t, "Priya Sharma", contactPerson,
+		"restoring the same warehouse name must not wipe the contact person saved before it was cleared")
+	require.Equal(t, "priya@example.com", email,
+		"restoring the same warehouse name must not wipe the email saved before it was cleared")
+}

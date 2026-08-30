@@ -253,7 +253,7 @@ export function ShippingConfigForm({
             />
             <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
               Used for shipping label pickup notifications. Falls back to the
-              customer's email if left blank.
+              customer&apos;s email if left blank.
             </p>
           </Field>
         </div>

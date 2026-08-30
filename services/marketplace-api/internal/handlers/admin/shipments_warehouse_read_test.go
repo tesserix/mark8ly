@@ -69,14 +69,14 @@ func carrierConfigForRead(storeID, tenantID string, warehouseID *uuid.UUID) *shi
 	storeUUID := uuid.MustParse(storeID)
 	tenantUUID := uuid.MustParse(tenantID)
 	return &shipping.CarrierConfig{
-		TenantID:     tenantUUID,
-		StoreID:      storeUUID,
-		Provider:     "delhivery",
-		APIKey:       "legacy-key",
-		Mode:         "test",
-		Enabled:      true,
-		HandlingFee:  decimal.Zero,
-		WarehouseID:  warehouseID,
+		TenantID:    tenantUUID,
+		StoreID:     storeUUID,
+		Provider:    "delhivery",
+		APIKey:      "legacy-key",
+		Mode:        "test",
+		Enabled:     true,
+		HandlingFee: decimal.Zero,
+		WarehouseID: warehouseID,
 	}
 }
 

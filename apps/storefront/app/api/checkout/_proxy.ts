@@ -26,6 +26,9 @@ function storefrontHeaders(extra?: HeadersInit): HeadersInit {
   return headers;
 }
 
+// Statuses the fetch spec forbids a body on.
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+
 export function marketplaceStoreUrl(storeSlug: string): string {
   return `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}`;
 }
@@ -44,6 +47,18 @@ export async function proxyJson(
       cache: "no-store",
     });
     const bodyText = await upstream.text();
+
+    // 204/205/304 are null-body statuses: constructing a Response with a
+    // body for one THROWS, and the throw lands in the catch below — so a
+    // call that actually succeeded upstream is reported to the client as
+    // `upstream_unreachable`, with the side effect already applied.
+    //
+    // Found live: DELETE /cart/holds (#232) returns 204, released the hold
+    // in the database, and answered the browser 502.
+    if (NULL_BODY_STATUSES.has(upstream.status)) {
+      return new Response(null, { status: upstream.status });
+    }
+
     return new Response(bodyText, {
       status: upstream.status,
       headers: {

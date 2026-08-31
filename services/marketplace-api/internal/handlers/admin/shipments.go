@@ -1945,12 +1945,17 @@ func (h *ShipmentsHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
-	rec, err := h.repo.GetShipmentByOrderID(ctx, orderID)
+	// Resolve by the shipment's own id — not the order's — so any parcel
+	// on a multi-warehouse order can be advanced, not just the one
+	// GetShipmentByOrderID happens to pick. The order/store checks below
+	// are a real authorisation boundary (a shipment id from another order
+	// or store must still 404), so they stay.
+	rec, err := h.repo.GetShipmentByID(ctx, shipmentID)
 	if err != nil {
 		RespondErr(c, apperrors.NotFound("shipment"), h.logger)
 		return
 	}
-	if rec.ID != shipmentID || rec.StoreID.String() != c.Param("storeId") {
+	if rec.OrderID != orderID || rec.StoreID.String() != c.Param("storeId") {
 		RespondErr(c, apperrors.NotFound("shipment"), h.logger)
 		return
 	}
@@ -2011,12 +2016,38 @@ func (h *ShipmentsHandler) UpdateStatus(c *gin.Context) {
 }
 
 // GetByOrder handles GET /admin/stores/:storeId/orders/:id/shipments.
+//
+// Without ?all=true it keeps the pre-#496 response shape (a single object,
+// or null) so the existing admin client keeps working — but now
+// deterministically the FIRST parcel (created_at ASC, id ASC), not an
+// arbitrary one. With ?all=true it returns every parcel on the order as a
+// JSON array, letting a multi-warehouse order's second (and later) parcel
+// be seen at all.
 func (h *ShipmentsHandler) GetByOrder(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	orderID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	storeID := c.Param("storeId")
+
+	if c.Query("all") == "true" {
+		recs, err := h.repo.ListShipmentsByOrderID(ctx, orderID)
+		if err != nil {
+			RespondErr(c, fmt.Errorf("shipments: list by order: %w", err), h.logger)
+			return
+		}
+		out := make([]ShipmentResponse, 0, len(recs))
+		for i := range recs {
+			rec := &recs[i]
+			if rec.StoreID.String() != storeID {
+				continue
+			}
+			out = append(out, toShipmentResponse(rec))
+		}
+		c.JSON(http.StatusOK, out)
 		return
 	}
 
@@ -2028,7 +2059,7 @@ func (h *ShipmentsHandler) GetByOrder(c *gin.Context) {
 	}
 
 	// Verify the shipment belongs to this store.
-	if rec.StoreID.String() != c.Param("storeId") {
+	if rec.StoreID.String() != storeID {
 		c.JSON(http.StatusOK, nil)
 		return
 	}

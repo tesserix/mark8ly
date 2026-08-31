@@ -64,15 +64,28 @@ Each was verified against the code or the live database. Do not re-derive them; 
 - Produces:
 
 ```go
-// storageLocations maps warehouseID -> the location_id the units are
-// actually stored under, per variant: storage[variantID][warehouseID].
-type storageLocations map[string]map[string]string
+// stockAt is units of a variant available at ONE physical storage location.
+type stockAt struct {
+    LocationID string
+    Units      int
+}
+
+// storageLocations records, per variant and warehouse, where the units
+// backing that warehouse's availability actually sit — possibly in more than
+// one place while sentinel and real rows coexist. Sorted by LocationID.
+type storageLocations map[string]map[string][]stockAt
 
 func loadAvailability(
     ctx context.Context, tx *gorm.DB, cartToken string,
     warehouses []allocation.Warehouse, variantIDs []string,
 ) (allocation.Availability, storageLocations, error)
 ```
+
+**Note (amended after Task 1's review):** this returns a per-location
+BREAKDOWN, not a single location. A warehouse's availability can be backed by
+units in two places during the transition — PR 5's per-location stock editing
+writes to a real warehouse id while the sentinel row still exists. An
+assignment may therefore need MORE THAN ONE hold.
 
   Task 2 calls this, passes the `Availability` to `allocation.Plan`, and uses `storageLocations` to decide which `location_id` each `Hold` targets.
 
@@ -683,11 +696,32 @@ In `services/marketplace-api/internal/handlers/storefront/checkout_stock.go`:
 		if policies[a.VariantID] == inventoryPolicyContinue {
 			continue // sold past zero on purpose; decremented, not held
 		}
-		loc := storage[a.VariantID][a.WarehouseID]
-		if loc == "" {
-			loc = a.WarehouseID
+		// A warehouse's units can sit in more than one physical location
+		// while the sentinel and real rows coexist, so draw the assigned
+		// quantity from that warehouse's locations in order until it is
+		// covered. The breakdown is sorted by LocationID, so the same
+		// inputs always produce the same holds.
+		want := a.Quantity
+		for _, at := range storage[a.VariantID][a.WarehouseID] {
+			if want == 0 {
+				break
+			}
+			take := min(want, at.Units)
+			if take <= 0 {
+				continue
+			}
+			totals[holdKey{a.VariantID, at.LocationID}] += take
+			want -= take
 		}
-		totals[holdKey{a.VariantID, loc}] += a.Quantity
+		if want > 0 {
+			// The snapshot said this warehouse had the units and the
+			// breakdown does not account for them. That is a bug in the
+			// snapshot, not a stock shortage — fail loudly rather than
+			// under-hold and oversell.
+			return fmt.Errorf(
+				"storefront: allocation for variant %s at warehouse %s is %d units short of its storage breakdown",
+				a.VariantID, a.WarehouseID, want)
+		}
 	}
 	for k, qty := range totals {
 		err := holds.Hold(ctx, tx, cartToken, k.variantID, k.locationID, qty, HoldTTL)
@@ -726,6 +760,43 @@ TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:5432/marketplace_db?sslmode=
 ```
 
 Expected: all four PASS.
+
+- [ ] **Step 4b: Add a test for an assignment spanning two storage locations**
+
+This is the case Task 1's review added the breakdown for, and nothing in the
+tests above reaches it. In `checkout_allocation_integration_test.go`:
+
+```go
+// A warehouse whose units sit in two places — the sentinel row that predates
+// the backfill, plus a real row written by per-location stock editing. One
+// assignment against that warehouse must produce a hold in EACH location,
+// adding up to the assignment.
+func TestCommitStock_AssignmentSpanningTwoStorageLocationsHoldsInBoth(t *testing.T) {
+	db := testdb.NewDB(t, "order_allocations", "stock_holds", "order_items", "orders",
+		"variant_stock", "product_variants", "products", "stores")
+	storeID, variantID := seedAvailStore(t, db)
+	whA := seedWarehouseRow(t, db, storeID, "A")
+	require.NoError(t, db.Exec(
+		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
+		 VALUES (?, ?, 3, now()), (?, ?, 4, now())`,
+		variantID, product.DefaultLocationID, variantID, whA).Error)
+
+	lines := []stockLine{{VariantID: variantID, Quantity: 5}}
+	orderID, _ := seedOrderWithItems(t, db, storeID, lines)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+			orderID, storeID, lines)
+	}))
+
+	// 5 units drawn from a 3 + 4 breakdown: the sentinel is exhausted and the
+	// remainder comes from the real row.
+	require.Equal(t, 0, stockAt(t, db, variantID, product.DefaultLocationID))
+	require.Equal(t, 2, stockAt(t, db, variantID, whA))
+}
+```
+
+Run it, expect PASS.
 
 - [ ] **Step 5: Mutation-test the hold aggregation**
 

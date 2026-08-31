@@ -15,6 +15,7 @@ package storefront
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -117,4 +118,22 @@ func TestLoadShipments_LastEntryMatchesTheSingularField(t *testing.T) {
 	require.NotEmpty(t, list)
 	require.NotNil(t, single)
 	require.Equal(t, list[len(list)-1].TrackingNumber, single.TrackingNumber)
+}
+
+// The no-omitempty tag is only half the contract: a nil slice still
+// marshals to null, and a storefront calling .map() on null throws. An
+// unshipped order must serialise an empty ARRAY.
+func TestOrderDetailResponse_EmptyShipmentsMarshalsAsArrayNotNull(t *testing.T) {
+	db := testdb.NewTx(t)
+	_, orderID := seedShipmentsOrder(t, db)
+
+	h := &OrderDetailHandler{db: db}
+	resp := storefrontOrderResponse{
+		Shipments: h.loadShipments(context.Background(), uuid.MustParse(orderID)),
+	}
+
+	body, err := json.Marshal(resp)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"shipments":[]`,
+		"an unshipped order must serialise an empty array, not null")
 }

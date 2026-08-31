@@ -164,6 +164,69 @@ func TestRelease_ReturnsStockToThePool(t *testing.T) {
 	}), "a released hold must return its unit to the pool")
 }
 
+// second location a store's stock holds may also sit at, for tests exercising
+// more than one (variant, location) pair for the same cart.
+const testLocation2 = "00000000-0000-0000-0000-000000000002"
+
+// ReleaseExcept must release every hold NOT in keep, and leave the ones in
+// keep untouched — the shape checkout needs before Commit runs, since
+// Commit decrements every live hold the cart owns.
+func TestReleaseExcept_ReleasesEverythingNotKept(t *testing.T) {
+	db := testdb.NewDB(t, "stock_holds")
+	repo := stockhold.NewRepository()
+	ctx := context.Background()
+	variantID := seedVariant(t, db, 5)
+	require.NoError(t, db.Exec(
+		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
+		 VALUES (?, ?, 5, now())`, variantID, testLocation2).Error)
+	cart := uuid.NewString()
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		if err := repo.Hold(ctx, tx, cart, variantID, testLocation, 1, time.Hour); err != nil {
+			return err
+		}
+		return repo.Hold(ctx, tx, cart, variantID, testLocation2, 1, time.Hour)
+	}))
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return repo.ReleaseExcept(ctx, tx, cart, []stockhold.VariantLocation{
+			{VariantID: variantID, LocationID: testLocation2},
+		})
+	}))
+
+	var states []string
+	require.NoError(t, db.Raw(
+		`SELECT state FROM stock_holds WHERE cart_token = ? ORDER BY location_id`, cart).
+		Scan(&states).Error)
+	require.Equal(t, []string{"released", "held"}, states,
+		"testLocation sorts before testLocation2 — the kept hold must stay 'held', the other must be released")
+
+	// The released unit at testLocation must be obtainable by someone else.
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return repo.Hold(ctx, tx, uuid.NewString(), variantID, testLocation, 1, time.Minute)
+	}))
+}
+
+// An empty keep list must behave exactly like Release — release everything.
+func TestReleaseExcept_EmptyKeepReleasesEverything(t *testing.T) {
+	db := testdb.NewDB(t, "stock_holds")
+	repo := stockhold.NewRepository()
+	ctx := context.Background()
+	variantID := seedVariant(t, db, 1)
+	cart := uuid.NewString()
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return repo.Hold(ctx, tx, cart, variantID, testLocation, 1, time.Hour)
+	}))
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return repo.ReleaseExcept(ctx, tx, cart, nil)
+	}))
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return repo.Hold(ctx, tx, uuid.NewString(), variantID, testLocation, 1, time.Minute)
+	}), "an empty keep list must release everything, same as Release")
+}
+
 // THE TEST THIS PACKAGE EXISTS FOR.
 //
 // N goroutines on separate connections contend for M units. Exactly M may

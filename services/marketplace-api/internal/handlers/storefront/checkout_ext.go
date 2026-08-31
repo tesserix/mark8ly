@@ -630,7 +630,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 
 	consumeDiscounts := func(tx *gorm.DB, o *order.Order) error {
 		if h.stockHolds != nil {
-			if err := commitStock(ctx, tx, h.stockHolds, stockCartToken, stockLines); err != nil {
+			if err := commitStock(ctx, tx, h.stockHolds, stockCartToken, o.ID.String(), storeID.String(), stockLines); err != nil {
 				return err
 			}
 		}

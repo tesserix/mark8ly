@@ -30,6 +30,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -176,6 +177,44 @@ func (r *Repository) Release(ctx context.Context, tx *gorm.DB, cartToken string)
 	return tx.WithContext(ctx).Exec(
 		`UPDATE stock_holds SET state = 'released' WHERE cart_token = ? AND state = 'held'`,
 		cartToken).Error
+}
+
+// VariantLocation identifies one (variant, location) pair a cart holds units
+// at.
+type VariantLocation struct {
+	VariantID  string
+	LocationID string
+}
+
+// ReleaseExcept returns a cart's live holds to the pool, except those whose
+// (variant_id, location_id) appears in keep.
+//
+// It exists for the case Release does not cover: a placement plan retargets
+// an assignment to a location different from wherever a cart-add hold
+// landed it. Commit decrements EVERY live hold the cart owns, so a hold that
+// no longer matches the final plan must be released before Commit runs, or
+// the same units get decremented twice — once for the stale hold, once for
+// the plan's own hold on the replacement location.
+func (r *Repository) ReleaseExcept(ctx context.Context, tx *gorm.DB, cartToken string, keep []VariantLocation) error {
+	if len(keep) == 0 {
+		return r.Release(ctx, tx, cartToken)
+	}
+
+	conds := make([]string, len(keep))
+	args := make([]interface{}, 0, len(keep)*2+1)
+	args = append(args, cartToken)
+	for i, k := range keep {
+		conds[i] = "(variant_id = ? AND location_id = ?)"
+		args = append(args, k.VariantID, k.LocationID)
+	}
+
+	query := fmt.Sprintf(
+		`UPDATE stock_holds SET state = 'released'
+		  WHERE cart_token = ? AND state = 'held'
+		    AND NOT (%s)`,
+		strings.Join(conds, " OR "))
+
+	return tx.WithContext(ctx).Exec(query, args...).Error
 }
 
 // Extend pushes a live cart's expiry out, for a customer still working

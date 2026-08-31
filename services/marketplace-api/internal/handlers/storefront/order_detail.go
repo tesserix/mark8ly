@@ -115,8 +115,17 @@ type storefrontOrderResponse struct {
 	ShippingAddress *storefrontAddressResponse    `json:"shipping_address"`
 	BillingAddress  *storefrontAddressResponse    `json:"billing_address,omitempty"`
 	Shipment        *storefrontShipmentResponse   `json:"shipment,omitempty"`
-	Timeline        []storefrontTimelineEntry     `json:"timeline"`
-	PlacedAt        string                        `json:"placed_at"`
+	// Shipments is every parcel on the order, oldest first. A multi-warehouse
+	// order ships as more than one (#177), and the singular Shipment above
+	// shows only the most recent — a customer reading it alone would silently
+	// lose the other tracking numbers.
+	//
+	// Shipment is kept, unchanged, because apps/storefront reads it in seven
+	// places including invoice rendering, and this service deploys
+	// independently of that app. It is retired once nothing reads it.
+	Shipments []storefrontShipmentResponse `json:"shipments"`
+	Timeline  []storefrontTimelineEntry    `json:"timeline"`
+	PlacedAt  string                       `json:"placed_at"`
 }
 
 // storefrontTaxLineResponse is the public view of one persisted
@@ -263,6 +272,7 @@ func (h *OrderDetailHandler) GetOrder(c *gin.Context) {
 
 	resp := mapOrderToStorefrontResponse(o, items, addrs)
 	resp.Shipment = shipment
+	resp.Shipments = h.loadShipments(c.Request.Context(), orderID)
 	resp.Timeline = timeline
 	resp.TaxLines = taxLines
 	c.JSON(http.StatusOK, gin.H{"data": resp})
@@ -322,7 +332,15 @@ func (h *OrderDetailHandler) loadShipment(ctx context.Context, orderID uuid.UUID
 	if err != nil || row.Carrier == "" {
 		return nil
 	}
-	resp := &storefrontShipmentResponse{
+	resp := shipmentResponseFrom(row)
+	return &resp
+}
+
+// shipmentResponseFrom maps a raw shipments row onto the public DTO. Shared
+// by loadShipment (most recent parcel) and loadShipments (every parcel) so
+// the field mapping can't drift between the two.
+func shipmentResponseFrom(row shipmentRow) storefrontShipmentResponse {
+	resp := storefrontShipmentResponse{
 		Carrier: row.Carrier,
 		// Service level isn't persisted, so we leave it empty on the
 		// public DTO — the customer card already reads "Standard delivery"
@@ -340,6 +358,42 @@ func (h *OrderDetailHandler) loadShipment(ctx context.Context, orderID uuid.UUID
 		resp.DeliveredAt = *row.DeliveredAt
 	}
 	return resp
+}
+
+// loadShipments returns every shipment on the order, oldest first.
+//
+// Ordered ASCENDING by created_at so a parcel keeps its position as later
+// ones are added — a customer who bookmarked "parcel 1" should not find it
+// renumbered. loadShipment's DESC + Limit(1) is left alone: it answers a
+// different question (the most recent parcel) that the singular field still
+// promises.
+//
+// A read failure yields an empty list rather than an error: the order page
+// must still render without its tracking numbers, exactly as loadShipment
+// already degrades.
+func (h *OrderDetailHandler) loadShipments(ctx context.Context, orderID uuid.UUID) []storefrontShipmentResponse {
+	var rows []shipmentRow
+	err := h.db.WithContext(ctx).
+		Table("shipments").
+		Select("carrier", "tracking_number", "status", "estimated_delivery", "shipped_at", "delivered_at").
+		Where("order_id = ?", orderID).
+		Order("created_at ASC, id ASC").
+		Scan(&rows).Error
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("storefront: load shipments", "order_id", orderID, "err", err)
+		}
+		return nil
+	}
+
+	out := make([]storefrontShipmentResponse, 0, len(rows))
+	for _, row := range rows {
+		if row.Carrier == "" {
+			continue
+		}
+		out = append(out, shipmentResponseFrom(row))
+	}
+	return out
 }
 
 type timelineRow struct {

@@ -22,15 +22,20 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
@@ -58,6 +63,78 @@ func seedTwoParcelOrder(t *testing.T, db *gorm.DB) (storeID, tenantID, orderID u
 	require.Len(t, shipments, 2, "expected two parcels for a two-warehouse allocation")
 	// shipmentsForOrder already orders by created_at, id.
 	return storeID, tenantID, orderID, shipments[0].ID, shipments[1].ID
+}
+
+// seedShuffledParcels seeds n shipment rows directly (bypassing Create(),
+// which has no reason to control id/created_at relationships) for one
+// order, choosing ids and created_at values that deliberately DISAGREE.
+//
+// The first attempt at this fixture only inverted PHYSICAL INSERT order
+// against created_at, on the theory that an unordered query falls back to
+// heap/physical scan order. Re-running the mutation (drop the explicit
+// .Order(...) in GetShipmentByOrderID) against that fixture still only
+// caught it ~50-60% of the time — because that theory was wrong. GORM's
+// First() silently injects `ORDER BY id ASC` whenever no explicit Order()
+// is given (a documented GORM convention for First/Last), so the "no
+// ordering" mutant is not actually unordered — it orders by the random
+// v4 UUID primary key, which is unrelated to created_at and only
+// disagrees with the intended row part of the time.
+//
+// The reliable fixture therefore has to invert id order against created_at
+// order, not insertion order: the row that should sort FIRST by created_at
+// is given the LARGEST id, and the row that should sort LAST is given the
+// SMALLEST id. That makes the two possible answers provably different
+// instead of probabilistically different:
+//   - correct code (ORDER BY created_at ASC, id ASC) returns the
+//     earliest-created_at row, regardless of its id.
+//   - the mutant (GORM's implicit ORDER BY id ASC) returns the
+//     smallest-id row, which by construction is the row that should sort
+//     LAST — never the same row as the correct answer.
+//
+// Returns the shipment ids in INTENDED (created_at ASC) order — index 0 is
+// the row every correct caller must treat as "the first parcel".
+func seedShuffledParcels(t *testing.T, db *gorm.DB, n int) (storeID, tenantID, orderID uuid.UUID, orderedIDs []string) {
+	t.Helper()
+	storeID, tenantID = seedPerWarehouseStore(t, db)
+	orderID = seedPerWarehouseOrder(t, db, storeID, tenantID)
+
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	orderedIDs = make([]string, n)
+	for i := 0; i < n; i++ {
+		// Intended position i (0 = first/earliest) gets an ASCENDING
+		// created_at but a DESCENDING id — id value (n-1-i), so index 0
+		// (earliest created_at) holds the LARGEST id and index n-1
+		// (latest created_at) holds the SMALLEST id (0000...0000).
+		createdAt := base.Add(time.Duration(i) * time.Hour)
+		id := deterministicUUID(n - 1 - i)
+		rec := shipping.ShipmentRecord{
+			ID:             id,
+			TenantID:       tenantID,
+			StoreID:        storeID,
+			OrderID:        orderID,
+			Carrier:        "stubcarrier",
+			TrackingNumber: fmt.Sprintf("TRK-SHUFFLED-%d", i),
+			Status:         "pending",
+			ShipFrom:       datatypes.JSON(`{}`),
+			ShipTo:         datatypes.JSON(`{}`),
+			HandlingFee:    decimal.Zero,
+			CurrencyCode:   "INR",
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		}
+		require.NoError(t, db.Create(&rec).Error)
+		orderedIDs[i] = rec.ID.String()
+	}
+	return storeID, tenantID, orderID, orderedIDs
+}
+
+// deterministicUUID builds a valid, lexicographically-ordered uuid.UUID
+// from a small non-negative integer — value 0 sorts smallest, larger
+// values sort larger, ascending in step with the integer. Used so a
+// fixture can pin id ordering independently of created_at ordering
+// (see seedShuffledParcels).
+func deterministicUUID(value int) uuid.UUID {
+	return uuid.MustParse(fmt.Sprintf("00000000-0000-4000-8000-%012d", value))
 }
 
 // getByOrderViaHandler calls GetByOrder directly against a hand-built
@@ -125,18 +202,24 @@ func TestGetByOrder_AllTrueReturnsBothParcelsOldestFirst(t *testing.T) {
 // defect 1: GetShipmentByOrderID had no ORDER BY, so it returned an
 // arbitrary parcel. Without ?all=true, GetByOrder must consistently return
 // the FIRST parcel (by created_at, id) across repeated calls.
+//
+// Uses seedShuffledParcels (4 rows) rather than seedTwoParcelOrder: id
+// order there is the exact REVERSE of intended created_at order, so
+// GORM's implicit "ORDER BY id ASC" fallback (what actually runs when the
+// explicit .Order(...) is removed — see seedShuffledParcels' doc comment)
+// disagrees with the correct answer by construction, not by chance. See
+// seedShuffledParcels' doc comment and REPORT.md's Mutation A note for why
+// a naively-seeded fixture only caught the regression ~50-60% of the time.
 func TestGetByOrder_WithoutAllReturnsFirstParcelDeterministically(t *testing.T) {
 	db := testdb.NewDB(t, perWarehouseTables...)
-	storeID, _, orderID, firstID, secondID := seedTwoParcelOrder(t, db)
-	require.NotEqual(t, firstID, secondID)
+	storeID, _, orderID, orderedIDs := seedShuffledParcels(t, db, 4)
+	wantID := orderedIDs[0]
 
-	// stubCarrier encodes its pickup Line1 into the tracking number
-	// ("TRK-1 Warehouse A Road" / "TRK-2 Warehouse B Road"), so asserting
-	// on it (not just the id) proves GetByOrder returned the actual first
+	// stubCarrier-independent: seedShuffledParcels stamps each row's own
+	// tracking number ("TRK-SHUFFLED-<intended position>"), so asserting on
+	// it (not just the id) proves GetByOrder returned the actual first
 	// parcel's data, not merely a row with a matching id.
-	wantTrackingNumber := trackingNumberForShipment(t, db, firstID)
-	otherTrackingNumber := trackingNumberForShipment(t, db, secondID)
-	require.NotEqual(t, wantTrackingNumber, otherTrackingNumber)
+	wantTrackingNumber := trackingNumberForShipment(t, db, wantID)
 
 	h := newPerWarehouseHandler(db, &stubCarrier{})
 
@@ -146,11 +229,13 @@ func TestGetByOrder_WithoutAllReturnsFirstParcelDeterministically(t *testing.T) 
 
 		var got ShipmentResponse
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
-		require.Equal(t, firstID, got.ID,
+		require.Equal(t, wantID, got.ID,
 			"call %d: GetByOrder without ?all=true must always return the first parcel", i)
 		require.Equal(t, wantTrackingNumber, got.TrackingNumber,
 			"call %d: must return the first parcel's own tracking number", i)
-		require.NotEqual(t, secondID, got.ID)
+		for _, otherID := range orderedIDs[1:] {
+			require.NotEqual(t, otherID, got.ID)
+		}
 	}
 }
 

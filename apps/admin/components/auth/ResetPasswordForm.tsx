@@ -7,7 +7,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -15,6 +15,7 @@ import { Input } from "@tesserix/web";
 import { Field } from "@repo/ui/field";
 
 import { confirmPasswordResetAction } from "@/app/reset-password/actions";
+import { signInHref } from "@/lib/auth/sign-in-href";
 
 const schema = z
   .object({
@@ -37,6 +38,9 @@ interface ResetPasswordFormProps {
 
 export function ResetPasswordForm({ oobCode }: ResetPasswordFormProps) {
   const router = useRouter();
+  // Canonical /login 404s without a valid returnUrl, so only link when
+  // the page carries one we can hand straight back. See signInHref.
+  const backHref = signInHref(useSearchParams().get("returnUrl"));
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -101,12 +105,13 @@ export function ResetPasswordForm({ oobCode }: ResetPasswordFormProps) {
             You can now sign in with your new password.
           </p>
         </div>
-        <Link
-          href="/login"
-          className="inline-flex h-10 items-center rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-800)]"
-        >
-          Go to sign in
-        </Link>
+        {backHref ? (
+          <Link href={backHref} className="inline-flex h-10 items-center rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-800)]">
+            Go to sign in
+          </Link>
+        ) : (
+          <p className="max-w-md text-xs leading-relaxed text-foreground-secondary">Sign in from your store&rsquo;s own address &mdash; <span className="whitespace-nowrap">{"{slug}"}-admin.mark8ly.com</span>.</p>
+        )}
       </div>
     );
   }
@@ -174,12 +179,13 @@ export function ResetPasswordForm({ oobCode }: ResetPasswordFormProps) {
         </button>
 
         <div className="flex justify-center">
-          <Link
-            href="/login"
-            className="text-xs text-foreground-secondary underline underline-offset-4 decoration-border-subtle transition-colors hover:text-foreground hover:decoration-foreground-tertiary"
-          >
-            Back to sign in
-          </Link>
+          {backHref ? (
+            <Link href={backHref} className="text-xs text-foreground-secondary underline underline-offset-4 decoration-border-subtle transition-colors hover:text-foreground hover:decoration-foreground-tertiary">
+              Back to sign in
+            </Link>
+          ) : (
+            <p className="max-w-md text-xs leading-relaxed text-foreground-secondary">Sign in from your store&rsquo;s own address &mdash; <span className="whitespace-nowrap">{"{slug}"}-admin.mark8ly.com</span>.</p>
+          )}
         </div>
       </form>
     </div>

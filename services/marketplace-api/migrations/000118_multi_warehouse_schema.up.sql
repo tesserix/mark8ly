@@ -34,9 +34,19 @@ CREATE INDEX IF NOT EXISTS order_allocations_order_idx
     ON order_allocations (order_id);
 CREATE INDEX IF NOT EXISTS order_allocations_shipment_idx
     ON order_allocations (shipment_id);
+-- Postgres does not index the referencing side of an FK automatically.
+-- Without this, DELETE FROM warehouses sequential-scans order_allocations,
+-- and PR 5's "does this warehouse owe a parcel" query has nothing to use.
+CREATE INDEX IF NOT EXISTS order_allocations_warehouse_idx
+    ON order_allocations (warehouse_id);
 
 -- Where a shipment actually shipped from. Nullable because every shipment
 -- created before this migration has no honest answer; every one created
 -- after it sets the column.
 ALTER TABLE shipments
     ADD COLUMN IF NOT EXISTS warehouse_id uuid REFERENCES warehouses(id);
+
+-- Same FK-indexing gap as above: without this, DELETE FROM warehouses
+-- sequential-scans shipments too.
+CREATE INDEX IF NOT EXISTS shipments_warehouse_idx
+    ON shipments (warehouse_id);

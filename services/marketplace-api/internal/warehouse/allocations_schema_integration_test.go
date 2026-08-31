@@ -113,3 +113,21 @@ func TestWarehouses_PriorityDefaultsToZero(t *testing.T) {
 		Row().Scan(&priority))
 	require.Equal(t, 0, priority, "an unranked warehouse sorts with the rest, not ahead of them")
 }
+
+// A default of 0 would still hold even if NOT NULL were dropped, so
+// TestWarehouses_PriorityDefaultsToZero alone doesn't pin the constraint.
+// This asserts the constraint directly: an explicit NULL must be refused.
+//
+// The failing INSERT aborts the transaction, so this test does not attempt
+// any further DB call afterward — a later assertion in the same
+// testdb.NewTx would fail for the unrelated reason that the transaction is
+// already aborted, not because the behaviour under test changed.
+func TestWarehouses_PriorityRejectsExplicitNull(t *testing.T) {
+	db := testdb.NewTx(t)
+	tenantID, storeID := seedStore(t, db)
+
+	err := db.Exec(
+		`INSERT INTO warehouses (id, tenant_id, store_id, name, priority) VALUES (?, ?, ?, 'Null Prio WH', NULL)`,
+		uuid.NewString(), tenantID, storeID).Error
+	require.Error(t, err, "priority is NOT NULL; an explicit NULL insert must be refused")
+}

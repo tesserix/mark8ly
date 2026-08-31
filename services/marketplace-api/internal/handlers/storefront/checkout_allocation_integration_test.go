@@ -10,6 +10,7 @@ package storefront
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -21,8 +22,14 @@ import (
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
-// seedOrderWithItems creates an order and one order_item per line and
-// returns (orderID, []orderItemID).
+// seedOrderWithItems creates an order and its order_items in ONE multi-row
+// INSERT, mirroring internal/order/repository.go's batch tx.Create(&items):
+// production inserts all of an order's items in a single statement, so they
+// share one created_at and the only tie-break Postgres has is the random
+// gen_random_uuid() id. A test that inserted items with separate statements
+// (and therefore strictly increasing created_at) would stay green against a
+// production-broken assumption that order_items come back in line order.
+// Returns (orderID, []orderItemID) in the SAME order as lines.
 func seedOrderWithItems(t *testing.T, db *gorm.DB, storeID string, lines []stockLine) (string, []string) {
 	t.Helper()
 	var tenantID string
@@ -36,15 +43,18 @@ func seedOrderWithItems(t *testing.T, db *gorm.DB, storeID string, lines []stock
 		orderID, tenantID, storeID, "AL-"+uuid.NewString()[:8], uuid.NewString()).Error)
 
 	ids := make([]string, 0, len(lines))
+	placeholders := make([]string, 0, len(lines))
+	args := make([]interface{}, 0, len(lines)*9)
 	for _, l := range lines {
 		itemID := uuid.NewString()
-		require.NoError(t, db.Exec(
-			`INSERT INTO order_items (id, order_id, variant_id, title_snapshot, sku_snapshot,
-			                          unit_price, quantity, line_total, currency_code)
-			 VALUES (?, ?, ?, 'Item', 'SKU', 10.00, ?, 10.00, 'INR')`,
-			itemID, orderID, l.VariantID, l.Quantity).Error)
 		ids = append(ids, itemID)
+		placeholders = append(placeholders, "(?, ?, ?, 'Item', 'SKU', 10.00, ?, 10.00, 'INR')")
+		args = append(args, itemID, orderID, l.VariantID, l.Quantity)
 	}
+	require.NoError(t, db.Exec(
+		`INSERT INTO order_items (id, order_id, variant_id, title_snapshot, sku_snapshot,
+		                          unit_price, quantity, line_total, currency_code)
+		 VALUES `+strings.Join(placeholders, ", "), args...).Error)
 	return orderID, ids
 }
 
@@ -208,4 +218,182 @@ func TestCommitStock_AssignmentSpanningTwoStorageLocationsHoldsInBoth(t *testing
 	// remainder comes from the real row.
 	require.Equal(t, 0, stockUnitsAt(t, db, variantID, product.DefaultLocationID))
 	require.Equal(t, 2, stockUnitsAt(t, db, variantID, whA))
+}
+
+// seedAvailVariant creates one more product+variant for an existing store,
+// for tests that need two distinct variants.
+func seedAvailVariant(t *testing.T, db *gorm.DB, storeID string) string {
+	t.Helper()
+	var tenantID string
+	require.NoError(t, db.Raw(`SELECT tenant_id FROM stores WHERE id = ?`, storeID).Row().Scan(&tenantID))
+
+	productID := uuid.NewString()
+	require.NoError(t, db.Exec(
+		`INSERT INTO products (id, tenant_id, store_id, title, handle, status, vendor_id, published_at)
+		 VALUES (?, ?, ?, 'Avail Product 2', ?, 'active', ?, now())`,
+		productID, tenantID, storeID, "avail-"+uuid.NewString()[:8], uuid.NewString()).Error)
+
+	variantID := uuid.NewString()
+	require.NoError(t, db.Exec(
+		`INSERT INTO product_variants (id, product_id, store_id, sku, price, currency_code)
+		 VALUES (?, ?, ?, ?, 10.00, 'INR')`,
+		variantID, productID, storeID, "SKU-"+uuid.NewString()[:8]).Error)
+	return variantID
+}
+
+// order_items are inserted in ONE batch statement (seedOrderWithItems
+// mirrors production's tx.Create(&items)), so all rows share one created_at
+// and Postgres's tie-break — a random UUID — is the only thing left to sort
+// by. recordAllocations must not rely on that order: it must find each
+// line's item by (variant_id, quantity), and its per-warehouse attribution
+// must not confuse two DIFFERENT variants split across the SAME two
+// warehouses.
+func TestCommitStock_RecordsAllocationsForTwoDifferentVariantsAcrossWarehouses(t *testing.T) {
+	db := testdb.NewDB(t, "order_allocations", "stock_holds", "order_items", "orders",
+		"variant_stock", "product_variants", "products", "stores")
+	storeID, variantX := seedAvailStore(t, db)
+	variantY := seedAvailVariant(t, db, storeID)
+	whA := seedWarehouseRow(t, db, storeID, "A")
+	whB := seedWarehouseRow(t, db, storeID, "B")
+	require.NoError(t, db.Exec(`UPDATE warehouses SET priority = 0 WHERE id = ?`, whA).Error)
+	require.NoError(t, db.Exec(`UPDATE warehouses SET priority = 1 WHERE id = ?`, whB).Error)
+	require.NoError(t, db.Exec(
+		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at) VALUES
+		   (?, ?, 2, now()), (?, ?, 1, now()),
+		   (?, ?, 1, now()), (?, ?, 2, now())`,
+		variantX, whA, variantX, whB,
+		variantY, whA, variantY, whB).Error)
+
+	// X: 2 at A, 1 at B — needs both. Y: 1 at A, 2 at B — needs both too,
+	// so both variants' assignments interleave across the same warehouses.
+	lines := []stockLine{{VariantID: variantX, Quantity: 3}, {VariantID: variantY, Quantity: 3}}
+	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+			orderID, storeID, lines)
+	}))
+
+	assertAllocs := func(itemID string, want map[string]int) {
+		t.Helper()
+		var got []struct {
+			WarehouseID string
+			Quantity    int
+		}
+		require.NoError(t, db.Raw(
+			`SELECT warehouse_id, quantity FROM order_allocations WHERE order_item_id = ?`, itemID).
+			Scan(&got).Error)
+		have := map[string]int{}
+		for _, g := range got {
+			have[g.WarehouseID] = g.Quantity
+		}
+		require.Equal(t, want, have)
+	}
+
+	// itemIDs[0] is line0 (variantX): 2 from A, 1 from B.
+	assertAllocs(itemIDs[0], map[string]int{whA: 2, whB: 1})
+	// itemIDs[1] is line1 (variantY): 1 from A, 2 from B.
+	assertAllocs(itemIDs[1], map[string]int{whA: 1, whB: 2})
+
+	require.Equal(t, 0, stockUnitsAt(t, db, variantX, whA))
+	require.Equal(t, 0, stockUnitsAt(t, db, variantX, whB))
+	require.Equal(t, 0, stockUnitsAt(t, db, variantY, whA))
+	require.Equal(t, 0, stockUnitsAt(t, db, variantY, whB))
+}
+
+// Two lines of the SAME variant but DIFFERENT quantities. Their order_items
+// rows are indistinguishable by variant alone, but the (variant, quantity)
+// pair is unique to each line here, so this proves recordAllocations pairs
+// by that key rather than by whatever order order_items happens to load in.
+func TestCommitStock_TwoLinesOfSameVariantDifferentQuantitiesAttributeCorrectly(t *testing.T) {
+	db := testdb.NewDB(t, "order_allocations", "stock_holds", "order_items", "orders",
+		"variant_stock", "product_variants", "products", "stores")
+	storeID, variantID := seedAvailStore(t, db)
+	whA := seedWarehouseRow(t, db, storeID, "A")
+	require.NoError(t, db.Exec(
+		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
+		 VALUES (?, ?, 10, now())`, variantID, whA).Error)
+
+	lines := []stockLine{{VariantID: variantID, Quantity: 2}, {VariantID: variantID, Quantity: 5}}
+	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+			orderID, storeID, lines)
+	}))
+
+	for i, itemID := range itemIDs {
+		var q int
+		require.NoError(t, db.Raw(
+			`SELECT quantity FROM order_allocations WHERE order_item_id = ?`, itemID).Row().Scan(&q))
+		require.Equal(t, lines[i].Quantity, q,
+			"each item's allocation must match ITS OWN line's quantity, not the other line's")
+	}
+}
+
+// A continue-policy (sell-past-zero) variant with NO variant_stock row at
+// all — the common case, since it never needed one to sell — must succeed
+// on the allocation path exactly as the legacy sentinel path does: its
+// UPDATE matches zero rows and that is fine.
+func TestCommitStock_ContinuePolicyWithNoStorageSucceedsOnAllocationPath(t *testing.T) {
+	db := testdb.NewDB(t, "order_allocations", "stock_holds", "order_items", "orders",
+		"variant_stock", "product_variants", "products", "stores")
+	storeID, variantID := seedAvailStore(t, db)
+	whA := seedWarehouseRow(t, db, storeID, "A")
+	require.NoError(t, db.Exec(
+		`UPDATE product_variants SET inventory_policy = 'continue' WHERE id = ?`, variantID).Error)
+	// Deliberately no variant_stock row for variantID anywhere.
+
+	lines := []stockLine{{VariantID: variantID, Quantity: 3}}
+	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+			orderID, storeID, lines)
+	}))
+
+	require.Equal(t, -1, stockUnitsAt(t, db, variantID, whA),
+		"no variant_stock row existed and none should have been created")
+
+	var got struct {
+		WarehouseID string
+		Quantity    int
+	}
+	require.NoError(t, db.Raw(
+		`SELECT warehouse_id, quantity FROM order_allocations WHERE order_item_id = ?`, itemIDs[0]).
+		Row().Scan(&got.WarehouseID, &got.Quantity))
+	require.Equal(t, whA, got.WarehouseID)
+	require.Equal(t, 3, got.Quantity)
+}
+
+// A continue-policy variant whose warehouse's units span TWO storage
+// locations (the sentinel row plus a real one). Both must be decremented,
+// not just the first one the breakdown happens to list.
+func TestCommitStock_ContinuePolicyDecrementsAcrossMultipleStorageLocations(t *testing.T) {
+	db := testdb.NewDB(t, "order_allocations", "stock_holds", "order_items", "orders",
+		"variant_stock", "product_variants", "products", "stores")
+	storeID, variantID := seedAvailStore(t, db)
+	whA := seedWarehouseRow(t, db, storeID, "A")
+	require.NoError(t, db.Exec(
+		`UPDATE product_variants SET inventory_policy = 'continue' WHERE id = ?`, variantID).Error)
+	require.NoError(t, db.Exec(
+		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
+		 VALUES (?, ?, 1, now()), (?, ?, 1, now())`,
+		variantID, product.DefaultLocationID, variantID, whA).Error)
+
+	// 2 units requested against two locations holding 1 each: whichever
+	// sorts first can only cover 1, so the second MUST be touched too, or
+	// this fails regardless of storage order.
+	lines := []stockLine{{VariantID: variantID, Quantity: 2}}
+	orderID, _ := seedOrderWithItems(t, db, storeID, lines)
+
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+			orderID, storeID, lines)
+	}))
+
+	require.Equal(t, 0, stockUnitsAt(t, db, variantID, product.DefaultLocationID),
+		"the sentinel location must be decremented, not left untouched")
+	require.Equal(t, 0, stockUnitsAt(t, db, variantID, whA),
+		"the real warehouse location must be decremented too")
 }

@@ -127,16 +127,41 @@ func commitStock(
 			// sentinel path clamps (#231's non-negative CHECK).
 			at := storage[a.VariantID][a.WarehouseID]
 			if len(at) == 0 {
-				return fmt.Errorf(
-					"storefront: no storage location found for continue-policy variant %s at warehouse %s",
-					a.VariantID, a.WarehouseID)
+				// No variant_stock row exists for this warehouse — the
+				// common case for a sell-past-zero variant, since it never
+				// needed a stock row to sell. The legacy sentinel path's
+				// UPDATE simply matches zero rows and succeeds; erroring
+				// here would hard-fail a checkout that used to work the
+				// moment a merchant has a warehouse at all (PR 5).
+				continue // sold past zero on purpose; nothing to decrement
 			}
-			if err := tx.WithContext(ctx).Exec(
-				`UPDATE variant_stock
-				    SET quantity = GREATEST(quantity - ?, 0), updated_at = now()
-				  WHERE variant_id = ? AND location_id = ?`,
-				a.Quantity, a.VariantID, at[0].LocationID).Error; err != nil {
-				return fmt.Errorf("storefront: decrement continue-policy variant: %w", err)
+			// Walk every location the way the hold path does, rather than
+			// only at[0]: a warehouse whose units span the sentinel row and
+			// a real row must have BOTH decremented, or the second silently
+			// keeps stale stock. The last location absorbs whatever is left
+			// after the others — continue-policy is unconstrained by
+			// availability, so there is no "short" to error on here the way
+			// the hold path does; GREATEST clamps it at zero.
+			want := a.Quantity
+			for i, loc := range at {
+				take := want
+				if i < len(at)-1 {
+					take = min(want, loc.Units)
+				}
+				if take <= 0 {
+					continue
+				}
+				if err := tx.WithContext(ctx).Exec(
+					`UPDATE variant_stock
+					    SET quantity = GREATEST(quantity - ?, 0), updated_at = now()
+					  WHERE variant_id = ? AND location_id = ?`,
+					take, a.VariantID, loc.LocationID).Error; err != nil {
+					return fmt.Errorf("storefront: decrement continue-policy variant: %w", err)
+				}
+				want -= take
+				if want == 0 {
+					break
+				}
 			}
 			continue // sold past zero on purpose; decremented, not held
 		}
@@ -267,12 +292,23 @@ func variantIDsOf(lines []stockLine) []string {
 
 // recordAllocations writes one order_allocations row per assignment.
 //
-// order_items rows are paired to lines POSITIONALLY: items[i] is line[i]'s
-// item, because order.CreateInput.WithinTx inserts one order_item per line
-// in the same order commitStock was given, and stockLinesFromItems preserves
-// item order. That means a cart mixing stocked and unstocked items would
-// make lines shorter than order_items — the length assert below exists to
-// catch that mismatch loudly rather than mis-pair rows silently.
+// # Why order_items cannot be paired to lines by position
+//
+// Production inserts every item of an order in ONE batch tx.Create(&items)
+// (internal/order/repository.go), so all of an order's rows share a single
+// created_at, and the only tie-break `ORDER BY created_at, id` has left is
+// id — gen_random_uuid(). items[i] is then a RANDOM permutation of lines,
+// not lines[i]'s item: pairing positionally silently attaches every
+// allocation to the wrong line the moment an order has two or more items.
+// A cart mixing stocked and unstocked items would also make lines shorter
+// than order_items — the length assert below exists to catch that mismatch
+// loudly rather than mis-pair rows silently.
+//
+// Paired instead by the (variant_id, quantity) MULTISET: two lines
+// identical in both are genuinely interchangeable — swapping which gets
+// which order_item_id changes nothing observable — so matching on that key
+// is exact, and does not depend on any ordering order_items happens to
+// come back in.
 //
 // # Attributing an assignment back to a line
 //
@@ -307,7 +343,7 @@ func recordAllocations(
 	if len(items) != len(lines) {
 		return fmt.Errorf(
 			"storefront: order %s has %d order_items but commitStock was given %d lines — "+
-				"allocations cannot be paired positionally", orderID, len(items), len(lines))
+				"allocations cannot be paired to lines", orderID, len(items), len(lines))
 	}
 
 	var tenantID, storeID string
@@ -315,6 +351,34 @@ func recordAllocations(
 		`SELECT tenant_id, store_id FROM orders WHERE id = ?`, orderID).
 		Row().Scan(&tenantID, &storeID); err != nil {
 		return fmt.Errorf("storefront: load order for allocation: %w", err)
+	}
+
+	type itemKey struct {
+		variantID string
+		quantity  int
+	}
+	byKey := map[itemKey][]string{}
+	for _, it := range items {
+		k := itemKey{it.VariantID, it.Quantity}
+		byKey[k] = append(byKey[k], it.ID)
+	}
+
+	lineItemID := make([]string, len(lines))
+	for i, l := range lines {
+		k := itemKey{l.VariantID, l.Quantity}
+		queue := byKey[k]
+		if len(queue) == 0 {
+			// Every line was supposed to have created exactly one
+			// order_item with its own (variant, quantity). Running out
+			// means the order_items this order actually has don't match
+			// what commitStock was told to place — fail loudly rather
+			// than attribute the allocation to an unrelated line.
+			return fmt.Errorf(
+				"storefront: no order_item left matching variant %s quantity %d for line %d of order %s",
+				l.VariantID, l.Quantity, i, orderID)
+		}
+		lineItemID[i] = queue[0]
+		byKey[k] = queue[1:]
 	}
 
 	remaining := make([]int, len(lines))
@@ -359,7 +423,7 @@ func recordAllocations(
 		if err := tx.WithContext(ctx).Exec(
 			`INSERT INTO order_allocations (id, tenant_id, store_id, order_id, order_item_id, warehouse_id, quantity)
 			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			id, tenantID, storeID, orderID, items[lineIdx].ID, a.WarehouseID, a.Quantity).Error; err != nil {
+			id, tenantID, storeID, orderID, lineItemID[lineIdx], a.WarehouseID, a.Quantity).Error; err != nil {
 			return fmt.Errorf("storefront: insert order_allocations: %w", err)
 		}
 	}

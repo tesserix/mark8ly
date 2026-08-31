@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -120,6 +122,16 @@ func commitStock(
 	// would leave only the SECOND quantity reserved. Aggregate first.
 	type holdKey struct{ variantID, locationID string }
 	totals := map[holdKey]int{}
+	// drawn tracks, per (variant, location), how many units EARLIER
+	// assignments in this loop already claimed from that location's
+	// breakdown. storage[...] is an immutable snapshot taken once before the
+	// loop — without this, every assignment would draw from the FULL
+	// breakdown again, and two lines of the same variant filled at the same
+	// warehouse would double-count what the location actually holds (e.g. a
+	// breakdown of [sentinel:3, A:4] with two assignments of 2 and 3 must
+	// draw 3 from the sentinel and 2 from A in total, not 5 from the
+	// sentinel).
+	drawn := map[holdKey]int{}
 	for _, a := range assignments {
 		if policies[a.VariantID] == inventoryPolicyContinue {
 			// Sell past zero on purpose. No hold, no gate — decrement at
@@ -175,11 +187,14 @@ func commitStock(
 			if want == 0 {
 				break
 			}
-			take := min(want, at.Units)
+			key := holdKey{a.VariantID, at.LocationID}
+			remaining := at.Units - drawn[key]
+			take := min(want, remaining)
 			if take <= 0 {
 				continue
 			}
-			totals[holdKey{a.VariantID, at.LocationID}] += take
+			totals[key] += take
+			drawn[key] += take
 			want -= take
 		}
 		if want > 0 {
@@ -192,7 +207,37 @@ func commitStock(
 				a.VariantID, a.WarehouseID, want)
 		}
 	}
-	for k, qty := range totals {
+	// Release any cart-time hold whose (variant, location) is not part of
+	// this plan BEFORE placing the plan's holds and BEFORE Commit runs.
+	// cart_holds.go places holds at product.DefaultLocationID; a placement
+	// plan is free to target a different warehouse, and holds.Commit
+	// decrements EVERY live hold this cart owns regardless of whether it
+	// matches. Left in place, a stale cart-add hold gets decremented a
+	// second time alongside the plan's own hold for the same units.
+	keep := make([]stockhold.VariantLocation, 0, len(totals))
+	for k := range totals {
+		keep = append(keep, stockhold.VariantLocation{VariantID: k.variantID, LocationID: k.locationID})
+	}
+	if err := holds.ReleaseExcept(ctx, tx, cartToken, keep); err != nil {
+		return err
+	}
+
+	// Sorted rather than ranged directly: map iteration order is randomised,
+	// and each Hold takes a SELECT ... FOR UPDATE row lock. Two concurrent
+	// checkouts of identical carts taking the same two locks in opposite
+	// orders is a deadlock waiting to happen; a fixed order rules it out.
+	keys := make([]holdKey, 0, len(totals))
+	for k := range totals {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].variantID != keys[j].variantID {
+			return keys[i].variantID < keys[j].variantID
+		}
+		return keys[i].locationID < keys[j].locationID
+	})
+	for _, k := range keys {
+		qty := totals[k]
 		err := holds.Hold(ctx, tx, cartToken, k.variantID, k.locationID, qty, HoldTTL)
 		if errors.Is(err, stockhold.ErrInsufficientStock) {
 			return outOfStockError{VariantID: k.variantID}
@@ -300,9 +345,18 @@ func variantIDsOf(lines []stockLine) []string {
 // id — gen_random_uuid(). items[i] is then a RANDOM permutation of lines,
 // not lines[i]'s item: pairing positionally silently attaches every
 // allocation to the wrong line the moment an order has two or more items.
-// A cart mixing stocked and unstocked items would also make lines shorter
-// than order_items — the length assert below exists to catch that mismatch
-// loudly rather than mis-pair rows silently.
+//
+// # Items without a variant_id are not lines
+//
+// order.CreateInput.WithinTx inserts an order_items row for EVERY checkout
+// item, including ones whose variant_id is nil or unparseable, but
+// stockLinesFromItems drops those — they carry nothing to allocate. The
+// query below only reads order_items whose variant_id IS NOT NULL, so items
+// is naturally restricted to the ones that can correspond to a line; a
+// variantless item is simply ignored here, matching the legacy sentinel path
+// which silently skipped it too. What still fails loudly is a genuine
+// attribution mismatch: a line for which no matching order_item can be
+// found, in the per-line pairing loop below.
 //
 // Paired instead by the (variant_id, quantity) MULTISET: two lines
 // identical in both are genuinely interchangeable — swapping which gets
@@ -336,14 +390,10 @@ func recordAllocations(
 		Quantity  int
 	}
 	if err := tx.WithContext(ctx).Raw(
-		`SELECT id, variant_id, quantity FROM order_items WHERE order_id = ? ORDER BY created_at, id`,
+		`SELECT id, variant_id, quantity FROM order_items
+		  WHERE order_id = ? AND variant_id IS NOT NULL ORDER BY created_at, id`,
 		orderID).Scan(&items).Error; err != nil {
 		return fmt.Errorf("storefront: load order items for allocation: %w", err)
-	}
-	if len(items) != len(lines) {
-		return fmt.Errorf(
-			"storefront: order %s has %d order_items but commitStock was given %d lines — "+
-				"allocations cannot be paired to lines", orderID, len(items), len(lines))
 	}
 
 	var tenantID, storeID string
@@ -462,13 +512,20 @@ func inventoryPolicies(tx *gorm.DB, lines []stockLine) (map[string]string, error
 //
 // An item with no variant_id is a custom or unstocked line — refusing those
 // would break every unstocked sale, and there is nothing to decrement.
+//
+// Variant ids are lowercased here, at the boundary where lines are built.
+// The legacy path passed the client's string straight into SQL, where
+// Postgres casts to uuid case-insensitively; everything downstream of this
+// function does Go map lookups against ids read back from the database in
+// canonical lowercase, so an uppercase id from a client would otherwise miss
+// every lookup and read as zero availability.
 func stockLinesFromItems(items []CheckoutItemRequest) []stockLine {
 	lines := make([]stockLine, 0, len(items))
 	for _, it := range items {
 		if it.VariantID == nil || *it.VariantID == "" || it.Quantity <= 0 {
 			continue
 		}
-		lines = append(lines, stockLine{VariantID: *it.VariantID, Quantity: it.Quantity})
+		lines = append(lines, stockLine{VariantID: strings.ToLower(*it.VariantID), Quantity: it.Quantity})
 	}
 	return lines
 }

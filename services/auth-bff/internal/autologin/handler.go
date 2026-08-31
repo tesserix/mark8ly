@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mark8ly/auth-bff/internal/emailotp"
 	"github.com/mark8ly/auth-bff/internal/geoip"
 )
 
@@ -101,7 +102,11 @@ func (h *Handler) autoLogin(c *gin.Context) {
 //
 //	after the retry budget this is a real "not authorized" answer
 //
-// 503: openfga is unreachable — the system is broken, retry the call
+// 429: the email-OTP rate limit was tripped — waiting is the only way out
+// 503: openfga is unreachable, or the sign-in code could not otherwise be
+//
+//	sent — the system is broken, retry the call
+//
 // 500: anything else (session mint failure, internal bugs)
 func respondError(c *gin.Context, err error) {
 	switch {
@@ -119,6 +124,14 @@ func respondError(c *gin.Context, err error) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "openfga_unreachable",
 			"message": "authorization service is temporarily unavailable; please retry",
+		})
+	// Checked ahead of ErrChallengeSendFail: a rate limit is wrapped by
+	// ErrChallengeSendFail, and errors.Is matches either, so the more
+	// specific case must win.
+	case errors.Is(err, emailotp.ErrRateLimited):
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":   "rate_limited",
+			"message": "too many sign-in codes requested; please wait before trying again",
 		})
 	case errors.Is(err, ErrChallengeSendFail):
 		c.JSON(http.StatusServiceUnavailable, gin.H{

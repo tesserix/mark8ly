@@ -217,7 +217,7 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 				Email:    tok.Email,
 				TenantID: req.WorkspaceTenant,
 			}); err != nil {
-				return nil, fmt.Errorf("%w: %s", ErrSessionMintFail, err)
+				return nil, fmt.Errorf("%w: %w", ErrSessionMintFail, err)
 			}
 			return &Result{
 				UID:         tok.UID,
@@ -262,7 +262,11 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 	// second device safe rather than merely possible.
 	if newDevice && s.emailOTP != nil {
 		if err := s.emailOTP.IssueChallenge(ctx, tok.Email, req.IPAddress); err != nil {
-			return nil, fmt.Errorf("%w: %s", ErrChallengeSendFail, err)
+			if s.logger != nil {
+				s.logger.Error("autologin: challenge send failed",
+					"err", err, "user_id", tok.UID, "tenant_id", req.WorkspaceTenant)
+			}
+			return nil, fmt.Errorf("%w: %w", ErrChallengeSendFail, err)
 		}
 		if err := s.sessions.MintPending(w, session.Pending{
 			UID:         tok.UID,
@@ -272,7 +276,7 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 			Device:      device,
 			IPAddress:   req.IPAddress,
 		}); err != nil {
-			return nil, fmt.Errorf("%w: %s", ErrSessionMintFail, err)
+			return nil, fmt.Errorf("%w: %w", ErrSessionMintFail, err)
 		}
 		return &Result{
 			UID:              tok.UID,
@@ -288,7 +292,7 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 		Email:    tok.Email,
 		TenantID: req.WorkspaceTenant,
 	}); err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrSessionMintFail, err)
+		return nil, fmt.Errorf("%w: %w", ErrSessionMintFail, err)
 	}
 
 	// Step 4 (best-effort): record the new session in the registry for

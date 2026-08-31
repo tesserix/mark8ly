@@ -551,24 +551,63 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Groups this order still owes a parcel for. An order with none — every
-	// order placed before allocation shipped, and every order on a store with
-	// no warehouse — takes the single-shipment path below, unchanged. That is
-	// not a fallback for tidiness: order_allocations is empty in production
+	// Routing is a three-state decision, not two. Conflating "no
+	// allocations at all" with "every allocation already shipped" into a
+	// single len(groups)==0 check would route a re-POST on a fully-shipped
+	// order into createSingleShipment, which ignores order_allocations
+	// entirely and would buy a second, real, un-cancellable label for
+	// goods that already shipped.
+	totalAllocations, err := h.totalAllocationsForOrder(ctx, orderID)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	// An order with NO allocations at all — every order placed before
+	// allocation shipped, and every order on a store with no warehouse —
+	// takes the single-shipment path below, unchanged. That is not a
+	// fallback for tidiness: order_allocations is empty in production
 	// today (#177 PR 3 only just started writing it), so this IS the only
 	// path currently executing for a real order.
+	if totalAllocations == 0 {
+		h.createSingleShipment(c, ctx, orderID, storeID, tenantID, o, shippingAddr, items, provider, req, carrierCfg)
+		return
+	}
+
 	groups, err := h.unshippedAllocationGroups(ctx, orderID)
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}
 
+	// Allocations exist but every one is already stamped with a
+	// shipment_id: this order is fully shipped and a re-POST is a no-op,
+	// not a request for another shipment.
 	if len(groups) == 0 {
-		h.createSingleShipment(c, ctx, orderID, storeID, tenantID, o, shippingAddr, items, provider, req, carrierCfg)
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{
+			"error":   "already_shipped",
+			"message": "every allocation for this order already has a shipment; nothing to create",
+		})
 		return
 	}
 
 	h.createShipmentsPerWarehouse(c, ctx, orderID, storeID, tenantID, o, shippingAddr, items, provider, req, carrierCfg, groups)
+}
+
+// totalAllocationsForOrder counts every order_allocations row for orderID,
+// shipped or not. Distinct from unshippedAllocationGroups's count: this is
+// what tells Create() whether the order has ANY allocations at all (the
+// legacy no-allocations path) versus allocations that are all already
+// shipped (a no-op re-POST, not a fresh single-shipment order).
+func (h *ShipmentsHandler) totalAllocationsForOrder(ctx context.Context, orderID uuid.UUID) (int64, error) {
+	var total int64
+	if err := h.db.WithContext(ctx).
+		Table("order_allocations").
+		Where("order_id = ?", orderID).
+		Count(&total).Error; err != nil {
+		return 0, fmt.Errorf("shipments: count allocations: %w", err)
+	}
+	return total, nil
 }
 
 // allocationGroup is one warehouse's still-unshipped share of an order:
@@ -960,7 +999,7 @@ func (h *ShipmentsHandler) createSingleShipment(
 	var pickupWarning string
 	if carrierCfg.AutoSchedulePickup {
 		if ps, ok := carrier.(shipping.PickupScheduler); ok {
-			pickupWarning = h.tryAutoSchedulePickup(ctx, rec, ps, carrierCfg)
+			pickupWarning = h.tryAutoSchedulePickup(ctx, rec, ps, carrierCfg, pickup.Name)
 		}
 	}
 
@@ -1095,6 +1134,7 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 	tenantUUID, _ := uuid.Parse(tenantID)
 
 	created := make([]*shipping.ShipmentRecord, 0, len(groups))
+	pickupWarnings := make([]string, 0, len(groups))
 	for _, g := range groups {
 		wh, err := h.warehouseRepo.ByID(ctx, h.db, g.WarehouseID)
 		if err != nil {
@@ -1105,6 +1145,22 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 			c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
 				"error":   "warehouse_not_found",
 				"message": fmt.Sprintf("warehouse %s referenced by this order's allocation no longer exists", g.WarehouseID),
+				"created": len(created),
+			})
+			return
+		}
+		whID, err := uuid.Parse(wh.ID)
+		if err != nil {
+			// wh.ID comes straight out of the warehouses table's uuid
+			// primary key, so a parse failure here means data corruption,
+			// not a bad request — 500, not a panic via MustParse.
+			if h.logger != nil {
+				h.logger.Error("shipments: warehouse row has a malformed id",
+					"order_id", orderID.String(), "warehouse_id", wh.ID, "err", err)
+			}
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"error":   "malformed_warehouse_id",
+				"message": err.Error(),
 				"created": len(created),
 			})
 			return
@@ -1120,6 +1176,19 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 			Phone:         wh.Phone,
 			ContactPerson: wh.ContactPerson,
 			Email:         wh.Email,
+		}
+
+		// Same validation createSingleShipment applies to the carrier
+		// config's warehouse — a half-filled warehouse must fail here
+		// with a clear message, not be sent to the carrier and come back
+		// as an opaque 502.
+		if pickup.Line1 == "" || pickup.City == "" || pickup.CountryCode == "" {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error":   "warehouse_address_incomplete",
+				"message": fmt.Sprintf("warehouse %q's address is not fully configured", pickup.Name),
+				"created": len(created),
+			})
+			return
 		}
 
 		fromAddress := shipping.Address{
@@ -1170,7 +1239,24 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 			}
 			parcelItems = append(parcelItems, p)
 		}
+		if len(parcelItems) == 0 {
+			// Every itemID this group named was missing from the order's
+			// own items — an allocation/order_items data mismatch. Sending
+			// a zero-item parcel to a real carrier is worse than refusing:
+			// carriers accept it as a valid, empty, billable shipment.
+			if h.logger != nil {
+				h.logger.Error("shipments: allocation group named no resolvable order items",
+					"order_id", orderID.String(), "warehouse_id", g.WarehouseID)
+			}
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"error":   "empty_parcel",
+				"message": fmt.Sprintf("warehouse %q's allocation names no items on this order", pickup.Name),
+				"created": len(created),
+			})
+			return
+		}
 
+		// Call the carrier to create shipment.
 		shipment, err := h.svc.CreateShipment(
 			ctx,
 			orderID.String(),
@@ -1181,6 +1267,52 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 			o.CurrencyCode,
 			carrier,
 		)
+		// Self-heal: same as createSingleShipment — Delhivery rejects a
+		// label when its pickup location isn't registered on the
+		// carrier's side. Secondary warehouses are exactly the ones most
+		// likely to have never been registered, so this is the FIRST
+		// thing a real multi-warehouse label attempt is likely to hit.
+		// Without this, the original #177 failure reappears inside the
+		// feature meant to fix it.
+		var whErr *shipping.WarehouseNotRegisteredError
+		if errors.As(err, &whErr) {
+			if syncer, ok := carrier.(shipping.WarehouseSyncer); ok {
+				whEmail := pickupEmailOrBuyerFallback(pickup, o.CustomerEmail)
+				carrierWh := shipping.Warehouse{
+					Name:          pickup.Name,
+					Phone:         pickup.Phone,
+					Email:         whEmail,
+					Address:       strings.TrimSpace(pickup.Line1 + " " + pickup.Line2),
+					City:          pickup.City,
+					PinCode:       pickup.PostalCode,
+					CountryCode:   pickup.CountryCode,
+					Region:        pickup.Region,
+					ContactPerson: pickup.ContactPerson,
+				}
+				if regErr := syncer.UpsertWarehouse(ctx, carrierWh); regErr != nil {
+					if h.logger != nil {
+						h.logger.Error("shipments: warehouse auto-register failed for group",
+							"order_id", orderID.String(), "provider", provider,
+							"warehouse", pickup.Name, "err", regErr.Error())
+					}
+					c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+						"error":   "warehouse_register_failed",
+						"message": "Couldn't register your pickup location with " + provider + ": " + regErr.Error(),
+						"created": len(created),
+					})
+					return
+				}
+				if h.logger != nil {
+					h.logger.Info("shipments: warehouse auto-registered, retrying label for group",
+						"order_id", orderID.String(), "provider", provider,
+						"warehouse", pickup.Name)
+				}
+				shipment, err = h.svc.CreateShipment(
+					ctx, orderID.String(), fromAddress, toAddress,
+					parcelItems, req.Service, o.CurrencyCode, carrier,
+				)
+			}
+		}
 		if err != nil {
 			// The label already created for an earlier group cannot be
 			// un-created at the carrier, so it stays. The failed group
@@ -1210,7 +1342,6 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 			"phone":        pickup.Phone,
 		})
 
-		whID := uuid.MustParse(wh.ID)
 		rec := &shipping.ShipmentRecord{
 			TenantID:          tenantUUID,
 			StoreID:           storeUUID,
@@ -1243,31 +1374,87 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 			})
 			return
 		}
+		// From here on the shipment row (and its real carrier label) is
+		// persisted, so it counts toward "created" for every remaining
+		// error path in this iteration — a stamp failure below does not
+		// undo the label that already exists.
+		created = append(created, rec)
+
+		// Some carriers (Delhivery) gate the label PDF behind an
+		// Authorization header, so the browser can't deep-link directly
+		// to the provider's packing-slip URL. Same proxy URL
+		// createSingleShipment sets — without it a label exists at the
+		// carrier that the admin UI cannot print.
+		if rec.LabelURL == "" {
+			if _, ok := carrier.(shipping.LabelFetcher); ok {
+				rec.LabelURL = fmt.Sprintf("/api/v1/admin/stores/%s/orders/%s/shipments/%s/label",
+					storeID, orderID.String(), rec.ID.String())
+				if err := h.db.WithContext(ctx).
+					Table("shipments").
+					Where("id = ?", rec.ID).
+					Update("label_url", rec.LabelURL).Error; err != nil && h.logger != nil {
+					h.logger.Warn("shipments: persist label_url failed",
+						"shipment_id", rec.ID, "err", err)
+				}
+			}
+		}
 
 		// Stamp this group's allocation rows with the shipment that just
 		// covered them, so a retry does not re-ship an already-shipped
-		// group.
+		// group. This write is what idempotency rests on: if it fails,
+		// the group looks unshipped to the next Create() call even
+		// though a real, un-cancellable label now exists for it — so a
+		// failure here must fail the response, not just log.
 		if err := h.db.WithContext(ctx).
 			Table("order_allocations").
 			Where("order_id = ? AND warehouse_id = ? AND shipment_id IS NULL", orderID, g.WarehouseID).
-			Update("shipment_id", rec.ID).Error; err != nil && h.logger != nil {
-			h.logger.Error("shipments: stamp allocation shipment_id failed",
-				"order_id", orderID.String(), "warehouse_id", g.WarehouseID,
-				"shipment_id", rec.ID.String(), "err", err)
+			Update("shipment_id", rec.ID).Error; err != nil {
+			if h.logger != nil {
+				h.logger.Error("shipments: stamp allocation shipment_id failed — label exists but allocation not marked shipped",
+					"order_id", orderID.String(), "warehouse_id", g.WarehouseID,
+					"shipment_id", rec.ID.String(), "err", err)
+			}
+			c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+				"error":   "allocation_stamp_failed",
+				"message": fmt.Sprintf("shipment %s was created but its allocation could not be marked shipped: %s", rec.ID.String(), err.Error()),
+				"created": len(created),
+			})
+			return
 		}
+
+		// Auto-schedule a pickup for THIS group's warehouse — mirrors
+		// createSingleShipment, but keyed on the group's own pickup name
+		// rather than the carrier config's, since each group can ship
+		// from a different warehouse.
+		var pickupWarning string
+		if carrierCfg.AutoSchedulePickup {
+			if ps, ok := carrier.(shipping.PickupScheduler); ok {
+				pickupWarning = h.tryAutoSchedulePickup(ctx, rec, ps, carrierCfg, pickup.Name)
+			}
+		}
+		pickupWarnings = append(pickupWarnings, pickupWarning)
 
 		h.appendShipmentEvent(ctx, orderID, rec, order.EventKindShipmentCreated,
 			"Shipping label created — package will be picked up shortly.")
-		h.dispatchShipmentDispatchedEmail(orderID, rec)
-
-		created = append(created, rec)
+		// Deliberately NOT dispatchShipmentDispatchedEmail here: that
+		// email means "your order has shipped" and the single-shipment
+		// path only ever fires it on the in_transit transition (manual
+		// status update or the tracking-sync loop), not at label
+		// creation. Firing it here would email the customer at label
+		// creation — days before pickup — for every group, then nothing
+		// when the parcels actually ship. The existing in_transit
+		// trigger already dedups per shipment id and needs no change.
 	}
 
-	resp := make([]ShipmentResponse, 0, len(created))
-	for _, rec := range created {
-		resp = append(resp, toShipmentResponse(rec))
-	}
-	c.JSON(http.StatusCreated, gin.H{"shipments": resp})
+	// The admin client (apps/admin/lib/api/shipping-api.ts) types this
+	// endpoint's response as a single ShipmentResponse, matching
+	// createSingleShipment's shape — not an array. Returning the first
+	// created shipment here keeps that contract intact without touching
+	// the frontend; a later PR can teach the client (and this response)
+	// about multiple shipments per order.
+	resp := toShipmentResponse(created[0])
+	resp.PickupWarning = pickupWarnings[0]
+	c.JSON(http.StatusCreated, resp)
 }
 
 // tryAutoSchedulePickup calls SchedulePickup with the next-business-day
@@ -1283,11 +1470,8 @@ func (h *ShipmentsHandler) tryAutoSchedulePickup(
 	rec *shipping.ShipmentRecord,
 	ps shipping.PickupScheduler,
 	cfg *shipping.CarrierConfig,
+	warehouseName string,
 ) string {
-	// #484: WarehouseName used to come straight off cfg's legacy column;
-	// it now goes through the same warehouses-row resolution as the rest
-	// of this file.
-	warehouseName := h.resolvePickupAddress(ctx, cfg).Name
 	slot := strings.TrimSpace(cfg.DefaultPickupSlotStart)
 	if slot == "" {
 		slot = "14:00:00"

@@ -430,3 +430,37 @@ func TestCreateShipment_AlreadyShippedGroupIsNotShippedTwice(t *testing.T) {
 		require.NotNil(t, g.ShipmentID, "both groups must be stamped after the retry")
 	}
 }
+
+// TestCreateShipment_FullyShippedOrderReCallIsNoOp pins CRITICAL 1 from
+// fix round 1: an order whose allocations are ALL already shipped is a
+// different state from "no allocations at all" — len(groups)==0 alone
+// cannot tell them apart. A re-POST on a fully-shipped order must be a
+// 409 no-op, not fall through to createSingleShipment and buy a second,
+// real, un-cancellable label for the whole order.
+func TestCreateShipment_FullyShippedOrderReCallIsNoOp(t *testing.T) {
+	db := testdb.NewDB(t, perWarehouseTables...)
+	storeID, tenantID := seedPerWarehouseStore(t, db)
+	wh := seedPerWarehouseWarehouse(t, db, storeID, tenantID, "Warehouse A", "1 Warehouse A Road")
+	seedPerWarehouseCarrierConfig(t, db, storeID, tenantID, nil)
+	orderID := seedPerWarehouseOrder(t, db, storeID, tenantID)
+	itemID := seedPerWarehouseItem(t, db, orderID, "SKU-1", 2)
+	seedAllocation(t, db, tenantID, storeID, orderID, itemID, wh.ID, 2)
+
+	h := newPerWarehouseHandler(db, &stubCarrier{})
+
+	w1 := createShipmentViaHandler(t, h, storeID, orderID, tenantID)
+	require.Equal(t, http.StatusCreated, w1.Code, w1.Body.String())
+
+	shipmentsAfterFirst := shipmentsForOrder(t, db, orderID.String())
+	require.Len(t, shipmentsAfterFirst, 1)
+
+	// Every allocation is now shipped. A second Create() call must be a
+	// no-op: 409, and NOT a second whole-order shipment via
+	// createSingleShipment falling through on len(groups)==0.
+	w2 := createShipmentViaHandler(t, h, storeID, orderID, tenantID)
+	require.Equal(t, http.StatusConflict, w2.Code, w2.Body.String())
+
+	shipmentsAfterRecall := shipmentsForOrder(t, db, orderID.String())
+	require.Len(t, shipmentsAfterRecall, 1, "a re-POST on a fully-shipped order must not create another shipment")
+	require.Equal(t, shipmentsAfterFirst[0].ID, shipmentsAfterRecall[0].ID)
+}

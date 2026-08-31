@@ -241,11 +241,15 @@ func main() {
 	// tenant_id GIP custom claim after onboarding completes, and the
 	// invitation service needs it to stamp the same claim on accept.
 	var gipAdmin *gipadmin.AdminClient
-	if cfg.GIPProjectID != "" && cfg.GIPTenantID != "" && cfg.GIPWebAPIKey != "" {
+	// GIPKey prefers the unrestricted server key and falls back to the
+	// public web key. The web key is referrer-restricted, so admin calls
+	// such as resetPassword fail 403 "Requests from referer <empty> are
+	// blocked" when it is all that is configured.
+	if cfg.GIPProjectID != "" && cfg.GIPTenantID != "" && cfg.GIPKey() != "" {
 		admin, adminErr := gipadmin.New(context.Background(), gipadmin.Config{
 			ProjectID: cfg.GIPProjectID,
 			TenantID:  cfg.GIPTenantID,
-			WebAPIKey: cfg.GIPWebAPIKey,
+			WebAPIKey: cfg.GIPKey(),
 		})
 		if adminErr != nil {
 			log.Error("gipadmin: init", "err", adminErr)
@@ -268,7 +272,7 @@ func main() {
 				"reset_url", cfg.AdminResetBaseURL)
 		}
 	} else {
-		log.Warn("auth: password reset disabled — missing GIP_PROJECT_ID/GIP_TENANT_ID/GIP_WEB_API_KEY")
+		log.Warn("auth: password reset disabled — missing GIP_PROJECT_ID/GIP_TENANT_ID and GIP_SERVER_API_KEY or GIP_WEB_API_KEY")
 	}
 
 	// Assign through a typed interface variable only when non-nil, so the
@@ -310,7 +314,7 @@ func main() {
 	accountHandler := account.NewHandler(accountSvc)
 	merchantAccountRoutes := fga != nil && gipAdmin != nil
 	if !merchantAccountRoutes {
-		log.Warn("account: merchant teardown endpoint disabled — missing OpenFGA store or GIP_PROJECT_ID/GIP_TENANT_ID/GIP_WEB_API_KEY; operator teardown (#288) stays mounted")
+		log.Warn("account: merchant teardown endpoint disabled — missing OpenFGA store or GIP_PROJECT_ID/GIP_TENANT_ID and a GIP API key; operator teardown (#288) stays mounted")
 	}
 
 	// ─── Outbox drainer ────────────────────────────────────────────────

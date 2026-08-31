@@ -83,13 +83,39 @@ type Config struct {
 	InternalAuthSecret string `envconfig:"INTERNAL_AUTH_SECRET"`
 
 	// GIP (Google Identity Platform) admin settings used by the
-	// password-reset flow. ProjectID + TenantID are required in prod;
-	// WebAPIKey is the public Firebase Web API key. If any of the
-	// three are blank, platform-api skips wiring the password-reset
-	// handler (dev convenience — local dev without real GIP).
+	// password-reset flow. ProjectID + TenantID are required in prod.
+	// If project, tenant and a usable key are not all present,
+	// platform-api skips wiring the password-reset handler (dev
+	// convenience — local dev without real GIP).
 	GIPProjectID string `envconfig:"GIP_PROJECT_ID"`
 	GIPTenantID  string `envconfig:"GIP_TENANT_ID"`
+
+	// GIPWebAPIKey is the PUBLIC Firebase Web API key — the same value the
+	// admin browser bundle embeds. Browser keys carry an HTTP-referrer
+	// restriction, and a server sends no Referer, so GIP answers
+	// "Requests from referer <empty> are blocked" (403) to anything this
+	// service calls with it. Kept only as a fallback so a deployment that
+	// has not yet been given a server key behaves exactly as before.
 	GIPWebAPIKey string `envconfig:"GIP_WEB_API_KEY"`
+
+	// GIPServerAPIKey is a key with NO referrer restriction, for
+	// server-to-server GIP calls. Prefer it over GIPWebAPIKey; see
+	// GIPKey below. Relaxing the web key instead is not an option —
+	// it is public by construction.
+	GIPServerAPIKey string `envconfig:"GIP_SERVER_API_KEY"`
+}
+
+// GIPKey returns the API key to use for server-side GIP calls: the
+// server key when configured, otherwise the public web key.
+//
+// The fallback exists so this change can ship before the server key does.
+// It is not a permanent arrangement — a web key will keep failing
+// referrer-restricted admin operations like resetPassword.
+func (c *Config) GIPKey() string {
+	if c.GIPServerAPIKey != "" {
+		return c.GIPServerAPIKey
+	}
+	return c.GIPWebAPIKey
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

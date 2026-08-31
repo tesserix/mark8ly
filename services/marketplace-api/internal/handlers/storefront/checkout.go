@@ -222,8 +222,8 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 	if h.stockHolds != nil {
 		lines := stockLinesFromItems(req.Items)
 		cartToken := cartTokenForCheckout(c)
-		in.WithinTx = func(tx *gorm.DB, _ *order.Order) error {
-			return commitStock(c.Request.Context(), tx, h.stockHolds, cartToken, lines)
+		in.WithinTx = func(tx *gorm.DB, o *order.Order) error {
+			return commitStock(c.Request.Context(), tx, h.stockHolds, cartToken, o.ID.String(), storeID.String(), lines)
 		}
 	}
 

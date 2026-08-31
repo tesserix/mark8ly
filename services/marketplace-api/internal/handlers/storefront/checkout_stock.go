@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/allocation"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/stockhold"
 )
@@ -61,6 +62,8 @@ func commitStock(
 	tx *gorm.DB,
 	holds *stockhold.Repository,
 	cartToken string,
+	orderID string,
+	storeID string,
 	lines []stockLine,
 ) error {
 	if len(lines) == 0 {
@@ -72,6 +75,133 @@ func commitStock(
 		return err
 	}
 
+	// A store with NO warehouses keeps the pre-#177 behaviour exactly:
+	// hold and decrement at the sentinel location, write no allocations.
+	// This is not a tidy fallback — production has zero warehouse rows, so
+	// it is the only path that currently runs, and allocation.Plan would
+	// return ErrNoWarehouse for every checkout if it ran unconditionally.
+	warehouses, err := storeWarehousesInFillOrder(ctx, tx, storeID)
+	if err != nil {
+		return err
+	}
+	if len(warehouses) == 0 {
+		return commitStockAtSentinel(ctx, tx, holds, cartToken, lines, policies)
+	}
+
+	avail, storage, err := loadAvailability(ctx, tx, cartToken, warehouses, variantIDsOf(lines))
+	if err != nil {
+		return err
+	}
+
+	allocLines := make([]allocation.Line, 0, len(lines))
+	for _, l := range lines {
+		allocLines = append(allocLines, allocation.Line{
+			VariantID:     l.VariantID,
+			Quantity:      l.Quantity,
+			SellsPastZero: policies[l.VariantID] == inventoryPolicyContinue,
+		})
+	}
+
+	assignments, err := allocation.Plan(warehouses, avail, allocLines)
+	var cannot allocation.CannotFillError
+	if errors.As(err, &cannot) {
+		// Same shape the shopper already gets for a sold-out cart.
+		return outOfStockError{VariantID: cannot.VariantID}
+	}
+	if err != nil {
+		return err
+	}
+
+	// stockhold.Hold's ON CONFLICT DO UPDATE SET qty = EXCLUDED.qty REPLACES
+	// a quantity rather than adding to it, and its unique key is
+	// (cart_token, variant_id, location_id). Two assignments for the same
+	// variant and warehouse — which happens whenever two order lines carry
+	// the same variant, because stockLinesFromItems does not merge them —
+	// would leave only the SECOND quantity reserved. Aggregate first.
+	type holdKey struct{ variantID, locationID string }
+	totals := map[holdKey]int{}
+	for _, a := range assignments {
+		if policies[a.VariantID] == inventoryPolicyContinue {
+			// Sell past zero on purpose. No hold, no gate — decrement at
+			// this assignment's warehouse, clamped for the same reason the
+			// sentinel path clamps (#231's non-negative CHECK).
+			at := storage[a.VariantID][a.WarehouseID]
+			if len(at) == 0 {
+				return fmt.Errorf(
+					"storefront: no storage location found for continue-policy variant %s at warehouse %s",
+					a.VariantID, a.WarehouseID)
+			}
+			if err := tx.WithContext(ctx).Exec(
+				`UPDATE variant_stock
+				    SET quantity = GREATEST(quantity - ?, 0), updated_at = now()
+				  WHERE variant_id = ? AND location_id = ?`,
+				a.Quantity, a.VariantID, at[0].LocationID).Error; err != nil {
+				return fmt.Errorf("storefront: decrement continue-policy variant: %w", err)
+			}
+			continue // sold past zero on purpose; decremented, not held
+		}
+		// A warehouse's units can sit in more than one physical location
+		// while the sentinel and real rows coexist, so draw the assigned
+		// quantity from that warehouse's locations in order until it is
+		// covered. The breakdown is sorted by LocationID, so the same
+		// inputs always produce the same holds.
+		want := a.Quantity
+		for _, at := range storage[a.VariantID][a.WarehouseID] {
+			if want == 0 {
+				break
+			}
+			take := min(want, at.Units)
+			if take <= 0 {
+				continue
+			}
+			totals[holdKey{a.VariantID, at.LocationID}] += take
+			want -= take
+		}
+		if want > 0 {
+			// The snapshot said this warehouse had the units and the
+			// breakdown does not account for them. That is a bug in the
+			// snapshot, not a stock shortage — fail loudly rather than
+			// under-hold and oversell.
+			return fmt.Errorf(
+				"storefront: allocation for variant %s at warehouse %s is %d units short of its storage breakdown",
+				a.VariantID, a.WarehouseID, want)
+		}
+	}
+	for k, qty := range totals {
+		err := holds.Hold(ctx, tx, cartToken, k.variantID, k.locationID, qty, HoldTTL)
+		if errors.Is(err, stockhold.ErrInsufficientStock) {
+			return outOfStockError{VariantID: k.variantID}
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	// order_items rows already exist: order.CreateInput.WithinTx runs after
+	// CreateInTx inserts them. Reading them back is how an allocation gets
+	// its order_item_id without threading ids through the checkout request.
+	if err := recordAllocations(ctx, tx, orderID, assignments, lines); err != nil {
+		return err
+	}
+
+	// One Commit for the whole cart: it decrements every live hold this cart
+	// holds and flips them to 'committed' in the same transaction.
+	return holds.Commit(ctx, tx, cartToken)
+}
+
+// commitStockAtSentinel is the pre-#177 behaviour, moved here verbatim: hold
+// and decrement everything at the single sentinel location, and write no
+// order_allocations rows. This is the ONLY path production exercises today
+// — there are zero warehouse rows — so its body must stay provably
+// unchanged rather than be re-implemented alongside the allocation path.
+func commitStockAtSentinel(
+	ctx context.Context,
+	tx *gorm.DB,
+	holds *stockhold.Repository,
+	cartToken string,
+	lines []stockLine,
+	policies map[string]string,
+) error {
 	for _, line := range lines {
 		if policies[line.VariantID] == inventoryPolicyContinue {
 			// Sell past zero on purpose. No hold, no gate — and the
@@ -106,6 +236,134 @@ func commitStock(
 	// One Commit for the whole cart: it decrements every live hold this cart
 	// holds and flips them to 'committed' in the same transaction.
 	return holds.Commit(ctx, tx, cartToken)
+}
+
+// storeWarehousesInFillOrder reads storeID's warehouses and returns them in
+// the order allocation.Plan should fill them. Plan takes an ordered slice
+// and cannot detect an unordered one, so ordering here is mandatory.
+func storeWarehousesInFillOrder(ctx context.Context, tx *gorm.DB, storeID string) ([]allocation.Warehouse, error) {
+	var rows []allocation.Warehouse
+	if err := tx.WithContext(ctx).Raw(
+		`SELECT id, priority, is_default, created_at FROM warehouses WHERE store_id = ?`, storeID).
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("storefront: load warehouses: %w", err)
+	}
+	return allocation.InPriorityOrder(rows), nil
+}
+
+// variantIDsOf returns the distinct variant ids across lines.
+func variantIDsOf(lines []stockLine) []string {
+	seen := make(map[string]struct{}, len(lines))
+	ids := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if _, ok := seen[l.VariantID]; ok {
+			continue
+		}
+		seen[l.VariantID] = struct{}{}
+		ids = append(ids, l.VariantID)
+	}
+	return ids
+}
+
+// recordAllocations writes one order_allocations row per assignment.
+//
+// order_items rows are paired to lines POSITIONALLY: items[i] is line[i]'s
+// item, because order.CreateInput.WithinTx inserts one order_item per line
+// in the same order commitStock was given, and stockLinesFromItems preserves
+// item order. That means a cart mixing stocked and unstocked items would
+// make lines shorter than order_items — the length assert below exists to
+// catch that mismatch loudly rather than mis-pair rows silently.
+//
+// # Attributing an assignment back to a line
+//
+// allocation.Plan documents its output as "grouped by warehouse in fill
+// order, and by LINE order within a warehouse" — not grouped by line. So two
+// lines sharing a variant, split across warehouses with partial fills, can
+// interleave: {whA: line0, whA: line2, whB: line0, whB: line2}. A running
+// "current line" pointer over the flat assignment slice mis-attributes that
+// case. Instead, every time the warehouse changes, the set of not-yet-filled
+// lines for each variant is rebuilt in ascending index order; within one
+// warehouse's contribution to a given variant, Plan visits at most one
+// assignment per line, in that same ascending order, so consuming that
+// queue front-to-back for each variant, only resetting on a warehouse
+// change, is exact.
+func recordAllocations(
+	ctx context.Context,
+	tx *gorm.DB,
+	orderID string,
+	assignments []allocation.Assignment,
+	lines []stockLine,
+) error {
+	var items []struct {
+		ID        string
+		VariantID string
+		Quantity  int
+	}
+	if err := tx.WithContext(ctx).Raw(
+		`SELECT id, variant_id, quantity FROM order_items WHERE order_id = ? ORDER BY created_at, id`,
+		orderID).Scan(&items).Error; err != nil {
+		return fmt.Errorf("storefront: load order items for allocation: %w", err)
+	}
+	if len(items) != len(lines) {
+		return fmt.Errorf(
+			"storefront: order %s has %d order_items but commitStock was given %d lines — "+
+				"allocations cannot be paired positionally", orderID, len(items), len(lines))
+	}
+
+	var tenantID, storeID string
+	if err := tx.WithContext(ctx).Raw(
+		`SELECT tenant_id, store_id FROM orders WHERE id = ?`, orderID).
+		Row().Scan(&tenantID, &storeID); err != nil {
+		return fmt.Errorf("storefront: load order for allocation: %w", err)
+	}
+
+	remaining := make([]int, len(lines))
+	for i, l := range lines {
+		remaining[i] = l.Quantity
+	}
+
+	var prevWarehouse string
+	haveWarehouse := false
+	queues := map[string][]int{} // variantID -> ascending line indices still owed, as of the current warehouse
+	pointer := map[string]int{}  // variantID -> next queue position to consume
+
+	for _, a := range assignments {
+		if !haveWarehouse || a.WarehouseID != prevWarehouse {
+			queues = map[string][]int{}
+			pointer = map[string]int{}
+			for i, l := range lines {
+				if remaining[i] > 0 {
+					queues[l.VariantID] = append(queues[l.VariantID], i)
+				}
+			}
+			prevWarehouse = a.WarehouseID
+			haveWarehouse = true
+		}
+
+		idxList := queues[a.VariantID]
+		p := pointer[a.VariantID]
+		if p >= len(idxList) {
+			// Plan produced an assignment for a variant with no line left
+			// owing it in this warehouse's chunk — a bug in this pairing
+			// logic or in Plan's ordering contract, not a data problem.
+			// Fail loudly rather than attribute it to the wrong line.
+			return fmt.Errorf(
+				"storefront: cannot attribute allocation of %d units of variant %s at warehouse %s to any order line",
+				a.Quantity, a.VariantID, a.WarehouseID)
+		}
+		lineIdx := idxList[p]
+		pointer[a.VariantID] = p + 1
+		remaining[lineIdx] -= a.Quantity
+
+		id := uuid.NewString()
+		if err := tx.WithContext(ctx).Exec(
+			`INSERT INTO order_allocations (id, tenant_id, store_id, order_id, order_item_id, warehouse_id, quantity)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			id, tenantID, storeID, orderID, items[lineIdx].ID, a.WarehouseID, a.Quantity).Error; err != nil {
+			return fmt.Errorf("storefront: insert order_allocations: %w", err)
+		}
+	}
+	return nil
 }
 
 // inventoryPolicies reads the policy for each line's variant in one query.

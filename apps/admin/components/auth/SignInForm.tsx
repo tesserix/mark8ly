@@ -26,7 +26,12 @@ import { getGoogleCredential } from "@/lib/gip/google-gsi";
 import { getAppleCredential } from "@/lib/gip/apple-js";
 import { appleSignInEnabled } from "@/lib/config";
 import { linkGoogleToInternalPassword } from "@/lib/gip/link";
-import { signIn, confirmMFALogin } from "@/app/login/actions";
+import {
+  signIn,
+  confirmMFALogin,
+  confirmEmailOTPLogin,
+  resendEmailOTPCode,
+} from "@/app/login/actions";
 import { prepareCrossDomainNavigation } from "@/lib/auth/cross-domain-handoff";
 import { LinkProviderPrompt } from "@repo/ui/auth/link-provider-prompt";
 
@@ -93,6 +98,11 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
   // of redirecting. `mfaMultipleTenants` is remembered from the
   // first step so the post-challenge redirect still respects
   // pick-tenant vs dashboard.
+  // Which challenge the server asked for. "mfa" is an authenticator
+  // app; "email_otp" is the new-device code auth-bff emails. Both leave
+  // only a PENDING cookie, so neither may skip to goToDestination.
+  const [challenge, setChallenge] = useState<"mfa" | "email_otp" | null>(null);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
   const [mfaStep, setMfaStep] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
   const [mfaPending, setMfaPending] = useState(false);
@@ -148,8 +158,9 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
         }
         return;
       }
-      if (r.data.mfaRequired) {
+      if (r.data.mfaRequired || r.data.emailOtpRequired) {
         setMfaMultipleTenants(r.data.multipleTenants);
+        setChallenge(r.data.mfaRequired ? "mfa" : "email_otp");
         setMfaStep(true);
         return;
       }
@@ -167,8 +178,9 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
       );
       return;
     }
-    if (r.data.mfaRequired) {
+    if (r.data.mfaRequired || r.data.emailOtpRequired) {
       setMfaMultipleTenants(r.data.multipleTenants);
+      setChallenge(r.data.mfaRequired ? "mfa" : "email_otp");
       setMfaStep(true);
       return;
     }
@@ -265,7 +277,10 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
     setSubmitError(null);
     setMfaPending(true);
     try {
-      const r = await confirmMFALogin(mfaCode);
+      const r =
+        challenge === "email_otp"
+          ? await confirmEmailOTPLogin(mfaCode)
+          : await confirmMFALogin(mfaCode);
       if (!r.ok) {
         setSubmitError(r.message);
         return;
@@ -278,8 +293,24 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
 
   function cancelMFA() {
     setMfaStep(false);
+    setChallenge(null);
     setMfaCode("");
     setSubmitError(null);
+    setResendNotice(null);
+  }
+
+  async function handleResend() {
+    setSubmitError(null);
+    setResendNotice(null);
+    setMfaPending(true);
+    try {
+      const r = await resendEmailOTPCode();
+      setResendNotice(
+        r.ok ? "We've sent a new code. It expires in 5 minutes." : r.message,
+      );
+    } finally {
+      setMfaPending(false);
+    }
   }
 
   if (mfaStep) {
@@ -288,16 +319,20 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
         <div className="space-y-2">
           <p className="eyebrow">mark8ly admin</p>
           <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground">
-            Two-factor check
+            {challenge === "email_otp" ? "Check your email" : "Two-factor check"}
           </h1>
           <p className="text-base leading-7 text-foreground-secondary">
-            Enter the 6-digit code from your authenticator app to finish
-            signing in.
+            {challenge === "email_otp"
+              ? "We emailed you a 6-digit code because this is a new device. It expires in 5 minutes."
+              : "Enter the 6-digit code from your authenticator app to finish signing in."}
           </p>
         </div>
 
         <form onSubmit={handleMFA} className="mt-8 space-y-5">
-          <Field id="mfa-code" label="Verification code">
+          <Field
+            id="mfa-code"
+            label={challenge === "email_otp" ? "Sign-in code" : "Verification code"}
+          >
             <Input
               id="mfa-code"
               type="text"
@@ -313,6 +348,12 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
             />
           </Field>
 
+          {resendNotice && (
+            <p aria-live="polite" className="text-sm text-foreground-secondary">
+              {resendNotice}
+            </p>
+          )}
+
           {submitError && (
             <p role="alert" aria-live="polite" className="text-sm text-danger">
               {submitError}
@@ -326,6 +367,17 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
           >
             {mfaPending ? "Verifying…" : "Verify and continue"}
           </button>
+
+          {challenge === "email_otp" && (
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={mfaPending}
+              className="inline-flex h-11 w-full items-center justify-center text-sm text-foreground-secondary underline underline-offset-4 decoration-border-subtle hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Send a new code
+            </button>
+          )}
 
           <button
             type="button"

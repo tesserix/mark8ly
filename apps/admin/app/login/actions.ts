@@ -11,6 +11,8 @@ import { cookies, headers } from "next/headers";
 
 import {
   autoLogin,
+  completeEmailOTPChallenge,
+  resendEmailOTP,
   completeMFAChallenge,
   AuthBffError,
 } from "@/lib/auth/auth-bff";
@@ -78,6 +80,12 @@ interface SignInSuccess {
   // The UI must collect a 6-digit code and call confirmMFALogin
   // before treating the sign-in as complete.
   mfaRequired: boolean;
+  // true when the sign-in came from an unrecognised device and auth-bff
+  // emailed a one-time code, writing only a PENDING cookie. Treating
+  // this as success redirects into a middleware bounce back to /login
+  // with no error — the UI must collect the code and call
+  // confirmEmailOTPLogin.
+  emailOtpRequired: boolean;
 }
 
 export async function signIn(
@@ -154,6 +162,7 @@ export async function signIn(
         tenantId: primary.tenant_id,
         multipleTenants,
         mfaRequired: result.mfaRequired,
+        emailOtpRequired: result.emailOtpRequired,
       },
     };
   } catch (err) {
@@ -201,6 +210,68 @@ export async function confirmMFALogin(
       }
     }
     return { ok: true, data: { tenantId: result.tenant_id } };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * confirmEmailOTPLogin finishes a sign-in that auth-bff challenged with
+ * an emailed code. Mirrors confirmMFALogin: the browser already holds
+ * the pending cookie from signIn, we forward it with the code, and set
+ * whatever cookies auth-bff mints in return.
+ */
+export async function confirmEmailOTPLogin(
+  code: string,
+): Promise<Result<{ tenantId: string }>> {
+  try {
+    const trimmed = code.trim();
+    if (!trimmed) {
+      return {
+        ok: false,
+        code: "invalid_code",
+        message: "Enter the 6-digit code we emailed you.",
+      };
+    }
+    const c = await cookies();
+    const cookieHeader = c
+      .getAll()
+      .map((x) => `${x.name}=${x.value}`)
+      .join("; ");
+    const result = await completeEmailOTPChallenge(trimmed, cookieHeader);
+    for (const raw of result.setCookies) {
+      const parsed = parseSetCookie(raw);
+      if (parsed) {
+        c.set({
+          name: parsed.name,
+          value: parsed.value,
+          path: parsed.path ?? "/",
+          domain: parsed.domain,
+          httpOnly: parsed.httpOnly,
+          secure: parsed.secure,
+          sameSite: "lax",
+          maxAge: parsed.maxAge,
+        });
+      }
+    }
+    return { ok: true, data: { tenantId: result.tenant_id } };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** resendEmailOTPCode asks for a fresh emailed code on the same pending
+ *  session. A 429 here means the rate limit tripped — waiting is the
+ *  only way out, so the message must not tell the user to retry. */
+export async function resendEmailOTPCode(): Promise<Result<null>> {
+  try {
+    const c = await cookies();
+    const cookieHeader = c
+      .getAll()
+      .map((x) => `${x.name}=${x.value}`)
+      .join("; ");
+    await resendEmailOTP(cookieHeader);
+    return { ok: true, data: null };
   } catch (err) {
     return fail(err);
   }

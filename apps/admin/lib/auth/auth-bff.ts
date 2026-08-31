@@ -38,6 +38,12 @@ interface AutoLoginResult {
    *  this as a successful sign-in; it must collect the 6-digit code and
    *  call completeMFAChallenge before authenticated requests work. */
   mfaRequired: boolean;
+  /** True when the sign-in came from an unrecognised device and auth-bff
+   *  emailed a one-time code. Like mfaRequired this is NOT a completed
+   *  sign-in — auto-login minted only a PENDING cookie, so redirecting
+   *  now bounces the user straight back to /login with no error shown.
+   *  The caller must collect the code and call completeEmailOTPChallenge. */
+  emailOtpRequired: boolean;
 }
 
 interface MFAChallengeResult {
@@ -164,6 +170,7 @@ export async function autoLogin(
       email: string;
       tenant_id: string;
       mfa_required?: boolean;
+      email_otp_required?: boolean;
     };
   };
   const setCookies = readAllSetCookies(res);
@@ -174,7 +181,68 @@ export async function autoLogin(
     tenant_id: body.data.tenant_id,
     setCookies,
     mfaRequired: body.data.mfa_required === true,
+    emailOtpRequired: body.data.email_otp_required === true,
   };
+}
+
+/**
+ * completeEmailOTPChallenge finishes a sign-in that auth-bff challenged
+ * with an emailed one-time code. The caller forwards the pending cookie
+ * auto-login set, plus the 6-digit code from the email. On success
+ * auth-bff mints the real session cookie and clears the pending one.
+ */
+export async function completeEmailOTPChallenge(
+  code: string,
+  cookieHeader: string,
+): Promise<{ uid: string; tenant_id: string; setCookies: string[] }> {
+  const res = await fetch(`${base}/auth/otp/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookieHeader },
+    body: JSON.stringify({ code }),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new AuthBffError(
+      res.status,
+      body.error ?? `http_${res.status}`,
+      body.message ?? `HTTP ${res.status}`,
+    );
+  }
+  const body = (await res.json()) as { uid: string; tenant_id: string };
+  return {
+    uid: body.uid,
+    tenant_id: body.tenant_id,
+    setCookies: readAllSetCookies(res),
+  };
+}
+
+/** resendEmailOTP asks auth-bff for a fresh code on the same pending
+ *  session. Rate limited upstream (429), which the caller surfaces. */
+export async function resendEmailOTP(cookieHeader: string): Promise<void> {
+  const res = await fetch(`${base}/auth/otp/resend`, {
+    method: "POST",
+    headers: { Cookie: cookieHeader },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new AuthBffError(
+      res.status,
+      body.error ?? `http_${res.status}`,
+      body.message ?? `HTTP ${res.status}`,
+    );
+  }
 }
 
 // readAllSetCookies returns every Set-Cookie header auth-bff sent.

@@ -73,6 +73,59 @@ func TestInPriorityOrder(t *testing.T) {
 	}
 }
 
+// A 2-element case cannot pin the direction of the IsDefault tiebreak: with
+// only two elements, flipping "IsDefault true sorts first" to "sorts last"
+// still passes because the comparator is only ever evaluated in one
+// direction. With four elements and mixed input order, the wrong direction
+// changes the output.
+func TestInPriorityOrder_IsDefaultTiebreakIsPinned(t *testing.T) {
+	in := []allocation.Warehouse{
+		{ID: "y", Priority: 1, IsDefault: true, CreatedAt: at(2)},
+		{ID: "x", Priority: 1, IsDefault: false, CreatedAt: at(1)},
+		{ID: "z", Priority: 1, IsDefault: false, CreatedAt: at(3)},
+		{ID: "w", Priority: 1, IsDefault: true, CreatedAt: at(4)},
+	}
+
+	got := allocation.InPriorityOrder(in)
+	ids := make([]string, 0, len(got))
+	for _, w := range got {
+		ids = append(ids, w.ID)
+	}
+	require.Equal(t, []string{"y", "w", "x", "z"}, ids)
+}
+
+// Ordering must be TOTAL: whatever order the same set of warehouses arrives
+// in, InPriorityOrder must produce the identical result every time.
+func TestInPriorityOrder_IsPermutationInvariant(t *testing.T) {
+	base := []allocation.Warehouse{
+		{ID: "y", Priority: 1, IsDefault: true, CreatedAt: at(2)},
+		{ID: "x", Priority: 1, IsDefault: false, CreatedAt: at(1)},
+		{ID: "z", Priority: 1, IsDefault: false, CreatedAt: at(3)},
+		{ID: "w", Priority: 1, IsDefault: true, CreatedAt: at(4)},
+	}
+
+	permutations := [][]allocation.Warehouse{
+		{base[0], base[1], base[2], base[3]},
+		{base[3], base[2], base[1], base[0]},
+		{base[1], base[3], base[0], base[2]},
+		{base[2], base[0], base[3], base[1]},
+	}
+
+	var want []string
+	for i, perm := range permutations {
+		got := allocation.InPriorityOrder(perm)
+		ids := make([]string, 0, len(got))
+		for _, w := range got {
+			ids = append(ids, w.ID)
+		}
+		if i == 0 {
+			want = ids
+			continue
+		}
+		require.Equal(t, want, ids, "input order must not change the result")
+	}
+}
+
 // Repo style forbids mutating an input. A caller that ordered a slice for the
 // allocator and then reused its own slice for display would otherwise see it
 // silently reordered underneath them.

@@ -25,6 +25,15 @@ BEGIN
         v_variant := NEW.variant_id;
     END IF;
 
+    -- Serialise writers on the parent row BEFORE computing the sum. Without
+    -- this, two transactions writing different locations of the same variant
+    -- both evaluate the SUM sub-select against their pre-block snapshot, and
+    -- the second overwrites the first's contribution: EvalPlanQual re-checks
+    -- the qual on unblocking, not the sub-select. Unreachable while every
+    -- variant has one stock row; reachable the moment multi-location writes
+    -- land.
+    PERFORM 1 FROM product_variants WHERE id = v_variant FOR UPDATE;
+
     UPDATE product_variants
        SET inventory_quantity = COALESCE(
                (SELECT SUM(quantity) FROM variant_stock WHERE variant_id = v_variant), 0)

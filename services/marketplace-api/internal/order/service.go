@@ -309,6 +309,90 @@ func (s *Service) MarkFulfilled(ctx context.Context, tx *gorm.DB, orderID uuid.U
 	})
 }
 
+// MarkPartiallyFulfilled moves fulfillment_status → partial. It does NOT
+// touch orders.status — a partial shipment does not fulfil the order, so
+// the order axis stays exactly where it is (typically confirmed). This is
+// the counterpart to MarkFulfilled for orders that still owe at least one
+// parcel: createShipmentsPerWarehouse calls this when unshipped allocation
+// groups remain after shipping the ones it can.
+//
+// Idempotent: calling it again on an order already partial is a no-op — the
+// fulfillmentStatusTransitions table only allows partial → fulfilled, not
+// partial → partial, so a second "still owes a parcel" report (e.g. from a
+// retried shipment-creation call) must not be treated as an illegal
+// transition.
+func (s *Service) MarkPartiallyFulfilled(ctx context.Context, tx *gorm.DB, orderID uuid.UUID) error {
+	return s.runMaybeOwnTx(ctx, tx, func(tx *gorm.DB) error {
+		o, err := s.loadForUpdate(tx, orderID)
+		if err != nil {
+			return err
+		}
+		if o.FulfillmentStatus == string(FulfillmentStatusPartial) {
+			return nil
+		}
+		if !FulfillmentStatus(o.FulfillmentStatus).CanTransitionTo(FulfillmentStatusPartial) {
+			return apperrors.InvalidTransition("fulfillment", o.FulfillmentStatus, string(FulfillmentStatusPartial))
+		}
+		if err := s.repo.UpdateFulfillmentStatus(tx, orderID, FulfillmentStatusPartial); err != nil {
+			return err
+		}
+		if err := s.repo.AppendEvent(tx, &OrderEvent{
+			OrderID: orderID,
+			Kind:    string(EventKindPartiallyFulfilled),
+			Payload: EncodeStatusChanged(StatusChangedPayload{
+				Axis: "fulfillment",
+				From: o.FulfillmentStatus,
+				To:   string(FulfillmentStatusPartial),
+			}),
+		}); err != nil {
+			return err
+		}
+		return s.enqueueOutbox(ctx, tx, o.TenantID, outbox.AggregateOrder, orderID, outbox.EventOrderPartiallyFulfilled, map[string]any{
+			"store_id": o.StoreID.String(),
+			"order_id": orderID.String(),
+		})
+	})
+}
+
+// MarkFulfillmentComplete moves fulfillment_status → fulfilled. Unlike
+// MarkFulfilled it does NOT touch orders.status — label creation is not the
+// "this order is done" action; the manual /fulfill admin endpoint (which
+// still calls MarkFulfilled) is. orders.status has fulfilled as a TERMINAL
+// state (see status.go), so advancing it here would permanently block
+// Cancel on every order the moment its first (and, for a single-warehouse
+// store, only) group ships — before the parcel is even picked up. This is
+// the fulfillment-only counterpart to MarkPartiallyFulfilled, called by
+// createShipmentsPerWarehouse when no unshipped allocation groups remain.
+func (s *Service) MarkFulfillmentComplete(ctx context.Context, tx *gorm.DB, orderID uuid.UUID) error {
+	return s.runMaybeOwnTx(ctx, tx, func(tx *gorm.DB) error {
+		o, err := s.loadForUpdate(tx, orderID)
+		if err != nil {
+			return err
+		}
+		if !FulfillmentStatus(o.FulfillmentStatus).CanTransitionTo(FulfillmentStatusFulfilled) {
+			return apperrors.InvalidTransition("fulfillment", o.FulfillmentStatus, string(FulfillmentStatusFulfilled))
+		}
+		if err := s.repo.UpdateFulfillmentStatus(tx, orderID, FulfillmentStatusFulfilled); err != nil {
+			return err
+		}
+		if err := s.repo.AppendEvent(tx, &OrderEvent{
+			OrderID: orderID,
+			Kind:    string(EventKindFulfilled),
+			Payload: EncodeStatusChanged(StatusChangedPayload{
+				Axis: "fulfillment",
+				From: o.FulfillmentStatus,
+				To:   string(FulfillmentStatusFulfilled),
+			}),
+		}); err != nil {
+			return err
+		}
+		return s.enqueueOutbox(ctx, tx, o.TenantID, outbox.AggregateOrder, orderID, outbox.EventOrderFulfilled, map[string]any{
+			"store_id": o.StoreID.String(),
+			"order_id": orderID.String(),
+		})
+	})
+}
+
 // Cancel transitions an order to cancelled. Reason is recorded in the
 // order_events row.
 func (s *Service) Cancel(ctx context.Context, tx *gorm.DB, orderID uuid.UUID, reason string) error {

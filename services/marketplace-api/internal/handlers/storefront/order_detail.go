@@ -470,6 +470,8 @@ func defaultTimelineDescription(kind string) string {
 		return "Payment received."
 	case "fulfilled":
 		return "Order fulfilled."
+	case "partially_fulfilled":
+		return "Part of your order has shipped."
 	case "cancelled":
 		return "Order cancelled."
 	case "refunded":

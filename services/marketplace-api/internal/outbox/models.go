@@ -72,6 +72,7 @@ const (
 	EventOrderPlaced                = "order.placed"
 	EventOrderConfirmed             = "order.confirmed"
 	EventOrderFulfilled             = "order.fulfilled"
+	EventOrderPartiallyFulfilled    = "order.partially_fulfilled"
 	EventOrderCancelled             = "order.cancelled"
 	EventOrderRefunded              = "order.refunded"
 	EventReturnRequested            = "return.requested"

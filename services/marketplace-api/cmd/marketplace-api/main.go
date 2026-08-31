@@ -807,7 +807,8 @@ func main() {
 		shipmentsHandler := admin.NewShipmentsHandler(conn, shippingService, shippingRepo, orderDocSvc, log).
 			WithEncryptor(apiKeyEncryptor).
 			WithSecretStore(carrierSecretStore).
-			WithLabelMailer(labelMailer)
+			WithLabelMailer(labelMailer).
+			WithOrderService(orderSvc)
 
 		// Shipment-cancel executor — resolves + executes the carrier action
 		// when an order is fully refunded or cancelled. Reuses the shipments

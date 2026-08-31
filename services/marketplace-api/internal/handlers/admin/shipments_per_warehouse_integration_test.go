@@ -33,6 +33,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/warehouse"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
@@ -135,6 +136,8 @@ func (s *stubCarrier) SupportedCountries() []string { return []string{"IN"} }
 var perWarehouseTables = []string{
 	"order_allocations",
 	"shipments",
+	"order_events",
+	"outbox_events",
 	"order_addresses",
 	"order_items",
 	"orders",
@@ -143,15 +146,34 @@ var perWarehouseTables = []string{
 	"stores",
 }
 
+// newPerWarehouseHandler wires a real order.Service (backed by the same
+// db) so createShipmentsPerWarehouse's fulfilment-status reporting is
+// exercised end-to-end, not skipped as it would be if orderSvc were left
+// nil — see TestCreateShipment_* fulfillmentStatusForOrder assertions
+// below, which are what step 6 of the task-2 brief mutation-tests.
 func newPerWarehouseHandler(db *gorm.DB, carrier shipping.Carrier) *ShipmentsHandler {
 	repo := shipping.NewRepository(db)
 	svc := shipping.NewShippingService(repo)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	h := NewShipmentsHandler(db, svc, repo, nil, logger)
+	orderRepo := order.NewRepository()
+	outboxRepo := outbox.NewRepository(db)
+	orderSvc := order.NewService(db, orderRepo, outboxRepo)
+	h := NewShipmentsHandler(db, svc, repo, nil, logger).WithOrderService(orderSvc)
 	h.WithCarrierConstructor(func(provider, apiKey, secretKey, mode string) (shipping.Carrier, error) {
 		return carrier, nil
 	})
 	return h
+}
+
+// fulfillmentStatusForOrder reads orders.fulfillment_status directly —
+// the property createShipmentsPerWarehouse's remaining-groups decision
+// (brief step 4) is responsible for.
+func fulfillmentStatusForOrder(t *testing.T, db *gorm.DB, orderID uuid.UUID) string {
+	t.Helper()
+	var status string
+	require.NoError(t, db.Raw(
+		`SELECT fulfillment_status FROM orders WHERE id = ?`, orderID).Row().Scan(&status))
+	return status
 }
 
 func seedPerWarehouseStore(t *testing.T, db *gorm.DB) (storeID, tenantID uuid.UUID) {
@@ -291,6 +313,12 @@ func TestCreateShipment_OrderWithNoAllocationsCreatesOneShipmentAsBefore(t *test
 	shipments := shipmentsForOrder(t, db, orderID.String())
 	require.Len(t, shipments, 1, "an order with no allocations must produce exactly one shipment")
 	require.Nil(t, shipments[0].WarehouseID, "with no allocation to attribute it to, warehouse_id must stay NULL")
+
+	// The no-allocations path keeps whatever behaviour it had before #177
+	// PR 4b: createSingleShipment has never reported fulfilment status, and
+	// this task must not start it doing so.
+	require.Equal(t, "unfulfilled", fulfillmentStatusForOrder(t, db, orderID),
+		"the single-shipment path must not change fulfilment status")
 }
 
 // TestCreateShipment_OneAllocationGroupCreatesOneShipmentWithItsWarehouse
@@ -320,6 +348,10 @@ func TestCreateShipment_OneAllocationGroupCreatesOneShipmentWithItsWarehouse(t *
 	require.Len(t, groups, 1)
 	require.NotNil(t, groups[0].ShipmentID, "the allocation row must be stamped with the shipment it went out on")
 	require.Equal(t, shipments[0].ID, *groups[0].ShipmentID)
+
+	// Every group this order owed a parcel for now has one — fulfilled,
+	// not partial.
+	require.Equal(t, "fulfilled", fulfillmentStatusForOrder(t, db, orderID))
 }
 
 // TestCreateShipment_TwoAllocationGroupsCreateTwoShipments is the core
@@ -367,6 +399,9 @@ func TestCreateShipment_TwoAllocationGroupsCreateTwoShipments(t *testing.T) {
 		require.NotNil(t, g.ShipmentID)
 		require.Equal(t, gotWarehouses[g.WarehouseID], *g.ShipmentID)
 	}
+
+	// Both groups shipped in this one call — the order is fully fulfilled.
+	require.Equal(t, "fulfilled", fulfillmentStatusForOrder(t, db, orderID))
 }
 
 // TestCreateShipment_AlreadyShippedGroupIsNotShippedTwice pins the
@@ -404,6 +439,13 @@ func TestCreateShipment_AlreadyShippedGroupIsNotShippedTwice(t *testing.T) {
 	shipmentsAfterFirst := shipmentsForOrder(t, db, orderID.String())
 	require.Len(t, shipmentsAfterFirst, 1, "the succeeding group's shipment must be persisted despite the other group's failure")
 
+	// One of two groups has a real, persisted parcel; the other still owes
+	// one. The order must report partial — not fulfilled (that would tell
+	// a customer their order is complete while a parcel is missing) and
+	// not unfulfilled (that would hide the parcel that already shipped).
+	require.Equal(t, "partial", fulfillmentStatusForOrder(t, db, orderID),
+		"a two-group order with only one parcel shipped must report partial fulfilment")
+
 	// Second call: the retry. The already-shipped group must not be
 	// re-shipped; only the previously-failed group gets a new shipment.
 	w2 := createShipmentViaHandler(t, h, storeID, orderID, tenantID)
@@ -411,6 +453,9 @@ func TestCreateShipment_AlreadyShippedGroupIsNotShippedTwice(t *testing.T) {
 
 	shipmentsAfterRetry := shipmentsForOrder(t, db, orderID.String())
 	require.Len(t, shipmentsAfterRetry, 2, "the retry must add exactly one shipment, for the group that had failed")
+
+	// Now every group owed a parcel has one.
+	require.Equal(t, "fulfilled", fulfillmentStatusForOrder(t, db, orderID))
 
 	firstIDs := map[string]bool{}
 	for _, s := range shipmentsAfterFirst {
@@ -453,6 +498,7 @@ func TestCreateShipment_FullyShippedOrderReCallIsNoOp(t *testing.T) {
 
 	shipmentsAfterFirst := shipmentsForOrder(t, db, orderID.String())
 	require.Len(t, shipmentsAfterFirst, 1)
+	require.Equal(t, "fulfilled", fulfillmentStatusForOrder(t, db, orderID))
 
 	// Every allocation is now shipped. A second Create() call must be a
 	// no-op: 409, and NOT a second whole-order shipment via
@@ -463,4 +509,8 @@ func TestCreateShipment_FullyShippedOrderReCallIsNoOp(t *testing.T) {
 	shipmentsAfterRecall := shipmentsForOrder(t, db, orderID.String())
 	require.Len(t, shipmentsAfterRecall, 1, "a re-POST on a fully-shipped order must not create another shipment")
 	require.Equal(t, shipmentsAfterFirst[0].ID, shipmentsAfterRecall[0].ID)
+
+	// The no-op recall must not touch fulfilment status either — it never
+	// reaches createShipmentsPerWarehouse's per-group reporting.
+	require.Equal(t, "fulfilled", fulfillmentStatusForOrder(t, db, orderID))
 }

@@ -79,6 +79,12 @@ type ShipmentsHandler struct {
 	// is deliberately scoped to that loop, so overloading it would blur a
 	// boundary its own doc comment draws.
 	newCarrier func(provider, apiKey, secretKey, mode string) (shipping.Carrier, error)
+	// orderSvc, when non-nil, lets createShipmentsPerWarehouse report
+	// order.fulfillment_status after shipping a batch of groups: fulfilled
+	// when nothing remains unshipped, partial when at least one group
+	// still owes a parcel. Nil-safe (skipped) so tests that don't wire an
+	// order service keep working — see WithOrderService.
+	orderSvc *order.Service
 }
 
 // NewShipmentsHandler constructs a ShipmentsHandler. docMailer is
@@ -127,6 +133,16 @@ func (h *ShipmentsHandler) WithLabelMailer(m LabelMailer) *ShipmentsHandler {
 // cancel endpoint. Chainable, nil-safe by omission.
 func (h *ShipmentsHandler) WithCanceller(e *shipmentcancel.Executor) *ShipmentsHandler {
 	h.canceller = e
+	return h
+}
+
+// WithOrderService attaches the order service so createShipmentsPerWarehouse
+// can report order.fulfillment_status after shipping a batch of groups.
+// Optional — without it, this behaviour is skipped (see orderSvc's doc
+// comment), matching the single-shipment path, which has never reported
+// fulfilment status automatically.
+func (h *ShipmentsHandler) WithOrderService(s *order.Service) *ShipmentsHandler {
+	h.orderSvc = s
 	return h
 }
 
@@ -1420,6 +1436,39 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 				"created": len(created),
 			})
 			return
+		}
+
+		// An order is fulfilled only when every group it owes a parcel for
+		// has one. While any allocation still has a NULL shipment_id, the
+		// order is partially shipped — a status the schema and the
+		// transition table have always allowed but nothing has ever
+		// written. Recomputed after EVERY group, not once after the whole
+		// loop: a later group in this same call can still fail and abort
+		// the request (see the carrier-call and persist-failure aborts
+		// above), and the parcel that DID ship a moment ago is real and
+		// un-cancellable — the order must reflect that even if the
+		// response comes back non-2xx.
+		//
+		// Best-effort: a failure recomputing or writing fulfilment status
+		// must not turn an already-real shipment into a 5xx for the admin.
+		// The order is left for a later read (or a retry Create()) to
+		// reconcile.
+		if remaining, err := h.unshippedAllocationGroups(ctx, orderID); err != nil {
+			if h.logger != nil {
+				h.logger.Error("shipments: recount remaining allocation groups failed",
+					"order_id", orderID.String(), "err", err)
+			}
+		} else if h.orderSvc != nil {
+			var fulfilErr error
+			if len(remaining) == 0 {
+				fulfilErr = h.orderSvc.MarkFulfilled(ctx, nil, orderID)
+			} else {
+				fulfilErr = h.orderSvc.MarkPartiallyFulfilled(ctx, nil, orderID)
+			}
+			if fulfilErr != nil && h.logger != nil {
+				h.logger.Error("shipments: report order fulfilment status failed",
+					"order_id", orderID.String(), "remaining_groups", len(remaining), "err", fulfilErr)
+			}
 		}
 
 		// Auto-schedule a pickup for THIS group's warehouse — mirrors

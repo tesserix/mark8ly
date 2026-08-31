@@ -13,17 +13,18 @@ import (
 type EventKind string
 
 const (
-	EventKindCreated         EventKind = "created"
-	EventKindStatusChanged   EventKind = "status_changed"
-	EventKindPaymentRecorded EventKind = "payment_recorded"
-	EventKindFulfilled       EventKind = "fulfilled"
-	EventKindCancelled       EventKind = "cancelled"
-	EventKindRefunded        EventKind = "refunded"
-	EventKindReturnRequested EventKind = "return_requested"
-	EventKindReturnApproved  EventKind = "return_approved"
-	EventKindReturnReceived  EventKind = "return_received"
-	EventKindReturnRefunded  EventKind = "return_refunded"
-	EventKindReturnRejected  EventKind = "return_rejected"
+	EventKindCreated            EventKind = "created"
+	EventKindStatusChanged      EventKind = "status_changed"
+	EventKindPaymentRecorded    EventKind = "payment_recorded"
+	EventKindFulfilled          EventKind = "fulfilled"
+	EventKindPartiallyFulfilled EventKind = "partially_fulfilled"
+	EventKindCancelled          EventKind = "cancelled"
+	EventKindRefunded           EventKind = "refunded"
+	EventKindReturnRequested    EventKind = "return_requested"
+	EventKindReturnApproved     EventKind = "return_approved"
+	EventKindReturnReceived     EventKind = "return_received"
+	EventKindReturnRefunded     EventKind = "return_refunded"
+	EventKindReturnRejected     EventKind = "return_rejected"
 
 	// Fulfillment / shipment timeline. These feed the customer-facing
 	// order tracking view. `shipment_created` fires when a label is

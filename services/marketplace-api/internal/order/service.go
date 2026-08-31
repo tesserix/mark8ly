@@ -309,6 +309,51 @@ func (s *Service) MarkFulfilled(ctx context.Context, tx *gorm.DB, orderID uuid.U
 	})
 }
 
+// MarkPartiallyFulfilled moves fulfillment_status → partial. It does NOT
+// touch orders.status — a partial shipment does not fulfil the order, so
+// the order axis stays exactly where it is (typically confirmed). This is
+// the counterpart to MarkFulfilled for orders that still owe at least one
+// parcel: createShipmentsPerWarehouse calls this when unshipped allocation
+// groups remain after shipping the ones it can.
+//
+// Idempotent: calling it again on an order already partial is a no-op — the
+// fulfillmentStatusTransitions table only allows partial → fulfilled, not
+// partial → partial, so a second "still owes a parcel" report (e.g. from a
+// retried shipment-creation call) must not be treated as an illegal
+// transition.
+func (s *Service) MarkPartiallyFulfilled(ctx context.Context, tx *gorm.DB, orderID uuid.UUID) error {
+	return s.runMaybeOwnTx(ctx, tx, func(tx *gorm.DB) error {
+		o, err := s.loadForUpdate(tx, orderID)
+		if err != nil {
+			return err
+		}
+		if o.FulfillmentStatus == string(FulfillmentStatusPartial) {
+			return nil
+		}
+		if !FulfillmentStatus(o.FulfillmentStatus).CanTransitionTo(FulfillmentStatusPartial) {
+			return apperrors.InvalidTransition("fulfillment", o.FulfillmentStatus, string(FulfillmentStatusPartial))
+		}
+		if err := s.repo.UpdateFulfillmentStatus(tx, orderID, FulfillmentStatusPartial); err != nil {
+			return err
+		}
+		if err := s.repo.AppendEvent(tx, &OrderEvent{
+			OrderID: orderID,
+			Kind:    string(EventKindPartiallyFulfilled),
+			Payload: EncodeStatusChanged(StatusChangedPayload{
+				Axis: "fulfillment",
+				From: o.FulfillmentStatus,
+				To:   string(FulfillmentStatusPartial),
+			}),
+		}); err != nil {
+			return err
+		}
+		return s.enqueueOutbox(ctx, tx, o.TenantID, outbox.AggregateOrder, orderID, outbox.EventOrderPartiallyFulfilled, map[string]any{
+			"store_id": o.StoreID.String(),
+			"order_id": orderID.String(),
+		})
+	})
+}
+
 // Cancel transitions an order to cancelled. Reason is recorded in the
 // order_events row.
 func (s *Service) Cancel(ctx context.Context, tx *gorm.DB, orderID uuid.UUID, reason string) error {

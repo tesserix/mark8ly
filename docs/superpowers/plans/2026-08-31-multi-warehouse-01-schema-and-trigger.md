@@ -574,7 +574,7 @@ TEST_DATABASE_URL='postgres://dev:dev@192.168.1.110:5432/marketplace_db?sslmode=
   go test -tags=integration ./internal/product/... -run TestInventorySync -count=1 -p 1 -v
 ```
 
-Expected: all five `TestInventorySync_*` tests PASS.
+Expected: all four `TestInventorySync_*` tests PASS.
 
 - [ ] **Step 6: Mutation-test the DELETE arm**
 

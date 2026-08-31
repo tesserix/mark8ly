@@ -126,16 +126,20 @@ and with only INSERT and UPDATE triggers it would not.
 
 ### Warehouse deletion
 
-Refused while the warehouse holds stock (`variant_stock.quantity > 0`) or owes
-a parcel (`order_allocations` rows with a NULL `shipment_id`).
+A warehouse with ANY allocation history — even fully shipped — is **archived,
+never deleted**. `ON DELETE RESTRICT` on `order_allocations.warehouse_id` is
+correct as the hard backstop for this: an allocation row is the record of
+which warehouse shipped a line, and deleting the warehouse would corrupt that
+record. There is no separate "shipped history is deletable" case for the
+repository to special-case — `RESTRICT` refuses it outright, which is what we
+want.
 
-The `ON DELETE RESTRICT` FK is a backstop, not the rule: it refuses while
-*any* allocation row references the warehouse, including long-shipped ones,
-which would make a warehouse undeletable forever. Both rules therefore live in
-the repository with their own tests, and the FK exists so that a path which
-forgets them fails loudly instead of orphaning an unshipped parcel. Deleting a
-warehouse with shipped history is allowed and nulls nothing — the allocation
-rows keep pointing at it, which is why it is RESTRICT and not CASCADE.
+PR 5 implements archiving (an `archived_at` column on `warehouses`) as the
+actual removal mechanism. The repository's deletion rules — refused while the
+warehouse holds stock or owes a parcel — therefore apply only to warehouses
+with no allocation history at all; a warehouse with any history is archived
+instead, and `shipments.warehouse_id`'s FK is moot for deletion purposes
+rather than a second trap to reason about.
 
 ## The sentinel backfill, and why it is two deploys
 
@@ -308,9 +312,12 @@ a bug.
   `TEST_DATABASE_URL` (never `TEST_DB_DSN`), run with `-p 1`. A skip reads as
   a pass, so any claim about an integration run must name the DSN it ran
   with.
-- **Trigger coverage** reads the migration verbatim from the embedded
-  `MigrationsFS`, as migration 000116's test did, so the test exercises what
-  ships rather than a copy that can drift.
+- **Trigger coverage** asserts against the already-migrated test database
+  rather than parsing the migration file directly. That database is itself
+  migrated from the same embedded `MigrationsFS`, so this is equivalent to
+  reading the migration verbatim and matches the existing convention in
+  these packages — no test in this codebase re-parses SQL out of
+  `MigrationsFS` at assertion time.
 - **The backfill** is tested at both deploy steps: sentinel rows tolerated
   before it, absent after.
 

@@ -7,9 +7,8 @@
 // build its rate-quote origin address from the legacy warehouse_* columns,
 // then from the store-level warehouses row with a legacy fallback (#480).
 // #484 removes that fallback: resolveWarehouseAddress now sources the
-// origin exclusively from the warehouses row via warehouse_id — those
-// columns are no longer read anywhere, which is what makes dropping them
-// in a later migration safe. Testing resolveWarehouseAddress directly,
+// origin exclusively from the warehouses row via warehouse_id — which is
+// what made dropping those columns (migration 000117) safe. Testing resolveWarehouseAddress directly,
 // rather than driving GetRates end-to-end, avoids needing a live carrier
 // for a rates call.
 package storefront
@@ -56,21 +55,22 @@ func seedShippingRatesWarehouseReadStore(t *testing.T, db *gorm.DB) (storeID, te
 // raw SQL rather than the carrierConfigRow GORM model — that model
 // deliberately omits store_id (it's only ever used for reads keyed by the
 // gin-context store), so it can't Create() a row that satisfies the
-// table's NOT NULL store_id. The legacy warehouse_* columns are still
-// populated here (they still exist on the table — #484 stops reading
-// them, it doesn't drop them) precisely so a test that fails to switch
-// off the fallback would still be caught: these values deliberately
-// differ from the warehouses-row address used below.
+// table's NOT NULL store_id.
+//
+// This used to also populate the 8 legacy warehouse_* columns with an
+// address deliberately unlike the warehouses row's, so a resolver that
+// still fell back to them would be caught reading the wrong address.
+// Migration 000117 dropped those columns, so that fixture is no longer
+// writable — and no longer needed: a column that does not exist cannot be
+// read. What the tests below still pin is the behaviour that replaced the
+// fallback, namely that an unresolvable warehouse_id yields the zero
+// address rather than anything else.
 func seedShippingRatesCarrierConfig(t *testing.T, db *gorm.DB, storeID, tenantID string, warehouseID *string) {
 	t.Helper()
 	require.NoError(t, db.Exec(
 		`INSERT INTO shipping_carrier_configs
-		    (id, tenant_id, store_id, provider, api_key_encrypted, mode, is_active,
-		     warehouse_name, warehouse_line1, warehouse_city, warehouse_region,
-		     warehouse_postal, warehouse_country, warehouse_phone, warehouse_id)
-		 VALUES (?, ?, ?, 'delhivery', 'legacy-key', 'test', true,
-		         'Legacy Warehouse', '1 Legacy Lane', 'Legacy City', 'LG',
-		         '111111', 'IN', '+911111111111', ?)`,
+		    (id, tenant_id, store_id, provider, api_key_encrypted, mode, is_active, warehouse_id)
+		 VALUES (?, ?, ?, 'delhivery', 'legacy-key', 'test', true, ?)`,
 		uuid.NewString(), tenantID, storeID, warehouseID).Error)
 }
 
@@ -103,14 +103,15 @@ func TestResolveWarehouseAddress_ResolvesFromTheWarehousesRowWhenLinked(t *testi
 	h := newShippingRatesWarehouseReadHandler(db)
 	got := h.resolveWarehouseAddress(context.Background(), cfg)
 
-	require.Equal(t, "99 Warehouses-Table Road", got.Line1, "must read the warehouses row, not the legacy column")
+	require.Equal(t, "99 Warehouses-Table Road", got.Line1, "must read the warehouses row")
 	require.Equal(t, "Mumbai", got.City)
 }
 
 // TestResolveWarehouseAddress_ZeroValueWhenWarehouseIDIsNil covers a
-// config with no linked warehouse. #484 removed the legacy-column
-// fallback: this must yield the zero shipping.Address, never the (still
-// populated on the row) legacy data.
+// config with no linked warehouse: it must yield the zero
+// shipping.Address. Before #486 removed the fallback there was legacy
+// column data to return instead; migration 000117 has since dropped the
+// columns, so the zero address is now the only address there is.
 func TestResolveWarehouseAddress_ZeroValueWhenWarehouseIDIsNil(t *testing.T) {
 	db := testdb.NewDB(t, shippingRatesWarehouseReadTables...)
 	storeID, tenantID := seedShippingRatesWarehouseReadStore(t, db)
@@ -120,7 +121,7 @@ func TestResolveWarehouseAddress_ZeroValueWhenWarehouseIDIsNil(t *testing.T) {
 	h := newShippingRatesWarehouseReadHandler(db)
 	got := h.resolveWarehouseAddress(context.Background(), cfg)
 
-	require.Equal(t, shipping.Address{}, got, "no warehouse_id must yield the zero address, not the legacy columns")
+	require.Equal(t, shipping.Address{}, got, "no warehouse_id must yield the zero address")
 }
 
 // TestResolveWarehouseAddress_ZeroValueWhenWarehouseIDIsDangling covers a

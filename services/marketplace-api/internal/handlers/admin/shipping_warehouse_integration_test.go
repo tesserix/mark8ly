@@ -275,62 +275,15 @@ func TestShippingUpsert_BlankWarehouseNameCreatesNoWarehouseRow(t *testing.T) {
 	require.Nil(t, linkedID, "warehouse_id must stay NULL when no warehouse name was given")
 }
 
-// TestShippingUpsert_DoesNotWriteLegacyWarehouseColumns is #484's write-path
-// pin: the 8 legacy warehouse_* columns on shipping_carrier_configs must no
-// longer be touched by a save. They still exist on the table (dropping
-// them is the separate, later PR this one sets up) but must keep whatever
-// value they already had — never be overwritten with the newly-submitted
-// address, which now lives exclusively on the warehouses row via
-// warehouse_id.
-//
-// The existing row is seeded with raw SQL, bypassing the handler, so its
-// legacy columns start with a value the Upsert body below deliberately
-// does not match — if the new code still wrote them, this test would
-// catch it by finding the NEW address in the legacy columns instead of
-// the stale one.
-func TestShippingUpsert_DoesNotWriteLegacyWarehouseColumns(t *testing.T) {
-	env := setupShippingWarehouseRouter(t)
-	seedShippingCountry(t, env.db)
-	storeID, tenantID := seedShippingWarehouseStore(t, env.db)
-	userID := uuid.NewString()
-	env.fga.Grant(userID, authz.RoleOwner, tenantID)
-
-	require.NoError(t, env.db.Exec(
-		`INSERT INTO shipping_carrier_configs
-		    (id, tenant_id, store_id, provider, api_key_encrypted, mode, is_active,
-		     warehouse_name, warehouse_line1, warehouse_city, warehouse_region,
-		     warehouse_postal, warehouse_country, warehouse_phone)
-		 VALUES (?, ?, ?, 'delhivery', 'preexisting-key', 'test', true,
-		         'Stale Legacy Warehouse', '1 Stale Lane', 'Stale City', 'ST',
-		         '999999', 'IN', '+919999999999')`,
-		uuid.NewString(), tenantID, storeID).Error)
-
-	w := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
-		warehouseUpsertBody("Main Warehouse"), authHeaders(userID, tenantID))
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-
-	var name, line1, city, region, postal, phone string
-	require.NoError(t, env.db.Raw(
-		`SELECT warehouse_name, warehouse_line1, warehouse_city, warehouse_region, warehouse_postal, warehouse_phone
-		 FROM shipping_carrier_configs WHERE store_id = ? AND provider = 'delhivery'`, storeID).
-		Row().Scan(&name, &line1, &city, &region, &postal, &phone))
-	require.Equal(t, "Stale Legacy Warehouse", name, "the legacy column must keep its pre-existing value, not the newly-submitted one")
-	require.Equal(t, "1 Stale Lane", line1)
-	require.Equal(t, "Stale City", city)
-	require.Equal(t, "ST", region)
-	require.Equal(t, "999999", postal)
-	require.Equal(t, "+919999999999", phone)
-
-	// The new address must instead land on the warehouses row, linked via
-	// warehouse_id — this is where a merchant editing the address in the
-	// admin UI actually goes now.
-	rows := loadWarehousesForStore(t, env.db, storeID)
-	require.Len(t, rows, 1)
-	require.Equal(t, "Main Warehouse", rows[0].Name)
-	var whLine1 string
-	require.NoError(t, env.db.Raw(`SELECT line1 FROM warehouses WHERE id = ?`, rows[0].ID).Row().Scan(&whLine1))
-	require.Equal(t, "12 Industrial Estate", whLine1)
-}
+// The write-path pin that used to live here —
+// TestShippingUpsert_DoesNotWriteLegacyWarehouseColumns — asserted that a
+// save left the 8 legacy warehouse_* columns at their pre-existing values
+// instead of overwriting them with the submitted address. Migration
+// 000117 dropped those columns, which turns that property into something
+// the schema enforces rather than something a test can observe: its
+// fixture seeded the columns it was checking. The replacement guard is
+// TestMigration000117_LegacyWarehouseColumnsAreDropped in
+// internal/warehouse.
 
 // TestShippingUpsert_ClearingTheWarehouseNameClearsTheLink covers the UPDATE
 // path that the create-path blank test above cannot reach: a merchant who

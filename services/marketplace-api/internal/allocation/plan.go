@@ -10,6 +10,13 @@ import (
 // the merchant has a configuration problem, not an inventory one.
 var ErrNoWarehouse = errors.New("allocation: store has no warehouses")
 
+// ErrInvalidInput means the caller passed Plan something it should never have
+// produced — a non-positive line quantity, or the same warehouse ID twice.
+// It is a caller bug, not a domain failure like CannotFillError, and is kept
+// distinct so a caller mapping allocator errors to HTTP responses does not
+// have to string-match to tell the two apart.
+var ErrInvalidInput = errors.New("allocation: invalid input")
+
 // CannotFillError names the first line no combination of warehouses can
 // satisfy, and by how much it falls short.
 //
@@ -48,18 +55,32 @@ func Plan(warehouses []Warehouse, avail Availability, lines []Line) ([]Assignmen
 		return nil, ErrNoWarehouse
 	}
 
+	seenWarehouse := make(map[string]struct{}, len(warehouses))
+	for _, warehouse := range warehouses {
+		if _, ok := seenWarehouse[warehouse.ID]; ok {
+			return nil, fmt.Errorf("%w: warehouse %s appears more than once", ErrInvalidInput, warehouse.ID)
+		}
+		seenWarehouse[warehouse.ID] = struct{}{}
+	}
+
 	remaining := make([]int, len(lines))
 	for i, line := range lines {
 		if line.Quantity <= 0 {
-			return nil, fmt.Errorf("allocation: line %d (variant %s): quantity must be positive, got %d",
-				i, line.VariantID, line.Quantity)
+			return nil, fmt.Errorf("%w: line %d (variant %s): quantity must be positive, got %d",
+				ErrInvalidInput, i, line.VariantID, line.Quantity)
 		}
 		remaining[i] = line.Quantity
 	}
 
 	assignments := make([]Assignment, 0, len(lines))
 
-	for w, warehouse := range warehouses {
+	// used tracks, per variant and warehouse, how much of that warehouse's
+	// availability has already been committed to an earlier line. Without
+	// it, two lines carrying the same variant would each read avail.At
+	// fresh and could double-spend the same units of stock.
+	used := make(map[string]map[string]int)
+
+	for _, warehouse := range warehouses {
 		for i, line := range lines {
 			if remaining[i] == 0 {
 				continue
@@ -72,15 +93,21 @@ func Plan(warehouses []Warehouse, avail Availability, lines []Line) ([]Assignmen
 				// not constrain it. Assign it whole to the first warehouse —
 				// leaving it unassigned because no location has units would
 				// produce an order line that ships from nothing.
-				if w != 0 {
-					continue
-				}
 				take = remaining[i]
 			default:
-				take = min(remaining[i], avail.At(line.VariantID, warehouse.ID))
+				already := used[line.VariantID][warehouse.ID]
+				// avail.At can be negative — PR 3's availability snapshot is
+				// quantity minus live holds, not floored at zero. Clamp it
+				// here rather than let a negative take reduce remaining[i]
+				// (which would INCREASE what looks left to fill).
+				free := avail.At(line.VariantID, warehouse.ID) - already
+				if free < 0 {
+					free = 0
+				}
+				take = min(remaining[i], free)
 			}
 
-			if take == 0 {
+			if take <= 0 {
 				continue
 			}
 			assignments = append(assignments, Assignment{
@@ -89,6 +116,12 @@ func Plan(warehouses []Warehouse, avail Availability, lines []Line) ([]Assignmen
 				Quantity:    take,
 			})
 			remaining[i] -= take
+			if !line.SellsPastZero {
+				if used[line.VariantID] == nil {
+					used[line.VariantID] = make(map[string]int)
+				}
+				used[line.VariantID][warehouse.ID] += take
+			}
 		}
 	}
 

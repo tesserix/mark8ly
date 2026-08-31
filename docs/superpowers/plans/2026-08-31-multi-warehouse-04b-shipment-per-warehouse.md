@@ -55,9 +55,48 @@ Verified in the code and against production. Do not re-derive; do not contradict
 - Consumes: `order_allocations` (PR 1 schema, written by PR 3), `warehouse.Repository.ByID`.
 - Produces: one `shipments` row per contributing warehouse with `warehouse_id` set, and `order_allocations.shipment_id` stamped. Task 2 reads those rows to decide `partial` versus `fulfilled`.
 
+- [ ] **Step 0: Add the carrier seam `Create` needs to be testable**
+
+`Create` calls `shipping.NewCarrier(provider, apiKey, secretKey, cfg.Mode)`
+directly, so it cannot be exercised without a live carrier. The existing
+`carrierFactory` is NOT the seam to use — its doc comment scopes it to the
+tracking-sync loop deliberately, and its signature (`func(provider string, sh
+any)`) is shaped for that loop's projection.
+
+Add a separate, nil-safe override mirroring how `labelMailer` and
+`carrierFactory` are already attached in this file:
+
+```go
+	// newCarrier overrides shipping.NewCarrier inside Create. Nil on
+	// production builds, where Create constructs the carrier directly as
+	// before. It exists because label creation cannot otherwise be tested
+	// without a live carrier account — and the sync loop's carrierFactory
+	// is deliberately scoped to that loop, so overloading it would blur a
+	// boundary its own doc comment draws.
+	newCarrier func(provider, apiKey, secretKey, mode string) (shipping.Carrier, error)
+```
+
+with a `WithCarrierConstructor` setter alongside the existing `With…`
+methods, and in `Create`:
+
+```go
+	construct := shipping.NewCarrier
+	if h.newCarrier != nil {
+		construct = h.newCarrier
+	}
+	carrier, err := construct(provider, apiKey, secretKey, carrierCfg.Mode)
+```
+
+Production behaviour is unchanged: nothing calls the setter outside tests.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `services/marketplace-api/internal/handlers/admin/shipments_per_warehouse_integration_test.go`.
+
+Your stub carrier implements `shipping.Carrier` and returns a canned
+shipment (a tracking number that encodes which pickup address it was called
+with, so the two-warehouse test can prove each parcel shipped from the right
+origin). Attach it with `WithCarrierConstructor`.
 
 The load-bearing case is the FIRST one. Every order in production has no allocations, so if that path changes, label creation breaks for all of them.
 

@@ -169,6 +169,12 @@ func (c *AdminClient) ResetPassword(ctx context.Context, oobCode, newPassword st
 	body := map[string]any{
 		"oobCode":     oobCode,
 		"newPassword": newPassword,
+		// The code was minted inside this tenant (SendPasswordResetOobCode
+		// sends the same tenantId), and Identity Toolkit only resolves an
+		// oobCode within the tenant that issued it. Omitting this looks the
+		// code up at project level, where it does not exist — GIP answers
+		// INVALID_OOB_CODE and a freshly-issued link reads as expired.
+		"tenantId": c.cfg.TenantID,
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {

@@ -82,7 +82,7 @@ func TestLoadAvailability_SentinelStockIsReportedAgainstTheFirstWarehouse(t *tes
 
 	require.Equal(t, 7, avail.At(variantID, whID),
 		"sentinel-stored units must be visible against the store's warehouse before the backfill")
-	require.Equal(t, product.DefaultLocationID, storage[variantID][whID],
+	require.Equal(t, []stockAt{{LocationID: product.DefaultLocationID, Units: 7}}, storage[variantID][whID],
 		"a hold must target the location the units are actually stored at")
 }
 
@@ -103,8 +103,9 @@ func TestLoadAvailability_RealWarehouseStockIsReportedAgainstItself(t *testing.T
 
 	require.Equal(t, 3, avail.At(variantID, whA))
 	require.Equal(t, 4, avail.At(variantID, whB))
-	require.Equal(t, whA, storage[variantID][whA], "post-backfill the storage location IS the warehouse")
-	require.Equal(t, whB, storage[variantID][whB])
+	require.Equal(t, []stockAt{{LocationID: whA, Units: 3}}, storage[variantID][whA],
+		"post-backfill the storage location IS the warehouse")
+	require.Equal(t, []stockAt{{LocationID: whB, Units: 4}}, storage[variantID][whB])
 }
 
 // Matching stockhold.Hold and stockhold.Available: a cart must not see its
@@ -160,6 +161,56 @@ func TestLoadAvailability_VariantWithNoStockRowsIsAbsent(t *testing.T) {
 	db := testdb.NewTx(t)
 	storeID, variantID := seedAvailStore(t, db)
 	whID := seedWarehouseRow(t, db, storeID, "Main")
+
+	avail, storage, err := loadAvailability(context.Background(), db, uuid.NewString(),
+		[]allocation.Warehouse{{ID: whID}}, []string{variantID})
+	require.NoError(t, err)
+
+	require.Equal(t, 0, avail.At(variantID, whID))
+	require.Empty(t, storage[variantID])
+}
+
+// A single warehouse can be backed by MORE than one storage location before
+// PR 6's backfill completes: PR 5 adds per-location stock editing, which can
+// write a real warehouse-id row while the sentinel row for the same variant
+// still exists. Availability must sum across both, and the storage
+// breakdown must name both locations — collapsing to one would under-lock a
+// hold.
+func TestLoadAvailability_MixedSentinelAndRealStockForSameWarehouseIsSummedAndBothLocationsRecorded(t *testing.T) {
+	db := testdb.NewTx(t)
+	storeID, variantID := seedAvailStore(t, db)
+	whID := seedWarehouseRow(t, db, storeID, "Main")
+
+	require.NoError(t, db.Exec(
+		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
+		 VALUES (?, ?, 3, now()), (?, ?, 4, now())`,
+		variantID, product.DefaultLocationID, variantID, whID).Error)
+
+	avail, storage, err := loadAvailability(context.Background(), db, uuid.NewString(),
+		[]allocation.Warehouse{{ID: whID}}, []string{variantID})
+	require.NoError(t, err)
+
+	require.Equal(t, 7, avail.At(variantID, whID),
+		"3 sentinel-stored plus 4 stored directly at the warehouse")
+	require.Equal(t, []stockAt{
+		{LocationID: product.DefaultLocationID, Units: 3},
+		{LocationID: whID, Units: 4},
+	}, storage[variantID][whID],
+		"a hold must be able to target both locations the units actually sit at")
+}
+
+// Stock at a location that is neither the sentinel nor one of the store's
+// warehouses (a warehouse deleted out from under its stock) must contribute
+// nothing — not error, not appear in the total.
+func TestLoadAvailability_StockAtUnknownLocationContributesNothing(t *testing.T) {
+	db := testdb.NewTx(t)
+	storeID, variantID := seedAvailStore(t, db)
+	whID := seedWarehouseRow(t, db, storeID, "Main")
+	orphanLocationID := uuid.NewString()
+
+	require.NoError(t, db.Exec(
+		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
+		 VALUES (?, ?, 9, now())`, variantID, orphanLocationID).Error)
 
 	avail, storage, err := loadAvailability(context.Background(), db, uuid.NewString(),
 		[]allocation.Warehouse{{ID: whID}}, []string{variantID})

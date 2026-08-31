@@ -69,6 +69,14 @@ type ShipmentRecord struct {
 	CancelReason      string     `gorm:"column:cancel_reason;type:text"`
 	CancelRequestedAt *time.Time `gorm:"column:cancel_requested_at"`
 
+	// WarehouseID is where this shipment actually shipped from (#177,
+	// migration 000118). Nullable: every shipment created before that
+	// migration has no honest answer, and a shipment created for an order
+	// with no allocations (the whole store today) attributes to the
+	// carrier config's warehouse instead of a specific allocation group,
+	// so it is left NULL rather than guessed.
+	WarehouseID *uuid.UUID `gorm:"column:warehouse_id;type:uuid"`
+
 	// Response-shape only — never touch the DB. Callers map these after
 	// reading a row, and the carrier layer sets them on create.
 	Provider           string `gorm:"-"`

@@ -72,6 +72,13 @@ type ShipmentsHandler struct {
 	// caller of NewShipmentsHandler — costs nothing, matching
 	// ShippingSettingsHandler's warehouseRepo on the write side.
 	warehouseRepo *warehouse.Repository
+	// newCarrier overrides shipping.NewCarrier inside Create. Nil on
+	// production builds, where Create constructs the carrier directly as
+	// before. It exists because label creation cannot otherwise be tested
+	// without a live carrier account — and the sync loop's carrierFactory
+	// is deliberately scoped to that loop, so overloading it would blur a
+	// boundary its own doc comment draws.
+	newCarrier func(provider, apiKey, secretKey, mode string) (shipping.Carrier, error)
 }
 
 // NewShipmentsHandler constructs a ShipmentsHandler. docMailer is
@@ -120,6 +127,15 @@ func (h *ShipmentsHandler) WithLabelMailer(m LabelMailer) *ShipmentsHandler {
 // cancel endpoint. Chainable, nil-safe by omission.
 func (h *ShipmentsHandler) WithCanceller(e *shipmentcancel.Executor) *ShipmentsHandler {
 	h.canceller = e
+	return h
+}
+
+// WithCarrierConstructor overrides shipping.NewCarrier inside Create.
+// Test-only: production code never calls this, so Create keeps
+// constructing the real carrier via shipping.NewCarrier. Exists because
+// Create cannot otherwise be exercised without a live carrier account.
+func (h *ShipmentsHandler) WithCarrierConstructor(fn func(provider, apiKey, secretKey, mode string) (shipping.Carrier, error)) *ShipmentsHandler {
+	h.newCarrier = fn
 	return h
 }
 
@@ -535,6 +551,96 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Groups this order still owes a parcel for. An order with none — every
+	// order placed before allocation shipped, and every order on a store with
+	// no warehouse — takes the single-shipment path below, unchanged. That is
+	// not a fallback for tidiness: order_allocations is empty in production
+	// today (#177 PR 3 only just started writing it), so this IS the only
+	// path currently executing for a real order.
+	groups, err := h.unshippedAllocationGroups(ctx, orderID)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+
+	if len(groups) == 0 {
+		h.createSingleShipment(c, ctx, orderID, storeID, tenantID, o, shippingAddr, items, provider, req, carrierCfg)
+		return
+	}
+
+	h.createShipmentsPerWarehouse(c, ctx, orderID, storeID, tenantID, o, shippingAddr, items, provider, req, carrierCfg, groups)
+}
+
+// allocationGroup is one warehouse's still-unshipped share of an order:
+// the order items it must ship, and the quantity of each — which can be
+// less than the order item's own Quantity when a line is split across
+// warehouses.
+type allocationGroup struct {
+	WarehouseID string
+	ItemIDs     []string
+	Quantities  map[string]int
+}
+
+// unshippedAllocationGroups folds order_allocations into one group per
+// warehouse still owing this order a parcel. Ordering by warehouse_id
+// makes the parcel sequence deterministic — two runs on the same order
+// (e.g. a retry after a partial carrier failure) must walk the remaining
+// groups in the same order. A group whose allocations already carry a
+// shipment_id is excluded entirely — its parcel already shipped.
+func (h *ShipmentsHandler) unshippedAllocationGroups(ctx context.Context, orderID uuid.UUID) ([]allocationGroup, error) {
+	type allocRow struct {
+		WarehouseID string
+		OrderItemID string
+		Quantity    int
+	}
+	var rows []allocRow
+	if err := h.db.WithContext(ctx).
+		Table("order_allocations").
+		Select("warehouse_id", "order_item_id", "quantity").
+		Where("order_id = ? AND shipment_id IS NULL", orderID).
+		Order("warehouse_id, order_item_id").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("shipments: load allocation groups: %w", err)
+	}
+
+	groups := make([]allocationGroup, 0, len(rows))
+	indexByWarehouse := make(map[string]int, len(rows))
+	for _, r := range rows {
+		idx, ok := indexByWarehouse[r.WarehouseID]
+		if !ok {
+			idx = len(groups)
+			indexByWarehouse[r.WarehouseID] = idx
+			groups = append(groups, allocationGroup{
+				WarehouseID: r.WarehouseID,
+				Quantities:  map[string]int{},
+			})
+		}
+		groups[idx].ItemIDs = append(groups[idx].ItemIDs, r.OrderItemID)
+		groups[idx].Quantities[r.OrderItemID] += r.Quantity
+	}
+	return groups, nil
+}
+
+// createSingleShipment is the production path today: an order with no
+// unshipped allocation groups gets exactly one shipment, pickup resolved
+// from the carrier config's warehouse — identical to CreateShipment's
+// behavior before #177 PR 4b. Moved out of Create() verbatim (the carrier
+// construction line is the one sanctioned change — see WithCarrierConstructor)
+// so this path is provably unchanged by the grouping work in
+// createShipmentsPerWarehouse.
+func (h *ShipmentsHandler) createSingleShipment(
+	c *gin.Context,
+	ctx context.Context,
+	orderID uuid.UUID,
+	storeID string,
+	tenantID string,
+	o order.Order,
+	shippingAddr order.OrderAddress,
+	items []order.OrderItem,
+	provider string,
+	req CreateShipmentRequest,
+	carrierCfg *shipping.CarrierConfig,
+) {
 	// Resolve the pickup address from the store-level warehouses row
 	// (#484, the contract half). No legacy-column fallback anymore — see
 	// resolvePickupAddress.
@@ -564,8 +670,17 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	}
 	h.maybeRewrapCarrierCreds(ctx, carrierCfg, apiKey, secretKey)
 
-	// Create the carrier instance.
-	carrier, err := shipping.NewCarrier(provider, apiKey, secretKey, carrierCfg.Mode)
+	// Create the carrier instance. construct is shipping.NewCarrier on
+	// production builds; tests override it via WithCarrierConstructor
+	// since label creation cannot otherwise be exercised without a live
+	// carrier account.
+	construct := func(provider, apiKey, secretKey, mode string) (shipping.Carrier, error) {
+		return shipping.NewCarrier(provider, apiKey, secretKey, mode)
+	}
+	if h.newCarrier != nil {
+		construct = h.newCarrier
+	}
+	carrier, err := construct(provider, apiKey, secretKey, carrierCfg.Mode)
 	if err != nil {
 		RespondErr(c, fmt.Errorf("shipments: create carrier: %w", err), h.logger)
 		return
@@ -858,6 +973,301 @@ func (h *ShipmentsHandler) Create(c *gin.Context) {
 	resp := toShipmentResponse(rec)
 	resp.PickupWarning = pickupWarning
 	c.JSON(http.StatusCreated, resp)
+}
+
+// createShipmentsPerWarehouse is #177 PR 4b: one shipment per warehouse
+// group still owing this order a parcel. Each group resolves its OWN
+// pickup address (not the carrier config's), ships only the order items
+// (and quantities) that group allocated, and stamps its allocation rows
+// with the resulting shipment's id so a retry doesn't re-ship it.
+//
+// A carrier failure part-way through does not undo earlier parcels: each
+// shipment is persisted as soon as its carrier call succeeds, so a failed
+// group leaves its allocations with shipment_id still NULL — exactly the
+// set a retry needs to pick up.
+func (h *ShipmentsHandler) createShipmentsPerWarehouse(
+	c *gin.Context,
+	ctx context.Context,
+	orderID uuid.UUID,
+	storeID string,
+	tenantID string,
+	o order.Order,
+	shippingAddr order.OrderAddress,
+	items []order.OrderItem,
+	provider string,
+	req CreateShipmentRequest,
+	carrierCfg *shipping.CarrierConfig,
+	groups []allocationGroup,
+) {
+	// Decrypt credentials once — every group ships through the same
+	// carrier account, only the pickup address and parcel contents vary.
+	apiKey, secretKey, err := h.resolveCarrierCreds(ctx, carrierCfg)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("shipments: resolve carrier creds",
+				"store_id", storeID, "provider", provider, "err", err)
+		}
+		RespondErr(c, fmt.Errorf("shipments: %w", err), h.logger)
+		return
+	}
+	h.maybeRewrapCarrierCreds(ctx, carrierCfg, apiKey, secretKey)
+
+	construct := func(provider, apiKey, secretKey, mode string) (shipping.Carrier, error) {
+		return shipping.NewCarrier(provider, apiKey, secretKey, mode)
+	}
+	if h.newCarrier != nil {
+		construct = h.newCarrier
+	}
+	carrier, err := construct(provider, apiKey, secretKey, carrierCfg.Mode)
+	if err != nil {
+		RespondErr(c, fmt.Errorf("shipments: create carrier: %w", err), h.logger)
+		return
+	}
+
+	// Destination address is the same for every parcel on this order.
+	toAddress := shipping.Address{
+		Name:        shippingAddr.Name,
+		Line1:       shippingAddr.Line1,
+		City:        shippingAddr.City,
+		CountryCode: shippingAddr.CountryCode,
+		Email:       o.CustomerEmail,
+	}
+	if shippingAddr.Line2 != nil {
+		toAddress.Line2 = *shippingAddr.Line2
+	}
+	if shippingAddr.Region != nil {
+		toAddress.Region = *shippingAddr.Region
+	}
+	if shippingAddr.PostalCode != nil {
+		toAddress.PostalCode = *shippingAddr.PostalCode
+	}
+	if shippingAddr.Phone != nil {
+		toAddress.Phone = *shippingAddr.Phone
+	}
+
+	toJSON, _ := json.Marshal(map[string]any{
+		"name":         shippingAddr.Name,
+		"line1":        shippingAddr.Line1,
+		"line2":        derefStringPtr(shippingAddr.Line2),
+		"city":         shippingAddr.City,
+		"region":       derefStringPtr(shippingAddr.Region),
+		"postal_code":  derefStringPtr(shippingAddr.PostalCode),
+		"country_code": shippingAddr.CountryCode,
+		"phone":        derefStringPtr(shippingAddr.Phone),
+	})
+
+	// Per-variant weight/dims, same lookup createSingleShipment uses —
+	// keyed once across every item on the order so each group's parcel
+	// build below is a pure slice-and-lookup.
+	variantIDs := make([]string, 0, len(items))
+	for _, it := range items {
+		if it.VariantID != nil {
+			variantIDs = append(variantIDs, it.VariantID.String())
+		}
+	}
+	type variantShipRow struct {
+		ID          string
+		WeightGrams *int
+		LengthCM    *decimal.Decimal
+		WidthCM     *decimal.Decimal
+		HeightCM    *decimal.Decimal
+	}
+	shipByVariant := map[string]variantShipRow{}
+	if len(variantIDs) > 0 {
+		var rows []variantShipRow
+		if err := h.db.WithContext(ctx).
+			Table("product_variants").
+			Select("id", "weight_grams", "length_cm", "width_cm", "height_cm").
+			Where("id IN ?", variantIDs).
+			Find(&rows).Error; err == nil {
+			for _, r := range rows {
+				shipByVariant[r.ID] = r
+			}
+		}
+	}
+	itemsByID := make(map[string]order.OrderItem, len(items))
+	for _, it := range items {
+		itemsByID[it.ID.String()] = it
+	}
+
+	const defaultWeightGramsPerUnit = 500
+	storeUUID, _ := uuid.Parse(storeID)
+	tenantUUID, _ := uuid.Parse(tenantID)
+
+	created := make([]*shipping.ShipmentRecord, 0, len(groups))
+	for _, g := range groups {
+		wh, err := h.warehouseRepo.ByID(ctx, h.db, g.WarehouseID)
+		if err != nil {
+			if h.logger != nil {
+				h.logger.Error("shipments: allocation group's warehouse_id has no matching row",
+					"order_id", orderID.String(), "warehouse_id", g.WarehouseID, "err", err)
+			}
+			c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+				"error":   "warehouse_not_found",
+				"message": fmt.Sprintf("warehouse %s referenced by this order's allocation no longer exists", g.WarehouseID),
+				"created": len(created),
+			})
+			return
+		}
+		pickup := pickupAddress{
+			Name:          wh.Name,
+			Line1:         wh.Line1,
+			Line2:         wh.Line2,
+			City:          wh.City,
+			Region:        wh.Region,
+			PostalCode:    wh.PostalCode,
+			CountryCode:   wh.CountryCode,
+			Phone:         wh.Phone,
+			ContactPerson: wh.ContactPerson,
+			Email:         wh.Email,
+		}
+
+		fromAddress := shipping.Address{
+			Name:        pickup.Name,
+			Line1:       pickup.Line1,
+			Line2:       pickup.Line2,
+			City:        pickup.City,
+			Region:      pickup.Region,
+			PostalCode:  pickup.PostalCode,
+			CountryCode: pickup.CountryCode,
+			Phone:       pickup.Phone,
+			Email:       pickupEmailOrBuyerFallback(pickup, o.CustomerEmail),
+		}
+
+		// Build parcel items from THIS group's allocations only — the
+		// order items it names, at the allocated quantities, not the
+		// whole order.
+		parcelItems := make([]shipping.ParcelItem, 0, len(g.ItemIDs))
+		for _, itemID := range g.ItemIDs {
+			it, ok := itemsByID[itemID]
+			if !ok {
+				continue
+			}
+			p := shipping.ParcelItem{
+				Title:       it.TitleSnapshot,
+				SKU:         it.SKUSnapshot,
+				Quantity:    g.Quantities[itemID],
+				WeightGrams: defaultWeightGramsPerUnit,
+			}
+			if it.VariantID != nil {
+				if vs, ok := shipByVariant[it.VariantID.String()]; ok {
+					if vs.WeightGrams != nil && *vs.WeightGrams > 0 {
+						p.WeightGrams = *vs.WeightGrams
+					}
+					if vs.LengthCM != nil {
+						f, _ := vs.LengthCM.Float64()
+						p.LengthCM = f
+					}
+					if vs.WidthCM != nil {
+						f, _ := vs.WidthCM.Float64()
+						p.WidthCM = f
+					}
+					if vs.HeightCM != nil {
+						f, _ := vs.HeightCM.Float64()
+						p.HeightCM = f
+					}
+				}
+			}
+			parcelItems = append(parcelItems, p)
+		}
+
+		shipment, err := h.svc.CreateShipment(
+			ctx,
+			orderID.String(),
+			fromAddress,
+			toAddress,
+			parcelItems,
+			req.Service,
+			o.CurrencyCode,
+			carrier,
+		)
+		if err != nil {
+			// The label already created for an earlier group cannot be
+			// un-created at the carrier, so it stays. The failed group
+			// keeps shipment_id NULL and a retry will pick up exactly
+			// the groups still owing a parcel.
+			if h.logger != nil {
+				h.logger.Error("shipments: carrier create failed for group",
+					"order_id", orderID.String(), "warehouse_id", g.WarehouseID,
+					"created", len(created), "err", err.Error())
+			}
+			c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+				"error":   "carrier_create_failed",
+				"message": err.Error(),
+				"created": len(created),
+			})
+			return
+		}
+
+		fromJSON, _ := json.Marshal(map[string]any{
+			"name":         pickup.Name,
+			"line1":        pickup.Line1,
+			"line2":        pickup.Line2,
+			"city":         pickup.City,
+			"region":       pickup.Region,
+			"postal_code":  pickup.PostalCode,
+			"country_code": pickup.CountryCode,
+			"phone":        pickup.Phone,
+		})
+
+		whID := uuid.MustParse(wh.ID)
+		rec := &shipping.ShipmentRecord{
+			TenantID:          tenantUUID,
+			StoreID:           storeUUID,
+			OrderID:           orderID,
+			Carrier:           provider,
+			TrackingNumber:    shipment.TrackingNumber,
+			LabelURL:          shipment.LabelURL,
+			Status:            "pending",
+			ShipFrom:          datatypes.JSON(fromJSON),
+			ShipTo:            datatypes.JSON(toJSON),
+			CurrencyCode:      o.CurrencyCode,
+			EstimatedDelivery: shipment.EstimatedDelivery,
+			WarehouseID:       &whID,
+			// Response-only fields — not persisted, but carried so the
+			// wire DTO can surface them.
+			Provider:           provider,
+			ProviderShipmentID: shipment.ProviderShipmentID,
+			Service:            shipment.Service,
+		}
+
+		if err := h.repo.CreateShipment(ctx, rec); err != nil {
+			if h.logger != nil {
+				h.logger.Error("shipments: persist record for group failed",
+					"order_id", orderID.String(), "warehouse_id", g.WarehouseID, "err", err)
+			}
+			c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+				"error":   "persist_failed",
+				"message": err.Error(),
+				"created": len(created),
+			})
+			return
+		}
+
+		// Stamp this group's allocation rows with the shipment that just
+		// covered them, so a retry does not re-ship an already-shipped
+		// group.
+		if err := h.db.WithContext(ctx).
+			Table("order_allocations").
+			Where("order_id = ? AND warehouse_id = ? AND shipment_id IS NULL", orderID, g.WarehouseID).
+			Update("shipment_id", rec.ID).Error; err != nil && h.logger != nil {
+			h.logger.Error("shipments: stamp allocation shipment_id failed",
+				"order_id", orderID.String(), "warehouse_id", g.WarehouseID,
+				"shipment_id", rec.ID.String(), "err", err)
+		}
+
+		h.appendShipmentEvent(ctx, orderID, rec, order.EventKindShipmentCreated,
+			"Shipping label created — package will be picked up shortly.")
+		h.dispatchShipmentDispatchedEmail(orderID, rec)
+
+		created = append(created, rec)
+	}
+
+	resp := make([]ShipmentResponse, 0, len(created))
+	for _, rec := range created {
+		resp = append(resp, toShipmentResponse(rec))
+	}
+	c.JSON(http.StatusCreated, gin.H{"shipments": resp})
 }
 
 // tryAutoSchedulePickup calls SchedulePickup with the next-business-day

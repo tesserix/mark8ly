@@ -85,8 +85,13 @@ export function ResetPasswordForm({ oobCode }: ResetPasswordFormProps) {
       const result = await confirmPasswordResetAction(oobCode, values.password);
       if (result.ok) {
         setDone(true);
-        // Give the success screen a beat to land, then bounce to login.
-        setTimeout(() => router.push("/login"), 1500);
+        // Only bounce when we have a sign-in target middleware accepts.
+        // Bare /login 404s on the canonical host, so without a valid
+        // returnUrl we leave the success screen up (it explains where to
+        // sign in) rather than redirecting the user into a dead page.
+        if (backHref) {
+          setTimeout(() => router.push(backHref), 1500);
+        }
         return;
       }
       setSubmitError(result.message);
@@ -110,7 +115,7 @@ export function ResetPasswordForm({ oobCode }: ResetPasswordFormProps) {
             Go to sign in
           </Link>
         ) : (
-          <p className="max-w-md text-xs leading-relaxed text-foreground-secondary">Sign in from your store&rsquo;s own address &mdash; <span className="whitespace-nowrap">{"{slug}"}-admin.mark8ly.com</span>.</p>
+          <p className="max-w-md text-xs leading-relaxed text-foreground-secondary">Sign in from your store&rsquo;s own admin address &mdash; the one ending in <span className="whitespace-nowrap">-admin.mark8ly.com</span>.</p>
         )}
       </div>
     );
@@ -184,7 +189,7 @@ export function ResetPasswordForm({ oobCode }: ResetPasswordFormProps) {
               Back to sign in
             </Link>
           ) : (
-            <p className="max-w-md text-xs leading-relaxed text-foreground-secondary">Sign in from your store&rsquo;s own address &mdash; <span className="whitespace-nowrap">{"{slug}"}-admin.mark8ly.com</span>.</p>
+            <p className="max-w-md text-xs leading-relaxed text-foreground-secondary">Sign in from your store&rsquo;s own admin address &mdash; the one ending in <span className="whitespace-nowrap">-admin.mark8ly.com</span>.</p>
           )}
         </div>
       </form>

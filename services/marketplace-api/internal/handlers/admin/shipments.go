@@ -1156,7 +1156,11 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 	// Route it into the first group's parcel instead — the
 	// highest-priority warehouse (unshippedAllocationGroups orders
 	// deterministically by warehouse_id), which is also where a
-	// single-warehouse store ships everything from anyway.
+	// single-warehouse store ships everything from anyway. That routing
+	// is only ever applied once per order — see isFirstShipmentOverall
+	// below, computed from the order's existing shipments rows rather
+	// than the group's position in this call's (remaining-only) groups
+	// slice, so a retry after a partial failure can't ship it twice.
 	allocatedItemIDs := make(map[string]bool, len(items))
 	for _, g := range groups {
 		for _, itemID := range g.ItemIDs {
@@ -1170,6 +1174,31 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 			unallocatedItemIDs = append(unallocatedItemIDs, id)
 		}
 	}
+
+	// Whether the unallocated items should ride along is decided ONCE,
+	// before the loop, off durable state — not off gi==0 inside the loop.
+	// gi is only an index into `groups`, and groups comes from
+	// unshippedAllocationGroups, which is recomputed REMAINING-only on
+	// every call: it folds in only allocations still missing a
+	// shipment_id. So gi==0 means "first group THIS call", not "first
+	// group ever" — after a partial failure (group A ships, group B's
+	// carrier call fails and the handler returns), a retry recomputes
+	// groups as [B] alone, B is now gi==0, and the variantless items
+	// would be appended to B's parcel too, shipping them a second time
+	// with no allocation row to have caught it. Counting this order's
+	// existing shipments rows instead is stable across retries: it is
+	// zero only on the order's actual first shipment overall, and stays
+	// nonzero afterwards regardless of which warehouse group failed or
+	// how many times the endpoint is retried.
+	var existingShipmentCount int64
+	if err := h.db.WithContext(ctx).
+		Table("shipments").
+		Where("order_id = ?", orderID).
+		Count(&existingShipmentCount).Error; err != nil {
+		RespondErr(c, fmt.Errorf("shipments: count existing shipments: %w", err), h.logger)
+		return
+	}
+	isFirstShipmentOverall := existingShipmentCount == 0
 
 	const defaultWeightGramsPerUnit = 500
 	storeUUID, _ := uuid.Parse(storeID)
@@ -1247,12 +1276,15 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 
 		// Build parcel items from THIS group's allocations — the order
 		// items it names, at the allocated quantities, not the whole
-		// order — plus, on the first group only, any order item no
-		// allocation covers at all (variantless/unstocked lines; see the
-		// unallocatedItemIDs comment above). Those ship at their full
-		// order quantity since no allocation split them.
+		// order — plus, on the order's first group ever, any order item
+		// no allocation covers at all (variantless/unstocked lines; see
+		// the unallocatedItemIDs comment above). Those ship at their full
+		// order quantity since no allocation split them. Gated on
+		// isFirstShipmentOverall (existing shipments rows == 0), NOT on
+		// gi == 0 — see the comment above that computation for why a
+		// positional index isn't safe across retries.
 		groupItemIDs := g.ItemIDs
-		if gi == 0 && len(unallocatedItemIDs) > 0 {
+		if gi == 0 && isFirstShipmentOverall && len(unallocatedItemIDs) > 0 {
 			groupItemIDs = append(append([]string{}, g.ItemIDs...), unallocatedItemIDs...)
 		}
 		parcelItems := make([]shipping.ParcelItem, 0, len(groupItemIDs))

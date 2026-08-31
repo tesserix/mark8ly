@@ -625,7 +625,7 @@ func TestCreateShipment_PendingOrderShipsAndFulfilmentStatusStillAdvances(t *tes
 	require.Empty(t, resp.PickupWarning, "fulfilment-status reporting must succeed, not warn, once it no longer depends on orders.status")
 }
 
-// TestCreateShipment_VariantlessItemIsIncludedInFirstGroupsParcel pins
+// TestCreateShipment_VariantlessItemIsIncludedInFirstShipmentsParcel pins
 // task-2 FIX 2: stockLinesFromItems (checkout_stock.go) deliberately skips
 // order items with a nil variant_id when computing allocations — a
 // custom/unstocked line is a supported order shape. Such an item never
@@ -634,8 +634,12 @@ func TestCreateShipment_PendingOrderShipsAndFulfilmentStatusStillAdvances(t *tes
 // group's parcel from ONLY that group's ItemIDs, so the variantless item
 // would silently vanish from every shipment — the order gets marked
 // fulfilled having shipped an incomplete parcel. It must instead ride
-// along in the first (highest-priority) group's parcel.
-func TestCreateShipment_VariantlessItemIsIncludedInFirstGroupsParcel(t *testing.T) {
+// along in the first (highest-priority) group's parcel. This single-call,
+// single-group order can't distinguish "first group of this call" from
+// "first shipment overall" — see
+// TestCreateShipment_UnallocatedItemShipsOnlyOnceAcrossRetry below for the
+// case that does.
+func TestCreateShipment_VariantlessItemIsIncludedInFirstShipmentsParcel(t *testing.T) {
 	db := testdb.NewDB(t, perWarehouseTables...)
 	storeID, tenantID := seedPerWarehouseStore(t, db)
 	wh := seedPerWarehouseWarehouse(t, db, storeID, tenantID, "Warehouse A", "1 Warehouse A Road")
@@ -676,4 +680,83 @@ func TestCreateShipment_VariantlessItemIsIncludedInFirstGroupsParcel(t *testing.
 	groups := groupsForOrder(t, db, orderID.String())
 	require.Len(t, groups, 1)
 	require.NotNil(t, groups[0].ShipmentID)
+}
+
+// TestCreateShipment_UnallocatedItemShipsOnlyOnceAcrossRetry is the
+// regression test for the double-ship bug: an unallocated (variantless)
+// item riding along in "the first group's parcel" must be gated on this
+// being the order's first shipment EVER, not on gi==0 within one call.
+//
+// groups comes from unshippedAllocationGroups, which is recomputed
+// REMAINING-only on every call. Sequence:
+//  1. Call 1: groups = [A, B]. A is gi==0, so the variantless item rides in
+//     A's parcel. A's label succeeds and persists.
+//  2. B's carrier call fails; Create() aborts having created exactly one
+//     shipment (for A), leaving B's allocation unshipped.
+//  3. Retry: groups = [B] alone (A no longer owes a parcel). B is now
+//     gi==0 for THIS call — a positional check would append the
+//     variantless item to B's parcel too, shipping it a second time. The
+//     item has no allocation row, so nothing would ever catch the
+//     duplicate: it just goes out twice, for real, at a carrier that
+//     can't un-create a label.
+//
+// Gating on "does this order already have any shipments rows" instead
+// stays correct across the retry: it was true only on call 1's group A.
+func TestCreateShipment_UnallocatedItemShipsOnlyOnceAcrossRetry(t *testing.T) {
+	db := testdb.NewDB(t, perWarehouseTables...)
+	storeID, tenantID := seedPerWarehouseStore(t, db)
+	whA := seedPerWarehouseWarehouse(t, db, storeID, tenantID, "Warehouse A", "1 Warehouse A Road")
+	whB := seedPerWarehouseWarehouse(t, db, storeID, tenantID, "Warehouse B", "2 Warehouse B Road")
+	seedPerWarehouseCarrierConfig(t, db, storeID, tenantID, nil)
+	orderID := seedPerWarehouseOrder(t, db, storeID, tenantID)
+	itemA := seedPerWarehouseItem(t, db, orderID, "SKU-A", 1)
+	itemB := seedPerWarehouseItem(t, db, orderID, "SKU-B", 1)
+	seedAllocation(t, db, tenantID, storeID, orderID, itemA, whA.ID, 1)
+	seedAllocation(t, db, tenantID, storeID, orderID, itemB, whB.ID, 1)
+
+	// The variantless line: no VariantID, no order_allocations row at all.
+	seedPerWarehouseItem(t, db, orderID, "SKU-CUSTOM", 1)
+
+	// Groups are walked in warehouse_id order. Fail whichever of A/B sorts
+	// SECOND, so the first call's gi==0 group (which gets the variantless
+	// item, correctly, under both the old and new code) is the one that
+	// succeeds and persists — and the failing group is the one left for
+	// the retry to pick up as its OWN gi==0.
+	failLine1 := "2 Warehouse B Road"
+	if whB.ID < whA.ID {
+		failLine1 = "1 Warehouse A Road"
+	}
+	carrier := &stubCarrier{failOnceForLine1: failLine1}
+	h := newPerWarehouseHandler(db, carrier)
+
+	// First call: one group succeeds (carrying the variantless item),
+	// the other fails the whole request.
+	w1 := createShipmentViaHandler(t, h, storeID, orderID, tenantID)
+	require.Equal(t, http.StatusBadGateway, w1.Code, w1.Body.String())
+	require.Len(t, carrier.calls, 1, "exactly one parcel must have been sent to the carrier before the failure")
+
+	// Retry: only the previously-failed group remains, and it is gi==0 for
+	// THIS call.
+	w2 := createShipmentViaHandler(t, h, storeID, orderID, tenantID)
+	require.Equal(t, http.StatusCreated, w2.Code, w2.Body.String())
+
+	require.Len(t, carrier.calls, 2, "the retry must add exactly one more parcel, for the previously-failed group")
+
+	// The load-bearing assertion: SKU-CUSTOM must appear in EXACTLY ONE of
+	// the two parcels sent to the carrier across both calls — never zero
+	// (it must still ship), never two (it must not ship twice).
+	parcelsContainingCustom := 0
+	for _, call := range carrier.calls {
+		for _, item := range call.Items {
+			if item.SKU == "SKU-CUSTOM" {
+				parcelsContainingCustom++
+				require.Equal(t, 1, item.Quantity)
+			}
+		}
+	}
+	require.Equal(t, 1, parcelsContainingCustom,
+		"the unallocated item must ship in exactly one parcel across the call and its retry, not zero and not two")
+
+	shipments := shipmentsForOrder(t, db, orderID.String())
+	require.Len(t, shipments, 2, "one shipment per allocation group, across both calls")
 }

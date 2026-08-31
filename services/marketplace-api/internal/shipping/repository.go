@@ -193,9 +193,18 @@ func (r *gormRepository) GetShipmentByID(ctx context.Context, id uuid.UUID) (*Sh
 	return &rec, nil
 }
 
+// GetShipmentByOrderID returns the first parcel on an order, ordered
+// created_at ASC, id ASC. A multi-warehouse order has one shipments row per
+// warehouse (#177); without an explicit order Postgres returns whichever row
+// it likes (effectively by primary key), which made this pick an arbitrary
+// parcel. Ordering here matches storefront/order_detail.go's loadShipments
+// (added in #492) so "the shipment" means the same parcel everywhere (#496).
 func (r *gormRepository) GetShipmentByOrderID(ctx context.Context, orderID uuid.UUID) (*ShipmentRecord, error) {
 	var rec ShipmentRecord
-	err := r.db.WithContext(ctx).Where("order_id = ?", orderID).First(&rec).Error
+	err := r.db.WithContext(ctx).
+		Where("order_id = ?", orderID).
+		Order("created_at ASC, id ASC").
+		First(&rec).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("shipping: shipment not found for order")
 	}
@@ -228,7 +237,7 @@ func (r *gormRepository) ListShipmentsByOrderID(ctx context.Context, orderID uui
 	var recs []ShipmentRecord
 	if err := r.db.WithContext(ctx).
 		Where("order_id = ?", orderID).
-		Order("created_at ASC").
+		Order("created_at ASC, id ASC").
 		Find(&recs).Error; err != nil {
 		return nil, fmt.Errorf("shipping: list shipments by order id: %w", err)
 	}

@@ -82,7 +82,7 @@ export function ForgotPasswordForm() {
             Back to sign in
           </Link>
         ) : (
-          <p className="max-w-md text-xs leading-relaxed text-foreground-secondary">Sign in from your store&rsquo;s own address &mdash; <span className="whitespace-nowrap">{"{slug}"}-admin.mark8ly.com</span>.</p>
+          <p className="max-w-md text-xs leading-relaxed text-foreground-secondary">Sign in from your store&rsquo;s own admin address &mdash; the one ending in <span className="whitespace-nowrap">-admin.mark8ly.com</span>.</p>
         )}
       </div>
     );
@@ -137,7 +137,7 @@ export function ForgotPasswordForm() {
               Back to sign in
             </Link>
           ) : (
-            <p className="max-w-md text-xs leading-relaxed text-foreground-secondary">Sign in from your store&rsquo;s own address &mdash; <span className="whitespace-nowrap">{"{slug}"}-admin.mark8ly.com</span>.</p>
+            <p className="max-w-md text-xs leading-relaxed text-foreground-secondary">Sign in from your store&rsquo;s own admin address &mdash; the one ending in <span className="whitespace-nowrap">-admin.mark8ly.com</span>.</p>
           )}
         </div>
       </form>

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -103,6 +104,12 @@ func shipFromLine1(t *testing.T, db *gorm.DB, shipmentID string) string {
 type stubCarrier struct {
 	failOnceForLine1 string
 	failed           atomic.Bool
+
+	// mu guards calls — createShipmentsPerWarehouse calls CreateShipment
+	// sequentially within one Create() request, but a test may hold onto
+	// this stub across the request, so guard it anyway.
+	mu    sync.Mutex
+	calls []shipping.ShipmentRequest
 }
 
 func (s *stubCarrier) GetRates(context.Context, shipping.RateRequest) ([]shipping.Rate, error) {
@@ -113,6 +120,9 @@ func (s *stubCarrier) CreateShipment(_ context.Context, in shipping.ShipmentRequ
 	if s.failOnceForLine1 != "" && in.FromAddress.Line1 == s.failOnceForLine1 && s.failed.CompareAndSwap(false, true) {
 		return nil, fmt.Errorf("stubCarrier: simulated carrier failure for %s", in.FromAddress.Line1)
 	}
+	s.mu.Lock()
+	s.calls = append(s.calls, in)
+	s.mu.Unlock()
 	return &shipping.Shipment{
 		ProviderShipmentID: "PSID-" + in.FromAddress.Line1,
 		TrackingNumber:     "TRK-" + in.FromAddress.Line1,
@@ -173,6 +183,18 @@ func fulfillmentStatusForOrder(t *testing.T, db *gorm.DB, orderID uuid.UUID) str
 	var status string
 	require.NoError(t, db.Raw(
 		`SELECT fulfillment_status FROM orders WHERE id = ?`, orderID).Row().Scan(&status))
+	return status
+}
+
+// orderStatusForOrder reads orders.status directly — the axis label
+// creation must NEVER touch (task-2 FIX 1). Label creation only ever
+// advances fulfillment_status; orders.status is the manual /fulfill admin
+// endpoint's job.
+func orderStatusForOrder(t *testing.T, db *gorm.DB, orderID uuid.UUID) string {
+	t.Helper()
+	var status string
+	require.NoError(t, db.Raw(
+		`SELECT status FROM orders WHERE id = ?`, orderID).Row().Scan(&status))
 	return status
 }
 
@@ -362,6 +384,16 @@ func TestCreateShipment_OneAllocationGroupCreatesOneShipmentWithItsWarehouse(t *
 	// Every group this order owed a parcel for now has one — fulfilled,
 	// not partial.
 	require.Equal(t, "fulfilled", fulfillmentStatusForOrder(t, db, orderID))
+
+	// task-2 FIX 1: label creation must move ONLY fulfillment_status.
+	// orders.status stays exactly where it started (confirmed, per
+	// seedPerWarehouseOrder) — orders.status="fulfilled" is TERMINAL
+	// (status.go), so if this ever regresses to calling MarkFulfilled here,
+	// the order becomes permanently un-cancellable the moment its first
+	// (and, for a single-warehouse store, only) label is created — before
+	// the parcel is even picked up.
+	require.Equal(t, "confirmed", orderStatusForOrder(t, db, orderID),
+		"orders.status must be untouched by label creation, not advanced to fulfilled")
 }
 
 // TestCreateShipment_TwoAllocationGroupsCreateTwoShipments is the core
@@ -412,6 +444,9 @@ func TestCreateShipment_TwoAllocationGroupsCreateTwoShipments(t *testing.T) {
 
 	// Both groups shipped in this one call — the order is fully fulfilled.
 	require.Equal(t, "fulfilled", fulfillmentStatusForOrder(t, db, orderID))
+
+	// orders.status is a separate axis label creation never touches.
+	require.Equal(t, "confirmed", orderStatusForOrder(t, db, orderID))
 }
 
 // TestCreateShipment_AlreadyShippedGroupIsNotShippedTwice pins the
@@ -540,7 +575,17 @@ func TestCreateShipment_FullyShippedOrderReCallIsNoOp(t *testing.T) {
 // order is left stuck on fulfillment_status=partial (never advanced to
 // fulfilled), and that must be surfaced to the admin via the response's
 // pickup-warning channel, not just logged.
-func TestCreateShipment_PendingOrderShipsButFulfilmentStatusReportedAsWarning(t *testing.T) {
+// TestCreateShipment_PendingOrderShipsAndFulfilmentStatusStillAdvances pins
+// task-2 FIX 1's actual mechanism: fulfillment_status is reported via
+// MarkFulfillmentComplete/MarkPartiallyFulfilled, which have ONLY a
+// fulfillment_status precondition — never an orders.status one. Before the
+// fix, the last group's report went through MarkFulfilled, which also
+// requires orders.status to legally reach "fulfilled" (confirmed only);
+// on a still-pending order that precondition failed, silently stranding
+// fulfillment_status at "partial" even though every parcel had shipped.
+// Post-fix, both parcels ship AND fulfillment_status correctly reaches
+// "fulfilled" regardless of orders.status — which itself is never touched.
+func TestCreateShipment_PendingOrderShipsAndFulfilmentStatusStillAdvances(t *testing.T) {
 	db := testdb.NewDB(t, perWarehouseTables...)
 	storeID, tenantID := seedPerWarehouseStore(t, db)
 	whA := seedPerWarehouseWarehouse(t, db, storeID, tenantID, "Warehouse A", "1 Warehouse A Road")
@@ -555,13 +600,10 @@ func TestCreateShipment_PendingOrderShipsButFulfilmentStatusReportedAsWarning(t 
 	h := newPerWarehouseHandler(db, &stubCarrier{})
 	w := createShipmentViaHandler(t, h, storeID, orderID, tenantID)
 
-	// The label creation itself succeeded — a fulfilment-status write
-	// failure downstream of two real, persisted carrier labels must not
-	// turn this into an error response.
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 
 	shipments := shipmentsForOrder(t, db, orderID.String())
-	require.Len(t, shipments, 2, "both parcels must be created despite the order being unable to report fulfilled")
+	require.Len(t, shipments, 2)
 
 	groups := groupsForOrder(t, db, orderID.String())
 	require.Len(t, groups, 2)
@@ -569,20 +611,69 @@ func TestCreateShipment_PendingOrderShipsButFulfilmentStatusReportedAsWarning(t 
 		require.NotNil(t, g.ShipmentID, "both allocation groups must be stamped shipped")
 	}
 
-	// The order is stuck at partial — the last group's MarkFulfilled call
-	// failed, so fulfillment_status never advanced past what the first
-	// group's MarkPartiallyFulfilled call set it to.
-	require.Equal(t, "partial", fulfillmentStatusForOrder(t, db, orderID))
+	// fulfillment_status reaches "fulfilled" — no longer gated on
+	// orders.status, which a pending order would have failed under the
+	// old MarkFulfilled call.
+	require.Equal(t, "fulfilled", fulfillmentStatusForOrder(t, db, orderID))
 
 	// orders.status itself must be untouched — still pending, never
-	// silently bumped.
-	var status string
-	require.NoError(t, db.Raw(`SELECT status FROM orders WHERE id = ?`, orderID).Row().Scan(&status))
-	require.Equal(t, "pending", status)
+	// silently bumped by label creation.
+	require.Equal(t, "pending", orderStatusForOrder(t, db, orderID))
 
 	var resp ShipmentResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.NotEmpty(t, resp.PickupWarning, "the response must surface the fulfilment-status failure as a warning")
-	require.Contains(t, resp.PickupWarning, "could not be marked fulfilled",
-		"the warning must name what failed, not just that something did")
+	require.Empty(t, resp.PickupWarning, "fulfilment-status reporting must succeed, not warn, once it no longer depends on orders.status")
+}
+
+// TestCreateShipment_VariantlessItemIsIncludedInFirstGroupsParcel pins
+// task-2 FIX 2: stockLinesFromItems (checkout_stock.go) deliberately skips
+// order items with a nil variant_id when computing allocations — a
+// custom/unstocked line is a supported order shape. Such an item never
+// gets an order_allocations row, so it never lands in any allocation
+// group's ItemIDs. Before the fix, createShipmentsPerWarehouse built each
+// group's parcel from ONLY that group's ItemIDs, so the variantless item
+// would silently vanish from every shipment — the order gets marked
+// fulfilled having shipped an incomplete parcel. It must instead ride
+// along in the first (highest-priority) group's parcel.
+func TestCreateShipment_VariantlessItemIsIncludedInFirstGroupsParcel(t *testing.T) {
+	db := testdb.NewDB(t, perWarehouseTables...)
+	storeID, tenantID := seedPerWarehouseStore(t, db)
+	wh := seedPerWarehouseWarehouse(t, db, storeID, tenantID, "Warehouse A", "1 Warehouse A Road")
+	seedPerWarehouseCarrierConfig(t, db, storeID, tenantID, nil)
+	orderID := seedPerWarehouseOrder(t, db, storeID, tenantID)
+
+	// A stocked line — allocated to Warehouse A, so it drives the one
+	// allocation group this order has.
+	stockedID := seedPerWarehouseItem(t, db, orderID, "SKU-STOCKED", 2)
+	seedAllocation(t, db, tenantID, storeID, orderID, stockedID, wh.ID, 2)
+
+	// A custom/unstocked line with NO variant_id and, critically, NO
+	// order_allocations row at all — nothing "stockLinesFromItems" ever
+	// wrote for it. seedPerWarehouseItem never sets VariantID, so it is
+	// nil by default, matching this order shape exactly.
+	seedPerWarehouseItem(t, db, orderID, "SKU-CUSTOM", 1)
+
+	carrier := &stubCarrier{}
+	h := newPerWarehouseHandler(db, carrier)
+	w := createShipmentViaHandler(t, h, storeID, orderID, tenantID)
+
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	shipments := shipmentsForOrder(t, db, orderID.String())
+	require.Len(t, shipments, 1, "one allocation group means one shipment — the unallocated item must not create a second one")
+
+	require.Len(t, carrier.calls, 1)
+	skus := make(map[string]int, 2)
+	for _, item := range carrier.calls[0].Items {
+		skus[item.SKU] = item.Quantity
+	}
+	require.Equal(t, 2, skus["SKU-STOCKED"], "the allocated item must still ship at its allocated quantity")
+	require.Equal(t, 1, skus["SKU-CUSTOM"], "the variantless item must ride along in the parcel at its full order quantity, not vanish")
+
+	// The unallocated item has no order_allocations row, so it stays
+	// invisible to groupsForOrder — only the stocked line's allocation is
+	// there, and it must be stamped shipped.
+	groups := groupsForOrder(t, db, orderID.String())
+	require.Len(t, groups, 1)
+	require.NotNil(t, groups[0].ShipmentID)
 }

@@ -1145,13 +1145,39 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 		itemsByID[it.ID.String()] = it
 	}
 
+	// stockLinesFromItems (checkout_stock.go) deliberately skips order
+	// items with a nil/empty variant_id when it computes allocations — a
+	// custom or otherwise unstocked line is a supported order shape, and
+	// refusing it there "would break every unstocked sale". That was
+	// harmless when the parcel was built from ALL of the order's items
+	// regardless of allocation. Now the parcel is built per warehouse
+	// group from allocations alone, so a variantless item never lands in
+	// any group's ItemIDs and would silently vanish from every shipment.
+	// Route it into the first group's parcel instead — the
+	// highest-priority warehouse (unshippedAllocationGroups orders
+	// deterministically by warehouse_id), which is also where a
+	// single-warehouse store ships everything from anyway.
+	allocatedItemIDs := make(map[string]bool, len(items))
+	for _, g := range groups {
+		for _, itemID := range g.ItemIDs {
+			allocatedItemIDs[itemID] = true
+		}
+	}
+	unallocatedItemIDs := make([]string, 0, len(items))
+	for _, it := range items {
+		id := it.ID.String()
+		if !allocatedItemIDs[id] {
+			unallocatedItemIDs = append(unallocatedItemIDs, id)
+		}
+	}
+
 	const defaultWeightGramsPerUnit = 500
 	storeUUID, _ := uuid.Parse(storeID)
 	tenantUUID, _ := uuid.Parse(tenantID)
 
 	created := make([]*shipping.ShipmentRecord, 0, len(groups))
 	pickupWarnings := make([]string, 0, len(groups))
-	for _, g := range groups {
+	for gi, g := range groups {
 		wh, err := h.warehouseRepo.ByID(ctx, h.db, g.WarehouseID)
 		if err != nil {
 			if h.logger != nil {
@@ -1219,19 +1245,30 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 			Email:       pickupEmailOrBuyerFallback(pickup, o.CustomerEmail),
 		}
 
-		// Build parcel items from THIS group's allocations only — the
-		// order items it names, at the allocated quantities, not the
-		// whole order.
-		parcelItems := make([]shipping.ParcelItem, 0, len(g.ItemIDs))
-		for _, itemID := range g.ItemIDs {
+		// Build parcel items from THIS group's allocations — the order
+		// items it names, at the allocated quantities, not the whole
+		// order — plus, on the first group only, any order item no
+		// allocation covers at all (variantless/unstocked lines; see the
+		// unallocatedItemIDs comment above). Those ship at their full
+		// order quantity since no allocation split them.
+		groupItemIDs := g.ItemIDs
+		if gi == 0 && len(unallocatedItemIDs) > 0 {
+			groupItemIDs = append(append([]string{}, g.ItemIDs...), unallocatedItemIDs...)
+		}
+		parcelItems := make([]shipping.ParcelItem, 0, len(groupItemIDs))
+		for _, itemID := range groupItemIDs {
 			it, ok := itemsByID[itemID]
 			if !ok {
 				continue
 			}
+			qty := g.Quantities[itemID]
+			if qty == 0 {
+				qty = it.Quantity
+			}
 			p := shipping.ParcelItem{
 				Title:       it.TitleSnapshot,
 				SKU:         it.SKUSnapshot,
-				Quantity:    g.Quantities[itemID],
+				Quantity:    qty,
 				WeightGrams: defaultWeightGramsPerUnit,
 			}
 			if it.VariantID != nil {
@@ -1452,14 +1489,14 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 		// Best-effort: a failure recomputing or writing fulfilment status
 		// must not turn an already-real shipment into a 5xx for the admin —
 		// the carrier label already exists and is un-cancellable. But it
-		// must not be swallowed either: an order stuck on `confirmed`-only
-		// transitions (MarkFulfilled/MarkPartiallyFulfilled both require
-		// specific order.status preconditions the way orders.Confirm does)
-		// can leave every parcel shipped while fulfillment_status silently
-		// never advances — e.g. a still-`pending` order, which the admin
-		// UI explicitly allows labelling. Surface that on the same
-		// pickup-warning channel the response already carries, alongside
-		// the log line, so the admin actually sees it.
+		// must not be swallowed either: MarkFulfillmentComplete and
+		// MarkPartiallyFulfilled both still have a fulfillment_status
+		// precondition of their own (fulfillmentStatusTransitions), so an
+		// order already at the target fulfillment_status, or otherwise
+		// mid-transition, can leave every parcel shipped while
+		// fulfillment_status silently never advances. Surface that on the
+		// same pickup-warning channel the response already carries,
+		// alongside the log line, so the admin actually sees it.
 		var fulfilWarning string
 		if h.orderSvc != nil {
 			remaining, err := h.unshippedAllocationGroups(ctx, orderID)
@@ -1473,7 +1510,14 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 				var targetStatus string
 				if len(remaining) == 0 {
 					targetStatus = "fulfilled"
-					fulfilErr = h.orderSvc.MarkFulfilled(ctx, nil, orderID)
+					// MarkFulfillmentComplete, not MarkFulfilled: label
+					// creation must move only fulfillment_status.
+					// orders.status is terminal at "fulfilled" (status.go),
+					// so advancing it here at label-creation time — before
+					// pickup — would permanently block Cancel. The manual
+					// /fulfill admin endpoint is the deliberate two-axis
+					// action; this is not it.
+					fulfilErr = h.orderSvc.MarkFulfillmentComplete(ctx, nil, orderID)
 				} else {
 					targetStatus = "partially fulfilled"
 					fulfilErr = h.orderSvc.MarkPartiallyFulfilled(ctx, nil, orderID)

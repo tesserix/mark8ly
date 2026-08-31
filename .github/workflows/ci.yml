@@ -85,6 +85,59 @@ jobs:
     name: Secrets
     uses: tesserix/tesserix-workflows/.github/workflows/secret-scan.yml@v2.2.1
 
+  integration:
+    name: Integration (marketplace-api)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: dev
+          POSTGRES_PASSWORD: dev
+          POSTGRES_DB: marketplace_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Host-side, because the job's steps run on the runner, not in a
+      # container on the services network.
+      DSN: postgres://dev:dev@127.0.0.1:5432/marketplace_db?sslmode=disable
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: "1.26.6"
+          cache-dependency-path: services/marketplace-api/go.sum
+      - name: Apply migrations
+        working-directory: services/marketplace-api
+        run: DATABASE_URL="$DSN" go run ./cmd/migrate up
+      - name: Prove the database is actually reachable
+        working-directory: services/marketplace-api
+        # An integration test with no TEST_DATABASE_URL SKIPS and the package
+        # still prints "ok" — a green suite here would otherwise prove nothing.
+        # This canary must visibly RUN, so a broken DSN fails the job loudly
+        # instead of passing silently.
+        run: |
+          out=$(TEST_DATABASE_URL="$DSN" go test -tags=integration -count=1 -v \
+                  ./internal/product/... -run TestInventorySync_SumsAcrossLocations)
+          printf '%s\n' "$out"
+          grep -q -- '--- PASS: TestInventorySync_SumsAcrossLocations' <<<"$out" || {
+            echo "::error::canary did not run — integration tests are skipping, not passing"
+            exit 1
+          }
+      - name: Integration tests
+        working-directory: services/marketplace-api
+        # -p 1: the packages share one database; parallel runs exhaust
+        # connections and surface as data pollution rather than as a clear
+        # failure.
+        run: TEST_DATABASE_URL="$DSN" go test -tags=integration -p 1 -count=1 ./...
+
   containers:
     name: Containers
     if: ${{ github.event_name == 'pull_request' }}
@@ -129,7 +182,7 @@ jobs:
   gate:
     name: CI gate
     if: ${{ always() }}
-    needs: [policy, go, nextjs, secrets, containers, release]
+    needs: [policy, go, nextjs, secrets, integration, containers, release]
     runs-on: ubuntu-latest
     permissions: {}
     steps:

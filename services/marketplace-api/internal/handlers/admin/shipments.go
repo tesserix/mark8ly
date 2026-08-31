@@ -1450,24 +1450,41 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 		// response comes back non-2xx.
 		//
 		// Best-effort: a failure recomputing or writing fulfilment status
-		// must not turn an already-real shipment into a 5xx for the admin.
-		// The order is left for a later read (or a retry Create()) to
-		// reconcile.
-		if remaining, err := h.unshippedAllocationGroups(ctx, orderID); err != nil {
-			if h.logger != nil {
-				h.logger.Error("shipments: recount remaining allocation groups failed",
-					"order_id", orderID.String(), "err", err)
-			}
-		} else if h.orderSvc != nil {
-			var fulfilErr error
-			if len(remaining) == 0 {
-				fulfilErr = h.orderSvc.MarkFulfilled(ctx, nil, orderID)
+		// must not turn an already-real shipment into a 5xx for the admin —
+		// the carrier label already exists and is un-cancellable. But it
+		// must not be swallowed either: an order stuck on `confirmed`-only
+		// transitions (MarkFulfilled/MarkPartiallyFulfilled both require
+		// specific order.status preconditions the way orders.Confirm does)
+		// can leave every parcel shipped while fulfillment_status silently
+		// never advances — e.g. a still-`pending` order, which the admin
+		// UI explicitly allows labelling. Surface that on the same
+		// pickup-warning channel the response already carries, alongside
+		// the log line, so the admin actually sees it.
+		var fulfilWarning string
+		if h.orderSvc != nil {
+			remaining, err := h.unshippedAllocationGroups(ctx, orderID)
+			if err != nil {
+				if h.logger != nil {
+					h.logger.Error("shipments: recount remaining allocation groups failed",
+						"order_id", orderID.String(), "err", err)
+				}
 			} else {
-				fulfilErr = h.orderSvc.MarkPartiallyFulfilled(ctx, nil, orderID)
-			}
-			if fulfilErr != nil && h.logger != nil {
-				h.logger.Error("shipments: report order fulfilment status failed",
-					"order_id", orderID.String(), "remaining_groups", len(remaining), "err", fulfilErr)
+				var fulfilErr error
+				var targetStatus string
+				if len(remaining) == 0 {
+					targetStatus = "fulfilled"
+					fulfilErr = h.orderSvc.MarkFulfilled(ctx, nil, orderID)
+				} else {
+					targetStatus = "partially fulfilled"
+					fulfilErr = h.orderSvc.MarkPartiallyFulfilled(ctx, nil, orderID)
+				}
+				if fulfilErr != nil {
+					if h.logger != nil {
+						h.logger.Error("shipments: report order fulfilment status failed",
+							"order_id", orderID.String(), "remaining_groups", len(remaining), "err", fulfilErr)
+					}
+					fulfilWarning = fmt.Sprintf("parcel shipped, but the order could not be marked %s: %s", targetStatus, fulfilErr.Error())
+				}
 			}
 		}
 
@@ -1479,6 +1496,13 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 		if carrierCfg.AutoSchedulePickup {
 			if ps, ok := carrier.(shipping.PickupScheduler); ok {
 				pickupWarning = h.tryAutoSchedulePickup(ctx, rec, ps, carrierCfg, pickup.Name)
+			}
+		}
+		if fulfilWarning != "" {
+			if pickupWarning != "" {
+				pickupWarning = pickupWarning + "; " + fulfilWarning
+			} else {
+				pickupWarning = fulfilWarning
 			}
 		}
 		pickupWarnings = append(pickupWarnings, pickupWarning)
@@ -1502,7 +1526,19 @@ func (h *ShipmentsHandler) createShipmentsPerWarehouse(
 	// the frontend; a later PR can teach the client (and this response)
 	// about multiple shipments per order.
 	resp := toShipmentResponse(created[0])
-	resp.PickupWarning = pickupWarnings[0]
+	// Join every group's warning, not just the first shipment's: a
+	// fulfilment-status warning (see above) can land on ANY group in this
+	// batch, not necessarily the one whose shipment this response
+	// describes, and dropping it here would silently hide the one signal
+	// the admin gets that an order is stuck unable to report its true
+	// fulfilment state.
+	var warnings []string
+	for _, w := range pickupWarnings {
+		if w != "" {
+			warnings = append(warnings, w)
+		}
+	}
+	resp.PickupWarning = strings.Join(warnings, "; ")
 	c.JSON(http.StatusCreated, resp)
 }
 

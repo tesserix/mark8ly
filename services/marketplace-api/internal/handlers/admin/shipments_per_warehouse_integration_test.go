@@ -214,13 +214,23 @@ func seedPerWarehouseCarrierConfig(t *testing.T, db *gorm.DB, storeID, tenantID 
 
 func seedPerWarehouseOrder(t *testing.T, db *gorm.DB, storeID, tenantID uuid.UUID) uuid.UUID {
 	t.Helper()
+	return seedPerWarehouseOrderWithStatus(t, db, storeID, tenantID, "confirmed")
+}
+
+// seedPerWarehouseOrderWithStatus is seedPerWarehouseOrder with the
+// orders.status column exposed — used to cover the "order still pending
+// when parcels ship" fulfilment-status-can't-report case, which requires
+// an order Create() will accept (Create has no order-status precondition)
+// but MarkFulfilled's confirmed->fulfilled guard will reject.
+func seedPerWarehouseOrderWithStatus(t *testing.T, db *gorm.DB, storeID, tenantID uuid.UUID, status string) uuid.UUID {
+	t.Helper()
 	o := &order.Order{
 		TenantID:       tenantID,
 		StoreID:        storeID,
 		OrderNumber:    "M-" + uuid.NewString()[:8],
 		IdempotencyKey: "idem-" + uuid.NewString(),
 		CustomerEmail:  "buyer@example.com",
-		Status:         "confirmed",
+		Status:         status,
 		PaymentStatus:  "paid",
 		Subtotal:       decimal.NewFromInt(1000),
 		GrandTotal:     decimal.NewFromInt(1000),
@@ -513,4 +523,66 @@ func TestCreateShipment_FullyShippedOrderReCallIsNoOp(t *testing.T) {
 	// The no-op recall must not touch fulfilment status either — it never
 	// reaches createShipmentsPerWarehouse's per-group reporting.
 	require.Equal(t, "fulfilled", fulfillmentStatusForOrder(t, db, orderID))
+}
+
+// TestCreateShipment_PendingOrderShipsButFulfilmentStatusReportedAsWarning
+// covers fix-round-1 IMPORTANT 1: Create() has no order-status
+// precondition, and the admin UI explicitly allows labelling a `pending`
+// order — but MarkFulfilled requires orders.status == confirmed, and
+// MarkPartiallyFulfilled's guard is on the fulfillment axis only (no order
+// axis check). So on a two-group pending order, the first group's
+// MarkPartiallyFulfilled call succeeds (no order-status guard fires), then
+// the second group recomputes remaining==0 and calls MarkFulfilled, which
+// fails InvalidTransition because orders.status is still "pending".
+//
+// Both parcels must exist at the carrier regardless — the failure must
+// NOT turn into a 5xx that would suggest the shipment itself failed. The
+// order is left stuck on fulfillment_status=partial (never advanced to
+// fulfilled), and that must be surfaced to the admin via the response's
+// pickup-warning channel, not just logged.
+func TestCreateShipment_PendingOrderShipsButFulfilmentStatusReportedAsWarning(t *testing.T) {
+	db := testdb.NewDB(t, perWarehouseTables...)
+	storeID, tenantID := seedPerWarehouseStore(t, db)
+	whA := seedPerWarehouseWarehouse(t, db, storeID, tenantID, "Warehouse A", "1 Warehouse A Road")
+	whB := seedPerWarehouseWarehouse(t, db, storeID, tenantID, "Warehouse B", "2 Warehouse B Road")
+	seedPerWarehouseCarrierConfig(t, db, storeID, tenantID, nil)
+	orderID := seedPerWarehouseOrderWithStatus(t, db, storeID, tenantID, "pending")
+	itemA := seedPerWarehouseItem(t, db, orderID, "SKU-A", 1)
+	itemB := seedPerWarehouseItem(t, db, orderID, "SKU-B", 1)
+	seedAllocation(t, db, tenantID, storeID, orderID, itemA, whA.ID, 1)
+	seedAllocation(t, db, tenantID, storeID, orderID, itemB, whB.ID, 1)
+
+	h := newPerWarehouseHandler(db, &stubCarrier{})
+	w := createShipmentViaHandler(t, h, storeID, orderID, tenantID)
+
+	// The label creation itself succeeded — a fulfilment-status write
+	// failure downstream of two real, persisted carrier labels must not
+	// turn this into an error response.
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	shipments := shipmentsForOrder(t, db, orderID.String())
+	require.Len(t, shipments, 2, "both parcels must be created despite the order being unable to report fulfilled")
+
+	groups := groupsForOrder(t, db, orderID.String())
+	require.Len(t, groups, 2)
+	for _, g := range groups {
+		require.NotNil(t, g.ShipmentID, "both allocation groups must be stamped shipped")
+	}
+
+	// The order is stuck at partial — the last group's MarkFulfilled call
+	// failed, so fulfillment_status never advanced past what the first
+	// group's MarkPartiallyFulfilled call set it to.
+	require.Equal(t, "partial", fulfillmentStatusForOrder(t, db, orderID))
+
+	// orders.status itself must be untouched — still pending, never
+	// silently bumped.
+	var status string
+	require.NoError(t, db.Raw(`SELECT status FROM orders WHERE id = ?`, orderID).Row().Scan(&status))
+	require.Equal(t, "pending", status)
+
+	var resp ShipmentResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.NotEmpty(t, resp.PickupWarning, "the response must surface the fulfilment-status failure as a warning")
+	require.Contains(t, resp.PickupWarning, "could not be marked fulfilled",
+		"the warning must name what failed, not just that something did")
 }

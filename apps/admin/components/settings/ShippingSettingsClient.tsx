@@ -83,26 +83,27 @@ export function ShippingSettingsClient({
                   }
                 : undefined
             }
+            banner={
+              blockers.length > 0 ? (
+                <div
+                  role="status"
+                  className="mb-5 space-y-2 rounded-md border border-[color:var(--signal,#B7410E)]/25 bg-[color:var(--signal,#B7410E)]/[0.04] px-4 py-3"
+                >
+                  <p className="text-sm font-medium text-foreground">
+                    This carrier isn&rsquo;t quoting rates yet
+                  </p>
+                  <ul className="space-y-1 text-sm text-foreground-secondary">
+                    {blockers.map((b) => (
+                      <li key={b.code} className="flex gap-2">
+                        <span aria-hidden="true">&middot;</span>
+                        <span>{b.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null
+            }
           >
-            {blockers.length > 0 && (
-              <div
-                role="status"
-                className="mb-5 space-y-2 rounded-md border border-[color:var(--signal,#B7410E)]/25 bg-[color:var(--signal,#B7410E)]/[0.04] px-4 py-3"
-              >
-                <p className="text-sm font-medium text-foreground">
-                  This carrier isn&rsquo;t quoting rates yet
-                </p>
-                <ul className="space-y-1 text-sm text-foreground-secondary">
-                  {blockers.map((b) => (
-                    <li key={b.code} className="flex gap-2">
-                      <span aria-hidden="true">&middot;</span>
-                      <span>{b.message}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
             {editable ? (
               <ShippingConfigForm
                 provider={carrier}

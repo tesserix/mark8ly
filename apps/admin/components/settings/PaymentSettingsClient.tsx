@@ -98,28 +98,31 @@ export function PaymentSettingsClient({
                       }
                     : undefined
                 }
+                banner={
+                  blockers.length > 0 ? (
+                    <div
+                      role="status"
+                      className="mb-5 space-y-2 rounded-md border border-[color:var(--signal,#B7410E)]/25 bg-[color:var(--signal,#B7410E)]/[0.04] px-4 py-3"
+                    >
+                      <p className="text-sm font-medium text-foreground">
+                        {blockers.some(
+                          (b) => b.severity === "silently_loses_orders",
+                        )
+                          ? "This gateway can take payments it will not record"
+                          : "This gateway isn’t taking payments yet"}
+                      </p>
+                      <ul className="space-y-1 text-sm text-foreground-secondary">
+                        {blockers.map((b) => (
+                          <li key={b.code} className="flex gap-2">
+                            <span aria-hidden="true">&middot;</span>
+                            <span>{b.message}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null
+                }
               >
-                {blockers.length > 0 && (
-                  <div
-                    role="status"
-                    className="mb-5 space-y-2 rounded-md border border-[color:var(--signal,#B7410E)]/25 bg-[color:var(--signal,#B7410E)]/[0.04] px-4 py-3"
-                  >
-                    <p className="text-sm font-medium text-foreground">
-                      {blockers.some((b) => b.severity === "silently_loses_orders")
-                        ? "This gateway can take payments it will not record"
-                        : "This gateway isn’t taking payments yet"}
-                    </p>
-                    <ul className="space-y-1 text-sm text-foreground-secondary">
-                      {blockers.map((b) => (
-                        <li key={b.code} className="flex gap-2">
-                          <span aria-hidden="true">&middot;</span>
-                          <span>{b.message}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
                 {editable ? (
                   <PaymentConfigForm
                     provider={provider}

@@ -1191,6 +1191,7 @@ func main() {
 			CSVImportsHandler:        csvImportsHandler,
 			PaymentSettingsHandler:   paymentSettingsHandler,
 			ShippingSettingsHandler:  shippingSettingsHandler,
+			WarehousesHandler:        admin.NewWarehousesHandler(conn, log),
 			ShipmentsHandler:         shipmentsHandler,
 			TaxSettingsHandler:       taxSettingsHandler,
 			SettingsMetaHandler:      settingsMetaHandler,

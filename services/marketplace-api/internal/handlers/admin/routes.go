@@ -33,6 +33,7 @@ type Deps struct {
 	CSVImportsHandler       *CSVImportsHandler
 	PaymentSettingsHandler  *PaymentSettingsHandler
 	ShippingSettingsHandler *ShippingSettingsHandler
+	WarehousesHandler       *WarehousesHandler
 	TaxSettingsHandler      *TaxSettingsHandler
 	SettingsMetaHandler     *SettingsMetaHandler
 	CouponHandler           *CouponHandler
@@ -462,6 +463,35 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				ss.DELETE("/:provider",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
 					deps.ShippingSettingsHandler.Delete)
+			}
+		}
+		// Warehouses — #177 PR 5b. Mounted OUTSIDE /settings/shipping on
+		// purpose: a warehouse is a property of the store, not of a carrier
+		// account, and burying it under a carrier's settings is what let it
+		// become a side effect of the carrier form in the first place.
+		if deps.WarehousesHandler != nil {
+			wh := storeRoute.Group("/warehouses")
+			{
+				wh.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.WarehousesHandler.List)
+				wh.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
+					deps.WarehousesHandler.Create)
+				// Static sibling of "/:id" — gin resolves the literal first,
+				// so a warehouse can never be shadowed by this path.
+				wh.PUT("/reorder",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
+					deps.WarehousesHandler.Reorder)
+				wh.PATCH("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
+					deps.WarehousesHandler.Update)
+				wh.DELETE("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
+					deps.WarehousesHandler.Delete)
+				wh.PUT("/:id/default",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
+					deps.WarehousesHandler.SetDefault)
 			}
 		}
 		if deps.TaxSettingsHandler != nil {

@@ -71,6 +71,9 @@ var codeStatus = map[apperrors.Code]int{
 	apperrors.CodeCampaignNoRecipients: http.StatusUnprocessableEntity,
 	apperrors.CodeCampaignSchedulePast: http.StatusUnprocessableEntity,
 	apperrors.CodeSegmentInUse:         http.StatusConflict,
+
+	// Warehouses — #177 PR 5b.
+	apperrors.CodeWarehouseNameTaken: http.StatusConflict,
 }
 
 // RespondErr writes the standard error envelope for the given error.

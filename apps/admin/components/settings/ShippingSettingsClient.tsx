@@ -11,6 +11,7 @@ import type {
   ShippingConfig,
   SupportedProviders,
 } from "@/lib/api/settings-api";
+import type { Warehouse } from "@/lib/api/warehouses-api";
 import { ProviderCard } from "./ProviderCard";
 import { ShippingConfigForm } from "./ShippingConfigForm";
 import { readinessFor } from "@/lib/settings/shipping-readiness";
@@ -19,6 +20,8 @@ import { removeShippingConfig } from "@/app/(admin)/settings/shipping/actions";
 interface ShippingSettingsClientProps {
   supported: SupportedProviders;
   configs: ShippingConfig[];
+  /** The store's live warehouses — the carrier picker's options (#177 PR 5d). */
+  warehouses: Warehouse[];
   editable: boolean;
   /**
    * ISO 3166 alpha-2 country code from the active store's session
@@ -32,6 +35,7 @@ interface ShippingSettingsClientProps {
 export function ShippingSettingsClient({
   supported,
   configs,
+  warehouses,
   editable,
   storeCountry,
 }: ShippingSettingsClientProps) {
@@ -58,7 +62,7 @@ export function ShippingSettingsClient({
         // Everything standing between this carrier and a live rate. Only
         // shown once credentials exist — "no carrier" is already obvious
         // from the card's own Add-credentials state.
-        const blockers = configured ? readinessFor(cfg) : [];
+        const blockers = configured ? readinessFor(cfg, warehouses.length) : [];
 
         return (
           <ProviderCard
@@ -108,7 +112,7 @@ export function ShippingSettingsClient({
               <ShippingConfigForm
                 provider={carrier}
                 existing={cfg}
-                defaultCountryCode={storeCountry || supported.country_code}
+                warehouses={warehouses}
               />
             ) : (
               <p className="text-sm text-foreground-tertiary">

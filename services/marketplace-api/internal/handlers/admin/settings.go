@@ -748,17 +748,21 @@ type shippingConfigResponse struct {
 	FreeShippingThreshold string `json:"free_shipping_threshold"`
 	// Fallback weight for products that carry none. 500 unless the
 	// merchant changes it — see migration 000120.
-	DefaultParcelWeightGrams int    `json:"default_parcel_weight_grams"`
-	WarehouseName            string `json:"warehouse_name,omitempty"`
-	WarehouseLine1           string `json:"warehouse_line1,omitempty"`
-	WarehouseLine2           string `json:"warehouse_line2,omitempty"`
-	WarehouseCity            string `json:"warehouse_city,omitempty"`
-	WarehouseRegion          string `json:"warehouse_region,omitempty"`
-	WarehousePostal          string `json:"warehouse_postal,omitempty"`
-	WarehouseCountry         string `json:"warehouse_country,omitempty"`
-	WarehousePhone           string `json:"warehouse_phone,omitempty"`
-	WarehouseContactPerson   string `json:"warehouse_contact_person,omitempty"`
-	WarehouseEmail           string `json:"warehouse_email,omitempty"`
+	DefaultParcelWeightGrams int `json:"default_parcel_weight_grams"`
+	// WarehouseID is which warehouse this carrier ships from. The
+	// warehouse_* fields below are that warehouse's address, resolved for
+	// display; the id is what the admin's picker binds to (#177 PR 5d).
+	WarehouseID            string `json:"warehouse_id,omitempty"`
+	WarehouseName          string `json:"warehouse_name,omitempty"`
+	WarehouseLine1         string `json:"warehouse_line1,omitempty"`
+	WarehouseLine2         string `json:"warehouse_line2,omitempty"`
+	WarehouseCity          string `json:"warehouse_city,omitempty"`
+	WarehouseRegion        string `json:"warehouse_region,omitempty"`
+	WarehousePostal        string `json:"warehouse_postal,omitempty"`
+	WarehouseCountry       string `json:"warehouse_country,omitempty"`
+	WarehousePhone         string `json:"warehouse_phone,omitempty"`
+	WarehouseContactPerson string `json:"warehouse_contact_person,omitempty"`
+	WarehouseEmail         string `json:"warehouse_email,omitempty"`
 	// Pickup automation — surfaced so the admin UI can render the
 	// "Auto-schedule Delhivery pickup" checkbox + slot selector and
 	// preserve the merchant's choice across saves.
@@ -823,6 +827,10 @@ func (h *ShippingSettingsHandler) toShippingResponse(ctx context.Context, cfg Sh
 				"store_id", cfg.StoreID.String(), "warehouse_id", cfg.WarehouseID.String(), "err", err)
 		}
 	}
+	warehouseID := ""
+	if wh.ID != "" {
+		warehouseID = wh.ID
+	}
 	return shippingConfigResponse{
 		ID:                       cfg.ID.String(),
 		Provider:                 cfg.Provider,
@@ -833,6 +841,7 @@ func (h *ShippingSettingsHandler) toShippingResponse(ctx context.Context, cfg Sh
 		HandlingFee:              cfg.HandlingFee.String(),
 		FreeShippingThreshold:    cfg.FreeShippingMin.String(),
 		DefaultParcelWeightGrams: cfg.DefaultParcelWeightGrams,
+		WarehouseID:              warehouseID,
 		WarehouseName:            wh.Name,
 		WarehouseLine1:           wh.Line1,
 		WarehouseLine2:           wh.Line2,
@@ -896,17 +905,24 @@ type shippingUpsertRequest struct {
 	FreeShippingMin float64 `json:"free_shipping_min"`
 	// Optional: 0 or absent keeps whatever the row already has, so an
 	// older client cannot silently reset a merchant's chosen weight.
-	DefaultParcelWeightGrams int    `json:"default_parcel_weight_grams"`
-	WarehouseName            string `json:"warehouse_name"`
-	WarehouseLine1           string `json:"warehouse_line1"`
-	WarehouseLine2           string `json:"warehouse_line2"`
-	WarehouseCity            string `json:"warehouse_city"`
-	WarehouseRegion          string `json:"warehouse_region"`
-	WarehousePostal          string `json:"warehouse_postal"`
-	WarehouseCountry         string `json:"warehouse_country"`
-	WarehousePhone           string `json:"warehouse_phone"`
-	WarehouseContactPerson   string `json:"warehouse_contact_person"`
-	WarehouseEmail           string `json:"warehouse_email"`
+	DefaultParcelWeightGrams int `json:"default_parcel_weight_grams"`
+	// WarehouseID binds this carrier to an existing warehouse and is what
+	// the admin sends since #177 PR 5d. It takes precedence over the
+	// WarehouseName/address fields below, which remain only so a client
+	// that has not been updated yet keeps working — the free-text name is
+	// the trap this whole issue exists to remove, since a mistyped one
+	// created a SECOND, stockless warehouse rather than editing the first.
+	WarehouseID            string `json:"warehouse_id"`
+	WarehouseName          string `json:"warehouse_name"`
+	WarehouseLine1         string `json:"warehouse_line1"`
+	WarehouseLine2         string `json:"warehouse_line2"`
+	WarehouseCity          string `json:"warehouse_city"`
+	WarehouseRegion        string `json:"warehouse_region"`
+	WarehousePostal        string `json:"warehouse_postal"`
+	WarehouseCountry       string `json:"warehouse_country"`
+	WarehousePhone         string `json:"warehouse_phone"`
+	WarehouseContactPerson string `json:"warehouse_contact_person"`
+	WarehouseEmail         string `json:"warehouse_email"`
 	// Pickup automation. AutoSchedulePickup is a *bool so zero-value
 	// (JSON omitted) keeps the DB default instead of forcing false
 	// on every save — we don't want the checkbox to flip itself off
@@ -1094,7 +1110,21 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 		// backfill skips those rows too, and Delhivery keys on the name.
 		// Leave warehouse_id untouched (nil on create, whatever it already
 		// was on update) rather than manufacturing an empty warehouse row.
-		if strings.TrimSpace(req.WarehouseName) != "" {
+		if id := strings.TrimSpace(req.WarehouseID); id != "" {
+			// The id path does NOT write the warehouse. The address is the
+			// warehouse's own, edited on /settings/warehouses; a carrier
+			// save that could still rewrite it would put the same address
+			// behind two forms, which is how the two drifted apart before.
+			wh, err := h.warehouseRepo.LiveForStore(c.Request.Context(), tx, id, store.ID)
+			if err != nil {
+				return err
+			}
+			whID, err := uuid.Parse(wh.ID)
+			if err != nil {
+				return err
+			}
+			cfg.WarehouseID = &whID
+		} else if strings.TrimSpace(req.WarehouseName) != "" {
 			// A blank contact_person/email in this save means "the merchant
 			// didn't touch this field", not "clear it" — warehouseRepo.Upsert's
 			// ON CONFLICT clause overwrites both columns unconditionally, so we
@@ -1183,6 +1213,20 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 		return tx.Where("store_id = ? AND provider = ?", storeUUID, provider).First(&cfg).Error
 	})
 	if txErr != nil {
+		// A warehouse_id naming nothing this store can ship from is the
+		// caller's mistake, not ours. Reporting it as a 500 would tell the
+		// merchant the save "failed" with no way to tell a typo from an
+		// outage — and the picker's whole point is that the id came from a
+		// list we handed them, so a miss here means the warehouse was
+		// archived or removed underneath them.
+		if errors.Is(txErr, warehouse.ErrNotFound) {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error":   "validation_failed",
+				"message": "that warehouse no longer exists — pick another on the Warehouses page",
+				"details": gin.H{"field": "warehouse_id"},
+			})
+			return
+		}
 		h.logger.Error("save shipping config", "store_id", store.ID, "provider", provider, "err", txErr)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 			"error":   "internal",

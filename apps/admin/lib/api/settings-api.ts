@@ -64,6 +64,12 @@ export interface ShippingConfig {
    * quotes identically until the merchant changes it.
    */
   default_parcel_weight_grams?: number;
+  /**
+   * Which warehouse this carrier ships from (#177 PR 5d). The
+   * warehouse_* fields below are that warehouse's address, resolved by
+   * the backend for display; this id is what the picker binds to.
+   */
+  warehouse_id?: string;
   warehouse_name?: string;
   warehouse_line1?: string;
   warehouse_line2?: string;
@@ -93,6 +99,12 @@ export interface ShippingConfigUpsertInput {
   free_shipping_min: number;
   /** 0 leaves the stored value untouched. */
   default_parcel_weight_grams?: number;
+  /**
+   * The warehouse to ship from. Since #177 PR 5d this is what the admin
+   * sends; it takes precedence over the warehouse_* fields below, which
+   * the backend keeps only for clients that have not been updated.
+   */
+  warehouse_id?: string;
   warehouse_name?: string;
   warehouse_line1?: string;
   warehouse_line2?: string;

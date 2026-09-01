@@ -14,12 +14,14 @@ const ready = {
   warehouse_phone: "+61255500000",
 } as unknown as ShippingConfig;
 
-const codes = (cfg: ShippingConfig | undefined) =>
-  readinessFor(cfg).map((b) => b.code);
+// Most cases describe a store that HAS a warehouse; the zero case gets its
+// own test below.
+const codes = (cfg: ShippingConfig | undefined, warehouseCount = 1) =>
+  readinessFor(cfg, warehouseCount).map((b) => b.code);
 
 describe("readinessFor", () => {
   it("reports nothing when the carrier can quote", () => {
-    expect(readinessFor(ready)).toEqual([]);
+    expect(readinessFor(ready, 1)).toEqual([]);
   });
 
   it("reports a missing carrier", () => {
@@ -45,7 +47,7 @@ describe("readinessFor", () => {
     ]);
   });
 
-  it("reports a missing address, and does not also nag about the phone", () => {
+  it("reports a carrier not linked to a warehouse, without nagging about the phone", () => {
     // A phone with no address to attach it to is not the useful advice.
     expect(
       codes({
@@ -56,6 +58,23 @@ describe("readinessFor", () => {
         warehouse_phone: "",
       }),
     ).toEqual(["no_warehouse_address"]);
+  });
+
+  // "Link this carrier to a warehouse" is useless advice when there are
+  // none — it sends the merchant looking for a control that is not there.
+  it("distinguishes a store with no warehouses at all", () => {
+    expect(
+      codes(
+        {
+          ...ready,
+          warehouse_line1: "",
+          warehouse_city: "",
+          warehouse_postal: "",
+          warehouse_phone: "",
+        },
+        0,
+      ),
+    ).toEqual(["no_warehouses"]);
   });
 
   // Reporting only the first blocker would send the merchant round the

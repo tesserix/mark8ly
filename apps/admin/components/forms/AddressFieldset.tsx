@@ -229,11 +229,17 @@ export function AddressFieldset({
             className={inputClass}
             placeholder="e.g. Main Warehouse"
           />
+          {/* #505 warned here that a mistyped name would silently create a
+              SECOND warehouse and strand the stock on the first. That was a
+              mitigation for the carrier form's name-keyed upsert, which
+              #177 PR 5d deleted — the carrier now picks a warehouse by id
+              and this fieldset's only consumer is the warehouses page,
+              where creating a second warehouse is the point. Keeping the
+              old warning there would tell the merchant that doing the
+              intended thing breaks their store. */}
           <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
-            This name identifies the warehouse. If your store already has
-            one, type its name <strong>exactly</strong> — a different name
-            creates a second warehouse, and stock stays with the first, so
-            orders find nothing to ship.
+            How this location appears in your admin and on carrier pickup
+            requests.
           </p>
         </Field>
       )}

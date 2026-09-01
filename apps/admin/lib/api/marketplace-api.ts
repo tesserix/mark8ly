@@ -89,6 +89,17 @@ export interface AdminVariantResponse {
   width_cm: string | null;
   height_cm: string | null;
   inventory_quantity: number;
+  /**
+   * Per-warehouse breakdown (#177 PR 5e), keyed by warehouse id. Present
+   * on the product DETAIL response only.
+   *
+   * The SENTINEL id `00000000-0000-0000-0000-000000000001` appears here
+   * for a variant PR 6 has not migrated yet — it means "these units exist
+   * but are not assigned to a location", which is a different thing from
+   * a warehouse holding them, and the merchant's first per-location save
+   * is what resolves it.
+   */
+  inventory_by_location?: Record<string, number>;
   inventory_policy: "deny" | "continue";
   low_stock_threshold: number | null;
   option_values: AdminVariantOptionRef[];
@@ -2523,4 +2534,37 @@ export async function setReturnPickup(
   );
   if (!res.ok) return { ok: false, error: await parseMutationError(res) };
   return { ok: true, data: (await res.json()) as AdminReturn };
+}
+
+/** The un-migrated location every product's stock still sits on (PR 6 clears it). */
+export const SENTINEL_LOCATION_ID = "00000000-0000-0000-0000-000000000001";
+
+/**
+ * setVariantStockByLocation writes a variant's per-warehouse stock.
+ *
+ * The backend clears the variant's sentinel row in the same transaction,
+ * so the total is conserved — see SetVariantStockByLocationInTx. Sending
+ * this alongside `inventory_quantity` is refused with a 400 rather than
+ * the service guessing which the merchant meant.
+ */
+export async function setVariantStockByLocation(
+  storeId: string,
+  productId: string,
+  variantId: string,
+  byLocation: Record<string, number>,
+  session: SessionHeaders,
+): Promise<MutationResult<AdminVariantResponse>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}/variants/${variantId}`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: commonHeaders(session),
+      body: JSON.stringify({ inventory_by_location: byLocation }),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as AdminVariantResponse };
 }

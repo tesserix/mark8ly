@@ -13,6 +13,8 @@ import type { ProductFormValues } from "@/lib/validation/product-form";
 import { ProductCategoriesPicker } from "../ProductCategoriesPicker";
 import { Field } from "./Field";
 import { isUsableWeight } from "@/lib/products/usable-weight";
+import type { Warehouse } from "@/lib/api/warehouses-api";
+import { VariantStockByWarehouse } from "./VariantStockByWarehouse";
 
 export interface GeneralTabProps {
   mode: "create" | "edit";
@@ -20,6 +22,17 @@ export interface GeneralTabProps {
   currencyCode: string;
   hasMultipleVariants: boolean;
   storeId?: string;
+  /**
+   * The store's live warehouses (#177 PR 5e). With fewer than two, the
+   * single Stock field below stays exactly as it was — a store with one
+   * warehouse must see no change at all.
+   */
+  warehouses?: Warehouse[];
+  /** Set on edit only — the per-warehouse editor saves against a real variant. */
+  productId?: string;
+  variantId?: string;
+  /** Current per-warehouse breakdown for that variant. */
+  stockByLocation?: Record<string, number>;
 }
 
 export function GeneralTab({
@@ -28,6 +41,10 @@ export function GeneralTab({
   currencyCode,
   hasMultipleVariants,
   storeId,
+  warehouses = [],
+  productId,
+  variantId,
+  stockByLocation = {},
 }: GeneralTabProps) {
   const form = useFormContext<ProductFormValues>();
   const { register, formState, watch, setValue } = form;
@@ -36,6 +53,16 @@ export function GeneralTab({
   // weight" — each ends up as the fallback at checkout.
   const weightKgValue = watch("weightKg");
   const isWeightMissing = !isUsableWeight(weightKgValue);
+
+  // Per-warehouse stock replaces the single field only when there is an
+  // actual choice to make AND a saved variant to write against. On create
+  // there is no variant id yet, so the single field stays and the merchant
+  // splits the stock after the product exists.
+  const perWarehouseStock =
+    warehouses.length > 1 &&
+    mode === "edit" &&
+    !hasMultipleVariants &&
+    Boolean(storeId && productId && variantId);
 
   return (
     <div className="flex flex-col gap-8">
@@ -125,18 +152,20 @@ export function GeneralTab({
               className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
             />
           </Field>
-          <Field
-            label="Stock"
-            error={formState.errors.inventoryQuantity?.message}
-          >
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="0"
-              {...register("inventoryQuantity")}
-              className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-            />
-          </Field>
+          {!perWarehouseStock && (
+            <Field
+              label="Stock"
+              error={formState.errors.inventoryQuantity?.message}
+            >
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="0"
+                {...register("inventoryQuantity")}
+                className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              />
+            </Field>
+          )}
           <Field label="SKU" error={formState.errors.sku?.message}>
             <input
               type="text"
@@ -146,6 +175,16 @@ export function GeneralTab({
             />
           </Field>
         </div>
+      )}
+
+      {perWarehouseStock && storeId && productId && variantId && (
+        <VariantStockByWarehouse
+          storeId={storeId}
+          productId={productId}
+          variantId={variantId}
+          warehouses={warehouses}
+          byLocation={stockByLocation}
+        />
       )}
 
       {!hasMultipleVariants && (

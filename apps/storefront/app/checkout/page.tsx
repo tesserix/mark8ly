@@ -1039,7 +1039,9 @@ export default function CheckoutPage() {
                           {humanizeService(rate.service)}
                         </p>
                         <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
-                          Est. {rate.estimated_days} business day{rate.estimated_days !== 1 ? "s" : ""}
+                          {rate.estimated_days > 0
+                            ? `Est. ${rate.estimated_days} business day${rate.estimated_days !== 1 ? "s" : ""}`
+                            : "Delivery estimate unavailable"}
                         </p>
                       </div>
                     </div>
@@ -1695,7 +1697,7 @@ function NoShippingFallback({
     <div className="mt-4 space-y-3 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15 bg-[color:var(--storefront-background,var(--paper-200))] px-4 py-3 text-sm">
       <p className="text-[color:var(--storefront-text,var(--ink-900))]">
         {shipsHere
-          ? "We couldn\u2019t get a live rate for this address right now. Please try again in a moment or double-check your postal code."
+          ? "We couldn\u2019t get a live rate for this address right now. Please try again in a moment \u2014 if it keeps happening, the store\u2019s shipping settings may need attention."
           : `Sorry \u2014 we don\u2019t currently ship to ${pretty(country) || "this country"}.`}
       </p>
       <div className="space-y-1.5 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-80">

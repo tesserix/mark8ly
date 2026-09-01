@@ -931,11 +931,13 @@ func (h *CheckoutExtHandler) calculateShipping(
 	parcels := make([]shipping.ParcelItem, 0, len(req.Items))
 	for _, it := range req.Items {
 		p := shipping.ParcelItem{Quantity: it.Quantity}
+		// Always resolved, even when the variant row is missing: a zero
+		// weight makes every carrier refuse the whole request, so an
+		// order that quoted fine would fail on submit.
+		p.WeightGrams = parcelWeightGrams(nil, cfg.DefaultParcelWeightGrams)
 		if it.VariantID != nil {
 			if vs, ok := shipByVariant[*it.VariantID]; ok {
-				if vs.WeightGrams != nil {
-					p.WeightGrams = *vs.WeightGrams
-				}
+				p.WeightGrams = parcelWeightGrams(vs.WeightGrams, cfg.DefaultParcelWeightGrams)
 				if vs.LengthCM != nil {
 					f, _ := vs.LengthCM.Float64()
 					p.LengthCM = f

@@ -116,6 +116,36 @@ type carrierConfigRow struct {
 	// warehouse_* column fields from this projection; they are no
 	// longer read anywhere.
 	WarehouseID *string `gorm:"column:warehouse_id"`
+	// DefaultParcelWeightGrams (migration 000120) is the weight to assume
+	// for a variant that carries none. See parcelWeightGrams.
+	DefaultParcelWeightGrams int `gorm:"column:default_parcel_weight_grams"`
+}
+
+// FallbackParcelWeightGrams is the weight assumed for a variant with no
+// weight of its own when the store has not configured one. 500 matches
+// what storefront checkout has always sent for that case, so nothing a
+// shopper is quoted changes.
+const FallbackParcelWeightGrams = 500
+
+// parcelWeightGrams resolves the weight to send a carrier for one line.
+//
+// A zero weight is not a rounding detail: ShipEngine answers "Packages
+// must weigh more than zero kg" and returns NO rates, so an order that
+// quoted fine at checkout fails outright on submit. That is exactly what
+// happened on the-bondi-store — the storefront applied a 500g fallback
+// when fetching the quote, the server applied none when placing the
+// order, and every product without a weight could be priced but never
+// bought.
+//
+// Both paths now resolve the fallback here so they cannot drift apart.
+func parcelWeightGrams(variantWeight *int, configured int) int {
+	if variantWeight != nil && *variantWeight > 0 {
+		return *variantWeight
+	}
+	if configured > 0 {
+		return configured
+	}
+	return FallbackParcelWeightGrams
 }
 
 func (carrierConfigRow) TableName() string { return "shipping_carrier_configs" }

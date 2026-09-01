@@ -227,8 +227,14 @@ export function AddressFieldset({
             disabled={disabled}
             onChange={(e) => update("name", e.target.value)}
             className={inputClass}
-            placeholder="Primary"
+            placeholder="e.g. Main Warehouse"
           />
+          <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
+            This name identifies the warehouse. If your store already has
+            one, type its name <strong>exactly</strong> — a different name
+            creates a second warehouse, and stock stays with the first, so
+            orders find nothing to ship.
+          </p>
         </Field>
       )}
 

@@ -16,6 +16,10 @@ import {
 import { saveShippingConfig } from "@/app/(admin)/settings/shipping/actions";
 import type { ShippingConfig } from "@/lib/api/settings-api";
 import {
+  defaultAutoSchedulePickup,
+  supportsPickupAutomation,
+} from "@/lib/settings/pickup-automation";
+import {
   AddressFieldset,
   type AddressValue,
 } from "@/components/forms/AddressFieldset";
@@ -48,11 +52,13 @@ export function ShippingConfigForm({
     existing?.free_shipping_threshold ?? "0",
   );
 
-  // Pickup automation. Defaults mirror the DB: TRUE + 14:00-18:00 so
-  // existing merchants get the zero-friction path the moment they load
-  // the edit form, without needing to flip the checkbox first.
+  // Pickup automation. A saved value always wins; the unset default is
+  // ON only for carriers that actually implement SchedulePickup, so a
+  // ShipEngine merchant is no longer shown a pre-ticked Delhivery
+  // option. See lib/settings/pickup-automation.
+  const showPickupAutomation = supportsPickupAutomation(provider);
   const [autoSchedulePickup, setAutoSchedulePickup] = useState(
-    existing?.auto_schedule_pickup ?? true,
+    defaultAutoSchedulePickup(provider, existing?.auto_schedule_pickup),
   );
   const [defaultPickupSlotStart, setDefaultPickupSlotStart] = useState(
     existing?.default_pickup_slot_start ?? "14:00:00",
@@ -259,11 +265,11 @@ export function ShippingConfigForm({
         </div>
       </fieldset>
 
-      {/* Pickup automation — Delhivery only, but the form is
-          carrier-agnostic so the fields stay visible for all providers.
-          A merchant with ShipEngine sees the checkbox but it no-ops
-          because the backend only calls SchedulePickup when the carrier
-          implements the interface. */}
+      {/* Pickup automation — only rendered for carriers that implement
+          SchedulePickup. Showing it elsewhere advertised a Delhivery
+          feature to (say) an Australian ShipEngine store, pre-ticked,
+          where it silently no-ops. */}
+      {showPickupAutomation && (
       <fieldset className="space-y-4">
         <legend className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50 mb-2">
           Pickup automation
@@ -304,6 +310,7 @@ export function ShippingConfigForm({
           </p>
         </Field>
       </fieldset>
+      )}
 
       {/* Fees */}
       <fieldset className="space-y-4">

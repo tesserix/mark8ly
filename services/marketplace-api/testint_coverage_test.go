@@ -194,6 +194,16 @@ func testIntPatterns(makefilePath string) ([]string, error) {
 			continue
 		}
 		for _, field := range strings.Fields(strings.TrimSuffix(trimmed, "\\")) {
+			// A bare "." is the service ROOT package. It carries integration
+			// tests as of #177 PR 6 (the sentinel backfill executes its own
+			// migration SQL, which lives beside migrations.go), and the
+			// parser previously recognised only "./"-prefixed patterns — so
+			// the root could never be marked covered however the Makefile
+			// spelled it.
+			if field == "." {
+				patterns = append(patterns, ".")
+				continue
+			}
 			if strings.HasPrefix(field, "./") {
 				patterns = append(patterns, strings.TrimPrefix(field, "./"))
 			}

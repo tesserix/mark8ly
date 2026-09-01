@@ -19,6 +19,10 @@ type PublicDeps struct {
 	// Delhivery. Nil-safe — when absent the route is simply not
 	// mounted, which keeps merchants on polling-only.
 	DelhiveryWebhookHandler *DelhiveryWebhookHandler
+	// JournalSubscribeHandler serves the mark8ly.com Journal "coming
+	// soon" page's email capture (#153). Nil-safe, like the others —
+	// absent in test builds that don't wire a DB.
+	JournalSubscribeHandler *JournalSubscribeHandler
 }
 
 // RegisterPublic mounts all public (unauthenticated) routes onto the given
@@ -40,5 +44,15 @@ func RegisterPublic(router *gin.RouterGroup, deps PublicDeps) {
 		// putting shipping webhooks on a separate root keeps both
 		// surfaces working without either cannibalising the other.
 		router.POST("/carrier-webhooks/delhivery", deps.DelhiveryWebhookHandler.Handle)
+	}
+	if deps.JournalSubscribeHandler != nil {
+		// Deliberately NOT under /storefront or /admin: a journal
+		// subscriber is a platform-level marketing record with no
+		// tenant_id (see migrations/000124), so it has no business
+		// behind TenantMiddleware or any per-tenant route group. This
+		// group — the same one SSO and the Delhivery webhook already
+		// share — is the one genuinely tenant-free public surface this
+		// router exposes.
+		router.POST("/journal/subscribe", deps.JournalSubscribeHandler.Subscribe)
 	}
 }

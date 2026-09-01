@@ -111,6 +111,10 @@ interface MarketingStubProps {
     href: string;
     label: string;
   };
+  /** Optional content rendered below the CTA row — e.g. the Journal
+   *  page's email capture form (#153). Most stub pages have no need for
+   *  this and can omit it entirely. */
+  children?: ReactNode;
 }
 
 export function MarketingStub({
@@ -119,6 +123,7 @@ export function MarketingStub({
   body,
   primaryCta,
   secondaryCta,
+  children,
 }: MarketingStubProps) {
   return (
     <MarketingPage>
@@ -149,6 +154,8 @@ export function MarketingStub({
               )}
             </div>
           )}
+
+          {children}
         </div>
       </section>
     </MarketingPage>

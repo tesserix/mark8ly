@@ -13,7 +13,7 @@
 // because the backend conserves the total by clearing the variant's
 // sentinel row in the same transaction — see SetVariantStockByLocationInTx.
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { SENTINEL_LOCATION_ID } from "@/lib/api/marketplace-api";
@@ -27,6 +27,14 @@ interface VariantStockByWarehouseProps {
   warehouses: Warehouse[];
   /** Current breakdown from the product detail response. */
   byLocation: Record<string, number>;
+  /**
+   * Move focus to the first warehouse input on mount. Set when the panel is
+   * opened by a disclosure control: activating it is a deliberate
+   * drill-down, and a keyboard or screen-reader user expects to land
+   * somewhere rather than stay parked on a button whose state silently
+   * changed.
+   */
+  autoFocus?: boolean;
 }
 
 export function VariantStockByWarehouse({
@@ -35,9 +43,15 @@ export function VariantStockByWarehouse({
   variantId,
   warehouses,
   byLocation,
+  autoFocus = false,
 }: VariantStockByWarehouseProps) {
   const router = useRouter();
+  const firstInputRef = useRef<HTMLInputElement>(null);
   const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (autoFocus) firstInputRef.current?.focus();
+  }, [autoFocus]);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -125,7 +139,7 @@ export function VariantStockByWarehouse({
       )}
 
       <ul className="space-y-3">
-        {warehouses.map((w) => (
+        {warehouses.map((w, index) => (
           <li key={w.id} className="flex items-center justify-between gap-4">
             <label
               htmlFor={`stock-${variantId}-${w.id}`}
@@ -135,6 +149,7 @@ export function VariantStockByWarehouse({
               <span className="ml-2 opacity-50">{w.city}</span>
             </label>
             <input
+              ref={index === 0 ? firstInputRef : undefined}
               id={`stock-${variantId}-${w.id}`}
               type="text"
               inputMode="numeric"

@@ -310,3 +310,45 @@ func namesOf(ws []warehouse.Warehouse) []string {
 	}
 	return out
 }
+
+// Archive() clears is_default, but DefaultForStore's ordering — is_default
+// DESC, created_at ASC — would still hand back an ARCHIVED row whenever it
+// is the oldest, or whenever every warehouse has been archived. Callers use
+// this to fill a carrier config's pickup address, so an archived answer
+// binds a live carrier to a warehouse nothing is allowed to allocate to.
+func TestDefaultForStore_SkipsArchived(t *testing.T) {
+	db := testdb.NewDB(t, "warehouses")
+	repo := warehouse.NewRepository()
+	ctx := context.Background()
+	tenantID, storeID := seedStore(t, db)
+
+	// Oldest first, so it wins the created_at ASC tie-break once both have
+	// is_default = false.
+	old, err := repo.Upsert(ctx, db, sample(tenantID, storeID, "Old"))
+	require.NoError(t, err)
+	current, err := repo.Upsert(ctx, db, sample(tenantID, storeID, "Current"))
+	require.NoError(t, err)
+
+	require.NoError(t, repo.Archive(ctx, db, old.ID))
+
+	got, err := repo.DefaultForStore(ctx, db, storeID)
+	require.NoError(t, err)
+	require.Equal(t, current.ID, got.ID,
+		"an archived warehouse must never be offered as the store default")
+}
+
+// Every warehouse archived is not "the oldest one, then" — it is the same
+// answer as a store with no warehouses at all.
+func TestDefaultForStore_AllArchivedIsNotFound(t *testing.T) {
+	db := testdb.NewDB(t, "warehouses")
+	repo := warehouse.NewRepository()
+	ctx := context.Background()
+	tenantID, storeID := seedStore(t, db)
+
+	only, err := repo.Upsert(ctx, db, sample(tenantID, storeID, "Only"))
+	require.NoError(t, err)
+	require.NoError(t, repo.Archive(ctx, db, only.ID))
+
+	_, err = repo.DefaultForStore(ctx, db, storeID)
+	require.ErrorIs(t, err, warehouse.ErrNotFound)
+}

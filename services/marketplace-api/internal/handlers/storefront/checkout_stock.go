@@ -308,13 +308,21 @@ func commitStockAtSentinel(
 	return holds.Commit(ctx, tx, cartToken)
 }
 
-// storeWarehousesInFillOrder reads storeID's warehouses and returns them in
-// the order allocation.Plan should fill them. Plan takes an ordered slice
+// storeWarehousesInFillOrder reads storeID's LIVE warehouses and returns them
+// in the order allocation.Plan should fill them. Plan takes an ordered slice
 // and cannot detect an unordered one, so ordering here is mandatory.
+//
+// archived_at IS NULL is not a nicety. Archiving (#177 PR 5a) is what the
+// settings page's "remove" does to any warehouse with allocation history —
+// the row survives so the record of which warehouse shipped a line survives
+// with it. Without this filter a removed warehouse keeps receiving
+// allocations for whatever stock it still holds, and orders route to a
+// location the merchant believes is gone.
 func storeWarehousesInFillOrder(ctx context.Context, tx *gorm.DB, storeID string) ([]allocation.Warehouse, error) {
 	var rows []allocation.Warehouse
 	if err := tx.WithContext(ctx).Raw(
-		`SELECT id, priority, is_default, created_at FROM warehouses WHERE store_id = ?`, storeID).
+		`SELECT id, priority, is_default, created_at FROM warehouses
+		  WHERE store_id = ? AND archived_at IS NULL`, storeID).
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("storefront: load warehouses: %w", err)
 	}

@@ -65,8 +65,23 @@ export function AdminPage({
   // The entrance animation smooths the skeleton→content swap on route
   // changes (M3 "emphasized decelerate" feel via ease-out-expo). Guarded
   // by motion-safe; prefers-reduced-motion users get an instant swap.
+  //
+  // fill-mode is `backwards`, NOT `both`, and that is load-bearing.
+  // fadeInUp ends on `transform: none`, but `both` keeps the ANIMATED
+  // value applied for as long as the page is mounted — and an animated
+  // `none` computes to the identity matrix(1, 0, 0, 1, 0, 0), which is
+  // still a transform. A transformed ancestor becomes the containing
+  // block for every `position: fixed` descendant, so `inset-0` stopped
+  // meaning "the viewport" and started meaning "this div": modal scrims
+  // rendered as a grey rectangle over the content column while the
+  // sidebar and header stayed bright. Measured on the live page: the
+  // overlay was 1152x448 at (512, 113) inside a 1920x779 viewport.
+  //
+  // `backwards` reverts to the element's natural style once the animation
+  // finishes — opacity 1, no transform — which is visually identical to
+  // the final keyframe and leaves no containing block behind.
   return (
-    <div className="space-y-10 motion-safe:animate-[fadeInUp_0.35s_var(--ease-out)_both]">
+    <div className="space-y-10 motion-safe:animate-[fadeInUp_0.35s_var(--ease-out)_backwards]">
       <header className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="min-w-0 flex-1 space-y-3">

@@ -623,24 +623,27 @@ func (h *ShippingSettingsHandler) maskKeyField(ctx context.Context, ref string) 
 
 // shippingConfigResponse is the safe wire DTO for carrier configs.
 type shippingConfigResponse struct {
-	ID                     string `json:"id"`
-	Provider               string `json:"provider"`
-	APIKey                 string `json:"api_key"`
-	SecretKey              string `json:"secret_key"`
-	Mode                   string `json:"mode"`
-	Enabled                bool   `json:"enabled"`
-	HandlingFee            string `json:"handling_fee"`
-	FreeShippingThreshold  string `json:"free_shipping_threshold"`
-	WarehouseName          string `json:"warehouse_name,omitempty"`
-	WarehouseLine1         string `json:"warehouse_line1,omitempty"`
-	WarehouseLine2         string `json:"warehouse_line2,omitempty"`
-	WarehouseCity          string `json:"warehouse_city,omitempty"`
-	WarehouseRegion        string `json:"warehouse_region,omitempty"`
-	WarehousePostal        string `json:"warehouse_postal,omitempty"`
-	WarehouseCountry       string `json:"warehouse_country,omitempty"`
-	WarehousePhone         string `json:"warehouse_phone,omitempty"`
-	WarehouseContactPerson string `json:"warehouse_contact_person,omitempty"`
-	WarehouseEmail         string `json:"warehouse_email,omitempty"`
+	ID                    string `json:"id"`
+	Provider              string `json:"provider"`
+	APIKey                string `json:"api_key"`
+	SecretKey             string `json:"secret_key"`
+	Mode                  string `json:"mode"`
+	Enabled               bool   `json:"enabled"`
+	HandlingFee           string `json:"handling_fee"`
+	FreeShippingThreshold string `json:"free_shipping_threshold"`
+	// Fallback weight for products that carry none. 500 unless the
+	// merchant changes it — see migration 000120.
+	DefaultParcelWeightGrams int    `json:"default_parcel_weight_grams"`
+	WarehouseName            string `json:"warehouse_name,omitempty"`
+	WarehouseLine1           string `json:"warehouse_line1,omitempty"`
+	WarehouseLine2           string `json:"warehouse_line2,omitempty"`
+	WarehouseCity            string `json:"warehouse_city,omitempty"`
+	WarehouseRegion          string `json:"warehouse_region,omitempty"`
+	WarehousePostal          string `json:"warehouse_postal,omitempty"`
+	WarehouseCountry         string `json:"warehouse_country,omitempty"`
+	WarehousePhone           string `json:"warehouse_phone,omitempty"`
+	WarehouseContactPerson   string `json:"warehouse_contact_person,omitempty"`
+	WarehouseEmail           string `json:"warehouse_email,omitempty"`
 	// Pickup automation — surfaced so the admin UI can render the
 	// "Auto-schedule Delhivery pickup" checkbox + slot selector and
 	// preserve the merchant's choice across saves.
@@ -673,9 +676,10 @@ type ShippingCarrierConfigRow struct {
 	// warehouse_* columns: they are no longer read anywhere (see
 	// toShippingResponse and resolveWarehouseForSync), which is what
 	// makes dropping those columns in a later migration safe.
-	WarehouseID     *uuid.UUID      `gorm:"column:warehouse_id;type:uuid"`
-	HandlingFee     decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
-	FreeShippingMin decimal.Decimal `gorm:"column:free_shipping_min;type:numeric(12,2)"`
+	WarehouseID              *uuid.UUID      `gorm:"column:warehouse_id;type:uuid"`
+	HandlingFee              decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
+	FreeShippingMin          decimal.Decimal `gorm:"column:free_shipping_min;type:numeric(12,2)"`
+	DefaultParcelWeightGrams int             `gorm:"column:default_parcel_weight_grams;not null;default:500"`
 	// Pickup automation. See shipping.CarrierConfig for the rationale.
 	AutoSchedulePickup     bool      `gorm:"column:auto_schedule_pickup;type:boolean;not null;default:true"`
 	DefaultPickupSlotStart string    `gorm:"column:default_pickup_slot_start;type:varchar(8);default:14:00:00"`
@@ -705,29 +709,30 @@ func (h *ShippingSettingsHandler) toShippingResponse(ctx context.Context, cfg Sh
 		}
 	}
 	return shippingConfigResponse{
-		ID:                     cfg.ID.String(),
-		Provider:               cfg.Provider,
-		APIKey:                 h.maskKeyField(ctx, cfg.APIKeyEncrypted),
-		SecretKey:              h.maskKeyField(ctx, cfg.SecretKeyEncrypted),
-		Mode:                   cfg.Mode,
-		Enabled:                cfg.IsActive,
-		HandlingFee:            cfg.HandlingFee.String(),
-		FreeShippingThreshold:  cfg.FreeShippingMin.String(),
-		WarehouseName:          wh.Name,
-		WarehouseLine1:         wh.Line1,
-		WarehouseLine2:         wh.Line2,
-		WarehouseCity:          wh.City,
-		WarehouseRegion:        wh.Region,
-		WarehousePostal:        wh.PostalCode,
-		WarehouseCountry:       wh.CountryCode,
-		WarehousePhone:         wh.Phone,
-		WarehouseContactPerson: wh.ContactPerson,
-		WarehouseEmail:         wh.Email,
-		AutoSchedulePickup:     cfg.AutoSchedulePickup,
-		DefaultPickupSlotStart: cfg.DefaultPickupSlotStart,
-		DefaultPickupSlotEnd:   cfg.DefaultPickupSlotEnd,
-		CreatedAt:              cfg.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:              cfg.UpdatedAt.Format(time.RFC3339),
+		ID:                       cfg.ID.String(),
+		Provider:                 cfg.Provider,
+		APIKey:                   h.maskKeyField(ctx, cfg.APIKeyEncrypted),
+		SecretKey:                h.maskKeyField(ctx, cfg.SecretKeyEncrypted),
+		Mode:                     cfg.Mode,
+		Enabled:                  cfg.IsActive,
+		HandlingFee:              cfg.HandlingFee.String(),
+		FreeShippingThreshold:    cfg.FreeShippingMin.String(),
+		DefaultParcelWeightGrams: cfg.DefaultParcelWeightGrams,
+		WarehouseName:            wh.Name,
+		WarehouseLine1:           wh.Line1,
+		WarehouseLine2:           wh.Line2,
+		WarehouseCity:            wh.City,
+		WarehouseRegion:          wh.Region,
+		WarehousePostal:          wh.PostalCode,
+		WarehouseCountry:         wh.CountryCode,
+		WarehousePhone:           wh.Phone,
+		WarehouseContactPerson:   wh.ContactPerson,
+		WarehouseEmail:           wh.Email,
+		AutoSchedulePickup:       cfg.AutoSchedulePickup,
+		DefaultPickupSlotStart:   cfg.DefaultPickupSlotStart,
+		DefaultPickupSlotEnd:     cfg.DefaultPickupSlotEnd,
+		CreatedAt:                cfg.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:                cfg.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -768,22 +773,25 @@ func (h *ShippingSettingsHandler) List(c *gin.Context) {
 // keeps the previously-encrypted value. A blank submit on a new row (no
 // existing row) still fails — validated after the lookup below.
 type shippingUpsertRequest struct {
-	APIKey                 string  `json:"api_key"`
-	SecretKey              string  `json:"secret_key"`
-	Mode                   string  `json:"mode"       binding:"required,oneof=test live"`
-	IsActive               bool    `json:"is_active"`
-	HandlingFee            float64 `json:"handling_fee"`
-	FreeShippingMin        float64 `json:"free_shipping_min"`
-	WarehouseName          string  `json:"warehouse_name"`
-	WarehouseLine1         string  `json:"warehouse_line1"`
-	WarehouseLine2         string  `json:"warehouse_line2"`
-	WarehouseCity          string  `json:"warehouse_city"`
-	WarehouseRegion        string  `json:"warehouse_region"`
-	WarehousePostal        string  `json:"warehouse_postal"`
-	WarehouseCountry       string  `json:"warehouse_country"`
-	WarehousePhone         string  `json:"warehouse_phone"`
-	WarehouseContactPerson string  `json:"warehouse_contact_person"`
-	WarehouseEmail         string  `json:"warehouse_email"`
+	APIKey          string  `json:"api_key"`
+	SecretKey       string  `json:"secret_key"`
+	Mode            string  `json:"mode"       binding:"required,oneof=test live"`
+	IsActive        bool    `json:"is_active"`
+	HandlingFee     float64 `json:"handling_fee"`
+	FreeShippingMin float64 `json:"free_shipping_min"`
+	// Optional: 0 or absent keeps whatever the row already has, so an
+	// older client cannot silently reset a merchant's chosen weight.
+	DefaultParcelWeightGrams int    `json:"default_parcel_weight_grams"`
+	WarehouseName            string `json:"warehouse_name"`
+	WarehouseLine1           string `json:"warehouse_line1"`
+	WarehouseLine2           string `json:"warehouse_line2"`
+	WarehouseCity            string `json:"warehouse_city"`
+	WarehouseRegion          string `json:"warehouse_region"`
+	WarehousePostal          string `json:"warehouse_postal"`
+	WarehouseCountry         string `json:"warehouse_country"`
+	WarehousePhone           string `json:"warehouse_phone"`
+	WarehouseContactPerson   string `json:"warehouse_contact_person"`
+	WarehouseEmail           string `json:"warehouse_email"`
 	// Pickup automation. AutoSchedulePickup is a *bool so zero-value
 	// (JSON omitted) keeps the DB default instead of forcing false
 	// on every save — we don't want the checkbox to flip itself off
@@ -1035,6 +1043,12 @@ func (h *ShippingSettingsHandler) Upsert(c *gin.Context) {
 			"default_pickup_slot_start": slotStart,
 			"default_pickup_slot_end":   slotEnd,
 			"updated_at":                time.Now(),
+		}
+		// Only written when supplied. A 0 (absent in JSON) leaves the
+		// existing value alone, so an older admin build cannot silently
+		// reset a merchant's chosen parcel weight back to the default.
+		if req.DefaultParcelWeightGrams > 0 {
+			updates["default_parcel_weight_grams"] = req.DefaultParcelWeightGrams
 		}
 		// #484: the legacy warehouse_* columns are no longer written here.
 		// warehouse_id is still updated on every save, including when it's

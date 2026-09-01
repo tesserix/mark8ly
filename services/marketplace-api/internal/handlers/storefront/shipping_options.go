@@ -37,6 +37,11 @@ type shippingOptionResponse struct {
 	Mode               string   `json:"mode,omitempty"`
 	Services           []string `json:"services"`
 	SupportedCountries []string `json:"supported_countries"`
+	// Fallback weight for a cart item whose product carries none.
+	// Checkout used to hardcode 500g for that case, so an invisible
+	// frontend constant set real carrier prices. Migration 000120
+	// defaults the column to 500, so exposing it changes no live quote.
+	DefaultParcelWeightGrams int `json:"default_parcel_weight_grams"`
 }
 
 // serviceLevelsByCarrier mirrors the admin SERVICE_LEVELS catalog.
@@ -109,10 +114,11 @@ func (h *ShippingOptionsHandler) GetOptions(c *gin.Context) {
 			}
 		}
 		out = append(out, shippingOptionResponse{
-			Carrier:            cfg.Provider,
-			Mode:               cfg.Mode,
-			Services:           services,
-			SupportedCountries: countries,
+			Carrier:                  cfg.Provider,
+			Mode:                     cfg.Mode,
+			Services:                 services,
+			SupportedCountries:       countries,
+			DefaultParcelWeightGrams: cfg.DefaultParcelWeightGrams,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"data": out})

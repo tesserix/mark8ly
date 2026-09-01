@@ -58,6 +58,12 @@ export interface ShippingConfig {
   enabled: boolean;
   handling_fee: string;
   free_shipping_threshold: string;
+  /**
+   * Fallback weight for products with none of their own. Defaults to
+   * 500 — exactly what checkout used to hardcode — so an existing store
+   * quotes identically until the merchant changes it.
+   */
+  default_parcel_weight_grams?: number;
   warehouse_name?: string;
   warehouse_line1?: string;
   warehouse_line2?: string;
@@ -85,6 +91,8 @@ export interface ShippingConfigUpsertInput {
   is_active: boolean;
   handling_fee: number;
   free_shipping_min: number;
+  /** 0 leaves the stored value untouched. */
+  default_parcel_weight_grams?: number;
   warehouse_name?: string;
   warehouse_line1?: string;
   warehouse_line2?: string;

@@ -1,3 +1,4 @@
+import { MailLink } from "@repo/ui/mail-link";
 import {
   MarketingPage,
   PageHero,
@@ -167,7 +168,7 @@ export default function TermsOfServicePage() {
         <p>
           If you believe content on a Mark8ly-hosted store infringes your
           copyright, send a notice to{" "}
-          <a href="mailto:legal@mark8ly.com">legal@mark8ly.com</a> including:
+          <MailLink email="legal@mark8ly.com" /> including:
         </p>
         <ul>
           <li>your contact details</li>
@@ -318,19 +319,19 @@ export default function TermsOfServicePage() {
         <ul>
           <li>
             <strong>Legal questions:</strong>{" "}
-            <a href="mailto:legal@mark8ly.com">legal@mark8ly.com</a>
+            <MailLink email="legal@mark8ly.com" />
           </li>
           <li>
             <strong>Billing and refunds:</strong>{" "}
-            <a href="mailto:support@mark8ly.com">support@mark8ly.com</a>
+            <MailLink email="support@mark8ly.com" />
           </li>
           <li>
             <strong>Privacy:</strong>{" "}
-            <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a>
+            <MailLink email="privacy@mark8ly.com" />
           </li>
           <li>
             <strong>Security:</strong>{" "}
-            <a href="mailto:security@mark8ly.com">security@mark8ly.com</a>
+            <MailLink email="security@mark8ly.com" />
           </li>
         </ul>
 

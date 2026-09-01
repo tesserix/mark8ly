@@ -1,3 +1,4 @@
+import { MailLink } from "@repo/ui/mail-link";
 import {
   MarketingPage,
   PageHero,
@@ -84,7 +85,7 @@ export default function SecurityPage() {
         <p>
           If you think you&rsquo;ve found a security vulnerability, please
           tell us. Email{" "}
-          <a href="mailto:security@mark8ly.com">security@mark8ly.com</a> with
+          <MailLink email="security@mark8ly.com" /> with
           a description, reproduction steps, and — if you know — the impact.
         </p>
         <ul>
@@ -130,15 +131,15 @@ export default function SecurityPage() {
         <ul>
           <li>
             <strong>Vulnerability reports:</strong>{" "}
-            <a href="mailto:security@mark8ly.com">security@mark8ly.com</a>
+            <MailLink email="security@mark8ly.com" />
           </li>
           <li>
             <strong>Privacy &amp; DPA:</strong>{" "}
-            <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a>
+            <MailLink email="privacy@mark8ly.com" />
           </li>
           <li>
             <strong>General legal:</strong>{" "}
-            <a href="mailto:legal@mark8ly.com">legal@mark8ly.com</a>
+            <MailLink email="legal@mark8ly.com" />
           </li>
         </ul>
 

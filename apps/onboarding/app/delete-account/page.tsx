@@ -1,3 +1,4 @@
+import { MailLink } from "@repo/ui/mail-link";
 import { MarketingPage, PageHero, Prose } from "@/components/marketing/primitives";
 
 export const metadata = {
@@ -100,7 +101,7 @@ export default function DeleteAccountPage() {
         <p>
           If you&rsquo;ve lost access to your account and can&rsquo;t use either
           self-service option above, email{" "}
-          <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a> from the
+          <MailLink email="privacy@mark8ly.com" /> from the
           address on your account and ask us to delete it. We&rsquo;ll verify
           you own the account and complete the deletion for you.
         </p>

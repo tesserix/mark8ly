@@ -1,3 +1,4 @@
+import { MailLink } from "@repo/ui/mail-link";
 import {
   MarketingPage,
   PageHero,
@@ -111,7 +112,7 @@ export default function CookiePolicyPage() {
         <h2>6. Contact</h2>
         <p>
           Questions about cookies: email{" "}
-          <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a>.
+          <MailLink email="privacy@mark8ly.com" />.
         </p>
 
         <h2>7. About Tesserix</h2>

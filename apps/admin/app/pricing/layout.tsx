@@ -8,6 +8,8 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 
+import { MailLink } from '@repo/ui/mail-link'
+
 interface PricingLayoutProps {
   children: ReactNode
 }
@@ -48,12 +50,12 @@ export default function PricingLayout({ children }: PricingLayoutProps) {
         style={{ color: 'var(--ink-600)' }}
       >
         <nav aria-label="Footer" className="flex gap-6 text-sm">
-          <a
-            href="mailto:hello@mark8ly.com"
+          <MailLink
+            email="hello@mark8ly.com"
             className="hover:text-[var(--moss-700)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] rounded-sm"
           >
             Contact
-          </a>
+          </MailLink>
           <Link
             href="/privacy"
             className="hover:text-[var(--moss-700)] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] rounded-sm"

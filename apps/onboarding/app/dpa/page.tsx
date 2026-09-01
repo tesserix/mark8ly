@@ -1,3 +1,4 @@
+import { MailLink } from "@repo/ui/mail-link";
 import {
   MarketingPage,
   PageHero,
@@ -120,7 +121,7 @@ export default function DpaPage() {
           engaging a new sub-processor or materially changing how an
           existing one is used. The Controller may object within those
           fourteen days by emailing{" "}
-          <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a>; if
+          <MailLink email="privacy@mark8ly.com" />; if
           the parties cannot agree on an alternative, the Controller may
           terminate the affected part of the service without penalty.
         </p>
@@ -133,7 +134,7 @@ export default function DpaPage() {
           measures, taking into account the nature of the Processing. Most
           requests are servable by the Controller through the admin
           dashboard; for those that are not, email{" "}
-          <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a>.
+          <MailLink email="privacy@mark8ly.com" />.
         </p>
 
         <h2>7. Breach notification</h2>
@@ -204,7 +205,7 @@ export default function DpaPage() {
         <h2>13. Annex III — SCCs completion details</h2>
         <ul>
           <li><strong>Data exporter:</strong> the Controller (merchant account holder) as identified in the Mark8ly account record.</li>
-          <li><strong>Data importer:</strong> Tesserix Pty Ltd (ACN 694 070 865), New South Wales, Australia. Contact: <a href="mailto:dpo@mark8ly.com">dpo@mark8ly.com</a>.</li>
+          <li><strong>Data importer:</strong> Tesserix Pty Ltd (ACN 694 070 865), New South Wales, Australia. Contact: <MailLink email="dpo@mark8ly.com" />.</li>
           <li><strong>Module:</strong> Module Two — Transfer Controller to Processor.</li>
           <li><strong>Clause 7 (Docking):</strong> optional, not used.</li>
           <li><strong>Clause 9 (Sub-processors):</strong> General written authorisation, 14 days&rsquo; notice — see section 5.</li>
@@ -235,15 +236,15 @@ export default function DpaPage() {
         <ul>
           <li>
             <strong>Data Protection Officer:</strong>{" "}
-            <a href="mailto:dpo@mark8ly.com">dpo@mark8ly.com</a>
+            <MailLink email="dpo@mark8ly.com" />
           </li>
           <li>
             <strong>Privacy:</strong>{" "}
-            <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a>
+            <MailLink email="privacy@mark8ly.com" />
           </li>
           <li>
             <strong>Legal:</strong>{" "}
-            <a href="mailto:legal@mark8ly.com">legal@mark8ly.com</a>
+            <MailLink email="legal@mark8ly.com" />
           </li>
         </ul>
       </Prose>

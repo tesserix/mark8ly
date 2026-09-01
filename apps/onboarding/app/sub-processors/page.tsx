@@ -1,3 +1,4 @@
+import { MailLink } from "@repo/ui/mail-link";
 import {
   MarketingPage,
   PageHero,
@@ -166,7 +167,7 @@ export default function SubProcessorsPage() {
           or materially changing how an existing one is used. Merchants who
           have signed our Data Processing Addendum may subscribe to change
           notifications by emailing{" "}
-          <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a> with
+          <MailLink email="privacy@mark8ly.com" /> with
           the subject line &ldquo;sub-processor updates&rdquo;.
         </p>
         <p>
@@ -179,11 +180,11 @@ export default function SubProcessorsPage() {
         <ul>
           <li>
             <strong>Privacy / DPA questions:</strong>{" "}
-            <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a>
+            <MailLink email="privacy@mark8ly.com" />
           </li>
           <li>
             <strong>Data protection officer:</strong>{" "}
-            <a href="mailto:dpo@mark8ly.com">dpo@mark8ly.com</a>
+            <MailLink email="dpo@mark8ly.com" />
           </li>
         </ul>
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { MailLink } from "@repo/ui/mail-link";
 import { MarketingPage, PageHero } from "@/components/marketing/primitives";
 
 export const metadata = {
@@ -42,12 +43,10 @@ export default function ContactPage() {
                   {channel.description}
                 </dd>
                 <dd className="mt-4">
-                  <a
-                    href={`mailto:${channel.email}`}
+                  <MailLink
+                    email={channel.email}
                     className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
-                  >
-                    {channel.email}
-                  </a>
+                  />
                 </dd>
               </div>
             ))}
@@ -68,12 +67,10 @@ export default function ContactPage() {
             </p>
             <p>
               If you&rsquo;re local and want to meet, email{" "}
-              <a
-                href="mailto:hello@mark8ly.com"
+              <MailLink
+                email="hello@mark8ly.com"
                 className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
-              >
-                hello@mark8ly.com
-              </a>
+              />
               .
             </p>
           </div>

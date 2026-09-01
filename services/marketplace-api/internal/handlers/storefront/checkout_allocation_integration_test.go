@@ -579,3 +579,38 @@ func TestCommitStock_UppercaseVariantIDStillMatchesAvailability(t *testing.T) {
 
 	require.Equal(t, 3, stockUnitsAt(t, db, variantID, whA))
 }
+
+// #177 PR 5a added archiving; the allocator's candidate query did not learn
+// about it. An archived warehouse still holding stock would keep receiving
+// allocations — the merchant removes a warehouse from the settings page and
+// orders keep being routed to it, with nobody there to pick them.
+//
+// The order below needs 5 units. Only the LIVE warehouse's 3 count, so it
+// must fail rather than quietly draw the other 2 from an archived one.
+func TestCommitStock_ArchivedWarehouseIsNotAllocatedTo(t *testing.T) {
+	db := testdb.NewDB(t, "order_allocations", "stock_holds", "order_items", "orders",
+		"variant_stock", "product_variants", "products", "stores")
+	storeID, variantID := seedAvailStore(t, db)
+	live := seedWarehouseRow(t, db, storeID, "Live")
+	archived := seedWarehouseRow(t, db, storeID, "Archived")
+	require.NoError(t, db.Exec(`UPDATE warehouses SET priority = 0 WHERE id = ?`, live).Error)
+	require.NoError(t, db.Exec(`UPDATE warehouses SET priority = 1 WHERE id = ?`, archived).Error)
+	require.NoError(t, db.Exec(`UPDATE warehouses SET archived_at = now() WHERE id = ?`, archived).Error)
+	require.NoError(t, db.Exec(
+		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
+		 VALUES (?, ?, 3, now()), (?, ?, 4, now())`,
+		variantID, live, variantID, archived).Error)
+
+	lines := []stockLine{{VariantID: variantID, Quantity: 5}}
+	orderID, _ := seedOrderWithItems(t, db, storeID, lines)
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+			orderID, storeID, lines)
+	})
+	require.Error(t, err,
+		"5 units against 3 live + 4 archived must not fill — archived stock is not sellable")
+
+	require.Equal(t, 3, stockUnitsAt(t, db, variantID, live), "a failed checkout must move no stock")
+	require.Equal(t, 4, stockUnitsAt(t, db, variantID, archived))
+}

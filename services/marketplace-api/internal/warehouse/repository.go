@@ -168,7 +168,14 @@ func (r *Repository) Upsert(ctx context.Context, db *gorm.DB, w Warehouse) (Ware
 func (r *Repository) DefaultForStore(ctx context.Context, db *gorm.DB, storeID string) (Warehouse, error) {
 	var w Warehouse
 	err := db.WithContext(ctx).
-		Where("store_id = ?", storeID).
+		// Archive() clears is_default, but that alone is not enough: with
+		// every candidate then at is_default = false, created_at ASC would
+		// hand back the archived row whenever it is the oldest, and a store
+		// whose warehouses are ALL archived would get one rather than
+		// ErrNotFound. Callers fill a carrier config's pickup address from
+		// this, so an archived answer binds a live carrier to a warehouse
+		// the allocator refuses to use.
+		Where("store_id = ? AND archived_at IS NULL", storeID).
 		Order("is_default DESC, created_at ASC").
 		First(&w).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {

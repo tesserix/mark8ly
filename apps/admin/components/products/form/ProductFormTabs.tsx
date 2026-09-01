@@ -2,12 +2,11 @@
 
 import type { KeyboardEvent } from "react";
 
-export type ProductFormTabId =
-  | "general"
-  | "media"
-  | "options"
-  | "variants"
-  | "tax";
+// "tax" was removed as a tab: it spent permanent navigation on something
+// most merchants set once or never, since the store carries a country
+// default. It is a collapsed section on the General tab now — see
+// TaxSection.
+export type ProductFormTabId = "general" | "media" | "options" | "variants";
 
 export interface ProductFormTabsProps {
   active: ProductFormTabId;
@@ -21,7 +20,6 @@ const TABS: Array<{ id: ProductFormTabId; label: string }> = [
   { id: "media", label: "Media" },
   { id: "options", label: "Options" },
   { id: "variants", label: "Variants" },
-  { id: "tax", label: "Tax" },
 ];
 
 export function ProductFormTabs({
@@ -42,11 +40,16 @@ export function ProductFormTabs({
     } else if (e.key === "Home") {
       e.preventDefault();
       const first = TABS[0];
-      if (first) onChange(first.id);
+      if (first && !disabled?.[first.id]) onChange(first.id);
     } else if (e.key === "End") {
+      // Home and End must respect `disabled` exactly as the arrows do.
+      // They did not, which was invisible only because the last tab used
+      // to be Tax and Tax was never disabled. Removing that tab made
+      // Variants last — and Variants IS disabled until options exist — so
+      // End could select a tab the merchant cannot use.
       e.preventDefault();
       const last = TABS[TABS.length - 1];
-      if (last) onChange(last.id);
+      if (last && !disabled?.[last.id]) onChange(last.id);
     }
   };
 

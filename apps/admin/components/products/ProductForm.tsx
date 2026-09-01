@@ -54,7 +54,7 @@ import type { Warehouse } from "@/lib/api/warehouses-api";
 import { OptionsTab } from "./form/OptionsTab";
 import { VariantsTab } from "./form/VariantsTab";
 import { MediaTab } from "./form/MediaTab";
-import { TaxTab } from "./form/TaxTab";
+import { TaxSection } from "./form/TaxSection";
 
 // RHF-side option shape (matches zod + OptionsEditor).
 interface RhfOptionDraft {
@@ -460,17 +460,22 @@ export function ProductForm({
 
         <div>
           {currentTab === "general" && (
-            <GeneralTab
-              mode={mode}
-              categories={categories}
-              currencyCode={currencyCode}
-              hasMultipleVariants={hasMultipleVariants}
-              storeId={storeId}
-              warehouses={warehouses}
-              productId={initialProduct?.id}
-              variantId={firstVariant?.id}
-              stockByLocation={firstVariant?.inventory_by_location ?? {}}
-            />
+            <>
+              <GeneralTab
+                mode={mode}
+                categories={categories}
+                currencyCode={currencyCode}
+                hasMultipleVariants={hasMultipleVariants}
+                storeId={storeId}
+                warehouses={warehouses}
+                productId={initialProduct?.id}
+                variantId={firstVariant?.id}
+                stockByLocation={firstVariant?.inventory_by_location ?? {}}
+              />
+              <div className="mt-10">
+                <TaxSection storeCountryCode={storeCountryCode} />
+              </div>
+            </>
           )}
           {currentTab === "media" && mode === "edit" && initialProduct && (
             <MediaTab
@@ -489,9 +494,7 @@ export function ProductForm({
               stockByLocation={stockByVariant}
             />
           )}
-          {currentTab === "tax" && (
-            <TaxTab storeCountryCode={storeCountryCode} />
-          )}
+
         </div>
 
         {/* Actions — hairline top separator, discard as text link on left,

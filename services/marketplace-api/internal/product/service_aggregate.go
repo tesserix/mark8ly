@@ -196,7 +196,15 @@ func (s *Service) UpdateAggregate(ctx context.Context, req UpdateAggregateReques
 			newVariants = added
 		}
 
-		// 4. Seed stock for newly added variants.
+		// 4. Seed stock for newly added variants, at the store's warehouse.
+		var stockLocationID string
+		if len(newVariants) > 0 {
+			var locErr error
+			stockLocationID, locErr = s.stockLocationFor(ctx, tx, req.TenantID, req.StoreID)
+			if locErr != nil {
+				return locErr
+			}
+		}
 		for i := range newVariants {
 			// Find the matching input by generated ID to read InitialStock.
 			if req.Variants == nil {
@@ -205,7 +213,7 @@ func (s *Service) UpdateAggregate(ctx context.Context, req UpdateAggregateReques
 			for _, in := range *req.Variants {
 				if in.ID == "" && newVariants[i].SKU == in.SKU {
 					if err := s.repo.UpdateVariantStockInTx(ctx, tx,
-						newVariants[i].ID, DefaultLocationID, in.InitialStock); err != nil {
+						newVariants[i].ID, stockLocationID, in.InitialStock); err != nil {
 						return err
 					}
 					break
@@ -237,6 +245,16 @@ func (s *Service) UpdateAggregate(ctx context.Context, req UpdateAggregateReques
 			for _, nv := range newVariants {
 				newByID[nv.ID] = struct{}{}
 			}
+			// Resolved once for the loop below. Step 4 may have resolved it
+			// already; EnsureDefaultForStore is idempotent, so asking twice
+			// costs a lookup rather than a second warehouse.
+			if stockLocationID == "" {
+				var locErr error
+				stockLocationID, locErr = s.stockLocationFor(ctx, tx, req.TenantID, req.StoreID)
+				if locErr != nil {
+					return locErr
+				}
+			}
 			for _, in := range *req.Variants {
 				var matched *Variant
 				if in.ID != "" {
@@ -259,7 +277,7 @@ func (s *Service) UpdateAggregate(ctx context.Context, req UpdateAggregateReques
 					continue
 				}
 				if err := s.repo.UpdateVariantStockInTx(ctx, tx,
-					matched.ID, DefaultLocationID, in.InitialStock); err != nil {
+					matched.ID, stockLocationID, in.InitialStock); err != nil {
 					return err
 				}
 			}

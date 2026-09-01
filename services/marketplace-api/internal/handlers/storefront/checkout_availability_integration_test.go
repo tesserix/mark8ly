@@ -25,7 +25,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/allocation"
-	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
@@ -66,24 +65,34 @@ func seedWarehouseRow(t *testing.T, db *gorm.DB, storeID, name string) string {
 	return id
 }
 
-func TestLoadAvailability_SentinelStockIsReportedAgainstTheFirstWarehouse(t *testing.T) {
+// The inverse of the test this replaces. Availability used to map a
+// sentinel row onto the store's FIRST warehouse, because every unit in
+// production lived there and the allocator could not otherwise see them.
+// #177 PR 6 removed that: migration 000123 moved the units onto real
+// warehouses, and every write path now resolves one, so a sentinel row is
+// simply a location this store does not have.
+//
+// Pinned rather than deleted, because the failure it guards against is
+// silent. A straggler row — written by a pod still on the old image during
+// the rollout, or restored from a backup — must contribute NOTHING rather
+// than quietly reappear as sellable stock at whichever warehouse happens
+// to sort first.
+func TestLoadAvailability_SentinelStockNoLongerCountsAsAnything(t *testing.T) {
 	db := testdb.NewTx(t)
 	storeID, variantID := seedAvailStore(t, db)
 	whID := seedWarehouseRow(t, db, storeID, "Main")
 
-	// Stock still lives at the sentinel — PR 6 has not backfilled yet.
 	require.NoError(t, db.Exec(
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
-		 VALUES (?, ?, 7, now())`, variantID, product.DefaultLocationID).Error)
+		 VALUES (?, ?, 7, now())`, variantID, retiredSentinelForTest).Error)
 
 	warehouses := []allocation.Warehouse{{ID: whID}}
 	avail, storage, err := loadAvailability(context.Background(), db, uuid.NewString(), warehouses, []string{variantID})
 	require.NoError(t, err)
 
-	require.Equal(t, 7, avail.At(variantID, whID),
-		"sentinel-stored units must be visible against the store's warehouse before the backfill")
-	require.Equal(t, []stockAt{{LocationID: product.DefaultLocationID, Units: 7}}, storage[variantID][whID],
-		"a hold must target the location the units are actually stored at")
+	require.Zero(t, avail.At(variantID, whID),
+		"a sentinel row is a location this store does not have; it must not be sellable")
+	require.Empty(t, storage[variantID][whID])
 }
 
 func TestLoadAvailability_RealWarehouseStockIsReportedAgainstItself(t *testing.T) {
@@ -117,14 +126,14 @@ func TestLoadAvailability_ExcludesTheCallingCartsOwnHolds(t *testing.T) {
 	whID := seedWarehouseRow(t, db, storeID, "Main")
 	require.NoError(t, db.Exec(
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
-		 VALUES (?, ?, 10, now())`, variantID, product.DefaultLocationID).Error)
+		 VALUES (?, ?, 10, now())`, variantID, whID).Error)
 
 	mine, theirs := uuid.NewString(), uuid.NewString()
 	require.NoError(t, db.Exec(
 		`INSERT INTO stock_holds (variant_id, location_id, cart_token, qty, expires_at, state)
 		 VALUES (?, ?, ?, 4, ?, 'held'), (?, ?, ?, 3, ?, 'held')`,
-		variantID, product.DefaultLocationID, mine, time.Now().Add(time.Hour),
-		variantID, product.DefaultLocationID, theirs, time.Now().Add(time.Hour)).Error)
+		variantID, whID, mine, time.Now().Add(time.Hour),
+		variantID, whID, theirs, time.Now().Add(time.Hour)).Error)
 
 	warehouses := []allocation.Warehouse{{ID: whID}}
 	avail, _, err := loadAvailability(context.Background(), db, mine, warehouses, []string{variantID})
@@ -140,11 +149,11 @@ func TestLoadAvailability_ExpiredHoldsDoNotReduceAvailability(t *testing.T) {
 	whID := seedWarehouseRow(t, db, storeID, "Main")
 	require.NoError(t, db.Exec(
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
-		 VALUES (?, ?, 5, now())`, variantID, product.DefaultLocationID).Error)
+		 VALUES (?, ?, 5, now())`, variantID, whID).Error)
 	require.NoError(t, db.Exec(
 		`INSERT INTO stock_holds (variant_id, location_id, cart_token, qty, expires_at, state)
 		 VALUES (?, ?, ?, 5, ?, 'held')`,
-		variantID, product.DefaultLocationID, uuid.NewString(), time.Now().Add(-time.Minute)).Error)
+		variantID, whID, uuid.NewString(), time.Now().Add(-time.Minute)).Error)
 
 	avail, _, err := loadAvailability(context.Background(), db, uuid.NewString(),
 		[]allocation.Warehouse{{ID: whID}}, []string{variantID})
@@ -176,32 +185,9 @@ func TestLoadAvailability_VariantWithNoStockRowsIsAbsent(t *testing.T) {
 // still exists. Availability must sum across both, and the storage
 // breakdown must name both locations — collapsing to one would under-lock a
 // hold.
-func TestLoadAvailability_MixedSentinelAndRealStockForSameWarehouseIsSummedAndBothLocationsRecorded(t *testing.T) {
-	db := testdb.NewTx(t)
-	storeID, variantID := seedAvailStore(t, db)
-	whID := seedWarehouseRow(t, db, storeID, "Main")
-
-	require.NoError(t, db.Exec(
-		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
-		 VALUES (?, ?, 3, now()), (?, ?, 4, now())`,
-		variantID, product.DefaultLocationID, variantID, whID).Error)
-
-	avail, storage, err := loadAvailability(context.Background(), db, uuid.NewString(),
-		[]allocation.Warehouse{{ID: whID}}, []string{variantID})
-	require.NoError(t, err)
-
-	require.Equal(t, 7, avail.At(variantID, whID),
-		"3 sentinel-stored plus 4 stored directly at the warehouse")
-	require.Equal(t, []stockAt{
-		{LocationID: product.DefaultLocationID, Units: 3},
-		{LocationID: whID, Units: 4},
-	}, storage[variantID][whID],
-		"a hold must be able to target both locations the units actually sit at")
-}
-
-// Stock at a location that is neither the sentinel nor one of the store's
-// warehouses (a warehouse deleted out from under its stock) must contribute
-// nothing — not error, not appear in the total.
+// Stock at a location that is not one of the store's warehouses (a
+// warehouse deleted out from under its stock) must contribute nothing —
+// not error, not appear in the total.
 func TestLoadAvailability_StockAtUnknownLocationContributesNothing(t *testing.T) {
 	db := testdb.NewTx(t)
 	storeID, variantID := seedAvailStore(t, db)
@@ -219,3 +205,9 @@ func TestLoadAvailability_StockAtUnknownLocationContributesNothing(t *testing.T)
 	require.Equal(t, 0, avail.At(variantID, whID))
 	require.Empty(t, storage[variantID])
 }
+
+// retiredSentinelForTest is the location every stock row used to carry,
+// before #177 PR 6 moved them onto real warehouses. Declared here rather
+// than imported: the production constant is gone, and a test that needs
+// the value needs it precisely BECAUSE nothing writes it any more.
+const retiredSentinelForTest = "00000000-0000-0000-0000-000000000001"

@@ -178,7 +178,7 @@ func (r *gormRepository) UpdateVariantStockInTx(ctx context.Context, tx *gorm.DB
 //
 // # Why the sentinel has to go
 //
-// Until PR 6's backfill runs, a variant's units live on DefaultLocationID.
+// Until PR 6's backfill ran, a variant's units lived on the sentinel.
 // checkout_availability.go attributes a sentinel row to the store's FIRST
 // warehouse and SUMS it with any real row for that same warehouse:
 //
@@ -216,7 +216,7 @@ func (r *gormRepository) SetVariantStockByLocationInTx(
 	slices.Sort(locations)
 
 	for _, locationID := range locations {
-		if locationID == DefaultLocationID {
+		if locationID == retiredSentinelLocationID {
 			// The sentinel is not a place a merchant can choose. Accepting
 			// it here would write the row this method exists to remove.
 			return fmt.Errorf("product: set stock by location: sentinel is not a warehouse")
@@ -228,7 +228,7 @@ func (r *gormRepository) SetVariantStockByLocationInTx(
 
 	if err := tx.WithContext(ctx).Exec(
 		`DELETE FROM variant_stock WHERE variant_id = ? AND location_id = ?`,
-		variantID, DefaultLocationID).Error; err != nil {
+		variantID, retiredSentinelLocationID).Error; err != nil {
 		return fmt.Errorf("product: set stock by location: clear sentinel: %w", err)
 	}
 	return nil
@@ -269,3 +269,15 @@ func (r *gormRepository) StockByLocationForVariants(
 	}
 	return out, nil
 }
+
+// retiredSentinelLocationID is the location every stock row used to carry:
+// the old DefaultLocationID, deleted in #177 PR 6 step 2.
+//
+// It survives as a value, not as a destination. Nothing writes it any more
+// — migration 000123 moved production's 16,354 units onto real warehouses,
+// and every write now resolves the store's warehouse instead. It is kept
+// so the two guards above can still recognise a straggler: a row written
+// by a pod still on the old image during the rollout window, or by a
+// restored backup. Sweeping one costs a DELETE that matches nothing in the
+// normal case.
+const retiredSentinelLocationID = "00000000-0000-0000-0000-000000000001"

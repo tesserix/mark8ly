@@ -141,9 +141,15 @@ func (s *Service) UpdateVariantBasics(ctx context.Context, req UpdateVariantBasi
 				return err
 			}
 		case req.InventoryQuantity != nil:
-			// The single-warehouse path, unchanged. A store with one
-			// warehouse must behave exactly as it did before this slice.
-			if err := s.repo.UpdateVariantStockInTx(ctx, tx, req.VariantID, DefaultLocationID, *req.InventoryQuantity); err != nil {
+			// The single-warehouse path: one number, written to the store's
+			// warehouse. It used to write the sentinel; #177 PR 6 retired
+			// that, so the units now sit somewhere the allocator can fill
+			// from.
+			locationID, locErr := s.stockLocationFor(ctx, tx, req.TenantID, req.StoreID)
+			if locErr != nil {
+				return locErr
+			}
+			if err := s.repo.UpdateVariantStockInTx(ctx, tx, req.VariantID, locationID, *req.InventoryQuantity); err != nil {
 				return err
 			}
 		}
@@ -184,4 +190,31 @@ func (s *Service) liveWarehouseIDs(ctx context.Context, storeID string) (map[str
 // the per-warehouse editor (#177 PR 5e).
 func (s *Service) StockByLocation(ctx context.Context, variantIDs []string) (map[string]map[string]int, error) {
 	return s.repo.StockByLocationForVariants(ctx, s.db, variantIDs)
+}
+
+// stockLocationFor resolves where a store's stock rows live, creating the
+// store's warehouse if it has none (#177 PR 6 step 2).
+//
+// This replaced DefaultLocationID, the sentinel every stock write used to
+// target. The sentinel named nothing: the allocator could only tolerate
+// those rows, never fill from them, so allocation was structurally correct
+// and economically hollow. Migration 000123 moved the existing 16,354
+// units onto real warehouses; this keeps every NEW write there too.
+//
+// Runs in the caller's transaction so the warehouse and the stock row that
+// needs it commit together.
+func (s *Service) stockLocationFor(ctx context.Context, tx *gorm.DB, tenantID, storeID string) (string, error) {
+	countryCode := ""
+	if store, err := s.storesRepo.GetByIDForTenant(ctx, storeID, tenantID); err == nil {
+		countryCode = store.CountryCode
+	}
+	// A store row that cannot be read is not fatal here: the country code
+	// only seeds the warehouse's country, and the merchant corrects the
+	// address on the warehouses page regardless. Failing the product save
+	// over it would be a worse trade.
+	wh, err := warehouse.NewRepository().EnsureDefaultForStore(ctx, tx, tenantID, storeID, countryCode)
+	if err != nil {
+		return "", err
+	}
+	return wh.ID, nil
 }

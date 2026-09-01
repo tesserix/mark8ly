@@ -249,8 +249,36 @@ func insertVariantWithStock(t *testing.T, db *gorm.DB, tenantID, storeID string,
 		 VALUES (?, ?, ?, ?, 10.00, 'EUR')`,
 		variantID, productID, storeID, "SKU-"+uuid.NewString()[:8]).Error)
 
+	// Stock lives at the store's warehouse, not at a sentinel location.
+	// #177 PR 6 retired the sentinel: every write path resolves a real
+	// warehouse, and cart holds are placed against it. Seeding the old way
+	// here would test a state production can no longer be in.
+	locationID := ensureTestWarehouse(t, db, tenantID, storeID)
 	require.NoError(t, db.Exec(
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
-		 VALUES (?, '00000000-0000-0000-0000-000000000001', ?, now())`, variantID, qty).Error)
+		 VALUES (?, ?, ?, now())`, variantID, locationID, qty).Error)
 	return variantID
+}
+
+// ensureTestWarehouse returns the store's warehouse, creating one if it has
+// none — the same find-or-create the product write paths do.
+func ensureTestWarehouse(t *testing.T, db *gorm.DB, tenantID, storeID string) string {
+	t.Helper()
+	var existing string
+	err := db.Raw(
+		`SELECT id::text FROM warehouses
+		  WHERE store_id = ? AND archived_at IS NULL
+		  ORDER BY is_default DESC, priority ASC, created_at ASC LIMIT 1`,
+		storeID).Row().Scan(&existing)
+	if err == nil && existing != "" {
+		return existing
+	}
+	id := uuid.NewString()
+	require.NoError(t, db.Exec(
+		`INSERT INTO warehouses (id, tenant_id, store_id, name, line1, city, region,
+		                         postal_code, country_code, phone, is_default)
+		 VALUES (?, ?, ?, 'Main Warehouse', '1 Dock Rd', 'Mumbai', 'MH', '400001', 'IN',
+		         '+912200000000', true)`,
+		id, tenantID, storeID).Error)
+	return id
 }

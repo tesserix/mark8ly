@@ -573,3 +573,53 @@ func (r *Repository) UnitsHeld(ctx context.Context, db *gorm.DB, id string) (int
 	}
 	return *total, nil
 }
+
+// EnsureDefaultForStore returns the store's default warehouse, creating one
+// if the store has none (#177 PR 6 step 2).
+//
+// This is the invariant that lets DefaultLocationID go: any store that
+// holds stock has somewhere real to hold it. Before, a store with no
+// warehouse wrote to a sentinel location that named nothing, and the
+// allocator could only tolerate those rows rather than fill from them.
+//
+// The address is left blank on purpose — the same choice migration 000123
+// made. The store has not said where it ships from, and inventing a
+// plausible address would produce a warehouse that quotes rates from a
+// place that does not exist. The warehouses page is what fills it in, and
+// shipping readiness already reports a warehouse with no address as a
+// blocker.
+//
+// Runs in the caller's *gorm.DB so the warehouse and the stock row that
+// needs it land in one transaction: a warehouse created for a stock write
+// that then failed would be a row nothing references.
+func (r *Repository) EnsureDefaultForStore(
+	ctx context.Context, db *gorm.DB, tenantID, storeID, countryCode string,
+) (Warehouse, error) {
+	existing, err := r.DefaultForStore(ctx, db, storeID)
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return Warehouse{}, err
+	}
+
+	created, err := r.Create(ctx, db, Warehouse{
+		TenantID:    tenantID,
+		StoreID:     storeID,
+		Name:        "Main Warehouse",
+		CountryCode: strings.ToUpper(strings.TrimSpace(countryCode)),
+		IsDefault:   true,
+	})
+	if err == nil {
+		return created, nil
+	}
+	if errors.Is(err, ErrNameTaken) {
+		// Two concurrent stock writes for a store with no warehouse race
+		// here, and the partial unique index makes exactly one of them
+		// lose. The loser's answer is the winner's row, not an error —
+		// otherwise a merchant's product save fails for a reason that has
+		// nothing to do with their product.
+		return r.DefaultForStore(ctx, db, storeID)
+	}
+	return Warehouse{}, err
+}

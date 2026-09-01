@@ -16,7 +16,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/authz"
-	"github.com/mark8ly/marketplace-api/internal/product"
 )
 
 // seedWarehouseFor inserts a live warehouse for a store.
@@ -29,6 +28,22 @@ func seedStockWarehouse(t *testing.T, db *gorm.DB, tenantID, storeID, name strin
 		 VALUES (?, ?, ?, ?, '1 Dock Rd', 'Mumbai', 'MH', '400001', 'IN', '+912200000000')`,
 		id, tenantID, storeID, name).Error; err != nil {
 		t.Fatalf("seed warehouse: %v", err)
+	}
+	return id
+}
+
+// storeWarehouseID returns the warehouse the store's stock writes resolve
+// to. Product writes create one when the store has none (#177 PR 6), so
+// after seeding a product this always finds a row.
+func storeWarehouseID(t *testing.T, db *gorm.DB, storeID string) string {
+	t.Helper()
+	var id string
+	if err := db.Raw(
+		`SELECT id::text FROM warehouses
+		  WHERE store_id = ? AND archived_at IS NULL
+		  ORDER BY is_default DESC, priority ASC, created_at ASC LIMIT 1`,
+		storeID).Row().Scan(&id); err != nil {
+		t.Fatalf("no warehouse for store %s: %v", storeID, err)
 	}
 	return id
 }
@@ -89,11 +104,12 @@ func TestAPI_VariantStock_PerLocationSaveConservesTheTotal(t *testing.T) {
 	env.fga.Grant(userID, authz.RoleStaff, tenantID)
 
 	productID, variantID := seedProductWithStock(t, env, storeID, tenantID, userID, 10)
-	if got := stockAtLoc(t, env.db, variantID, product.DefaultLocationID); got != 10 {
-		t.Fatalf("precondition: sentinel stock = %d, want 10", got)
+	// Seeding the product created the store's warehouse and put the units
+	// there — the sentinel is gone (#177 PR 6).
+	whA := storeWarehouseID(t, env.db, storeID)
+	if got := stockAtLoc(t, env.db, variantID, whA); got != 10 {
+		t.Fatalf("precondition: warehouse stock = %d, want 10", got)
 	}
-
-	whA := seedStockWarehouse(t, env.db, tenantID, storeID, "Alpha")
 	whB := seedStockWarehouse(t, env.db, tenantID, storeID, "Bravo")
 
 	w := request(t, env.router, http.MethodPatch, variantURL(storeID, productID, variantID),
@@ -103,8 +119,8 @@ func TestAPI_VariantStock_PerLocationSaveConservesTheTotal(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
 
-	if got := stockAtLoc(t, env.db, variantID, product.DefaultLocationID); got != -1 {
-		t.Fatalf("sentinel row survived with %d units — its stock is double-counted", got)
+	if got := stockAtLoc(t, env.db, variantID, retiredSentinelLoc); got != -1 {
+		t.Fatalf("nothing may live on the retired sentinel, found %d", got)
 	}
 	if got := stockAtLoc(t, env.db, variantID, whA); got != 10 {
 		t.Fatalf("warehouse A = %d, want 10", got)
@@ -121,8 +137,11 @@ func TestAPI_VariantStock_PerLocationSaveConservesTheTotal(t *testing.T) {
 	}
 }
 
-// The single-warehouse path must be untouched by this slice.
-func TestAPI_VariantStock_PlainQuantityStillWritesTheSentinel(t *testing.T) {
+// The single-quantity path: one number, written to the store's warehouse.
+// It used to write the sentinel; #177 PR 6 retired that, and a store with
+// no warehouse gets one created rather than falling back to a location
+// that names nothing.
+func TestAPI_VariantStock_PlainQuantityWritesTheStoreWarehouse(t *testing.T) {
 	env := setupTestRouter(t)
 	storeID, tenantID := seedStoreRow(t, env.db, "")
 	userID := uuid.NewString()
@@ -137,8 +156,12 @@ func TestAPI_VariantStock_PlainQuantityStillWritesTheSentinel(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
-	if got := stockAtLoc(t, env.db, variantID, product.DefaultLocationID); got != 42 {
-		t.Fatalf("sentinel = %d, want 42 — the single-warehouse path must be unchanged", got)
+	wh := storeWarehouseID(t, env.db, storeID)
+	if got := stockAtLoc(t, env.db, variantID, wh); got != 42 {
+		t.Fatalf("warehouse stock = %d, want 42", got)
+	}
+	if got := stockAtLoc(t, env.db, variantID, retiredSentinelLoc); got != -1 {
+		t.Fatalf("nothing may be written to the retired sentinel, found %d", got)
 	}
 }
 
@@ -181,8 +204,8 @@ func TestAPI_VariantStock_AnotherStoresWarehouseIsRefused(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
-	if got := stockAtLoc(t, env.db, variantID, product.DefaultLocationID); got != 10 {
-		t.Fatalf("a refused save moved stock: sentinel = %d, want 10", got)
+	if got := stockAtLoc(t, env.db, variantID, storeWarehouseID(t, env.db, storeID)); got != 10 {
+		t.Fatalf("a refused save moved stock: warehouse = %d, want 10", got)
 	}
 }
 
@@ -239,8 +262,19 @@ func TestAPI_ProductGet_CarriesThePerLocationBreakdown(t *testing.T) {
 	if len(resp.Variants) == 0 {
 		t.Fatalf("no variants: %s", get.Body.String())
 	}
-	if got := resp.Variants[0].InventoryByLocation[product.DefaultLocationID]; got != 10 {
-		t.Fatalf("sentinel breakdown = %d, want 10 (variant %s): %s",
+	wh := storeWarehouseID(t, env.db, storeID)
+	if got := resp.Variants[0].InventoryByLocation[wh]; got != 10 {
+		t.Fatalf("warehouse breakdown = %d, want 10 (variant %s): %s",
 			got, variantID, get.Body.String())
 	}
+	if _, present := resp.Variants[0].InventoryByLocation[retiredSentinelLoc]; present {
+		t.Fatalf("the retired sentinel must not appear in a breakdown: %s", get.Body.String())
+	}
 }
+
+// retiredSentinelLoc is the location every stock row carried before #177 PR 6
+// moved them onto real warehouses. The production constant is gone;
+// these tests still need the value precisely BECAUSE nothing writes it
+// any more — a straggler row from an old pod or a restored backup must
+// still be swept, and that is what they pin.
+const retiredSentinelLoc = "00000000-0000-0000-0000-000000000001"

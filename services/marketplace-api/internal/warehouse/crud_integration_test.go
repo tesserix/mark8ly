@@ -212,3 +212,101 @@ func TestUpdateByID_IgnoresAnotherStoresWarehouse(t *testing.T) {
 	require.NoError(t, db.Raw(`SELECT name FROM warehouses WHERE id = ?`, mine.ID).Scan(&name).Error)
 	require.Equal(t, "Mine", name, "another store's warehouse must be untouched")
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// #177 PR 6 step 2 — the invariant that lets DefaultLocationID go.
+// ─────────────────────────────────────────────────────────────────────────
+
+func TestEnsureDefaultForStore_CreatesOneWhenTheStoreHasNone(t *testing.T) {
+	db := testdb.NewDB(t, "warehouses")
+	repo := warehouse.NewRepository()
+	ctx := context.Background()
+	tenantID, storeID := seedStore(t, db)
+
+	got, err := repo.EnsureDefaultForStore(ctx, db, tenantID, storeID, "au")
+	require.NoError(t, err)
+	require.Equal(t, "Main Warehouse", got.Name)
+	require.True(t, got.IsDefault)
+	require.Equal(t, "AU", got.CountryCode, "country code is normalised to upper case")
+
+	// Blank on purpose: inventing an address would quote rates from a
+	// place that does not exist.
+	require.Empty(t, got.Line1)
+	require.Empty(t, got.City)
+}
+
+func TestEnsureDefaultForStore_ReusesTheExistingDefault(t *testing.T) {
+	db := testdb.NewDB(t, "warehouses")
+	repo := warehouse.NewRepository()
+	ctx := context.Background()
+	tenantID, storeID := seedStore(t, db)
+
+	made, err := repo.Create(ctx, db, sample(tenantID, storeID, "Bondi Depot"))
+	require.NoError(t, err)
+	require.NoError(t, repo.SetDefault(ctx, db, storeID, made.ID))
+
+	got, err := repo.EnsureDefaultForStore(ctx, db, tenantID, storeID, "AU")
+	require.NoError(t, err)
+	require.Equal(t, made.ID, got.ID, "an existing warehouse must be reused, never duplicated")
+
+	all, err := repo.List(ctx, db, storeID, true)
+	require.NoError(t, err)
+	require.Len(t, all, 1)
+}
+
+// A store whose only warehouse is ARCHIVED has, as far as everything else
+// is concerned, no warehouse — the allocator refuses to fill from it
+// (#528). It must get a live one rather than have stock parked somewhere
+// unsellable.
+func TestEnsureDefaultForStore_ArchivedOnlyStoreGetsALiveOne(t *testing.T) {
+	db := testdb.NewDB(t, "warehouses")
+	repo := warehouse.NewRepository()
+	ctx := context.Background()
+	tenantID, storeID := seedStore(t, db)
+
+	old, err := repo.Create(ctx, db, sample(tenantID, storeID, "Gone"))
+	require.NoError(t, err)
+	require.NoError(t, repo.Archive(ctx, db, old.ID))
+
+	got, err := repo.EnsureDefaultForStore(ctx, db, tenantID, storeID, "AU")
+	require.NoError(t, err)
+	require.NotEqual(t, old.ID, got.ID)
+	require.Equal(t, "Main Warehouse", got.Name)
+}
+
+// Called twice it must settle on one row — this runs on every stock write.
+func TestEnsureDefaultForStore_IsIdempotent(t *testing.T) {
+	db := testdb.NewDB(t, "warehouses")
+	repo := warehouse.NewRepository()
+	ctx := context.Background()
+	tenantID, storeID := seedStore(t, db)
+
+	first, err := repo.EnsureDefaultForStore(ctx, db, tenantID, storeID, "AU")
+	require.NoError(t, err)
+	second, err := repo.EnsureDefaultForStore(ctx, db, tenantID, storeID, "AU")
+	require.NoError(t, err)
+	require.Equal(t, first.ID, second.ID)
+
+	all, err := repo.List(ctx, db, storeID, true)
+	require.NoError(t, err)
+	require.Len(t, all, 1)
+}
+
+// An ARCHIVED 'Main Warehouse' must not block creating a live one — that is
+// what 000122's partial unique index buys, and a merchant who archived
+// theirs would otherwise be unable to save a product with stock.
+func TestEnsureDefaultForStore_ArchivedMainWarehouseNameIsNotAConflict(t *testing.T) {
+	db := testdb.NewDB(t, "warehouses")
+	repo := warehouse.NewRepository()
+	ctx := context.Background()
+	tenantID, storeID := seedStore(t, db)
+
+	old, err := repo.Create(ctx, db, sample(tenantID, storeID, "Main Warehouse"))
+	require.NoError(t, err)
+	require.NoError(t, repo.Archive(ctx, db, old.ID))
+
+	got, err := repo.EnsureDefaultForStore(ctx, db, tenantID, storeID, "AU")
+	require.NoError(t, err)
+	require.NotEqual(t, old.ID, got.ID)
+	require.Equal(t, "Main Warehouse", got.Name)
+}

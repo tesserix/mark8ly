@@ -9,6 +9,7 @@ package product
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"gorm.io/gorm"
@@ -170,4 +171,101 @@ func (r *gormRepository) UpdateVariantStockInTx(ctx context.Context, tx *gorm.DB
 		return fmt.Errorf("product: upsert variant stock: %w", res.Error)
 	}
 	return nil
+}
+
+// SetVariantStockByLocationInTx writes a variant's stock across real
+// warehouses and CONSERVES the total by dropping its sentinel row.
+//
+// # Why the sentinel has to go
+//
+// Until PR 6's backfill runs, a variant's units live on DefaultLocationID.
+// checkout_availability.go attributes a sentinel row to the store's FIRST
+// warehouse and SUMS it with any real row for that same warehouse:
+//
+//	avail[variantID][warehouseID] += r.Available
+//
+// So writing a real row for the first warehouse while the sentinel row
+// survives reports both. A merchant opening a product that shows 10 units,
+// typing 10 against their main warehouse and 5 against a new one, would end
+// up selling 25. They changed nothing and doubled their stock.
+//
+// Dropping the sentinel row here makes the edit a per-variant backfill:
+// after it, that variant is fully migrated and PR 6 has one less row to
+// sweep. It is also why this is one transaction — a write that landed
+// without the delete is precisely the double-count.
+//
+// Goes through UpdateVariantStockInTx per location rather than writing
+// variant_stock directly, keeping that the single mutation chokepoint the
+// sync_variant_inventory trigger is reasoned about through.
+func (r *gormRepository) SetVariantStockByLocationInTx(
+	ctx context.Context, tx *gorm.DB, variantID string, byLocation map[string]int,
+) error {
+	if len(byLocation) == 0 {
+		// Nothing asked for. Deleting the sentinel here would destroy stock
+		// on an empty request, so refuse rather than "helpfully" clear.
+		return nil
+	}
+
+	// Deterministic order. A map's iteration order is random, and two
+	// concurrent saves touching the same pair of locations in opposite
+	// orders can deadlock on the row locks.
+	locations := make([]string, 0, len(byLocation))
+	for id := range byLocation {
+		locations = append(locations, id)
+	}
+	slices.Sort(locations)
+
+	for _, locationID := range locations {
+		if locationID == DefaultLocationID {
+			// The sentinel is not a place a merchant can choose. Accepting
+			// it here would write the row this method exists to remove.
+			return fmt.Errorf("product: set stock by location: sentinel is not a warehouse")
+		}
+		if err := r.UpdateVariantStockInTx(ctx, tx, variantID, locationID, byLocation[locationID]); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.WithContext(ctx).Exec(
+		`DELETE FROM variant_stock WHERE variant_id = ? AND location_id = ?`,
+		variantID, DefaultLocationID).Error; err != nil {
+		return fmt.Errorf("product: set stock by location: clear sentinel: %w", err)
+	}
+	return nil
+}
+
+// StockByLocationForVariants reads the per-location breakdown for a set of
+// variants: variantID -> locationID -> quantity.
+//
+// The SENTINEL is reported under its own id rather than folded into a
+// warehouse. Callers rendering the admin's per-warehouse editor need to
+// know a variant is still un-migrated — that is the difference between
+// "this warehouse holds 10" and "10 units exist but are not yet assigned
+// anywhere", and the merchant's first per-location save is what resolves
+// it (see SetVariantStockByLocationInTx).
+func (r *gormRepository) StockByLocationForVariants(
+	ctx context.Context, db *gorm.DB, variantIDs []string,
+) (map[string]map[string]int, error) {
+	out := map[string]map[string]int{}
+	if len(variantIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		VariantID  string
+		LocationID string
+		Quantity   int
+	}
+	if err := db.WithContext(ctx).Raw(
+		`SELECT variant_id, location_id, quantity
+		   FROM variant_stock
+		  WHERE variant_id IN ?`, variantIDs).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("product: stock by location: %w", err)
+	}
+	for _, row := range rows {
+		if out[row.VariantID] == nil {
+			out[row.VariantID] = map[string]int{}
+		}
+		out[row.VariantID][row.LocationID] = row.Quantity
+	}
+	return out, nil
 }

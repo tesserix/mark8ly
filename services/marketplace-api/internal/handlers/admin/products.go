@@ -101,7 +101,30 @@ func (h *ProductHandler) Get(c *gin.Context) {
 		return
 	}
 	categories := h.resolveCategoryRefs(c, agg.CategoryLinks, storeID, tenantID)
-	c.JSON(http.StatusOK, ToAdminProductResponse(agg, categories))
+	resp := ToAdminProductResponse(agg, categories)
+
+	// Per-warehouse stock, on the detail view only (#177 PR 5e). The list
+	// view does not carry it: it renders a total, and one extra query per
+	// page of products to fill a field nothing reads is a cost with no
+	// buyer. A failure here degrades to the total rather than failing the
+	// whole product load — the breakdown is an editing aid, not the
+	// product.
+	variantIDs := make([]string, 0, len(agg.Variants))
+	for i := range agg.Variants {
+		variantIDs = append(variantIDs, agg.Variants[i].ID)
+	}
+	byVariant, err := h.svc.StockByLocation(c.Request.Context(), variantIDs)
+	if err != nil {
+		h.logger.Warn("product get: per-location stock unavailable",
+			"product_id", id, "store_id", storeID, "err", err)
+	} else {
+		for i := range resp.Variants {
+			if breakdown, ok := byVariant[resp.Variants[i].ID]; ok {
+				resp.Variants[i].InventoryByLocation = breakdown
+			}
+		}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // Create handles POST /admin/stores/:storeId/products.
@@ -235,7 +258,30 @@ func (h *ProductHandler) Patch(c *gin.Context) {
 		},
 	})
 	categories := h.resolveCategoryRefs(c, agg.CategoryLinks, storeID, tenantID)
-	c.JSON(http.StatusOK, ToAdminProductResponse(agg, categories))
+	resp := ToAdminProductResponse(agg, categories)
+
+	// Per-warehouse stock, on the detail view only (#177 PR 5e). The list
+	// view does not carry it: it renders a total, and one extra query per
+	// page of products to fill a field nothing reads is a cost with no
+	// buyer. A failure here degrades to the total rather than failing the
+	// whole product load — the breakdown is an editing aid, not the
+	// product.
+	variantIDs := make([]string, 0, len(agg.Variants))
+	for i := range agg.Variants {
+		variantIDs = append(variantIDs, agg.Variants[i].ID)
+	}
+	byVariant, err := h.svc.StockByLocation(c.Request.Context(), variantIDs)
+	if err != nil {
+		h.logger.Warn("product get: per-location stock unavailable",
+			"product_id", id, "store_id", storeID, "err", err)
+	} else {
+		for i := range resp.Variants {
+			if breakdown, ok := byVariant[resp.Variants[i].ID]; ok {
+				resp.Variants[i].InventoryByLocation = breakdown
+			}
+		}
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // Delete handles DELETE /admin/stores/:storeId/products/:id.

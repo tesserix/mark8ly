@@ -50,6 +50,7 @@ import {
   type ProductFormTabId,
 } from "./form/ProductFormTabs";
 import { GeneralTab } from "./form/GeneralTab";
+import type { Warehouse } from "@/lib/api/warehouses-api";
 import { OptionsTab } from "./form/OptionsTab";
 import { VariantsTab } from "./form/VariantsTab";
 import { MediaTab } from "./form/MediaTab";
@@ -74,6 +75,12 @@ export interface ProductFormProps {
   canArchive: boolean;
   session: SessionHeaders;
   storeSlug?: string;
+  /**
+   * The store's live warehouses (#177 PR 5e). Empty or one keeps the
+   * single Stock field and the ordinary product save — a store with one
+   * warehouse must see exactly what it saw before.
+   */
+  warehouses?: Warehouse[];
 }
 
 export function ProductForm({
@@ -86,6 +93,7 @@ export function ProductForm({
   canDelete,
   session,
   storeSlug,
+  warehouses = [],
 }: ProductFormProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -450,6 +458,10 @@ export function ProductForm({
               currencyCode={currencyCode}
               hasMultipleVariants={hasMultipleVariants}
               storeId={storeId}
+              warehouses={warehouses}
+              productId={initialProduct?.id}
+              variantId={firstVariant?.id}
+              stockByLocation={firstVariant?.inventory_by_location ?? {}}
             />
           )}
           {currentTab === "media" && mode === "edit" && initialProduct && (

@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/outbox"
+	"github.com/mark8ly/marketplace-api/internal/warehouse"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -33,10 +34,15 @@ type UpdateVariantBasicsRequest struct {
 	WidthCM           *decimal.Decimal
 	HeightCM          *decimal.Decimal
 	InventoryQuantity *int
-	InventoryPolicy   *string
-	LowStockThreshold *int
-	Position          *int
-	CurrencyCode      *string
+	// InventoryByLocation is the per-warehouse breakdown (#177 PR 5e).
+	// Mutually exclusive with InventoryQuantity: one names a total with no
+	// location, the other names locations with no total, and accepting both
+	// would leave the service guessing which the merchant meant.
+	InventoryByLocation map[string]int
+	InventoryPolicy     *string
+	LowStockThreshold   *int
+	Position            *int
+	CurrencyCode        *string
 }
 
 // UpdateVariantBasics applies the non-nil fields to one variant row.
@@ -51,6 +57,27 @@ func (s *Service) UpdateVariantBasics(ctx context.Context, req UpdateVariantBasi
 		}
 		if *req.CurrencyCode != store.CurrencyCode {
 			return nil, apperrors.CurrencyChangeForbidden()
+		}
+	}
+
+	if req.InventoryQuantity != nil && len(req.InventoryByLocation) > 0 {
+		return nil, apperrors.ValidationFailed("inventory_by_location",
+			"send either inventory_quantity or inventory_by_location, not both")
+	}
+	// Every named location must be a LIVE warehouse of this store. An id is
+	// a guessable handle, and stock written against another store's
+	// warehouse — or an archived one — is stock the allocator will never
+	// offer, which reads to the merchant as inventory that vanished.
+	if len(req.InventoryByLocation) > 0 {
+		live, err := s.liveWarehouseIDs(ctx, req.StoreID)
+		if err != nil {
+			return nil, err
+		}
+		for id := range req.InventoryByLocation {
+			if _, ok := live[id]; !ok {
+				return nil, apperrors.ValidationFailed("inventory_by_location",
+					"unknown or archived warehouse: "+id)
+			}
 		}
 	}
 
@@ -104,7 +131,18 @@ func (s *Service) UpdateVariantBasics(ctx context.Context, req UpdateVariantBasi
 				return err
 			}
 		}
-		if req.InventoryQuantity != nil {
+		switch {
+		case len(req.InventoryByLocation) > 0:
+			// Per-warehouse stock. SetVariantStockByLocationInTx also drops
+			// the variant's sentinel row, which is what keeps the total
+			// honest — see its doc comment for why leaving it doubles the
+			// merchant's stock.
+			if err := s.repo.SetVariantStockByLocationInTx(ctx, tx, req.VariantID, req.InventoryByLocation); err != nil {
+				return err
+			}
+		case req.InventoryQuantity != nil:
+			// The single-warehouse path, unchanged. A store with one
+			// warehouse must behave exactly as it did before this slice.
 			if err := s.repo.UpdateVariantStockInTx(ctx, tx, req.VariantID, DefaultLocationID, *req.InventoryQuantity); err != nil {
 				return err
 			}
@@ -126,4 +164,24 @@ func (s *Service) UpdateVariantBasics(ctx context.Context, req UpdateVariantBasi
 		}
 	}
 	return nil, apperrors.NotFound("variant")
+}
+
+// liveWarehouseIDs is the set of warehouse ids a store may hold stock at.
+func (s *Service) liveWarehouseIDs(ctx context.Context, storeID string) (map[string]struct{}, error) {
+	rows, err := warehouse.NewRepository().List(ctx, s.db, storeID, false)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]struct{}, len(rows))
+	for _, w := range rows {
+		out[w.ID] = struct{}{}
+	}
+	return out, nil
+}
+
+// StockByLocation returns the per-warehouse breakdown for a set of
+// variants. Read-only; used by the admin product detail view to render
+// the per-warehouse editor (#177 PR 5e).
+func (s *Service) StockByLocation(ctx context.Context, variantIDs []string) (map[string]map[string]int, error) {
+	return s.repo.StockByLocationForVariants(ctx, s.db, variantIDs)
 }

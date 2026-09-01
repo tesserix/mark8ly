@@ -24,6 +24,7 @@ import {
   getProduct,
   type CreateProductRequest,
   type UpdateProductRequest,
+  setVariantStockByLocation,
 } from "@/lib/api/marketplace-api";
 import { productFormSchema, type ProductFormValues } from "@/lib/validation/product-form";
 import { bulkActionSchema } from "@/lib/validation/bulk-action";
@@ -423,4 +424,43 @@ export async function bulkAssignCategoryAction(
   categoryIds: string[],
 ): Promise<BulkActionResult> {
   return executeBulkAction(storeId, "assign_category", productIds, { category_ids: categoryIds });
+}
+
+/**
+ * saveVariantStockByLocation writes one variant's per-warehouse stock
+ * (#177 PR 5e).
+ *
+ * Separate from the product save on purpose. A store with ONE warehouse
+ * keeps the single Stock field and the existing save path untouched —
+ * that is the spec's rule, and routing it through here too would change
+ * behaviour for every merchant who has no second location.
+ */
+export async function saveVariantStockByLocation(
+  storeId: string,
+  productId: string,
+  variantId: string,
+  byLocation: Record<string, number>,
+): Promise<ActionResult> {
+  const ctx = await readContext(storeId, "");
+  if (!ctx) {
+    return {
+      ok: false,
+      error: { code: "no_session", message: "Session expired. Please sign in again." },
+    };
+  }
+
+  const result = await setVariantStockByLocation(
+    storeId,
+    productId,
+    variantId,
+    byLocation,
+    { userId: ctx.userId, tenantId: ctx.tenantId, email: ctx.email },
+  );
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidatePath("/products");
+  revalidatePath(`/products/${productId}`);
+  return { ok: true };
 }

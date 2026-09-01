@@ -53,6 +53,11 @@ type Repository interface {
 	UpdateMediaInTx(ctx context.Context, tx *gorm.DB, productID, mediaID, storeID, tenantID string, fields map[string]any) error
 	DeleteMediaInTx(ctx context.Context, tx *gorm.DB, productID, mediaID, storeID, tenantID string) error
 	UpdateVariantStockInTx(ctx context.Context, tx *gorm.DB, variantID, locationID string, quantity int) error
+	// SetVariantStockByLocationInTx writes per-warehouse stock and clears
+	// the variant's sentinel row in the same transaction (#177 PR 5e).
+	SetVariantStockByLocationInTx(ctx context.Context, tx *gorm.DB, variantID string, byLocation map[string]int) error
+	// StockByLocationForVariants reads variantID -> locationID -> quantity.
+	StockByLocationForVariants(ctx context.Context, db *gorm.DB, variantIDs []string) (map[string]map[string]int, error)
 	UpdateVariantBasicsInTx(ctx context.Context, tx *gorm.DB, productID, variantID, storeID, tenantID string, fields map[string]any) error
 	SoftDeleteInTx(ctx context.Context, tx *gorm.DB, id, storeID, tenantID string) error
 }

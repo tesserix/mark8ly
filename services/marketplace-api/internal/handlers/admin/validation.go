@@ -52,9 +52,13 @@ type UpdateVariantRequest struct {
 	WidthCM           *decimal.Decimal `json:"width_cm,omitempty"`
 	HeightCM          *decimal.Decimal `json:"height_cm,omitempty"`
 	InventoryQuantity *int             `json:"inventory_quantity,omitempty"`
-	InventoryPolicy   *string          `json:"inventory_policy,omitempty" binding:"omitempty,oneof=deny continue"`
-	LowStockThreshold *int             `json:"low_stock_threshold,omitempty"`
-	Position          *int             `json:"position,omitempty"`
+	// InventoryByLocation is the per-warehouse breakdown (#177 PR 5e),
+	// keyed by warehouse id. Mutually exclusive with InventoryQuantity —
+	// the service rejects both together rather than guessing.
+	InventoryByLocation map[string]int `json:"inventory_by_location,omitempty"`
+	InventoryPolicy     *string        `json:"inventory_policy,omitempty" binding:"omitempty,oneof=deny continue"`
+	LowStockThreshold   *int           `json:"low_stock_threshold,omitempty"`
+	Position            *int           `json:"position,omitempty"`
 }
 
 // UploadURLRequest is the wire body for POST /media/upload-url.
@@ -177,24 +181,25 @@ func toServiceUpdateCategory(req UpdateCategoryRequest, id, tenantID, storeID st
 // through so the service can reject cross-currency mutations.
 func toServiceUpdateVariantBasics(req UpdateVariantRequest, productID, variantID, storeID, tenantID string) product.UpdateVariantBasicsRequest {
 	return product.UpdateVariantBasicsRequest{
-		ProductID:         productID,
-		VariantID:         variantID,
-		StoreID:           storeID,
-		TenantID:          tenantID,
-		SKU:               req.SKU,
-		Barcode:           req.Barcode,
-		Price:             req.Price,
-		CompareAtPrice:    req.CompareAtPrice,
-		CostPrice:         req.CostPrice,
-		WeightGrams:       req.WeightGrams,
-		LengthCM:          req.LengthCM,
-		WidthCM:           req.WidthCM,
-		HeightCM:          req.HeightCM,
-		InventoryQuantity: req.InventoryQuantity,
-		InventoryPolicy:   req.InventoryPolicy,
-		LowStockThreshold: req.LowStockThreshold,
-		Position:          req.Position,
-		CurrencyCode:      req.CurrencyCode,
+		ProductID:           productID,
+		VariantID:           variantID,
+		StoreID:             storeID,
+		TenantID:            tenantID,
+		SKU:                 req.SKU,
+		Barcode:             req.Barcode,
+		Price:               req.Price,
+		CompareAtPrice:      req.CompareAtPrice,
+		CostPrice:           req.CostPrice,
+		WeightGrams:         req.WeightGrams,
+		LengthCM:            req.LengthCM,
+		WidthCM:             req.WidthCM,
+		HeightCM:            req.HeightCM,
+		InventoryQuantity:   req.InventoryQuantity,
+		InventoryByLocation: req.InventoryByLocation,
+		InventoryPolicy:     req.InventoryPolicy,
+		LowStockThreshold:   req.LowStockThreshold,
+		Position:            req.Position,
+		CurrencyCode:        req.CurrencyCode,
 	}
 }
 

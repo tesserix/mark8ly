@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import type { AdminMediaResponse } from "@/lib/api/marketplace-api";
+import type { Warehouse } from "@/lib/api/warehouses-api";
 import { VariantRow } from "./VariantRow";
 
 export interface VariantDraft {
@@ -24,6 +25,12 @@ export interface VariantMatrixTableProps {
   currencyCode: string;
   media: AdminMediaResponse[];
   onPatch: (key: string, patch: Partial<VariantDraft>) => void;
+  /** Per-warehouse stock (#177 PR 6); fewer than two changes nothing. */
+  warehouses?: Warehouse[];
+  storeId?: string;
+  productId?: string;
+  /** variantId -> warehouseId -> quantity. */
+  stockByLocation?: Record<string, Record<string, number>>;
 }
 
 export function VariantMatrixTable({
@@ -31,6 +38,10 @@ export function VariantMatrixTable({
   currencyCode,
   media,
   onPatch,
+  warehouses = [],
+  storeId,
+  productId,
+  stockByLocation = {},
 }: VariantMatrixTableProps): React.ReactElement {
   const optionNames = React.useMemo<string[]>(() => {
     const first = variants[0];
@@ -84,6 +95,10 @@ export function VariantMatrixTable({
               currencyCode={currencyCode}
               media={media}
               onPatch={(patch) => onPatch(v.key, patch)}
+              warehouses={warehouses}
+              storeId={storeId}
+              productId={productId}
+              stockByLocation={v.id ? stockByLocation[v.id] : undefined}
             />
           ))}
         </tbody>

@@ -8,9 +8,15 @@ import {
 import { VariantBulkBar } from "@/components/products/variants/VariantBulkBar";
 import type { ProductFormValues } from "@/lib/validation/product-form";
 import type { AdminMediaResponse } from "@/lib/api/marketplace-api";
+import type { Warehouse } from "@/lib/api/warehouses-api";
 
 export interface VariantsTabProps {
   currencyCode: string;
+  /** Per-warehouse stock (#177 PR 6); fewer than two changes nothing. */
+  warehouses?: Warehouse[];
+  storeId?: string;
+  productId?: string;
+  stockByLocation?: Record<string, Record<string, number>>;
 }
 
 type BulkPatch =
@@ -18,7 +24,13 @@ type BulkPatch =
   | { field: "stock"; value: number }
   | { field: "weight"; value: number };
 
-export function VariantsTab({ currencyCode }: VariantsTabProps) {
+export function VariantsTab({
+  currencyCode,
+  warehouses = [],
+  storeId,
+  productId,
+  stockByLocation = {},
+}: VariantsTabProps) {
   const { control, setValue, getValues } = useFormContext<ProductFormValues>();
   const variants =
     (useWatch({ control, name: "variants" }) as VariantDraft[] | undefined) ?? [];
@@ -54,11 +66,26 @@ export function VariantsTab({ currencyCode }: VariantsTabProps) {
         currencyCode={currencyCode}
         onBulkPatch={handleBulk}
       />
+      {warehouses.length > 1 && (
+        // Two save models in one table is a real inconsistency, so it is
+        // stated rather than disguised: prices and SKUs commit on blur with
+        // the product, warehouse stock has its own Save. A merchant who
+        // expects one Save for everything otherwise files a bug about
+        // stock "not saving".
+        <p className="border-b border-[var(--ink-100)] pb-3 text-xs text-[color:var(--ink-900)]/50">
+          Prices, SKUs and dimensions save with the product. Warehouse stock
+          saves on its own, inside each variant.
+        </p>
+      )}
       <VariantMatrixTable
         variants={variants}
         currencyCode={currencyCode}
         media={media}
         onPatch={handlePatch}
+        warehouses={warehouses}
+        storeId={storeId}
+        productId={productId}
+        stockByLocation={stockByLocation}
       />
     </div>
   );

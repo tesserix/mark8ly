@@ -105,6 +105,14 @@ export function ProductForm({
   const hasMultipleVariants = (initialProduct?.variants.length ?? 0) > 1;
   const firstVariant = initialProduct?.variants[0];
 
+  // variantId -> warehouseId -> quantity, from the product detail response
+  // (#177 PR 6). Empty for a store with fewer than two warehouses, which is
+  // exactly when neither tab shows a per-warehouse editor.
+  const stockByVariant: Record<string, Record<string, number>> = {};
+  for (const v of initialProduct?.variants ?? []) {
+    if (v.inventory_by_location) stockByVariant[v.id] = v.inventory_by_location;
+  }
+
   const defaults: ProductFormValues = {
     title: initialProduct?.title ?? "",
     handle: initialProduct?.handle ?? "",
@@ -473,7 +481,13 @@ export function ProductForm({
           )}
           {currentTab === "options" && <OptionsTab />}
           {currentTab === "variants" && (
-            <VariantsTab currencyCode={currencyCode} />
+            <VariantsTab
+              currencyCode={currencyCode}
+              warehouses={warehouses}
+              storeId={storeId}
+              productId={initialProduct?.id}
+              stockByLocation={stockByVariant}
+            />
           )}
           {currentTab === "tax" && (
             <TaxTab storeCountryCode={storeCountryCode} />

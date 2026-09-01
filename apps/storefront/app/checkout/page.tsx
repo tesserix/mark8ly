@@ -37,6 +37,7 @@ import {
   type CheckoutItemBody,
   type CheckoutAddressBody,
 } from "@/lib/api/checkout-api";
+import { fallbackParcelWeight } from "@/lib/checkout/parcel-weight";
 
 // ---------------------------------------------------------------------------
 // Store slug — client-side resolution via hostname + fallback
@@ -181,6 +182,9 @@ export default function CheckoutPage() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
+  // Weight to assume for items whose product carries none. Store-configured
+  // (migration 000120), defaulting to the 500g checkout used to inline.
+  const fallbackWeightGrams = fallbackParcelWeight(shippingOptions);
   const [selectedShipping, setSelectedShipping] = useState<string>("");
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [loadingRates, setLoadingRates] = useState(false);
@@ -350,7 +354,8 @@ export default function CheckoutPage() {
         quantity: i.qty,
         // Real weight + dims from the variant the buyer selected.
         // Server falls back to default envelope when these are 0/missing.
-        weight_grams: i.weightGrams && i.weightGrams > 0 ? i.weightGrams : 500,
+        weight_grams:
+          i.weightGrams && i.weightGrams > 0 ? i.weightGrams : fallbackWeightGrams,
         length_cm: i.lengthCm,
         width_cm: i.widthCm,
         height_cm: i.heightCm,

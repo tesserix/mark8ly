@@ -55,6 +55,11 @@ export function ShippingConfigForm({
   const [freeShippingMin, setFreeShippingMin] = useState(
     existing?.free_shipping_threshold ?? "0",
   );
+  // 500g is what checkout hardcoded before this was configurable, so an
+  // untouched store keeps quoting exactly as it did.
+  const [parcelWeight, setParcelWeight] = useState(
+    String(existing?.default_parcel_weight_grams ?? 500),
+  );
 
   // Pickup automation. A saved value always wins; the unset default is
   // ON only for carriers that actually implement SchedulePickup, so a
@@ -118,6 +123,9 @@ export function ShippingConfigForm({
         is_active: isActive,
         handling_fee: parseFloat(handlingFee) || 0,
         free_shipping_min: parseFloat(freeShippingMin) || 0,
+        // 0 or unparseable means "leave it alone" server-side, so a blank
+        // box cannot silently reset a merchant's chosen weight.
+        default_parcel_weight_grams: parseInt(parcelWeight, 10) || 0,
         warehouse_name: address.name || undefined,
         warehouse_line1: address.line1 || undefined,
         warehouse_line2: address.line2 || undefined,
@@ -368,6 +376,23 @@ export function ShippingConfigForm({
             />
             <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
               Orders above this amount ship free. Set to 0 to disable.
+            </p>
+          </Field>
+          <Field label="Default parcel weight (g)" htmlFor={`${provider}-parcel-weight`}>
+            <input
+              id={`${provider}-parcel-weight`}
+              type="number"
+              step="1"
+              min="1"
+              value={parcelWeight}
+              onChange={(e) => { setParcelWeight(e.target.value); setSuccess(false); }}
+              disabled={pending}
+              className={inputClass}
+            />
+            <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
+              Used only when a product has no weight of its own. Carriers price
+              on this, so a wrong value over- or under-charges every such item.
+              Set weights on your products for accurate rates.
             </p>
           </Field>
         </div>

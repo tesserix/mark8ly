@@ -284,6 +284,13 @@ export interface ShippingOption {
   mode?: string;
   services: string[];
   supported_countries: string[];
+  /**
+   * Fallback weight for a cart item whose product carries no weight.
+   * Checkout hardcoded 500g for that case, so an invisible constant set
+   * real carrier prices. Optional: an older API build omits it and the
+   * 500g default still applies.
+   */
+  default_parcel_weight_grams?: number;
 }
 
 /**

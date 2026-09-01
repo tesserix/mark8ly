@@ -102,7 +102,14 @@ type CarrierConfig struct {
 	Mode                  string          `gorm:"column:mode;type:varchar(10);not null;default:test"`
 	HandlingFee           decimal.Decimal `gorm:"column:handling_fee;type:numeric(12,2);not null;default:0"`
 	FreeShippingThreshold decimal.Decimal `gorm:"column:free_shipping_min;type:numeric(12,2)"`
-	Enabled               bool            `gorm:"column:is_active;not null;default:false"`
+	// DefaultParcelWeightGrams is used when a product carries no weight.
+	// Checkout hardcoded 500 for that case, so an invisible constant in
+	// frontend code was setting real carrier prices. Migration 000120
+	// defaults this to 500 so no live quote moves; it only makes the
+	// number visible and adjustable. Per-product weights remain the
+	// accurate answer — this is the fallback when one is missing.
+	DefaultParcelWeightGrams int  `gorm:"column:default_parcel_weight_grams;not null;default:500"`
+	Enabled                  bool `gorm:"column:is_active;not null;default:false"`
 	// WarehouseID points at the store-level warehouses row (migration
 	// 000095, #177) when one has been linked. Nullable: a config saved
 	// with a blank warehouse name never gets one, and the FK is ON DELETE

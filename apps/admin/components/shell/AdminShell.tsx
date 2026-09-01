@@ -294,7 +294,11 @@ function AdminShellFrame({
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset className="relative bg-background">
+      {/* --admin-topbar-h is published here, on the ancestor of BOTH the
+          topbar and <main>, so page content can dock beneath the sticky
+          topbar without hardcoding its height. The topbar consumes it too,
+          which is what keeps the two from drifting apart. */}
+      <SidebarInset className="relative bg-background [--admin-topbar-h:4.5rem]">
         <header className="sticky top-0 z-30 border-b border-border-subtle bg-background">
           <button
             type="button"
@@ -308,7 +312,7 @@ function AdminShellFrame({
               <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             )}
           </button>
-          <div className="flex h-[4.5rem] items-center justify-between px-5 sm:px-7">
+          <div className="flex h-[var(--admin-topbar-h)] items-center justify-between px-5 sm:px-7">
             <div className="flex items-center gap-3">
               <SidebarTrigger className="-ml-1 md:hidden" />
               {/* Compact section indicator only — the page body owns

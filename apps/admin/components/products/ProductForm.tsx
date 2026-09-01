@@ -461,6 +461,63 @@ export function ProductForm({
           </div>
         )}
 
+        {/* The docked action bar.
+            Save used to live in the rail. The merchant's report was that it
+            "dangled in the middle of the page", and that was an anchoring
+            problem, not a boundary one — the rail is `self-start`, so it is a
+            short box floating beside a long column, and no amount of border
+            fixes that. Here Save has a fixed home: it stays put under the
+            topbar at every scroll position.
+
+            Flat --background, one hairline underneath, no shadow and no
+            backdrop-blur. The bar is part of the page rather than floating
+            above it, which is what keeps it from reading as dashboard chrome.
+
+            top is --admin-topbar-h, published by AdminShell on the ancestor of
+            both its own sticky topbar and <main>. The topbar is `sticky top-0
+            z-30`, so a bar at top-0 would slide underneath it; docking to the
+            shared variable means the two cannot drift apart. z-20 sits below
+            the topbar deliberately — they abut rather than overlap.
+
+            The negative margins let the hairline run the full content width
+            while the controls stay on the page's own left edge. */}
+        <div className="sticky top-[var(--admin-topbar-h)] z-20 -mx-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border-subtle bg-background px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+          <div className="flex items-center gap-4">
+            <button
+              type="submit"
+              disabled={isPending}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isPending
+                ? "Saving…"
+                : mode === "create"
+                  ? "Create product"
+                  : "Save changes"}
+            </button>
+            <Link
+              href="/products"
+              onClick={handleDiscard}
+              className="text-sm text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              Discard
+            </Link>
+            <span className="hidden text-xs text-[color:var(--ink-900)]/40 sm:inline">
+              Changes apply when you save.
+            </span>
+          </div>
+          {mode === "edit" && canDelete && initialProduct && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isPending}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-foreground-secondary transition-colors hover:text-[color:var(--danger)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Delete product"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete
+            </button>
+          )}
+        </div>
+
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-14">
           <div className="flex flex-col gap-10">
             <ProductSection
@@ -533,49 +590,7 @@ export function ProductForm({
             <TaxSection storeCountryCode={storeCountryCode} />
           </div>
 
-          <ProductRail
-            categories={categories}
-            storeId={storeId}
-            actions={
-              // Stacked in the rail rather than a footer row: on a
-              // scrolling page a bottom-anchored Save is a journey, and
-              // the merchant's most common question ("did that save?")
-              // should never require one.
-              <div className="flex flex-col gap-3">
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isPending
-                    ? "Saving…"
-                    : mode === "create"
-                      ? "Create product"
-                      : "Save changes"}
-                </button>
-                <div className="flex items-center justify-between">
-                  <Link
-                    href="/products"
-                    onClick={handleDiscard}
-                    className="text-sm text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-                  >
-                    Discard
-                  </Link>
-                  {mode === "edit" && canDelete && initialProduct && (
-                    <button
-                      type="button"
-                      onClick={handleDelete}
-                      disabled={isPending}
-                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-foreground-secondary transition-colors hover:text-[color:var(--danger)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
-                      aria-label="Delete product"
-                    >
-                      <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete
-                    </button>
-                  )}
-                </div>
-              </div>
-            }
-          />
+          <ProductRail categories={categories} storeId={storeId} />
         </div>
       </form>
 

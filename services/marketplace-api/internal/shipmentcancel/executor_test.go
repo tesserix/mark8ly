@@ -21,6 +21,20 @@ type fakeStore struct {
 	byID    map[uuid.UUID]shipping.ShipmentRecord
 	sets    []recordedSet
 	created []shipping.ShipmentRecord
+	// released records every shipment whose allocations were un-stamped,
+	// so tests can assert the never-shipped boundary.
+	released []uuid.UUID
+	// releaseErr makes the release fail, to prove a successful cancel is
+	// still reported as succeeded.
+	releaseErr error
+}
+
+func (f *fakeStore) ReleaseAllocationsForShipment(_ context.Context, id uuid.UUID) (int64, error) {
+	if f.releaseErr != nil {
+		return 0, f.releaseErr
+	}
+	f.released = append(f.released, id)
+	return 2, nil
 }
 
 func (f *fakeStore) CreateShipment(_ context.Context, rec *shipping.ShipmentRecord) error {
@@ -371,5 +385,84 @@ func TestParseShipmentAddress_RejectsAnErasedBlob(t *testing.T) {
 	}
 	if got.Line1 != "1 Test Lane" || got.Name != "A Person" {
 		t.Fatalf("populated address decoded wrong: %+v", got)
+	}
+}
+
+// --- allocation release on cancel (#497) ---
+//
+// Cancelling used to leave order_allocations stamped with shipment_id, so
+// Create() returned 409 already_shipped forever and the only escape was
+// deleting the shipment. A cancelled shipment is not a shipped one.
+
+func TestExecutor_CancelForward_ReleasesAllocations(t *testing.T) {
+	oid, sid := uuid.New(), uuid.New()
+	store := &fakeStore{byOrder: map[uuid.UUID][]shipping.ShipmentRecord{
+		oid: {{ID: sid, Carrier: "delhivery", TrackingNumber: "WBN1", Status: "pending"}},
+	}}
+	e := NewExecutor(store, resolverFor(&fakeCarrier{}), nil)
+
+	e.CancelForOrder(context.Background(), oid)
+
+	if len(store.released) != 1 || store.released[0] != sid {
+		t.Errorf("released = %v, want [%s]", store.released, sid)
+	}
+}
+
+// The boundary that matters. in_transit resolves to ActionTriggerRTO and
+// delivered to ActionReversePickup — the goods are moving or already
+// there. Freeing those allocations would let a merchant create a SECOND
+// label for the same goods.
+func TestExecutor_ShippedStatuses_DoNotReleaseAllocations(t *testing.T) {
+	for _, status := range []string{"in_transit", "out_for_delivery", "delivered"} {
+		t.Run(status, func(t *testing.T) {
+			oid, sid := uuid.New(), uuid.New()
+			store := &fakeStore{byOrder: map[uuid.UUID][]shipping.ShipmentRecord{
+				oid: {{ID: sid, Carrier: "delhivery", TrackingNumber: "WBN1", Status: status}},
+			}}
+			e := NewExecutor(store, resolverFor(&fakeCarrier{}), nil)
+
+			e.CancelForOrder(context.Background(), oid)
+
+			if len(store.released) != 0 {
+				t.Errorf("released = %v for status %q, want none", store.released, status)
+			}
+		})
+	}
+}
+
+// A carrier that refused the cancel means the label still stands, so the
+// allocations must stay stamped.
+func TestExecutor_FailedCancel_DoesNotReleaseAllocations(t *testing.T) {
+	oid, sid := uuid.New(), uuid.New()
+	store := &fakeStore{byOrder: map[uuid.UUID][]shipping.ShipmentRecord{
+		oid: {{ID: sid, Carrier: "delhivery", TrackingNumber: "WBN1", Status: "pending"}},
+	}}
+	car := &fakeCarrier{err: errors.New("delhivery: cancel shipment: Incorrect Waybill")}
+	e := NewExecutor(store, resolverFor(car), nil)
+
+	e.CancelForOrder(context.Background(), oid)
+
+	if len(store.released) != 0 {
+		t.Errorf("released = %v after a failed cancel, want none", store.released)
+	}
+}
+
+// The cancel already succeeded at the carrier by this point. A failure to
+// free allocations must not downgrade that to an error — the merchant is
+// left in the old (recoverable) dead end rather than being told a
+// successful cancel failed.
+func TestExecutor_ReleaseFailure_StillReportsSucceeded(t *testing.T) {
+	oid, sid := uuid.New(), uuid.New()
+	store := &fakeStore{
+		byOrder: map[uuid.UUID][]shipping.ShipmentRecord{
+			oid: {{ID: sid, Carrier: "delhivery", TrackingNumber: "WBN1", Status: "pending"}},
+		},
+		releaseErr: errors.New("db down"),
+	}
+	e := NewExecutor(store, resolverFor(&fakeCarrier{}), nil)
+
+	out := e.CancelForOrder(context.Background(), oid)
+	if len(out) != 1 || out[0].Status != "succeeded" {
+		t.Fatalf("outcomes = %+v, want one succeeded despite release failure", out)
 	}
 }

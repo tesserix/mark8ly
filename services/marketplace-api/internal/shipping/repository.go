@@ -150,6 +150,7 @@ type Repository interface {
 	ListShipmentsByStore(ctx context.Context, storeID uuid.UUID, limit, offset int) ([]ShipmentRecord, int64, error)
 	UpdateShipmentStatus(ctx context.Context, id uuid.UUID, status string) error
 	SetShipmentCancelState(ctx context.Context, shipmentID uuid.UUID, action, status, reason string) error
+	ReleaseAllocationsForShipment(ctx context.Context, shipmentID uuid.UUID) (int64, error)
 
 	// Carrier configs
 	GetCarrierConfig(ctx context.Context, storeID, provider string) (*CarrierConfig, error)
@@ -264,6 +265,32 @@ func (r *gormRepository) SetShipmentCancelState(ctx context.Context, shipmentID 
 		return fmt.Errorf("shipping: shipment not found")
 	}
 	return nil
+}
+
+// ReleaseAllocationsForShipment clears order_allocations.shipment_id for
+// every row stamped with shipmentID, making those allocation groups
+// unshipped again so a new label can be created for them.
+//
+// Called ONLY after a cancel that means the goods never left
+// (pending/created/manifested → ActionCancelForward). An in-transit or
+// delivered shipment must keep its stamp: freeing those would let a
+// merchant create a second label for goods already moving.
+//
+// Returns the number of allocations freed so the caller can log it. Zero
+// is normal, not an error — orders placed before allocation shipped have
+// no allocation rows at all.
+func (r *gormRepository) ReleaseAllocationsForShipment(ctx context.Context, shipmentID uuid.UUID) (int64, error) {
+	res := r.db.WithContext(ctx).
+		Table("order_allocations").
+		Where("shipment_id = ?", shipmentID).
+		Updates(map[string]any{
+			"shipment_id": nil,
+			"updated_at":  time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return 0, fmt.Errorf("shipping: release allocations for shipment: %w", res.Error)
+	}
+	return res.RowsAffected, nil
 }
 
 func (r *gormRepository) ListShipmentsByStore(ctx context.Context, storeID uuid.UUID, limit, offset int) ([]ShipmentRecord, int64, error) {

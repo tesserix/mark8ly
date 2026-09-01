@@ -55,6 +55,7 @@ var declaredExclusions = map[string]string{
 	"tenant_sso_user_mappings":  "merchant SSO identity, not a customer",
 	"promo_redemptions":         "subscription promo-code redemption (§7). Its `email` is the MERCHANT's billing address — promo.Service writes normaliseEmail(in.MerchantEmail) (internal/promo/service.go:156) and the row references a subscription_id, not an order. Anonymising it during a customer erasure would rewrite a merchant's own billing record",
 	"customer_erasure_requests": "the request itself — its own status and receipt are the evidence the erasure happened, and destroying it would destroy the proof",
+	"journal_subscribers":       "mark8ly.com marketing-list signup (#153), not a merchant's customer. The table carries no store_id and no tenant_id by design — a subscriber belongs to the platform, not to any store — so a store-scoped erasure plan has no key to reach it by, and erasing on a customer's request would delete a platform subscription that customer may never have made. NOT a statement that these addresses are unerasable: they are personal data and still carry an art.17 right, exercised against the platform rather than through a merchant's store-scoped flow",
 }
 
 // TestErasurePlan_CoversEveryCustomerLinkedTable fails when a table exists

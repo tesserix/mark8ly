@@ -72,8 +72,19 @@ describe("MediaCropDialog", () => {
     const onCancel = vi.fn();
     render(<MediaCropDialog sourceUrl="blob:test" onApply={onApply} onCancel={onCancel} />);
     await waitFor(() => expect(screen.getByRole("button", { name: /apply/i })).not.toBeDisabled());
-    fireEvent.keyDown(window, { key: "Enter" });
-    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    // The Apply button's disabled state and the window keydown listener are
+    // updated by two different mechanisms: the button is plain render
+    // output, the listener is a passive effect keyed on [pixelCrop]. React
+    // commits the DOM before flushing that effect, so waiting on the button
+    // does not guarantee the listener has re-registered with a non-null
+    // pixelCrop — on a loaded CI runner the keydown lands on the stale
+    // closure and does nothing. Retry the key until it takes; handleApply
+    // sets `busy` synchronously and the handler skips when busy, so a retry
+    // cannot apply twice.
+    await waitFor(() => {
+      fireEvent.keyDown(window, { key: "Enter" });
+      expect(onApply).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("passes sourceMimeType through to cropToBlob", async () => {

@@ -7,11 +7,23 @@ import {
   getSupportedProviders,
   listShippingConfigs,
 } from "@/lib/api/settings-api";
+import { listWarehouses } from "@/lib/api/warehouses-api";
 import { ShippingSettingsClient } from "@/components/settings/ShippingSettingsClient";
+import { WarehousesSettingsClient } from "@/components/settings/WarehousesSettingsClient";
 
 /**
- * /settings/shipping — shipping carrier configuration. Each carrier card
- * includes credentials, warehouse address, and fee settings.
+ * /settings/shipping — the whole "where do we ship from, and with whom"
+ * job on one page (#177 PR 5d).
+ *
+ * Two sections, deliberately in this order: the warehouses a store ships
+ * FROM, then the carriers that quote against them. A carrier cannot quote
+ * without an origin, so a merchant who arrives with neither is walked
+ * through it in the order the dependency actually runs — rather than
+ * meeting a carrier form that sends them to another page and back.
+ *
+ * Same page is not the same object. The address lives on the warehouse and
+ * nowhere else; the carrier binds to it by id. That separation is the
+ * whole of #177, and it survives the shared page.
  */
 export default async function ShippingSettingsPage() {
   const { tenantName, email, role, memberships, tenantId, userId, currentStore } =
@@ -26,9 +38,9 @@ export default async function ShippingSettingsPage() {
         title="Shipping"
         description={
           <>
-            Configure shipping carriers for your store
-            {country ? ` (${country})` : ""}. Each carrier needs API
-            credentials and a warehouse origin address for rate calculation.
+            Where your store ships from, and which carriers quote for it
+            {country ? ` (${country})` : ""}. Carriers quote rates from a
+            warehouse address, so add a warehouse first.
           </>
         }
         readOnlyNotice={!editable && role ? <ReadOnlyNotice role={role} /> : undefined}
@@ -64,9 +76,10 @@ async function ShippingSettingsContent({
   storeCountry: string;
 }) {
   const session = { userId, tenantId };
-  const [supported, configs] = await Promise.all([
+  const [supported, configs, warehouses] = await Promise.all([
     getSupportedProviders(storeId, session),
     listShippingConfigs(storeId, session),
+    listWarehouses(storeId, session),
   ]);
 
   if (!supported) {
@@ -79,11 +92,38 @@ async function ShippingSettingsContent({
   }
 
   return (
-    <ShippingSettingsClient
-      supported={supported}
-      configs={configs}
-      editable={editable}
-      storeCountry={storeCountry}
-    />
+    <div className="space-y-12">
+      <section id="warehouses" className="scroll-mt-24 space-y-5">
+        <div className="space-y-1.5">
+          <h2 className="font-serif text-xl text-foreground">Ships from</h2>
+          <p className="max-w-2xl text-sm text-foreground-secondary">
+            Your pickup locations. Orders are allocated to them in the order
+            listed here.
+          </p>
+        </div>
+        <WarehousesSettingsClient
+          warehouses={warehouses}
+          editable={editable}
+          storeCountry={storeCountry}
+        />
+      </section>
+
+      <section id="carriers" className="scroll-mt-24 space-y-5">
+        <div className="space-y-1.5">
+          <h2 className="font-serif text-xl text-foreground">Carriers</h2>
+          <p className="max-w-2xl text-sm text-foreground-secondary">
+            Credentials and fees per carrier. Each one ships from a warehouse
+            above.
+          </p>
+        </div>
+        <ShippingSettingsClient
+          supported={supported}
+          configs={configs}
+          warehouses={warehouses}
+          editable={editable}
+          storeCountry={storeCountry}
+        />
+      </section>
+    </div>
   );
 }

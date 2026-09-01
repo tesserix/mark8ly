@@ -327,3 +327,180 @@ func TestShippingUpsert_ClearingTheWarehouseNameClearsTheLink(t *testing.T) {
 	require.Len(t, loadWarehousesForStore(t, env.db, storeID), 1,
 		"the warehouse row itself must survive — it is still in use")
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// #177 PR 5d — the carrier binds to a warehouse BY ID.
+//
+// The free-text name was the trap: typing a name that did not exactly match
+// created a second, stockless warehouse rather than editing the first, and
+// the orders allocated to it never shipped. The admin now picks from a list
+// and sends the id.
+// ─────────────────────────────────────────────────────────────────────────
+
+// seedWarehouseForStore inserts a warehouse directly, the way the
+// warehouses page would have.
+func seedWarehouseForStore(t *testing.T, db *gorm.DB, tenantID, storeID, name string) string {
+	t.Helper()
+	id := uuid.NewString()
+	require.NoError(t, db.Exec(
+		`INSERT INTO warehouses (id, tenant_id, store_id, name, line1, city, region,
+		                         postal_code, country_code, phone)
+		 VALUES (?, ?, ?, ?, '1 Campbell Parade', 'Bondi Beach', 'NSW', '2026', 'AU', '+61200000000')`,
+		id, tenantID, storeID, name).Error)
+	return id
+}
+
+func warehouseIDUpsertBody(warehouseID string) map[string]any {
+	return map[string]any{
+		"api_key":      "test-token-1234",
+		"mode":         "test",
+		"is_active":    true,
+		"warehouse_id": warehouseID,
+	}
+}
+
+func TestShippingUpsert_BindsToAnExistingWarehouseByID(t *testing.T) {
+	env := setupShippingWarehouseRouter(t)
+	seedShippingCountry(t, env.db)
+	storeID, tenantID := seedShippingWarehouseStore(t, env.db)
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleOwner, tenantID)
+	whID := seedWarehouseForStore(t, env.db, tenantID, storeID, "Bondi Depot")
+
+	w := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+		warehouseIDUpsertBody(whID), authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	linked := warehouseIDForConfig(t, env.db, storeID, "delhivery")
+	require.NotNil(t, linked)
+	require.Equal(t, whID, *linked)
+
+	require.Len(t, loadWarehousesForStore(t, env.db, storeID), 1,
+		"binding by id must not create a warehouse")
+}
+
+// The address belongs to the warehouse now. A carrier save that could
+// still rewrite it would put one address behind two forms, which is
+// exactly how the two copies drifted apart before #177.
+func TestShippingUpsert_BindingByIDDoesNotRewriteTheWarehouse(t *testing.T) {
+	env := setupShippingWarehouseRouter(t)
+	seedShippingCountry(t, env.db)
+	storeID, tenantID := seedShippingWarehouseStore(t, env.db)
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleOwner, tenantID)
+	whID := seedWarehouseForStore(t, env.db, tenantID, storeID, "Bondi Depot")
+
+	body := warehouseIDUpsertBody(whID)
+	// A stale client sending BOTH must not win with the address half.
+	body["warehouse_name"] = "Somewhere Else"
+	body["warehouse_line1"] = "999 Wrong Street"
+	body["warehouse_city"] = "Nowhere"
+
+	w := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+		body, authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var name, line1 string
+	require.NoError(t, env.db.Raw(
+		`SELECT name, line1 FROM warehouses WHERE id = ?`, whID).Row().Scan(&name, &line1))
+	require.Equal(t, "Bondi Depot", name)
+	require.Equal(t, "1 Campbell Parade", line1)
+	require.Len(t, loadWarehousesForStore(t, env.db, storeID), 1,
+		"the name in the body must not have created a second warehouse")
+}
+
+func TestShippingUpsert_UnknownWarehouseIDIsRefusedNotA500(t *testing.T) {
+	env := setupShippingWarehouseRouter(t)
+	seedShippingCountry(t, env.db)
+	storeID, tenantID := seedShippingWarehouseStore(t, env.db)
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleOwner, tenantID)
+
+	w := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+		warehouseIDUpsertBody("00000000-0000-0000-0000-0000000000ff"),
+		authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "warehouse_id")
+}
+
+// An id is a guessable handle. The picker only ever offers this store's
+// warehouses, so a foreign id means a crafted request.
+func TestShippingUpsert_AnotherStoresWarehouseIDIsRefused(t *testing.T) {
+	env := setupShippingWarehouseRouter(t)
+	seedShippingCountry(t, env.db)
+	storeID, tenantID := seedShippingWarehouseStore(t, env.db)
+	otherStoreID, otherTenantID := seedShippingWarehouseStore(t, env.db)
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleOwner, tenantID)
+	foreign := seedWarehouseForStore(t, env.db, otherTenantID, otherStoreID, "Theirs")
+
+	w := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+		warehouseIDUpsertBody(foreign), authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+
+	// The whole save is refused, so there is no config row at all — assert
+	// on the count rather than on warehouse_id, which would just error
+	// with "no rows" and read like a different failure.
+	var configs int64
+	require.NoError(t, env.db.Raw(
+		`SELECT count(*) FROM shipping_carrier_configs WHERE store_id = ?`, storeID).
+		Scan(&configs).Error)
+	require.Zero(t, configs, "a refused save must not have written a carrier config")
+}
+
+// Archiving is removal. A carrier bound to an archived warehouse would
+// quote from a location the allocator refuses to use (#528).
+func TestShippingUpsert_ArchivedWarehouseIDIsRefused(t *testing.T) {
+	env := setupShippingWarehouseRouter(t)
+	seedShippingCountry(t, env.db)
+	storeID, tenantID := seedShippingWarehouseStore(t, env.db)
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleOwner, tenantID)
+	whID := seedWarehouseForStore(t, env.db, tenantID, storeID, "Gone")
+	require.NoError(t, env.db.Exec(
+		`UPDATE warehouses SET archived_at = now() WHERE id = ?`, whID).Error)
+
+	w := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+		warehouseIDUpsertBody(whID), authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+}
+
+// The picker needs to know which warehouse is currently bound.
+func TestShippingResponse_CarriesTheBoundWarehouseID(t *testing.T) {
+	env := setupShippingWarehouseRouter(t)
+	seedShippingCountry(t, env.db)
+	storeID, tenantID := seedShippingWarehouseStore(t, env.db)
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleOwner, tenantID)
+	whID := seedWarehouseForStore(t, env.db, tenantID, storeID, "Bondi Depot")
+
+	save := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+		warehouseIDUpsertBody(whID), authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusOK, save.Code, save.Body.String())
+	require.Contains(t, save.Body.String(), whID,
+		"the save response must name the bound warehouse")
+
+	list := request(t, env.router, http.MethodGet,
+		"/api/v1/admin/stores/"+storeID+"/settings/shipping", nil,
+		authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusOK, list.Code, list.Body.String())
+	require.Contains(t, list.Body.String(), `"warehouse_id":"`+whID+`"`)
+}
+
+// The legacy name path must keep working for a client that has not been
+// updated — this is the expand half of an expand/contract change.
+func TestShippingUpsert_LegacyNamePathStillWorksWithoutAnID(t *testing.T) {
+	env := setupShippingWarehouseRouter(t)
+	seedShippingCountry(t, env.db)
+	storeID, tenantID := seedShippingWarehouseStore(t, env.db)
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleOwner, tenantID)
+
+	w := request(t, env.router, http.MethodPut, shippingSettingsURL(storeID, "delhivery"),
+		warehouseUpsertBody("Legacy Warehouse"), authHeaders(userID, tenantID))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	rows := loadWarehousesForStore(t, env.db, storeID)
+	require.Len(t, rows, 1)
+	require.Equal(t, "Legacy Warehouse", rows[0].Name)
+}

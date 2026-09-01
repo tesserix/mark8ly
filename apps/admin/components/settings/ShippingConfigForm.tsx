@@ -1,9 +1,18 @@
 "use client";
 
-// ShippingConfigForm — inline form for configuring a shipping carrier.
-// Includes API credentials, warehouse address, and fee settings.
+// ShippingConfigForm — inline form for configuring a shipping carrier:
+// API credentials, which warehouse it ships from, and fee settings.
+//
+// #177 PR 5d took the ADDRESS out of this form. It used to embed
+// AddressFieldset and save a warehouse behind the carrier, keyed on the
+// name the merchant typed — so a name that did not match exactly created a
+// second, stockless warehouse instead of editing the first, and every order
+// allocated to it was unshippable. A free-text field that must exactly
+// match an existing record is the wrong contract. The merchant now picks
+// from their real warehouses and the form sends an id.
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Select,
@@ -19,28 +28,20 @@ import {
   defaultAutoSchedulePickup,
   supportsPickupAutomation,
 } from "@/lib/settings/pickup-automation";
-import { validateWarehouseAddress } from "@/lib/settings/warehouse-validation";
 import { defaultCarrierActive } from "@/lib/settings/carrier-active";
-import {
-  AddressFieldset,
-  type AddressValue,
-} from "@/components/forms/AddressFieldset";
+import type { Warehouse } from "@/lib/api/warehouses-api";
 
 interface ShippingConfigFormProps {
   provider: string;
   existing?: ShippingConfig;
-  /**
-   * ISO 3166 alpha-2 country code of the store, used to pre-select the
-   * warehouse country dropdown when the merchant first opens the form.
-   * Plumbed from `supported.country_code` in ShippingSettingsClient.
-   */
-  defaultCountryCode?: string;
+  /** The store's live warehouses, for the picker. */
+  warehouses: Warehouse[];
 }
 
 export function ShippingConfigForm({
   provider,
   existing,
-  defaultCountryCode,
+  warehouses,
 }: ShippingConfigFormProps) {
   const router = useRouter();
   const [apiKey, setApiKey] = useState("");
@@ -73,29 +74,12 @@ export function ShippingConfigForm({
     existing?.default_pickup_slot_start ?? "14:00:00",
   );
 
-  // Single object for the entire warehouse address. Replaces 8 separate
-  // useStates that each forced a full-form rerender on every keystroke
-  // and made the country box accept "Au" instead of "AU". For a brand
-  // new carrier card (no existing config) the country starts pre-selected
-  // to the store's country, so the merchant only types the street/city
-  // bits — no scroll-and-pick through 240+ countries to find their own.
-  const [address, setAddress] = useState<AddressValue>({
-    name: existing?.warehouse_name ?? "",
-    line1: existing?.warehouse_line1 ?? "",
-    line2: existing?.warehouse_line2 ?? "",
-    city: existing?.warehouse_city ?? "",
-    region: existing?.warehouse_region ?? "",
-    postal: existing?.warehouse_postal ?? "",
-    country:
-      existing?.warehouse_country ?? defaultCountryCode ?? "",
-    phone: existing?.warehouse_phone ?? "",
-  });
-
-  const [warehouseContactPerson, setWarehouseContactPerson] = useState(
-    existing?.warehouse_contact_person ?? "",
-  );
-  const [warehouseEmail, setWarehouseEmail] = useState(
-    existing?.warehouse_email ?? "",
+  // Which warehouse this carrier ships from. With exactly one there is no
+  // choice to make, so it binds silently and the card shows it read-only —
+  // presenting a one-item dropdown would be asking a question with one
+  // answer.
+  const [warehouseId, setWarehouseId] = useState(
+    existing?.warehouse_id ?? (warehouses.length === 1 ? warehouses[0]!.id : ""),
   );
 
   const [error, setError] = useState<string | null>(null);
@@ -107,11 +91,12 @@ export function ShippingConfigForm({
     setError(null);
     setSuccess(false);
 
-    // A config whose origin address cannot produce rates is worse than a
-    // refused save — see lib/settings/warehouse-validation.
-    const addressError = validateWarehouseAddress(address);
-    if (addressError) {
-      setError(addressError);
+    // The phone rule that used to live here moved to the warehouse form
+    // with the address — one rule, one place. Two validators for the same
+    // requirement drift, and the one nobody remembers is the one that
+    // stops matching.
+    if (warehouses.length > 0 && !warehouseId) {
+      setError("Choose which warehouse this carrier ships from.");
       return;
     }
 
@@ -126,16 +111,9 @@ export function ShippingConfigForm({
         // 0 or unparseable means "leave it alone" server-side, so a blank
         // box cannot silently reset a merchant's chosen weight.
         default_parcel_weight_grams: parseInt(parcelWeight, 10) || 0,
-        warehouse_name: address.name || undefined,
-        warehouse_line1: address.line1 || undefined,
-        warehouse_line2: address.line2 || undefined,
-        warehouse_city: address.city || undefined,
-        warehouse_region: address.region || undefined,
-        warehouse_postal: address.postal || undefined,
-        warehouse_country: address.country || undefined,
-        warehouse_phone: address.phone || undefined,
-        warehouse_contact_person: warehouseContactPerson || undefined,
-        warehouse_email: warehouseEmail || undefined,
+        // Only the id. The address is the warehouse's own; sending it from
+        // here too would put one address behind two forms.
+        warehouse_id: warehouseId || undefined,
         auto_schedule_pickup: autoSchedulePickup,
         default_pickup_slot_start: defaultPickupSlotStart,
         // Slot end mirrors the start + 4h — kept implicit because the UI
@@ -250,49 +228,85 @@ export function ShippingConfigForm({
         </label>
       </fieldset>
 
-      {/* Warehouse address */}
+      {/* Ships from — a picker over real warehouses, never free text.
+          The address itself lives on /settings/warehouses. */}
       <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50 mb-2">
-          Warehouse address
+        <legend className="mb-2 text-sm font-semibold uppercase tracking-[0.12em] text-[color:var(--ink-900)]/50">
+          Ships from
         </legend>
-        <AddressFieldset
-          value={address}
-          onChange={setAddress}
-          defaultCountryCode={defaultCountryCode}
-          lockCountry={Boolean(defaultCountryCode)}
-          disabled={pending}
-          idPrefix={`${provider}-wh`}
-        />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Contact person (optional)" htmlFor={`${provider}-wh-contact`}>
-            <input
-              id={`${provider}-wh-contact`}
-              type="text"
-              value={warehouseContactPerson}
-              onChange={(e) => { setWarehouseContactPerson(e.target.value); setSuccess(false); }}
+
+        {warehouses.length === 0 ? (
+          <div className="rounded-md border border-[color:var(--signal,#B7410E)]/25 bg-[color:var(--signal,#B7410E)]/[0.04] px-4 py-3">
+            <p className="text-sm text-[color:var(--ink-900)]">
+              You have no warehouses yet, and a carrier cannot quote a rate
+              without an origin address.
+            </p>
+            <Link
+              href="/settings/warehouses"
+              className="mt-2 inline-block text-sm font-medium text-[color:var(--moss-700)] underline underline-offset-4"
+            >
+              Add a warehouse
+            </Link>
+          </div>
+        ) : warehouses.length === 1 ? (
+          <div>
+            <p className="text-sm text-[color:var(--ink-900)]">
+              {warehouses[0]!.name}
+            </p>
+            <p className="mt-0.5 text-sm text-foreground-secondary">
+              {[
+                warehouses[0]!.line1,
+                warehouses[0]!.city,
+                warehouses[0]!.postal_code,
+                warehouses[0]!.country_code,
+              ]
+                .filter(Boolean)
+                .join(", ")}
+            </p>
+            <p className="mt-1.5 text-xs text-[color:var(--ink-900)]/40">
+              Your only warehouse, so this carrier ships from it.{" "}
+              <Link
+                href="/settings/warehouses"
+                className="text-[color:var(--moss-700)] underline underline-offset-4"
+              >
+                Edit the address
+              </Link>
+              .
+            </p>
+          </div>
+        ) : (
+          <Field label="Warehouse" htmlFor={`${provider}-warehouse`}>
+            <Select
+              value={warehouseId}
+              onValueChange={(value) => {
+                setWarehouseId(value);
+                setSuccess(false);
+              }}
               disabled={pending}
-              className={inputClass}
-            />
-            <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
-              Who the courier should ask for when picking up. Falls back to the
-              warehouse name if left blank.
+            >
+              <SelectTrigger id={`${provider}-warehouse`} className="w-full">
+                <SelectValue placeholder="Choose a warehouse" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name} — {w.city}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="mt-1 text-xs text-[color:var(--ink-900)]/40">
+              Addresses are managed on the{" "}
+              <Link
+                href="/settings/warehouses"
+                className="text-[color:var(--moss-700)] underline underline-offset-4"
+              >
+                Warehouses
+              </Link>{" "}
+              page.
             </p>
           </Field>
-          <Field label="Contact email (optional)" htmlFor={`${provider}-wh-email`}>
-            <input
-              id={`${provider}-wh-email`}
-              type="email"
-              value={warehouseEmail}
-              onChange={(e) => { setWarehouseEmail(e.target.value); setSuccess(false); }}
-              disabled={pending}
-              className={inputClass}
-            />
-            <p className="text-xs text-[color:var(--ink-900)]/40 mt-1">
-              Used for shipping label pickup notifications. Falls back to the
-              customer&apos;s email if left blank.
-            </p>
-          </Field>
-        </div>
+        )}
       </fieldset>
 
       {/* Pickup automation — only rendered for carriers that implement

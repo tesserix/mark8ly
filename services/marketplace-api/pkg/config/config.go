@@ -180,6 +180,17 @@ type Config struct {
 	// the single-brand v1 setup this static host is sufficient.
 	PublicStorefrontHost string `envconfig:"PUBLIC_STOREFRONT_HOST" default:""`
 
+	// PublicAPIBaseURL is the externally reachable origin for this
+	// service — the host Stripe must call back on. It is NOT the
+	// storefront host: the Istio wildcard routes api.mark8ly.com to
+	// marketplace-api and every other *.mark8ly.com to the Next.js
+	// apps, so a webhook registered against a store's own domain 404s.
+	//
+	// Used to auto-provision each store's Stripe webhook endpoint.
+	// Empty disables provisioning (and is logged) rather than
+	// registering an endpoint at a URL that cannot receive events.
+	PublicAPIBaseURL string `envconfig:"MARKETPLACE_PUBLIC_API_BASE_URL" default:"https://api.mark8ly.com"`
+
 	// Marketing M2 — Storefront URL template for gift card delivery
 	// emails. {slug} is substituted with the store slug. Empty disables
 	// the "Shop storefront" CTA in gift card emails.

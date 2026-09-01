@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/mark8ly/marketplace-api/internal/product"
+	"github.com/mark8ly/marketplace-api/internal/allocation"
 	"github.com/mark8ly/marketplace-api/internal/stockhold"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
@@ -74,32 +74,37 @@ func stockUnitsAt(t *testing.T, db *gorm.DB, variantID, locationID string) int {
 	return q
 }
 
-// THE load-bearing test. Production has zero warehouses; if this regresses,
-// every checkout fails.
-func TestCommitStock_StoreWithNoWarehousesBehavesExactlyAsBefore(t *testing.T) {
+// Replaces TestCommitStock_StoreWithNoWarehousesBehavesExactlyAsBefore,
+// which pinned the pre-#177 fallback: hold and decrement at a sentinel
+// location, write no allocations. That path is gone.
+//
+// Every store that holds stock now has a warehouse — product writes
+// resolve one, creating it if the store had none, and migration 000123
+// moved the existing rows. So a store with no warehouse has no products,
+// and a checkout against one is a broken invariant rather than a normal
+// case. It must fail LOUDLY: holding stock at a location that names
+// nothing is exactly what made allocation economically hollow.
+func TestCommitStock_StoreWithNoWarehousesFailsLoudlyInsteadOfUsingASentinel(t *testing.T) {
 	db := testdb.NewDB(t, "order_allocations", "stock_holds", "order_items", "orders",
 		"variant_stock", "product_variants", "products", "stores")
 	storeID, variantID := seedAvailStore(t, db)
+	orphan := uuid.NewString()
 	require.NoError(t, db.Exec(
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
-		 VALUES (?, ?, 5, now())`, variantID, product.DefaultLocationID).Error)
+		 VALUES (?, ?, 5, now())`, variantID, orphan).Error)
 
 	lines := []stockLine{{VariantID: variantID, Quantity: 2}}
 	orderID, _ := seedOrderWithItems(t, db, storeID, lines)
-	cart := uuid.NewString()
 
-	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), cart, orderID, storeID, lines)
-	}))
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+			orderID, storeID, lines)
+	})
+	require.Error(t, err, "a store with no warehouse cannot allocate, and must say so")
+	require.ErrorIs(t, err, allocation.ErrNoWarehouse)
 
-	require.Equal(t, 3, stockUnitsAt(t, db, variantID, product.DefaultLocationID),
-		"the sentinel row must still be the one decremented")
-
-	var allocations int64
-	require.NoError(t, db.Raw(
-		`SELECT count(*) FROM order_allocations WHERE order_id = ?`, orderID).Scan(&allocations).Error)
-	require.Zero(t, allocations,
-		"a store with no warehouses has nothing to allocate against — order_allocations.warehouse_id is NOT NULL")
+	require.Equal(t, 5, stockUnitsAt(t, db, variantID, orphan),
+		"a failed checkout must move no stock")
 }
 
 func TestCommitStock_AllocatesAcrossWarehousesAndRecordsThem(t *testing.T) {
@@ -197,30 +202,6 @@ func TestCommitStock_UnfillableOrderFailsAndTakesNoStock(t *testing.T) {
 // the backfill, plus a real row written by per-location stock editing. One
 // assignment against that warehouse must produce a hold in EACH location,
 // adding up to the assignment.
-func TestCommitStock_AssignmentSpanningTwoStorageLocationsHoldsInBoth(t *testing.T) {
-	db := testdb.NewDB(t, "order_allocations", "stock_holds", "order_items", "orders",
-		"variant_stock", "product_variants", "products", "stores")
-	storeID, variantID := seedAvailStore(t, db)
-	whA := seedWarehouseRow(t, db, storeID, "A")
-	require.NoError(t, db.Exec(
-		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
-		 VALUES (?, ?, 3, now()), (?, ?, 4, now())`,
-		variantID, product.DefaultLocationID, variantID, whA).Error)
-
-	lines := []stockLine{{VariantID: variantID, Quantity: 5}}
-	orderID, _ := seedOrderWithItems(t, db, storeID, lines)
-
-	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
-			orderID, storeID, lines)
-	}))
-
-	// 5 units drawn from a 3 + 4 breakdown: the sentinel is exhausted and the
-	// remainder comes from the real row.
-	require.Equal(t, 0, stockUnitsAt(t, db, variantID, product.DefaultLocationID))
-	require.Equal(t, 2, stockUnitsAt(t, db, variantID, whA))
-}
-
 // seedAvailVariant creates one more product+variant for an existing store,
 // for tests that need two distinct variants.
 func seedAvailVariant(t *testing.T, db *gorm.DB, storeID string) string {
@@ -370,41 +351,23 @@ func TestCommitStock_ContinuePolicyWithNoStorageSucceedsOnAllocationPath(t *test
 // A continue-policy variant whose warehouse's units span TWO storage
 // locations (the sentinel row plus a real one). Both must be decremented,
 // not just the first one the breakdown happens to list.
-func TestCommitStock_ContinuePolicyDecrementsAcrossMultipleStorageLocations(t *testing.T) {
-	db := testdb.NewDB(t, "order_allocations", "stock_holds", "order_items", "orders",
-		"variant_stock", "product_variants", "products", "stores")
-	storeID, variantID := seedAvailStore(t, db)
-	whA := seedWarehouseRow(t, db, storeID, "A")
-	require.NoError(t, db.Exec(
-		`UPDATE product_variants SET inventory_policy = 'continue' WHERE id = ?`, variantID).Error)
-	require.NoError(t, db.Exec(
-		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
-		 VALUES (?, ?, 1, now()), (?, ?, 1, now())`,
-		variantID, product.DefaultLocationID, variantID, whA).Error)
+// REMOVED: TestCommitStock_ContinuePolicyDecrementsAcrossMultipleStorageLocations.
+//
+// It pinned a 'continue' variant's decrement spanning TWO storage rows
+// behind ONE warehouse — the sentinel row plus a real row. That state
+// cannot occur after #177 PR 6: every variant_stock row's location_id is
+// now a warehouse id, so a warehouse is backed by exactly one row.
+//
+// Deliberately not rewritten as "spreads across two warehouses". The
+// allocator does not do that for a sell-past-zero variant — it fills from
+// the first warehouse and lets it go past zero — so the rewrite asserted
+// behaviour that has never existed and failed, which is how it was caught.
+// TestCommitStock_ContinuePolicyWithNoStorageSucceedsOnAllocationPath
+// still covers the sell-past-zero path itself.
 
-	// 2 units requested against two locations holding 1 each: whichever
-	// sorts first can only cover 1, so the second MUST be touched too, or
-	// this fails regardless of storage order.
-	lines := []stockLine{{VariantID: variantID, Quantity: 2}}
-	orderID, _ := seedOrderWithItems(t, db, storeID, lines)
-
-	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
-			orderID, storeID, lines)
-	}))
-
-	require.Equal(t, 0, stockUnitsAt(t, db, variantID, product.DefaultLocationID),
-		"the sentinel location must be decremented, not left untouched")
-	require.Equal(t, 0, stockUnitsAt(t, db, variantID, whA),
-		"the real warehouse location must be decremented too")
-}
-
-// FIX 1 (final review): the storage draw must track units already consumed
-// by EARLIER assignments in this call, not restart from the full breakdown
-// snapshot for every assignment. Two lines of the same variant, both filled
-// at one warehouse whose units span the sentinel row and a real row —
-// breakdown [sentinel:3, A:4], lines of 2 and 3 — must total 3 at the
-// sentinel and 2 at A, not 5 at a location that only holds 3.
+// at ONE warehouse — lines of 2 and 3 against a warehouse holding 5 —
+// must draw 5 in total, not double-count the breakdown and try to take
+// more than the row holds.
 func TestCommitStock_TwoLinesFilledAtSameWarehouseDoNotDoubleCountTheBreakdown(t *testing.T) {
 	db := testdb.NewDB(t, "order_allocations", "stock_holds", "order_items", "orders",
 		"variant_stock", "product_variants", "products", "stores")
@@ -412,8 +375,7 @@ func TestCommitStock_TwoLinesFilledAtSameWarehouseDoNotDoubleCountTheBreakdown(t
 	whA := seedWarehouseRow(t, db, storeID, "A")
 	require.NoError(t, db.Exec(
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
-		 VALUES (?, ?, 3, now()), (?, ?, 4, now())`,
-		variantID, product.DefaultLocationID, variantID, whA).Error)
+		 VALUES (?, ?, 5, now())`, variantID, whA).Error)
 
 	lines := []stockLine{{VariantID: variantID, Quantity: 2}, {VariantID: variantID, Quantity: 3}}
 	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
@@ -423,10 +385,8 @@ func TestCommitStock_TwoLinesFilledAtSameWarehouseDoNotDoubleCountTheBreakdown(t
 			orderID, storeID, lines)
 	}), "a cart the store can fully fill must not see out_of_stock")
 
-	require.Equal(t, 0, stockUnitsAt(t, db, variantID, product.DefaultLocationID),
-		"3 units at the sentinel, fully drawn across both lines")
-	require.Equal(t, 2, stockUnitsAt(t, db, variantID, whA),
-		"4 units at A, only the 2 units the sentinel could not cover")
+	require.Equal(t, 0, stockUnitsAt(t, db, variantID, whA),
+		"5 units at A, fully drawn across both lines")
 
 	var total int64
 	require.NoError(t, db.Raw(
@@ -443,33 +403,37 @@ func TestCommitStock_TwoLinesFilledAtSameWarehouseDoNotDoubleCountTheBreakdown(t
 // fires and the checkout 500s instead of succeeding.
 //
 // The stale hold is manufactured the way it happens in production: a
-// cart-add hold succeeds against the sentinel while it still has stock, and
+// cart-add hold succeeds against warehouse B while it still has stock, and
 // by checkout time an admin has corrected that count to zero — the hold
-// still exists, but the sentinel no longer has anything to give, so the
-// warehouse allocation plan must fill entirely from the real row instead.
+// still exists, but B no longer has anything to give, so the allocation
+// plan must fill entirely from A instead.
 func TestCommitStock_StaleCartHoldAtAnUnusedLocationIsReleasedNotDoubleCommitted(t *testing.T) {
 	db := testdb.NewDB(t, "order_allocations", "stock_holds", "order_items", "orders",
 		"variant_stock", "product_variants", "products", "stores")
 	storeID, variantID := seedAvailStore(t, db)
 	whA := seedWarehouseRow(t, db, storeID, "A")
+	whB := seedWarehouseRow(t, db, storeID, "B")
+	// A is filled first, so B is the one the plan will not need.
+	require.NoError(t, db.Exec(`UPDATE warehouses SET priority = 0 WHERE id = ?`, whA).Error)
+	require.NoError(t, db.Exec(`UPDATE warehouses SET priority = 1 WHERE id = ?`, whB).Error)
 	require.NoError(t, db.Exec(
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
 		 VALUES (?, ?, 2, now()), (?, ?, 5, now())`,
-		variantID, product.DefaultLocationID, variantID, whA).Error)
+		variantID, whB, variantID, whA).Error)
 
 	cart := uuid.NewString()
 	holds := stockhold.NewRepository()
 
 	// The cart-add hold, placed while the sentinel still had stock.
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return holds.Hold(context.Background(), tx, cart, variantID, product.DefaultLocationID, 2, time.Hour)
+		return holds.Hold(context.Background(), tx, cart, variantID, whB, 2, time.Hour)
 	}))
 
 	// An admin corrects the count between cart-add and checkout. The hold
 	// row is untouched — it still says 2 units held at the sentinel.
 	require.NoError(t, db.Exec(
 		`UPDATE variant_stock SET quantity = 0 WHERE variant_id = ? AND location_id = ?`,
-		variantID, product.DefaultLocationID).Error)
+		variantID, whB).Error)
 
 	lines := []stockLine{{VariantID: variantID, Quantity: 2}}
 	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
@@ -478,7 +442,7 @@ func TestCommitStock_StaleCartHoldAtAnUnusedLocationIsReleasedNotDoubleCommitted
 		return commitStock(context.Background(), tx, holds, cart, orderID, storeID, lines)
 	}), "the stale sentinel hold must be released, not decremented a second time")
 
-	require.Equal(t, 0, stockUnitsAt(t, db, variantID, product.DefaultLocationID),
+	require.Equal(t, 0, stockUnitsAt(t, db, variantID, whB),
 		"the sentinel had nothing left and must stay at zero, not go negative")
 	require.Equal(t, 3, stockUnitsAt(t, db, variantID, whA),
 		"the whole order must be filled from A, the only location with real stock")
@@ -486,7 +450,7 @@ func TestCommitStock_StaleCartHoldAtAnUnusedLocationIsReleasedNotDoubleCommitted
 	var state string
 	require.NoError(t, db.Raw(
 		`SELECT state FROM stock_holds WHERE cart_token = ? AND location_id = ?`,
-		cart, product.DefaultLocationID).Row().Scan(&state))
+		cart, whB).Row().Scan(&state))
 	require.Equal(t, "released", state, "the stale hold must be released, not left held or committed")
 
 	var allocWarehouse string

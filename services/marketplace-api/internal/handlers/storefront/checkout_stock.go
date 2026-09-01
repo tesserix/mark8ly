@@ -12,7 +12,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/allocation"
-	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/stockhold"
 )
 
@@ -77,17 +76,19 @@ func commitStock(
 		return err
 	}
 
-	// A store with NO warehouses keeps the pre-#177 behaviour exactly:
-	// hold and decrement at the sentinel location, write no allocations.
-	// This is not a tidy fallback — production has zero warehouse rows, so
-	// it is the only path that currently runs, and allocation.Plan would
-	// return ErrNoWarehouse for every checkout if it ran unconditionally.
+	// Every store that holds stock has a warehouse. Product writes resolve
+	// one — creating it if the store had none — and migration 000123 moved
+	// the existing rows onto real warehouses, so the sentinel path this
+	// used to fall back to is gone (#177 PR 6 step 2).
+	//
+	// A store with no warehouse therefore has no products, and nothing to
+	// check out. If that is ever false, allocation.Plan returns
+	// ErrNoWarehouse and the checkout fails loudly — which is the right
+	// answer: silently holding stock at a location that names nothing is
+	// what made allocation economically hollow in the first place.
 	warehouses, err := storeWarehousesInFillOrder(ctx, tx, storeID)
 	if err != nil {
 		return err
-	}
-	if len(warehouses) == 0 {
-		return commitStockAtSentinel(ctx, tx, holds, cartToken, lines, policies)
 	}
 
 	avail, storage, err := loadAvailability(ctx, tx, cartToken, warehouses, variantIDsOf(lines))
@@ -209,7 +210,7 @@ func commitStock(
 	}
 	// Release any cart-time hold whose (variant, location) is not part of
 	// this plan BEFORE placing the plan's holds and BEFORE Commit runs.
-	// cart_holds.go places holds at product.DefaultLocationID; a placement
+	// cart_holds.go places holds at the store default warehouse; a placement
 	// plan is free to target a different warehouse, and holds.Commit
 	// decrements EVERY live hold this cart owns regardless of whether it
 	// matches. Left in place, a stale cart-add hold gets decremented a
@@ -252,55 +253,6 @@ func commitStock(
 	// its order_item_id without threading ids through the checkout request.
 	if err := recordAllocations(ctx, tx, orderID, assignments, lines); err != nil {
 		return err
-	}
-
-	// One Commit for the whole cart: it decrements every live hold this cart
-	// holds and flips them to 'committed' in the same transaction.
-	return holds.Commit(ctx, tx, cartToken)
-}
-
-// commitStockAtSentinel is the pre-#177 behaviour, moved here verbatim: hold
-// and decrement everything at the single sentinel location, and write no
-// order_allocations rows. This is the ONLY path production exercises today
-// — there are zero warehouse rows — so its body must stay provably
-// unchanged rather than be re-implemented alongside the allocation path.
-func commitStockAtSentinel(
-	ctx context.Context,
-	tx *gorm.DB,
-	holds *stockhold.Repository,
-	cartToken string,
-	lines []stockLine,
-	policies map[string]string,
-) error {
-	for _, line := range lines {
-		if policies[line.VariantID] == inventoryPolicyContinue {
-			// Sell past zero on purpose. No hold, no gate — and the
-			// decrement is clamped, because variant_stock carries a
-			// non-negative CHECK (#231) that cannot be policy-aware: the
-			// policy lives on product_variants, and a CHECK cannot read
-			// another table.
-			//
-			// The consequence, stated rather than hidden: how far a
-			// 'continue' variant is oversold is NOT tracked. The orders
-			// are the record of what was sold; this column stops at zero.
-			if err := tx.WithContext(ctx).Exec(
-				`UPDATE variant_stock
-				    SET quantity = GREATEST(quantity - ?, 0), updated_at = now()
-				  WHERE variant_id = ? AND location_id = ?`,
-				line.Quantity, line.VariantID, product.DefaultLocationID).Error; err != nil {
-				return fmt.Errorf("storefront: decrement continue-policy variant: %w", err)
-			}
-			continue
-		}
-
-		err := holds.Hold(ctx, tx, cartToken, line.VariantID,
-			product.DefaultLocationID, line.Quantity, HoldTTL)
-		if errors.Is(err, stockhold.ErrInsufficientStock) {
-			return outOfStockError{VariantID: line.VariantID}
-		}
-		if err != nil {
-			return err
-		}
 	}
 
 	// One Commit for the whole cart: it decrements every live hold this cart

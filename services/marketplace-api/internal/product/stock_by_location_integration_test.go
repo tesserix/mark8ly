@@ -59,7 +59,7 @@ func TestSetVariantStockByLocation_WritesRealRowsAndClearsTheSentinel(t *testing
 	variantID := agg.Variants[0].ID
 
 	// The pre-5e world: everything on the sentinel.
-	require.NoError(t, repo.UpdateVariantStockInTx(ctx, tx, variantID, product.DefaultLocationID, 10))
+	require.NoError(t, repo.UpdateVariantStockInTx(ctx, tx, variantID, retiredSentinel, 10))
 
 	whA := seedWarehouseRowForStock(t, tx, tenantID, storeID, "Alpha")
 	whB := seedWarehouseRowForStock(t, tx, tenantID, storeID, "Bravo")
@@ -70,7 +70,7 @@ func TestSetVariantStockByLocation_WritesRealRowsAndClearsTheSentinel(t *testing
 	var sentinel int64
 	require.NoError(t, tx.Raw(
 		`SELECT count(*) FROM variant_stock WHERE variant_id = ? AND location_id = ?`,
-		variantID, product.DefaultLocationID).Scan(&sentinel).Error)
+		variantID, retiredSentinel).Scan(&sentinel).Error)
 	require.Zero(t, sentinel,
 		"the sentinel row must be gone — left behind it is summed with the real row for the same warehouse and the merchant's stock doubles")
 
@@ -89,7 +89,7 @@ func TestSetVariantStockByLocation_InventoryQuantityIsTheTotal(t *testing.T) {
 	agg := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-1")
 	require.NoError(t, repo.CreateAggregateInTx(ctx, tx, agg))
 	variantID := agg.Variants[0].ID
-	require.NoError(t, repo.UpdateVariantStockInTx(ctx, tx, variantID, product.DefaultLocationID, 10))
+	require.NoError(t, repo.UpdateVariantStockInTx(ctx, tx, variantID, retiredSentinel, 10))
 
 	whA := seedWarehouseRowForStock(t, tx, tenantID, storeID, "Alpha")
 	whB := seedWarehouseRowForStock(t, tx, tenantID, storeID, "Bravo")
@@ -142,7 +142,7 @@ func TestSetVariantStockByLocation_IsIdempotent(t *testing.T) {
 	agg := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-1")
 	require.NoError(t, repo.CreateAggregateInTx(ctx, tx, agg))
 	variantID := agg.Variants[0].ID
-	require.NoError(t, repo.UpdateVariantStockInTx(ctx, tx, variantID, product.DefaultLocationID, 10))
+	require.NoError(t, repo.UpdateVariantStockInTx(ctx, tx, variantID, retiredSentinel, 10))
 
 	whA := seedWarehouseRowForStock(t, tx, tenantID, storeID, "Alpha")
 	for range 2 {
@@ -171,13 +171,13 @@ func TestSetVariantStockByLocation_RefusesTheSentinelAsALocation(t *testing.T) {
 	agg := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-1")
 	require.NoError(t, repo.CreateAggregateInTx(ctx, tx, agg))
 	variantID := agg.Variants[0].ID
-	require.NoError(t, repo.UpdateVariantStockInTx(ctx, tx, variantID, product.DefaultLocationID, 10))
+	require.NoError(t, repo.UpdateVariantStockInTx(ctx, tx, variantID, retiredSentinel, 10))
 
 	err := repo.SetVariantStockByLocationInTx(ctx, tx, variantID,
-		map[string]int{product.DefaultLocationID: 99})
+		map[string]int{retiredSentinel: 99})
 	require.Error(t, err)
 
-	require.Equal(t, 10, stockAtLocation(t, tx, variantID, product.DefaultLocationID),
+	require.Equal(t, 10, stockAtLocation(t, tx, variantID, retiredSentinel),
 		"a refused call must not have touched the stock")
 }
 
@@ -192,10 +192,17 @@ func TestSetVariantStockByLocation_EmptyMapChangesNothing(t *testing.T) {
 	agg := minimalAggregate(storeID, tenantID, vendorID, "linen-shirt", "LINEN-1")
 	require.NoError(t, repo.CreateAggregateInTx(ctx, tx, agg))
 	variantID := agg.Variants[0].ID
-	require.NoError(t, repo.UpdateVariantStockInTx(ctx, tx, variantID, product.DefaultLocationID, 10))
+	require.NoError(t, repo.UpdateVariantStockInTx(ctx, tx, variantID, retiredSentinel, 10))
 
 	require.NoError(t, repo.SetVariantStockByLocationInTx(ctx, tx, variantID, map[string]int{}))
 
-	require.Equal(t, 10, stockAtLocation(t, tx, variantID, product.DefaultLocationID),
+	require.Equal(t, 10, stockAtLocation(t, tx, variantID, retiredSentinel),
 		"an empty request must not have cleared the sentinel")
 }
+
+// retiredSentinel is the location every stock row carried before #177 PR 6
+// moved them onto real warehouses. The production constant is gone;
+// these tests still need the value precisely BECAUSE nothing writes it
+// any more — a straggler row from an old pod or a restored backup must
+// still be swept, and that is what they pin.
+const retiredSentinel = "00000000-0000-0000-0000-000000000001"

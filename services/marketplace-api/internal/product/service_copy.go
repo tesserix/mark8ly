@@ -210,10 +210,16 @@ func (s *Service) Copy(ctx context.Context, req CopyRequest) (*Aggregate, error)
 			return err
 		}
 
-		// 4d. Seed variant_stock rows at quantity 0 in target store.
+		// 4d. Seed variant_stock rows at quantity 0 in the TARGET store's
+		// warehouse — the copy's stock belongs to the store it landed in,
+		// not the one it came from.
+		copyLocationID, err := s.stockLocationFor(ctx, tx, newAgg.Product.TenantID, newAgg.Product.StoreID)
+		if err != nil {
+			return err
+		}
 		for i := range newAgg.Variants {
 			if err := s.repo.UpdateVariantStockInTx(ctx, tx,
-				newAgg.Variants[i].ID, DefaultLocationID, 0); err != nil {
+				newAgg.Variants[i].ID, copyLocationID, 0); err != nil {
 				return err
 			}
 		}

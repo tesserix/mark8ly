@@ -41,10 +41,6 @@ import (
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
-// DefaultLocationID is the slice-1 single-warehouse location used for
-// variant_stock seeding. Multi-warehouse lands in a later slice.
-const DefaultLocationID = "00000000-0000-0000-0000-000000000001"
-
 // Service orchestrates product mutations and their outbox events.
 type Service struct {
 	db                 *gorm.DB
@@ -339,10 +335,16 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Aggregate, er
 		if err := s.repo.CreateAggregateInTx(ctx, tx, agg); err != nil {
 			return err
 		}
-		// Seed per-variant stock at the default location.
+		// Seed per-variant stock at the store's warehouse, creating one if
+		// the store has none. Stock has to live somewhere real — that is
+		// what retired the sentinel (#177 PR 6).
+		locationID, err := s.stockLocationFor(ctx, tx, req.TenantID, req.StoreID)
+		if err != nil {
+			return err
+		}
 		for i := range agg.Variants {
 			if err := s.repo.UpdateVariantStockInTx(ctx, tx,
-				agg.Variants[i].ID, DefaultLocationID, req.Variants[i].InitialStock); err != nil {
+				agg.Variants[i].ID, locationID, req.Variants[i].InitialStock); err != nil {
 				return err
 			}
 		}

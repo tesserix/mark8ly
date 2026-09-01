@@ -10,9 +10,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/stockhold"
 	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/warehouse"
 )
 
 // CartTokenCookie is the first-party cookie carrying the server-minted cart
@@ -103,6 +103,28 @@ func (h *CartHoldsHandler) Place(c *gin.Context) {
 	results := make([]cartHoldItemResult, 0, len(req.Items))
 
 	err := h.db.Transaction(func(tx *gorm.DB) error {
+		// Where this store's stock lives. Read-only on purpose: a shopper
+		// adding to their cart must never create merchant configuration,
+		// so unlike the product write paths this does NOT ensure a
+		// warehouse. A store without one has no stock rows either — every
+		// write path creates one — so there is nothing to hold, and the
+		// items below are reported insufficient rather than held against a
+		// location that names nothing (#177 PR 6 step 2).
+		var holdLocationID string
+		wh, whErr := warehouse.NewRepository().DefaultForStore(c.Request.Context(), tx, storeID)
+		switch {
+		case whErr == nil:
+			holdLocationID = wh.ID
+		case errors.Is(whErr, warehouse.ErrNotFound):
+			// Leave holdLocationID empty and fall through. Returning early
+			// here skipped the per-item ownership check below — which is
+			// the one thing on this unauthenticated surface that stops a
+			// caller probing another store's variants through any store's
+			// slug. A test caught it; the check runs first, always.
+		default:
+			return whErr
+		}
+
 		for _, item := range req.Items {
 			// Ownership check FIRST. This surface is unauthenticated beyond
 			// the shared storefront key, so without it a caller could hold
@@ -118,15 +140,26 @@ func (h *CartHoldsHandler) Place(c *gin.Context) {
 				return errVariantNotInStore
 			}
 
+			if holdLocationID == "" {
+				// The store has no warehouse, so it has no stock rows
+				// either — every write path creates one. Nothing to hold,
+				// and reporting it as insufficient is the truth rather
+				// than holding against a location that names nothing.
+				results = append(results, cartHoldItemResult{
+					VariantID: item.VariantID, Status: "insufficient", Available: 0,
+				})
+				continue
+			}
+
 			err := h.holds.Hold(c.Request.Context(), tx, cartToken, item.VariantID,
-				product.DefaultLocationID, item.Quantity, HoldTTL)
+				holdLocationID, item.Quantity, HoldTTL)
 			switch {
 			case err == nil:
 				results = append(results, cartHoldItemResult{
 					VariantID: item.VariantID, Status: "held", Available: item.Quantity,
 				})
 			case errors.Is(err, stockhold.ErrInsufficientStock):
-				avail, aerr := h.holds.Available(c.Request.Context(), tx, item.VariantID, product.DefaultLocationID, cartToken)
+				avail, aerr := h.holds.Available(c.Request.Context(), tx, item.VariantID, holdLocationID, cartToken)
 				if aerr != nil {
 					return aerr
 				}

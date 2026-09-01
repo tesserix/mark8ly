@@ -8,7 +8,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/allocation"
-	"github.com/mark8ly/marketplace-api/internal/product"
 )
 
 // stockAt is units of a variant available at one physical storage location.
@@ -18,18 +17,15 @@ type stockAt struct {
 }
 
 // storageLocations records, per variant and warehouse, WHERE the units
-// backing that warehouse's availability actually sit — possibly in more
-// than one place while the sentinel and real rows coexist.
+// backing that warehouse's availability actually sit.
 //
-// It exists because of the expand phase: until PR 6 backfills
-// variant_stock.location_id, units sit at product.DefaultLocationID while
-// allocation reasons about real warehouse ids. A hold must be placed against
-// the location(s) the rows actually have, or it locks nothing. A single
-// warehouse can be backed by MORE than one storage location even before the
-// backfill completes: PR 5 adds per-location stock editing, which can write
-// a real warehouse-id row while the sentinel row for that same variant still
-// exists. After the backfill every warehouse has exactly one contributing
-// location and this collapses to the obvious case.
+// It exists because a hold must be placed against the location(s) the rows
+// actually have, or it locks nothing. It was written for the expand phase,
+// when units sat on a sentinel location while allocation reasoned about
+// real warehouse ids and one warehouse could be backed by two rows. After
+// #177 PR 6 that collapses to the obvious case — one warehouse, one row —
+// and the indirection is kept because it is what makes a hold target a
+// real location rather than the warehouse's id by assumption.
 type storageLocations map[string]map[string][]stockAt
 
 // loadAvailability builds the snapshot allocation.Plan reasons over.
@@ -78,10 +74,11 @@ func loadAvailability(
 		return nil, nil, fmt.Errorf("storefront: load availability: %w", err)
 	}
 
-	// Which warehouse a stock row belongs to. Sentinel rows have no real
-	// warehouse of their own, so they answer for the store's FIRST warehouse
-	// in fill order — the one a single-warehouse store ships everything from
-	// anyway. Real rows answer for themselves.
+	// Which warehouse a stock row belongs to. Every row answers for itself
+	// now: the sentinel tolerance that mapped location-less rows onto the
+	// store's first warehouse was removed in #177 PR 6 step 2, once
+	// migration 000123 had moved production's units onto real warehouses
+	// and every write path resolved one.
 	byWarehouse := make(map[string]string, len(warehouses))
 	for _, w := range warehouses {
 		byWarehouse[w.ID] = w.ID
@@ -89,9 +86,7 @@ func loadAvailability(
 
 	for _, r := range rows {
 		warehouseID := r.LocationID
-		if r.LocationID == product.DefaultLocationID {
-			warehouseID = warehouses[0].ID
-		} else if _, known := byWarehouse[r.LocationID]; !known {
+		if _, known := byWarehouse[r.LocationID]; !known {
 			// Stock at a location that is not one of this store's warehouses
 			// — another store's row cannot appear here (variantIDs are this
 			// order's), so this is a warehouse deleted out from under its
@@ -112,10 +107,11 @@ func loadAvailability(
 			storage[r.VariantID] = map[string][]stockAt{}
 		}
 		avail[r.VariantID][warehouseID] += r.Available
-		// Append rather than overwrite: the sentinel row and a real
-		// warehouse-id row can both back the same warehouse (PR 5 writes
-		// real rows before PR 6 backfills the sentinel away), and a hold
-		// must be able to target every location the units actually sit at.
+		// Append rather than overwrite. One warehouse is normally backed by
+		// one row, but the shape is kept: a hold must be able to target
+		// every location the units actually sit at, and collapsing to a
+		// single row here would silently drop the second if that ever
+		// stops being true.
 		storage[r.VariantID][warehouseID] = append(
 			storage[r.VariantID][warehouseID],
 			stockAt{LocationID: r.LocationID, Units: r.Available},

@@ -73,8 +73,14 @@ export function PaymentSettingsClient({
                   configured
                     ? async () => {
                         if (!editable) return;
-                        await removePaymentConfig(provider);
+                        // Surface the failure rather than refreshing over it:
+                        // this DELETE was 401 for months and looked like a no-op.
+                        const result = await removePaymentConfig(provider);
+                        if (!result.ok) {
+                          return { ok: false, message: result.message };
+                        }
                         router.refresh();
+                        return { ok: true };
                       }
                     : undefined
                 }

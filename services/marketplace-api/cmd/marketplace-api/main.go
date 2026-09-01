@@ -99,6 +99,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/page"
 	"github.com/mark8ly/marketplace-api/internal/payment"
+	"github.com/mark8ly/marketplace-api/internal/payment/stripewebhook"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/promo"
@@ -795,7 +796,11 @@ func main() {
 		// Settings handlers (P5a).
 		countryRepoAdmin := country.NewRepository(conn)
 		paymentSettingsHandler := admin.NewPaymentSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log).
-			WithSecretStore(carrierSecretStore)
+			WithSecretStore(carrierSecretStore).
+			// Registers the store's Stripe webhook on save so a merchant
+			// never has to touch the Stripe dashboard. Disabled when the
+			// public API base is unset, which leaves the manual flow.
+			WithStripeWebhookProvisioner(stripewebhook.New(), cfg.PublicAPIBaseURL)
 		shippingSettingsHandler := admin.NewShippingSettingsHandler(conn, countryRepoAdmin, apiKeyEncryptor, log).
 			WithSecretStore(carrierSecretStore)
 		shippingRepo := shipping.NewRepository(conn)

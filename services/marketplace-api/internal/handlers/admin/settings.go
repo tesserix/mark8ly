@@ -21,6 +21,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
+	"github.com/mark8ly/marketplace-api/internal/payment/stripewebhook"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/warehouse"
@@ -161,6 +162,21 @@ type PaymentSettingsHandler struct {
 	// deployments remain buildable.
 	secretStore carriersecrets.Store
 	logger      *slog.Logger
+	// webhookProvisioner + publicAPIBase auto-register the store's Stripe
+	// webhook endpoint on save. Nil/empty disables it, leaving the manual
+	// dashboard flow — never a hard failure, because a saved API key is
+	// still useful without one.
+	webhookProvisioner *stripewebhook.Provisioner
+	publicAPIBase      string
+}
+
+// WithStripeWebhookProvisioner enables automatic webhook registration.
+func (h *PaymentSettingsHandler) WithStripeWebhookProvisioner(
+	p *stripewebhook.Provisioner, publicAPIBase string,
+) *PaymentSettingsHandler {
+	h.webhookProvisioner = p
+	h.publicAPIBase = publicAPIBase
+	return h
 }
 
 // NewPaymentSettingsHandler constructs a PaymentSettingsHandler.
@@ -415,6 +431,16 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 			First(&cfg)
 	}
 
+	// Auto-provision the Stripe webhook so the merchant never has to open
+	// the Stripe dashboard. Without it, payment succeeds at Stripe and the
+	// order stays Pending forever — and nothing surfaces, because the
+	// webhook handler answers 200 even when it rejects an unverifiable
+	// event, so Stripe reports delivery as successful.
+	//
+	// Best-effort: the credentials are already saved and useful, so a
+	// Stripe outage here must not fail the save.
+	webhookStatus := h.provisionStripeWebhook(c, store.Slug, provider, req, cfg)
+
 	h.audit.Emit(c, audit.Event{
 		Action:       "payment_provider.updated",
 		ResourceType: "payment_provider",
@@ -426,7 +452,69 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 			"is_active": req.IsActive,
 		},
 	})
-	c.JSON(http.StatusOK, gin.H{"data": h.toPaymentResponse(c.Request.Context(), cfg)})
+	resp := gin.H{"data": h.toPaymentResponse(c.Request.Context(), cfg)}
+	if webhookStatus != "" {
+		resp["webhook_status"] = webhookStatus
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// provisionStripeWebhook registers (or confirms) the store's Stripe webhook
+// endpoint and persists the signing secret Stripe returns.
+//
+// Returns a short status for the response, or "" when provisioning does not
+// apply. Never returns an error: the payment config is already saved, and
+// telling a merchant their save failed because a webhook call timed out
+// would be worse than leaving them the manual path.
+func (h *PaymentSettingsHandler) provisionStripeWebhook(
+	c *gin.Context, storeSlug, provider string, req paymentUpsertRequest, cfg PaymentGatewayConfig,
+) string {
+	if provider != "stripe" || h.webhookProvisioner == nil || h.publicAPIBase == "" {
+		return ""
+	}
+	// The plaintext secret key is only in hand when the caller just sent
+	// it; we deliberately do not read it back out of the secret store to
+	// re-provision on an unrelated save.
+	if req.SecretKey == "" {
+		return ""
+	}
+
+	ctx := c.Request.Context()
+	endpoint := stripewebhook.EndpointURL(h.publicAPIBase, storeSlug)
+	// A merchant-supplied secret on this same request wins — they are
+	// telling us which endpoint to verify against.
+	haveSecret := cfg.WebhookSecretEncrypted != "" ||
+		(req.WebhookSecret != nil && *req.WebhookSecret != "")
+
+	res, err := h.webhookProvisioner.Ensure(ctx, req.SecretKey, endpoint, haveSecret, nil)
+	if err != nil {
+		h.logger.Warn("payment: stripe webhook provisioning failed",
+			"store", storeSlug, "endpoint", endpoint, "err", err)
+		return "failed"
+	}
+	if res.Secret == "" {
+		return string(res.Action)
+	}
+
+	enc, err := h.putCredential(ctx, cfg.TenantID.String(), provider, "webhook_secret", res.Secret)
+	if err != nil {
+		// The endpoint now exists but we cannot verify its events. Log
+		// loudly: this is the state that looks healthy from Stripe.
+		h.logger.Error("payment: stripe webhook secret could not be encrypted",
+			"store", storeSlug, "endpoint_id", res.EndpointID, "err", err)
+		return "failed"
+	}
+	if err := h.db.WithContext(ctx).
+		Model(&PaymentGatewayConfig{}).
+		Where("id = ?", cfg.ID).
+		Update("webhook_secret_encrypted", enc).Error; err != nil {
+		h.logger.Error("payment: stripe webhook secret could not be stored",
+			"store", storeSlug, "endpoint_id", res.EndpointID, "err", err)
+		return "failed"
+	}
+	h.logger.Info("payment: stripe webhook provisioned",
+		"store", storeSlug, "action", string(res.Action), "endpoint_id", res.EndpointID)
+	return string(res.Action)
 }
 
 // putCredential routes a plaintext credential through the wired Store,

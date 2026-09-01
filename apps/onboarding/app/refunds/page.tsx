@@ -1,3 +1,4 @@
+import { MailLink } from "@repo/ui/mail-link";
 import {
   MarketingPage,
   PageHero,
@@ -39,7 +40,7 @@ export default function RefundsPolicyPage() {
         <p>
           After your first paid charge, you have fourteen days to request a
           full refund — no questions asked. Email{" "}
-          <a href="mailto:support@mark8ly.com">support@mark8ly.com</a> with
+          <MailLink email="support@mark8ly.com" /> with
           your store name and the invoice number. Typical turnaround is five
           business days; funds reappear on the original payment method.
         </p>
@@ -85,7 +86,7 @@ export default function RefundsPolicyPage() {
 
         <h2>7. How to request a refund</h2>
         <ol style={{ listStyleType: "decimal", paddingLeft: "1.5rem" }}>
-          <li>Email <a href="mailto:support@mark8ly.com">support@mark8ly.com</a></li>
+          <li>Email <MailLink email="support@mark8ly.com" /></li>
           <li>Include your store name and the invoice number</li>
           <li>Tell us briefly what happened</li>
         </ol>
@@ -99,11 +100,11 @@ export default function RefundsPolicyPage() {
         <ul>
           <li>
             <strong>Billing or refund questions:</strong>{" "}
-            <a href="mailto:support@mark8ly.com">support@mark8ly.com</a>
+            <MailLink email="support@mark8ly.com" />
           </li>
           <li>
             <strong>Legal:</strong>{" "}
-            <a href="mailto:legal@mark8ly.com">legal@mark8ly.com</a>
+            <MailLink email="legal@mark8ly.com" />
           </li>
         </ul>
 

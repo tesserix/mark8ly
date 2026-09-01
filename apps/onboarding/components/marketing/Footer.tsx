@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { MailLink } from "@repo/ui/mail-link";
+
 interface FooterColumnProps {
   title: string;
   links: Array<{ href: string; label: string }>;
@@ -92,12 +94,10 @@ export function Footer() {
             <p className="text-sm text-paper-500">
               © {currentYear} mark8ly · A Tesserix product
             </p>
-            <a
-              href="mailto:hello@mark8ly.com"
+            <MailLink
+              email="hello@mark8ly.com"
               className="inline-flex h-11 items-center text-sm text-paper-400 hover:text-paper-50"
-            >
-              hello@mark8ly.com
-            </a>
+            />
           </div>
           {/* Operator disclosure. Named here so a merchant can match the entity
               on their invoice and settlement to the product they signed up to. */}

@@ -84,6 +84,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/handlers/webhooks"
 	"github.com/mark8ly/marketplace-api/internal/health"
 	"github.com/mark8ly/marketplace-api/internal/ipprivacy"
+	"github.com/mark8ly/marketplace-api/internal/journal"
 	"github.com/mark8ly/marketplace-api/internal/k8sprov"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
 	"github.com/mark8ly/marketplace-api/internal/media"
@@ -305,6 +306,17 @@ func main() {
 		log.Error("db open", "err", err)
 		os.Exit(1)
 	}
+
+	// Journal "coming soon" page email capture (#153). Built here,
+	// unconditionally, rather than inside the admin-only wiring block
+	// below: unlike delhiveryWebhookHandler it has no admin-specific
+	// dependency (shipments, carrier secrets) — it only needs the DB
+	// connection every mode already has. Mounted via RegisterPublic on
+	// the same two engines (mode.Both, mode.Admin) as the rest of the
+	// public group; see internal/handlers/public/routes.go for why a
+	// tenant-free record is not on mode.Storefront.
+	journalSubscribeHandler := public.NewJournalSubscribeHandler(
+		journal.NewRepository(conn), journal.NewRateLimiter(), log)
 
 	// ─── Email templates loader (B1f) ───────────────────────────────────
 	// DB-backed templates with embedded fallback. tesserix-home authors
@@ -2218,6 +2230,7 @@ func main() {
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
 		public.RegisterPublic(r.Group("/api/v1"), public.PublicDeps{
 			DelhiveryWebhookHandler: delhiveryWebhookHandler,
+			JournalSubscribeHandler: journalSubscribeHandler,
 		})
 		if brandingSeeder != nil {
 			brandingSeeder.Register(r.Group("/api/v1/test"))
@@ -2366,6 +2379,7 @@ func main() {
 			// ShipmentsHandler.
 			public.RegisterPublic(engine.Group("/api/v1"), public.PublicDeps{
 				DelhiveryWebhookHandler: delhiveryWebhookHandler,
+				JournalSubscribeHandler: journalSubscribeHandler,
 			})
 			if countryPublicHandler != nil {
 				engine.GET("/api/v1/public/supported-countries", countryPublicHandler.ListSupported)

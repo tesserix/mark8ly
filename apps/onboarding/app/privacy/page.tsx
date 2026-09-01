@@ -1,3 +1,4 @@
+import { MailLink } from "@repo/ui/mail-link";
 import {
   MarketingPage,
   PageHero,
@@ -39,9 +40,9 @@ export default function PrivacyPolicyPage() {
         </p>
         <p>
           <strong>Contact:</strong>{" "}
-          <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a> ·{" "}
+          <MailLink email="privacy@mark8ly.com" /> ·{" "}
           <strong>Data Protection Officer:</strong>{" "}
-          <a href="mailto:dpo@mark8ly.com">dpo@mark8ly.com</a>
+          <MailLink email="dpo@mark8ly.com" />
         </p>
 
         <h2>2. Information we collect</h2>
@@ -218,7 +219,7 @@ export default function PrivacyPolicyPage() {
         </ul>
         <p>
           To exercise your rights, email{" "}
-          <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a>. We
+          <MailLink email="privacy@mark8ly.com" />. We
           respond within 30 days.
         </p>
 
@@ -248,7 +249,7 @@ export default function PrivacyPolicyPage() {
             correction, erasure, grievance redressal, and nomination, per
             the Digital Personal Data Protection Act, 2023. Our grievance
             officer is reachable at{" "}
-            <a href="mailto:dpo@mark8ly.com">dpo@mark8ly.com</a>.
+            <MailLink email="dpo@mark8ly.com" />.
           </li>
         </ul>
 
@@ -281,7 +282,7 @@ export default function PrivacyPolicyPage() {
           Mark8ly is not directed to children under 16. We do not knowingly
           collect personal information from children under 16. If you
           believe we&rsquo;ve received such information, email{" "}
-          <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a> and
+          <MailLink email="privacy@mark8ly.com" /> and
           we will delete it.
         </p>
 
@@ -296,15 +297,15 @@ export default function PrivacyPolicyPage() {
         <ul>
           <li>
             <strong>General privacy:</strong>{" "}
-            <a href="mailto:privacy@mark8ly.com">privacy@mark8ly.com</a>
+            <MailLink email="privacy@mark8ly.com" />
           </li>
           <li>
             <strong>Data Protection Officer / grievance officer (India):</strong>{" "}
-            <a href="mailto:dpo@mark8ly.com">dpo@mark8ly.com</a>
+            <MailLink email="dpo@mark8ly.com" />
           </li>
           <li>
             <strong>Legal:</strong>{" "}
-            <a href="mailto:legal@mark8ly.com">legal@mark8ly.com</a>
+            <MailLink email="legal@mark8ly.com" />
           </li>
         </ul>
 

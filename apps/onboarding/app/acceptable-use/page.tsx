@@ -1,3 +1,4 @@
+import { MailLink } from "@repo/ui/mail-link";
 import {
   MarketingPage,
   PageHero,
@@ -72,7 +73,7 @@ export default function AcceptableUsePage() {
         <p>
           If your account is suspended or terminated and you believe we got
           it wrong, email{" "}
-          <a href="mailto:legal@mark8ly.com">legal@mark8ly.com</a> within 30
+          <MailLink email="legal@mark8ly.com" /> within 30
           days. Include your store name, the action we took, and why you think
           it was incorrect. We respond within 10 business days.
         </p>
@@ -81,7 +82,7 @@ export default function AcceptableUsePage() {
         <p>
           If you see a Mark8ly-hosted store that looks like it violates this
           policy — counterfeit goods, phishing, IP infringement, fraud — email{" "}
-          <a href="mailto:abuse@mark8ly.com">abuse@mark8ly.com</a>. Include
+          <MailLink email="abuse@mark8ly.com" />. Include
           the store URL and a description of the issue.
         </p>
 

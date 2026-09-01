@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { MailLink } from "@repo/ui/mail-link";
+
 /**
  * Thin footer used by the onboarding flow and post-submit
  * pages. Pure type, a single row, hairline top border. No card
@@ -11,12 +13,10 @@ export function SlimFooter() {
       <div className="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-5 text-sm text-foreground-secondary sm:flex-row sm:items-center sm:justify-between">
         <p>
           Need help?{" "}
-          <a
-            href="mailto:hello@mark8ly.com"
+          <MailLink
+            email="hello@mark8ly.com"
             className="font-medium text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
-          >
-            hello@mark8ly.com
-          </a>
+          />
         </p>
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">

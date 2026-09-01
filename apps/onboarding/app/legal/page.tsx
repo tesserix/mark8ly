@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { MailLink } from "@repo/ui/mail-link";
 import {
   MarketingPage,
   PageHero,
@@ -101,12 +102,10 @@ export default function LegalHubPage() {
             </p>
             <p className="mt-3">
               Questions?{" "}
-              <a
-                href="mailto:legal@mark8ly.com"
+              <MailLink
+                email="legal@mark8ly.com"
                 className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
-              >
-                legal@mark8ly.com
-              </a>
+              />
             </p>
           </div>
         </div>

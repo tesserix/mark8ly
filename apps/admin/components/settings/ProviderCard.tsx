@@ -34,6 +34,16 @@ interface ProviderCardProps {
   onTest?: () => Promise<{ success: boolean; error?: string }>;
   /** The inline configuration form rendered when expanded. */
   children?: ReactNode;
+  /**
+   * Always-visible slot, rendered whether or not the card is expanded.
+   *
+   * For anything the merchant must see WITHOUT opening the card — chiefly
+   * readiness warnings. Passing those as `children` hides them behind the
+   * expand toggle, which is exactly how both the shipping (#511) and
+   * payments (#522) panels shipped invisible: the card renders children
+   * only under `{expanded && …}`, so a collapsed card showed nothing.
+   */
+  banner?: ReactNode;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -50,6 +60,7 @@ export function ProviderCard({
   onRemove,
   onTest,
   children,
+  banner,
 }: ProviderCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -83,7 +94,9 @@ export function ProviderCard({
       // A falsy `ok` is a real failure; `void` means the caller has nothing
       // to report and the refresh below tells the story.
       if (result && !result.ok) {
-        setRemoveError(result.message ?? "Could not remove this configuration.");
+        setRemoveError(
+          result.message ?? "Could not remove this configuration.",
+        );
         return;
       }
       setConfirmRemove(false);
@@ -199,12 +212,15 @@ export function ProviderCard({
                 role="alert"
                 className="rounded-md border border-[color:var(--danger)]/20 bg-[color:var(--danger)]/[0.05] px-4 py-2.5 text-sm text-[color:var(--danger)]"
               >
-                Connection failed{testResult.error ? `: ${testResult.error}` : "."}
+                Connection failed
+                {testResult.error ? `: ${testResult.error}` : "."}
               </div>
             )}
           </div>
         )}
       </div>
+
+      {banner && <div className="pb-4">{banner}</div>}
 
       {/* Confirm remove warning */}
       {confirmRemove && !removing && (
@@ -213,9 +229,9 @@ export function ProviderCard({
             role="alert"
             className="rounded-md border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/[0.05] px-4 py-2.5 text-sm text-[color:var(--warning)]"
           >
-            Remove {formatProviderName(providerName)}? You&rsquo;ll need to add it
-            again to re-enable. Click &quot;Confirm remove&quot; to proceed, or
-            close to cancel.
+            Remove {formatProviderName(providerName)}? You&rsquo;ll need to add
+            it again to re-enable. Click &quot;Confirm remove&quot; to proceed,
+            or close to cancel.
           </div>
         </div>
       )}
@@ -303,5 +319,8 @@ function formatProviderName(provider: string): string {
     // Tax
     taxjar: "TaxJar",
   };
-  return names[provider.toLowerCase()] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
+  return (
+    names[provider.toLowerCase()] ??
+    provider.charAt(0).toUpperCase() + provider.slice(1)
+  );
 }

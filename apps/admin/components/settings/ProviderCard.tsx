@@ -5,7 +5,8 @@
 // mode badge, and action buttons. Accepts a children slot for the
 // inline configuration form that expands on "Configure".
 
-import { useRef, useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition, type ReactNode } from "react";
+import { AlertDialog } from "@tesserix/web";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Types
@@ -63,7 +64,7 @@ export function ProviderCard({
   banner,
 }: ProviderCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [removing, startRemoveTransition] = useTransition();
   const [testing, startTestTransition] = useTransition();
@@ -71,23 +72,20 @@ export function ProviderCard({
     success: boolean;
     error?: string;
   } | null>(null);
-  const confirmBtnRef = useRef<HTMLButtonElement>(null);
 
   function handleConfigure() {
     setExpanded((prev) => !prev);
-    setConfirmRemove(false);
+    setConfirmOpen(false);
     setTestResult(null);
     void onConfigure?.();
   }
 
-  function handleRemove() {
+  // Removal is two steps on purpose, but the second step is a modal, not a
+  // relabelled button: a button that quietly renames itself reads as "nothing
+  // happened" and costs the merchant a round trip before they realise the
+  // click registered.
+  function handleRemoveConfirmed() {
     if (!onRemove) return;
-    if (!confirmRemove) {
-      setConfirmRemove(true);
-      // Focus the button after React re-renders with confirmation state
-      requestAnimationFrame(() => confirmBtnRef.current?.focus());
-      return;
-    }
     setRemoveError(null);
     startRemoveTransition(async () => {
       const result = await onRemove();
@@ -97,9 +95,7 @@ export function ProviderCard({
         setRemoveError(
           result.message ?? "Could not remove this configuration.",
         );
-        return;
       }
-      setConfirmRemove(false);
     });
   }
 
@@ -169,17 +165,12 @@ export function ProviderCard({
           </button>
           {onRemove && configured && (
             <button
-              ref={confirmBtnRef}
               type="button"
-              onClick={handleRemove}
+              onClick={() => setConfirmOpen(true)}
               disabled={removing}
               className="rounded-md border border-[color:var(--ink-900)]/10 px-3 py-1.5 text-sm font-medium text-[color:var(--danger)] transition-colors hover:border-[color:var(--danger)]/30 hover:bg-[color:var(--danger)]/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {removing
-                ? "Removing..."
-                : confirmRemove
-                  ? "Confirm remove"
-                  : "Remove"}
+              {removing ? "Removing..." : "Remove"}
             </button>
           )}
         </div>
@@ -222,20 +213,6 @@ export function ProviderCard({
 
       {banner && <div className="pb-4">{banner}</div>}
 
-      {/* Confirm remove warning */}
-      {confirmRemove && !removing && (
-        <div className="pb-4">
-          <div
-            role="alert"
-            className="rounded-md border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/[0.05] px-4 py-2.5 text-sm text-[color:var(--warning)]"
-          >
-            Remove {formatProviderName(providerName)}? You&rsquo;ll need to add
-            it again to re-enable. Click &quot;Confirm remove&quot; to proceed,
-            or close to cancel.
-          </div>
-        </div>
-      )}
-
       {/* Expandable form with smooth height transition */}
       <div
         className="grid transition-[grid-template-rows] duration-300 ease-in-out"
@@ -255,6 +232,20 @@ export function ProviderCard({
           )}
         </div>
       </div>
+
+      <AlertDialog
+        isOpen={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title={`Remove ${formatProviderName(providerName)}?`}
+        message={`This deletes the stored ${formatProviderName(
+          providerName,
+        )} configuration. You will need to add it again to re-enable it.`}
+        type="confirm"
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        onConfirm={handleRemoveConfirmed}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </article>
   );
 }

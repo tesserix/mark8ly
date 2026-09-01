@@ -138,6 +138,7 @@ func setupTestRouter(t *testing.T) *testEnv {
 		MediaHandler:        mediaHandler,
 		SubscriptionHandler: subHandler,
 		PromoHandler:        promoHandler,
+		WarehousesHandler:   admin.NewWarehousesHandler(db, nil),
 		StoresMiddleware:    storeMW,
 		AuthzMiddleware:     authzMW,
 		InternalSecret:      "",

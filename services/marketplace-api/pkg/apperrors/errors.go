@@ -78,6 +78,11 @@ const (
 	// clause, so the delete is refused by Postgres; this code turns that
 	// refusal into an actionable 409 instead of a driver-level 500.
 	CodeSegmentInUse Code = "segment_in_use"
+
+	// CodeWarehouseNameTaken — another LIVE warehouse in the store already
+	// holds the name. Archived rows do not collide (000122's partial unique
+	// index), so reusing an archived name is not this error.
+	CodeWarehouseNameTaken Code = "warehouse_name_taken"
 )
 
 // Error is the marketplace-api envelope. Satisfies the error interface.
@@ -192,6 +197,7 @@ var knownCodes = []Code{
 	CodeCampaignNotFound, CodeCampaignNotDraft, CodeCampaignNotSending,
 	CodeCampaignNotPaused, CodeSegmentNotFound, CodeSegmentInvalidRules,
 	CodeCampaignNoRecipients, CodeCampaignSchedulePast, CodeSegmentInUse,
+	CodeWarehouseNameTaken,
 }
 
 // IsKnownCode reports whether the given code string is one of the
@@ -455,4 +461,13 @@ func SegmentInUse(campaignCount int64) *Error {
 	return &Error{Code: CodeSegmentInUse,
 		Message: fmt.Sprintf("segment is still used by %d %s and cannot be deleted", campaignCount, noun),
 		Details: map[string]any{"campaign_count": campaignCount}}
+}
+
+// WarehouseNameTaken reports a live name collision within one store.
+func WarehouseNameTaken(name string) *Error {
+	return &Error{
+		Code:    CodeWarehouseNameTaken,
+		Message: "a warehouse with this name already exists",
+		Details: map[string]any{"name": name},
+	}
 }

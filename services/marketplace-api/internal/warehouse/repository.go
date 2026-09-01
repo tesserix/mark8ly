@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -62,6 +63,11 @@ var ErrHasUnshippedParcel = errors.New("warehouse: has unshipped allocations")
 // cannot be deleted at all — it must be archived. Not a failure the caller
 // should surface as an error: it is the signal to call Archive instead.
 var ErrHasHistory = errors.New("warehouse: has allocation history; archive instead")
+
+// ErrNameTaken means another LIVE warehouse in the same store already holds
+// the name. Archived rows do not collide — that is what 000122's partial
+// unique index buys, and reusing an archived name is legitimate.
+var ErrNameTaken = errors.New("warehouse: name already in use")
 
 // Warehouse is a store's pickup location.
 type Warehouse struct {
@@ -393,4 +399,177 @@ func (r *Repository) SetPriorities(ctx context.Context, db *gorm.DB, storeID str
 		}
 		return nil
 	})
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// #177 PR 5b — id-keyed CRUD for the admin API.
+//
+// Upsert (above) is keyed on (store_id, name) and cannot serve this
+// surface: a merchant renaming a warehouse through Upsert would land on a
+// DIFFERENT row and leave the stock behind on the old one. That is the
+// exact trap #177 exists to remove, so the admin API keys on the id and a
+// name collision is reported rather than silently merged.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Create inserts a new warehouse. A live warehouse already holding the name
+// is ErrNameTaken; an ARCHIVED one is not a conflict at all, which is what
+// the partial index (000122) is for.
+func (r *Repository) Create(ctx context.Context, db *gorm.DB, w Warehouse) (Warehouse, error) {
+	if err := normalize(&w); err != nil {
+		return Warehouse{}, err
+	}
+	w.ID = uuid.NewString()
+
+	if err := db.WithContext(ctx).Create(&w).Error; err != nil {
+		if isUniqueViolation(err) {
+			return Warehouse{}, ErrNameTaken
+		}
+		return Warehouse{}, fmt.Errorf("warehouse: create: %w", err)
+	}
+	return w, nil
+}
+
+// UpdateByID edits a live warehouse in place, id-keyed so a rename moves
+// the row instead of forking it.
+//
+// Scoped to store_id as well as id: an id alone is a guessable handle to
+// another tenant's row, and the handler takes the store from the URL.
+// Archived rows are not editable — the merchant has been told they are
+// gone, and an edit would be editing something the UI does not show.
+func (r *Repository) UpdateByID(ctx context.Context, db *gorm.DB, w Warehouse) (Warehouse, error) {
+	if err := normalize(&w); err != nil {
+		return Warehouse{}, err
+	}
+	if w.ID == "" {
+		return Warehouse{}, ErrNotFound
+	}
+
+	res := db.WithContext(ctx).
+		Model(&Warehouse{}).
+		Where("id = ? AND store_id = ? AND archived_at IS NULL", w.ID, w.StoreID).
+		Updates(map[string]any{
+			"name":           w.Name,
+			"line1":          w.Line1,
+			"line2":          w.Line2,
+			"city":           w.City,
+			"region":         w.Region,
+			"postal_code":    w.PostalCode,
+			"country_code":   w.CountryCode,
+			"phone":          w.Phone,
+			"email":          w.Email,
+			"contact_person": w.ContactPerson,
+			"updated_at":     time.Now().UTC(),
+		})
+	if res.Error != nil {
+		if isUniqueViolation(res.Error) {
+			return Warehouse{}, ErrNameTaken
+		}
+		return Warehouse{}, fmt.Errorf("warehouse: update: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		// Postgres reports no rows for an update whose values all match, so
+		// a genuine no-op edit would look like a miss. Distinguish by
+		// reading, rather than telling a merchant their warehouse vanished
+		// because they pressed Save without changing anything.
+		return r.LiveForStore(ctx, db, w.ID, w.StoreID)
+	}
+	return r.LiveForStore(ctx, db, w.ID, w.StoreID)
+}
+
+// SetDefault moves the store's is_default flag onto one live warehouse.
+//
+// Both writes are one transaction: clearing the old flag and failing to set
+// the new one would leave the store with NO default, and DefaultForStore
+// would start answering with whichever row happens to be oldest.
+func (r *Repository) SetDefault(ctx context.Context, db *gorm.DB, storeID, id string) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// The TRANSACTION is the guard here, not this ordering: a mutation
+		// that both moved this check after the clear AND kept the tx still
+		// passed, because the rollback undoes the clear either way. Drop
+		// the transaction as well and a refused call leaves the store with
+		// NO default at all — which is what the refusal test pins.
+		if _, err := r.LiveForStore(ctx, tx, id, storeID); err != nil {
+			return err
+		}
+		if err := tx.Model(&Warehouse{}).
+			Where("store_id = ? AND is_default", storeID).
+			Updates(map[string]any{"is_default": false, "updated_at": time.Now().UTC()}).
+			Error; err != nil {
+			return fmt.Errorf("warehouse: set default: clear: %w", err)
+		}
+		if err := tx.Model(&Warehouse{}).
+			Where("id = ?", id).
+			Updates(map[string]any{"is_default": true, "updated_at": time.Now().UTC()}).
+			Error; err != nil {
+			return fmt.Errorf("warehouse: set default: set: %w", err)
+		}
+		return nil
+	})
+}
+
+// LiveForStore loads one non-archived warehouse belonging to storeID.
+//
+// Exported because Delete and Archive take an id alone: an id is a guessable
+// handle, so the admin handler must prove the row belongs to the store in
+// the URL before touching it.
+func (r *Repository) LiveForStore(ctx context.Context, db *gorm.DB, id, storeID string) (Warehouse, error) {
+	var w Warehouse
+	err := db.WithContext(ctx).
+		Where("id = ? AND store_id = ? AND archived_at IS NULL", id, storeID).
+		First(&w).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return Warehouse{}, ErrNotFound
+	}
+	if err != nil {
+		return Warehouse{}, fmt.Errorf("warehouse: load: %w", err)
+	}
+	return w, nil
+}
+
+// normalize trims and validates the fields every write shares.
+func normalize(w *Warehouse) error {
+	w.Name = strings.TrimSpace(w.Name)
+	if w.Name == "" {
+		return fmt.Errorf("warehouse: name is required")
+	}
+	if w.StoreID == "" || w.TenantID == "" {
+		return fmt.Errorf("warehouse: tenant and store are required")
+	}
+	w.CountryCode = strings.ToUpper(strings.TrimSpace(w.CountryCode))
+	return nil
+}
+
+// isUniqueViolation reports whether err is Postgres 23505.
+//
+// Matched on SQLSTATE, not on the index name or the message text: the
+// partial index was renamed by 000122 (warehouses_store_name_key ->
+// warehouses_store_name_live_key), and a check keyed on the old name would
+// have kept compiling and quietly stopped matching.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	return false
+}
+
+// UnitsHeld reports how many units still sit in a warehouse.
+//
+// Read before archiving, because archiving does NOT move stock: those units
+// stop being sellable the moment the allocator skips the row. The caller
+// needs the number to warn the merchant rather than silently stranding
+// inventory.
+func (r *Repository) UnitsHeld(ctx context.Context, db *gorm.DB, id string) (int64, error) {
+	var total *int64
+	if err := db.WithContext(ctx).
+		Table("variant_stock").
+		Where("location_id = ?", id).
+		Select("COALESCE(SUM(quantity), 0)").
+		Scan(&total).Error; err != nil {
+		return 0, fmt.Errorf("warehouse: units held: %w", err)
+	}
+	if total == nil {
+		return 0, nil
+	}
+	return *total, nil
 }

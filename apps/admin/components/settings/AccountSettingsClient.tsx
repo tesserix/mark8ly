@@ -342,7 +342,8 @@ function MFASection({
             Two-factor authentication
           </h2>
           <p className="text-sm text-foreground-secondary">
-            Add an extra layer of security to your account.
+            Add an extra layer of security to your account with an
+            authenticator app.
           </p>
         </div>
         <span
@@ -354,6 +355,28 @@ function MFASection({
         >
           {mfaEnabled ? "Enabled" : "Disabled"}
         </span>
+      </div>
+
+      {/* "Disabled" above refers ONLY to the authenticator app. New-device
+          verification is always on and is not user-configurable — it keys
+          on the device being unrecognised, never on MFA enrolment
+          (auth-bff autologin/service.go:263). Without this note the badge
+          reads as "this account has no second factor", and a merchant who
+          then receives a sign-in code reasonably reports it as a bug. */}
+      <div className="flex items-start gap-4 rounded-md bg-[color:var(--paper-200)] px-4 py-3">
+        <Shield
+          className="mt-0.5 h-4 w-4 shrink-0 text-foreground-secondary"
+          aria-hidden="true"
+        />
+        <p className="text-sm text-foreground-secondary">
+          <span className="font-medium text-foreground">
+            New-device verification is always on.
+          </span>{" "}
+          Whether or not two-factor is enabled, signing in from a device we
+          don&rsquo;t recognise requires a one-time code emailed to you. That
+          is why you may receive a sign-in code while the setting above reads
+          &ldquo;Disabled&rdquo;.
+        </p>
       </div>
 
       {enrolling && (

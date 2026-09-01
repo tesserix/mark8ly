@@ -1,17 +1,22 @@
 "use client";
 
-// ProductRail — status, categories and the actions, kept in view.
+// ProductRail — the product's metadata: status and categories.
 //
-// These were spread across the top of the General tab and a footer at the
-// bottom of the form. On a scrolling page that means a merchant editing a
-// long description has to travel to publish or save. The rail is the one
-// piece of chrome that earns being sticky: it is the answer to "is this
-// live, and have I saved it".
+// It used to carry Save / Discard / Delete as well, and to be sticky with a
+// hairline down its left edge. Both are gone. Save now lives in a docked
+// action bar under the page header (see ProductForm), which is what actually
+// answers "have I saved this" at any scroll position. A border around a
+// floating control only frames the float; it does not anchor it.
 //
-// Asymmetric by design — a narrow rail beside a wider column, not a
-// centred form.
+// The rule went with it. `self-start` sized this box to its own content, so
+// the border was ~450px tall beside a 2000px column — a stub, not a boundary.
+// It was also invisible in practice: --border-subtle is --paper-300 on a
+// --paper-200 page, roughly 2% luminance at 1px, so it rendered as nothing at
+// all in production. The column already reads as metadata through width
+// asymmetry and the grid gap, which is the editorial convention regardless —
+// magazines divide with whitespace, not rules. A vertical rule is the visual
+// grammar of a sidebar panel, which this system lists as an anti-reference.
 
-import type { ReactNode } from "react";
 import { useFormContext } from "react-hook-form";
 import {
   Select,
@@ -29,55 +34,41 @@ import { Field } from "./Field";
 export interface ProductRailProps {
   categories: AdminCategory[];
   storeId?: string;
-  /** Save / delete / discard, composed by the form. */
-  actions: ReactNode;
 }
 
-export function ProductRail({ categories, storeId, actions }: ProductRailProps) {
+export function ProductRail({ categories, storeId }: ProductRailProps) {
   const { formState, watch, setValue } = useFormContext<ProductFormValues>();
 
   return (
-    // A hairline down the left edge is what makes this read as a COLUMN
-    // rather than controls floating in whitespace. Without it the sticky
-    // Save button appears to dangle in the middle of the page as the long
-    // left column scrolls past it — the elements were right, the boundary
-    // was missing. Hairline rather than a card, per the system.
-    <aside className="lg:sticky lg:top-8 lg:self-start lg:border-l lg:border-border-subtle lg:pl-8">
-      <div className="flex flex-col gap-6">
-        <Field label="Status" error={formState.errors.status?.message}>
-          <Select
-            value={watch("status")}
-            onValueChange={(value) =>
-              setValue("status", value as ProductFormValues["status"], {
-                shouldDirty: true,
-              })
-            }
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="archived">Archived</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
+    <aside className="flex flex-col gap-6">
+      <Field label="Status" error={formState.errors.status?.message}>
+        <Select
+          value={watch("status")}
+          onValueChange={(value) =>
+            setValue("status", value as ProductFormValues["status"], {
+              shouldDirty: true,
+            })
+          }
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="archived">Archived</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
 
-        <Field label="Categories" error={formState.errors.categoryIds?.message}>
-          <ProductCategoriesPicker
-            allCategories={categories}
-            selectedIds={watch("categoryIds")}
-            onChange={(ids) => setValue("categoryIds", ids, { shouldDirty: true })}
-            storeId={storeId}
-          />
-        </Field>
-
-        <div className="border-t border-border-subtle pt-6">{actions}</div>
-        <p className="text-xs text-[color:var(--ink-900)]/40">
-          Changes apply when you save.
-        </p>
-      </div>
+      <Field label="Categories" error={formState.errors.categoryIds?.message}>
+        <ProductCategoriesPicker
+          allCategories={categories}
+          selectedIds={watch("categoryIds")}
+          onChange={(ids) => setValue("categoryIds", ids, { shouldDirty: true })}
+          storeId={storeId}
+        />
+      </Field>
     </aside>
   );
 }

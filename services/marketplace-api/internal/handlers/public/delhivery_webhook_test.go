@@ -74,6 +74,10 @@ func (f *fakeShippingRepo) UpdateShipmentStatus(context.Context, uuid.UUID, stri
 func (f *fakeShippingRepo) SetShipmentCancelState(context.Context, uuid.UUID, string, string, string) error {
 	panic("not implemented")
 }
+
+func (f *fakeShippingRepo) ReleaseAllocationsForShipment(context.Context, uuid.UUID) (int64, error) {
+	return 0, nil
+}
 func (f *fakeShippingRepo) ListCarrierConfigs(context.Context, string) ([]shipping.CarrierConfig, error) {
 	panic("not implemented")
 }

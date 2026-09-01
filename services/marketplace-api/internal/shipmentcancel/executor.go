@@ -30,6 +30,10 @@ type ShipmentStore interface {
 	GetShipmentByID(ctx context.Context, id uuid.UUID) (*shipping.ShipmentRecord, error)
 	SetShipmentCancelState(ctx context.Context, shipmentID uuid.UUID, action, status, reason string) error
 	CreateShipment(ctx context.Context, rec *shipping.ShipmentRecord) error
+	// ReleaseAllocationsForShipment un-stamps the shipment's allocations
+	// so the order can be re-labelled. Only ever called for a cancel that
+	// means the goods never left — see releaseAllocations.
+	ReleaseAllocationsForShipment(ctx context.Context, shipmentID uuid.UUID) (int64, error)
 }
 
 // CarrierResolver builds a carrier client for a (store, provider). Kept as a
@@ -166,7 +170,40 @@ func (e *Executor) execCancelForward(ctx context.Context, sh *shipping.ShipmentR
 		return Outcome{ShipmentID: sh.ID, Action: ActionCancelForward, Status: statusFailed, Reason: reason}
 	}
 	e.record(ctx, sh.ID, ActionCancelForward, statusSucceeded, "")
+	e.releaseAllocations(ctx, sh)
 	return Outcome{ShipmentID: sh.ID, Action: ActionCancelForward, Status: statusSucceeded}
+}
+
+// releaseAllocations frees the shipment's allocation rows so the order can
+// be labelled again.
+//
+// Cancelling used to leave order_allocations stamped with shipment_id.
+// Create() then found totalAllocations > 0 and no unshipped groups, and
+// returned 409 already_shipped — permanently. The only escape was Delete,
+// whose hard delete fires ON DELETE SET NULL. A cancelled shipment is not
+// a shipped one, so the stamp should go when the cancel succeeds.
+//
+// ONLY safe for ActionCancelForward. ResolveAction maps that from
+// pending/created/manifested — states where nothing has physically left.
+// in_transit and out_for_delivery resolve to ActionTriggerRTO, delivered to
+// ActionReversePickup; freeing those would let a merchant create a second
+// label for goods already moving.
+//
+// Best-effort: the cancel itself has already succeeded at the carrier, so a
+// failure here must not turn a completed cancel into an error. The merchant
+// is left in the old dead end, which is recoverable, rather than being told
+// a successful cancel failed.
+func (e *Executor) releaseAllocations(ctx context.Context, sh *shipping.ShipmentRecord) {
+	freed, err := e.store.ReleaseAllocationsForShipment(ctx, sh.ID)
+	if err != nil {
+		e.warn("shipmentcancel: release allocations failed",
+			"shipment_id", sh.ID.String(), "err", err)
+		return
+	}
+	if freed > 0 && e.logger != nil {
+		e.logger.Info("shipmentcancel: allocations released for re-labelling",
+			"shipment_id", sh.ID.String(), "allocations", freed)
+	}
 }
 
 // execReturnToOrigin returns an in-transit shipment to origin. Carriers that

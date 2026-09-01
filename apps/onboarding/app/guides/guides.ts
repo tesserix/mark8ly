@@ -203,6 +203,125 @@ export const GUIDES: ReadonlyArray<Guide> = [
       },
     ],
   },
+  {
+    slug: "how-to-add-your-first-product",
+    title: "How to Add Your First Product to Your Online Store",
+    description:
+      "A walkthrough of adding your first product in the Mark8ly admin — the fields that matter, when variants are worth the extra step, and what draft vs active actually controls.",
+    eyebrow: "Guide",
+    heading: "How to add your first product",
+    lede: "The product form has more fields than any one product needs. Here's the order to fill them in, what's actually required, and what you can safely leave for later.",
+    updated: "2026-09-02",
+    readingMinutes: 6,
+    blocks: [
+      {
+        type: "p",
+        text: "A product listing only needs three things to save: a title, a price, and a stock count. Everything else on the form exists to handle products that are more complicated than yours might be. Here's what to fill in, in the order the form asks for it, and which parts you can ignore on day one.",
+      },
+      { type: "h2", text: "1. Open a new product" },
+      {
+        type: "p",
+        text: "From Products in the admin sidebar, click New product. That opens a blank form at a URL like /products/new — nothing is saved yet, so there's no harm in clicking around before you commit to anything.",
+      },
+      { type: "h2", text: "2. Details: title, handle, description" },
+      {
+        type: "p",
+        text: "Title is the only field on the whole form that's required by name. Handle — the part of the URL after /products/ — is optional and gets generated from the title automatically if you leave it blank, so don't overthink it unless you need a specific slug. Description sits below and shows up on the product page under the title; it's optional too, but an empty one looks unfinished to a shopper, so it's worth a paragraph even at this stage.",
+      },
+      { type: "h2", text: "3. Pricing and inventory" },
+      {
+        type: "p",
+        text: "For a plain product with no variants, this section is three fields: price, stock, and SKU. Price needs a number like 19.99 — the form will reject anything else. Stock defaults to 0, and there's an \"Always in stock\" checkbox for products you don't want to run out on the storefront (digital goods, made-to-order pieces); stock still counts down on each order, it just never blocks a sale. SKU is optional — leave it blank and one gets generated from the handle.",
+      },
+      {
+        type: "p",
+        text: "If your store has more than one warehouse, per-warehouse stock only appears once the product exists — you'll set the overall stock number here first, then split it by location after saving.",
+      },
+      { type: "h2", text: "4. Options — only if this product comes in more than one version" },
+      {
+        type: "p",
+        text: "Skip this section entirely if you're selling one version of one thing. If you're not — a T-shirt in three sizes, a candle in four scents — add an option (Size, Colour, whatever applies) and list its values. The moment you do, the Pricing and inventory section above turns into a variant table: one row per combination, each with its own price, stock, and SKU. Add a second option and the table fills in every combination automatically. There's no obligation to price every variant the same — that's the whole point of breaking it out.",
+      },
+      { type: "h2", text: "5. Shipping" },
+      {
+        type: "p",
+        text: "Weight and dimensions here are what carrier rates get calculated from at checkout. If you skip this, the storefront falls back to a default envelope for the rate quote — fine for a quick test, worth fixing before you take real orders, because a wrong quote either loses you money on every sale or overcharges a customer who then doesn't come back.",
+      },
+      { type: "h2", text: "6. Categories and tax" },
+      {
+        type: "p",
+        text: "Categories live in the right-hand rail and control where the product shows up when someone browses your storefront rather than searching it directly — worth setting even with only a handful of products, since \"browse everything\" stops being a real navigation option past about a dozen items. Tax fields below the main form adapt to your store's country; if you're not sure what applies, leave the default and revisit it with an accountant rather than guessing.",
+      },
+      { type: "h2", text: "7. Draft vs active — and photos" },
+      {
+        type: "p",
+        text: "Every new product starts as a draft, set in the Status field in the same right-hand rail. A draft is saved but not visible on your storefront — switch it to Active when you're ready for customers to see it. One thing to know before you save: photos aren't on the create form at all. A product needs to exist first before you can attach media to it, so the Media section only appears once you've saved the product for the first time and are editing it. Save with the basics, then come straight back in to add photos before switching it to Active — a product page without a photo is not one you want live.",
+      },
+      {
+        type: "p",
+        text: "That's the whole flow: title, price, stock, save. Everything else — variants, shipping weights, categories — is there for when a product needs it, not before. Once your first product is live, adding the next one is the same three fields again.",
+      },
+    ],
+  },
+  {
+    slug: "how-to-connect-your-domain",
+    title: "How to Connect Your Domain to Your Storefront",
+    description:
+      "A step-by-step guide to pointing your own domain at your Mark8ly storefront — the DNS records to add, how ownership and SSL get verified, and how long it actually takes.",
+    eyebrow: "Guide",
+    heading: "How to connect your domain",
+    lede: "A store on your own domain looks like a business. A store on someone else's subdomain looks like a trial. Here's exactly what to add at your DNS provider, and what each record is actually for.",
+    updated: "2026-09-02",
+    readingMinutes: 6,
+    blocks: [
+      {
+        type: "p",
+        text: "Connecting a domain is a DNS change, not a code change — you're telling the internet that your domain now points at your storefront. It takes a few minutes to set up and, depending on your DNS provider, anywhere from a few minutes to a couple of days to take effect. Here's the whole process, record by record.",
+      },
+      { type: "h2", text: "1. Start from Settings → Domains" },
+      {
+        type: "p",
+        text: "In the admin, go to Settings, then Domains, and use Add a custom domain. You'll be asked for the domain itself and which of two setup methods to use: manual, where you add DNS records yourself, or Cloudflare, where an API token lets the platform create them for you automatically. Manual works with any registrar and is what most people use; Cloudflare is faster if that's already where your domain's DNS is hosted.",
+      },
+      { type: "h2", text: "2. Prove you own the domain" },
+      {
+        type: "p",
+        text: "The first record is a TXT record, with a name and value generated specifically for your domain and shown on screen after you add it. Only someone with access to your DNS settings can publish a TXT record, which is exactly why it's used as proof of ownership before anything else happens. You can remove it once verification succeeds — it's not needed after that.",
+      },
+      { type: "h2", text: "3. Route traffic to your storefront" },
+      {
+        type: "p",
+        text: "This is the record that actually makes the domain work, and there are two ways to do it — pick the one your DNS provider supports for your situation. The Domains screen shows the exact value for each, with a copy button; copy from there rather than retyping from anywhere else, including this page — these values are the kind of thing that can change, and the screen is always current:",
+      },
+      {
+        type: "ul",
+        items: [
+          "Option A — an A record at your domain, pointing to the IP address shown on the Domains screen. Use this for an apex domain (example.com rather than shop.example.com) — most DNS providers don't allow a CNAME at the apex.",
+          "Option B — a CNAME record at your domain, pointing to edge.mark8ly.com. Cleaner if you're using a subdomain and your provider supports it.",
+        ],
+      },
+      { type: "h2", text: "4. Let SSL provision itself" },
+      {
+        type: "p",
+        text: "A third record — a CNAME from _acme-challenge.yourdomain.com to _acme-challenge.yourdomain.com.acme.mark8ly.com — delegates certificate issuance back to Mark8ly. It's how you get a free, auto-renewing SSL certificate without ever handing over your DNS credentials. Add it once alongside the routing record; you won't need to touch it again after that.",
+      },
+      { type: "h2", text: "5. Optional: a branded admin subdomain" },
+      {
+        type: "p",
+        text: "If you'd also like admin.yourdomain.com to work as a branded URL for your admin dashboard, add one more A record — admin.yourdomain.com pointing to the same IP address as the storefront record — and it's active alongside the rest. Skip this if the default admin URL is fine; it changes nothing about the storefront.",
+      },
+      { type: "h2", text: "6. Verify, and be patient with DNS" },
+      {
+        type: "p",
+        text: "Once the records are added, click Verify. DNS changes can take up to 48 hours to propagate fully, though most providers are faster — a tool like dnschecker.org will tell you whether your records have gone live before you try verifying again. If verification fails, the error tells you what it found: a missing CNAME, an unproven TXT record, or a routing record pointing somewhere other than what's expected. Fix the specific thing it names and verify again — there's no need to redo records that already checked out.",
+      },
+      { type: "h2", text: "7. What \"active\" looks like" },
+      {
+        type: "p",
+        text: "Once DNS verification succeeds, the domain's status moves to active and SSL certificate provisioning starts automatically — that can take a few minutes on its own, and a refresh action on the domain's card shows you when the certificate is live. From that point, your storefront answers on your own domain with a valid certificate, and you're done. No further DNS maintenance is needed unless you change registrars or move the domain elsewhere.",
+      },
+    ],
+  },
 ];
 
 export function getGuide(slug: string): Guide | undefined {

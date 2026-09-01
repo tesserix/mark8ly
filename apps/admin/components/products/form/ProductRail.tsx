@@ -37,7 +37,12 @@ export function ProductRail({ categories, storeId, actions }: ProductRailProps) 
   const { formState, watch, setValue } = useFormContext<ProductFormValues>();
 
   return (
-    <aside className="lg:sticky lg:top-8 lg:self-start">
+    // A hairline down the left edge is what makes this read as a COLUMN
+    // rather than controls floating in whitespace. Without it the sticky
+    // Save button appears to dangle in the middle of the page as the long
+    // left column scrolls past it — the elements were right, the boundary
+    // was missing. Hairline rather than a card, per the system.
+    <aside className="lg:sticky lg:top-8 lg:self-start lg:border-l lg:border-border-subtle lg:pl-8">
       <div className="flex flex-col gap-6">
         <Field label="Status" error={formState.errors.status?.message}>
           <Select
@@ -69,6 +74,9 @@ export function ProductRail({ categories, storeId, actions }: ProductRailProps) 
         </Field>
 
         <div className="border-t border-border-subtle pt-6">{actions}</div>
+        <p className="text-xs text-[color:var(--ink-900)]/40">
+          Changes apply when you save.
+        </p>
       </div>
     </aside>
   );

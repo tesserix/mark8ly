@@ -63,34 +63,34 @@ export function VariantMatrixTable({
   }, [currencyCode]);
 
   return (
-    // overflow-x-auto handles narrow viewports (mobile / small split panes),
-    // but on md+ we need overflow-visible so the VariantImagePicker popover
-    // can spill below the row. Otherwise CSS coerces overflow-y to auto and
-    // the absolute popover triggers a vertical scrollbar on the wrapper.
-    <div className="overflow-x-auto md:overflow-visible">
+    // Plain overflow-x-auto. The md:overflow-visible exception existed only
+    // so the image picker's absolutely-positioned popover could spill below
+    // the row; the picker now lives inside the row's details disclosure, so
+    // nothing escapes the wrapper and the exception is gone with it.
+    <div className="overflow-x-auto">
       <table className="w-full border-collapse text-left">
         <thead>
+          {/* Four visible columns, not eight. Every option collapses into
+              one Variant cell, and weight / dimensions / image move behind
+              the per-row details disclosure. Eight columns did not fit a
+              realistic admin width and pushed the table into a horizontal
+              scroll on every product that had options at all. */}
           <tr className="border-b border-[var(--ink-100)] text-xs uppercase tracking-widest text-[var(--ink-500)]">
-            {optionNames.map((name) => (
-              <th key={name} className="px-3 py-2 font-normal">
-                {name}
-              </th>
-            ))}
+            <th className="px-3 py-2 font-normal">Variant</th>
             <th className="px-3 py-2 font-normal">{priceHeader}</th>
             <th className="px-3 py-2 font-normal">SKU</th>
             <th className="px-3 py-2 font-normal">Stock</th>
-            <th className="px-3 py-2 font-normal">Weight (kg)</th>
-            <th className="px-3 py-2 font-normal" title="Length × Width × Height in centimetres">
-              L × W × H (cm)
+            <th className="w-px px-3 py-2 font-normal">
+              <span className="sr-only">Details</span>
             </th>
-            <th className="px-3 py-2 font-normal">Image</th>
           </tr>
         </thead>
         <tbody>
-          {variants.map((v) => (
+          {variants.map((v, index) => (
             <VariantRow
               key={v.key}
               variant={v}
+              index={index}
               optionNames={optionNames}
               currencyCode={currencyCode}
               media={media}

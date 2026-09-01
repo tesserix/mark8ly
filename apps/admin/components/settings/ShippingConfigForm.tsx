@@ -20,6 +20,7 @@ import {
   supportsPickupAutomation,
 } from "@/lib/settings/pickup-automation";
 import { validateWarehouseAddress } from "@/lib/settings/warehouse-validation";
+import { defaultCarrierActive } from "@/lib/settings/carrier-active";
 import {
   AddressFieldset,
   type AddressValue,
@@ -47,7 +48,9 @@ export function ShippingConfigForm({
   const [mode, setMode] = useState<"test" | "live">(
     (existing?.mode as "test" | "live") ?? "test",
   );
-  const [isActive, setIsActive] = useState(existing?.enabled ?? false);
+  // New configs default ON: an inactive carrier quotes nothing and says
+  // nothing. A saved choice always wins. See lib/settings/carrier-active.
+  const [isActive, setIsActive] = useState(defaultCarrierActive(existing?.enabled));
   const [handlingFee, setHandlingFee] = useState(existing?.handling_fee ?? "0");
   const [freeShippingMin, setFreeShippingMin] = useState(
     existing?.free_shipping_threshold ?? "0",
@@ -216,17 +219,27 @@ export function ShippingConfigForm({
             </Select>
           </Field>
 
-          <label className="flex items-center gap-2 cursor-pointer select-none pt-5">
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(e) => { setIsActive(e.target.checked); setSuccess(false); }}
-              disabled={pending}
-              className="h-4 w-4 rounded border-[color:var(--ink-900)]/20 text-[color:var(--moss-700)] focus:ring-[color:var(--moss-700)]"
-            />
-            <span className="text-sm text-[color:var(--ink-900)]">Active</span>
-          </label>
         </div>
+
+        {/* Kept out of the Mode row: "Test/Live" and "Active" are
+            unrelated, and sitting on one line read as though Active
+            modified the mode. */}
+        <label className="flex items-start gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={isActive}
+            onChange={(e) => { setIsActive(e.target.checked); setSuccess(false); }}
+            disabled={pending}
+            className="mt-0.5 h-4 w-4 rounded border-[color:var(--ink-900)]/20 text-[color:var(--moss-700)] focus:ring-[color:var(--moss-700)]"
+          />
+          <span className="text-sm text-[color:var(--ink-900)]">
+            Active
+            <span className="block text-xs text-[color:var(--ink-900)]/40">
+              Only active carriers are quoted at checkout. Untick to pause
+              this carrier without deleting its credentials.
+            </span>
+          </span>
+        </label>
       </fieldset>
 
       {/* Warehouse address */}

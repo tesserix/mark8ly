@@ -459,6 +459,26 @@ func (h *PaymentSettingsHandler) Upsert(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// provisioningSecretFor returns the plaintext key that can call Stripe's
+// management API, or "" when the request did not carry one.
+//
+// The subtlety this exists to pin: **Stripe's sk_… lives in api_key, not
+// secret_key.** Stripe has only one non-webhook secret, so
+// PaymentConfigForm relabels the API key field "Secret API key" and hides
+// the Secret key field entirely (see its comment). Reading req.SecretKey
+// for Stripe therefore always yields "" — webhook provisioning would
+// silently never run for the one provider it is written for, and nothing
+// would look broken.
+//
+// Other providers genuinely have a separate Key + Secret, but none of them
+// provisions webhooks today, so they return "" rather than guessing.
+func provisioningSecretFor(provider string, req paymentUpsertRequest) string {
+	if strings.ToLower(provider) != "stripe" {
+		return ""
+	}
+	return strings.TrimSpace(req.APIKey)
+}
+
 // provisionStripeWebhook registers (or confirms) the store's Stripe webhook
 // endpoint and persists the signing secret Stripe returns.
 //
@@ -472,10 +492,17 @@ func (h *PaymentSettingsHandler) provisionStripeWebhook(
 	if provider != "stripe" || h.webhookProvisioner == nil || h.publicAPIBase == "" {
 		return ""
 	}
-	// The plaintext secret key is only in hand when the caller just sent
-	// it; we deliberately do not read it back out of the secret store to
+	// Stripe's sk_… lives in api_key, NOT secret_key: Stripe has only one
+	// non-webhook secret, so PaymentConfigForm relabels the API key field
+	// "Secret API key" and hides the Secret key field entirely. Keying off
+	// req.SecretKey meant this never ran for the one provider it exists
+	// for.
+	//
+	// The plaintext key is only in hand when the caller just sent it; we
+	// deliberately do not read it back out of the secret store to
 	// re-provision on an unrelated save.
-	if req.SecretKey == "" {
+	stripeSecret := provisioningSecretFor(provider, req)
+	if stripeSecret == "" {
 		return ""
 	}
 
@@ -486,7 +513,7 @@ func (h *PaymentSettingsHandler) provisionStripeWebhook(
 	haveSecret := cfg.WebhookSecretEncrypted != "" ||
 		(req.WebhookSecret != nil && *req.WebhookSecret != "")
 
-	res, err := h.webhookProvisioner.Ensure(ctx, req.SecretKey, endpoint, haveSecret, nil)
+	res, err := h.webhookProvisioner.Ensure(ctx, stripeSecret, endpoint, haveSecret, nil)
 	if err != nil {
 		h.logger.Warn("payment: stripe webhook provisioning failed",
 			"store", storeSlug, "endpoint", endpoint, "err", err)

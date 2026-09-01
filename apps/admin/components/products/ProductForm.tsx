@@ -210,8 +210,26 @@ export function ProductForm({
     );
   }, [options]);
 
+  // Skips the FIRST run. On mount, options and variants are both hydrated
+  // from the server and already agree with each other — there is nothing
+  // to derive, and deriving anyway is destructive: generateVariants with
+  // zero options returns every existing variant id as `removedIds`, which
+  // is correct when a merchant deletes their last option and catastrophic
+  // when the product simply never had options.
+  //
+  // 8 of the-bondi-store's 12 products are in that state (variants, no
+  // option rows — the shape a seeded catalogue arrives in). Opening one
+  // emptied the variants list and staged every variant for deletion;
+  // pressing Save destroyed them. The form looked like it was showing an
+  // empty state and was in fact holding a loaded gun.
+  const derivationHasRun = useRef(false);
+
   useEffect(() => {
     if (!options) return;
+    if (!derivationHasRun.current) {
+      derivationHasRun.current = true;
+      return;
+    }
 
     // Adapt RHF options -> generateVariants OptionDraft (values: string[]).
     const adapted: GenOptionDraft[] = options

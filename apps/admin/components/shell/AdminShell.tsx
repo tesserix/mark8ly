@@ -148,7 +148,6 @@ const navigation: NavSection[] = [
       { group: "Store", label: "Domains", href: "/settings/domains" },
       { group: "Selling", label: "Payments", href: "/settings/payments" },
       { group: "Selling", label: "Shipping", href: "/settings/shipping" },
-      { group: "Selling", label: "Warehouses", href: "/settings/warehouses" },
       { group: "Team & access", label: "Team", href: "/settings/team" },
       { group: "Team & access", label: "Audit Logs", href: "/settings/audit-logs" },
       { group: "Account", label: "Account", href: "/settings/account" },
@@ -631,9 +630,6 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/settings/shipping")) {
     return { eyebrow: "Selling", title: "Shipping" };
-  }
-  if (pathname.startsWith("/settings/warehouses")) {
-    return { eyebrow: "Selling", title: "Warehouses" };
   }
   if (pathname.startsWith("/settings/team")) {
     return { eyebrow: "Team & access", title: "Team" };

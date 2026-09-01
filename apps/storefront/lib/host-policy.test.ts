@@ -15,11 +15,41 @@ describe("classifyStorefrontHost", () => {
   });
 
   it("treats apex + reserved subdomains as marketing (not storefront)", () => {
-    expect(classifyStorefrontHost("mark8ly.com")).toEqual({ kind: "marketing" });
-    expect(classifyStorefrontHost("www.mark8ly.com")).toEqual({ kind: "marketing" });
-    expect(classifyStorefrontHost("api.mark8ly.com")).toEqual({ kind: "marketing" });
-    expect(classifyStorefrontHost("admin.mark8ly.com")).toEqual({ kind: "marketing" });
-    expect(classifyStorefrontHost("identity.mark8ly.com")).toEqual({ kind: "marketing" });
+    // The apex is already canonical, so it has nowhere to redirect to.
+    expect(classifyStorefrontHost("mark8ly.com")).toEqual({
+      kind: "marketing",
+      redirectTo: null,
+    });
+    // Platform hosts have their own VirtualServices — a hit here is
+    // routing drift, and we'd rather it stay visible than be redirected.
+    expect(classifyStorefrontHost("api.mark8ly.com")).toEqual({
+      kind: "marketing",
+      redirectTo: null,
+    });
+    expect(classifyStorefrontHost("admin.mark8ly.com")).toEqual({
+      kind: "marketing",
+      redirectTo: null,
+    });
+    expect(classifyStorefrontHost("identity.mark8ly.com")).toEqual({
+      kind: "marketing",
+      redirectTo: null,
+    });
+  });
+
+  it("sends www to the apex of its own TLD (#147 soft-404 fix)", () => {
+    // www.mark8ly.com landed on the storefront pod and rendered a
+    // "Store not found" body under a 200 — a soft 404 on the brand's
+    // front door. It must 301 to the apex instead.
+    expect(classifyStorefrontHost("www.mark8ly.com")).toEqual({
+      kind: "marketing",
+      redirectTo: "mark8ly.com",
+    });
+    // Non-prod hosts redirect within their own environment, never
+    // across to production.
+    expect(classifyStorefrontHost("www.mark8ly.dev")).toEqual({
+      kind: "marketing",
+      redirectTo: "mark8ly.dev",
+    });
   });
 
   it("recognises custom domains as needing API resolution", () => {
@@ -51,9 +81,20 @@ describe("classifyStorefrontHost", () => {
   it("treats localhost as marketing for dev iteration — REGRESSION GUARD", () => {
     // Local dev points at localhost:port; the storefront page-level code
     // falls back to DEFAULT_STORE_SLUG. We don't want middleware to 404
-    // here or `npm run dev` breaks.
-    expect(classifyStorefrontHost("localhost")).toEqual({ kind: "marketing" });
-    expect(classifyStorefrontHost("localhost:4203")).toEqual({ kind: "marketing" });
+    // here or `npm run dev` breaks — and `redirectTo: null` keeps it from
+    // bouncing the developer out to the production marketing site.
+    expect(classifyStorefrontHost("localhost")).toEqual({
+      kind: "marketing",
+      redirectTo: null,
+    });
+    expect(classifyStorefrontHost("localhost:4203")).toEqual({
+      kind: "marketing",
+      redirectTo: null,
+    });
+    expect(classifyStorefrontHost("127.0.0.1")).toEqual({
+      kind: "marketing",
+      redirectTo: null,
+    });
   });
 
   it("recognises the UAT slug subdomain pattern and returns the canonical slug", () => {
@@ -74,10 +115,22 @@ describe("classifyStorefrontHost", () => {
     // The bare UAT canonical hosts (uat, admin-uat, onboarding-uat,
     // uat-landing) are NOT tenant slugs — each has its own VirtualService
     // routing to a different service.
-    expect(classifyStorefrontHost("uat.mark8ly.com")).toEqual({ kind: "marketing" });
-    expect(classifyStorefrontHost("admin-uat.mark8ly.com")).toEqual({ kind: "marketing" });
-    expect(classifyStorefrontHost("onboarding-uat.mark8ly.com")).toEqual({ kind: "marketing" });
-    expect(classifyStorefrontHost("uat-landing.mark8ly.com")).toEqual({ kind: "marketing" });
+    expect(classifyStorefrontHost("uat.mark8ly.com")).toEqual({
+      kind: "marketing",
+      redirectTo: null,
+    });
+    expect(classifyStorefrontHost("admin-uat.mark8ly.com")).toEqual({
+      kind: "marketing",
+      redirectTo: null,
+    });
+    expect(classifyStorefrontHost("onboarding-uat.mark8ly.com")).toEqual({
+      kind: "marketing",
+      redirectTo: null,
+    });
+    expect(classifyStorefrontHost("uat-landing.mark8ly.com")).toEqual({
+      kind: "marketing",
+      redirectTo: null,
+    });
   });
 
   it("rejects UAT admin-shaped hosts that hit storefront in error", () => {

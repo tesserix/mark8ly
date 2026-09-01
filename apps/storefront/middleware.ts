@@ -66,9 +66,23 @@ async function handleRequest(
   // mark8ly.com / www.mark8ly.com / api.mark8ly.com / admin.mark8ly.com:
   // not storefront surfaces. Marketing site is a separate app — Istio
   // routes those hosts elsewhere in prod, so a hit here means config
-  // drift. 404 cleanly instead of rendering DEFAULT_STORE under the
-  // wrong brand.
+  // drift.
+  //
+  // `www` is the case that actually reaches us in prod, and letting it
+  // fall through rendered a "Store not found" body under a 200 — a soft
+  // 404 on the brand's front door, which Google reports as an indexing
+  // error (#147). Send it to the apex instead: a 301 is the correct
+  // answer for a brand alias and consolidates link authority onto the
+  // canonical host. Other marketing hosts keep passing through, so
+  // genuine routing drift stays visible rather than being redirected away.
   if (hostKind.kind === "marketing") {
+    if (hostKind.redirectTo) {
+      const target = new URL(req.nextUrl);
+      target.host = hostKind.redirectTo;
+      target.protocol = "https:";
+      target.port = "";
+      return NextResponse.redirect(target, 301);
+    }
     return passthrough(req, nonce, csp);
   }
 

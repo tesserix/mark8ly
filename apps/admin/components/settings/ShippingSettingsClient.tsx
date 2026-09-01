@@ -13,6 +13,7 @@ import type {
 } from "@/lib/api/settings-api";
 import { ProviderCard } from "./ProviderCard";
 import { ShippingConfigForm } from "./ShippingConfigForm";
+import { readinessFor } from "@/lib/settings/shipping-readiness";
 import { removeShippingConfig } from "@/app/(admin)/settings/shipping/actions";
 
 interface ShippingSettingsClientProps {
@@ -54,6 +55,10 @@ export function ShippingSettingsClient({
       {supported.shipping_carriers.map((carrier) => {
         const cfg = configByCarrier.get(carrier);
         const configured = Boolean(cfg);
+        // Everything standing between this carrier and a live rate. Only
+        // shown once credentials exist — "no carrier" is already obvious
+        // from the card's own Add-credentials state.
+        const blockers = configured ? readinessFor(cfg) : [];
 
         return (
           <ProviderCard
@@ -73,6 +78,25 @@ export function ShippingSettingsClient({
                 : undefined
             }
           >
+            {blockers.length > 0 && (
+              <div
+                role="status"
+                className="mb-5 space-y-2 rounded-md border border-[color:var(--signal,#B7410E)]/25 bg-[color:var(--signal,#B7410E)]/[0.04] px-4 py-3"
+              >
+                <p className="text-sm font-medium text-foreground">
+                  This carrier isn&rsquo;t quoting rates yet
+                </p>
+                <ul className="space-y-1 text-sm text-foreground-secondary">
+                  {blockers.map((b) => (
+                    <li key={b.code} className="flex gap-2">
+                      <span aria-hidden="true">&middot;</span>
+                      <span>{b.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {editable ? (
               <ShippingConfigForm
                 provider={carrier}

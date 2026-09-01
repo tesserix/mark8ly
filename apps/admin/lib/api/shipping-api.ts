@@ -42,6 +42,16 @@ export interface ShipmentResponse {
   /** UTC timestamp combining pickup date + slot start. */
   pickup_scheduled_for?: string;
   /**
+   * Non-fatal problems from label creation — a failed auto-pickup
+   * schedule, or a failed fulfilment-status transition.
+   *
+   * The backend deliberately returns 200 with this set rather than
+   * failing the request: by that point real labels exist at the carrier,
+   * so a 502 would be worse than a warning. That trade only pays off if
+   * the merchant actually sees it, which is what this field is for.
+   */
+  pickup_warning?: string;
+  /**
    * Set when the backend has auto-cancelled/returned this shipment
    * (full refund or order cancel) or when a manual cancel was
    * requested via cancelShipment(). Omitted when no cancel/return has

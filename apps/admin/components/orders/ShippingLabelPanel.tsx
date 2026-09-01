@@ -255,6 +255,15 @@ function ShipmentDetails({
           })}
         </div>
       )}
+      {shipment.pickup_warning && (
+        <div
+          role="status"
+          className="rounded-md border border-[color:var(--warning)]/30 bg-[color:var(--warning)]/[0.06] px-4 py-3 text-xs text-[color:var(--warning)]"
+        >
+          The label was created, but something after it did not complete:{" "}
+          {shipment.pickup_warning}
+        </div>
+      )}
       <LabelActions
         storeId={storeId}
         orderId={orderId}

@@ -125,22 +125,28 @@ type AdminProductOptionValue struct {
 }
 
 type AdminVariantResponse struct {
-	ID                string                  `json:"id"`
-	SKU               string                  `json:"sku"`
-	Barcode           *string                 `json:"barcode,omitempty"`
-	Price             decimal.Decimal         `json:"price"`
-	CompareAtPrice    *decimal.Decimal        `json:"compare_at_price,omitempty"`
-	CostPrice         *decimal.Decimal        `json:"cost_price,omitempty"`
-	CurrencyCode      string                  `json:"currency_code"`
-	WeightGrams       *int                    `json:"weight_grams,omitempty"`
-	LengthCM          *decimal.Decimal        `json:"length_cm,omitempty"`
-	WidthCM           *decimal.Decimal        `json:"width_cm,omitempty"`
-	HeightCM          *decimal.Decimal        `json:"height_cm,omitempty"`
-	InventoryQuantity int                     `json:"inventory_quantity"`
-	InventoryPolicy   string                  `json:"inventory_policy"`
-	LowStockThreshold *int                    `json:"low_stock_threshold,omitempty"`
-	OptionValues      []AdminVariantOptionRef `json:"option_values"`
-	Position          int                     `json:"position"`
+	ID                string           `json:"id"`
+	SKU               string           `json:"sku"`
+	Barcode           *string          `json:"barcode,omitempty"`
+	Price             decimal.Decimal  `json:"price"`
+	CompareAtPrice    *decimal.Decimal `json:"compare_at_price,omitempty"`
+	CostPrice         *decimal.Decimal `json:"cost_price,omitempty"`
+	CurrencyCode      string           `json:"currency_code"`
+	WeightGrams       *int             `json:"weight_grams,omitempty"`
+	LengthCM          *decimal.Decimal `json:"length_cm,omitempty"`
+	WidthCM           *decimal.Decimal `json:"width_cm,omitempty"`
+	HeightCM          *decimal.Decimal `json:"height_cm,omitempty"`
+	InventoryQuantity int              `json:"inventory_quantity"`
+	// InventoryByLocation is the per-warehouse breakdown (#177 PR 5e),
+	// keyed by warehouse id. The SENTINEL location appears under its own id
+	// for a variant PR 6 has not migrated yet — the admin needs to tell
+	// "this warehouse holds 10" apart from "10 units exist but are not
+	// assigned to a location". Omitted when the caller did not ask for it.
+	InventoryByLocation map[string]int          `json:"inventory_by_location,omitempty"`
+	InventoryPolicy     string                  `json:"inventory_policy"`
+	LowStockThreshold   *int                    `json:"low_stock_threshold,omitempty"`
+	OptionValues        []AdminVariantOptionRef `json:"option_values"`
+	Position            int                     `json:"position"`
 }
 
 type AdminVariantOptionRef struct {

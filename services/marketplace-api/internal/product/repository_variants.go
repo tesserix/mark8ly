@@ -233,3 +233,39 @@ func (r *gormRepository) SetVariantStockByLocationInTx(
 	}
 	return nil
 }
+
+// StockByLocationForVariants reads the per-location breakdown for a set of
+// variants: variantID -> locationID -> quantity.
+//
+// The SENTINEL is reported under its own id rather than folded into a
+// warehouse. Callers rendering the admin's per-warehouse editor need to
+// know a variant is still un-migrated — that is the difference between
+// "this warehouse holds 10" and "10 units exist but are not yet assigned
+// anywhere", and the merchant's first per-location save is what resolves
+// it (see SetVariantStockByLocationInTx).
+func (r *gormRepository) StockByLocationForVariants(
+	ctx context.Context, db *gorm.DB, variantIDs []string,
+) (map[string]map[string]int, error) {
+	out := map[string]map[string]int{}
+	if len(variantIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		VariantID  string
+		LocationID string
+		Quantity   int
+	}
+	if err := db.WithContext(ctx).Raw(
+		`SELECT variant_id, location_id, quantity
+		   FROM variant_stock
+		  WHERE variant_id IN ?`, variantIDs).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("product: stock by location: %w", err)
+	}
+	for _, row := range rows {
+		if out[row.VariantID] == nil {
+			out[row.VariantID] = map[string]int{}
+		}
+		out[row.VariantID][row.LocationID] = row.Quantity
+	}
+	return out, nil
+}

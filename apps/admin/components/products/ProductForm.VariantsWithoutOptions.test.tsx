@@ -99,3 +99,37 @@ describe("ProductForm — a product whose variants have no options", () => {
     expect(values.variants ?? []).toHaveLength(2);
   });
 });
+
+// With no options there are no option-value pairs to compose a key from,
+// so buildVariantKey returned "" for EVERY variant of these products. The
+// key is both the React list key and the identity VariantsTab.handlePatch
+// matches on (`v.key === key`), so a single "" shared by every row means
+// editing one row's price wrote that price into all of them — silently,
+// and on exactly the products that were already the most broken.
+describe("ProductForm — editing one option-less variant", () => {
+  it("does not write the edit into every other variant", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProductForm
+        {...baseProps}
+        mode="edit"
+        initialProduct={productWithVariantsButNoOptions()}
+      />,
+    );
+
+    const prices = await screen.findAllByLabelText("Price");
+    expect(prices).toHaveLength(2);
+
+    await user.clear(prices[0]!);
+    await user.type(prices[0]!, "999");
+    await user.tab();
+
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(updateProductAction).toHaveBeenCalled());
+
+    const values = updateProductAction.mock.calls[0]![3] as {
+      variants?: Array<{ price: string }>;
+    };
+    expect(values.variants?.map((v) => v.price)).toEqual(["999", "120"]);
+  });
+});

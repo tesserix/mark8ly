@@ -151,7 +151,12 @@ export function ProductForm({
       );
       return {
         id: v.id,
-        key: buildVariantKey(pairs),
+        // With no options there is nothing to compose a key from and
+        // buildVariantKey returns "" for every variant alike. The key is
+        // both the React list key and the identity handlePatch matches on,
+        // so a shared "" made editing one row write into all of them. Fall
+        // back to the variant's own id, which is unique and stable.
+        key: pairs.length > 0 ? buildVariantKey(pairs) : `id:${v.id}`,
         price: v.price,
         sku: v.sku,
         stock: v.inventory_quantity,

@@ -12,6 +12,7 @@ import type { AdminCategory } from "@/lib/api/marketplace-api";
 import type { ProductFormValues } from "@/lib/validation/product-form";
 import { ProductCategoriesPicker } from "../ProductCategoriesPicker";
 import { Field } from "./Field";
+import { isUsableWeight } from "@/lib/products/usable-weight";
 
 export interface GeneralTabProps {
   mode: "create" | "edit";
@@ -30,6 +31,11 @@ export function GeneralTab({
 }: GeneralTabProps) {
   const form = useFormContext<ProductFormValues>();
   const { register, formState, watch, setValue } = form;
+
+  // Blank, whitespace, unparseable or non-positive all mean "no usable
+  // weight" — each ends up as the fallback at checkout.
+  const weightKgValue = watch("weightKg");
+  const isWeightMissing = !isUsableWeight(weightKgValue);
 
   return (
     <div className="flex flex-col gap-8">
@@ -166,8 +172,8 @@ export function GeneralTab({
           </legend>
           <p className="mb-3 mt-1 text-xs text-[color:var(--ink-900)] opacity-60">
             Carriers (Australia Post / ShipEngine / etc.) need package
-            dimensions and weight to quote real rates. Leave blank to use
-            the default 30 × 20 × 10 cm envelope.
+            dimensions and weight to quote real rates. Blank dimensions fall
+            back to a 30 × 20 × 10 cm envelope. Weight is different — see below.
           </p>
           <div className="grid gap-4 sm:grid-cols-4">
             <Field
@@ -181,6 +187,18 @@ export function GeneralTab({
                 {...register("weightKg")}
                 className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
               />
+              {/* A blank weight is not a neutral default the way blank
+                  dimensions are: checkout substitutes the store's fallback
+                  and the shopper is charged carrier rates derived from it.
+                  Silent until the field is actually empty, so it reads as
+                  guidance rather than an error. */}
+              {isWeightMissing && (
+                <p className="mt-1 text-xs text-[color:var(--warning)]">
+                  No weight set — shipping is quoted using your store&rsquo;s
+                  default parcel weight, so rates for this product may be
+                  wrong. Set a weight for accurate pricing.
+                </p>
+              )}
             </Field>
             <Field
               label="Length (cm)"

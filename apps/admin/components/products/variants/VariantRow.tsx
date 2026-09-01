@@ -9,6 +9,8 @@ import type { Warehouse } from "@/lib/api/warehouses-api";
 
 export interface VariantRowProps {
   variant: VariantDraft;
+  /** Row position, used to label variants that have no options to name them. */
+  index: number;
   optionNames: string[];
   currencyCode: string;
   media: AdminMediaResponse[];
@@ -33,6 +35,7 @@ const tabularNum: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
 export function VariantRow({
   variant,
+  index,
   optionNames,
   media,
   onPatch,
@@ -102,7 +105,9 @@ export function VariantRow({
   const [heightCm, setHeightCm] = React.useState(
     variant.heightCm ? String(variant.heightCm) : "",
   );
-  const [pickerOpen, setPickerOpen] = React.useState(false);
+  const [detailsOpen, setDetailsOpen] = React.useState(false);
+  const detailsTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const rowKey = variant.id ?? variant.key;
 
   React.useEffect(() => setPrice(variant.price), [variant.price]);
   React.useEffect(() => setSku(variant.sku), [variant.sku]);
@@ -121,7 +126,14 @@ export function VariantRow({
     [variant.heightCm],
   );
 
-  const currentMedia = media.find((m) => m.id === variant.variantImageId) ?? null;
+  // One Variant cell instead of a column per option. The interpunct is
+  // already this codebase's separator for joined metadata (the product
+  // header joins handle and storefront link the same way), so it is not a
+  // second convention for the same job.
+  const composedName = optionNames
+    .map((name) => findValue(variant, name))
+    .filter((value) => value.length > 0)
+    .join(" · ");
 
   const commitPrice = (): void => {
     if (price !== variant.price) onPatch({ price });
@@ -149,16 +161,31 @@ export function VariantRow({
     if (!Number.isNaN(n) && n !== variant[field]) onPatch({ [field]: n });
   };
 
-  const totalColumns = optionNames.length + 6;
+  // Variant | Price | SKU | Stock | details trigger.
+  const totalColumns = 5;
 
   return (
     <>
     <tr className="border-b border-[var(--ink-100)]">
-      {optionNames.map((name) => (
-        <td key={name} className="px-3 py-2 text-sm text-[var(--ink-900)]">
-          {findValue(variant, name)}
-        </td>
-      ))}
+      <td className="px-3 py-2">
+        {composedName ? (
+          <span className="text-sm text-[var(--ink-900)]">{composedName}</span>
+        ) : (
+          // A variant with no options has nothing to compose a name from.
+          // 8 of the-bondi-store's 12 products are in that state, so this
+          // is a normal row, not an edge case. Its position is the only
+          // honest label available — inventing "Option A" would be
+          // fabricating product data. Muted ink says the system named this
+          // row, the merchant did not, the same register the Tax summary
+          // uses for "the store default applies".
+          <span
+            className="text-sm text-[color:var(--ink-900)]/40"
+            title="No options set for this variant"
+          >
+            Variant {index + 1}
+          </span>
+        )}
+      </td>
       <td className="px-3 py-2">
         <input
           aria-label="Price"
@@ -235,84 +262,41 @@ export function VariantRow({
           />
         )}
       </td>
-      <td className="px-3 py-2">
-        <input
-          aria-label="Weight"
-          type="number"
-          step="0.01"
-          value={weight}
-          onChange={(e) => setWeight(e.target.value)}
-          onBlur={commitWeight}
-          style={tabularNum}
-          className="w-20 bg-transparent px-2 py-1 text-sm text-[var(--ink-900)] outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
-        />
-      </td>
-      <td className="px-3 py-2">
-        <div className="flex items-center gap-1" style={tabularNum}>
-          <input
-            aria-label="Length (cm)"
-            type="number"
-            step="0.01"
-            placeholder="L"
-            value={lengthCm}
-            onChange={(e) => setLengthCm(e.target.value)}
-            onBlur={() => commitDim(lengthCm, "lengthCm")}
-            className="w-14 bg-transparent px-2 py-1 text-sm text-[var(--ink-900)] outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
-          />
-          <span className="text-xs text-[var(--ink-500)]">×</span>
-          <input
-            aria-label="Width (cm)"
-            type="number"
-            step="0.01"
-            placeholder="W"
-            value={widthCm}
-            onChange={(e) => setWidthCm(e.target.value)}
-            onBlur={() => commitDim(widthCm, "widthCm")}
-            className="w-14 bg-transparent px-2 py-1 text-sm text-[var(--ink-900)] outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
-          />
-          <span className="text-xs text-[var(--ink-500)]">×</span>
-          <input
-            aria-label="Height (cm)"
-            type="number"
-            step="0.01"
-            placeholder="H"
-            value={heightCm}
-            onChange={(e) => setHeightCm(e.target.value)}
-            onBlur={() => commitDim(heightCm, "heightCm")}
-            className="w-14 bg-transparent px-2 py-1 text-sm text-[var(--ink-900)] outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
-          />
-        </div>
-      </td>
-      <td className="relative px-3 py-2">
+      <td className="w-px px-3 py-2 text-right">
+        {/* Weight, package dimensions and the image live behind this. They
+            are set once and rarely revisited, unlike price and stock, so
+            they cost four columns of horizontal scroll for nothing. Same
+            borderless ghost treatment as the stock disclosure beside it —
+            nothing draws a box around the trigger. */}
         <button
           type="button"
-          aria-label="Variant image"
-          onClick={() => setPickerOpen((o) => !o)}
-          className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] text-[var(--ink-500)] focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+          ref={detailsTriggerRef}
+          aria-expanded={detailsOpen}
+          aria-controls={`variant-details-${rowKey}`}
+          aria-label={`Weight, dimensions and image for ${composedName || `variant ${index + 1}`}`}
+          onClick={() => {
+            setDetailsOpen((open) => {
+              if (open) {
+                requestAnimationFrame(() => detailsTriggerRef.current?.focus());
+              }
+              return !open;
+            });
+          }}
+          className="group inline-flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-[color:var(--ink-900)]/[0.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
-          {currentMedia ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={currentMedia.url}
-              alt={currentMedia.alt ?? ""}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <span className="text-lg">+</span>
-          )}
+          <span className="text-xs text-[color:var(--ink-900)]/40 group-hover:text-[color:var(--moss-700)]">
+            More
+          </span>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            aria-hidden="true"
+            className={`text-[color:var(--ink-900)]/40 transition-transform group-hover:text-[color:var(--moss-700)] motion-reduce:transition-none ${detailsOpen ? "rotate-180" : ""}`}
+          >
+            <path d="M2 4l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
-        {pickerOpen ? (
-          <div className="absolute right-0 top-12 z-10">
-            <VariantImagePicker
-              media={media}
-              currentMediaId={variant.variantImageId ?? null}
-              onSelect={(id) => {
-                onPatch({ variantImageId: id });
-                setPickerOpen(false);
-              }}
-            />
-          </div>
-        ) : null}
       </td>
     </tr>
     {canSplit && splitOpen && (
@@ -336,6 +320,88 @@ export function VariantRow({
             byLocation={stockByLocation}
             autoFocus
           />
+          </div>
+        </td>
+      </tr>
+    )}
+    {detailsOpen && (
+      // Same sub-row pattern as the stock split, deliberately: one grammar
+      // for row detail, not two. Constrained width, page paper, and the
+      // hairline that ProductSection uses between sections.
+      <tr className="border-b border-[var(--ink-100)]">
+        <td colSpan={totalColumns} className="px-3 py-6">
+          <div
+            id={`variant-details-${rowKey}`}
+            className="flex max-w-xl flex-col gap-6 border-t border-[color:var(--border-subtle)] pt-6"
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs uppercase tracking-widest text-[var(--ink-500)]">
+                  Weight (kg)
+                </span>
+                <input
+                  aria-label="Weight"
+                  type="number"
+                  step="0.01"
+                  value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                  onBlur={commitWeight}
+                  style={tabularNum}
+                  className="w-full rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] px-2 py-1.5 text-sm text-[var(--ink-900)] outline-none focus:border-[var(--moss-700)] focus:ring-2 focus:ring-[color:var(--moss-700)]/20"
+                />
+              </label>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs uppercase tracking-widest text-[var(--ink-500)]">
+                  Package (cm)
+                </span>
+                <div className="flex items-center gap-1" style={tabularNum}>
+                  <input
+                    aria-label="Length (cm)"
+                    type="number"
+                    step="0.01"
+                    placeholder="L"
+                    value={lengthCm}
+                    onChange={(e) => setLengthCm(e.target.value)}
+                    onBlur={() => commitDim(lengthCm, "lengthCm")}
+                    className="w-full min-w-0 rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] px-2 py-1.5 text-sm text-[var(--ink-900)] outline-none focus:border-[var(--moss-700)] focus:ring-2 focus:ring-[color:var(--moss-700)]/20"
+                  />
+                  <span className="text-xs text-[var(--ink-500)]">×</span>
+                  <input
+                    aria-label="Width (cm)"
+                    type="number"
+                    step="0.01"
+                    placeholder="W"
+                    value={widthCm}
+                    onChange={(e) => setWidthCm(e.target.value)}
+                    onBlur={() => commitDim(widthCm, "widthCm")}
+                    className="w-full min-w-0 rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] px-2 py-1.5 text-sm text-[var(--ink-900)] outline-none focus:border-[var(--moss-700)] focus:ring-2 focus:ring-[color:var(--moss-700)]/20"
+                  />
+                  <span className="text-xs text-[var(--ink-500)]">×</span>
+                  <input
+                    aria-label="Height (cm)"
+                    type="number"
+                    step="0.01"
+                    placeholder="H"
+                    value={heightCm}
+                    onChange={(e) => setHeightCm(e.target.value)}
+                    onBlur={() => commitDim(heightCm, "heightCm")}
+                    className="w-full min-w-0 rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] px-2 py-1.5 text-sm text-[var(--ink-900)] outline-none focus:border-[var(--moss-700)] focus:ring-2 focus:ring-[color:var(--moss-700)]/20"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-xs uppercase tracking-widest text-[var(--ink-500)]">
+                Variant image
+              </span>
+              <VariantImagePicker
+                media={media}
+                currentMediaId={variant.variantImageId ?? null}
+                onSelect={(id) => onPatch({ variantImageId: id })}
+              />
+            </div>
           </div>
         </td>
       </tr>

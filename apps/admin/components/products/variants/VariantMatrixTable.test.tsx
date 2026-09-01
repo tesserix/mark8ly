@@ -35,7 +35,7 @@ const variants: VariantDraft[] = [
 ];
 
 describe("VariantMatrixTable", () => {
-  it("renders one row per variant with option cells", () => {
+  it("composes every option into a single Variant cell", () => {
     render(
       <VariantMatrixTable
         variants={variants}
@@ -44,10 +44,38 @@ describe("VariantMatrixTable", () => {
         onPatch={() => {}}
       />,
     );
-    expect(screen.getByText("Red")).toBeInTheDocument();
-    expect(screen.getByText("Blue")).toBeInTheDocument();
-    expect(screen.getByText("M")).toBeInTheDocument();
-    expect(screen.getByText("L")).toBeInTheDocument();
+    // Colour and Size used to be two columns. They are now one cell, joined
+    // by the interpunct, in the header's column order.
+    expect(screen.getByText("Red · M")).toBeInTheDocument();
+    expect(screen.getByText("Blue · L")).toBeInTheDocument();
+  });
+
+  it("shows four data columns, not one per option", () => {
+    render(
+      <VariantMatrixTable
+        variants={variants}
+        currencyCode="USD"
+        media={media}
+        onPatch={() => {}}
+      />,
+    );
+    const headers = screen
+      .getAllByRole("columnheader")
+      .map((th) => th.textContent?.trim());
+    expect(headers).toEqual(["Variant", "Price (USD)", "SKU", "Stock", "Details"]);
+  });
+
+  it("keeps weight, dimensions and image out of the row until expanded", () => {
+    render(
+      <VariantMatrixTable
+        variants={variants}
+        currencyCode="USD"
+        media={media}
+        onPatch={() => {}}
+      />,
+    );
+    expect(screen.queryByLabelText("Weight")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Length (cm)")).not.toBeInTheDocument();
   });
 
   it("renders price input populated from variant", () => {

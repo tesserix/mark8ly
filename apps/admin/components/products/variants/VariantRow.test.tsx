@@ -34,13 +34,15 @@ function renderRow(
   override: Partial<VariantDraft> = {},
   onPatch = vi.fn(),
   mediaList: AdminMediaResponse[] = media,
+  optionNames: string[] = ["Color"],
 ) {
   render(
     <table>
       <tbody>
         <VariantRow
           variant={{ ...baseVariant, ...override }}
-          optionNames={["Color"]}
+          index={0}
+          optionNames={optionNames}
           currencyCode="USD"
           media={mediaList}
           onPatch={onPatch}
@@ -51,6 +53,11 @@ function renderRow(
   return onPatch;
 }
 
+/** Weight, dimensions and the image now live behind the row's disclosure. */
+function openDetails(): void {
+  fireEvent.click(screen.getByRole("button", { name: /weight, dimensions and image/i }));
+}
+
 describe("VariantRow", () => {
   it("commits sku on blur and weight on blur, skips no-op change", () => {
     const onPatch = renderRow();
@@ -59,6 +66,7 @@ describe("VariantRow", () => {
     fireEvent.blur(sku);
     expect(onPatch).toHaveBeenCalledWith({ sku: "SKU-2" });
 
+    openDetails();
     const weight = screen.getByLabelText("Weight");
     fireEvent.change(weight, { target: { value: "1.5" } });
     fireEvent.blur(weight);
@@ -76,17 +84,16 @@ describe("VariantRow", () => {
     const stock = screen.getByLabelText("Stock");
     fireEvent.change(stock, { target: { value: "abc" } });
     fireEvent.blur(stock);
+    openDetails();
     const weight = screen.getByLabelText("Weight");
     fireEvent.change(weight, { target: { value: "xyz" } });
     fireEvent.blur(weight);
     expect(onPatch).not.toHaveBeenCalled();
   });
 
-  it("toggles image picker and selecting an image emits variantImageId", () => {
+  it("selecting an image in the details panel emits variantImageId", () => {
     const onPatch = renderRow();
-    const imgBtn = screen.getByRole("button", { name: /variant image/i });
-    fireEvent.click(imgBtn);
-    // Picker lists media thumbnails — click the first media option
+    openDetails();
     const thumb = screen.getByRole("radio", { name: /pic/i });
     fireEvent.click(thumb);
     expect(onPatch).toHaveBeenCalledWith({ variantImageId: "m1" });
@@ -94,7 +101,61 @@ describe("VariantRow", () => {
 
   it("renders current media image when variantImageId matches", () => {
     renderRow({ variantImageId: "m1" });
+    openDetails();
     const img = screen.getByAltText("pic") as HTMLImageElement;
     expect(img.src).toContain("a.jpg");
+  });
+
+  it("names the row by its option values", () => {
+    renderRow();
+    expect(screen.getByText("Red")).toBeInTheDocument();
+  });
+
+  // 8 of the-bondi-store's 12 products have variants with no options at
+  // all. Those rows have nothing to compose a name from, and must still be
+  // tellable apart rather than rendering as blank cells.
+  it("falls back to its position when the variant has no options", () => {
+    render(
+      <table>
+        <tbody>
+          <VariantRow
+            variant={{ ...baseVariant, optionValues: [] }}
+            index={2}
+            optionNames={[]}
+            currencyCode="USD"
+            media={media}
+            onPatch={vi.fn()}
+          />
+        </tbody>
+      </table>,
+    );
+    expect(screen.getByText("Variant 3")).toBeInTheDocument();
+  });
+
+  it("does not invent an option name for an unnamed variant", () => {
+    render(
+      <table>
+        <tbody>
+          <VariantRow
+            variant={{ ...baseVariant, optionValues: [] }}
+            index={0}
+            optionNames={[]}
+            currencyCode="USD"
+            media={media}
+            onPatch={vi.fn()}
+          />
+        </tbody>
+      </table>,
+    );
+    expect(screen.queryByText(/option a/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("—")).not.toBeInTheDocument();
+  });
+
+  it("collapses the details panel again on a second click", () => {
+    renderRow();
+    openDetails();
+    expect(screen.getByLabelText("Weight")).toBeInTheDocument();
+    openDetails();
+    expect(screen.queryByLabelText("Weight")).not.toBeInTheDocument();
   });
 });

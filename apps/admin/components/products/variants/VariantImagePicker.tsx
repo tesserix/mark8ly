@@ -17,7 +17,12 @@ export function VariantImagePicker({
   const hasMedia = media.length > 0;
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] p-4 shadow-[var(--shadow-1)]">
+    // No card. This used to be a floating popover, which needed its own
+    // border, fill and shadow to separate itself from the row underneath.
+    // It now sits inside the row's details disclosure, which already has a
+    // hairline above it — so the wrapper would be a bordered card in a
+    // system whose rule is hairline rules, not cards.
+    <div className="flex flex-col gap-3">
       {hasMedia ? (
         <div
           role="radiogroup"

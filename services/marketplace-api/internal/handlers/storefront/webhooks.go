@@ -41,6 +41,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
 // webhookGatewayConfigRow is a read-only projection of payment_gateway_configs
@@ -626,10 +627,26 @@ func (h *WebhookHandler) handlePaymentSucceeded(ctx context.Context, provider st
 		}
 		paidStatus := order.PaymentStatusPaid
 		if err := h.orderSvc.Confirm(ctx, nil, orderID, &paidStatus, "payment webhook: "+provider); err != nil {
-			h.logError("webhook: order confirm failed",
-				"order_id", evt.OrderID,
-				"err", err)
-			return
+			// Webhooks are at-least-once by contract, and Stripe sends BOTH
+			// checkout.session.completed and payment_intent.succeeded for a
+			// single payment. The second arrives after the first already
+			// confirmed the order, so Confirm refuses it with
+			// invalid_transition "confirmed" → "confirmed".
+			//
+			// That is a duplicate delivery, not a failure: the order is
+			// already in exactly the state we wanted. Logging it at ERROR
+			// put a scary line in the logs for EVERY successful payment,
+			// which is how a real confirm failure would get missed.
+			if isNoOpTransition(err) {
+				h.logInfo("webhook: order already in target state, ignoring duplicate delivery",
+					"order_id", evt.OrderID,
+					"provider", provider)
+			} else {
+				h.logError("webhook: order confirm failed",
+					"order_id", evt.OrderID,
+					"err", err)
+				return
+			}
 		}
 
 		// Order placed + paid → the buyer's invoice email goes out now.
@@ -791,6 +808,30 @@ func extractWebhookSignature(c *gin.Context, provider string) string {
 	default:
 		return c.GetHeader("X-Webhook-Signature")
 	}
+}
+
+// logInfo emits a structured info log entry. Silently no-ops when logger is nil.
+func (h *WebhookHandler) logInfo(msg string, args ...any) {
+	if h.logger != nil {
+		h.logger.Info(msg, args...)
+	}
+}
+
+// isNoOpTransition reports whether err is an invalid_transition that was
+// refused because the entity is ALREADY in the requested state.
+//
+// Distinguished from a genuinely wrong transition (say cancelled →
+// confirmed) by comparing the structured from/to details rather than
+// matching the message, so a reworded error cannot silently turn a real
+// failure into an ignored one.
+func isNoOpTransition(err error) bool {
+	var appErr *apperrors.Error
+	if !errors.As(err, &appErr) || appErr.Code != apperrors.CodeInvalidTransition {
+		return false
+	}
+	from, okFrom := appErr.Details["from"].(string)
+	to, okTo := appErr.Details["to"].(string)
+	return okFrom && okTo && from == to
 }
 
 // logError emits a structured error log entry. Silently no-ops when logger is nil.

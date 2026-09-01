@@ -432,7 +432,16 @@ export function AddressFieldset({
             disabled={disabled}
             onChange={(e) => update("phone", e.target.value)}
             className={inputClass}
+            aria-describedby={`${idPrefix}-phone-help`}
           />
+          <p
+            id={`${idPrefix}-phone-help`}
+            className="text-xs text-[color:var(--ink-900)]/40 mt-1"
+          >
+            Required by carriers. ShipEngine rejects rate requests for an
+            origin address with no phone, and the storefront then shows no
+            delivery options at all.
+          </p>
         </Field>
       </div>
     </div>

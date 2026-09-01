@@ -19,6 +19,7 @@ import {
   defaultAutoSchedulePickup,
   supportsPickupAutomation,
 } from "@/lib/settings/pickup-automation";
+import { validateWarehouseAddress } from "@/lib/settings/warehouse-validation";
 import {
   AddressFieldset,
   type AddressValue,
@@ -97,6 +98,14 @@ export function ShippingConfigForm({
     e.preventDefault();
     setError(null);
     setSuccess(false);
+
+    // A config whose origin address cannot produce rates is worse than a
+    // refused save — see lib/settings/warehouse-validation.
+    const addressError = validateWarehouseAddress(address);
+    if (addressError) {
+      setError(addressError);
+      return;
+    }
 
     startTransition(async () => {
       const result = await saveShippingConfig(provider, {

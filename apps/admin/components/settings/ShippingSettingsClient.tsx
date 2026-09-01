@@ -72,8 +72,14 @@ export function ShippingSettingsClient({
               configured
                 ? async () => {
                     if (!editable) return;
-                    await removeShippingConfig(carrier);
+                    // Surface the failure rather than refreshing over it:
+                    // this DELETE was 401 for months and looked like a no-op.
+                    const result = await removeShippingConfig(carrier);
+                    if (!result.ok) {
+                      return { ok: false, message: result.message };
+                    }
                     router.refresh();
+                    return { ok: true };
                   }
                 : undefined
             }

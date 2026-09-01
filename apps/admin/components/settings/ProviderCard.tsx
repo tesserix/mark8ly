@@ -24,7 +24,13 @@ interface ProviderCardProps {
   configured?: boolean;
   onConfigure?: () => Promise<void> | void;
   /** When absent, the Remove button is hidden (nothing to remove). */
-  onRemove?: () => Promise<void> | void;
+  /**
+   * Returns the outcome so a failure can be shown. It used to return void,
+   * which meant a rejected remove (both DELETEs were 401 for months) looked
+   * exactly like a successful one: the card re-rendered unchanged and said
+   * nothing. `void` is still accepted for callers with nothing to report.
+   */
+  onRemove?: () => Promise<{ ok: boolean; message?: string } | void> | void;
   onTest?: () => Promise<{ success: boolean; error?: string }>;
   /** The inline configuration form rendered when expanded. */
   children?: ReactNode;
@@ -47,6 +53,7 @@ export function ProviderCard({
 }: ProviderCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [removing, startRemoveTransition] = useTransition();
   const [testing, startTestTransition] = useTransition();
   const [testResult, setTestResult] = useState<{
@@ -70,8 +77,15 @@ export function ProviderCard({
       requestAnimationFrame(() => confirmBtnRef.current?.focus());
       return;
     }
+    setRemoveError(null);
     startRemoveTransition(async () => {
-      await onRemove();
+      const result = await onRemove();
+      // A falsy `ok` is a real failure; `void` means the caller has nothing
+      // to report and the refresh below tells the story.
+      if (result && !result.ok) {
+        setRemoveError(result.message ?? "Could not remove this configuration.");
+        return;
+      }
       setConfirmRemove(false);
     });
   }
@@ -160,6 +174,17 @@ export function ProviderCard({
 
       {/* Test connection feedback */}
       <div aria-live="polite" aria-atomic="true">
+        {removeError && (
+          <div className="pb-4">
+            <div
+              role="alert"
+              className="rounded-md border border-[color:var(--danger,#7B2D26)]/25 bg-[color:var(--danger,#7B2D26)]/[0.06] px-4 py-2.5 text-sm text-[color:var(--danger,#7B2D26)]"
+            >
+              {removeError}
+            </div>
+          </div>
+        )}
+
         {testResult && (
           <div className="pb-4">
             {testResult.success ? (

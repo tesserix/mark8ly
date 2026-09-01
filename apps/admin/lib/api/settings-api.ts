@@ -272,10 +272,12 @@ export async function deletePaymentConfig(
     {
       method: "DELETE",
       cache: "no-store",
-      headers: {
-        "X-User-Id": session.userId,
-        "X-Tenant-Id": session.tenantId,
-      },
+      // readHeaders, not a hand-rolled literal: it carries X-Internal-Auth,
+      // which marketplace-api requires. Both DELETEs omitted it and were
+      // rejected 401 every time — removing a payment or shipping config
+      // never worked, and the UI discarded the error so it looked like
+      // nothing happened.
+      headers: readHeaders(session),
     },
   );
   if (res.status === 204 || res.ok) {
@@ -358,10 +360,12 @@ export async function deleteShippingConfig(
     {
       method: "DELETE",
       cache: "no-store",
-      headers: {
-        "X-User-Id": session.userId,
-        "X-Tenant-Id": session.tenantId,
-      },
+      // readHeaders, not a hand-rolled literal: it carries X-Internal-Auth,
+      // which marketplace-api requires. Both DELETEs omitted it and were
+      // rejected 401 every time — removing a payment or shipping config
+      // never worked, and the UI discarded the error so it looked like
+      // nothing happened.
+      headers: readHeaders(session),
     },
   );
   if (res.status === 204 || res.ok) {

@@ -17,6 +17,7 @@ import type {
 } from "@/lib/api/settings-api";
 import { ProviderCard } from "./ProviderCard";
 import { PaymentConfigForm } from "./PaymentConfigForm";
+import { paymentReadinessFor } from "@/lib/settings/payments-readiness";
 import { TaxJarConfigForm } from "./TaxJarConfigForm";
 import {
   removePaymentConfig,
@@ -55,6 +56,10 @@ export function PaymentSettingsClient({
           supported.payment_providers.map((provider) => {
             const cfg = configByProvider.get(provider);
             const configured = Boolean(cfg);
+            // Everything between this gateway and a recorded payment. Only
+            // shown once credentials exist — "no gateway" is already plain
+            // from the card's own Add-credentials state.
+            const blockers = configured ? paymentReadinessFor(cfg) : [];
 
             return (
               <ProviderCard
@@ -88,6 +93,27 @@ export function PaymentSettingsClient({
                     : undefined
                 }
               >
+                {blockers.length > 0 && (
+                  <div
+                    role="status"
+                    className="mb-5 space-y-2 rounded-md border border-[color:var(--signal,#B7410E)]/25 bg-[color:var(--signal,#B7410E)]/[0.04] px-4 py-3"
+                  >
+                    <p className="text-sm font-medium text-foreground">
+                      {blockers.some((b) => b.severity === "silently_loses_orders")
+                        ? "This gateway can take payments it will not record"
+                        : "This gateway isn’t taking payments yet"}
+                    </p>
+                    <ul className="space-y-1 text-sm text-foreground-secondary">
+                      {blockers.map((b) => (
+                        <li key={b.code} className="flex gap-2">
+                          <span aria-hidden="true">&middot;</span>
+                          <span>{b.message}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 {editable ? (
                   <PaymentConfigForm
                     provider={provider}

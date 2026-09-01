@@ -45,16 +45,15 @@ import type { VariantDraft as MatrixVariantDraft } from "@/components/products/v
 
 import { useToast } from "@/components/feedback/Toaster";
 import { useUnsavedGuard } from "@/lib/hooks/useUnsavedGuard";
-import {
-  ProductFormTabs,
-  type ProductFormTabId,
-} from "./form/ProductFormTabs";
-import { GeneralTab } from "./form/GeneralTab";
 import type { Warehouse } from "@/lib/api/warehouses-api";
 import { OptionsTab } from "./form/OptionsTab";
-import { VariantsTab } from "./form/VariantsTab";
 import { MediaTab } from "./form/MediaTab";
-import { TaxTab } from "./form/TaxTab";
+import { TaxSection } from "./form/TaxSection";
+import { ProductSection } from "./form/ProductSection";
+import { DetailsSection } from "./form/DetailsSection";
+import { PricingSection } from "./form/PricingSection";
+import { ShippingSection } from "./form/ShippingSection";
+import { ProductRail } from "./form/ProductRail";
 
 // RHF-side option shape (matches zod + OptionsEditor).
 interface RhfOptionDraft {
@@ -99,7 +98,6 @@ export function ProductForm({
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [rootError, setRootError] = useState<string | null>(null);
-  const [currentTab, setCurrentTab] = useState<ProductFormTabId>("general");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const hasMultipleVariants = (initialProduct?.variants.length ?? 0) > 1;
@@ -387,17 +385,6 @@ export function ProductForm({
   const title =
     mode === "create" ? "New product" : (initialProduct?.title ?? "Product");
 
-  // Media tab is disabled in create mode — MediaTab requires a productId
-  // and a session for upload/recrop calls.
-  const tabDisabled: Partial<Record<ProductFormTabId, string>> =
-    mode === "create"
-      ? { media: "Save the product first to upload images" }
-      : {};
-
-  const mediaCount =
-    (useWatchSafe(methods, "media") as unknown[] | undefined)?.length ?? 0;
-  const variantCount =
-    (useWatchSafe(methods, "variants") as unknown[] | undefined)?.length ?? 0;
 
   return (
     <FormProvider {...methods}>
@@ -451,84 +438,121 @@ export function ProductForm({
           </div>
         )}
 
-        <ProductFormTabs
-          active={currentTab}
-          onChange={setCurrentTab}
-          badges={{ media: mediaCount, variants: variantCount }}
-          disabled={tabDisabled}
-        />
-
-        <div>
-          {currentTab === "general" && (
-            <GeneralTab
-              mode={mode}
-              categories={categories}
-              currencyCode={currencyCode}
-              hasMultipleVariants={hasMultipleVariants}
-              storeId={storeId}
-              warehouses={warehouses}
-              productId={initialProduct?.id}
-              variantId={firstVariant?.id}
-              stockByLocation={firstVariant?.inventory_by_location ?? {}}
-            />
-          )}
-          {currentTab === "media" && mode === "edit" && initialProduct && (
-            <MediaTab
-              storeId={storeId}
-              productId={initialProduct.id}
-              session={session}
-            />
-          )}
-          {currentTab === "options" && <OptionsTab />}
-          {currentTab === "variants" && (
-            <VariantsTab
-              currencyCode={currencyCode}
-              warehouses={warehouses}
-              storeId={storeId}
-              productId={initialProduct?.id}
-              stockByLocation={stockByVariant}
-            />
-          )}
-          {currentTab === "tax" && (
-            <TaxTab storeCountryCode={storeCountryCode} />
-          )}
-        </div>
-
-        {/* Actions — hairline top separator, discard as text link on left,
-            destructive + primary pair on the right. Primary CTA uses the
-            ink-filled + moss hover pair that the rest of admin uses. */}
-        <div className="flex items-center justify-between border-t border-border-subtle pt-6">
-          <Link
-            href="/products"
-            onClick={handleDiscard}
-            className="text-sm text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
-          >
-            Discard
-          </Link>
-          <div className="flex items-center gap-3">
-            {mode === "edit" && canDelete && initialProduct && (
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={isPending}
-                className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ink-900)]/20 px-3 py-2 text-sm text-foreground-secondary transition-colors hover:border-[color:var(--danger)] hover:text-[color:var(--danger)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
-                aria-label="Delete product"
-              >
-                <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete
-              </button>
-            )}
-            <button
-              type="submit"
-              disabled={isPending}
-              className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-14">
+          <div className="flex flex-col gap-10">
+            <ProductSection
+              id="details"
+              title="Details"
+              description="What the product is called, and how it reads on the storefront."
             >
-              {isPending
-                ? "Saving…"
-                : mode === "create"
-                  ? "Create product"
-                  : "Save changes"}
-            </button>
+              <DetailsSection mode={mode} />
+            </ProductSection>
+
+            <ProductSection
+              id="pricing"
+              title={hasMultipleVariants ? "Variants" : "Pricing and inventory"}
+              description={
+                hasMultipleVariants
+                  ? "Each combination has its own price, stock and SKU."
+                  : "What it costs, and how many you have."
+              }
+            >
+              <PricingSection
+                mode={mode}
+                currencyCode={currencyCode}
+                hasMultipleVariants={hasMultipleVariants}
+                storeId={storeId}
+                productId={initialProduct?.id}
+                variantId={firstVariant?.id}
+                warehouses={warehouses}
+                stockByLocation={firstVariant?.inventory_by_location ?? {}}
+                stockByVariant={stockByVariant}
+              />
+            </ProductSection>
+
+            <ProductSection
+              id="options"
+              title="Options"
+              description={
+                hasMultipleVariants
+                  ? "Size, colour and the like. Changing these regenerates the variants above."
+                  : "Add size, colour or similar to sell this product in several variations."
+              }
+            >
+              <OptionsTab />
+            </ProductSection>
+
+            <ProductSection
+              id="shipping"
+              title="Shipping"
+              description="Used to quote carrier rates. Wrong numbers cost you the difference on every order."
+            >
+              <ShippingSection />
+            </ProductSection>
+
+            {/* Media needs a product to attach to, so it is ABSENT on
+                create rather than present-and-disabled. A section that
+                cannot work yet is worse than one that is not there. */}
+            {mode === "edit" && initialProduct && (
+              <ProductSection
+                id="media"
+                title="Media"
+                description="The photos shoppers see. The first is used in listings."
+              >
+                <MediaTab
+                  storeId={storeId}
+                  productId={initialProduct.id}
+                  session={session}
+                />
+              </ProductSection>
+            )}
+
+            <TaxSection storeCountryCode={storeCountryCode} />
           </div>
+
+          <ProductRail
+            categories={categories}
+            storeId={storeId}
+            actions={
+              // Stacked in the rail rather than a footer row: on a
+              // scrolling page a bottom-anchored Save is a journey, and
+              // the merchant's most common question ("did that save?")
+              // should never require one.
+              <div className="flex flex-col gap-3">
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isPending
+                    ? "Saving…"
+                    : mode === "create"
+                      ? "Create product"
+                      : "Save changes"}
+                </button>
+                <div className="flex items-center justify-between">
+                  <Link
+                    href="/products"
+                    onClick={handleDiscard}
+                    className="text-sm text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                  >
+                    Discard
+                  </Link>
+                  {mode === "edit" && canDelete && initialProduct && (
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      disabled={isPending}
+                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-foreground-secondary transition-colors hover:text-[color:var(--danger)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label="Delete product"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            }
+          />
         </div>
       </form>
 

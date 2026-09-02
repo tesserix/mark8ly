@@ -810,7 +810,12 @@ func TestChainStore_GetUnknownPrefixErrorNeverLeaksValue(t *testing.T) {
 		GCPPrefix:    testPrefix,
 	})
 
-	// No "://" and no ":" — the dangerous shape: a raw plaintext credential.
+	// No "://" and no ":" — the dangerous shape: a raw plaintext credential
+	// from a pre-encryption row. Deliberately NOT shaped like a real
+	// provider key: GitHub push protection blocks a literal matching a live
+	// Stripe/Razorpay pattern, and a fixture that looks like a real
+	// credential is a liability in its own right. The property under test is
+	// the SHAPE (no scheme, no colon), not the issuer.
 	livePlaintextKey := "raw-credential-value-not-a-reference-0123456789"
 
 	_, err := store.Get(context.Background(), livePlaintextKey)

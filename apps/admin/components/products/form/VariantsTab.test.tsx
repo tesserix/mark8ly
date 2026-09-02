@@ -37,7 +37,7 @@ function Harness({ variants, onSnapshot }: HarnessProps): ReactElement {
 describe("VariantsTab", () => {
   it("shows empty state when no variants", () => {
     render(<Harness />);
-    expect(screen.getByText(/Add options on the Options tab/i)).toBeInTheDocument();
+    expect(screen.getByText(/Add options below to generate variants/i)).toBeInTheDocument();
   });
 
   const sampleVariants = [

@@ -68,7 +68,7 @@ export interface ProductFormProps {
   initialProduct?: AdminProduct;
   categories: AdminCategory[];
   currencyCode: string;
-  /** ISO 3166-1 alpha-2 code of the store, drives the Tax tab strategy. */
+  /** ISO 3166-1 alpha-2 code of the store, drives the Tax section strategy. */
   storeCountryCode: string;
   canDelete: boolean;
   canArchive: boolean;
@@ -101,6 +101,16 @@ export function ProductForm({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const hasMultipleVariants = (initialProduct?.variants.length ?? 0) > 1;
+  // Whether this product has real options, as opposed to variants that
+  // simply exist. 8 of the-bondi-store's 12 products have the latter: rows
+  // with prices and SKUs but no product_options at all. Calling those
+  // "combinations" is wrong — there is nothing being combined — and the
+  // consequence of adding an option to them is destructive, so both bits of
+  // copy below adapt on this rather than on variant count alone.
+  const namedOptions = (initialProduct?.options ?? []).filter(
+    (o) => o.name.trim().length > 0,
+  );
+  const hasOptions = namedOptions.length > 0;
   const firstVariant = initialProduct?.variants[0];
 
   // variantId -> warehouseId -> quantity, from the product detail response
@@ -532,9 +542,11 @@ export function ProductForm({
               id="pricing"
               title={hasMultipleVariants ? "Variants" : "Pricing and inventory"}
               description={
-                hasMultipleVariants
-                  ? "Each combination has its own price, stock and SKU."
-                  : "What it costs, and how many you have."
+                !hasMultipleVariants
+                  ? "What it costs, and how many you have."
+                  : hasOptions
+                    ? "Each combination has its own price, stock and SKU."
+                    : "Each variant has its own price, stock and SKU."
               }
             >
               <PricingSection
@@ -554,9 +566,16 @@ export function ProductForm({
               id="options"
               title="Options"
               description={
-                hasMultipleVariants
-                  ? "Size, colour and the like. Changing these regenerates the variants above."
-                  : "Add size, colour or similar to sell this product in several variations."
+                !hasMultipleVariants
+                  ? "Add size, colour or similar to sell this product in several variations."
+                  : hasOptions
+                    ? "Size, colour and the like. Changing these regenerates the variants above."
+                    : // These variants were never built from options, so no
+                      // option value can match them: generateVariants returns
+                      // every existing id in removedIds and Save deletes them.
+                      // Saying so is the difference between an informed choice
+                      // and losing a catalogue.
+                      "These variants have no options. Adding one rebuilds the list above from scratch and replaces them."
               }
             >
               <OptionsTab />

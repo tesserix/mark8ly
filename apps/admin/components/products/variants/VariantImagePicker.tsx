@@ -58,7 +58,7 @@ export function VariantImagePicker({
         </div>
       ) : (
         <p className="max-w-[14rem] text-xs text-foreground-tertiary">
-          Upload images on the Media tab to assign them to variants here.
+          Add images in the Media section below, then assign one here.
         </p>
       )}
       {currentMediaId !== null && (

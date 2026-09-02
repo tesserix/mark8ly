@@ -133,3 +133,65 @@ describe("ProductForm — editing one option-less variant", () => {
     expect(values.variants?.map((v) => v.price)).toEqual(["999", "120"]);
   });
 });
+
+// The page lost its tabs in #539, but two empty states and both variant
+// section descriptions still described the old layout — pointing at an
+// "Options tab" and an "Otions tab"-era mental model, and calling
+// option-less rows "combinations" when nothing is combined.
+describe("ProductForm — copy for a product whose variants have no options", () => {
+  it("never sends the merchant to a tab", async () => {
+    render(
+      <ProductForm
+        {...baseProps}
+        mode="edit"
+        initialProduct={productWithVariantsButNoOptions()}
+      />,
+    );
+    await screen.findByRole("button", { name: /save changes/i });
+    expect(document.body.textContent).not.toMatch(/\btab\b/i);
+  });
+
+  it("calls them variants, not combinations", async () => {
+    render(
+      <ProductForm
+        {...baseProps}
+        mode="edit"
+        initialProduct={productWithVariantsButNoOptions()}
+      />,
+    );
+    expect(
+      await screen.findByText(/each variant has its own price, stock and SKU/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/each combination/i)).not.toBeInTheDocument();
+  });
+
+  it("warns that adding an option replaces the existing variants", async () => {
+    render(
+      <ProductForm
+        {...baseProps}
+        mode="edit"
+        initialProduct={productWithVariantsButNoOptions()}
+      />,
+    );
+    expect(
+      await screen.findByText(/adding one rebuilds the list above from scratch and replaces them/i),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the combination wording for a product that really has options", async () => {
+    const withOptions = {
+      ...productWithVariantsButNoOptions(),
+      options: [{ id: "o1", name: "Size", values: [{ id: "ov1", value: "S" }, { id: "ov2", value: "M" }] }],
+      variants: [
+        { id: "v1", sku: "S", price: "120", inventory_quantity: 2, option_values: [{ option_name: "Size", value: "S" }] },
+        { id: "v2", sku: "M", price: "120", inventory_quantity: 2, option_values: [{ option_name: "Size", value: "M" }] },
+      ],
+    } as unknown as AdminProduct;
+
+    render(<ProductForm {...baseProps} mode="edit" initialProduct={withOptions} />);
+    expect(
+      await screen.findByText(/each combination has its own price, stock and SKU/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/rebuilds the list above/i)).not.toBeInTheDocument();
+  });
+});

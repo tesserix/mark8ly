@@ -176,12 +176,26 @@ func (c *CachingStore) invalidate(reference string) {
 // handler's Store dependency is a *CachingStore instead of a *ChainStore
 // directly. If inner does not implement Rewrapper, this reports no
 // rewrap performed.
+//
+// When a rewrap DID happen, both the old and new references are
+// invalidated in this cache. The inner rewrap writes the new reference
+// through the inner store directly (ChainStore.Put), bypassing
+// CachingStore.Put entirely — so without this, a stale cache entry from
+// earlier in the process's life (or one populated by a concurrent read
+// racing this rewrap) would keep serving old plaintext under the newly
+// minted reference for up to the TTL, and oldRef would keep resolving a
+// value that a fresh read should no longer reach through this path.
 func (c *CachingStore) MaybeRewrap(ctx context.Context, oldRef string, scope Scope, plaintext string) (string, bool) {
 	rw, ok := c.inner.(Rewrapper)
 	if !ok {
 		return "", false
 	}
-	return rw.MaybeRewrap(ctx, oldRef, scope, plaintext)
+	newRef, changed := rw.MaybeRewrap(ctx, oldRef, scope, plaintext)
+	if changed {
+		c.invalidate(oldRef)
+		c.invalidate(newRef)
+	}
+	return newRef, changed
 }
 
 var _ Store = (*CachingStore)(nil)

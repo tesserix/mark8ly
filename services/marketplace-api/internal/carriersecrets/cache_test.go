@@ -476,11 +476,34 @@ func TestCachingStore_ForwardsRewrapper(t *testing.T) {
 	if !ok {
 		t.Fatal("CachingStore does not implement Rewrapper")
 	}
+
+	// Seed the cache with stale entries under BOTH the old and new
+	// references, as if each had been read once already before the
+	// rewrap happens. Without invalidation, both would keep serving this
+	// stale plaintext for up to the TTL after the rewrap — the new
+	// reference's write went straight through the inner store
+	// (ChainStore.Put), bypassing CachingStore.Put's own invalidation.
+	cache.mu.Lock()
+	cache.entries["old-ref"] = cacheEntry{plaintext: "stale-old", fetchedAt: clock.Now()}
+	cache.entries["new-ref"] = cacheEntry{plaintext: "stale-new", fetchedAt: clock.Now()}
+	cache.mu.Unlock()
+
 	newRef, changed := rw.MaybeRewrap(context.Background(), "old-ref", testScope(), "plaintext")
 	if !changed || newRef != "new-ref" {
 		t.Errorf("MaybeRewrap() = (%q, %v), want (%q, true)", newRef, changed, "new-ref")
 	}
 	if inner.rewrapCalls != 1 {
 		t.Errorf("inner.rewrapCalls = %d, want 1", inner.rewrapCalls)
+	}
+
+	cache.mu.Lock()
+	_, oldStillCached := cache.entries["old-ref"]
+	_, newStillCached := cache.entries["new-ref"]
+	cache.mu.Unlock()
+	if oldStillCached {
+		t.Error("MaybeRewrap() left a stale cache entry under the OLD reference — it must be invalidated")
+	}
+	if newStillCached {
+		t.Error("MaybeRewrap() left a stale cache entry under the NEW reference — it must be invalidated so the next read fetches the fresh value instead of serving stale plaintext for up to the TTL")
 	}
 }

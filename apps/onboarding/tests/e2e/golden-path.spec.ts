@@ -22,7 +22,15 @@ test("golden path: landing → form → magic link → welcome", async ({
   // 1. Landing page renders and the primary CTA goes to /onboarding.
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: /a storefront worth opening/i }),
+    // Pins both halves of the H1. The offer half is the point of
+    // tesserix/mark8ly#599: the <title> leads with the offer, so an H1
+    // that leads only with the brand line tells a different story to
+    // anyone who arrives without passing through a SERP.
+    page.getByRole("heading", {
+      // \s+ rather than a literal space: the markup uses &nbsp; to stop
+      // "days." orphaning on mobile, and a literal space would not match it.
+      name: /a storefront worth opening\.\s*free for ninety\s+days\./i,
+    }),
   ).toBeVisible();
 
   // 2. Onboarding form.

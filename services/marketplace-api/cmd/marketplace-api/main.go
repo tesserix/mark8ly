@@ -38,7 +38,6 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
-	"github.com/mark8ly/marketplace-api/internal/bao"
 	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
 	appcredspkg "github.com/mark8ly/marketplace-api/internal/billing/appcreds"
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
@@ -425,8 +424,6 @@ func main() {
 	// independently of whatever mount the OpenBao client is configured
 	// with, so a mismatch there would otherwise fail every read/write
 	// at runtime instead of at boot).
-	var carrierSecretStore carriersecrets.Store
-	carrierSecretStoreDegraded := false
 	// carrierSecretCounter feeds ChainStore's fallback-read counter and
 	// CachingStore's stale-read counter. There is no existing Prometheus
 	// CounterVec for carriersecrets metrics and this task's file scope
@@ -445,63 +442,28 @@ func main() {
 	carrierSecretCounter := func(label string, n int64) {
 		log.Info("carriersecrets: metric", "label", label, "count", n)
 	}
-	switch cfg.ShippingSecretStore {
-	case "gcpsm", "bao":
-		if cfg.GCPProjectID == "" {
-			log.Error("GCP_PROJECT_ID required when SHIPPING_SECRET_STORE=gcpsm or bao",
-				"shipping_secret_store", cfg.ShippingSecretStore)
-			os.Exit(1)
-		}
-		smClient, smErr := secretmanagerclient.NewClient(context.Background())
-		if smErr != nil {
-			log.Error("carriersecrets: secret manager client init failed — falling back to inline",
-				"err", smErr)
-			carrierSecretStore = carriersecrets.NewInlineStore(apiKeyEncryptor)
-			carrierSecretStoreDegraded = true
-		} else {
-			baoClient, baoErr := bao.New(bao.Config{
-				Address:        cfg.OpenBaoAddr,
-				Mount:          cfg.OpenBaoKVMount,
-				KubernetesRole: cfg.OpenBaoRole,
-			})
-			if baoErr != nil {
-				// bao.New only fails on an empty Address, which never
-				// happens here — OpenBaoAddr always carries a default.
-				// Treated as a boot failure rather than silently
-				// degrading, matching the "misconfiguration is a boot
-				// failure" property required of the mount check above.
-				log.Error("carriersecrets: openbao client init failed", "err", baoErr)
-				os.Exit(1)
-			}
-			primary := carriersecrets.BackendGCP
-			if cfg.ShippingSecretStore == "bao" {
-				primary = carriersecrets.BackendBao
-			}
-			chain := carriersecrets.NewChainStore(carriersecrets.ChainConfig{
-				Bao:          carriersecrets.NewBaoClient(baoClient),
-				GCP:          carriersecrets.NewGCPStore(smClient, cfg.GCPProjectID),
-				Encryptor:    apiKeyEncryptor,
-				Primary:      primary,
-				GCPProjectID: cfg.GCPProjectID,
-				GCPPrefix:    cfg.SecretNamePrefix,
-				Counter:      carrierSecretCounter,
-				Logger:       log,
-			})
-			if cfg.ShippingSecretStore == "bao" {
-				// Caching is bao-only — see the switch's doc comment
-				// above for why "gcpsm" stays uncached.
-				carrierSecretStore = carriersecrets.NewCachingStore(chain, 60*time.Second, time.Now, carrierSecretCounter)
-			} else {
-				carrierSecretStore = chain
-			}
-			log.Info("carriersecrets: chain store online",
-				"primary", primary, "cached", cfg.ShippingSecretStore == "bao",
-				"project_id", cfg.GCPProjectID, "prefix", cfg.SecretNamePrefix,
-				"openbao_addr", cfg.OpenBaoAddr, "openbao_kv_mount", cfg.OpenBaoKVMount)
-		}
-	default: // "inline" — config.Validate already rejected anything else.
-		carrierSecretStore = carriersecrets.NewInlineStore(apiKeyEncryptor)
-		log.Info("carriersecrets: inline store (dev mode)")
+	// The construction itself — the mode switch this comment block
+	// describes — lives in internal/carriersecrets.Build, shared with
+	// cmd/refund-sweep-cron so the two callers cannot drift the way that
+	// produced mark8ly#166 (the cron never got the "bao" mode the API
+	// did, because the switch was duplicated instead of shared). Build
+	// never calls os.Exit; every failure it can't degrade past comes
+	// back as an error, and this is where that decision (exit vs.
+	// continue) is made for the API process specifically.
+	carrierSecretStore, carrierSecretStoreDegraded, buildErr := carriersecrets.Build(context.Background(), carriersecrets.BuildParams{
+		Mode:         cfg.ShippingSecretStore,
+		GCPProjectID: cfg.GCPProjectID,
+		SecretPrefix: cfg.SecretNamePrefix,
+		OpenBaoAddr:  cfg.OpenBaoAddr,
+		OpenBaoMount: cfg.OpenBaoKVMount,
+		OpenBaoRole:  cfg.OpenBaoRole,
+		Encryptor:    apiKeyEncryptor,
+		Logger:       log,
+		Counter:      carrierSecretCounter,
+	})
+	if buildErr != nil {
+		log.Error("carriersecrets: build failed", "err", buildErr, "shipping_secret_store", cfg.ShippingSecretStore)
+		os.Exit(1)
 	}
 	_ = carrierSecretStoreDegraded // readiness wiring is a downstream concern; flag kept in scope so future health-check hooks can read it.
 

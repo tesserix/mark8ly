@@ -38,15 +38,17 @@ func TestCheck_RejectsPlainHTTP(t *testing.T) {
 // resolves to any of them must never be dialled.
 func TestCheck_RejectsNonPublicDestinations(t *testing.T) {
 	for name, ip := range map[string]string{
-		"loopback":          "127.0.0.1",
-		"private 10/8":      "10.0.0.5",
-		"private 172.16/12": "172.16.0.5",
-		"private 192.168":   "192.168.1.5",
-		"link-local":        "169.254.1.1",
-		"GCP metadata":      "169.254.169.254",
-		"IPv6 loopback":     "::1",
-		"IPv6 ULA":          "fd00::1",
-		"unspecified":       "0.0.0.0",
+		"loopback":           "127.0.0.1",
+		"private 10/8":       "10.0.0.5",
+		"private 172.16/12":  "172.16.0.5",
+		"private 192.168":    "192.168.1.5",
+		"link-local":         "169.254.1.1",
+		"GCP metadata":       "169.254.169.254",
+		"IPv6 loopback":      "::1",
+		"IPv6 ULA":           "fd00::1",
+		"unspecified":        "0.0.0.0",
+		"0.0.0.0/8 non-zero": "0.0.0.1",
+		"CGNAT shared space": "100.64.0.1",
 	} {
 		t.Run(name, func(t *testing.T) {
 			g := New(fixed(ip))
@@ -54,6 +56,15 @@ func TestCheck_RejectsNonPublicDestinations(t *testing.T) {
 				t.Fatalf("want ErrPrivateAddress for %s, got %v", ip, err)
 			}
 		})
+	}
+}
+
+// 100.63.255.255 sits just below the CGNAT block (100.64.0.0/10) and must
+// still be treated as public — over-blocking is also a defect.
+func TestCheck_AllowsAddressAdjacentToCGNAT(t *testing.T) {
+	g := New(fixed("100.63.255.255"))
+	if _, err := g.Check("https://edge.example.com/x"); err != nil {
+		t.Fatalf("expected address adjacent to CGNAT to pass, got %v", err)
 	}
 }
 

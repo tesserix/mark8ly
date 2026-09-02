@@ -31,6 +31,34 @@ var (
 // maxURLLen bounds what we will store and log.
 const maxURLLen = 2048
 
+// nonPublicRanges are blocks that net.IP's built-in classifiers do not
+// cover but that must still be refused. Parsed once at package init rather
+// than per-call.
+var nonPublicRanges = mustParseCIDRs(
+	// 0.0.0.0/8: IsUnspecified() only matches the all-zero address, but
+	// Linux — the deployment target, Alpine containers — routinely treats
+	// the whole "this network" block as loopback/local. A documented SSRF
+	// bypass class.
+	"0.0.0.0/8",
+	// 100.64.0.0/10 (RFC 6598, carrier-grade NAT / shared address space):
+	// IsPrivate() covers RFC1918 and fc00::/7 only, but this range is
+	// exactly the kind of address cloud/Kubernetes internal networking
+	// (CNI overlays, NAT gateways) uses on this cluster.
+	"100.64.0.0/10",
+)
+
+func mustParseCIDRs(cidrs ...string) []*net.IPNet {
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		_, n, err := net.ParseCIDR(c)
+		if err != nil {
+			panic("ssrfguard: invalid CIDR literal " + c + ": " + err.Error())
+		}
+		nets = append(nets, n)
+	}
+	return nets
+}
+
 // Resolver looks a hostname up. Injected so tests need no DNS.
 type Resolver func(host string) ([]net.IP, error)
 
@@ -88,6 +116,11 @@ func isPublic(ip net.IP) bool {
 		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() {
 		return false
+	}
+	for _, n := range nonPublicRanges {
+		if n.Contains(ip) {
+			return false
+		}
 	}
 	return true
 }

@@ -13,6 +13,17 @@ import { useFormContext } from "react-hook-form";
 import type { ProductFormValues } from "@/lib/validation/product-form";
 import { Field } from "./Field";
 
+// RHF's register() returns only { name, onChange, onBlur, ref } — no value
+// and no defaultValue — so a server-rendered form emits EMPTY inputs and the
+// values appear only once the client has hydrated and RHF has written them
+// through its refs. On the product page that showed as a real flash: the
+// heading and breadcrumb (plain JSX) were correct immediately while Title sat
+// empty and Handle showed its placeholder, which reads exactly like a product
+// with no data — or a failed load.
+//
+// Passing defaultValue puts the value in the server HTML. It affects nothing
+// after hydration: RHF owns the input imperatively from then on, and a later
+// reset() sets .value directly rather than consulting the attribute.
 export interface DetailsSectionProps {
   mode: "create" | "edit";
   /**
@@ -28,13 +39,14 @@ const inputClass =
   "w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]";
 
 export function DetailsSection({ mode, compact = false }: DetailsSectionProps) {
-  const { register, formState } = useFormContext<ProductFormValues>();
+  const { register, formState, getValues } = useFormContext<ProductFormValues>();
 
   const titleField = (
     <Field label="Title" error={formState.errors.title?.message}>
       <input
         type="text"
         {...register("title")}
+          defaultValue={getValues("title")}
         className={`${inputClass} text-base`}
       />
     </Field>
@@ -60,6 +72,7 @@ export function DetailsSection({ mode, compact = false }: DetailsSectionProps) {
         <input
           type="text"
           {...register("handle")}
+          defaultValue={getValues("handle")}
           placeholder="linen-shirt"
           className={inputClass}
         />
@@ -72,6 +85,7 @@ export function DetailsSection({ mode, compact = false }: DetailsSectionProps) {
       >
         <textarea
           {...register("description")}
+          defaultValue={getValues("description")}
           rows={6}
           className={`${inputClass} resize-vertical`}
         />

@@ -22,6 +22,17 @@ import { Field } from "./Field";
 import { VariantsTab } from "./VariantsTab";
 import { VariantStockByWarehouse } from "./VariantStockByWarehouse";
 
+// RHF's register() returns only { name, onChange, onBlur, ref } — no value
+// and no defaultValue — so a server-rendered form emits EMPTY inputs and the
+// values appear only once the client has hydrated and RHF has written them
+// through its refs. On the product page that showed as a real flash: the
+// heading and breadcrumb (plain JSX) were correct immediately while Title sat
+// empty and Handle showed its placeholder, which reads exactly like a product
+// with no data — or a failed load.
+//
+// Passing defaultValue puts the value in the server HTML. It affects nothing
+// after hydration: RHF owns the input imperatively from then on, and a later
+// reset() sets .value directly rather than consulting the attribute.
 export interface PricingSectionProps {
   mode: "create" | "edit";
   currencyCode: string;
@@ -51,7 +62,7 @@ export function PricingSection({
   stockByLocation = {},
   stockByVariant = {},
 }: PricingSectionProps) {
-  const { register, formState, watch } = useFormContext<ProductFormValues>();
+  const { register, formState, watch, getValues } = useFormContext<ProductFormValues>();
 
   // With options defined, the variants themselves carry price and stock —
   // the table IS this section.
@@ -86,6 +97,7 @@ export function PricingSection({
             inputMode="decimal"
             placeholder="19.99"
             {...register("price")}
+            defaultValue={getValues("price")}
             className={inputClass}
           />
         </Field>
@@ -96,6 +108,7 @@ export function PricingSection({
               inputMode="numeric"
               placeholder="0"
               {...register("inventoryQuantity")}
+              defaultValue={getValues("inventoryQuantity")}
               className={inputClass}
             />
           </Field>
@@ -105,6 +118,7 @@ export function PricingSection({
             type="text"
             placeholder="Auto-generated from handle"
             {...register("sku")}
+            defaultValue={getValues("sku")}
             className={inputClass}
           />
         </Field>

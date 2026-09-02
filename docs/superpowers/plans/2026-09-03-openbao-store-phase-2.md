@@ -556,7 +556,7 @@ New settings, all only consulted when the mode is `bao`:
 | `OPENBAO_ROLE` | Kubernetes auth role | unset |
 | `OPENBAO_KV_MOUNT` | KV v2 mount | `kv` |
 
-**The default is unchanged (`inline`), so merging this PR changes nothing at runtime.** Moving a deployment to `bao` is a one-value, revertible config change — that is the rollback story.
+**The default is unchanged (`inline`), so merging this PR changes nothing at runtime.** Moving a deployment to `bao` is a one-value config change, but it is only revertible while `OPENBAO_ROLE` and `OPENBAO_ADDR` stay configured. `ChainStore.Get`/`Destroy` route a `bao://` reference to OpenBao BY PREFIX regardless of which backend is primary, so flipping `SHIPPING_SECRET_STORE` back to `gcpsm` after any row has migrated does NOT make that row resolve through GCP SM again — it still needs a working OpenBao login. Removing the OpenBao settings at the same time as the rollback breaks checkout, shipping rates and payment webhooks for every already-migrated tenant. `pkg/config.Validate` now enforces this by requiring `OPENBAO_ROLE`/`OPENBAO_ADDR` whenever `SHIPPING_SECRET_STORE != "inline"`, not only when it is `"bao"`.
 
 Read `main.go:394` onward first and preserve every existing branch, including the degraded-mode handling (`carrierSecretStoreDegraded`) and the dev path with no GCP credentials. `HybridStore` stays in the codebase until phase 5.
 

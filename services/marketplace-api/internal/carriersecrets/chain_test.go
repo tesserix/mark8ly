@@ -614,3 +614,51 @@ func TestChainStore_MaybeRewrapUnderGCPPrimary(t *testing.T) {
 		t.Errorf("Get(newRef) = %q, want %q", got, "the-secret")
 	}
 }
+
+// TestChainStore_BaoRefStillResolvesUnderGCPPrimary pins the property the
+// whole rollback story rests on (see pkg/config.ErrOpenBaoRoleRequired):
+// after a deployment flips SHIPPING_SECRET_STORE from "bao" back to
+// "gcpsm", any row that already migrated to bao:// must still resolve — Get
+// routes by the reference's own prefix, never by which backend is
+// "primary". If this ever regressed to routing by Primary instead, a
+// rollback would silently break checkout/shipping/webhooks for every
+// migrated tenant, which is exactly BLOCKER 1 from the whole-branch review.
+func TestChainStore_BaoRefStillResolvesUnderGCPPrimary(t *testing.T) {
+	scope := testScope()
+	bao := newRecordingClient()
+	gcp := newRecordingClient()
+	// Primary=GCP models the rolled-back ("gcpsm") configuration — the
+	// Bao client here still stands in for a live, correctly-configured
+	// OpenBao client (i.e. OPENBAO_ROLE/OPENBAO_ADDR were kept set, as
+	// pkg/config now requires even in gcpsm mode).
+	store := NewChainStore(ChainConfig{
+		Bao:          bao,
+		GCP:          gcp,
+		Primary:      BackendGCP,
+		GCPProjectID: testProjectID,
+		GCPPrefix:    testPrefix,
+	})
+
+	// Simulate a row that migrated to bao:// before the rollback, by
+	// writing it directly through the Bao client (bypassing Put, which
+	// under Primary=GCP would refuse to write there).
+	path := BaoPath(scope)
+	if err := bao.CreateOrAddVersion(context.Background(), path, []byte("still-live-credential")); err != nil {
+		t.Fatalf("seed bao secret: %v", err)
+	}
+	bao.createCalls = 0 // reset so the assertion below only counts the Get
+
+	got, err := store.Get(context.Background(), FormatBaoReference(scope))
+	if err != nil {
+		t.Fatalf("Get(bao://...) under Primary=GCP (rolled back) = %v, want nil — rollback must not break already-migrated reads", err)
+	}
+	if got != "still-live-credential" {
+		t.Errorf("Get(bao://...) = %q, want %q", got, "still-live-credential")
+	}
+	if bao.accessCalls != 1 {
+		t.Errorf("bao.accessCalls = %d, want 1 — a bao:// reference must route to Bao regardless of Primary", bao.accessCalls)
+	}
+	if gcp.totalCalls() != 0 {
+		t.Errorf("gcp saw %d calls, want 0 — a bao:// reference must never fall back to GCP", gcp.totalCalls())
+	}
+}

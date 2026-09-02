@@ -247,3 +247,54 @@ func TestConfig_BaoModeRequiresGCPProjectID(t *testing.T) {
 		t.Fatal("Load() with SHIPPING_SECRET_STORE=bao and no GCP_PROJECT_ID = nil, want error")
 	}
 }
+
+// Rollback safety: ChainStore.Get/Destroy route a bao:// reference to
+// OpenBao BY PREFIX regardless of which backend is primary (see
+// chain.go). So a deployment rolled back from "bao" to "gcpsm" after any
+// row has already migrated still needs a working OPENBAO_ROLE to resolve
+// it — "gcpsm" mode must require it too, not only "bao" mode, or the
+// rollback silently breaks checkout/shipping/webhooks for every migrated
+// tenant instead of restoring service.
+func TestConfig_GCPSMModeAlsoRequiresOpenBaoRole(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "gcpsm")
+	t.Setenv("GCP_PROJECT_ID", "test-project")
+	t.Setenv("OPENBAO_ROLE", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=gcpsm and no OPENBAO_ROLE = nil, want error")
+	}
+}
+
+// Same rollback-safety property, for OPENBAO_ADDR: an explicitly-empty
+// address must also fail boot in "gcpsm" mode, since ChainStore still
+// needs somewhere to dial for any already-migrated bao:// row.
+func TestConfig_GCPSMModeAlsoRequiresOpenBaoAddr(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "gcpsm")
+	t.Setenv("GCP_PROJECT_ID", "test-project")
+	t.Setenv("OPENBAO_ROLE", "marketplace-api")
+	t.Setenv("OPENBAO_ADDR", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=gcpsm and empty OPENBAO_ADDR = nil, want error")
+	}
+}
+
+// An explicitly-empty SHIPPING_SECRET_STORE (set but blank, as opposed to
+// unset) must be treated as "inline", not rejected as an unknown value —
+// envconfig's `default` tag only fires when the var is UNSET. Every chart
+// renders `| default "inline"` today so this is not a live risk, but it is
+// a startup-crash trap worth closing.
+func TestConfig_ShippingSecretStoreExplicitlyEmptyDefaultsToInline(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with SHIPPING_SECRET_STORE=\"\" (explicitly set, empty) = %v, want success", err)
+	}
+	if cfg.ShippingSecretStore != "inline" {
+		t.Errorf("ShippingSecretStore = %q, want inline", cfg.ShippingSecretStore)
+	}
+}

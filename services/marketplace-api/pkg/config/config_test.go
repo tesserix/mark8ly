@@ -298,3 +298,85 @@ func TestConfig_ShippingSecretStoreExplicitlyEmptyDefaultsToInline(t *testing.T)
 		t.Errorf("ShippingSecretStore = %q, want inline", cfg.ShippingSecretStore)
 	}
 }
+
+// LoadCarrierSecretJob is the narrow loader for background jobs (e.g.
+// cmd/refund-sweep-cron) that only need to construct a carrier secret
+// Store — it must accept a minimal env with none of Config's unrelated
+// required/prod-only fields set.
+func TestLoadCarrierSecretJob_MinimalEnvSucceeds(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x/y")
+	os.Unsetenv("MARKETPLACE_FGA_API_URL")
+	os.Unsetenv("SHIPPING_SECRET_STORE")
+	os.Unsetenv("ENV")
+
+	cfg, err := LoadCarrierSecretJob()
+	if err != nil {
+		t.Fatalf("LoadCarrierSecretJob: %v", err)
+	}
+	if cfg.DatabaseURL != "postgres://x/y" {
+		t.Errorf("DatabaseURL = %q, want postgres://x/y", cfg.DatabaseURL)
+	}
+	if cfg.ShippingSecretStore != "inline" {
+		t.Errorf("LoadCarrierSecretJob: ShippingSecretStore = %q, want inline", cfg.ShippingSecretStore)
+	}
+}
+
+// It must NOT require MARKETPLACE_FGA_API_URL — that's the whole point:
+// Load()/Config requires it unconditionally, but a carrier-secret job
+// never touches FGA.
+func TestLoadCarrierSecretJob_DoesNotRequireFGAAPIURL(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x/y")
+	os.Unsetenv("MARKETPLACE_FGA_API_URL")
+
+	if _, err := LoadCarrierSecretJob(); err != nil {
+		t.Fatalf("LoadCarrierSecretJob() with no MARKETPLACE_FGA_API_URL = %v, want success", err)
+	}
+}
+
+func TestLoadCarrierSecretJob_RequiresDatabaseURL(t *testing.T) {
+	os.Unsetenv("DATABASE_URL")
+
+	if _, err := LoadCarrierSecretJob(); err == nil {
+		t.Fatal("LoadCarrierSecretJob() with no DATABASE_URL = nil, want error")
+	}
+}
+
+// The same validateShippingSecretStore() the full Load() uses must reject
+// an unknown SHIPPING_SECRET_STORE for the narrow loader too — this is
+// the one piece of validation that must never drift between callers.
+func TestLoadCarrierSecretJob_RejectsUnknownShippingSecretStore(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x/y")
+	t.Setenv("SHIPPING_SECRET_STORE", "totally-bogus")
+
+	if _, err := LoadCarrierSecretJob(); err == nil {
+		t.Fatal("LoadCarrierSecretJob() with SHIPPING_SECRET_STORE=totally-bogus = nil, want error")
+	}
+}
+
+// Same rollback-safety rule Load() enforces: "gcpsm" (and "bao") require
+// OPENBAO_ROLE.
+func TestLoadCarrierSecretJob_GCPSMModeRequiresOpenBaoRole(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x/y")
+	t.Setenv("SHIPPING_SECRET_STORE", "gcpsm")
+	t.Setenv("GCP_PROJECT_ID", "test-project")
+	t.Setenv("OPENBAO_ROLE", "")
+
+	if _, err := LoadCarrierSecretJob(); err == nil {
+		t.Fatal("LoadCarrierSecretJob() with SHIPPING_SECRET_STORE=gcpsm and no OPENBAO_ROLE = nil, want error")
+	}
+}
+
+func TestLoadCarrierSecretJob_BaoModeSucceedsWithFullSettings(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x/y")
+	t.Setenv("SHIPPING_SECRET_STORE", "bao")
+	t.Setenv("OPENBAO_ROLE", "refund-sweep-cron")
+	t.Setenv("GCP_PROJECT_ID", "test-project")
+
+	cfg, err := LoadCarrierSecretJob()
+	if err != nil {
+		t.Fatalf("LoadCarrierSecretJob() with SHIPPING_SECRET_STORE=bao and required settings: %v", err)
+	}
+	if cfg.ShippingSecretStore != "bao" {
+		t.Errorf("ShippingSecretStore = %q, want bao", cfg.ShippingSecretStore)
+	}
+}

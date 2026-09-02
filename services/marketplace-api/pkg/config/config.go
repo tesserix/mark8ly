@@ -480,3 +480,98 @@ func (c *Config) validateShippingSecretStore() error {
 	}
 	return nil
 }
+
+// CarrierSecretJobConfig is the narrow config surface for a background
+// job that only needs to build a per-tenant carrier secret Store (see
+// internal/carriersecrets.Build) and talk to Postgres — e.g.
+// cmd/refund-sweep-cron — as opposed to the full Config a Gin-serving
+// process like cmd/marketplace-api needs.
+type CarrierSecretJobConfig struct {
+	DatabaseURL         string
+	ShippingSecretStore string
+	GCPProjectID        string
+	SecretNamePrefix    string
+	OpenBaoAddr         string
+	OpenBaoRole         string
+	OpenBaoKVMount      string
+	// EncryptionMode/EncryptionKey stay in scope even though this is a
+	// "secret store" loader, not a full auth surface: the store needs an
+	// Encryptor for "inline" mode and for decoding legacy inline
+	// (noop:/aes:) references under any mode.
+	EncryptionMode string
+	EncryptionKey  string
+}
+
+// carrierSecretJobEnv is the envconfig-tagged struct LoadCarrierSecretJob
+// binds env vars into. Kept separate from Config so envconfig's
+// required-field enforcement only applies to DATABASE_URL, not to
+// Config's MARKETPLACE_FGA_API_URL (required unconditionally) or its
+// prod-only auth secrets (see Validate) — none of which a carrier-secret
+// job has any use for.
+type carrierSecretJobEnv struct {
+	DatabaseURL         string `envconfig:"DATABASE_URL" required:"true"`
+	ShippingSecretStore string `envconfig:"SHIPPING_SECRET_STORE" default:"inline"`
+	GCPProjectID        string `envconfig:"GCP_PROJECT_ID" default:""`
+	SecretNamePrefix    string `envconfig:"SECRET_NAME_PREFIX" default:"mark8ly-dev"`
+	OpenBaoAddr         string `envconfig:"OPENBAO_ADDR" default:"http://openbao-active.openbao.svc.cluster.local:8200"`
+	OpenBaoRole         string `envconfig:"OPENBAO_ROLE" default:""`
+	OpenBaoKVMount      string `envconfig:"OPENBAO_KV_MOUNT" default:"kv"`
+	EncryptionMode      string `envconfig:"ENCRYPTION_MODE" default:""`
+	EncryptionKey       string `envconfig:"ENCRYPTION_KEY" default:""`
+}
+
+// LoadCarrierSecretJob reads .env (if present) and binds only the env
+// vars a carrier-secret-consuming background job needs: DATABASE_URL,
+// SHIPPING_SECRET_STORE, GCP_PROJECT_ID, SECRET_NAME_PREFIX, OPENBAO_ADDR,
+// OPENBAO_ROLE, OPENBAO_KV_MOUNT, ENCRYPTION_MODE, ENCRYPTION_KEY.
+//
+// It deliberately does NOT call Load(): Load's envconfig.Process(Config{})
+// requires MARKETPLACE_FGA_API_URL unconditionally and, outside
+// ENV=dev, MARKETPLACE_INTERNAL_AUTH_SECRET / CUSTOMER_SESSION_SECRET /
+// ENCRYPTION_MODE=aes+ENCRYPTION_KEY (see Validate) — none of which a job
+// that only builds a carrier secret Store and talks to Postgres has any
+// use for. Loading the full Config here would force such a job to boot
+// with settings it never reads, and would widen the blast radius of
+// secrets (the customer session secret, the internal auth secret) it
+// never touches.
+//
+// It DOES reuse Config.validateShippingSecretStore() — the one piece of
+// validation that must never drift between the API and any other caller
+// of internal/carriersecrets.Build — by copying the relevant fields onto
+// a throwaway *Config and invoking that same method, rather than
+// duplicating its logic here.
+func LoadCarrierSecretJob() (*CarrierSecretJobConfig, error) {
+	_ = godotenv.Load() // .env is optional
+
+	var env carrierSecretJobEnv
+	if err := envconfig.Process("", &env); err != nil {
+		return nil, err
+	}
+
+	// validateShippingSecretStore is a method on *Config and also
+	// normalises ShippingSecretStore ("" -> "inline") in place — run it
+	// through a throwaway Config carrying only the fields it reads, then
+	// copy the (possibly normalised) value back out.
+	validation := &Config{
+		ShippingSecretStore: env.ShippingSecretStore,
+		GCPProjectID:        env.GCPProjectID,
+		OpenBaoAddr:         env.OpenBaoAddr,
+		OpenBaoRole:         env.OpenBaoRole,
+		OpenBaoKVMount:      env.OpenBaoKVMount,
+	}
+	if err := validation.validateShippingSecretStore(); err != nil {
+		return nil, err
+	}
+
+	return &CarrierSecretJobConfig{
+		DatabaseURL:         env.DatabaseURL,
+		ShippingSecretStore: validation.ShippingSecretStore,
+		GCPProjectID:        env.GCPProjectID,
+		SecretNamePrefix:    env.SecretNamePrefix,
+		OpenBaoAddr:         env.OpenBaoAddr,
+		OpenBaoRole:         env.OpenBaoRole,
+		OpenBaoKVMount:      env.OpenBaoKVMount,
+		EncryptionMode:      strings.ToLower(strings.TrimSpace(env.EncryptionMode)),
+		EncryptionKey:       strings.TrimSpace(env.EncryptionKey),
+	}, nil
+}

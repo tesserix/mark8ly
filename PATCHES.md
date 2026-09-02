@@ -14,7 +14,15 @@ into **GCP Secret Manager** — one secret per
   store-side settings (reads must match writes).
 - `charts/apps/mark8ly-marketplace-api-admin/templates/deployment.yaml`:
   plumbs `SHIPPING_SECRET_STORE`, `GCP_PROJECT_ID`,
-  `SECRET_NAME_PREFIX` into the container.
+  `SECRET_NAME_PREFIX` into the container. Also plumbs (added by the
+  mark8ly OpenBao migration; see `docs/superpowers/specs/2026-09-03-openbao-carrier-secrets-design.md`):
+  `OPENBAO_ADDR` (OpenBao API address), `OPENBAO_ROLE` (Kubernetes auth
+  role), `OPENBAO_KV_MOUNT` (KV v2 mount, must be `"kv"`). marketplace-api
+  now requires all three whenever `SHIPPING_SECRET_STORE` is anything
+  other than `"inline"` — including `"gcpsm"` — because `ChainStore`
+  routes an already-migrated `bao://` reference to OpenBao by prefix
+  regardless of which mode is configured. Do not unset these on a
+  `bao` -> `gcpsm` rollback.
 - `charts/apps/mark8ly-marketplace-api-admin/templates/carrier-iam-bootstrap.yaml`:
   Helm post-install/post-upgrade Job that idempotently grants
   `roles/secretmanager.admin` to the marketplace-api GCP SA. Replaces

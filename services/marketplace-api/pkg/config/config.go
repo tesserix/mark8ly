@@ -3,6 +3,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -250,16 +251,45 @@ type Config struct {
 	// (tenant, domain, provider, field); "inline" → stores envelope-
 	// encrypted ciphertext in the DB column (legacy behaviour). Default
 	// is "inline" so local dev without GCP creds still boots.
+	// Valid values: "inline", "gcpsm", "bao". Anything else is rejected
+	// at startup by Validate — a typo here must not silently leave the
+	// wrong backend primary (see ErrShippingSecretStoreUnknown).
 	ShippingSecretStore string `envconfig:"SHIPPING_SECRET_STORE" default:"inline"`
 	// GCPProjectID is the project that hosts the per-tenant carrier
-	// secrets. Required when ShippingSecretStore=gcpsm; unused
-	// otherwise.
+	// secrets. Required when ShippingSecretStore is "gcpsm" or "bao" —
+	// even bao-primary chains still route legacy gsm:// reads through
+	// GCP Secret Manager. Unused when "inline".
 	GCPProjectID string `envconfig:"GCP_PROJECT_ID" default:""`
 	// SecretNamePrefix goes at the head of every per-tenant secret ID,
 	// e.g. "mark8ly-prod", "mark8ly-test". Isolates dev and prod
 	// clusters that share the same GCP project by scoping IAM
 	// bindings via resource.name.startsWith.
 	SecretNamePrefix string `envconfig:"SECRET_NAME_PREFIX" default:"mark8ly-dev"`
+
+	// OpenBaoAddr is the OpenBao API address. Required whenever
+	// ShippingSecretStore != "inline" — ChainStore routes any bao://
+	// reference to OpenBao BY PREFIX regardless of which mode is
+	// configured, so a "gcpsm" deployment with already-migrated rows
+	// still needs a working address to resolve them. Validate rejects an
+	// empty value outside inline mode for exactly this reason (see
+	// ErrOpenBaoAddrRequired).
+	OpenBaoAddr string `envconfig:"OPENBAO_ADDR" default:"http://openbao-active.openbao.svc.cluster.local:8200"`
+	// OpenBaoRole is the Kubernetes auth role the OpenBao client logs in
+	// as. Required whenever ShippingSecretStore != "inline", not only in
+	// "bao" mode — a bao:// reference is routed to OpenBao by prefix
+	// regardless of the configured mode, so rolling a deployment back
+	// from "bao" to "gcpsm" still needs a working login role for any row
+	// that already migrated, or that rollback silently breaks every
+	// migrated tenant's checkout/shipping/webhook reads. Kubernetes auth
+	// cannot proceed without it, so Validate rejects an empty value
+	// outside inline mode.
+	OpenBaoRole string `envconfig:"OPENBAO_ROLE" default:""`
+	// OpenBaoKVMount is the KV v2 mount name. carriersecrets.BaoPath
+	// currently hardcodes the "kv" mount prefix independently of this
+	// setting, so Validate rejects any other value when
+	// ShippingSecretStore=bao — a mismatch here must fail at boot, not
+	// on the first merchant credential save. Unused otherwise.
+	OpenBaoKVMount string `envconfig:"OPENBAO_KV_MOUNT" default:"kv"`
 
 	// --- Merchant device push (mobile-admin) ---
 	// PushEventsTopic is the Pub/Sub topic merchant notifications are
@@ -291,6 +321,45 @@ var (
 		"marketplace config: ENCRYPTION_MODE must be \"aes\" when ENV != \"dev\" (noop stores merchant provider secrets as base64)")
 	ErrEncryptionKeyRequired = errors.New(
 		"marketplace config: ENCRYPTION_KEY must be set when ENCRYPTION_MODE=aes")
+
+	// ErrShippingSecretStoreUnknown guards against a typo silently
+	// leaving the wrong carrier-secret backend primary — checked in
+	// every environment, not just non-dev, since a bad value is a
+	// mistake regardless of ENV.
+	ErrShippingSecretStoreUnknown = errors.New(
+		"marketplace config: SHIPPING_SECRET_STORE must be \"inline\", \"gcpsm\", or \"bao\"")
+	// ErrOpenBaoRoleRequired fires when ShippingSecretStore is anything
+	// other than "inline" but OPENBAO_ROLE is unset. This is required in
+	// "gcpsm" mode too, not only "bao" — ChainStore routes a bao://
+	// reference to OpenBao by prefix regardless of which mode is
+	// configured, so a deployment rolled back from "bao" to "gcpsm" still
+	// needs a working role for any row that already migrated. Without
+	// it, the Kubernetes auth login has no role to present and cannot
+	// succeed.
+	ErrOpenBaoRoleRequired = errors.New(
+		"marketplace config: OPENBAO_ROLE must be set when SHIPPING_SECRET_STORE is not \"inline\" (ChainStore routes bao:// references to OpenBao by prefix regardless of mode, so a gcpsm rollback still needs a working role)")
+	// ErrOpenBaoAddrRequired fires when ShippingSecretStore is anything
+	// other than "inline" but OPENBAO_ADDR is empty, for the same
+	// rollback-safety reason as ErrOpenBaoRoleRequired.
+	ErrOpenBaoAddrRequired = errors.New(
+		"marketplace config: OPENBAO_ADDR must be set when SHIPPING_SECRET_STORE is not \"inline\" (ChainStore routes bao:// references to OpenBao by prefix regardless of mode, so a gcpsm rollback still needs a working address)")
+	// ErrOpenBaoKVMountUnsupported fires when ShippingSecretStore=bao
+	// and OPENBAO_KV_MOUNT is anything other than "kv". This is a
+	// carry-forward from an earlier task: carriersecrets.BaoPath
+	// hardcodes the "kv/" logical path prefix independently of whatever
+	// mount the OpenBao client is configured with, so a mismatch here
+	// can no longer be expressed inside carriersecrets — every read and
+	// write would fail at runtime with a "does not start with mount"
+	// error on the first merchant credential save instead of at boot.
+	ErrOpenBaoKVMountUnsupported = errors.New(
+		"marketplace config: OPENBAO_KV_MOUNT must be \"kv\" when SHIPPING_SECRET_STORE=bao (carriersecrets.BaoPath currently assumes the \"kv\" mount)")
+	// ErrGCPProjectIDRequiredForBao fires when ShippingSecretStore=bao
+	// and GCP_PROJECT_ID is unset. A bao-primary ChainStore still routes
+	// legacy gsm:// reads (and destroys) through GCP Secret Manager, so
+	// GCP_PROJECT_ID is a genuine prerequisite for "bao" mode, not just
+	// "gcpsm" mode.
+	ErrGCPProjectIDRequiredForBao = errors.New(
+		"marketplace config: GCP_PROJECT_ID must be set when SHIPPING_SECRET_STORE=bao (legacy gsm:// rows must still resolve through GCP Secret Manager)")
 )
 
 // Load reads .env (if present) and binds environment variables into Config.
@@ -338,6 +407,12 @@ func Load() (*Config, error) {
 // empty, so an unset env var would ship an open service rather than a
 // broken one — the failure mode we can least afford to discover in prod.
 func (c *Config) Validate() error {
+	// Checked in every environment, including dev — a SHIPPING_SECRET_STORE
+	// typo (or selecting bao without the settings it needs) is a
+	// misconfiguration, not a security posture that dev gets to relax.
+	if err := c.validateShippingSecretStore(); err != nil {
+		return err
+	}
 	if c.Env == "dev" {
 		return nil
 	}
@@ -352,6 +427,56 @@ func (c *Config) Validate() error {
 	}
 	if c.EncryptionKey == "" {
 		return ErrEncryptionKeyRequired
+	}
+	return nil
+}
+
+// validateShippingSecretStore rejects an unrecognised SHIPPING_SECRET_STORE
+// value outright (rather than silently coercing it to the "inline"
+// default) and checks the settings that a non-"inline" mode depends on but
+// does not itself have a working fallback for.
+//
+// An explicitly-empty SHIPPING_SECRET_STORE is treated as "inline" rather
+// than an unknown value: envconfig's `default` tag only applies when the
+// variable is completely UNSET, so a var that is SET to "" would otherwise
+// fail this switch and crash-loop the service, even though every chart
+// today renders `| default "inline"` and would never produce that shape
+// live. It is a startup trap, not a live risk, and it costs nothing to
+// close.
+func (c *Config) validateShippingSecretStore() error {
+	if c.ShippingSecretStore == "" {
+		c.ShippingSecretStore = "inline"
+	}
+	switch c.ShippingSecretStore {
+	case "inline", "gcpsm", "bao":
+	default:
+		return fmt.Errorf("%w (got %q)", ErrShippingSecretStoreUnknown, c.ShippingSecretStore)
+	}
+	if c.ShippingSecretStore == "inline" {
+		return nil
+	}
+	// OPENBAO_ROLE and OPENBAO_ADDR are required in "gcpsm" mode too, not
+	// only "bao" — ChainStore.Get/Destroy route a bao:// reference to
+	// OpenBao BY PREFIX unconditionally, regardless of which backend is
+	// configured as primary. A deployment rolled back from "bao" to
+	// "gcpsm" after any row has migrated still needs a working OpenBao
+	// login to read it; without these settings that rollback breaks
+	// checkout, shipping rates and payment webhooks for every migrated
+	// tenant instead of restoring service.
+	if c.OpenBaoRole == "" {
+		return ErrOpenBaoRoleRequired
+	}
+	if c.OpenBaoAddr == "" {
+		return ErrOpenBaoAddrRequired
+	}
+	if c.ShippingSecretStore != "bao" {
+		return nil
+	}
+	if c.OpenBaoKVMount != "kv" {
+		return fmt.Errorf("%w (got OPENBAO_KV_MOUNT=%q)", ErrOpenBaoKVMountUnsupported, c.OpenBaoKVMount)
+	}
+	if c.GCPProjectID == "" {
+		return ErrGCPProjectIDRequiredForBao
 	}
 	return nil
 }

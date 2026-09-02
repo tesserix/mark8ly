@@ -101,6 +101,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/breakglass/... \
 	    ./internal/campaign/... \
 	    ./internal/campaignbudget/... \
+	    ./internal/carriersecrets/... \
 	    ./internal/category/... \
 	    ./internal/csvjob/... \
 	    ./internal/customererasure/... \

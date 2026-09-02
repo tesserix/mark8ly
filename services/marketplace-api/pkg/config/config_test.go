@@ -154,3 +154,147 @@ func TestLoad_DevToleratesEmptySecrets(t *testing.T) {
 		t.Fatalf("Load() in dev with empty secrets: %v", err)
 	}
 }
+
+// baseEnv sets only the two hard-required vars, leaving everything else
+// (including SHIPPING_SECRET_STORE) at its default — used by the
+// SHIPPING_SECRET_STORE tests below so they exercise defaulting in
+// isolation from the prod fail-closed checks.
+func baseEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("DATABASE_URL", "postgres://x/y")
+	t.Setenv("MARKETPLACE_FGA_API_URL", "http://openfga:8080")
+}
+
+// The default is unchanged: an unset SHIPPING_SECRET_STORE is still
+// "inline", so merging this PR cannot alter any deployment's behaviour.
+func TestConfig_ShippingSecretStoreDefaultUnchanged(t *testing.T) {
+	baseEnv(t)
+	os.Unsetenv("SHIPPING_SECRET_STORE")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ShippingSecretStore != "inline" {
+		t.Errorf("ShippingSecretStore = %q, want inline", cfg.ShippingSecretStore)
+	}
+}
+
+// "bao" is accepted as a third valid mode.
+func TestConfig_ShippingSecretStoreAcceptsBao(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "bao")
+	t.Setenv("OPENBAO_ROLE", "marketplace-api")
+	t.Setenv("GCP_PROJECT_ID", "test-project")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with SHIPPING_SECRET_STORE=bao, OPENBAO_ROLE and GCP_PROJECT_ID set: %v", err)
+	}
+	if cfg.ShippingSecretStore != "bao" {
+		t.Errorf("ShippingSecretStore = %q, want bao", cfg.ShippingSecretStore)
+	}
+}
+
+// An unknown value is rejected at startup, not silently coerced — a typo
+// must not quietly leave the wrong backend primary.
+func TestConfig_ShippingSecretStoreRejectsUnknownValue(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "totally-bogus")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=totally-bogus = nil, want error")
+	}
+}
+
+// Selecting bao without OPENBAO_ROLE is a startup error, since Kubernetes
+// login cannot work without it.
+func TestConfig_BaoModeRequiresRole(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "bao")
+	t.Setenv("OPENBAO_ROLE", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=bao and no OPENBAO_ROLE = nil, want error")
+	}
+}
+
+// Bonus coverage for the carry-forward risk called out in the task brief:
+// carriersecrets.BaoPath hardcodes the "kv/" mount prefix, so a non-"kv"
+// OPENBAO_KV_MOUNT must fail at boot, not at the first credential save.
+func TestConfig_BaoModeRejectsNonKVMount(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "bao")
+	t.Setenv("OPENBAO_ROLE", "marketplace-api")
+	t.Setenv("OPENBAO_KV_MOUNT", "secret")
+	t.Setenv("GCP_PROJECT_ID", "test-project")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=bao and OPENBAO_KV_MOUNT=secret = nil, want error")
+	}
+}
+
+// bao mode still routes legacy gsm:// reads/destroys through GCP Secret
+// Manager, so GCP_PROJECT_ID is a genuine prerequisite for "bao" mode too,
+// not just "gcpsm" — selecting bao without it is a startup error.
+func TestConfig_BaoModeRequiresGCPProjectID(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "bao")
+	t.Setenv("OPENBAO_ROLE", "marketplace-api")
+	t.Setenv("GCP_PROJECT_ID", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=bao and no GCP_PROJECT_ID = nil, want error")
+	}
+}
+
+// Rollback safety: ChainStore.Get/Destroy route a bao:// reference to
+// OpenBao BY PREFIX regardless of which backend is primary (see
+// chain.go). So a deployment rolled back from "bao" to "gcpsm" after any
+// row has already migrated still needs a working OPENBAO_ROLE to resolve
+// it — "gcpsm" mode must require it too, not only "bao" mode, or the
+// rollback silently breaks checkout/shipping/webhooks for every migrated
+// tenant instead of restoring service.
+func TestConfig_GCPSMModeAlsoRequiresOpenBaoRole(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "gcpsm")
+	t.Setenv("GCP_PROJECT_ID", "test-project")
+	t.Setenv("OPENBAO_ROLE", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=gcpsm and no OPENBAO_ROLE = nil, want error")
+	}
+}
+
+// Same rollback-safety property, for OPENBAO_ADDR: an explicitly-empty
+// address must also fail boot in "gcpsm" mode, since ChainStore still
+// needs somewhere to dial for any already-migrated bao:// row.
+func TestConfig_GCPSMModeAlsoRequiresOpenBaoAddr(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "gcpsm")
+	t.Setenv("GCP_PROJECT_ID", "test-project")
+	t.Setenv("OPENBAO_ROLE", "marketplace-api")
+	t.Setenv("OPENBAO_ADDR", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=gcpsm and empty OPENBAO_ADDR = nil, want error")
+	}
+}
+
+// An explicitly-empty SHIPPING_SECRET_STORE (set but blank, as opposed to
+// unset) must be treated as "inline", not rejected as an unknown value —
+// envconfig's `default` tag only fires when the var is UNSET. Every chart
+// renders `| default "inline"` today so this is not a live risk, but it is
+// a startup-crash trap worth closing.
+func TestConfig_ShippingSecretStoreExplicitlyEmptyDefaultsToInline(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with SHIPPING_SECRET_STORE=\"\" (explicitly set, empty) = %v, want success", err)
+	}
+	if cfg.ShippingSecretStore != "inline" {
+		t.Errorf("ShippingSecretStore = %q, want inline", cfg.ShippingSecretStore)
+	}
+}

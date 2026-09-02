@@ -34,13 +34,20 @@ const SITE_URL = "https://mark8ly.com";
 
 export const metadata: Metadata = {
   title: {
-    absolute: "Mark8ly — quiet commerce for people who make things",
+    // Offer-led, not brand-led: the ninety days and the 0% platform fee are
+    // what differentiate us in a SERP (Shopify gives three days, Wix and
+    // Squarespace fourteen), and a brand tagline spends the whole ~60-char
+    // budget saying nothing a searcher can act on. 53 chars, so Google
+    // renders it whole.
+    absolute: "Ninety days free, 0% platform fees — Mark8ly commerce",
   },
+  // 151 chars — under the ~155 Google renders. Offer first, category second;
+  // "platform fees" rather than a bare "0% fees" because the merchant still
+  // pays their payment processor's standard rate.
   description:
-    "Mark8ly is an editorial commerce platform for independent merchants. " +
-    "Open a storefront in an afternoon, keep every sale — no platform " +
-    "transaction fees — and ship a store that looks considered from day one. " +
-    "Ninety days free, no card required.",
+    "Ninety days free, no card, and 0% platform fees on your sales. " +
+    "An editorial commerce platform for independent merchants — " +
+    "open a store in an afternoon.",
   alternates: {
     canonical: "/",
   },
@@ -299,7 +306,10 @@ export default async function HomePage() {
    ------------------------------------------------------------
    Asymmetric: copy left, single editorial moment right. No
    floating badges, no fake browser chrome, no metric strip.
-   Headline carries the offer; everything else gets out of the way.
+   Headline carries the brand, the deck line under it carries the
+   offer; everything else gets out of the way. The offer is stated
+   once, above the CTAs — the line below them keeps price detail only,
+   so nothing repeats.
    ============================================================ */
 
 function Hero() {
@@ -312,7 +322,11 @@ function Hero() {
             <br />
             worth opening.
           </h1>
-          <p className="mt-8 max-w-xl text-lg leading-[1.55] text-foreground-secondary">
+          <p className="mt-6 max-w-xl text-xl leading-[1.2] text-foreground">
+            Ninety days free, no card. And we never take a cut of what you
+            sell.
+          </p>
+          <p className="mt-6 max-w-xl text-lg leading-[1.55] text-foreground-secondary">
             Mark8ly is a quiet, considered commerce platform for people who
             actually make things. Set up in an afternoon. Keep your margins.
             Sell on a storefront that doesn&rsquo;t look like everyone
@@ -332,8 +346,7 @@ function Hero() {
           </div>
 
           <p className="mt-8 text-sm text-foreground-tertiary">
-            Free for ninety days. No card required. Three clear plans after
-            that, from $15 a month, billed yearly.
+            Three clear plans after that, from $15 a month, billed yearly.
           </p>
         </div>
       </div>

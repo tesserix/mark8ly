@@ -12,8 +12,26 @@
 //	  ↓
 //	complete   →  spawns tenant + outbox FGA write, status="completed"
 //
-// At any point a session may transition to status="abandoned" (browser close)
-// or "expired" (gc).
+// Those three — in_progress, verifying, completed — are the ONLY statuses
+// this package ever writes.
+//
+// "abandoned" and "expired" are declared below and permitted by the
+// migration's CHECK constraint, but nothing writes them: there is no gc,
+// cron, sweep or reaper for onboarding sessions anywhere in the workspace.
+// Every session in production is in_progress, verifying or completed.
+//
+// This comment used to claim "at any point a session may transition to
+// status='abandoned' (browser close) or 'expired' (gc)", which described a
+// lifecycle the code does not implement. #283 nearly built an abandoned-
+// session counter on `status = 'abandoned'`; it would have returned zero for
+// every window, forever, and read as a data problem rather than a missing
+// feature. It instead derives abandonment from `last_activity_at` (idle >24h,
+// not completed) and keeps the stored status and the derived flag as separate
+// fields on the wire, so the gap stays visible.
+//
+// If a gc is wanted for its own sake (#322 option 2), the constants are here
+// and the constraint already permits them — but the derived flag and the
+// stored status would then need to agree during the transition.
 //
 // The completion handler is the bug-fix landing point for auth-bug #2 and #3
 // from docs/planning/auth-bugs.md. It writes both the tenant row and the
@@ -48,6 +66,10 @@ type Session struct {
 func (Session) TableName() string { return "onboarding_sessions" }
 
 // Status constants. Match the CHECK constraint in the migration.
+//
+// StatusExpired and StatusAbandoned are RESERVED: permitted by the
+// constraint, referenced by no writer. See the package doc above before
+// building anything that reads for them.
 const (
 	StatusInProgress = "in_progress"
 	StatusVerifying  = "verifying"

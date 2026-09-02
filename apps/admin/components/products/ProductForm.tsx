@@ -526,6 +526,8 @@ export function ProductForm({
               <Link
                 href="/products"
                 onClick={handleDiscard}
+                // Owns its own confirmation, as on the edit page.
+                data-unsaved-guard="off"
                 className="text-sm text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
               >
                 Cancel
@@ -633,6 +635,10 @@ export function ProductForm({
             <Link
               href="/products"
               onClick={handleDiscard}
+              // This link already opens its own styled confirmation, so the
+              // global navigation guard steps aside rather than stacking a
+              // second dialog on the same click.
+              data-unsaved-guard="off"
               className="text-sm text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
             >
               Discard

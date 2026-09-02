@@ -16,6 +16,8 @@ import {
   LogOut,
   ChevronDown,
 } from "lucide-react";
+
+import { UnsavedChangesProvider } from "./UnsavedChangesGuard";
 import {
   Sidebar,
   SidebarContent,
@@ -385,7 +387,11 @@ function AdminShellFrame({
             prose inside pages is constrained by its own max-w-2xl/3xl so
             text measure stays readable. */}
         <main id="main" className="flex-1 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+          <div className="mx-auto w-full max-w-6xl">
+            {/* Wraps the content, not the chrome, but the click listener is
+                on document — so sidebar and topbar links are guarded too. */}
+            <UnsavedChangesProvider>{children}</UnsavedChangesProvider>
+          </div>
         </main>
       </SidebarInset>
     </>

@@ -36,6 +36,14 @@ FROM ghcr.io/tesserix/base-node-builder-22@sha256:517372359a366695db0898e2295158
 USER 0:0
 WORKDIR /src
 COPY --from=deps /src/node_modules ./node_modules
+# npm does not always hoist a workspace dependency to the root. When two
+# workspaces resolve a package the root tree cannot satisfy, it lands in
+# apps/<app>/node_modules instead — and copying only /src/node_modules
+# silently drops it, which surfaces much later as "Module not found" during
+# next build rather than as an install error. Carry the per-workspace trees
+# too; the context excludes node_modules, so the COPY below cannot clobber
+# them.
+COPY --from=deps /src/apps ./apps
 COPY . .
 
 # Public Next.js env vars — INLINED into the client bundle at build

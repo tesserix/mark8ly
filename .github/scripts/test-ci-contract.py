@@ -177,6 +177,12 @@ class ReusableCIContract(unittest.TestCase):
                     if line.startswith("COPY") and ".npmrc" in line
                 ]
                 self.assertEqual(copied, [], "Dockerfile still COPYs a deleted .npmrc")
+                # The builder must carry the per-workspace node_modules, not
+                # just the root tree. npm does not always hoist a workspace
+                # dependency, and copying only /src/node_modules drops it —
+                # which fails as "Module not found" during next build, long
+                # after the install step reported success.
+                self.assertIn("COPY --from=deps /src/apps ./apps", contents)
                 self.assertIn("ARG REUSABLE_BUILD_CACHE_FP", contents)
                 self.assertIn(
                     f"NEXT_PUBLIC_GOOGLE_CLIENT_ID=${google_slot}", contents

@@ -28,6 +28,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
+	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/promo"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -145,6 +146,11 @@ func setupTestRouter(t *testing.T) *testEnv {
 		webhook.NewDeliveryRepo(db),
 		whGuard,
 		webhook.NewSender(whGuard, nil),
+		// Real resolver so the per-store subscription cap (#586) is
+		// exercised by the handler tests rather than bypassed. Seeded
+		// stores have no subscription row, so Resolve falls back to
+		// PlanTrial — a cap of 5.
+		plangate.NewPlanResolver(db, subscription.NewRepository()),
 		nil,
 	)
 

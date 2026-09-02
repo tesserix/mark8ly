@@ -93,6 +93,7 @@ export const pricingCopy = {
         'Full colour palette & announcement bar',
         'Your own domain',
         'Read-only API',
+        '10 webhook endpoints',
       ],
     },
     {
@@ -107,6 +108,7 @@ export const pricingCopy = {
         '50,000 campaign emails / mo',
         'Custom CSS & fonts',
         'Read-only API',
+        '25 webhook endpoints',
         '12-month audit log',
       ],
     },
@@ -120,6 +122,7 @@ export const pricingCopy = {
         'Up to 10 storefronts',
         'Unlimited images',
         'Full read/write API',
+        '100 webhook endpoints',
         'SSO (SAML / OIDC)',
         'Priority support (4h response)',
         'Forever audit retention',

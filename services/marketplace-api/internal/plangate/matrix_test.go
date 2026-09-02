@@ -63,6 +63,37 @@ func TestMatrix_ReadAPI_StarterAndAbove(t *testing.T) {
 	}
 }
 
+// TestMatrix_WebhookSubscriptions pins the #586 ladder. The cap exists
+// because dispatch fan-out is `outbox rows × matching subscriptions` on a
+// shared db-f1-micro; it is not merely an anti-abuse number. Pro's 100 is
+// deliberately below the ~132 subscriptions that overflowed Postgres's
+// 65535-parameter limit in the original outage, so no tier can reach the
+// region that broke dispatch even though #562's chunking already fixed it.
+func TestMatrix_WebhookSubscriptions(t *testing.T) {
+	for _, tc := range []struct {
+		plan subscription.SubscriptionPlan
+		want int
+	}{
+		{subscription.PlanTrial, 5},
+		{subscription.PlanStarter, 10},
+		{subscription.PlanStudio, 25},
+		{subscription.PlanPro, 100},
+	} {
+		require.Equal(t, tc.want, plangate.Limit(tc.plan, plangate.FeatureWebhookSubscriptions),
+			"webhook subscription cap for %s", tc.plan)
+	}
+
+	// No tier may be Unlimited: fan-out cost is unbounded in the number of
+	// subscriptions, so "no cap" is the failure mode this feature exists to
+	// prevent. Guard against a well-meaning future edit.
+	for _, p := range []subscription.SubscriptionPlan{
+		subscription.PlanTrial, subscription.PlanStarter, subscription.PlanStudio, subscription.PlanPro,
+	} {
+		require.NotEqual(t, plangate.Unlimited, plangate.Limit(p, plangate.FeatureWebhookSubscriptions),
+			"plan %s must keep a finite webhook subscription cap (#586)", p)
+	}
+}
+
 func TestMatrix_FullAPI_ProOnly(t *testing.T) {
 	require.True(t, plangate.IsAllowed(subscription.PlanStudio, plangate.FeatureReadAPI))
 	require.False(t, plangate.IsAllowed(subscription.PlanStudio, plangate.FeatureFullAPI))
@@ -113,7 +144,7 @@ func TestAllFeatureLimits_EveryFeaturePresentForEveryPlan(t *testing.T) {
 // feature list stays aligned with the spec §9 count. Bumping the count
 // should be deliberate — update this assertion when a new Feature lands.
 func TestAllFeatures_IncludesAllConstants(t *testing.T) {
-	require.Equal(t, 25, len(plangate.AllFeatures()),
+	require.Equal(t, 26, len(plangate.AllFeatures()),
 		"expected 25 feature constants per §9 — update this count if new ones are added")
 }
 

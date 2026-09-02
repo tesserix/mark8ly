@@ -73,6 +73,7 @@ const PLAN_META: readonly PlanMeta[] = [
       'Full colour palette & announcement bar',
       'Your own domain',
       'Read-only API',
+      '10 webhook endpoints',
     ],
   },
   {
@@ -85,6 +86,7 @@ const PLAN_META: readonly PlanMeta[] = [
       '50,000 campaign emails / mo',
       'Custom CSS & fonts',
       'Read-only API',
+      '25 webhook endpoints',
       '12-month audit log',
     ],
   },
@@ -96,6 +98,7 @@ const PLAN_META: readonly PlanMeta[] = [
       'Up to 10 stores',
       'Unlimited images',
       'Full read/write API',
+      '100 webhook endpoints',
       'SSO (SAML / OIDC)',
       'Priority support (4h response)',
       'Forever audit retention',

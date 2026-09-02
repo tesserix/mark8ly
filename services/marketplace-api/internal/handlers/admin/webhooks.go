@@ -23,6 +23,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/mark8ly/marketplace-api/internal/outbox"
+	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/webhook"
 	"github.com/mark8ly/marketplace-api/internal/webhook/ssrfguard"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -67,12 +68,17 @@ type WebhooksHandler struct {
 	deliveries *webhook.DeliveryRepo
 	guard      *ssrfguard.Guard
 	sender     *webhook.Sender
+	resolver   *plangate.PlanResolver
 	logger     *slog.Logger
 }
 
-// NewWebhooksHandler constructs a WebhooksHandler.
-func NewWebhooksHandler(subs *webhook.SubscriptionRepo, deliveries *webhook.DeliveryRepo, guard *ssrfguard.Guard, sender *webhook.Sender, logger *slog.Logger) *WebhooksHandler {
-	return &WebhooksHandler{subs: subs, deliveries: deliveries, guard: guard, sender: sender, logger: logger}
+// NewWebhooksHandler constructs a WebhooksHandler. resolver is an explicit
+// parameter rather than an optional setter because it enforces the per-store
+// subscription cap (#586) — a nil resolver disables that cap, and a limit
+// that silently does not apply is worse than no limit at all. Create logs
+// loudly and fails closed if it is ever nil.
+func NewWebhooksHandler(subs *webhook.SubscriptionRepo, deliveries *webhook.DeliveryRepo, guard *ssrfguard.Guard, sender *webhook.Sender, resolver *plangate.PlanResolver, logger *slog.Logger) *WebhooksHandler {
+	return &WebhooksHandler{subs: subs, deliveries: deliveries, guard: guard, sender: sender, resolver: resolver, logger: logger}
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -240,6 +246,50 @@ func (h *WebhooksHandler) ownedSubscription(c *gin.Context, tenantID, storeID uu
 // and the event-type check before ever generating a secret or touching the
 // database, and returns the secret exactly once — it never leaves the
 // server again after this response (Subscription.Secret is json:"-").
+// withinSubscriptionCap reports whether the store may create one more
+// subscription, writing the error response itself when it may not. Fails
+// CLOSED on a nil resolver or a count error: the cap protects shared
+// database capacity, so "we could not check" must not mean "allow".
+func (h *WebhooksHandler) withinSubscriptionCap(c *gin.Context, tenantID, storeID uuid.UUID) bool {
+	if h.resolver == nil {
+		// Wiring bug, not a merchant error. Loud, and closed.
+		if h.logger != nil {
+			h.logger.Error("webhooks: no plan resolver wired, cannot enforce subscription cap",
+				"tenant_id", tenantID, "store_id", storeID)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "internal_error",
+			"message": "Webhook subscription limits are unavailable. Please try again later.",
+		})
+		return false
+	}
+
+	ctx := c.Request.Context()
+	plan := h.resolver.Resolve(ctx, tenantID, storeID)
+	limit := plangate.Limit(plan, plangate.FeatureWebhookSubscriptions)
+
+	count, err := h.subs.CountForStore(ctx, tenantID, storeID)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return false
+	}
+
+	if count >= limit {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "webhook_subscription_limit_reached",
+			"message": fmt.Sprintf(
+				"This store has %d of %d webhook subscriptions allowed on the %s plan. Delete one, or upgrade for a higher limit.",
+				count, limit, plan),
+			"limit":   limit,
+			"current": count,
+			"plan":    string(plan),
+			"feature": string(plangate.FeatureWebhookSubscriptions),
+		})
+		return false
+	}
+	return true
+}
+
 func (h *WebhooksHandler) Create(c *gin.Context) {
 	tenantID, storeID, ok := h.scope(c)
 	if !ok {
@@ -257,6 +307,16 @@ func (h *WebhooksHandler) Create(c *gin.Context) {
 	}
 	if verr := validateEventTypes(req.EventTypes); verr != nil {
 		RespondErr(c, verr, h.logger)
+		return
+	}
+
+	// Per-store subscription cap (#586). Dispatch fan-out is
+	// `outbox rows × matching subscriptions`, so an unbounded count turns
+	// one order.placed into an unbounded number of delivery rows and
+	// outbound HTTP attempts. Enforced here, at creation, only — a
+	// downgrade never deletes a merchant's existing subscriptions, the same
+	// contract FeatureImagesPerProduct has.
+	if !h.withinSubscriptionCap(c, tenantID, storeID) {
 		return
 	}
 

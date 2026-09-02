@@ -43,6 +43,21 @@ func (r *SubscriptionRepo) ListForStore(ctx context.Context, tenantID, storeID u
 	return out, nil
 }
 
+// CountForStore returns how many subscriptions a store currently holds,
+// enabled or not. Disabled rows count: they are still a row a merchant can
+// flip back on, so excluding them would let a store sit permanently over
+// its plan cap by parking subscriptions in the disabled state.
+func (r *SubscriptionRepo) CountForStore(ctx context.Context, tenantID, storeID uuid.UUID) (int, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&Subscription{}).
+		Where("tenant_id = ? AND store_id = ?", tenantID, storeID).
+		Count(&n).Error
+	if err != nil {
+		return 0, fmt.Errorf("webhook: count subscriptions: %w", err)
+	}
+	return int(n), nil
+}
+
 // Update persists url/event_types/enabled/disabled_reason/disabled_at for a
 // subscription the caller has already verified belongs to their tenant and
 // store — this method itself does not re-check ownership, matching ByID.

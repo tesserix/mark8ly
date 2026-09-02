@@ -21,6 +21,28 @@ pure signals — ping a Slack channel, increment a counter, prompt someone to
 open admin — but a Trial integration cannot fetch the order behind an
 `order.placed` until the store is on a paid plan.
 
+**How many endpoints you can register.** Each store may hold a limited number
+of subscriptions, because dispatch fan-out is `outbox rows × matching
+subscriptions` — every subscription multiplies the delivery rows and outbound
+HTTP attempts a single event produces.
+
+| Plan | Webhook endpoints per store |
+| --- | --- |
+| Trial | 5 |
+| Starter | 10 |
+| Studio | 25 |
+| Pro | 100 |
+
+The cap is checked when you create a subscription; going over it returns a
+`400` with `webhook_subscription_limit_reached`, naming your current count and
+limit. **Disabled subscriptions still count** — a disabled row is one you can
+re-enable, so parking endpoints in the disabled state does not free a slot.
+Delete what you no longer need.
+
+A plan downgrade never deletes subscriptions you already have. A store that
+ends up over the cap keeps every existing endpoint working, but cannot create
+a new one until it is back under the limit.
+
 Subscriptions, deliveries, replay and test sends are all managed from
 **Admin → Settings → Webhooks**.
 

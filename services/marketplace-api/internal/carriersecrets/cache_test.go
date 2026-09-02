@@ -181,6 +181,103 @@ func TestCachingStore_ExpiresAfterTTL(t *testing.T) {
 	}
 }
 
+// TestCachingStore_EvictsExpiredEntries: when a successful Get refreshes
+// an expired entry, the OLD entry must actually be evicted (deleted then
+// replaced), not merely shadowed — the map must end up holding exactly
+// the fresh entry, with an updated fetchedAt, and no leftover state. This
+// is what keeps the "credentials live in memory for up to the TTL" doc
+// comment on CachingStore honest for a reference that keeps being read.
+func TestCachingStore_EvictsExpiredEntries(t *testing.T) {
+	inner := newCountingStore()
+	inner.setValue("bao://ref-1", "v1")
+	clock := newFakeClock(time.Unix(0, 0))
+	counter, _ := recordingCounter()
+
+	cache := NewCachingStore(inner, 60*time.Second, clock.Now, counter)
+
+	if _, err := cache.Get(context.Background(), "bao://ref-1"); err != nil {
+		t.Fatalf("Get() #1 error = %v", err)
+	}
+
+	cache.mu.Lock()
+	oldEntry, ok := cache.entries["bao://ref-1"]
+	cache.mu.Unlock()
+	if !ok {
+		t.Fatal("expected an entry to be cached after Get() #1")
+	}
+
+	clock.Advance(61 * time.Second)
+	inner.setValue("bao://ref-1", "v2")
+
+	got, err := cache.Get(context.Background(), "bao://ref-1")
+	if err != nil {
+		t.Fatalf("Get() #2 error = %v", err)
+	}
+	if got != "v2" {
+		t.Fatalf("Get() #2 = %q, want %q", got, "v2")
+	}
+
+	cache.mu.Lock()
+	newEntry, ok := cache.entries["bao://ref-1"]
+	entryCount := len(cache.entries)
+	cache.mu.Unlock()
+
+	if !ok {
+		t.Fatal("expected an entry to be cached after Get() #2")
+	}
+	if newEntry.fetchedAt.Equal(oldEntry.fetchedAt) {
+		t.Errorf("expired entry was not evicted: fetchedAt is still %v, want the refreshed time", newEntry.fetchedAt)
+	}
+	if newEntry.plaintext != "v2" {
+		t.Errorf("cached plaintext = %q, want %q — refresh must replace, not merely shadow, the expired entry", newEntry.plaintext, "v2")
+	}
+	if entryCount != 1 {
+		t.Errorf("cache holds %d entries for one reference, want 1 — eviction must not leave orphaned state", entryCount)
+	}
+}
+
+// TestCachingStore_StaleOnErrorSurvivesEvictionOrdering pairs with
+// TestCachingStore_EvictsExpiredEntries: it proves that evicting an
+// expired entry only on the SUCCESS path (never before calling inner)
+// does not break stale-on-error. An expired entry must still be
+// available to serve when the inner call fails on the very same call
+// that discovered the expiry.
+func TestCachingStore_StaleOnErrorSurvivesEvictionOrdering(t *testing.T) {
+	inner := newCountingStore()
+	inner.setValue("bao://ref-1", "secret-value")
+	clock := newFakeClock(time.Unix(0, 0))
+	counter, getCounter := recordingCounter()
+
+	cache := NewCachingStore(inner, 60*time.Second, clock.Now, counter)
+
+	if _, err := cache.Get(context.Background(), "bao://ref-1"); err != nil {
+		t.Fatalf("Get() #1 error = %v", err)
+	}
+
+	clock.Advance(61 * time.Second)
+	inner.setFailGet("bao://ref-1", errors.New("openbao: connection refused"))
+
+	got, err := cache.Get(context.Background(), "bao://ref-1")
+	if err != nil {
+		t.Fatalf("Get() #2 error = %v, want the stale value served instead of an error", err)
+	}
+	if got != "secret-value" {
+		t.Errorf("Get() #2 = %q, want stale value %q", got, "secret-value")
+	}
+
+	label, total := getCounter()
+	if label != StaleReadMetric || total != 1 {
+		t.Errorf("counter = (%q, %d), want (%q, 1)", label, total, StaleReadMetric)
+	}
+
+	cache.mu.Lock()
+	_, stillCached := cache.entries["bao://ref-1"]
+	cache.mu.Unlock()
+	if !stillCached {
+		t.Error("expired entry must remain available in the map after a failed refresh, so it can keep serving stale on repeated failures")
+	}
+}
+
 // TestCachingStore_ServesStaleOnError: the inner store fails, a stale
 // entry exists, so the stale value is served and the stale counter
 // increments.

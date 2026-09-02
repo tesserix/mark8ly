@@ -30,7 +30,17 @@ type cacheEntry struct {
 //     (production wires this with ttl=60s, clock=time.Now — see Task 7).
 //     A cache hit never touches the inner store, so a plaintext credential
 //     that would otherwise only exist for the duration of one request now
-//     persists in memory for the whole TTL window.
+//     persists in memory for the whole TTL window. Get evicts an expired
+//     entry the next time that reference is read (see the ordering note
+//     on Get), so a reference on an active request path never retains
+//     stale plaintext beyond one TTL past its last read. NOTE: a
+//     reference that is cached once and then never read, Put, or
+//     Destroyed again for the rest of the process's life is not swept
+//     proactively — there is no background goroutine here, by design —
+//     so its entry remains until the pod recycles. This is the accepted
+//     shape of a purely on-demand (no janitor) TTL cache; it does not
+//     affect the credentials this decorator targets, which are read on
+//     every checkout / shipping-rate / payment-webhook request.
 //   - A credential rotation (Put via some OTHER process instance, or a
 //     row updated out from under this process) takes up to the TTL to
 //     become visible to reads through this cache. Put and Destroy invoked
@@ -75,33 +85,56 @@ func NewCachingStore(inner Store, ttl time.Duration, clock func() time.Time, cou
 //
 //   - and a stale (expired) entry exists for reference, that stale value
 //     is served and the stale counter is incremented — the entry is left
-//     in place so future misses can keep serving it.
+//     in the map untouched so future misses can keep serving it too, for
+//     as long as the outage lasts.
 //   - and no entry exists at all, the error propagates unchanged. This
 //     is the behaviour that matters most: stale-on-error must never
 //     become swallow-all-errors, or a total backend outage would present
 //     as an empty credential to a payment gateway instead of a visible
 //     failure.
+//
+// Eviction ordering: an expired entry is NOT removed from the map the
+// moment expiry is detected. It is removed only once the inner call
+// SUCCEEDS, at the exact point that entry is replaced with the fresh
+// value. This ordering is deliberate — evicting the expired entry before
+// calling inner would destroy the only fallback stale-on-error has if
+// that inner call then fails, which is precisely the case that must keep
+// checkout alive during an OpenBao blip. Deleting only on the success
+// path still keeps the doc comment's "up to the TTL" residency bound
+// honest for the request paths this cache targets (checkout,
+// shipping-rates, payment-webhook): any reference that keeps being read
+// has its expired entry replaced at the next successful read, rather
+// than accumulating stale duplicate state.
 func (c *CachingStore) Get(ctx context.Context, reference string) (string, error) {
 	now := c.clock()
 
 	c.mu.Lock()
 	entry, found := c.entries[reference]
+	expired := found && now.Sub(entry.fetchedAt) >= c.ttl
 	c.mu.Unlock()
 
-	if found && now.Sub(entry.fetchedAt) < c.ttl {
+	if found && !expired {
 		return entry.plaintext, nil
 	}
 
 	plaintext, err := c.inner.Get(ctx, reference)
 	if err != nil {
 		if found {
+			// entry was captured above, before any map mutation, so it
+			// is still available here as the stale fallback even though
+			// (by design) we have not touched the map on this call.
 			c.counter(StaleReadMetric, 1)
 			return entry.plaintext, nil
 		}
 		return "", err
 	}
 
+	// The inner call succeeded: this is the only point where it is safe
+	// to evict the expired entry (if any) rather than merely overwriting
+	// it, so the map never retains more than one entry per reference and
+	// never silently disagrees with what a fresh read just confirmed.
 	c.mu.Lock()
+	delete(c.entries, reference)
 	c.entries[reference] = cacheEntry{plaintext: plaintext, fetchedAt: now}
 	c.mu.Unlock()
 

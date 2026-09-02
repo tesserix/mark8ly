@@ -118,6 +118,17 @@ type Config struct {
 	ConsoleCatalogScope    string        `envconfig:"CONSOLE_CATALOG_SCOPE" default:""`
 	ConsoleCatalogMode     string        `envconfig:"CONSOLE_CATALOG_MODE" default:"test"`
 	ConsoleCatalogInterval time.Duration `envconfig:"CONSOLE_CATALOG_INTERVAL" default:"15m"`
+	// CONSOLE_CATALOG_AUTHORITATIVE performs the #304 cutover: when true and
+	// the console is configured, prices are RESOLVED from the console with
+	// the compiled catalog as the fallback. False (the default) keeps the
+	// compiled catalog authoritative and the console read as a comparison
+	// only.
+	//
+	// A flag rather than a code-only cutover so the change can be reverted by
+	// setting one variable, without building and shipping an image — the
+	// difference between a minute and a deploy cycle on the one code path
+	// that decides what a customer is charged.
+	ConsoleCatalogAuthoritative bool `envconfig:"CONSOLE_CATALOG_AUTHORITATIVE" default:"false"`
 
 	// RESEND_WEBHOOK_SECRET verifies inbound provider delivery events
 	// (#348B). Empty leaves the endpoint mounted but inert: it answers 503

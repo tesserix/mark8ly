@@ -348,7 +348,16 @@ func LookupBaseline(p Plan, period Period, tier Tier) (Amount, bool) {
 }
 
 // LookupPPPOption returns the Amount for a specific PPP currency.
+//
+// An installed Source (the console, #304) is consulted first and the
+// compiled catalog answers when it cannot — see Source for why that
+// fallthrough is the whole fail-open design rather than an afterthought.
 func LookupPPPOption(p Plan, period Period, currency string) (Amount, bool) {
+	if src := sourceOrNil(); src != nil {
+		if amt, ok := src.PPPOption(p, period, currency); ok {
+			return amt, true
+		}
+	}
 	k := pppKey{plan: p, period: period, currency: currency}
 	amt, ok := pppAmounts[k]
 	return amt, ok
@@ -357,6 +366,11 @@ func LookupPPPOption(p Plan, period Period, currency string) (Amount, bool) {
 // DevelopedCurrencyOptions returns the Options map for the developed-tier descriptor
 // of (plan, period). The map contains all 7 developed-market currencies.
 func DevelopedCurrencyOptions(p Plan, period Period) (map[string]Amount, bool) {
+	if src := sourceOrNil(); src != nil {
+		if opts, ok := src.DevelopedOptions(p, period); ok && len(opts) > 0 {
+			return opts, true
+		}
+	}
 	for _, d := range allDescriptors {
 		if d.Plan == p && d.Period == period && d.Tier == TierDeveloped {
 			return d.Options, true

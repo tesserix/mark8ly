@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mark8ly/marketplace-api/internal/billing/consolecatalog"
+	"github.com/mark8ly/marketplace-api/internal/billing/pricing"
 	"github.com/mark8ly/marketplace-api/pkg/config"
 )
 
@@ -57,18 +58,60 @@ func startCatalogParityRun(cfg *config.Config, log *slog.Logger) {
 		interval = 15 * time.Minute
 	}
 
-	monitor := consolecatalog.NewMonitor(consolecatalog.NewClient(cc, log), interval, log)
-	log.Info("consolecatalog: parallel run enabled",
-		"mode", cc.Mode, "interval", interval.String())
+	client := consolecatalog.NewClient(cc, log)
+
+	if !cfg.ConsoleCatalogAuthoritative {
+		monitor := consolecatalog.NewMonitor(client, interval, log)
+		log.Info("consolecatalog: parallel run enabled (comparison only)",
+			"mode", cc.Mode, "interval", interval.String())
+		go func() {
+			// One check immediately, so a deploy produces evidence without
+			// waiting out the first interval.
+			runOneCheck(monitor, log)
+			t := time.NewTicker(interval)
+			defer t.Stop()
+			for range t.C {
+				runOneCheck(monitor, log)
+			}
+		}()
+		return
+	}
+
+	// ── Cutover (#304) ────────────────────────────────────────────────
+	//
+	// The console becomes the price source, with the compiled catalog as
+	// the fallback for anything it cannot answer.
+	//
+	// The FIRST refresh is deliberately synchronous. Installing the source
+	// before it holds a catalog would leave a window where every lookup
+	// falls through to the compiled catalog — harmless, but it would make
+	// the first seconds after a deploy silently behave like the pre-cutover
+	// build, which is exactly the kind of thing nobody notices until a
+	// price is wrong and the logs say everything was fine.
+	//
+	// A FAILED first refresh is NOT fatal: the source is still installed
+	// and simply declines until a later refresh succeeds, so pricing serves
+	// the baked snapshot. A console outage must never stop this service
+	// starting.
+	source := consolecatalog.NewSource(client, interval, log)
+	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
+	err := source.Refresh(ctx)
+	cancel()
+	if err != nil {
+		log.Warn("consolecatalog: cutover enabled but the first refresh failed; "+
+			"serving the compiled catalog until a refresh succeeds", "error", err)
+	}
+	pricing.UseSource(source)
+	log.Info("consolecatalog: CUTOVER ACTIVE — prices resolve from the console",
+		"mode", cc.Mode, "interval", interval.String(), "first_refresh_ok", err == nil)
 
 	go func() {
-		// One check immediately, so a deploy produces evidence without
-		// waiting out the first interval.
-		runOneCheck(monitor, log)
 		t := time.NewTicker(interval)
 		defer t.Stop()
 		for range t.C {
-			runOneCheck(monitor, log)
+			ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
+			_ = source.Refresh(ctx)
+			cancel()
 		}
 	}()
 }

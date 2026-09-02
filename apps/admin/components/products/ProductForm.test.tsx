@@ -32,6 +32,28 @@ const baseProps = {
   session: { userId: "u1", tenantId: "t1" },
 };
 
+// The one-page layout is the EDIT page. Create is deliberately a short
+// form that makes the product exist and redirects into edit, so these
+// structural assertions render edit mode explicitly rather than relying on
+// the default.
+const editProduct = {
+  id: "p1",
+  title: "T",
+  handle: "t",
+  description: "",
+  status: "draft",
+  variants: [],
+  categories: [],
+  options: [],
+  media: [],
+} as unknown as AdminProduct;
+
+function renderEdit() {
+  return render(
+    <ProductForm {...baseProps} mode="edit" initialProduct={editProduct} />,
+  );
+}
+
 // The form was five tabs. It is one scrolling page of hairline-separated
 // sections now: tabs hid whether a section held anything until you clicked
 // it, and the tab bar changed shape between create and edit because Media
@@ -40,7 +62,7 @@ const baseProps = {
 describe("ProductForm — one page, no tabs", () => {
   describe("everything is present without navigating", () => {
     it("renders the core fields on mount", () => {
-      render(<ProductForm {...baseProps} />);
+      renderEdit();
       expect(screen.getByText(/^Title$/i)).toBeInTheDocument();
       expect(screen.getByText(/^Handle$/i)).toBeInTheDocument();
       expect(screen.getByText(/^Description$/i)).toBeInTheDocument();
@@ -56,7 +78,7 @@ describe("ProductForm — one page, no tabs", () => {
     });
 
     it("shows options and shipping without a click", () => {
-      render(<ProductForm {...baseProps} />);
+      renderEdit();
       expect(
         screen.getByRole("button", { name: /add option/i }),
       ).toBeInTheDocument();
@@ -64,7 +86,7 @@ describe("ProductForm — one page, no tabs", () => {
     });
 
     it("names its sections as headings, so the page is navigable by structure", () => {
-      render(<ProductForm {...baseProps} />);
+      renderEdit();
       for (const name of [/^Details$/, /^Options$/, /^Shipping$/]) {
         expect(screen.getByRole("heading", { name })).toBeInTheDocument();
       }

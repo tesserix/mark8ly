@@ -2,9 +2,12 @@
 
 // Server actions for the webhooks settings page (#562 task 9).
 //
-// Every action starts with `guard()`, which resolves the session and
-// refuses write actions from anyone who can't edit settings. Read actions
-// (list deliveries) don't need write permission, only a valid session.
+// The MUTATING actions (create, patch, delete, replay) start with `guard()`,
+// which resolves the session and refuses anyone who can't edit settings.
+// The rest — list, test-send, list deliveries — only check that a session
+// exists, because the backend is what actually enforces authorization on
+// each route (internal/handlers/admin/routes.go) and re-deciding it here
+// would just be a second, drift-prone copy of that policy.
 
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -139,10 +142,13 @@ export async function deleteWebhookAction(webhookId: string): Promise<ActionResu
   return { ok: true, data: undefined };
 }
 
-// Test-send needs only a valid session, not write permission — it never
-// mutates the subscription and staff/viewer debugging their own endpoint
-// shouldn't need an admin to run it for them. It's still scoped to the
-// caller's store by ownedSubscription() server-side.
+// Test-send does not call guard(), but that does NOT make it available to
+// staff: POST /webhooks/:id/test requires RoleAdmin server-side
+// (internal/handlers/admin/routes.go), so a staff or viewer session reaches
+// the API and gets a 403 back, surfaced here as the returned error. The
+// backend is the authority on this; the action deliberately does not
+// duplicate the check. It's also scoped to the caller's store by
+// ownedSubscription() server-side.
 export async function testSendWebhookAction(
   webhookId: string,
 ): Promise<ActionResult<TestSendResult>> {

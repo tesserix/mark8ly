@@ -1743,6 +1743,14 @@ func main() {
 		dispatcher := webhook.NewDispatcher(conn, whSubs, whDeliveries, log, 100)
 		webhookDispatcherDone = dispatcher.Start(webhookCtx, 5*time.Second)
 
+		// notify is nil: merchant notification on auto-disable is NOT wired
+		// yet. Design decision 3 describes emailing the merchant, and that
+		// email is still outstanding — see the design doc, which records
+		// what actually ships. What a merchant gets today is the disabled
+		// subscription surfaced in admin settings with its
+		// disabled_reason/disabled_at, plus a server-side warning log; a
+		// merchant who is not looking at admin learns nothing until they do.
+		// Known gap, deliberately not papered over here.
 		worker := webhook.NewWorker(whDeliveries, whSubs, whSender, log, 4, nil)
 		webhookWorkerDone = worker.Start(webhookCtx, 5*time.Second)
 

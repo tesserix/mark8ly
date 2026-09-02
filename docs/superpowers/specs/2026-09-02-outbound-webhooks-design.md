@@ -74,8 +74,21 @@ and "why won't it accept my URL" becomes a support question. Accepted.
 
 Exponential backoff over a few hours. A delivery that exhausts its attempts
 is recorded as failed and kept. After a threshold of consecutive failures
-across *different* events, the subscription is disabled and the merchant is
-emailed. They fix the endpoint, re-enable, and replay failed deliveries.
+across *different* events, the subscription is disabled. They fix the
+endpoint, re-enable, and replay failed deliveries. Deliveries already
+pending when a subscription is disabled are retired as failed rather than
+sent, so disabling actually stops outbound traffic instead of only stopping
+new deliveries being created.
+
+**What ships today, and what does not.** The merchant is NOT emailed. The
+worker has the notification hook (`webhook.NewWorker`'s `notify` callback,
+which fires exactly once, on the transition to disabled) but it is wired to
+nil: the email path is its own piece of work and has not been built. What a
+merchant actually gets is the disabled subscription in admin settings with
+its reason and timestamp, and a server-side warning log. That is weaker than
+this decision describes — a merchant who is not looking at admin is not told
+— and the email remains outstanding. Recorded here rather than left as an
+aspiration the code does not meet.
 
 Rejected: retrying forever. A dead endpoint would have the cluster making
 outbound requests indefinitely, and on a shared `db-f1-micro` with a small

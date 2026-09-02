@@ -203,11 +203,19 @@ activity, not a permanent audit trail.
 
 **Auto-disable.** If a subscription accumulates 10 **consecutive** failures
 (`webhook.FailureThreshold`) — across different events, not just repeated
-attempts at the same one — the subscription is disabled automatically and
-you're notified, with the reason shown in admin. The threshold is
+attempts at the same one — the subscription is disabled automatically. The
+threshold is
 deliberately higher than the per-delivery attempt cap so a single bad
 delivery can't take down an otherwise-working endpoint; it takes sustained
-failure. Once you've fixed your endpoint, re-enable the subscription from
+failure. Any deliveries still queued for that subscription are marked
+`failed` rather than sent, so a disabled webhook stops making requests to
+your endpoint immediately.
+
+**Where a disabled webhook shows up.** Nothing is emailed to you today, so
+check admin: a disabled subscription appears in **Settings → Webhooks**
+marked as disabled, with the reason it was disabled and when. If deliveries
+stopped arriving and you are not sure why, that page is the place to look
+first. Once you've fixed your endpoint, re-enable the subscription from
 admin and replay the failed deliveries you want retried.
 
 ## Endpoint requirements

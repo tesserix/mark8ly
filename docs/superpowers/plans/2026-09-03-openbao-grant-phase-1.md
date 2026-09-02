@@ -198,26 +198,40 @@ In `charts/apps/openbao-namespace/values.yaml`, inside `allowedPodSources`:
       app.kubernetes.io/name: mark8ly-marketplace-api-storefront
 ```
 
-- [ ] **Step 2: Add the Istio principals**
+- [ ] **Step 2: Do NOT add Istio principals — add a comment saying why**
 
-marketplace-api pods run with an Istio sidecar, so they have a SPIFFE identity and the AuthorizationPolicy applies on top of the NetworkPolicy. In the same file, inside `allowedPrincipals`:
+Corrected during pre-flight. mark8ly is **not** mesh-enrolled: namespace `mark8ly`
+carries `istio-injection: disabled` and has **no** `istio.io/dataplane-mode` label,
+and its pods run a single `server` container with no `istio-proxy`. Contrast `devai`,
+the existing `allowedPrincipals` entry, which is `istio.io/dataplane-mode: ambient`.
+
+A caller with no SPIFFE identity cannot be matched by an Istio principal, so an entry
+would be inert and would mislead the next reader. Non-mesh callers are admitted by
+`allowNonMeshSources: true` plus the NetworkPolicy, exactly as the values file's own
+comments describe for ESO.
+
+Instead, add this note directly above the `allowedPrincipals` list so the omission is
+recorded rather than looking like an oversight:
 
 ```yaml
-  - mark8ly/mark8ly-marketplace-api-admin
-  - mark8ly/mark8ly-marketplace-api-storefront
+# mark8ly is deliberately absent: the namespace is not mesh-enrolled
+# (istio-injection: disabled, no istio.io/dataplane-mode), so its pods have no
+# SPIFFE identity to match. They are admitted by allowNonMeshSources + the
+# NetworkPolicy above. If mark8ly is ever ambient-enrolled, add
+# mark8ly/mark8ly-marketplace-api-admin and .../-storefront here at the same time.
 ```
 
 - [ ] **Step 3: Bump the chart version**
 
 In `charts/apps/openbao-namespace/Chart.yaml`, increment the `version:` patch number by one.
 
-- [ ] **Step 4: Verify both the NetworkPolicy and the AuthorizationPolicy render**
+- [ ] **Step 4: Verify the NetworkPolicy renders and no principal was added**
 
 ```bash
 helm template t charts/apps/openbao-namespace | grep -B 3 -A 3 "mark8ly-marketplace-api"
 ```
 
-Expected: the two pod labels appear under a `podSelector` in the NetworkPolicy, AND the two `mark8ly/...` principals appear in the AuthorizationPolicy. If only one of the two shows up, the grant is half-made and Task 5 will fail.
+Expected: the two pod labels appear under a `podSelector` in the NetworkPolicy, and **no** `mark8ly/...` entry appears in the AuthorizationPolicy (see Step 2). If a principal appears, Step 2 was misread.
 
 - [ ] **Step 5: Lint**
 
@@ -317,6 +331,11 @@ spec:
   ttlSecondsAfterFinished: 600
   template:
     metadata:
+      labels:
+        # REQUIRED. Without this the Job's pods carry only job-name=... and the
+        # NetworkPolicy added in Task 3 DENIES them — the probe would fail for a
+        # reason that has nothing to do with the OpenBao grant it is testing.
+        app.kubernetes.io/name: mark8ly-marketplace-api-admin
       annotations:
         sidecar.istio.io/inject: "false"
     spec:
@@ -381,17 +400,27 @@ Re-apply the Step 2 Job with `metadata.name: mark8ly-bao-scope-probe-ro`, `servi
 
 Expected: `==> login ok` followed by a **failure at the write step** (curl `-f` exits non-zero on 403). A storefront probe that reports `PROBE OK` means the least-privilege split is not in effect — treat that as a blocking defect, not a pass.
 
-- [ ] **Step 5: Verify the mesh path**
+- [ ] **Step 5: Assert the real deployments carry the labels the NetworkPolicy allows**
 
-Steps 2–4 bypass Istio. Confirm a sidecar-injected pod is also admitted, since that is how the real deployments talk:
+Corrected during pre-flight. There is no `istio-proxy` to exec into and the runtime
+image is distroless-static (no shell, no curl), so no exec-based check is possible
+from the real pods. What CAN be verified is that the label the policy allows is the
+label the deployments actually carry:
 
 ```bash
-kubectl -n mark8ly exec deploy/mark8ly-marketplace-api-admin -c istio-proxy -- \
-  curl -sS -o /dev/null -w '%{http_code}\n' \
-  http://openbao-active.openbao.svc.cluster.local:8200/v1/sys/health
+for d in mark8ly-marketplace-api-admin mark8ly-marketplace-api-storefront; do
+  echo -n "$d: "
+  kubectl -n mark8ly get pods -l app.kubernetes.io/name=$d \
+    -o jsonpath='{.items[0].metadata.labels.app\.kubernetes\.io/name}{"\n"}'
+done
 ```
 
-Expected: `200` (or `429`/`473` for standby, both of which prove reachability). A hang or `000` means the Istio principal from Task 3 Step 2 is missing.
+Expected: each command echoes back its own deployment name. An empty result means the
+`allowedPodSources` entry in Task 3 targets a label no pod carries, and the real
+service would be denied even though the probe passed.
+
+End-to-end proof from the actual server process comes in phase 2, when a real
+credential is saved and read back.
 
 - [ ] **Step 6: Clean up**
 
@@ -410,7 +439,7 @@ Post the probe output to mark8ly#319 as a comment. Phase 1 is complete only when
 - [ ] Both policies and both roles appear in the `openbao-bootstrap` Job log after a post-merge run
 - [ ] Admin probe: login, write, read, delete all succeed
 - [ ] Storefront probe: login succeeds, write is **refused with 403**
-- [ ] A sidecar-injected pod reaches the OpenBao API
+- [ ] The real deployments' pod labels match the `allowedPodSources` entries
 - [ ] Evidence posted to mark8ly#319
 
 Phase 2 (`ChainStore`, `BaoStore`, cache) does not begin until all five are ticked.

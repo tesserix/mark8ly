@@ -229,7 +229,7 @@ Each ends with a **live run**, not a green test suite.
 
 | # | Scope | Repo | Live verification |
 | --- | --- | --- | --- |
-| 1 | Grant: `namespaceWhitelist` (both SAs), `security.yaml` destinations, NetworkPolicy | tesserix-k8s | `scope-probe` Job round-trips a dummy path |
+| 1 | Grant: explicit `policies` + `kubernetesRoles` (both SAs), NetworkPolicy, Istio principals, `security.yaml` destination | tesserix-k8s | `scope-probe` Job round-trips a dummy path; storefront probe must be refused a write |
 | 2 | `ChainStore`, `BaoStore`, cache, client; **Bao primary for new writes** | mark8ly | One real credential saved and read back in prod |
 | 3 | Backfill | mark8ly | Dry-run counts reconcile against a DB count of `gsm://` rows; then real run |
 | 4 | `WithSecretStore` in `refund-sweep-cron` (+ its NetworkPolicy label; the role is already covered) | both | A real sweeper run resolving a credential |

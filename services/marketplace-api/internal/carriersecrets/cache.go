@@ -67,6 +67,15 @@ type CachingStore struct {
 // without sleeping. counter may be nil, in which case a no-op is
 // installed, matching NewChainStore's convention.
 func NewCachingStore(inner Store, ttl time.Duration, clock func() time.Time, counter CounterFn) *CachingStore {
+	if inner == nil {
+		panic("carriersecrets: CachingStore requires an inner Store")
+	}
+	if clock == nil {
+		panic("carriersecrets: CachingStore requires a clock")
+	}
+	if ttl <= 0 {
+		panic("carriersecrets: CachingStore requires a positive ttl")
+	}
 	if counter == nil {
 		counter = func(string, int64) {}
 	}

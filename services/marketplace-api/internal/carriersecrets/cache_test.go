@@ -507,3 +507,35 @@ func TestCachingStore_ForwardsRewrapper(t *testing.T) {
 		t.Error("MaybeRewrap() left a stale cache entry under the NEW reference — it must be invalidated so the next read fetches the fresh value instead of serving stale plaintext for up to the TTL")
 	}
 }
+
+// NewCachingStore must validate its arguments at construction, matching
+// NewChainStore's and NewHybridStore's panic-on-bad-config convention. A
+// nil inner store, nil clock, or non-positive ttl would otherwise only
+// surface as a panic on the FIRST Get on the checkout/shipping-rate/
+// payment-webhook path in production, rather than at boot.
+func TestNewCachingStore_PanicsOnNilInner(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewCachingStore(nil inner) did not panic, want panic")
+		}
+	}()
+	NewCachingStore(nil, 60*time.Second, time.Now, nil)
+}
+
+func TestNewCachingStore_PanicsOnNilClock(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewCachingStore(nil clock) did not panic, want panic")
+		}
+	}()
+	NewCachingStore(newCountingStore(), 60*time.Second, nil, nil)
+}
+
+func TestNewCachingStore_PanicsOnNonPositiveTTL(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewCachingStore(ttl=0) did not panic, want panic")
+		}
+	}()
+	NewCachingStore(newCountingStore(), 0, time.Now, nil)
+}

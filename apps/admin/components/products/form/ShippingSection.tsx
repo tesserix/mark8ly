@@ -22,8 +22,19 @@ import { Field } from "./Field";
 const inputClass =
   "w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]";
 
+// RHF's register() returns only { name, onChange, onBlur, ref } — no value
+// and no defaultValue — so a server-rendered form emits EMPTY inputs and the
+// values appear only once the client has hydrated and RHF has written them
+// through its refs. On the product page that showed as a real flash: the
+// heading and breadcrumb (plain JSX) were correct immediately while Title sat
+// empty and Handle showed its placeholder, which reads exactly like a product
+// with no data — or a failed load.
+//
+// Passing defaultValue puts the value in the server HTML. It affects nothing
+// after hydration: RHF owns the input imperatively from then on, and a later
+// reset() sets .value directly rather than consulting the attribute.
 export function ShippingSection() {
-  const { register, formState, watch } = useFormContext<ProductFormValues>();
+  const { register, formState, watch, getValues } = useFormContext<ProductFormValues>();
 
   // Blank, whitespace, unparseable or non-positive all mean "no usable
   // weight" — each ends up as the store's fallback at checkout.
@@ -38,17 +49,18 @@ export function ShippingSection() {
             inputMode="decimal"
             placeholder="0.5"
             {...register("weightKg")}
+            defaultValue={getValues("weightKg")}
             className={inputClass}
           />
         </Field>
         <Field label="Length (cm)" error={formState.errors.lengthCm?.message}>
-          <input type="text" inputMode="decimal" {...register("lengthCm")} className={inputClass} />
+          <input type="text" inputMode="decimal" {...register("lengthCm")} defaultValue={getValues("lengthCm")} className={inputClass} />
         </Field>
         <Field label="Width (cm)" error={formState.errors.widthCm?.message}>
-          <input type="text" inputMode="decimal" {...register("widthCm")} className={inputClass} />
+          <input type="text" inputMode="decimal" {...register("widthCm")} defaultValue={getValues("widthCm")} className={inputClass} />
         </Field>
         <Field label="Height (cm)" error={formState.errors.heightCm?.message}>
-          <input type="text" inputMode="decimal" {...register("heightCm")} className={inputClass} />
+          <input type="text" inputMode="decimal" {...register("heightCm")} defaultValue={getValues("heightCm")} className={inputClass} />
         </Field>
       </div>
 

@@ -1,16 +1,11 @@
-import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { cookies } from "next/headers";
 import { FaqAccordion } from "@repo/ui/faq-accordion";
 import { MOBILE_ADMIN_APP_LINKS } from "@repo/ui/app-store-badges";
 import {
-  CURRENCY_COOKIE_NAME,
-  Money,
   SHARED_PRICING_CATALOGUE,
   getPlanPrice,
-  normalizeCurrency,
   type Currency,
   type PlanId,
   type SharedPlan,
@@ -19,6 +14,8 @@ import {
 import { Header } from "@/components/marketing/Header";
 import { Footer } from "@/components/marketing/Footer";
 import { Pricing } from "@/components/marketing/Pricing";
+import { Comparison } from "@/components/marketing/Comparison";
+import { PRERENDER_CURRENCY } from "@/lib/geo/currency";
 
 const SITE_URL = "https://mark8ly.com";
 
@@ -111,7 +108,7 @@ function describeMobileApp(): {
  * Resolves a plan's price alongside the currency it is actually
  * denominated in. `getPlanPrice` silently falls back to USD for an
  * unlisted currency, which would otherwise let us label a USD amount
- * with the visitor's currency code — a wrong price in the schema.
+ * with the requested currency's code — a wrong price in the schema.
  */
 function resolvePricedPlan(
   plan: SharedPlan,
@@ -125,6 +122,20 @@ function resolvePricedPlan(
   };
 }
 
+/**
+ * The schema currency is fixed at PRERENDER_CURRENCY rather than the
+ * visitor's, and that is the honest description of what this page is:
+ * `/` is statically prerendered, so there is exactly one HTML document
+ * and it can only carry one price.
+ *
+ * Nothing is lost. The dynamic render this replaced resolved crawlers to
+ * their own egress location, which meant the "localised" structured data
+ * was one fixed currency (AUD, from the Sydney pod) in practice — it just
+ * cost full edge caching to produce. A fixed, USD-denominated graph that
+ * matches the prerendered visible prices satisfies Google's
+ * structured-data-must-match-visible-content rule for the document the
+ * crawler actually receives.
+ */
 function buildHomeJsonLd(currency: Currency) {
   const pricedPlans = SHARED_PRICING_CATALOGUE.plans.map((plan) => ({
     id: plan.id,
@@ -248,24 +259,24 @@ function buildHomeJsonLd(currency: Currency) {
 /**
  * Marketing landing page.
  *
- * Server Component. The only client island on the page is the
- * FAQ accordion, imported from @repo/ui. Everything else is
- * static markup so the JS bundle on the highest-traffic page
- * stays close to zero.
+ * Server Component, and deliberately a statically prerendered one:
+ * it touches no request-scoped API, so Next can emit it at build
+ * time and Cloudflare can cache it at the edge. Anything that
+ * needs the visitor (currency, today) belongs in a client island —
+ * see lib/geo/currency.ts. Adding a `cookies()`, `headers()`, or
+ * `searchParams` read here silently costs every visitor a
+ * round-trip to a single pod in Sydney (#597).
+ *
+ * The client islands are the FAQ accordion, the Pricing section,
+ * and the Comparison table. Everything else is static markup so
+ * the JS bundle on the highest-traffic page stays close to zero.
  *
  * Layout philosophy: editorial, left-aligned, asymmetric. No
  * card grids. No icon tiles above headings. No hero metric
  * strips. The serif (Source Serif 4) carries the weight; one
  * moss accent does the work color used to do.
  */
-export default async function HomePage() {
-  // Geo-localized currency — middleware sets `mk8_currency` from
-  // CF-IPCountry. Fallback is USD so the page always renders.
-  const cookieStore = await cookies();
-  const currency = normalizeCurrency(
-    cookieStore.get(CURRENCY_COOKIE_NAME)?.value,
-  );
-
+export default function HomePage() {
   return (
     <div className="bg-background text-foreground">
       <script
@@ -274,7 +285,7 @@ export default async function HomePage() {
         // input reaches this. `<` is escaped as a matter of habit,
         // matching app/guides/[slug]/page.tsx.
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(buildHomeJsonLd(currency)).replace(
+          __html: JSON.stringify(buildHomeJsonLd(PRERENDER_CURRENCY)).replace(
             /</g,
             "\\u003c",
           ),
@@ -288,8 +299,8 @@ export default async function HomePage() {
         <Tour />
         <Manifesto />
         <Features />
-        <Pricing currency={currency} catalogue={SHARED_PRICING_CATALOGUE} />
-        <Comparison currency={currency} />
+        <Pricing catalogue={SHARED_PRICING_CATALOGUE} />
+        <Comparison />
         <HowItWorks />
         <SetupSavings />
         <Faq />
@@ -589,358 +600,12 @@ function FeaturePlate({ kicker, index, src, alt }: FeaturePlateProps) {
    ============================================================ */
 
 /* ============================================================
-   Comparison — quiet, factual table that puts Mark8ly next to
-   the names readers have already weighed: Shopify, BigCommerce,
-   Wix, Squarespace.
-
-   Cadence: every "Starting price" cell shows the *annual-billed
-   monthly equivalent* — the same cadence the Pricing section
-   above defaults to. Without this, an AUD merchant saw A$23 in
-   Pricing and A$29 in Comparison for the same plan, which read
-   as a typo. Now both speak the same number.
-
-   Mark8ly's Starter tracks the SHARED_PRICING_CATALOGUE (single
-   source of truth with /admin/pricing). Competitor prices come
-   from each platform's published per-country pricing page,
-   verified against the live page where possible:
-     - Shopify Basic AUD A$42 — shopify.com/au/pricing
-     - Shopify Basic INR ₹1,499 — shopify.com/in/pricing
-     - BigCommerce Standard USD $22 — bigcommerce.com (USD only globally)
-   Where a platform doesn't publish a price in the visitor's
-   currency (BigCommerce globally, Wix/Squarespace outside the
-   US in our data set), the cell shows their USD rate with a
-   "(USD)" tag so the merchant sees what they'd actually be
-   charged. We deliberately keep the data set small and honest:
-   only currencies we've verified, USD fallback for the rest.
-
-   Editorial, not a SaaS bake-off — hairline rules between rows,
-   no shaded card, Mark8ly column carries a single moss accent
-   so the eye finds it without shouting.
+   Comparison — rendered by the client island at
+   components/marketing/Comparison.tsx. It left this file when
+   `/` was made statically prerenderable (#597): its price cells
+   resolve the visitor's currency after mount rather than from a
+   server-side cookie read.
    ============================================================ */
-
-interface CompareRow {
-  label: string;
-  mark8ly: string;
-  shopify: string;
-  bigcommerce: string;
-  wix: string;
-  squarespace: string;
-}
-
-// Feature rows (currency-agnostic). The Starting-price row is
-// rendered separately and pulls from COMPETITOR_STARTING_PRICES
-// + the shared catalogue.
-const COMPARISON_ROWS: readonly CompareRow[] = [
-  {
-    label: "Free to try",
-    mark8ly: "90 days",
-    shopify: "3 days",
-    bigcommerce: "15 days",
-    wix: "14 days",
-    squarespace: "14 days",
-  },
-  {
-    label: "Platform fee per sale",
-    mark8ly: "None",
-    shopify: "2%, unless you use Shopify Payments",
-    bigcommerce: "None",
-    wix: "None",
-    squarespace: "None",
-  },
-  {
-    label: "Default storefront design",
-    mark8ly: "Editorial, designer-led",
-    shopify: "Generic templates",
-    bigcommerce: "Functional templates",
-    wix: "Drag-and-drop builder",
-    squarespace: "Designer themes",
-  },
-  {
-    label: "Use your own domain",
-    mark8ly: "Included",
-    shopify: "Bring your own",
-    bigcommerce: "Bring your own",
-    wix: "First year included",
-    squarespace: "First year included",
-  },
-  {
-    label: "Local payments (UPI, wallets)",
-    mark8ly: "Built in",
-    shopify: "Limited by region",
-    bigcommerce: "Limited by region",
-    wix: "Limited by region",
-    squarespace: "Mostly Stripe / PayPal",
-  },
-  {
-    label: "Take your data when you leave",
-    mark8ly: "One click, any time",
-    shopify: "CSV export",
-    bigcommerce: "CSV export",
-    wix: "Partial",
-    squarespace: "Partial",
-  },
-];
-
-type CompetitorId = "shopify" | "bigcommerce" | "wix" | "squarespace";
-
-// Annual-billed monthly equivalent (the price each platform leads
-// with on their own pricing page, "$X/mo billed yearly"). Pre-
-// formatted strings preserve each platform's own grouping and
-// symbol convention. Currencies not in a competitor's map fall back
-// to its USD entry with a "(USD)" tag in the renderer below — that's
-// honest about platforms that don't localize for that currency.
-const COMPETITOR_STARTING_PRICES: Record<
-  CompetitorId,
-  Partial<Record<Currency, string>>
-> = {
-  shopify: {
-    // Shopify Basic, "$X/mo billed yearly" rate from each region.
-    USD: "$29",
-    AUD: "A$42", // shopify.com/au/pricing
-    INR: "₹1,499", // shopify.com/in/pricing
-    GBP: "£19",
-    EUR: "€27",
-  },
-  bigcommerce: {
-    // Standard plan annual-billed: $29 monthly with "save 25%" → $22/mo.
-    // BigCommerce publishes USD only globally — every other currency
-    // hits the USD-tagged fallback.
-    USD: "$22",
-  },
-  wix: {
-    // Core plan with ecommerce, annual billing.
-    USD: "$29",
-  },
-  squarespace: {
-    // Basic Commerce, annual billing.
-    USD: "$27",
-  },
-};
-
-function competitorStartingPrice(
-  id: CompetitorId,
-  currency: Currency,
-): string {
-  const map = COMPETITOR_STARTING_PRICES[id];
-  const localized = map[currency];
-  if (localized) return `${localized} / mo`;
-  // Platform doesn't publish a price in this currency — they bill
-  // in USD. Tag it so a non-US merchant knows what they'd actually pay.
-  const usd = map.USD!;
-  return currency === "USD" ? `${usd} / mo` : `${usd} / mo (USD)`;
-}
-
-interface ComparisonProps {
-  currency: Currency;
-}
-
-function Comparison({ currency }: ComparisonProps) {
-  const competitorHeaderClass =
-    "px-4 py-4 text-left align-bottom font-sans text-[0.9375rem] font-medium text-foreground-secondary";
-  const competitorCellClass =
-    "px-4 py-5 align-top text-foreground-tertiary";
-
-  // Mark8ly's Starter price tracks the shared pricing catalogue,
-  // and we deliberately use the annual-billed monthly equivalent so
-  // the number matches what the Pricing section shows on its default
-  // (annual) toggle. Without this, the same plan reads as A$23 in
-  // Pricing and A$29 in Comparison — same plan, different cadence,
-  // looks like a typo.
-  const starter = SHARED_PRICING_CATALOGUE.plans.find((p) => p.id === "starter");
-  const resolvedStarter = starter ? getPlanPrice(starter, currency) : null;
-  const mark8lyStarterAnnualMonthly = resolvedStarter?.price.annualMonthlyEquivalent ?? null;
-  // MUST render this — never the raw `currency` prop — for the same
-  // reason as the Pricing section: when `currency` has no row, the
-  // fallback amount is denominated in USD, and labelling it with the
-  // visitor's raw currency code would misquote the price.
-  const mark8lyStarterCurrency = resolvedStarter?.currency ?? currency;
-
-  return (
-    <section
-      id="compare"
-      aria-labelledby="compare-heading"
-      className="border-t border-border-subtle py-16 sm:py-24"
-    >
-      <div className="mx-auto max-w-6xl px-6">
-        <div className="mb-12 grid gap-8 lg:grid-cols-[1fr_2fr] lg:gap-16">
-          <div>
-            <p className="eyebrow mb-5">How we compare</p>
-            <h2
-              id="compare-heading"
-              className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground"
-            >
-              Side by side,
-              <br />
-              no spin.
-            </h2>
-          </div>
-          <p className="max-w-xl self-end text-base leading-relaxed text-foreground-secondary">
-            We&rsquo;re not the only commerce platform on the table. Here&rsquo;s
-            how Mark8ly lines up against the names you&rsquo;ve probably
-            already looked at &mdash; the things that show up on the bill,
-            and the things that show up on the storefront. Starting prices
-            show each platform&rsquo;s annual-billed rate in {currency} where
-            they publish one, the same cadence as the Pricing section above.
-          </p>
-        </div>
-
-        <div className="-mx-6 overflow-x-auto px-6 sm:mx-0 sm:px-0">
-          <table className="w-full min-w-[760px] border-collapse text-sm">
-            <caption className="sr-only">
-              How Mark8ly compares with Shopify, BigCommerce, Wix and
-              Squarespace on price, trial length, fees, design and data
-              portability. Prices shown in {currency}.
-            </caption>
-            <thead>
-              <tr className="border-b border-border">
-                <th
-                  scope="col"
-                  className="py-4 pr-6 text-left align-bottom"
-                >
-                  <span className="eyebrow">Feature</span>
-                </th>
-                <th
-                  scope="col"
-                  className="px-4 py-4 text-left align-bottom"
-                >
-                  <span className="font-serif text-lg font-medium text-foreground">
-                    Mark8ly
-                  </span>
-                </th>
-                <th scope="col" className={competitorHeaderClass}>
-                  Shopify
-                </th>
-                <th scope="col" className={competitorHeaderClass}>
-                  BigCommerce
-                </th>
-                <th scope="col" className={competitorHeaderClass}>
-                  Wix
-                </th>
-                <th scope="col" className={competitorHeaderClass}>
-                  Squarespace
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Starting price — geo-localized row, rendered specially. */}
-              <tr className="border-b border-border-subtle">
-                <th
-                  scope="row"
-                  className="py-5 pr-6 text-left align-top font-normal text-foreground-secondary"
-                >
-                  Starting price
-                </th>
-                <td className="px-4 py-5 align-top">
-                  <span className="block border-l-2 border-moss-700 pl-3 font-medium text-foreground">
-                    {mark8lyStarterAnnualMonthly !== null ? (
-                      <>
-                        <Money
-                          amount={mark8lyStarterAnnualMonthly}
-                          currency={mark8lyStarterCurrency}
-                          showCents={false}
-                        />
-                        <span className="text-foreground-tertiary"> / mo</span>
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </span>
-                </td>
-                <td className={competitorCellClass}>
-                  {competitorStartingPrice("shopify", currency)}
-                </td>
-                <td className={competitorCellClass}>
-                  {competitorStartingPrice("bigcommerce", currency)}
-                </td>
-                <td className={competitorCellClass}>
-                  {competitorStartingPrice("wix", currency)}
-                </td>
-                <td className={competitorCellClass}>
-                  {competitorStartingPrice("squarespace", currency)}
-                </td>
-              </tr>
-
-              {/* Feature rows — currency-agnostic. */}
-              {COMPARISON_ROWS.map((row) => (
-                <tr
-                  key={row.label}
-                  className="border-b border-border-subtle"
-                >
-                  <th
-                    scope="row"
-                    className="py-5 pr-6 text-left align-top font-normal text-foreground-secondary"
-                  >
-                    {row.label}
-                  </th>
-                  <td className="px-4 py-5 align-top">
-                    <span className="block border-l-2 border-moss-700 pl-3 font-medium text-foreground">
-                      {row.mark8ly}
-                    </span>
-                  </td>
-                  <td className={competitorCellClass}>{row.shopify}</td>
-                  <td className={competitorCellClass}>{row.bigcommerce}</td>
-                  <td className={competitorCellClass}>{row.wix}</td>
-                  <td className={competitorCellClass}>{row.squarespace}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <p className="mt-8 max-w-3xl text-sm text-foreground-tertiary">
-          Starting prices show each platform&rsquo;s cheapest paid plan
-          billed yearly &mdash; Shopify Basic, BigCommerce Standard, Wix
-          Core, Squarespace Basic Commerce. Where a platform doesn&rsquo;t
-          publish a price in your currency (BigCommerce globally; Wix and
-          Squarespace outside the US in our verified data), we show the USD
-          rate and tag it so you know what you&rsquo;d actually be charged.
-          Payment processor fees &mdash; around 2&ndash;3% for cards, closer
-          to 1% for UPI &mdash; apply on every platform. That&rsquo;s your
-          bank, not us; the line above is what the platform itself adds on
-          top.
-        </p>
-
-        <p className="mt-8 max-w-3xl text-base leading-relaxed text-foreground-secondary">
-          Weighing a specific platform? Read the full comparisons:{" "}
-          <ComparisonLink href="/shopify-alternative">
-            Mark8ly vs Shopify
-          </ComparisonLink>
-          ,{" "}
-          <ComparisonLink href="/etsy-alternative">
-            the Etsy alternative
-          </ComparisonLink>
-          , our{" "}
-          <ComparisonLink href="/ecommerce-for-makers">
-            guide for makers
-          </ComparisonLink>
-          , or{" "}
-          <ComparisonLink href="/sell-online-india">
-            selling online in India
-          </ComparisonLink>
-          .
-        </p>
-      </div>
-    </section>
-  );
-}
-
-/* Inline editorial link — moss underline, matches the Prose link style. */
-function ComparisonLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
-    >
-      {children}
-    </Link>
-  );
-}
 
 /* ============================================================
    How it works — three steps, numbered, left-aligned, narrow

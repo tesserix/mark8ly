@@ -185,10 +185,11 @@ func TestConfig_ShippingSecretStoreAcceptsBao(t *testing.T) {
 	baseEnv(t)
 	t.Setenv("SHIPPING_SECRET_STORE", "bao")
 	t.Setenv("OPENBAO_ROLE", "marketplace-api")
+	t.Setenv("GCP_PROJECT_ID", "test-project")
 
 	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("Load() with SHIPPING_SECRET_STORE=bao and OPENBAO_ROLE set: %v", err)
+		t.Fatalf("Load() with SHIPPING_SECRET_STORE=bao, OPENBAO_ROLE and GCP_PROJECT_ID set: %v", err)
 	}
 	if cfg.ShippingSecretStore != "bao" {
 		t.Errorf("ShippingSecretStore = %q, want bao", cfg.ShippingSecretStore)
@@ -226,8 +227,23 @@ func TestConfig_BaoModeRejectsNonKVMount(t *testing.T) {
 	t.Setenv("SHIPPING_SECRET_STORE", "bao")
 	t.Setenv("OPENBAO_ROLE", "marketplace-api")
 	t.Setenv("OPENBAO_KV_MOUNT", "secret")
+	t.Setenv("GCP_PROJECT_ID", "test-project")
 
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() with SHIPPING_SECRET_STORE=bao and OPENBAO_KV_MOUNT=secret = nil, want error")
+	}
+}
+
+// bao mode still routes legacy gsm:// reads/destroys through GCP Secret
+// Manager, so GCP_PROJECT_ID is a genuine prerequisite for "bao" mode too,
+// not just "gcpsm" — selecting bao without it is a startup error.
+func TestConfig_BaoModeRequiresGCPProjectID(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "bao")
+	t.Setenv("OPENBAO_ROLE", "marketplace-api")
+	t.Setenv("GCP_PROJECT_ID", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=bao and no GCP_PROJECT_ID = nil, want error")
 	}
 }

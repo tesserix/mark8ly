@@ -394,25 +394,37 @@ func main() {
 	//   - "inline" (default, unchanged): NewInlineStore, no GCP/OpenBao
 	//     creds needed — keeps local dev working exactly as before.
 	//   - "gcpsm" (unchanged behaviour): a ChainStore with
-	//     Primary: BackendGCP, wrapped in a CachingStore. It reads
-	//     gsm:// and inline references exactly as the old HybridStore
-	//     did; the only structural difference is the decorator, which
-	//     is a pure cache in front of identical reads.
+	//     Primary: BackendGCP, UNCACHED — reads gsm:// and inline
+	//     references exactly as the old HybridStore did, with no
+	//     wrapper of any kind. This is deliberate: merging this task
+	//     changes nothing on the default/existing path. A CachingStore
+	//     is not merely a performance detail — it would introduce
+	//     up-to-60s plaintext credential residency where there is none
+	//     today, up-to-60s staleness after a rotation from another
+	//     process, and (most significantly) stale-on-error, which would
+	//     turn a GCP Secret Manager outage that today surfaces
+	//     immediately as an error into one silently masked by a stale
+	//     cached value. None of that is acceptable to introduce on a
+	//     path nobody asked to change.
 	//   - "bao" (new, opt-in): a ChainStore with Primary: BackendBao,
-	//     also wrapped in a CachingStore. Writes mint bao://; gsm:// and
+	//     wrapped in a CachingStore. Writes mint bao://; gsm:// and
 	//     inline references keep reading exactly as before, so rows
 	//     already in GCP Secret Manager keep resolving while new writes
-	//     land in OpenBao.
+	//     land in OpenBao. The cache is intentionally bao-only: it
+	//     arrives bundled with the same deliberate, monitored config
+	//     change that switches the backend, rather than riding in
+	//     unannounced on "gcpsm" (see above).
 	//
 	// A real GCP Secret Manager client is required in both "gcpsm" and
 	// "bao" modes — a bao-primary chain still has to serve pre-cutover
 	// gsm:// rows — so the workload-identity-ADC-and-fallback-to-inline
 	// dance below is shared by both. config.Validate already refused to
-	// boot with SHIPPING_SECRET_STORE=bao and no OPENBAO_ROLE, or with a
-	// non-"kv" OPENBAO_KV_MOUNT (carriersecrets.BaoPath hardcodes the
-	// "kv/" path prefix independently of whatever mount the OpenBao
-	// client is configured with, so a mismatch there would otherwise
-	// fail every read/write at runtime instead of at boot).
+	// boot with SHIPPING_SECRET_STORE=bao and no OPENBAO_ROLE, no
+	// GCP_PROJECT_ID, or a non-"kv" OPENBAO_KV_MOUNT
+	// (carriersecrets.BaoPath hardcodes the "kv/" path prefix
+	// independently of whatever mount the OpenBao client is configured
+	// with, so a mismatch there would otherwise fail every read/write
+	// at runtime instead of at boot).
 	var carrierSecretStore carriersecrets.Store
 	carrierSecretStoreDegraded := false
 	// carrierSecretCounter feeds ChainStore's fallback-read counter and
@@ -422,6 +434,14 @@ func main() {
 	// internal/metrics, so this is a logging sink rather than a silent
 	// nil — grep logs for "carriersecrets: metric" to watch these two
 	// counters until a real CounterVec lands.
+	//
+	// IMPORTANT — phase-2 placeholder only, tracked separately as a
+	// blocker: a log line has no aggregation, no retention guarantee,
+	// and is vulnerable to sampling/log-loss across pods. A REAL metric
+	// (a Prometheus CounterVec) is REQUIRED before FallbackReadMetric
+	// can be trusted for the "zero for N days" decision that gates
+	// decommissioning GCP Secret Manager. Do not treat this closure as
+	// sufficient evidence for that decision.
 	carrierSecretCounter := func(label string, n int64) {
 		log.Info("carriersecrets: metric", "label", label, "count", n)
 	}
@@ -466,9 +486,16 @@ func main() {
 				GCPPrefix:    cfg.SecretNamePrefix,
 				Counter:      carrierSecretCounter,
 			})
-			carrierSecretStore = carriersecrets.NewCachingStore(chain, 60*time.Second, time.Now, carrierSecretCounter)
+			if cfg.ShippingSecretStore == "bao" {
+				// Caching is bao-only — see the switch's doc comment
+				// above for why "gcpsm" stays uncached.
+				carrierSecretStore = carriersecrets.NewCachingStore(chain, 60*time.Second, time.Now, carrierSecretCounter)
+			} else {
+				carrierSecretStore = chain
+			}
 			log.Info("carriersecrets: chain store online",
-				"primary", primary, "project_id", cfg.GCPProjectID, "prefix", cfg.SecretNamePrefix,
+				"primary", primary, "cached", cfg.ShippingSecretStore == "bao",
+				"project_id", cfg.GCPProjectID, "prefix", cfg.SecretNamePrefix,
 				"openbao_addr", cfg.OpenBaoAddr, "openbao_kv_mount", cfg.OpenBaoKVMount)
 		}
 	default: // "inline" — config.Validate already rejected anything else.

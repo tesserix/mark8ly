@@ -333,6 +333,13 @@ var (
 	// error on the first merchant credential save instead of at boot.
 	ErrOpenBaoKVMountUnsupported = errors.New(
 		"marketplace config: OPENBAO_KV_MOUNT must be \"kv\" when SHIPPING_SECRET_STORE=bao (carriersecrets.BaoPath currently assumes the \"kv\" mount)")
+	// ErrGCPProjectIDRequiredForBao fires when ShippingSecretStore=bao
+	// and GCP_PROJECT_ID is unset. A bao-primary ChainStore still routes
+	// legacy gsm:// reads (and destroys) through GCP Secret Manager, so
+	// GCP_PROJECT_ID is a genuine prerequisite for "bao" mode, not just
+	// "gcpsm" mode.
+	ErrGCPProjectIDRequiredForBao = errors.New(
+		"marketplace config: GCP_PROJECT_ID must be set when SHIPPING_SECRET_STORE=bao (legacy gsm:// rows must still resolve through GCP Secret Manager)")
 )
 
 // Load reads .env (if present) and binds environment variables into Config.
@@ -422,6 +429,9 @@ func (c *Config) validateShippingSecretStore() error {
 	}
 	if c.OpenBaoKVMount != "kv" {
 		return fmt.Errorf("%w (got OPENBAO_KV_MOUNT=%q)", ErrOpenBaoKVMountUnsupported, c.OpenBaoKVMount)
+	}
+	if c.GCPProjectID == "" {
+		return ErrGCPProjectIDRequiredForBao
 	}
 	return nil
 }

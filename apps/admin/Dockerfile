@@ -12,7 +12,7 @@ FROM ghcr.io/tesserix/base-node-builder-22@sha256:517372359a366695db0898e2295158
 USER 0:0
 WORKDIR /src
 
-COPY package.json package-lock.json .npmrc ./
+COPY package.json package-lock.json ./
 COPY apps/onboarding/package.json ./apps/onboarding/
 COPY apps/admin/package.json ./apps/admin/
 COPY apps/storefront/package.json ./apps/storefront/
@@ -22,13 +22,11 @@ COPY packages/eslint-config/package.json ./packages/eslint-config/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
 COPY packages/ui/package.json ./packages/ui/
 
-# @tesserix/* deps live on GitHub Packages which always requires auth.
-# The token is mounted as a BuildKit secret so it never lands in an
-# image layer; npm reads it via the NODE_AUTH_TOKEN variable already
-# interpolated into the root .npmrc.
-RUN --mount=type=secret,id=PACKAGE_READ_TOKEN \
-    NODE_AUTH_TOKEN="$(cat /run/secrets/PACKAGE_READ_TOKEN)" \
-    npm ci --no-audit --no-fund --legacy-peer-deps
+# @tesserix/* now comes from the public npm registry, so this needs no
+# credential. The scoped-registry .npmrc and its PACKAGE_READ_TOKEN
+# BuildKit secret are gone with it — an unauthenticated pull is one less
+# thing that can expire.
+RUN npm ci --no-audit --no-fund --legacy-peer-deps
 
 # ─── builder ───────────────────────────────────────────────────────────
 FROM ghcr.io/tesserix/base-node-builder-22@sha256:517372359a366695db0898e2295158cf4b227537377a264dc55a7faa623cfc29 AS builder

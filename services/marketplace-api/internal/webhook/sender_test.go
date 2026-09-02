@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,6 +89,62 @@ func TestSend_TreatsNon2xxAsFailureButReturnsTheCode(t *testing.T) {
 	}
 	if code != 500 {
 		t.Fatalf("want the status code surfaced for the merchant log, got %d", code)
+	}
+}
+
+// TestSend_CapturesTheFailingEndpointsResponseBodyForTheMerchantLog proves
+// last_error ends up with more than a bare status code: the endpoint's own
+// response body, which is what actually makes a broken endpoint debuggable
+// for the merchant (maxErrorLen's doc comment, and migration 000126's
+// last_error column comment, both promise this).
+func TestSend_CapturesTheFailingEndpointsResponseBodyForTheMerchantLog(t *testing.T) {
+	const want = "validation failed: missing signature header"
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(want))
+	}))
+	defer srv.Close()
+
+	s := NewSender(allowAll(), srv.Client())
+	_, err := s.Send(context.Background(), Subscription{URL: srv.URL, Secret: "x"}, Delivery{EventType: "order.placed"})
+	if err == nil {
+		t.Fatal("non-2xx must be an error")
+	}
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("error should carry the endpoint's response body so the merchant log is debuggable, got: %v", err)
+	}
+}
+
+// TestSend_TruncatesAnOverlongResponseBody proves the capture is bounded by
+// maxErrorLen, not just "whatever the endpoint sent" — an unbounded body
+// from a merchant-controlled endpoint must not be stored as-is.
+func TestSend_TruncatesAnOverlongResponseBody(t *testing.T) {
+	huge := strings.Repeat("x", maxErrorLen*4)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(huge))
+	}))
+	defer srv.Close()
+
+	s := NewSender(allowAll(), srv.Client())
+	_, err := s.Send(context.Background(), Subscription{URL: srv.URL, Secret: "x"}, Delivery{EventType: "order.placed"})
+	if err == nil {
+		t.Fatal("non-2xx must be an error")
+	}
+	if len(err.Error()) >= len(huge) {
+		t.Fatalf("captured body must be bounded by maxErrorLen, got a %d-byte error", len(err.Error()))
+	}
+}
+
+// TestNewSender_DoesNotMutateTheCallersClient proves NewSender takes a
+// shallow copy: a caller's *http.Client (e.g. one shared with other code,
+// or a test's srv.Client()) must not silently inherit the no-redirect
+// policy NewSender sets up for itself.
+func TestNewSender_DoesNotMutateTheCallersClient(t *testing.T) {
+	client := &http.Client{}
+	_ = NewSender(allowAll(), client)
+	if client.CheckRedirect != nil {
+		t.Fatal("NewSender must not mutate the caller's http.Client in place")
 	}
 }
 

@@ -34,19 +34,65 @@ func (r *DeliveryRepo) FanOut(ctx context.Context, rows []Delivery) (int, error)
 	return int(res.RowsAffected), nil
 }
 
-// ClaimDue locks up to limit pending, due deliveries. FOR UPDATE SKIP LOCKED
-// is what makes it safe for several replicas to run this loop at once — each
-// takes a disjoint set instead of contending.
+// ClaimDue claims up to limit pending, due deliveries by taking a short
+// LEASE, not a lock.
+//
+// FOR UPDATE SKIP LOCKED only holds its row lock while THIS function's own
+// transaction is open, and that transaction commits here, before the caller
+// ever makes the outbound HTTP call. Postgres releases the lock at commit —
+// well before RecordOutcome moves status off pending, up to RequestTimeout
+// later. If ClaimDue simply returned the claimed rows at that point, a
+// second worker calling ClaimDue while the first is still mid-Send would
+// see them as pending and unlocked, and send them again. Several replicas
+// running this loop at once (Task 6 puts this on KEDA-scaled pods) is
+// exactly the case that must not double-send.
+//
+// So within the same transaction that claims the rows, it immediately
+// pushes their next_attempt_at forward by LeaseWindow. That's what actually
+// keeps the rows from being claimed again: they are still status=pending,
+// but no longer due. The HTTP send itself happens entirely OUTSIDE any
+// transaction — holding a connection and row locks across a blocking
+// outbound call to a merchant server is not an option on a 5-connection
+// pool shared with the rest of the service. RecordOutcome then overwrites
+// next_attempt_at with the real outcome (retry backoff, or dead-letter).
+//
+// If a worker dies mid-send, no RecordOutcome ever runs and the lease
+// simply expires — the row becomes due again and some worker retries it.
+// That's at-least-once delivery, which is what webhooks already assume:
+// the signature and delivery id are what let a merchant dedupe.
 func (r *DeliveryRepo) ClaimDue(ctx context.Context, limit int) ([]Delivery, error) {
 	var out []Delivery
-	err := r.db.WithContext(ctx).Raw(`
-		SELECT * FROM webhook_deliveries
-		 WHERE status = ? AND next_attempt_at <= now()
-		 ORDER BY next_attempt_at ASC
-		 LIMIT ?
-		 FOR UPDATE SKIP LOCKED`, StatusPending, limit).Scan(&out).Error
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Raw(`
+			SELECT * FROM webhook_deliveries
+			 WHERE status = ? AND next_attempt_at <= now()
+			 ORDER BY next_attempt_at ASC
+			 LIMIT ?
+			 FOR UPDATE SKIP LOCKED`, StatusPending, limit).Scan(&out).Error; err != nil {
+			return fmt.Errorf("webhook: claim deliveries: %w", err)
+		}
+		if len(out) == 0 {
+			return nil
+		}
+
+		ids := make([]uuid.UUID, len(out))
+		for i, d := range out {
+			ids[i] = d.ID
+		}
+		leaseUntil := time.Now().Add(LeaseWindow)
+		if err := tx.Exec(`UPDATE webhook_deliveries SET next_attempt_at = ? WHERE id IN ?`,
+			leaseUntil, ids).Error; err != nil {
+			return fmt.Errorf("webhook: lease deliveries: %w", err)
+		}
+		// Reflect the lease in what's returned too, so a caller reading
+		// NextAttemptAt off these structs doesn't see stale pre-lease data.
+		for i := range out {
+			out[i].NextAttemptAt = leaseUntil
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("webhook: claim deliveries: %w", err)
+		return nil, err
 	}
 	return out, nil
 }

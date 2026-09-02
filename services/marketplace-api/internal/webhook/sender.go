@@ -19,6 +19,19 @@ import (
 // must not hold a goroutine for long.
 const RequestTimeout = 5 * time.Second
 
+// LeaseWindow is how far DeliveryRepo.ClaimDue pushes a claimed delivery's
+// next_attempt_at forward. It exists because FOR UPDATE SKIP LOCKED's row
+// lock is released the instant the claiming transaction commits — long
+// before the HTTP send this package makes actually finishes — so without a
+// lease, a second worker calling ClaimDue while the first is still mid-Send
+// would see the row as due and unlocked, and send it again.
+//
+// It MUST stay comfortably longer than RequestTimeout: shrinking one
+// without the other reopens the double-send window this constant exists to
+// close. 60s against a 5s request timeout leaves generous margin for a slow
+// send plus the time between claiming and issuing the request.
+const LeaseWindow = 60 * time.Second
+
 // maxErrorLen bounds what we store from a failing endpoint's response. The
 // body is surfaced to the merchant to make a broken endpoint debuggable; it
 // is never logged server-side, since it is arbitrary remote content.
@@ -32,6 +45,13 @@ type Sender struct {
 func NewSender(guard *ssrfguard.Guard, client *http.Client) *Sender {
 	if client == nil {
 		client = &http.Client{Timeout: RequestTimeout}
+	} else {
+		// Copy rather than mutate: client may be shared with other callers
+		// (a test's srv.Client(), a caller's own default client). Setting
+		// Transport/CheckRedirect directly on it would silently change its
+		// behavior for everyone else holding a reference.
+		cp := *client
+		client = &cp
 	}
 	if client.Transport == nil {
 		if dt, ok := http.DefaultTransport.(*http.Transport); ok {
@@ -101,11 +121,17 @@ func (s *Sender) Send(ctx context.Context, sub Subscription, d Delivery) (int, e
 		return 0, fmt.Errorf("webhook: request failed: %w", err)
 	}
 	defer res.Body.Close()
-	_, _ = io.CopyN(io.Discard, res.Body, 1<<16)
 
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return res.StatusCode, fmt.Errorf("webhook: endpoint returned %d", res.StatusCode)
+		// Captured for the merchant's delivery log — never logged
+		// server-side, since it is arbitrary content from a remote,
+		// merchant-controlled endpoint.
+		snippet, _ := io.ReadAll(io.LimitReader(res.Body, maxErrorLen))
+		return res.StatusCode, fmt.Errorf("webhook: endpoint returned %d: %s", res.StatusCode, snippet)
 	}
+	// A 2xx response body is never surfaced anywhere, so it only needs
+	// draining to let the connection be reused — not reading into memory.
+	_, _ = io.CopyN(io.Discard, res.Body, 1<<16)
 	return res.StatusCode, nil
 }
 
@@ -138,6 +164,10 @@ func (s *Sender) baseTransport() *http.Transport {
 	if tr, ok := s.client.Transport.(*http.Transport); ok {
 		return tr.Clone()
 	}
+	// A custom, non-*http.Transport RoundTripper is deliberately not
+	// preserved here — there's no generic way to clone an arbitrary
+	// RoundTripper and still override DialContext/TLSClientConfig on it, so
+	// falling back to a fresh default transport is the practical choice.
 	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
 		return dt.Clone()
 	}
@@ -150,6 +180,20 @@ func (s *Sender) baseTransport() *http.Transport {
 // names — there is no hostname for a transport to re-resolve, so no rebind
 // window exists, and the guard's resolver output (a mock, in tests) must
 // not override it. Otherwise the guard-validated address is used.
+//
+// This literal-IP branch is provably a no-op in production: real DNS
+// resolves a literal IP to itself, so ssrfguard.CheckResolved's own ips and
+// the literal always agree there — the branch only diverges under a test
+// double like allowAll() that answers every host with the same fixed
+// address regardless of what was asked, which is exactly what lets
+// httptest's loopback TLS servers exercise a real handshake here. It exists
+// for test portability, not as a security shortcut; there is no in-repo way
+// to exercise the guard-resolved branch end-to-end without either a test
+// seam inside isPublic (a seam in security code, worse than not having the
+// test) or a non-loopback test server (not portable). That branch's
+// correctness is instead covered by TestDialPinnedTo_* (the dial mechanism
+// itself) and ssrfguard's own CheckResolved tests (that the IPs it hands
+// back are the ones actually validated), not by an end-to-end Send test.
 func pinnedAddress(host string, ips []net.IP) net.IP {
 	if literal := net.ParseIP(host); literal != nil {
 		return literal

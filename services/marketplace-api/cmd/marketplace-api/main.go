@@ -38,6 +38,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/bao"
 	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
 	appcredspkg "github.com/mark8ly/marketplace-api/internal/billing/appcreds"
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
@@ -385,18 +386,50 @@ func main() {
 		log.Info("crypto: noop encryptor (dev mode)")
 	}
 
-	// Per-tenant carrier credential store. In "gcpsm" mode we stand up
-	// a real Secret Manager client (workload-identity ADC) and fall
-	// back to the inline encryptor if the client constructor errors
-	// out — loud warning plus a boot flag so ops can spot the
-	// mismatch without the service refusing to start. "inline" mode
-	// keeps local dev working without GCP creds.
+	// Per-tenant carrier credential store. SHIPPING_SECRET_STORE selects
+	// which backend is PRIMARY (where Put writes, and which reference
+	// format Get treats as "not a fallback"); it never adds a second,
+	// independent selector — see internal/carriersecrets/chain.go.
+	//
+	//   - "inline" (default, unchanged): NewInlineStore, no GCP/OpenBao
+	//     creds needed — keeps local dev working exactly as before.
+	//   - "gcpsm" (unchanged behaviour): a ChainStore with
+	//     Primary: BackendGCP, wrapped in a CachingStore. It reads
+	//     gsm:// and inline references exactly as the old HybridStore
+	//     did; the only structural difference is the decorator, which
+	//     is a pure cache in front of identical reads.
+	//   - "bao" (new, opt-in): a ChainStore with Primary: BackendBao,
+	//     also wrapped in a CachingStore. Writes mint bao://; gsm:// and
+	//     inline references keep reading exactly as before, so rows
+	//     already in GCP Secret Manager keep resolving while new writes
+	//     land in OpenBao.
+	//
+	// A real GCP Secret Manager client is required in both "gcpsm" and
+	// "bao" modes — a bao-primary chain still has to serve pre-cutover
+	// gsm:// rows — so the workload-identity-ADC-and-fallback-to-inline
+	// dance below is shared by both. config.Validate already refused to
+	// boot with SHIPPING_SECRET_STORE=bao and no OPENBAO_ROLE, or with a
+	// non-"kv" OPENBAO_KV_MOUNT (carriersecrets.BaoPath hardcodes the
+	// "kv/" path prefix independently of whatever mount the OpenBao
+	// client is configured with, so a mismatch there would otherwise
+	// fail every read/write at runtime instead of at boot).
 	var carrierSecretStore carriersecrets.Store
 	carrierSecretStoreDegraded := false
+	// carrierSecretCounter feeds ChainStore's fallback-read counter and
+	// CachingStore's stale-read counter. There is no existing Prometheus
+	// CounterVec for carriersecrets metrics and this task's file scope
+	// (main.go / pkg/config) doesn't extend to adding one in
+	// internal/metrics, so this is a logging sink rather than a silent
+	// nil — grep logs for "carriersecrets: metric" to watch these two
+	// counters until a real CounterVec lands.
+	carrierSecretCounter := func(label string, n int64) {
+		log.Info("carriersecrets: metric", "label", label, "count", n)
+	}
 	switch cfg.ShippingSecretStore {
-	case "gcpsm":
+	case "gcpsm", "bao":
 		if cfg.GCPProjectID == "" {
-			log.Error("GCP_PROJECT_ID required when SHIPPING_SECRET_STORE=gcpsm")
+			log.Error("GCP_PROJECT_ID required when SHIPPING_SECRET_STORE=gcpsm or bao",
+				"shipping_secret_store", cfg.ShippingSecretStore)
 			os.Exit(1)
 		}
 		smClient, smErr := secretmanagerclient.NewClient(context.Background())
@@ -406,16 +439,39 @@ func main() {
 			carrierSecretStore = carriersecrets.NewInlineStore(apiKeyEncryptor)
 			carrierSecretStoreDegraded = true
 		} else {
-			carrierSecretStore = carriersecrets.NewHybridStore(carriersecrets.HybridConfig{
-				Client:    carriersecrets.NewGCPStore(smClient, cfg.GCPProjectID),
-				Encryptor: apiKeyEncryptor,
-				ProjectID: cfg.GCPProjectID,
-				Prefix:    cfg.SecretNamePrefix,
+			baoClient, baoErr := bao.New(bao.Config{
+				Address:        cfg.OpenBaoAddr,
+				Mount:          cfg.OpenBaoKVMount,
+				KubernetesRole: cfg.OpenBaoRole,
 			})
-			log.Info("carriersecrets: hybrid store online",
-				"project_id", cfg.GCPProjectID, "prefix", cfg.SecretNamePrefix)
+			if baoErr != nil {
+				// bao.New only fails on an empty Address, which never
+				// happens here — OpenBaoAddr always carries a default.
+				// Treated as a boot failure rather than silently
+				// degrading, matching the "misconfiguration is a boot
+				// failure" property required of the mount check above.
+				log.Error("carriersecrets: openbao client init failed", "err", baoErr)
+				os.Exit(1)
+			}
+			primary := carriersecrets.BackendGCP
+			if cfg.ShippingSecretStore == "bao" {
+				primary = carriersecrets.BackendBao
+			}
+			chain := carriersecrets.NewChainStore(carriersecrets.ChainConfig{
+				Bao:          carriersecrets.NewBaoClient(baoClient),
+				GCP:          carriersecrets.NewGCPStore(smClient, cfg.GCPProjectID),
+				Encryptor:    apiKeyEncryptor,
+				Primary:      primary,
+				GCPProjectID: cfg.GCPProjectID,
+				GCPPrefix:    cfg.SecretNamePrefix,
+				Counter:      carrierSecretCounter,
+			})
+			carrierSecretStore = carriersecrets.NewCachingStore(chain, 60*time.Second, time.Now, carrierSecretCounter)
+			log.Info("carriersecrets: chain store online",
+				"primary", primary, "project_id", cfg.GCPProjectID, "prefix", cfg.SecretNamePrefix,
+				"openbao_addr", cfg.OpenBaoAddr, "openbao_kv_mount", cfg.OpenBaoKVMount)
 		}
-	default:
+	default: // "inline" — config.Validate already rejected anything else.
 		carrierSecretStore = carriersecrets.NewInlineStore(apiKeyEncryptor)
 		log.Info("carriersecrets: inline store (dev mode)")
 	}

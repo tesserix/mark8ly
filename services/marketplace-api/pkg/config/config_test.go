@@ -154,3 +154,80 @@ func TestLoad_DevToleratesEmptySecrets(t *testing.T) {
 		t.Fatalf("Load() in dev with empty secrets: %v", err)
 	}
 }
+
+// baseEnv sets only the two hard-required vars, leaving everything else
+// (including SHIPPING_SECRET_STORE) at its default — used by the
+// SHIPPING_SECRET_STORE tests below so they exercise defaulting in
+// isolation from the prod fail-closed checks.
+func baseEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("DATABASE_URL", "postgres://x/y")
+	t.Setenv("MARKETPLACE_FGA_API_URL", "http://openfga:8080")
+}
+
+// The default is unchanged: an unset SHIPPING_SECRET_STORE is still
+// "inline", so merging this PR cannot alter any deployment's behaviour.
+func TestConfig_ShippingSecretStoreDefaultUnchanged(t *testing.T) {
+	baseEnv(t)
+	os.Unsetenv("SHIPPING_SECRET_STORE")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ShippingSecretStore != "inline" {
+		t.Errorf("ShippingSecretStore = %q, want inline", cfg.ShippingSecretStore)
+	}
+}
+
+// "bao" is accepted as a third valid mode.
+func TestConfig_ShippingSecretStoreAcceptsBao(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "bao")
+	t.Setenv("OPENBAO_ROLE", "marketplace-api")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with SHIPPING_SECRET_STORE=bao and OPENBAO_ROLE set: %v", err)
+	}
+	if cfg.ShippingSecretStore != "bao" {
+		t.Errorf("ShippingSecretStore = %q, want bao", cfg.ShippingSecretStore)
+	}
+}
+
+// An unknown value is rejected at startup, not silently coerced — a typo
+// must not quietly leave the wrong backend primary.
+func TestConfig_ShippingSecretStoreRejectsUnknownValue(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "totally-bogus")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=totally-bogus = nil, want error")
+	}
+}
+
+// Selecting bao without OPENBAO_ROLE is a startup error, since Kubernetes
+// login cannot work without it.
+func TestConfig_BaoModeRequiresRole(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "bao")
+	t.Setenv("OPENBAO_ROLE", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=bao and no OPENBAO_ROLE = nil, want error")
+	}
+}
+
+// Bonus coverage for the carry-forward risk called out in the task brief:
+// carriersecrets.BaoPath hardcodes the "kv/" mount prefix, so a non-"kv"
+// OPENBAO_KV_MOUNT must fail at boot, not at the first credential save.
+func TestConfig_BaoModeRejectsNonKVMount(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("SHIPPING_SECRET_STORE", "bao")
+	t.Setenv("OPENBAO_ROLE", "marketplace-api")
+	t.Setenv("OPENBAO_KV_MOUNT", "secret")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with SHIPPING_SECRET_STORE=bao and OPENBAO_KV_MOUNT=secret = nil, want error")
+	}
+}

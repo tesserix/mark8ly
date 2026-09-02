@@ -3,6 +3,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -250,16 +251,35 @@ type Config struct {
 	// (tenant, domain, provider, field); "inline" → stores envelope-
 	// encrypted ciphertext in the DB column (legacy behaviour). Default
 	// is "inline" so local dev without GCP creds still boots.
+	// Valid values: "inline", "gcpsm", "bao". Anything else is rejected
+	// at startup by Validate — a typo here must not silently leave the
+	// wrong backend primary (see ErrShippingSecretStoreUnknown).
 	ShippingSecretStore string `envconfig:"SHIPPING_SECRET_STORE" default:"inline"`
 	// GCPProjectID is the project that hosts the per-tenant carrier
-	// secrets. Required when ShippingSecretStore=gcpsm; unused
-	// otherwise.
+	// secrets. Required when ShippingSecretStore is "gcpsm" or "bao" —
+	// even bao-primary chains still route legacy gsm:// reads through
+	// GCP Secret Manager. Unused when "inline".
 	GCPProjectID string `envconfig:"GCP_PROJECT_ID" default:""`
 	// SecretNamePrefix goes at the head of every per-tenant secret ID,
 	// e.g. "mark8ly-prod", "mark8ly-test". Isolates dev and prod
 	// clusters that share the same GCP project by scoping IAM
 	// bindings via resource.name.startsWith.
 	SecretNamePrefix string `envconfig:"SECRET_NAME_PREFIX" default:"mark8ly-dev"`
+
+	// OpenBaoAddr is the OpenBao API address. Consulted only when
+	// ShippingSecretStore=bao.
+	OpenBaoAddr string `envconfig:"OPENBAO_ADDR" default:"http://openbao-active.openbao.svc.cluster.local:8200"`
+	// OpenBaoRole is the Kubernetes auth role the OpenBao client logs in
+	// as. Required when ShippingSecretStore=bao — Kubernetes auth cannot
+	// proceed without it, so Validate rejects an empty value in that
+	// mode. Unused otherwise.
+	OpenBaoRole string `envconfig:"OPENBAO_ROLE" default:""`
+	// OpenBaoKVMount is the KV v2 mount name. carriersecrets.BaoPath
+	// currently hardcodes the "kv" mount prefix independently of this
+	// setting, so Validate rejects any other value when
+	// ShippingSecretStore=bao — a mismatch here must fail at boot, not
+	// on the first merchant credential save. Unused otherwise.
+	OpenBaoKVMount string `envconfig:"OPENBAO_KV_MOUNT" default:"kv"`
 
 	// --- Merchant device push (mobile-admin) ---
 	// PushEventsTopic is the Pub/Sub topic merchant notifications are
@@ -291,6 +311,28 @@ var (
 		"marketplace config: ENCRYPTION_MODE must be \"aes\" when ENV != \"dev\" (noop stores merchant provider secrets as base64)")
 	ErrEncryptionKeyRequired = errors.New(
 		"marketplace config: ENCRYPTION_KEY must be set when ENCRYPTION_MODE=aes")
+
+	// ErrShippingSecretStoreUnknown guards against a typo silently
+	// leaving the wrong carrier-secret backend primary — checked in
+	// every environment, not just non-dev, since a bad value is a
+	// mistake regardless of ENV.
+	ErrShippingSecretStoreUnknown = errors.New(
+		"marketplace config: SHIPPING_SECRET_STORE must be \"inline\", \"gcpsm\", or \"bao\"")
+	// ErrOpenBaoRoleRequired fires when ShippingSecretStore=bao but
+	// OPENBAO_ROLE is unset — the Kubernetes auth login has no role to
+	// present and cannot succeed.
+	ErrOpenBaoRoleRequired = errors.New(
+		"marketplace config: OPENBAO_ROLE must be set when SHIPPING_SECRET_STORE=bao (kubernetes auth cannot log in without it)")
+	// ErrOpenBaoKVMountUnsupported fires when ShippingSecretStore=bao
+	// and OPENBAO_KV_MOUNT is anything other than "kv". This is a
+	// carry-forward from an earlier task: carriersecrets.BaoPath
+	// hardcodes the "kv/" logical path prefix independently of whatever
+	// mount the OpenBao client is configured with, so a mismatch here
+	// can no longer be expressed inside carriersecrets — every read and
+	// write would fail at runtime with a "does not start with mount"
+	// error on the first merchant credential save instead of at boot.
+	ErrOpenBaoKVMountUnsupported = errors.New(
+		"marketplace config: OPENBAO_KV_MOUNT must be \"kv\" when SHIPPING_SECRET_STORE=bao (carriersecrets.BaoPath currently assumes the \"kv\" mount)")
 )
 
 // Load reads .env (if present) and binds environment variables into Config.
@@ -338,6 +380,12 @@ func Load() (*Config, error) {
 // empty, so an unset env var would ship an open service rather than a
 // broken one — the failure mode we can least afford to discover in prod.
 func (c *Config) Validate() error {
+	// Checked in every environment, including dev — a SHIPPING_SECRET_STORE
+	// typo (or selecting bao without the settings it needs) is a
+	// misconfiguration, not a security posture that dev gets to relax.
+	if err := c.validateShippingSecretStore(); err != nil {
+		return err
+	}
 	if c.Env == "dev" {
 		return nil
 	}
@@ -352,6 +400,28 @@ func (c *Config) Validate() error {
 	}
 	if c.EncryptionKey == "" {
 		return ErrEncryptionKeyRequired
+	}
+	return nil
+}
+
+// validateShippingSecretStore rejects an unrecognised SHIPPING_SECRET_STORE
+// value outright (rather than silently coercing it to the "inline"
+// default) and, when the value is "bao", checks the settings that mode
+// depends on but does not itself have a working fallback for.
+func (c *Config) validateShippingSecretStore() error {
+	switch c.ShippingSecretStore {
+	case "inline", "gcpsm", "bao":
+	default:
+		return fmt.Errorf("%w (got %q)", ErrShippingSecretStoreUnknown, c.ShippingSecretStore)
+	}
+	if c.ShippingSecretStore != "bao" {
+		return nil
+	}
+	if c.OpenBaoRole == "" {
+		return ErrOpenBaoRoleRequired
+	}
+	if c.OpenBaoKVMount != "kv" {
+		return fmt.Errorf("%w (got OPENBAO_KV_MOUNT=%q)", ErrOpenBaoKVMountUnsupported, c.OpenBaoKVMount)
 	}
 	return nil
 }

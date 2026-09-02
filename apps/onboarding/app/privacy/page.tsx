@@ -183,6 +183,12 @@ export default function PrivacyPolicyPage() {
             <strong>Backups:</strong> rotated on a schedule not exceeding 90
             days; deletion propagates on the next rotation.
           </li>
+          <li>
+            <strong>Journal subscribers:</strong> if you&rsquo;ve given us
+            your email to hear about new Journal posts, we keep it until
+            you unsubscribe using the link in any Journal email, or ask us
+            to remove it directly.
+          </li>
         </ul>
         <p>
           You may request earlier deletion under section 8.

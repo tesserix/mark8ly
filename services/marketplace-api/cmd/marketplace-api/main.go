@@ -317,6 +317,12 @@ func main() {
 	// tenant-free record is not on mode.Storefront.
 	journalSubscribeHandler := public.NewJournalSubscribeHandler(
 		journal.NewRepository(conn), journal.NewRateLimiter(), log)
+	// Erasure counterpart to journalSubscribeHandler (migration 000125)
+	// — a separate journal.RateLimiter instance rather than sharing
+	// journalSubscribeHandler's, so a burst against one endpoint can't
+	// lock a subscriber out of the other.
+	journalUnsubscribeHandler := public.NewJournalUnsubscribeHandler(
+		journal.NewRepository(conn), journal.NewRateLimiter(), log)
 
 	// ─── Email templates loader (B1f) ───────────────────────────────────
 	// DB-backed templates with embedded fallback. tesserix-home authors
@@ -2229,8 +2235,9 @@ func main() {
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
 		public.RegisterPublic(r.Group("/api/v1"), public.PublicDeps{
-			DelhiveryWebhookHandler: delhiveryWebhookHandler,
-			JournalSubscribeHandler: journalSubscribeHandler,
+			DelhiveryWebhookHandler:   delhiveryWebhookHandler,
+			JournalSubscribeHandler:   journalSubscribeHandler,
+			JournalUnsubscribeHandler: journalUnsubscribeHandler,
 		})
 		if brandingSeeder != nil {
 			brandingSeeder.Register(r.Group("/api/v1/test"))
@@ -2378,8 +2385,9 @@ func main() {
 			// handler shares shipments/secrets wiring with the admin
 			// ShipmentsHandler.
 			public.RegisterPublic(engine.Group("/api/v1"), public.PublicDeps{
-				DelhiveryWebhookHandler: delhiveryWebhookHandler,
-				JournalSubscribeHandler: journalSubscribeHandler,
+				DelhiveryWebhookHandler:   delhiveryWebhookHandler,
+				JournalSubscribeHandler:   journalSubscribeHandler,
+				JournalUnsubscribeHandler: journalUnsubscribeHandler,
 			})
 			if countryPublicHandler != nil {
 				engine.GET("/api/v1/public/supported-countries", countryPublicHandler.ListSupported)

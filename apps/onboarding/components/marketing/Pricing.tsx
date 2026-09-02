@@ -72,6 +72,7 @@ const PLAN_META: readonly PlanMeta[] = [
       '15,000 campaign emails / mo',
       'Full colour palette & announcement bar',
       'Your own domain',
+      'Read-only API',
     ],
   },
   {

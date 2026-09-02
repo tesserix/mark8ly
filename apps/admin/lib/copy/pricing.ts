@@ -92,6 +92,7 @@ export const pricingCopy = {
         '15,000 campaign emails / mo',
         'Full colour palette & announcement bar',
         'Your own domain',
+        'Read-only API',
       ],
     },
     {

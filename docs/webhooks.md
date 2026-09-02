@@ -8,6 +8,19 @@ verify the signature, and what your endpoint needs to handle.
 
 Webhooks are available on every plan. There is no gating by tier.
 
+**Completing the loop needs the read-only API.** A delivery body carries only
+the event name, the aggregate id and a timestamp — deliberately, so no customer
+data is sent to a merchant-supplied URL and a retry can never deliver a stale
+copy of an entity. To act on an event you fetch the entity from the REST API
+using the id. The read-only API is available on **Starter, Studio and Pro**
+(widened to Starter in #585 precisely so every plan that can register a webhook
+can also resolve what it delivers).
+
+On **Trial**, the read-only API is not enabled. Trial webhooks still work as
+pure signals — ping a Slack channel, increment a counter, prompt someone to
+open admin — but a Trial integration cannot fetch the order behind an
+`order.placed` until the store is on a paid plan.
+
 Subscriptions, deliveries, replay and test sends are all managed from
 **Admin → Settings → Webhooks**.
 

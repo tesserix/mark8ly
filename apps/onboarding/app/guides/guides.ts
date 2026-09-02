@@ -111,7 +111,7 @@ export const GUIDES: ReadonlyArray<Guide> = [
       { type: "h2", text: "4. Get paid properly" },
       {
         type: "p",
-        text: "Make sure checkout supports how your customers actually pay — cards, and where relevant local methods like UPI or wallets. The cost of taking money is your payment processor's fee (roughly 2% for UPI, 2–3% for cards). Watch for platforms that add their own percentage on top of that; over a year, that skim is real money out of a small margin.",
+        text: "Make sure checkout supports how your customers actually pay — cards, and where relevant local methods like UPI or wallets. The cost of taking money is your payment gateway's fee (roughly 2% for UPI, 2–3% for cards — UPI's own merchant discount rate is nil, so that 2% is the gateway's charge rather than a cost of UPI). Watch for platforms that add their own percentage on top of that; over a year, that skim is real money out of a small margin.",
       },
       { type: "h2", text: "5. Tell people — then keep the ones who buy" },
       {

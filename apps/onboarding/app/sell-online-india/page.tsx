@@ -78,6 +78,35 @@ export default function SellOnlineIndiaPage() {
           ],
         },
         {
+          heading: "The GST and gateway maths nobody puts on the pricing page",
+          body: [
+            "Two things make selling online in India cost more than the headline rate suggests, and neither appears in most comparisons.",
+            "The first is that Shopify Payments is not available in India \u2014 Stripe, which powers it, has not launched here. Indian merchants therefore have to use a third-party gateway such as Razorpay, which is precisely the case where Shopify Basic adds its 2% platform fee. On a Shopify store in India that 2% is not an avoidable option; it is unavoidable, and it sits on top of your gateway's own rate.",
+            "The second is GST. Payment gateway fees attract 18% GST, so a quoted 2% gateway rate costs 2.36% once tax is applied. If you are GST-registered you can generally claim that back as input tax credit, but it is still cash out of the account first, and it is rarely mentioned when a rate is quoted at you.",
+          ],
+          breakdown: {
+            caption: "\u20b91,00,000 of monthly sales, Shopify Basic with a third-party gateway",
+            rows: [
+              { label: "Shopify platform fee", amount: "\u20b92,000", note: "2%, unavoidable \u2014 Shopify Payments is not available in India" },
+              { label: "Gateway fee", amount: "\u20b92,000", note: "around 2%, varies by method and provider" },
+              { label: "GST on the gateway fee", amount: "\u20b9360", note: "18%, reclaimable as input credit if you are registered" },
+            ],
+            total: { label: "Before the subscription", amount: "\u20b94,360", note: "The \u20b92,000 platform fee is the half that buys you nothing." },
+            source: {
+              label: "Shopify's published pricing",
+              url: "https://www.shopify.com/pricing",
+            },
+          },
+        },
+        {
+          heading: "UPI itself costs nothing, and that surprises people",
+          body: [
+            "The merchant discount rate on person-to-merchant UPI payments has been nil since January 2020, under Section 10A of the Payment and Settlement Systems Act, 2007 and Section 269SU of the Income-tax Act, 1961. Accepting UPI is not, in the regulated sense, a cost at all.",
+            "What you pay is your gateway's own fee. Razorpay's published pricing states it plainly \u2014 \u201cZero MDR \u2014 2% platform fee applies\u201d \u2014 the same 2% it charges on cards and wallets. Knowing which of the two you are being charged is worth something, because only one of them is anyone's to negotiate.",
+            "Worth watching: the Taxation and Other Laws (Amendment) Bill, 2026 amended the Act to allow MDR to be notified above a turnover threshold. Neither the rate nor the threshold has been set, and smaller merchants are expected to remain exempt, but it is no longer a settled zero.",
+          ],
+        },
+        {
           heading: "Start today, keep everything",
           body: [
             "You don't need a developer. If you can write an email, you can open a store and be selling by the end of the afternoon — and real humans answer when you get stuck.",

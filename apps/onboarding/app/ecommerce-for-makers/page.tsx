@@ -73,8 +73,19 @@ export default function EcommerceForMakersPage() {
         {
           heading: "Margins that survive the sale",
           body: [
-            "When you make things by hand, every percentage point matters. Mark8ly adds nothing to your sales — no platform fee, no per-order surcharge. Your processor takes their standard rate (about 2% for UPI, 2–3% for cards) and that's it.",
+            "When you make things by hand, every percentage point matters. Mark8ly adds nothing to your sales — no platform fee, no per-order surcharge. Your gateway takes its standard rate (about 2% for UPI, 2–3% for cards) and that's it.",
             "The Starter plan is priced for a first shop and still carries unlimited products and orders — list a considered range or a deep archive, it costs the same. What you gain further up is more storefronts, more images per product, and deeper API access.",
+          ],
+        },
+        {
+          heading: "What a maker's storefront needs that a generic one doesn't",
+          body: [
+            "Most storefront software is built around a catalogue: many products, many variants, consistent stock, photography shot to a template. Handmade work is the opposite of nearly all of that, and the mismatch shows up as daily friction rather than as a missing feature.",
+            "A maker often has one of a thing. Not low stock \u2014 one. A platform that treats a sold-out listing as an error state, or pushes you to restock, is describing a business you are not running. Made-to-order work has the reverse problem: no stock number is meaningful, and what the buyer needs to know is how long it will take.",
+            "Variants are physical rather than a dropdown. Ring sizes, timber grain, dye lots and glaze results are not interchangeable options behind one photograph \u2014 the variation is frequently the reason someone is buying. A storefront that hides it behind a swatch is hiding the work.",
+            "Photography is doing the job a customer's hands would do. Texture, scale and colour accuracy carry the sale, which is why generous, uncropped images matter more here than in most categories, and why a template that squeezes everything into a uniform square costs real money.",
+            "And postage is genuinely hard: one-off dimensions, fragile pieces, and a real risk of quoting a flat rate that quietly eats the margin on the heaviest item.",
+            "None of this is exotic. It is just a different shape of business from the one most ecommerce software was designed around, and it is the shape we built for.",
           ],
         },
         {

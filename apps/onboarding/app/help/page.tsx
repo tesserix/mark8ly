@@ -105,7 +105,7 @@ const CATEGORIES: ReadonlyArray<FaqCategory> = [
       {
         question: "Does Mark8ly take a cut of my sales?",
         answer:
-          "No. We don't add a platform transaction fee on any plan. You pay only your payment processor's standard rate — roughly 2% for UPI and 2–3% for cards — and that's the entire cost of taking a payment.",
+          "No. We don't add a platform transaction fee on any plan. You pay only your payment gateway's standard rate — roughly 2% for UPI and 2–3% for cards — and that's the entire cost of taking a payment.",
       },
       {
         question: "What's the difference between Starter, Studio, and Pro?",

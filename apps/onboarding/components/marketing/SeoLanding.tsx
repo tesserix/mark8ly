@@ -25,10 +25,46 @@ export interface SeoComparisonRow {
   them: string;
 }
 
+export interface SeoBreakdownRow {
+  label: string;
+  amount: string;
+  /** What the figure applies to, where that is not obvious. */
+  note?: string;
+}
+
+/**
+ * A worked cost example.
+ *
+ * These pages were ~850 words each, and roughly 700 of those were the
+ * same fee philosophy with the competitor's name swapped in
+ * (tesserix/mark8ly#602). Shared boilerplate across near-identical
+ * pages is a low-quality-content marker, and more to the point it is
+ * not useful: "we don't take a cut" is a claim, whereas arithmetic a
+ * seller can check against their own last order is evidence.
+ *
+ * `source` is required, not optional. Every number here is a claim
+ * about somebody else's pricing, and an uncited one is worth less than
+ * no number at all — it invites a reader to assume we picked whichever
+ * figure flattered us.
+ */
+export interface SeoBreakdown {
+  /** Names the example, e.g. "A $53 order — a $45 item plus $8 shipping". */
+  caption: string;
+  rows: ReadonlyArray<SeoBreakdownRow>;
+  total: SeoBreakdownRow;
+  source: { label: string; url: string };
+}
+
 export interface SeoSection {
   heading: string;
   /** One or more body paragraphs. */
   body: ReadonlyArray<string>;
+  /**
+   * Optional worked figures, rendered after the body. Use this for
+   * something that would be *wrong* on the sibling pages — Etsy's
+   * per-order fees do not belong on the Shopify page.
+   */
+  breakdown?: SeoBreakdown;
 }
 
 export interface SeoLandingProps {
@@ -47,6 +83,71 @@ export interface SeoLandingProps {
   faq: ReadonlyArray<FaqItem>;
   ctaHeading: ReactNode;
   ctaBody: string;
+}
+
+/**
+ * Worked figures. Hairline rules rather than a bordered card, per the
+ * design context — and a real <table> because this is tabular data, so
+ * a screen reader should be able to navigate it as one.
+ *
+ * `tabular-nums` matters here specifically: the whole point is that the
+ * amounts line up so a reader can add them and check our total.
+ */
+function Breakdown({ breakdown }: { breakdown: SeoBreakdown }) {
+  return (
+    <div className="mt-8 max-w-2xl overflow-x-auto">
+      <table className="w-full border-collapse text-left text-sm">
+        <caption className="mb-4 text-left text-sm text-foreground">
+          {breakdown.caption}
+        </caption>
+        <tbody>
+          {breakdown.rows.map((row) => (
+            <tr key={row.label} className="border-t border-border-subtle">
+              <th
+                scope="row"
+                className="py-3 pr-6 font-normal text-foreground-secondary"
+              >
+                {row.label}
+                {row.note ? (
+                  <span className="block text-foreground-tertiary">
+                    {row.note}
+                  </span>
+                ) : null}
+              </th>
+              <td className="py-3 text-right tabular-nums text-foreground-secondary">
+                {row.amount}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-border">
+            <th scope="row" className="py-3 pr-6 text-left text-foreground">
+              {breakdown.total.label}
+              {breakdown.total.note ? (
+                <span className="block font-normal text-foreground-tertiary">
+                  {breakdown.total.note}
+                </span>
+              ) : null}
+            </th>
+            <td className="py-3 text-right tabular-nums text-foreground">
+              {breakdown.total.amount}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+      <p className="mt-4 text-sm text-foreground-tertiary">
+        Figures from{" "}
+        <a
+          href={breakdown.source.url}
+          className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
+        >
+          {breakdown.source.label}
+        </a>
+        . Rates change — check before relying on them.
+      </p>
+    </div>
+  );
 }
 
 export function SeoLanding({
@@ -203,6 +304,10 @@ export function SeoLanding({
                       {paragraph}
                     </p>
                   ))}
+
+                  {section.breakdown ? (
+                    <Breakdown breakdown={section.breakdown} />
+                  ) : null}
                 </div>
               </article>
             ))}

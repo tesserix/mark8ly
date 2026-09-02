@@ -342,6 +342,7 @@ idempotent via `ADD COLUMN IF NOT EXISTS`.
 |---|---|---|
 | Envelope encryption wrapper | `internal/carriersecrets/store.go` | all carrier-credential reads + writes |
 | GCP SM backend | `internal/carriersecrets/gcp.go` | `SHIPPING_SECRET_STORE=gcpsm` |
+| OpenBao backend | `internal/carriersecrets/bao.go` | `SHIPPING_SECRET_STORE=bao` (a `gcpsm` deployment can still hold already-migrated `bao://` rows — see below) |
 | Delhivery carrier client | `internal/shipping/delhivery.go` | admin label flow, storefront rates, sync, webhook |
 | Admin settings handler | `internal/handlers/admin/settings.go` | PUT `/settings/shipping/:provider` |
 | Auto warehouse-sync push | same file, `syncWarehouseAsync` | post-save, fire-and-forget |
@@ -363,7 +364,7 @@ idempotent via `ADD COLUMN IF NOT EXISTS`.
 | Symptom | Likely cause | First action |
 |---|---|---|
 | Admin banner: "failed to secure shipping configuration" | GCP SM create / add-version call denied | `kubectl logs` admin pod, check `secretmanager.*` IAM on the SA |
-| `****0Q==` shown as the API-key tail | mask path is reading ciphertext instead of plaintext | confirm `SHIPPING_SECRET_STORE=gcpsm` env var; re-save the key |
+| `****0Q==` shown as the API-key tail | mask path is reading ciphertext instead of plaintext | confirm `SHIPPING_SECRET_STORE` is set correctly for this deployment (`gcpsm` or `bao`, not unset/`inline`); re-save the key. Note: setting it to `gcpsm` does NOT fix this if the row already migrated to a `bao://` reference — `ChainStore` still routes that read to OpenBao regardless of which mode is configured, so also check `OPENBAO_ROLE`/`OPENBAO_ADDR` are set before assuming a `gcpsm` re-save will help |
 | 500 on `/checkout/shipping-rates` with `PermissionDenied` | storefront SA missing WI annotation | verify `iam.gke.io/gcp-service-account` on KSA |
 | `json: cannot unmarshal array into Go struct field ... remarks` | `dlCreateResponse.Remarks` typed as string | recent regression — should not recur after `[]string` change |
 | "pincode not serviceable" on a route you think should work | Delhivery service tier | one.delhivery.com → Pricing → enable the OD pair |

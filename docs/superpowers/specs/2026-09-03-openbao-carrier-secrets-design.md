@@ -278,6 +278,46 @@ ServiceAccount, the only extra cost is its NetworkPolicy label.
 
 Every new test is verified to fail before it passes.
 
+## Operator runbook: flipping SHIPPING_SECRET_STORE
+
+**To move a deployment to OpenBao:** set `SHIPPING_SECRET_STORE=bao`, plus
+`OPENBAO_ROLE` (the Kubernetes auth role for this pod's ServiceAccount —
+see the grant table above) and, if the default doesn't match this
+cluster's OpenBao, `OPENBAO_ADDR`. `OPENBAO_KV_MOUNT` must stay `"kv"`
+(`carriersecrets.BaoPath` hardcodes that mount prefix; `pkg/config.Validate`
+rejects anything else at boot). `GCP_PROJECT_ID` must also stay set — a
+bao-primary `ChainStore` still routes legacy `gsm://` rows through GCP SM.
+
+**To roll back from `bao` to `gcpsm`:** flip `SHIPPING_SECRET_STORE` back
+to `gcpsm` — **and leave `OPENBAO_ROLE` and `OPENBAO_ADDR` set**. This is
+the constraint the whole-branch review's Blocker 1 exists to enforce:
+`ChainStore.Get`/`Destroy` route a `bao://` reference to OpenBao **by
+prefix**, not by which backend is configured as primary. Any tenant whose
+credential already migrated to `bao://` is still resolved through OpenBao
+after the rollback — removing the OpenBao settings at the same time would
+make that read fail hard (`gcpsm` has no cache to serve a stale value, so
+this is not a graceful degradation — it is a checkout/shipping-rate/
+webhook outage for every already-migrated tenant). `pkg/config.Validate`
+enforces this by requiring `OPENBAO_ROLE`/`OPENBAO_ADDR` whenever
+`SHIPPING_SECRET_STORE != "inline"`, not only when it is `"bao"` — a
+`gcpsm` deployment with those settings unset fails at boot instead of
+failing individual reads later.
+
+**Reading which mode is live:** `carriersecrets: chain store online` logs
+`primary` and `cached` at boot (`cmd/marketplace-api/main.go`). The
+`carriersecrets_gsm_fallback_read` counter tells you whether any reads are
+still landing on GCP SM under bao-primary; it is measured at the
+`ChainStore` layer, below the cache, so its magnitude under-counts true
+volume by roughly the cache hit ratio, but "durably zero" still means "no
+gsm:// reads happened" — see the comment on `FallbackReadMetric`.
+
+**Rolling all the way back to `inline`** (abandoning both backends) is a
+separate, simpler path: it does not go through `ChainStore` at all
+(`main.go`'s switch on `SHIPPING_SECRET_STORE` falls to the `InlineStore`
+branch), so it has no equivalent OpenBao-settings constraint — but it also
+does not resolve any `gsm://` or `bao://` reference, so it is only safe
+for a deployment where every row is still inline (`noop:`/`aes:`).
+
 ## Out of scope
 
 `internal/breakglass/` and `internal/arbitrage/` also use GCP Secret Manager,

@@ -22,7 +22,7 @@ import { TaxTab } from "./TaxTab";
 
 export interface TaxSectionProps {
   /**
-   * Optional: this section renders on the General tab now, so it runs for
+   * Optional: this section renders inline on the product page, so it runs for
    * every product — including callers that never had a country to give.
    * An unknown country falls back to the generic strategy rather than
    * taking the whole form down with it.

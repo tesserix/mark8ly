@@ -133,3 +133,27 @@ describe("generateVariants", () => {
     expect(result.variants).toHaveLength(500);
   });
 });
+
+// 8 of the-bondi-store's 12 products have variants with no product_options
+// rows. Their variants are keyed by id (`id:<uuid>`, see ProductForm) since
+// there are no option values to compose a key from. Adding a first option
+// therefore matches none of them, and every one is returned for deletion.
+// This is the behaviour the Options section's copy warns about; the test
+// exists so the warning cannot quietly stop being true.
+describe("generateVariants — adding a first option to option-less variants", () => {
+  it("returns every existing variant for removal, because no key can match", () => {
+    const existing = [
+      { id: "v1", key: "id:v1", price: "189", sku: "ROBE-S", stock: 6, weight: 0 },
+      { id: "v2", key: "id:v2", price: "189", sku: "ROBE-M", stock: 4, weight: 0 },
+    ];
+
+    const { variants, removedIds } = generateVariants(
+      [{ name: "Size", values: ["S", "M"] }],
+      existing as never,
+      { price: "189", sku: "", stock: 0, weight: 0 },
+    );
+
+    expect(variants.map((v) => v.key)).toEqual(["Size=S", "Size=M"]);
+    expect(removedIds.sort()).toEqual(["v1", "v2"]);
+  });
+});

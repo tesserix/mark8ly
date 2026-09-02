@@ -32,6 +32,12 @@ type Subscriber struct {
 	Email     string    `gorm:"column:email;type:varchar(254);not null" json:"email"`
 	Source    string    `gorm:"column:source;type:varchar(40);not null;default:journal" json:"source"`
 	CreatedAt time.Time `gorm:"column:created_at;not null;default:now()" json:"created_at"`
+	// UnsubscribeToken is the bearer credential mailed to the
+	// subscriber (out of band — this service never sends the
+	// confirmation email itself) that authorises deleting this row via
+	// POST /journal/unsubscribe. Never serialized to JSON: it must
+	// never come back in any API response after creation.
+	UnsubscribeToken string `gorm:"column:unsubscribe_token;type:char(64);not null" json:"-"`
 }
 
 // TableName pins the GORM table name explicitly rather than relying on

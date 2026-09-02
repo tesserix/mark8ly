@@ -23,6 +23,10 @@ type PublicDeps struct {
 	// soon" page's email capture (#153). Nil-safe, like the others —
 	// absent in test builds that don't wire a DB.
 	JournalSubscribeHandler *JournalSubscribeHandler
+	// JournalUnsubscribeHandler is the erasure counterpart to
+	// JournalSubscribeHandler: it deletes a subscriber row by bearer
+	// token (migration 000125). Nil-safe, like the others.
+	JournalUnsubscribeHandler *JournalUnsubscribeHandler
 }
 
 // RegisterPublic mounts all public (unauthenticated) routes onto the given
@@ -54,5 +58,10 @@ func RegisterPublic(router *gin.RouterGroup, deps PublicDeps) {
 		// share — is the one genuinely tenant-free public surface this
 		// router exposes.
 		router.POST("/journal/subscribe", deps.JournalSubscribeHandler.Subscribe)
+	}
+	if deps.JournalUnsubscribeHandler != nil {
+		// Same tenant-free group, same reasoning as subscribe above:
+		// an unsubscribe token has no tenant to route through either.
+		router.POST("/journal/unsubscribe", deps.JournalUnsubscribeHandler.Unsubscribe)
 	}
 }

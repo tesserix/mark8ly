@@ -9,6 +9,9 @@
  * link across to the commercial comparison pages and /onboarding.
  */
 
+import type { Author } from "@/lib/seo/authors";
+import { MAHESH_SANGAWAR } from "@/lib/seo/authors";
+
 export type GuideBlock =
   | { type: "p"; text: string }
   | { type: "h2"; text: string }
@@ -32,6 +35,16 @@ export type GuideBlock =
 
 export interface Guide {
   slug: string;
+  /**
+   * A named human author, for guides whose claims need one.
+   *
+   * Optional on purpose. Product documentation ("how to connect your
+   * domain") is correctly attributed to the Organization, and inventing
+   * a byline for it would add nothing. Set this only where the named
+   * person's experience genuinely covers the subject — see the note in
+   * lib/seo/authors.ts on why a mismatched byline is worse than none.
+   */
+  author?: Author;
   /** <title> — brand suffix is appended by the layout template. */
   title: string;
   description: string;
@@ -168,6 +181,10 @@ export const GUIDES: ReadonlyArray<Guide> = [
   },
   {
     slug: "accept-upi-payments-online",
+    // The one guide here with a named author. The claims below are about
+    // UPI settlement economics and gateway pricing, which is work this
+    // author actually did rather than a topic we read up on.
+    author: MAHESH_SANGAWAR,
     title: "How to Accept UPI Payments on Your Online Store",
     description:
       "A clear guide to accepting UPI payments online in India — how UPI works at checkout, what it costs, and how to offer it alongside cards and wallets without losing the sale.",

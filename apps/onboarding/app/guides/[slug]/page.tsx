@@ -97,13 +97,27 @@ export default async function GuidePage({ params }: PageProps) {
     description: guide.description,
     datePublished: guide.updated,
     dateModified: guide.updated,
-    // Reference the Organization the root layout already puts on this
-    // page rather than declaring a second one. Google merges same-page
-    // JSON-LD, and the inline copy that used to live here carried no
-    // logo — so the richer node was being shadowed by a poorer duplicate
-    // (tesserix/mark8ly#600). If these guides ever gain a named human
-    // author, only `publisher` keeps the @id.
-    author: { "@id": ORGANIZATION_ID },
+    // `publisher` always references the Organization the root layout
+    // already puts on this page, rather than declaring a second one.
+    // Google merges same-page JSON-LD, and the inline copy that used to
+    // live here carried no logo — so the richer node was being shadowed
+    // by a poorer duplicate (tesserix/mark8ly#600).
+    //
+    // `author` is the Person where the guide names one, and falls back
+    // to the Organization otherwise. Both are emitted in full rather
+    // than as bare @id references, because the Person node exists
+    // nowhere else on the page — an @id pointing at nothing resolves to
+    // nothing, which is worse than no author at all.
+    author: guide.author
+      ? {
+          "@type": "Person",
+          "@id": guide.author.id,
+          name: guide.author.name,
+          jobTitle: guide.author.jobTitle,
+          description: guide.author.bio,
+          sameAs: [...guide.author.sameAs],
+        }
+      : { "@id": ORGANIZATION_ID },
     publisher: { "@id": ORGANIZATION_ID },
     mainEntityOfPage: { "@type": "WebPage", "@id": url },
     // Mirror any rendered "Sources" list into `citation`, so the
@@ -131,6 +145,17 @@ export default async function GuidePage({ params }: PageProps) {
         {guide.blocks.map((block, i) => (
           <Block key={i} block={block} />
         ))}
+
+        {guide.author ? (
+          // Rendered, not schema-only. A byline a reader cannot see is
+          // markup for crawlers; the point of naming someone is that a
+          // person deciding whether to trust this can weigh who wrote it.
+          <p className="mt-10 border-t border-border-subtle pt-6 text-sm text-foreground-secondary">
+            <span className="text-foreground">{guide.author.name}</span>
+            {" — "}
+            {guide.author.bio}
+          </p>
+        ) : null}
 
         <p className="mt-4 text-sm text-foreground-tertiary">
           Last updated{" "}

@@ -166,7 +166,7 @@ path "kv/metadata/mark8ly/marketplace-api/tenants/*" { capabilities = ["read","l
 ```
 
 **Correction from the whole-branch review:** "storefront handlers only
-read" describes the *grant*, not the *call pattern*. Eight storefront call
+read" describes the *grant*, not the *call pattern*. Ten storefront call
 sites (`shipping_rates.go:348,364`, `checkout_ext.go:130,146,171,187,212`,
 `payment_methods.go:83`, `webhooks.go:145,161`) call `MaybeRewrap` on every
 resolve, and `ChainStore.MaybeRewrap` calls `Put` — a write — to lazily

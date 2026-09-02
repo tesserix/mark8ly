@@ -113,7 +113,23 @@ test("no pricing surface advertises a limit or capability the service lacks", ()
   }
 });
 
-test("no pricing surface still sells webhooks or custom code injection (#544)", () => {
+/**
+ * #544 originally caught both "webhooks" and "code injection" as sold
+ * claims with nothing behind them. Outbound webhooks shipped in #562, so
+ * that half of the guard is gone — see the webhook assertion's history in
+ * git blame if you're looking for it.
+ *
+ * Custom code injection stays covered here on its own, and deliberately:
+ * it isn't merely unbuilt (the way webhooks briefly were), it's excluded by
+ * design. Arbitrary merchant-authored `<script>` in a storefront is XSS
+ * against that storefront's customers, and shipping it would permanently
+ * weaken the storefront CSP. Nothing schedules it, so this assertion isn't
+ * stale — it is guarding against reintroducing a claim the product should
+ * never make. If webhooks copy is ever touched again, remember it is not a
+ * tier differentiator (available on every plan), so it does not belong as
+ * a Studio-only bullet even though this guard no longer blocks it.
+ */
+test("no pricing surface still sells custom code injection (#544)", () => {
   const surfaces: ReadonlyArray<[string, string]> = [
     ["onboarding Pricing.tsx", copyOnly(read("apps/onboarding/components/marketing/Pricing.tsx"))],
     ["admin lib/copy/pricing.ts", copyOnly(read("apps/admin/lib/copy/pricing.ts"))],
@@ -121,13 +137,15 @@ test("no pricing surface still sells webhooks or custom code injection (#544)", 
   ];
 
   for (const [name, src] of surfaces) {
-    for (const claim of [/webhook/i, /code injection/i]) {
+    for (const claim of [/code injection/i]) {
       expect(
         src,
-        `${name} still advertises ${claim.source}. Neither exists server-side: ` +
-          `no column stores a merchant callback URL, and FeatureCustomCodeInjection ` +
-          `is a forward-compat hedge no handler reads (#544). Outbound webhooks are ` +
-          `tracked in #562 — restore the copy when they ship, not before.`,
+        `${name} still advertises ${claim.source}. FeatureCustomCodeInjection is a ` +
+          `forward-compat hedge no handler reads (#544), and it is excluded by design, ` +
+          `not merely unbuilt: arbitrary merchant <script> in a storefront is XSS ` +
+          `against that storefront's customers and would permanently weaken the ` +
+          `storefront CSP. Unlike webhooks (#562, shipped), there is no ticket to ` +
+          `restore this copy — it should not come back.`,
       ).not.toMatch(claim);
     }
   }

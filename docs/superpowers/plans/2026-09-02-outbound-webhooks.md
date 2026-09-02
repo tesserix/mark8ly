@@ -1872,7 +1872,7 @@ git commit -m "feat(webhooks): admin API for subscriptions, test sends and deliv
 ### Task 8: Delivery pruning
 
 **Files:**
-- Create: `services/marketplace-api/cmd/webhook-prune-cron/main.go`
+- Create: `services/marketplace-api/cmd/webhook-delivery-prune-cron/main.go`
 - Test: `services/marketplace-api/internal/webhook/prune_integration_test.go`
 - Modify: root `Makefile` (add `./internal/webhook/...` to `test-int` if Task 2 didn't)
 
@@ -1924,7 +1924,7 @@ Copy the structure of `cmd/refund-sweep-cron/main.go`: load config, open the DB,
 - [ ] **Step 4: Run and watch it pass, then commit**
 
 ```bash
-git add services/marketplace-api/cmd/webhook-prune-cron/ services/marketplace-api/internal/webhook/prune_integration_test.go Makefile
+git add services/marketplace-api/cmd/webhook-delivery-prune-cron/ services/marketplace-api/internal/webhook/prune_integration_test.go Makefile
 git commit -m "feat(webhooks): prune delivery rows past the 30-day retention window"
 ```
 

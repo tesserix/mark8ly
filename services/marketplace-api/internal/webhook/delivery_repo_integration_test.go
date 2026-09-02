@@ -81,3 +81,54 @@ func TestClaimDue_PicksTheRowBackUpOnceTheLeaseExpires(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, again, 1, "an expired lease must make the row claimable again")
 }
+
+// TestFanOut_InsertsABatchLargerThanThePostgresParameterLimit covers the
+// HIGH found reviewing the batched fan-out. Batching moved FanOut from one
+// statement per outbox row to ONE statement for the whole batch, so its row
+// count became batch x matching_subscriptions. At 5 bound parameters per
+// row, Postgres's 65535-parameter ceiling is 13107 rows — reachable with
+// ~132 enabled subscriptions on one store for one event type at batch=100,
+// and nothing caps subscription count.
+//
+// The failure mode is what makes this load-bearing rather than cosmetic: a
+// FanOut error returns before advanceCursor, so the cursor never moves, the
+// same batch is re-read every 5s, and NO tenant's webhooks dispatch at all.
+// One merchant with too many subscriptions would take the subsystem down
+// globally — the poison-pill shape internal/outbox documents removing in
+// #374.
+//
+// Driving it through real subscriptions would need 13k of them; the
+// parameter count is per-STATEMENT and does not care where the rows came
+// from, so one subscription and distinct outbox_event_ids reproduces it
+// exactly.
+func TestFanOut_InsertsABatchLargerThanThePostgresParameterLimit(t *testing.T) {
+	db := testdb.NewDB(t, "webhook_deliveries", "webhook_subscriptions", "outbox_events")
+	subs := webhook.NewSubscriptionRepo(db)
+	deliveries := webhook.NewDeliveryRepo(db)
+	ctx := context.Background()
+
+	sub := newSub(t, subs, uuid.New(), []string{"order.placed"})
+
+	// 5 params per row, so 65535/5 = 13107 is the ceiling. Go just past it.
+	const rows = 13200
+	pending := make([]webhook.Delivery, 0, rows)
+	for i := 0; i < rows; i++ {
+		pending = append(pending, webhook.Delivery{
+			SubscriptionID: sub.ID, OutboxEventID: uuid.New(), EventType: "order.placed",
+			AggregateID: uuid.New(), Status: webhook.StatusPending,
+		})
+	}
+
+	n, err := deliveries.FanOut(ctx, pending)
+	require.NoError(t, err, "a batch past the parameter limit must not error — an error here stalls dispatch for every tenant, forever")
+	require.Equal(t, rows, n, "every row must be inserted, and RowsAffected summed across chunks")
+
+	var count int64
+	require.NoError(t, db.Model(&webhook.Delivery{}).Count(&count).Error)
+	require.EqualValues(t, rows, count)
+
+	// Chunking must not break idempotency: re-running inserts nothing.
+	again, err := deliveries.FanOut(ctx, pending)
+	require.NoError(t, err)
+	require.Equal(t, 0, again, "ON CONFLICT DO NOTHING must still hold across chunk boundaries")
+}

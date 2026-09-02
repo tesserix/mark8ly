@@ -240,10 +240,17 @@ func TestDispatcher_TickLeavesAnAlreadyAdvancedCursorAlone(t *testing.T) {
 // no dead-letter, just silent permanent delivery loss. Replica clock skew
 // on `created_at` (it comes from the pod clock) produces the same shape.
 //
-// The lookback window is what closes it: reads also take anything newer
-// than now() - DispatchLookback regardless of the cursor, and the cursor
-// itself never advances past that boundary. Idempotent fan-out is what
-// makes the resulting re-reads free.
+// Two watermarks are what close it, and this test drives both. The forward
+// cursor (last_event_*) advances freely to the newest row each tick reads,
+// so a normal event is dispatched promptly — and so a late arrival IS
+// stepped over, which is the first half of what is asserted below. The
+// sweep watermark (swept_*) then trails through the region older than
+// now() - DispatchLookback, where every transaction that could have written
+// a row has certainly committed, so the row it missed is picked up exactly
+// once. There is no OR term and no clamp on the forward cursor: each pass
+// has its own LIMIT and advances independently, which is what keeps either
+// from starving the other's backlog. Idempotent fan-out is what makes the
+// overlap between the two passes free.
 func TestDispatcher_DispatchesAnOutboxRowThatBecameVisibleBehindTheCursor(t *testing.T) {
 	db := testdb.NewDB(t, "webhook_deliveries", "webhook_subscriptions", "outbox_events")
 	resetDispatchCursor(t, db)

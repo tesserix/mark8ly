@@ -59,7 +59,7 @@ jobs:
           - service: otto
             directory: services/otto
             coverage: 4
-    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@v2.2.1
+    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@v2.3.0
     with:
       working_directory: ${{ matrix.directory }}
       go_version: 1.26.6
@@ -67,7 +67,7 @@ jobs:
 
   nextjs:
     name: Next.js
-    uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@v2.2.1
+    uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@v2.3.0
     with:
       working_directory: .
       node_version: "22"
@@ -78,12 +78,35 @@ jobs:
         @mark8ly/onboarding
         @repo/ui
         @repo/otto-widget
+      # Two advisories on `image-size`, accepted knowingly (#561).
+      #
+      # There is no version to upgrade to: the advisory range is `<= 2.0.2`
+      # with `first_patched_version: null`, and 2.0.2 is the newest release.
+      # Every published version is affected, so no override or bump exists.
+      #
+      # It reaches this tree only through the mobile apps —
+      # react-native/expo -> metro -> image-size — as bundler tooling. It is
+      # in no web workspace's dependency graph and ships in no web image.
+      # `audit_workspaces` above says as much, but --workspace does not scope
+      # `npm audit`: it walks the hoisted root tree regardless, which is why
+      # this needs an explicit allowlist rather than a narrower list.
+      #
+      # Five other packages (metro, metro-config, metro-transform-worker,
+      # react-native, @react-native/community-cli-plugin) are reported too,
+      # and all six trace back to exactly these two advisories — the gate
+      # tolerates a vulnerability only when EVERY advisory it stems from is
+      # listed, so nothing else is being waved through.
+      #
+      # Remove both ids the moment a patched image-size exists.
+      audit_allowlist: >-
+        GHSA-w3rx-r6r6-pgpr
+        GHSA-5p2g-fcmc-qvqq
     secrets:
       package_read_token: ${{ secrets.GHCR_PAT }}
 
   secrets:
     name: Secrets
-    uses: tesserix/tesserix-workflows/.github/workflows/secret-scan.yml@v2.2.1
+    uses: tesserix/tesserix-workflows/.github/workflows/secret-scan.yml@v2.3.0
 
   integration:
     name: Integration (marketplace-api)
@@ -142,7 +165,7 @@ jobs:
     name: Containers
     if: ${{ github.event_name == 'pull_request' }}
     needs: policy
-    uses: tesserix/tesserix-workflows/.github/workflows/container-ci.yml@v2.2.1
+    uses: tesserix/tesserix-workflows/.github/workflows/container-ci.yml@v2.3.0
     with:
       images: ${{ needs.policy.outputs.images }}
     secrets:
@@ -162,7 +185,7 @@ jobs:
     name: Images
     if: ${{ contains(fromJSON('["push","workflow_dispatch"]'), github.event_name) && github.ref == 'refs/heads/main' }}
     needs: [policy, go, nextjs, secrets]
-    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@v2.2.1
+    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@v2.3.0
     with:
       namespace: tesserix
       images: ${{ needs.policy.outputs.images }}

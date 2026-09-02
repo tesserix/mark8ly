@@ -427,6 +427,9 @@ func TestChainStore_MaybeRewrapUpgradesGSM(t *testing.T) {
 	if bao.createCalls != 1 {
 		t.Errorf("bao.createCalls = %d, want 1", bao.createCalls)
 	}
+	if gcp.totalCalls() != 0 {
+		t.Errorf("gcp saw %d calls, want 0 — MaybeRewrap(primary=Bao) must never touch GCP", gcp.totalCalls())
+	}
 
 	// The rewrap must actually be readable back from Bao.
 	got, err := store.Get(context.Background(), newRef)
@@ -462,5 +465,152 @@ func TestChainStore_MaybeRewrapNoopForBaoRef(t *testing.T) {
 	}
 	if bao.totalCalls() != 0 || gcp.totalCalls() != 0 {
 		t.Errorf("MaybeRewrap() no-op must not touch either backend; bao=%d gcp=%d", bao.totalCalls(), gcp.totalCalls())
+	}
+}
+
+// TestChainStore_PutPrimaryGCP: with Primary=BackendGCP, Put returns a
+// gsm:// reference and the Bao backend records ZERO calls. This is the
+// configuration SHIPPING_SECRET_STORE=gcpsm actually constructs — the
+// default every existing deployment takes the moment ChainStore ships —
+// so it needs the same coverage as the Bao-primary path.
+func TestChainStore_PutPrimaryGCP(t *testing.T) {
+	scope := testScope()
+	bao := newRecordingClient()
+	gcp := newRecordingClient()
+	store := NewChainStore(ChainConfig{
+		Bao:          bao,
+		GCP:          gcp,
+		Primary:      BackendGCP,
+		GCPProjectID: testProjectID,
+		GCPPrefix:    testPrefix,
+	})
+
+	ref, err := store.Put(context.Background(), scope, "top-secret")
+	if err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	want := GSMRefPrefix + SecretResource(testProjectID, testPrefix, scope)
+	if ref != want {
+		t.Errorf("Put() = %q, want %q", ref, want)
+	}
+	if gcp.createCalls != 1 {
+		t.Errorf("gcp.createCalls = %d, want 1", gcp.createCalls)
+	}
+	if bao.totalCalls() != 0 {
+		t.Errorf("bao saw %d calls, want 0 — Put(primary=GCP) must never touch Bao", bao.totalCalls())
+	}
+}
+
+// TestChainStore_PutDoesNotFallBackOnGCPError is the mirror of
+// TestChainStore_PutDoesNotFallBackOnBaoError, on the branch that actually
+// ships by default (SHIPPING_SECRET_STORE=gcpsm constructs
+// Primary=BackendGCP). With GCP down, Put must fail — never silently fall
+// back to writing Bao.
+func TestChainStore_PutDoesNotFallBackOnGCPError(t *testing.T) {
+	scope := testScope()
+	gcpErr := errors.New("gcp sm: unavailable")
+	bao := newRecordingClient()
+	gcp := &erroringClient{err: gcpErr}
+	store := NewChainStore(ChainConfig{
+		Bao:          bao,
+		GCP:          gcp,
+		Primary:      BackendGCP,
+		GCPProjectID: testProjectID,
+		GCPPrefix:    testPrefix,
+	})
+
+	ref, err := store.Put(context.Background(), scope, "top-secret")
+	if err == nil {
+		t.Fatal("Put() error = nil, want error — GCP SM is down")
+	}
+	if !errors.Is(err, gcpErr) {
+		t.Errorf("Put() error = %v, want it to wrap %v", err, gcpErr)
+	}
+	if ref != "" {
+		t.Errorf("Put() ref = %q, want \"\" on error", ref)
+	}
+	if bao.totalCalls() != 0 {
+		t.Fatalf("bao saw %d calls — Put() fell back to Bao after GCP failed, which must never happen", bao.totalCalls())
+	}
+}
+
+// TestChainStore_GCPPrimaryDoesNotIncrementFallbackCounter: under
+// GCP-primary, reading a gsm:// reference is reading from the CURRENT
+// primary, not a fallback — it must not increment the fallback counter.
+// That counter means "we read from the OLD backend while the NEW one is
+// primary"; firing it here would inflate the only metric a later phase
+// uses to decide GCP Secret Manager can be decommissioned.
+func TestChainStore_GCPPrimaryDoesNotIncrementFallbackCounter(t *testing.T) {
+	scope := testScope()
+	bao := newRecordingClient()
+	gcp := newRecordingClient()
+	resource := SecretResource(testProjectID, testPrefix, scope)
+	if err := gcp.CreateOrAddVersion(context.Background(), resource, []byte("current-secret")); err != nil {
+		t.Fatalf("seed gcp: %v", err)
+	}
+
+	calls := 0
+	store := NewChainStore(ChainConfig{
+		Bao:          bao,
+		GCP:          gcp,
+		Primary:      BackendGCP,
+		GCPProjectID: testProjectID,
+		GCPPrefix:    testPrefix,
+		Counter: func(string, int64) {
+			calls++
+		},
+	})
+
+	plaintext, err := store.Get(context.Background(), GSMRefPrefix+resource)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if plaintext != "current-secret" {
+		t.Fatalf("Get() = %q, want %q", plaintext, "current-secret")
+	}
+	if calls != 0 {
+		t.Errorf("counter called %d times, want 0 — a gsm:// read under GCP-primary is not a fallback", calls)
+	}
+}
+
+// TestChainStore_MaybeRewrapUnderGCPPrimary pins the decision that
+// MaybeRewrap is symmetric: under GCP-primary it migrates a bao:// reference
+// back to gsm://. This is the rollback path — see the doc comment on
+// MaybeRewrap. The GCP backend must be the only one written.
+func TestChainStore_MaybeRewrapUnderGCPPrimary(t *testing.T) {
+	scope := testScope()
+	bao := newRecordingClient()
+	gcp := newRecordingClient()
+	store := NewChainStore(ChainConfig{
+		Bao:          bao,
+		GCP:          gcp,
+		Primary:      BackendGCP,
+		GCPProjectID: testProjectID,
+		GCPPrefix:    testPrefix,
+	})
+
+	oldRef := FormatBaoReference(scope)
+	newRef, changed := store.MaybeRewrap(context.Background(), oldRef, scope, "the-secret")
+	if !changed {
+		t.Fatal("MaybeRewrap() changed = false, want true for a bao:// ref when primary=GCP")
+	}
+	want := GSMRefPrefix + SecretResource(testProjectID, testPrefix, scope)
+	if newRef != want {
+		t.Errorf("MaybeRewrap() newRef = %q, want %q", newRef, want)
+	}
+	if gcp.createCalls != 1 {
+		t.Errorf("gcp.createCalls = %d, want 1", gcp.createCalls)
+	}
+	if bao.totalCalls() != 0 {
+		t.Errorf("bao saw %d calls, want 0 — MaybeRewrap(primary=GCP) must never touch Bao", bao.totalCalls())
+	}
+
+	// The rewrap must actually be readable back from GCP.
+	got, err := store.Get(context.Background(), newRef)
+	if err != nil {
+		t.Fatalf("Get(newRef) error = %v", err)
+	}
+	if got != "the-secret" {
+		t.Errorf("Get(newRef) = %q, want %q", got, "the-secret")
 	}
 }

@@ -214,9 +214,21 @@ func (c *ChainStore) Destroy(ctx context.Context, reference string) error {
 	}
 }
 
-// MaybeRewrap upgrades oldRef to the primary backend's format when it is
-// NOT already in that format, writing through Put (so it inherits Put's
-// no-fallback guarantee) and returning the new reference and true. Returns
+// MaybeRewrap migrates oldRef toward the CURRENT primary backend's format,
+// in whichever direction that is — it is symmetric, not one-way. Under
+// Bao-primary that upgrades gsm:// -> bao://; under GCP-primary it moves
+// bao:// -> gsm://. This is deliberate and it is what makes rollback safe:
+// if a deployment flips SHIPPING_SECRET_STORE (or the equivalent config)
+// back from baokv to gcpsm after some rows have already migrated to
+// OpenBao, MaybeRewrap does not need special-casing to undo that — the very
+// next save of a bao:// row under GCP-primary rewraps it back into GCP
+// Secret Manager, gradually bringing rows home. Reads keep working
+// throughout regardless of which format a given row is in, because Get
+// routes by the reference's own prefix, never by which backend is primary.
+//
+// Concretely: it writes through Put (so it inherits Put's no-fallback
+// guarantee) and returns the new reference and true, UNLESS oldRef is
+// already in the primary's format, in which case it is a no-op. Returns
 // ("", false) when oldRef is empty, already in the primary's format, or the
 // rewrap write itself fails — a transient backend blip must not fail the
 // surrounding read path; the next read tries again.

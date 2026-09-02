@@ -152,8 +152,8 @@ refusal. Phase 4 must add the label, and prove it with a live run.
 
 **Two policies, least privilege.** Every `Put` and every `Destroy` in the
 codebase is admin-side (`handlers/admin/settings.go:553,720,1442` and
-`internal/domain/service.go:292,394`); storefront handlers only read. So the
-storefront engine gets no write capability at all:
+`internal/domain/service.go:292,394`), so the storefront engine gets no
+write capability at all:
 
 ```hcl
 # policy: mark8ly-marketplace-api-admin-carrier-secrets
@@ -164,6 +164,22 @@ path "kv/metadata/mark8ly/marketplace-api/tenants/*" { capabilities = ["read","l
 path "kv/data/mark8ly/marketplace-api/tenants/*"     { capabilities = ["read"] }
 path "kv/metadata/mark8ly/marketplace-api/tenants/*" { capabilities = ["read","list"] }
 ```
+
+**Correction from the whole-branch review:** "storefront handlers only
+read" describes the *grant*, not the *call pattern*. Eight storefront call
+sites (`shipping_rates.go:348,364`, `checkout_ext.go:130,146,171,187,212`,
+`payment_methods.go:83`, `webhooks.go:145,161`) call `MaybeRewrap` on every
+resolve, and `ChainStore.MaybeRewrap` calls `Put` — a write — to lazily
+migrate a legacy reference. Under Bao-primary this write is refused with a
+403, because the storefront grant above deliberately carries no write
+capability. Storefront handlers therefore only read **because the write is
+refused, not because they never attempt one**. `ChainStore` makes that
+refusal visible (logged once, counted under `RewrapFailedMetric`) and
+latches to stop retrying it on every subsequent request, but it does not
+widen the grant. The practical consequence: lazy rewrap only ever succeeds
+on the admin-side saves (`settings.go`, `shipments.go`); every storefront-
+resolved credential is migrated by the active backfill (phase 3) instead,
+never by lazy rewrap.
 
 `Destroy` deletes the **metadata** path, removing all versions — matching
 today's GCP `Destroy`. KV v2's soft delete would leave recoverable plaintext.

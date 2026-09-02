@@ -4,8 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"strings"
+	"sync/atomic"
 
+	"github.com/mark8ly/marketplace-api/internal/bao"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 )
 
@@ -31,6 +35,16 @@ const (
 // whether GCP SM can be decommissioned by watching this counter stay at
 // zero for N days. Never fired for a bao:// read.
 const FallbackReadMetric = "carriersecrets_gsm_fallback_read"
+
+// RewrapFailedMetric is the label passed to CounterFn when
+// ChainStore.MaybeRewrap's write fails. The storefront engine holds no
+// write grant on OpenBao by design (see the design doc's "least privilege"
+// ruling), so every MaybeRewrap call on that path is expected to fail with
+// bao.ErrForbidden until the active backfill (not lazy rewrap) migrates the
+// row — this counter, together with the once-per-process log line at the
+// forbidden transition, is what makes that failure VISIBLE instead of a
+// silent no-op with a failing round-trip on every read.
+const RewrapFailedMetric = "carriersecrets_rewrap_failed"
 
 // CounterFn is the metric injection hook, called with (label, increment)
 // once per event. Kept generic — like webhookprune.CounterFn — so this
@@ -65,6 +79,12 @@ type ChainConfig struct {
 	// callers that don't care about metrics (most tests) don't have to
 	// pass one.
 	Counter CounterFn
+	// Logger receives structured log lines for events that must be
+	// visible to an operator but must not fail the surrounding read path
+	// — currently just MaybeRewrap failures. Nil-safe: a nil Logger
+	// installs a discard logger, matching Counter's no-op convention, so
+	// callers that don't care (most tests) don't have to pass one.
+	Logger *slog.Logger
 }
 
 // ChainStore is the Store that lets bao:// and gsm:// references coexist
@@ -79,6 +99,17 @@ type ChainStore struct {
 	gcpProjectID string
 	gcpPrefix    string
 	counter      CounterFn
+	logger       *slog.Logger
+
+	// rewrapDisabled latches to true the first time MaybeRewrap's write
+	// is refused with bao.ErrForbidden. Once set, every subsequent
+	// MaybeRewrap call is a no-op that skips the write attempt entirely
+	// — this is what silences the per-request 403 noise on the
+	// storefront path without weakening its OpenBao grant (see the
+	// design doc's "least privilege" ruling: the fix is visibility and
+	// stop-retrying, not a wider policy). Read/written with
+	// sync/atomic so concurrent request goroutines don't race.
+	rewrapDisabled atomic.Bool
 }
 
 // NewChainStore constructs a ChainStore. Panics on a missing required
@@ -104,6 +135,10 @@ func NewChainStore(cfg ChainConfig) *ChainStore {
 	if counter == nil {
 		counter = func(string, int64) {}
 	}
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	return &ChainStore{
 		bao:          cfg.Bao,
 		gcp:          cfg.GCP,
@@ -112,6 +147,7 @@ func NewChainStore(cfg ChainConfig) *ChainStore {
 		gcpProjectID: cfg.GCPProjectID,
 		gcpPrefix:    cfg.GCPPrefix,
 		counter:      counter,
+		logger:       logger,
 	}
 }
 
@@ -232,6 +268,19 @@ func (c *ChainStore) Destroy(ctx context.Context, reference string) error {
 // ("", false) when oldRef is empty, already in the primary's format, or the
 // rewrap write itself fails — a transient backend blip must not fail the
 // surrounding read path; the next read tries again.
+//
+// The storefront engine holds no OpenBao write grant by design (least
+// privilege on the internet-facing engine — see the design doc), so under
+// Bao-primary every call on that path fails Put with bao.ErrForbidden. A
+// failure here is never swallowed silently: it is logged and counted under
+// RewrapFailedMetric so the failure is visible instead of an inert no-op
+// with a failing round-trip on every read. The FIRST time the failure is
+// specifically bao.ErrForbidden, rewrapDisabled latches so every
+// subsequent call on this ChainStore instance skips the write attempt
+// entirely (logged once, at that transition) — this removes the
+// per-request 403 noise (and OpenBao audit-log spam) without widening the
+// grant. Migration for these rows is then the active backfill's job, not
+// lazy rewrap's.
 func (c *ChainStore) MaybeRewrap(ctx context.Context, oldRef string, scope Scope, plaintext string) (string, bool) {
 	if oldRef == "" {
 		return "", false
@@ -240,11 +289,21 @@ func (c *ChainStore) MaybeRewrap(ctx context.Context, oldRef string, scope Scope
 	if alreadyPrimary {
 		return "", false
 	}
+	if c.rewrapDisabled.Load() {
+		return "", false
+	}
 	if err := scope.Validate(); err != nil {
 		return "", false
 	}
 	newRef, err := c.Put(ctx, scope, plaintext)
 	if err != nil {
+		c.counter(RewrapFailedMetric, 1)
+		c.logger.Error("carriersecrets: lazy rewrap failed",
+			"tenant_id", scope.TenantID, "domain", scope.Domain, "provider", scope.Provider, "field", scope.Field,
+			"err", err)
+		if errors.Is(err, bao.ErrForbidden) && c.rewrapDisabled.CompareAndSwap(false, true) {
+			c.logger.Warn("carriersecrets: lazy rewrap disabled for this process — OpenBao refused the write; migration for remaining rows will be completed by the active backfill, not lazy rewrap")
+		}
 		return "", false
 	}
 	return newRef, true

@@ -485,6 +485,7 @@ func main() {
 				GCPProjectID: cfg.GCPProjectID,
 				GCPPrefix:    cfg.SecretNamePrefix,
 				Counter:      carrierSecretCounter,
+				Logger:       log,
 			})
 			if cfg.ShippingSecretStore == "bao" {
 				// Caching is bao-only — see the switch's doc comment

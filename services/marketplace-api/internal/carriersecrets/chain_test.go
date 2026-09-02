@@ -1,11 +1,15 @@
 package carriersecrets
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 
+	"github.com/mark8ly/marketplace-api/internal/bao"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 )
 
@@ -661,4 +665,122 @@ func TestChainStore_BaoRefStillResolvesUnderGCPPrimary(t *testing.T) {
 	if gcp.totalCalls() != 0 {
 		t.Errorf("gcp saw %d calls, want 0 — a bao:// reference must never fall back to GCP", gcp.totalCalls())
 	}
+}
+
+// TestChainStore_MaybeRewrapFailureIsLoggedAndCounted: a failed rewrap
+// write must never be a silent no-op. It must be both logged (so an
+// operator can see it) and counted under RewrapFailedMetric (so it shows
+// up in metrics), even for a plain transient error that is NOT
+// bao.ErrForbidden.
+func TestChainStore_MaybeRewrapFailureIsLoggedAndCounted(t *testing.T) {
+	scope := testScope()
+	transientErr := errors.New("openbao: timeout")
+	baoClient := &erroringClient{err: transientErr}
+	gcp := newRecordingClient()
+
+	var logBuf bytes.Buffer
+	var counts []string
+	store := NewChainStore(ChainConfig{
+		Bao:          baoClient,
+		GCP:          gcp,
+		Primary:      BackendBao,
+		GCPProjectID: testProjectID,
+		GCPPrefix:    testPrefix,
+		Logger:       slog.New(slog.NewTextHandler(&logBuf, nil)),
+		Counter: func(label string, n int64) {
+			if label == RewrapFailedMetric {
+				counts = append(counts, label)
+			}
+		},
+	})
+
+	oldRef := GSMRefPrefix + SecretResource(testProjectID, testPrefix, scope)
+	newRef, changed := store.MaybeRewrap(context.Background(), oldRef, scope, "the-secret")
+	if changed {
+		t.Fatalf("MaybeRewrap() changed = true, want false on a failed write")
+	}
+	if newRef != "" {
+		t.Errorf("MaybeRewrap() newRef = %q, want \"\"", newRef)
+	}
+	if len(counts) != 1 {
+		t.Errorf("RewrapFailedMetric fired %d times, want 1", len(counts))
+	}
+	if logBuf.Len() == 0 {
+		t.Error("MaybeRewrap() logged nothing on a failed write, want a log line")
+	}
+	if !strings.Contains(logBuf.String(), "rewrap failed") {
+		t.Errorf("log output = %q, want it to mention the rewrap failure", logBuf.String())
+	}
+	// A plain transient error must NOT latch — the next call should still
+	// try the write.
+	if store.rewrapDisabled.Load() {
+		t.Error("rewrapDisabled = true after a non-forbidden error, want false")
+	}
+}
+
+// TestChainStore_MaybeRewrapLatchesAfterForbidden: once OpenBao refuses a
+// rewrap write with bao.ErrForbidden (the expected shape of every
+// storefront-side MaybeRewrap call, since the storefront engine holds no
+// write grant by design), every subsequent MaybeRewrap call on the same
+// ChainStore must skip the write attempt entirely — no further calls reach
+// the backend, and no further 403s land in OpenBao's audit log.
+func TestChainStore_MaybeRewrapLatchesAfterForbidden(t *testing.T) {
+	scope := testScope()
+	baoClient := &countingErroringClient{err: bao.ErrForbidden}
+	gcp := newRecordingClient()
+
+	var warnCount int
+	store := NewChainStore(ChainConfig{
+		Bao:          baoClient,
+		GCP:          gcp,
+		Primary:      BackendBao,
+		GCPProjectID: testProjectID,
+		GCPPrefix:    testPrefix,
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Counter: func(label string, n int64) {
+			if label == RewrapFailedMetric {
+				warnCount++
+			}
+		},
+	})
+
+	oldRef := GSMRefPrefix + SecretResource(testProjectID, testPrefix, scope)
+
+	for i := 0; i < 3; i++ {
+		_, changed := store.MaybeRewrap(context.Background(), oldRef, scope, "the-secret")
+		if changed {
+			t.Fatalf("call %d: MaybeRewrap() changed = true, want false — backend always refuses", i)
+		}
+	}
+
+	if !store.rewrapDisabled.Load() {
+		t.Fatal("rewrapDisabled = false after a bao.ErrForbidden, want true")
+	}
+	if baoClient.createCalls != 1 {
+		t.Errorf("bao.createCalls = %d, want 1 — the latch must stop every call after the first forbidden response from reaching the backend", baoClient.createCalls)
+	}
+	if warnCount != 1 {
+		t.Errorf("RewrapFailedMetric fired %d times, want 1 — only the call that actually reached the backend counts", warnCount)
+	}
+}
+
+// countingErroringClient is erroringClient plus a call counter, so a test
+// can assert the latch actually stops calls from reaching the backend
+// rather than merely ignoring their (still-erroring) result.
+type countingErroringClient struct {
+	err         error
+	createCalls int
+}
+
+func (e *countingErroringClient) CreateOrAddVersion(context.Context, string, []byte) error {
+	e.createCalls++
+	return e.err
+}
+
+func (e *countingErroringClient) AccessLatest(context.Context, string) ([]byte, error) {
+	return nil, e.err
+}
+
+func (e *countingErroringClient) DeleteSecret(context.Context, string) error {
+	return e.err
 }

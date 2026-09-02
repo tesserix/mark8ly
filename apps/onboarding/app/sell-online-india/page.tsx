@@ -30,7 +30,7 @@ export default function SellOnlineIndiaPage() {
       intro={[
         "Selling online in India comes down to one thing at the moment of truth: can the customer pay the way they already pay? For most of the country, that's UPI — a quick scan or a tap, no card numbers, no friction. A checkout that treats UPI as an afterthought loses the sale on the last screen.",
         "Mark8ly puts UPI, wallets, and cards behind one clean checkout, so however your customer prefers to pay, they can. It's built in, not bolted on — no region-locked workarounds, no forcing everyone through a single card processor that half your customers don't use.",
-        "And on top of that, we take nothing from your sales. There's no platform fee — you pay only your payment processor's standard rate (around 2% for UPI). For Indian sellers running on real margins, keeping that 2% platform skim in your own pocket is decisive. Ninety days free to start, then plans from ₹ equivalent pricing shown in your own currency.",
+        "And on top of that, we take nothing from your sales. There's no platform fee — you pay only your payment processor's standard rate (around 2% for UPI). For Indian sellers running on real margins, keeping that 2% platform skim in your own pocket is decisive. Ninety days free to start, then ₹999 a month for Starter — or ₹9,599 for the year, which works out at about ₹800 a month.",
       ]}
       competitorName="Global platforms"
       comparisonNote="Most global platforms bill in USD and treat local Indian payment methods as a regional add-on rather than the default."
@@ -94,7 +94,7 @@ export default function SellOnlineIndiaPage() {
         {
           question: "What does it cost to sell online in India?",
           answer:
-            "There's no platform fee on your sales — you pay only your payment processor's standard rate, around 2% for UPI. Plans start after 90 days free, priced in your own currency.",
+            "There's no platform fee on your sales — you pay only your payment processor's standard rate, around 2% for UPI. After 90 days free, Starter is ₹999 a month (₹9,599 a year), Studio is ₹2,499 and Pro is ₹6,599.",
         },
         {
           question: "Can customers pay with cards and wallets too?",

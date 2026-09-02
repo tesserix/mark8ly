@@ -30,7 +30,7 @@ export default function SellOnlineIndiaPage() {
       intro={[
         "Selling online in India comes down to one thing at the moment of truth: can the customer pay the way they already pay? For most of the country, that's UPI — a quick scan or a tap, no card numbers, no friction. A checkout that treats UPI as an afterthought loses the sale on the last screen.",
         "Mark8ly puts UPI, wallets, and cards behind one clean checkout, so however your customer prefers to pay, they can. It's built in, not bolted on — no region-locked workarounds, no forcing everyone through a single card processor that half your customers don't use.",
-        "And on top of that, we take nothing from your sales. There's no platform fee — you pay only your payment processor's standard rate (around 2% for UPI). For Indian sellers running on real margins, keeping that 2% platform skim in your own pocket is decisive. Ninety days free to start, then ₹999 a month for Starter — or ₹9,599 for the year, which works out at about ₹800 a month.",
+        "And on top of that, we take nothing from your sales. There's no platform fee \u2014 you pay only your payment gateway's rate, around 2%. Worth knowing what that 2% actually is: UPI's own merchant discount rate has been nil since 2020, so it is your gateway's fee rather than a cost of UPI itself. For Indian sellers running on real margins, keeping a platform's extra cut out of that number is decisive. Ninety days free to start, then \u20b9999 a month for Starter \u2014 or \u20b99,599 for the year, which works out at about \u20b9800 a month.",
       ]}
       competitorName="Global platforms"
       comparisonNote="Most global platforms bill in USD and treat local Indian payment methods as a regional add-on rather than the default."
@@ -67,7 +67,7 @@ export default function SellOnlineIndiaPage() {
           heading: "Payments the way India actually pays",
           body: [
             "UPI, wallets, and cards all sit behind one checkout on Mark8ly. There's no separate flow to configure, no method that only works for some customers. Whether someone pays by scanning a QR, tapping a wallet, or entering a card, it's the same clean, single-page checkout — which is what keeps the sale from dropping at the end.",
-            "You pay only your processor's standard rate. We don't add a platform fee on top, so the cost of taking a UPI payment is the cost of the UPI payment — nothing else.",
+            "You pay only your gateway's rate. We don't add a platform fee on top, so what a UPI order costs you is your gateway's fee and nothing else \u2014 UPI itself carries no merchant discount rate.",
           ],
         },
         {
@@ -94,7 +94,7 @@ export default function SellOnlineIndiaPage() {
         {
           question: "What does it cost to sell online in India?",
           answer:
-            "There's no platform fee on your sales — you pay only your payment processor's standard rate, around 2% for UPI. After 90 days free, Starter is ₹999 a month (₹9,599 a year), Studio is ₹2,499 and Pro is ₹6,599.",
+            "There's no platform fee on your sales \u2014 you pay only your payment gateway's rate, typically around 2%. UPI's own merchant discount rate has been nil since 2020, so that 2% is the gateway's fee rather than a cost of UPI itself. After 90 days free, Starter is \u20b9999 a month (\u20b99,599 a year), Studio is \u20b92,499 and Pro is \u20b96,599.",
         },
         {
           question: "Can customers pay with cards and wallets too?",

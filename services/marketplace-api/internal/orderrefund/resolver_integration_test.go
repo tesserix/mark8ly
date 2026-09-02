@@ -11,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/orderrefund"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
@@ -267,5 +268,100 @@ func TestGatewayFor_MissingConfig(t *testing.T) {
 	r := orderrefund.NewResolver(db)
 	if _, err := r.GatewayFor(context.Background(), storeID, "stripe"); err == nil {
 		t.Fatalf("expected error for missing gateway config, got nil")
+	}
+}
+
+// seedGatewayConfigWithRefs inserts a payment_gateway_configs row whose
+// api_key_encrypted/secret_key_encrypted columns hold caller-supplied
+// values verbatim — used to seed real carriersecrets references (e.g.
+// "gsm://...") rather than seedGatewayConfig's plaintext placeholder.
+func seedGatewayConfigWithRefs(t *testing.T, db *gorm.DB, tenantID, storeID uuid.UUID, provider, apiKeyRef, secretKeyRef string) {
+	t.Helper()
+	err := db.Exec(
+		`INSERT INTO payment_gateway_configs (id, tenant_id, store_id, provider, api_key_encrypted, secret_key_encrypted, mode, is_active)
+		 VALUES (gen_random_uuid(), ?, ?, ?, ?, ?, 'test', true)`,
+		tenantID, storeID, provider, apiKeyRef, secretKeyRef,
+	).Error
+	if err != nil {
+		t.Fatalf("seedGatewayConfigWithRefs: %v", err)
+	}
+}
+
+// Pins the mark8ly#166 fix: cmd/refund-sweep-cron built a Resolver via
+// orderrefund.NewResolver(conn) and never called WithSecretStore, so
+// GatewayFor could not resolve the gsm:// references stored on
+// payment_gateway_configs and every gateway re-drive from the sweeper
+// failed. A Resolver WITH a secret store wired — the fix — must resolve a
+// wrapped reference back to the real credential and construct a working
+// gateway.
+func TestGatewayFor_WithSecretStoreResolvesWrappedReference(t *testing.T) {
+	db := testdb.NewDB(t, resolverTruncateTables...)
+	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID, tenantID)
+
+	store := carriersecrets.NewFakeStore("tesseracthub-480811", "mark8ly-test", crypto.NewNoopEncryptor())
+	ctx := context.Background()
+	const wantAPIKey = "rzp_test_realapikey123"
+	apiKeyRef, err := store.Put(ctx, carriersecrets.Scope{
+		TenantID: tenantID.String(), Domain: "payment", Provider: "razorpay", Field: "api_key",
+	}, wantAPIKey)
+	if err != nil {
+		t.Fatalf("Put api_key: %v", err)
+	}
+	const wantSecretKey = "rzp_test_realsecretkey456"
+	secretKeyRef, err := store.Put(ctx, carriersecrets.Scope{
+		TenantID: tenantID.String(), Domain: "payment", Provider: "razorpay", Field: "secret_key",
+	}, wantSecretKey)
+	if err != nil {
+		t.Fatalf("Put secret_key: %v", err)
+	}
+	seedGatewayConfigWithRefs(t, db, tenantID, storeID, "razorpay", apiKeyRef, secretKeyRef)
+
+	r := orderrefund.NewResolver(db).WithSecretStore(store)
+	gw, err := r.GatewayFor(ctx, storeID, "razorpay")
+	if err != nil {
+		t.Fatalf("GatewayFor with secret store wired: %v", err)
+	}
+	if gw == nil {
+		t.Fatal("gateway is nil")
+	}
+	if gw.ProviderName() != "razorpay" {
+		t.Errorf("ProviderName() = %q, want razorpay", gw.ProviderName())
+	}
+}
+
+// The other half of the mark8ly#166 pin: a Resolver with NO secret store
+// and NO encryptor wired — exactly how cmd/refund-sweep-cron constructed
+// it before this fix — must fail loudly at GatewayFor instead of handing
+// the raw "gsm://..." reference to the gateway as a credential (which is
+// what produced the 401s in prod).
+func TestGatewayFor_WithoutSecretStoreFailsLoudly(t *testing.T) {
+	db := testdb.NewDB(t, resolverTruncateTables...)
+	tenantID, storeID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID, tenantID)
+
+	store := carriersecrets.NewFakeStore("tesseracthub-480811", "mark8ly-test", crypto.NewNoopEncryptor())
+	ctx := context.Background()
+	apiKeyRef, err := store.Put(ctx, carriersecrets.Scope{
+		TenantID: tenantID.String(), Domain: "payment", Provider: "razorpay", Field: "api_key",
+	}, "rzp_test_realapikey123")
+	if err != nil {
+		t.Fatalf("Put api_key: %v", err)
+	}
+	secretKeyRef, err := store.Put(ctx, carriersecrets.Scope{
+		TenantID: tenantID.String(), Domain: "payment", Provider: "razorpay", Field: "secret_key",
+	}, "rzp_test_realsecretkey456")
+	if err != nil {
+		t.Fatalf("Put secret_key: %v", err)
+	}
+	seedGatewayConfigWithRefs(t, db, tenantID, storeID, "razorpay", apiKeyRef, secretKeyRef)
+
+	r := orderrefund.NewResolver(db) // no WithSecretStore, no WithEncryptor — the bug.
+	gw, err := r.GatewayFor(ctx, storeID, "razorpay")
+	if err == nil {
+		t.Fatal("GatewayFor with no secret store wired: want an error, got a gateway")
+	}
+	if gw != nil {
+		t.Errorf("GatewayFor returned a non-nil gateway on the unwired path, want nil")
 	}
 }

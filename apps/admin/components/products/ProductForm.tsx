@@ -54,6 +54,8 @@ import { DetailsSection } from "./form/DetailsSection";
 import { PricingSection } from "./form/PricingSection";
 import { ShippingSection } from "./form/ShippingSection";
 import { ProductRail } from "./form/ProductRail";
+import { Field } from "./form/Field";
+import { ProductCategoriesPicker } from "./ProductCategoriesPicker";
 
 // RHF-side option shape (matches zod + OptionsEditor).
 interface RhfOptionDraft {
@@ -419,6 +421,134 @@ export function ProductForm({
     mode === "create" ? "New product" : (initialProduct?.title ?? "Product");
 
 
+  // --- Create -------------------------------------------------------------
+  // A short form that makes the product exist, then redirects into edit.
+  //
+  // It deliberately does NOT reuse the edit page's furniture. No rail: the
+  // rail holds metadata worth glancing at while scrolling a long page, and
+  // four fields have no scroll to glance across — building one anyway would
+  // be cargo-culting a shape whose justification is absent. No docked action
+  // bar either, for the same reason: that bar exists to answer "did I save"
+  // across a long scroll, and there is no long scroll here.
+  //
+  // max-w-2xl with NO mx-auto. AdminShell already owns the page width; the
+  // empty space to the right is the asymmetric margin this system asks for,
+  // not a mistake to correct by centring. Centring it would land straight on
+  // the generic signup-card look the design direction rules out.
+  //
+  // Media is absent rather than disabled — before the product exists there is
+  // nothing to attach an upload to, and a disabled dropzone is a promise the
+  // page cannot keep.
+  if (mode === "create") {
+    return (
+      <FormProvider {...methods}>
+        <form
+          onSubmit={methods.handleSubmit(onSubmit, onInvalid)}
+          className="flex flex-col gap-8"
+          aria-labelledby="product-form-heading"
+        >
+          <header className="flex flex-col gap-3">
+            <h1
+              id="product-form-heading"
+              className="font-serif text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl"
+            >
+              New product
+            </h1>
+          </header>
+
+          {rootError && (
+            <div
+              role="alert"
+              className="border-y border-[color:var(--danger)]/30 bg-[color:var(--danger)]/[0.06] px-4 py-3 text-sm text-[color:var(--danger)]"
+            >
+              {rootError}
+            </div>
+          )}
+
+          <div className="flex max-w-2xl flex-col gap-10">
+            <ProductSection
+              id="details"
+              title="Details"
+              description="You can add the description, media and options once it exists."
+            >
+              <div className="flex flex-col gap-6">
+                <DetailsSection mode="create" compact />
+                <Field label="Categories" error={methods.formState.errors.categoryIds?.message}>
+                  <ProductCategoriesPicker
+                    allCategories={categories}
+                    selectedIds={methods.watch("categoryIds")}
+                    onChange={(ids: string[]) =>
+                      methods.setValue("categoryIds", ids, { shouldDirty: true })
+                    }
+                    storeId={storeId}
+                  />
+                </Field>
+              </div>
+            </ProductSection>
+
+            <ProductSection
+              id="pricing"
+              title="Pricing and inventory"
+              description="A starting price and count. Both are editable straight after."
+            >
+              <PricingSection
+                mode="create"
+                currencyCode={currencyCode}
+                hasMultipleVariants={false}
+                storeId={storeId}
+              />
+            </ProductSection>
+
+            {/* Status is folded into the two actions rather than asked as a
+                fifth field. The merchant decides it by choosing how to save,
+                and asking twice — once as a select, once implicitly by
+                submitting — is the redundancy this redesign has been removing.
+                Both are inline-sized and flush left, so the page stays
+                asymmetric to its last element instead of resolving into a
+                centred footer. */}
+            <div className="flex flex-wrap items-center gap-4 border-t border-border-subtle pt-8">
+              <button
+                type="submit"
+                disabled={isPending}
+                onClick={() => methods.setValue("status", "draft")}
+                className="inline-flex items-center justify-center rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isPending ? "Creating…" : "Create as draft"}
+              </button>
+              <button
+                type="submit"
+                disabled={isPending}
+                onClick={() => methods.setValue("status", "active")}
+                className="inline-flex items-center justify-center rounded-md border border-[color:var(--ink-200)] px-5 py-2 text-sm font-medium text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Create and publish
+              </button>
+              <Link
+                href="/products"
+                onClick={handleDiscard}
+                className="text-sm text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              >
+                Cancel
+              </Link>
+            </div>
+          </div>
+        </form>
+
+        <AlertDialog
+          isOpen={discardOpen}
+          onClose={() => setDiscardOpen(false)}
+          title="Discard this product?"
+          message="Nothing has been created yet."
+          type="confirm"
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          onConfirm={confirmDiscard}
+          onCancel={() => setDiscardOpen(false)}
+        />
+      </FormProvider>
+    );
+  }
+
   return (
     <FormProvider {...methods}>
       <form
@@ -498,11 +628,7 @@ export function ProductForm({
               disabled={isPending}
               className="inline-flex items-center justify-center gap-2 rounded-md bg-[color:var(--ink-900)] px-5 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isPending
-                ? "Saving…"
-                : mode === "create"
-                  ? "Create product"
-                  : "Save changes"}
+              {isPending ? "Saving…" : "Save changes"}
             </button>
             <Link
               href="/products"

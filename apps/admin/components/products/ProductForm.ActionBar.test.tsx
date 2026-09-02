@@ -100,10 +100,14 @@ describe("ProductForm — the docked action bar", () => {
     expect(screen.getByRole("button", { name: /delete product/i })).toBeInTheDocument();
   });
 
-  it("labels the action for the mode it is in", () => {
-    render(<ProductForm {...baseProps} mode="create" />);
-    expect(screen.getByRole("button", { name: /create product/i })).toBeInTheDocument();
+  it("does not appear on the create form, which has no scroll to get lost in", () => {
+    const { container } = render(<ProductForm {...baseProps} mode="create" />);
+    // Create is a short form. A bar that exists to answer "did I save"
+    // across a long scroll has nothing to do here, and its two actions are
+    // "Create as draft" / "Create and publish" instead.
+    expect(container.querySelector(".sticky")).toBeNull();
     expect(screen.queryByRole("button", { name: /save changes/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /create as draft/i })).toBeInTheDocument();
   });
 });
 

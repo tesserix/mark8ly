@@ -856,7 +856,7 @@ const faqItems = [
   {
     question: "What does Mark8ly take from each sale?",
     answer:
-      "Nothing. Your payment processor charges their standard fee (around 2% for UPI, 2–3% for cards). We don't add anything on top of that.",
+      "Nothing. Your payment gateway charges its standard fee (around 2% for UPI, 2–3% for cards). We don't add anything on top of that.",
   },
   {
     question: "Is there a limit on products?",

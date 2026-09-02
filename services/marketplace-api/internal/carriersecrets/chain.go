@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"strings"
 	"sync/atomic"
 
 	"github.com/mark8ly/marketplace-api/internal/bao"
@@ -309,17 +308,17 @@ func (c *ChainStore) MaybeRewrap(ctx context.Context, oldRef string, scope Scope
 	return newRef, true
 }
 
-// referencePrefix extracts a human-readable prefix from an unrecognised
-// reference for error messages — the scheme portion up to "://" when
-// present, else the portion up to the first ':', else the whole value.
+// referencePrefix returns a short, non-revealing descriptor of an
+// unrecognised reference for error messages. It must NEVER return the
+// value itself, or any prefix of it, however long: a pre-encryption
+// plaintext row (a raw gateway key with no "gsm://"/"bao://"/"noop:"/"aes:"
+// wrapper) is exactly the shape of value that reaches this path, and
+// callers wrap and log this error — so even a short leading slice would
+// put live credential material in a log line. The length is included
+// because it is diagnostically useful (e.g. distinguishing a truncated
+// value from an empty one) without disclosing content.
 func referencePrefix(ref string) string {
-	if idx := strings.Index(ref, "://"); idx >= 0 {
-		return ref[:idx+3]
-	}
-	if idx := strings.Index(ref, ":"); idx >= 0 {
-		return ref[:idx+1]
-	}
-	return ref
+	return fmt.Sprintf("<unrecognised, len=%d>", len(ref))
 }
 
 var _ Store = (*ChainStore)(nil)

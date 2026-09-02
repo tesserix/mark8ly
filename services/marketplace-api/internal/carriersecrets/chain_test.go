@@ -201,12 +201,19 @@ func TestChainStore_GetUnknownPrefixErrors(t *testing.T) {
 		GCPPrefix:    testPrefix,
 	})
 
-	_, err := store.Get(context.Background(), "s3://some-bucket/some-key")
+	input := "s3://some-bucket/some-key"
+	_, err := store.Get(context.Background(), input)
 	if err == nil {
 		t.Fatal("Get() error = nil, want error naming the unknown prefix")
 	}
-	if !strings.Contains(err.Error(), "s3://") {
-		t.Errorf("Get() error = %q, want it to name the prefix %q", err.Error(), "s3://")
+	// The error must be safe to log verbatim — it must NEVER echo any part
+	// of the input reference, since an unrecognised value can be a raw
+	// pre-encryption credential (see TestChainStore_GetUnknownPrefixErrorNeverLeaksValue).
+	if strings.Contains(err.Error(), input) || strings.Contains(err.Error(), "s3://") {
+		t.Errorf("Get() error = %q, must not contain any part of the input reference %q", err.Error(), input)
+	}
+	if !strings.Contains(err.Error(), "unrecognised") {
+		t.Errorf("Get() error = %q, want it to say the reference is unrecognised", err.Error())
 	}
 	if bao.totalCalls() != 0 || gcp.totalCalls() != 0 {
 		t.Errorf("unknown-prefix Get() must not touch either backend; bao=%d gcp=%d", bao.totalCalls(), gcp.totalCalls())
@@ -783,4 +790,39 @@ func (e *countingErroringClient) AccessLatest(context.Context, string) ([]byte, 
 
 func (e *countingErroringClient) DeleteSecret(context.Context, string) error {
 	return e.err
+}
+
+// TestChainStore_GetUnknownPrefixErrorNeverLeaksValue is BLOCKER 3 from the
+// whole-branch review: a pre-encryption plaintext row has neither "://" nor
+// ":" in it, which is exactly a raw gateway key's shape. The old
+// referencePrefix returned the WHOLE input in that case, and handlers wrap
+// and log this error — so a raw credential would land verbatim in a log
+// line. The fixed error must not contain the input value anywhere, in
+// whole or in part.
+func TestChainStore_GetUnknownPrefixErrorNeverLeaksValue(t *testing.T) {
+	bao := newRecordingClient()
+	gcp := newRecordingClient()
+	store := NewChainStore(ChainConfig{
+		Bao:          bao,
+		GCP:          gcp,
+		Primary:      BackendBao,
+		GCPProjectID: testProjectID,
+		GCPPrefix:    testPrefix,
+	})
+
+	// No "://" and no ":" — the dangerous shape: a raw plaintext credential.
+	livePlaintextKey := "raw-credential-value-not-a-reference-0123456789"
+
+	_, err := store.Get(context.Background(), livePlaintextKey)
+	if err == nil {
+		t.Fatal("Get() error = nil, want error for an unrecognised reference")
+	}
+	if strings.Contains(err.Error(), livePlaintextKey) {
+		t.Fatalf("Get() error = %q, LEAKS the raw input value %q", err.Error(), livePlaintextKey)
+	}
+	// Also guard against a partial leak (any non-trivial substring of the
+	// value appearing in the error), not just an exact match.
+	if len(livePlaintextKey) > 8 && strings.Contains(err.Error(), livePlaintextKey[:8]) {
+		t.Fatalf("Get() error = %q, leaks a PREFIX of the input value (%q)", err.Error(), livePlaintextKey[:8])
+	}
 }

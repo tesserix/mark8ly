@@ -3,8 +3,9 @@
 /**
  * Marketing /#pricing section.
  *
- * Client island (only for the monthly/annual toggle state). All
- * pricing data is static at build-time via SHARED_PRICING_CATALOGUE.
+ * Client island for the monthly/annual toggle state and for resolving
+ * the visitor's currency from the `mk8_currency` cookie. All pricing
+ * data is static at build-time via SHARED_PRICING_CATALOGUE.
  *
  * Design rules per mark8ly/.impeccable.md:
  *  - Paper / Ink / Moss only; no other decorative colours.
@@ -29,8 +30,9 @@ import {
   type SharedPricingCatalogue,
 } from '@repo/ui/subscription'
 
+import { useGeoCurrency } from '@/lib/geo/use-geo-currency'
+
 interface PricingProps {
-  currency: Currency
   catalogue: SharedPricingCatalogue
 }
 
@@ -168,7 +170,12 @@ function TogglePill({
   )
 }
 
-export function Pricing({ currency, catalogue }: PricingProps) {
+export function Pricing({ catalogue }: PricingProps) {
+  // Resolved on the client, not handed down from the server: reading the
+  // cookie in the page's server component made the whole marketing route
+  // dynamic and uncacheable at the edge. See lib/geo/currency.ts for the
+  // measurements and the accepted first-paint flash.
+  const currency = useGeoCurrency()
   const [period, setPeriod] = useState<BillingPeriod>('annual')
   const plans = catalogue.plans
   // The add-on always bills in USD globally (spec §4.1.2) regardless of the
@@ -178,7 +185,7 @@ export function Pricing({ currency, catalogue }: PricingProps) {
   const { price: proApp } = getAddOnPrice(catalogue.proApp, 'USD')
   const showUsdBilledNote = currency !== 'USD'
   // Page-level "prices shown in X" / GST copy MUST use the currency actually
-  // resolved for the plans below, not the raw `currency` prop — otherwise a
+  // resolved for the plans below, not the raw cookie value — otherwise a
   // visitor whose currency has no row would read "Prices shown in THB." over
   // amounts that are actually in USD. Every priceable currency has a row on
   // every plan (see PRICEABLE_CURRENCIES), so any plan resolves the same way;
@@ -223,7 +230,7 @@ export function Pricing({ currency, catalogue }: PricingProps) {
             const plan = plans.find((p) => p.id === meta.id)!
             // `resolvedCurrency` is what MUST be rendered — when `currency`
             // has no row on this plan, getPlanPrice falls back to USD, and
-            // rendering the visitor's raw `currency` would label that USD
+            // rendering the visitor's raw currency would label that USD
             // amount with a currency it isn't priced in.
             const { price, currency: resolvedCurrency } = getPlanPrice(plan, currency)
             const headline =

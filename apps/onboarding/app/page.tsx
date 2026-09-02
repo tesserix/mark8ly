@@ -136,6 +136,30 @@ function resolvePricedPlan(
  * structured-data-must-match-visible-content rule for the document the
  * crawler actually receives.
  */
+/**
+ * Tax disclosure for a price specification, or nothing.
+ *
+ * AU prices in SHARED_PRICING_CATALOGUE are GST-EXCLUSIVE (see the note in
+ * packages/ui/src/subscription/pricing-data.ts — the visible AU surfaces
+ * carry a "Plus GST" disclosure for exactly this reason). Saying nothing in
+ * the markup invites a crawler to read the figure as what an Australian
+ * buyer pays, which understates it by the 10% GST (tesserix/mark8ly#600).
+ *
+ * Every other currency is left silent rather than asserted `true`. We have
+ * not established tax-inclusivity for USD, GBP, EUR, INR and the rest, and
+ * an absent property is honest where a wrong `true` would not be.
+ *
+ * Today `/` prerenders at PRERENDER_CURRENCY (USD), so this branch does not
+ * fire on the shipped document. It is kept because it is correct whenever
+ * the currency IS AUD, and the day that changes the markup should already
+ * be right rather than quietly understating a price.
+ */
+function taxDisclosure(
+  priceCurrency: Currency,
+): { valueAddedTaxIncluded?: false } {
+  return priceCurrency === "AUD" ? { valueAddedTaxIncluded: false } : {};
+}
+
 function buildHomeJsonLd(currency: Currency) {
   const pricedPlans = SHARED_PRICING_CATALOGUE.plans.map((plan) => ({
     id: plan.id,
@@ -193,6 +217,7 @@ function buildHomeJsonLd(currency: Currency) {
                 priceCurrency: plan.priceCurrency,
                 unitText: "MONTH",
                 billingDuration: 12,
+                ...taxDisclosure(plan.priceCurrency),
               },
             },
             {
@@ -207,6 +232,7 @@ function buildHomeJsonLd(currency: Currency) {
                 priceCurrency: plan.priceCurrency,
                 unitText: "MONTH",
                 billingDuration: 1,
+                ...taxDisclosure(plan.priceCurrency),
               },
             },
           ]),

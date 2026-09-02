@@ -373,6 +373,7 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		tenantScoped("break_glass_lockouts", tenantID), // 000073: tenant_id (nullable)
 		tenantScoped("break_glass_accounts", tenantID), // 000072: tenant_id (PK)
 		tenantScoped("enterprise_api_keys", tenantID),  // 000068: tenant_id, store_id
+		tenantScoped("webhook_subscriptions", tenantID), // 000126: tenant_id, store_id
 		// audit_logs is tenant-scoped EXCEPT for operator rows. A platform
 		// operator's action against a tenant (suspend, trial extend, purge)
 		// is a governance record about the OPERATOR, not tenant data, and it

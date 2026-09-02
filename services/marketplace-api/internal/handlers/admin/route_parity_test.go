@@ -67,6 +67,7 @@ var webOnlySubtrees = map[string]string{
 	"/stores/:storeId/subscription":             "plan, invoices, checkout, promo, cancel — all billing is web-only (app-store policy + PCI surface)",
 	"/stores/:storeId/tax":                      "tax-ID submission + US/CA attestation — legal attestation flow, web-only by design",
 	"/stores/:storeId/warehouses":               "warehouse CRUD (#177 PR 5b) — address forms + drag-to-reorder, a desktop settings task; mobile ships no warehouse screen. If mobile ever wants a read-only list, replace this subtree with exact webOnlyRoutes entries.",
+	"/stores/:storeId/webhooks":                 "outbound webhook subscriptions (#562) — URL registration, secrets and delivery logs are a developer-integration task; no mobile UI planned.",
 }
 
 // webOnlyRoutes exempts a single route INSIDE a group mobile does mirror.

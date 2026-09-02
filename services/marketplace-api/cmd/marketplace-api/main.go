@@ -879,6 +879,20 @@ func main() {
 		// Coupon handler (Marketing M1).
 		couponHandler := admin.NewCouponHandler(couponSvc, log)
 
+		// Outbound webhooks admin API (#562 task 7). Its own SubscriptionRepo/
+		// DeliveryRepo/Sender instances, separate from the dispatcher and
+		// delivery worker wired further below — both sets are stateless
+		// wrappers over the same conn/ssrfguard, so nothing needs sharing
+		// between the HTTP surface and the background loops.
+		webhooksGuard := ssrfguard.New(nil)
+		webhooksHandler := admin.NewWebhooksHandler(
+			webhook.NewSubscriptionRepo(conn),
+			webhook.NewDeliveryRepo(conn),
+			webhooksGuard,
+			webhook.NewSender(webhooksGuard, nil),
+			log,
+		)
+
 		// Gift cards — Marketing M2.
 		giftCardRepo := giftcard.NewRepository()
 		// Delivery email rides the shared transport (log-only in dev).
@@ -1244,6 +1258,7 @@ func main() {
 			TicketsHandler:           ticketsHandler,
 			BrandingHandler:          brandingHandler,
 			PagesHandler:             pagesHandler,
+			WebhooksHandler:          webhooksHandler,
 			PlanResolver:             planResolver,
 			StoresMiddleware:         storeMW,
 			SubscriptionStatusLoader: readonly.LoadStatus(readonly.StatusLoaderConfig{DB: conn, Repo: subscriptionRepo, Logger: log}),

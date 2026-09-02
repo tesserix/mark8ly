@@ -115,6 +115,38 @@ func (r *DeliveryRepo) RecordOutcome(ctx context.Context, id uuid.UUID, status s
 	return nil
 }
 
+// ListForSubscription returns the most recent deliveries for one
+// subscription, most recent first, for the admin delivery log.
+func (r *DeliveryRepo) ListForSubscription(ctx context.Context, subscriptionID uuid.UUID, limit int) ([]Delivery, error) {
+	var out []Delivery
+	err := r.db.WithContext(ctx).
+		Where("subscription_id = ?", subscriptionID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&out).Error
+	if err != nil {
+		return nil, fmt.Errorf("webhook: list deliveries: %w", err)
+	}
+	return out, nil
+}
+
+// Replay resets one delivery to pending, due now, so the worker's next poll
+// picks it up. Scoped to subscriptionID — the caller must have already
+// verified that subscription belongs to their tenant and store — so a
+// deliveryID belonging to a different subscription is silently a no-op
+// rather than a cross-tenant write. Reports whether a row matched.
+func (r *DeliveryRepo) Replay(ctx context.Context, subscriptionID, deliveryID uuid.UUID) (bool, error) {
+	res := r.db.WithContext(ctx).Exec(`
+		UPDATE webhook_deliveries
+		   SET status = ?, attempts = 0, next_attempt_at = now()
+		 WHERE id = ? AND subscription_id = ?`,
+		StatusPending, deliveryID, subscriptionID)
+	if res.Error != nil {
+		return false, fmt.Errorf("webhook: replay delivery: %w", res.Error)
+	}
+	return res.RowsAffected > 0, nil
+}
+
 // Prune deletes delivery rows older than the retention window. 30 days on
 // every plan, deliberately not tied to FeatureAuditRetentionDays: "forever"
 // retention of delivery bodies on Pro is storage cost on a db-f1-micro with

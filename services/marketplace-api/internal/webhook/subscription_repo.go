@@ -43,6 +43,37 @@ func (r *SubscriptionRepo) ListForStore(ctx context.Context, tenantID, storeID u
 	return out, nil
 }
 
+// Update persists url/event_types/enabled/disabled_reason/disabled_at for a
+// subscription the caller has already verified belongs to their tenant and
+// store — this method itself does not re-check ownership, matching ByID.
+func (r *SubscriptionRepo) Update(ctx context.Context, s *Subscription) error {
+	err := r.db.WithContext(ctx).Model(&Subscription{}).
+		Where("id = ?", s.ID).
+		Updates(map[string]any{
+			"url":                  s.URL,
+			"event_types":          s.EventTypes,
+			"enabled":              s.Enabled,
+			"disabled_reason":      s.DisabledReason,
+			"disabled_at":          s.DisabledAt,
+			"consecutive_failures": s.ConsecutiveFailures,
+			"updated_at":           gorm.Expr("now()"),
+		}).Error
+	if err != nil {
+		return fmt.Errorf("webhook: update subscription: %w", err)
+	}
+	return nil
+}
+
+// Delete removes a subscription the caller has already verified belongs to
+// their tenant and store. webhook_deliveries.subscription_id is ON DELETE
+// CASCADE, so this also clears its delivery history.
+func (r *SubscriptionRepo) Delete(ctx context.Context, id uuid.UUID) error {
+	if err := r.db.WithContext(ctx).Delete(&Subscription{}, "id = ?", id).Error; err != nil {
+		return fmt.Errorf("webhook: delete subscription: %w", err)
+	}
+	return nil
+}
+
 // MatchingEvent returns the ENABLED subscriptions for tenantID that selected
 // eventType. `event_types @> ARRAY[?]` uses the array containment operator so
 // the match happens in Postgres rather than by loading every subscription.

@@ -370,9 +370,9 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		// so those survive — which is the point, not an accident. Widening this
 		// predicate would let any purge clear a live platform-wide lockout. See
 		// TestPurgePlan_BreakGlassLockoutsNeverTouchesNullTenantRows.
-		tenantScoped("break_glass_lockouts", tenantID), // 000073: tenant_id (nullable)
-		tenantScoped("break_glass_accounts", tenantID), // 000072: tenant_id (PK)
-		tenantScoped("enterprise_api_keys", tenantID),  // 000068: tenant_id, store_id
+		tenantScoped("break_glass_lockouts", tenantID),  // 000073: tenant_id (nullable)
+		tenantScoped("break_glass_accounts", tenantID),  // 000072: tenant_id (PK)
+		tenantScoped("enterprise_api_keys", tenantID),   // 000068: tenant_id, store_id
 		tenantScoped("webhook_subscriptions", tenantID), // 000126: tenant_id, store_id
 		// audit_logs is tenant-scoped EXCEPT for operator rows. A platform
 		// operator's action against a tenant (suspend, trial extend, purge)

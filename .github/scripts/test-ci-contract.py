@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/ci.yml"
 IMAGES = ROOT / ".github/ci/container-images.json"
 CANDIDATE_REF = "29f963da2412a4ba0c755f19697ad0a31d7624b4"
-RELEASE_REF = "v2.2.1"
+# Bumped to v2.3.0 for the `audit_allowlist` input on nextjs-ci.yml (#561).
+# That tag's only change from v2.2.1 is nextjs-ci.yml, so the other four
+# callers move with it purely to keep one ref across the file.
+RELEASE_REF = "v2.3.0"
 
 
 class ReusableCIContract(unittest.TestCase):

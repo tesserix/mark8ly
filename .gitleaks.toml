@@ -1,0 +1,39 @@
+# gitleaks configuration.
+#
+# The full default ruleset is kept — `useDefault = true` below means this file
+# only ever ADDS to it. Nothing here weakens scanning for anything except the
+# one value named explicitly.
+#
+# WHY AN ALLOWLIST AT ALL: the IndexNow ownership key trips the generic
+# high-entropy rules, because a 32-character hex string is exactly what an API
+# key looks like. It is not one.
+#
+# The IndexNow protocol verifies domain ownership by having the site serve the
+# key at `https://<host>/<key>.txt` — so the file is publicly fetchable by
+# design, and the FILENAME IS THE KEY. Anyone can read it by visiting the URL,
+# which is the entire point: search engines fetch it to confirm that whoever is
+# submitting URLs controls the domain. Hiding it in a secret store would not
+# make it secret, it would just mean the file could not be served.
+#
+# The protocol's own wording ("only you and the search engines should know the
+# key") is aspirational for a static site and does not describe what actually
+# happens. Treat this value as an identifier, not a credential: rotating it
+# costs nothing but a re-verification, and leaking it lets someone submit URLs
+# for a domain they would still have to control for the submission to be
+# honoured.
+#
+# Scope is deliberately tight — one literal value and one filename shape. Do
+# NOT widen this to cover `public/**` or all `.txt` files; a real secret
+# committed there should still fail the build.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "IndexNow ownership key — public by protocol (see lib/seo/indexnow.ts)"
+regexes = [
+  '''e34fd3ce8f958568aee4d51b05b53271''',
+]
+paths = [
+  '''apps/onboarding/public/[0-9a-f]{32}\.txt''',
+]

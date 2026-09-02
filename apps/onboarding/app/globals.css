@@ -155,15 +155,35 @@
   }
 
   /* Quiet ghost button — used for secondary CTAs so they never
-     compete with the primary ink CTA. */
+     compete with the primary ink CTA.
+
+     It stays a text link on purpose: one primary ink CTA plus one quiet
+     secondary link is the deliberate hierarchy, so this must not grow a
+     background, a border box, or horizontal padding that would read as a
+     second button.
+
+     It does, however, need to be tappable. Measured at 28px tall, against
+     the 44px WCAG 2.5.5 / Apple HIG minimum (tesserix/mark8ly#603). The
+     height comes from min-height plus the existing centred alignment, so
+     the box grows around the text without moving it and without any
+     visible change to the link itself.
+
+     The rule under the text is `text-decoration`, not the `border-bottom`
+     this used to carry. A border sits on the bottom edge of the box, so
+     growing the box to 44px would have left the underline floating ~8px
+     below the words it belongs to. An underline tracks the baseline
+     whatever the box height, which is the only reason the height fix is
+     invisible. Don't swap it back to a border. */
   .btn-ghost {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
+    min-height: 44px;
     color: var(--foreground);
     font-weight: 500;
-    border-bottom: 1px solid currentColor;
-    padding-bottom: 2px;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
   }
   .btn-ghost:hover {
     color: var(--accent);

@@ -3,9 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { MarketingPage, PageHero, Prose } from "@/components/marketing/primitives";
+import { ORGANIZATION_ID, SITE_URL } from "@/lib/seo/site-json-ld";
 import { GUIDES, getGuide, type GuideBlock } from "../guides";
-
-const SITE_URL = "https://mark8ly.com";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -69,12 +68,14 @@ export default async function GuidePage({ params }: PageProps) {
     description: guide.description,
     datePublished: guide.updated,
     dateModified: guide.updated,
-    author: { "@type": "Organization", name: "Mark8ly" },
-    publisher: {
-      "@type": "Organization",
-      name: "Mark8ly",
-      url: SITE_URL,
-    },
+    // Reference the Organization the root layout already puts on this
+    // page rather than declaring a second one. Google merges same-page
+    // JSON-LD, and the inline copy that used to live here carried no
+    // logo — so the richer node was being shadowed by a poorer duplicate
+    // (tesserix/mark8ly#600). If these guides ever gain a named human
+    // author, only `publisher` keeps the @id.
+    author: { "@id": ORGANIZATION_ID },
+    publisher: { "@id": ORGANIZATION_ID },
     mainEntityOfPage: { "@type": "WebPage", "@id": url },
   };
 

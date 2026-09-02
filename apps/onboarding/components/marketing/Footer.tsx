@@ -110,12 +110,37 @@ export function Footer() {
   );
 }
 
+/**
+ * One labelled column of footer links.
+ *
+ * The column title is a <p>, NOT a heading. As an <h2> it sat in the same
+ * document outline as real page content on every single page, so
+ * heading-based extractors — including the ones AI systems use to segment a
+ * document — ingested "Product", "Compare", "Legal" and friends as content
+ * sections (tesserix/mark8ly#603).
+ *
+ * Dropping the heading must not drop the labelling, which is a genuine
+ * accessibility affordance rather than decoration. So each column becomes
+ * its own <nav> landmark named by that same visible text via
+ * aria-labelledby: a screen-reader user still hears "Product navigation"
+ * and can jump between the columns, while the outline stays clean. Several
+ * labelled navs are the documented pattern for exactly this; several
+ * unlabelled ones would not be.
+ *
+ * Do not restore the <h2>, and do not swap the aria-labelledby for a
+ * visually-hidden duplicate of text that is already on screen.
+ */
 function FooterColumn({ title, links }: FooterColumnProps) {
+  const labelId = `footer-nav-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+
   return (
-    <div>
-      <h2 className="mb-5 text-xs font-medium uppercase tracking-[0.16em] text-paper-50">
+    <nav aria-labelledby={labelId}>
+      <p
+        id={labelId}
+        className="mb-5 text-xs font-medium uppercase tracking-[0.16em] text-paper-50"
+      >
         {title}
-      </h2>
+      </p>
       <ul className="space-y-3">
         {links.map((l) => (
           // Key on href alone, NOT `${href}-${label}`. React keys are
@@ -139,6 +164,6 @@ function FooterColumn({ title, links }: FooterColumnProps) {
           </li>
         ))}
       </ul>
-    </div>
+    </nav>
   );
 }

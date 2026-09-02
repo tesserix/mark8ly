@@ -30,14 +30,20 @@ import (
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	// cfg.Load reads the same SHIPPING_SECRET_STORE / GCP_PROJECT_ID /
-	// SECRET_NAME_PREFIX / OPENBAO_ADDR / OPENBAO_ROLE / OPENBAO_KV_MOUNT
-	// (and ENCRYPTION_MODE / ENCRYPTION_KEY) env vars cmd/marketplace-api
-	// does, through the same pkg/config validation — so a misconfigured
+	// LoadCarrierSecretJob reads only DATABASE_URL / SHIPPING_SECRET_STORE
+	// / GCP_PROJECT_ID / SECRET_NAME_PREFIX / OPENBAO_ADDR / OPENBAO_ROLE
+	// / OPENBAO_KV_MOUNT / ENCRYPTION_MODE / ENCRYPTION_KEY — NOT the full
+	// config.Load(), which requires MARKETPLACE_FGA_API_URL
+	// unconditionally and, outside ENV=dev, the internal-auth and
+	// customer-session secrets too. This job never touches FGA, internal
+	// auth, or customer sessions; loading the full Config would crash-loop
+	// it until its deployment manifest grew settings it never reads, and
+	// would widen the blast radius of secrets it never touches. It DOES
+	// go through the same validateShippingSecretStore() the API uses (see
+	// pkg/config.LoadCarrierSecretJob), so a misconfigured
 	// SHIPPING_SECRET_STORE fails the cron at boot exactly as it would
-	// fail the API, instead of drifting into its own, unvalidated reading
-	// of the same env vars.
-	cfg, err := config.Load()
+	// fail the API.
+	cfg, err := config.LoadCarrierSecretJob()
 	if err != nil {
 		log.Error("refund-sweep-cron: config load failed", "err", err)
 		os.Exit(1)
@@ -105,8 +111,23 @@ func main() {
 		log.Error("refund-sweep-cron: carrier secret store build failed", "err", buildErr, "shipping_secret_store", cfg.ShippingSecretStore)
 		os.Exit(1)
 	}
-	if degraded {
-		log.Warn("refund-sweep-cron: carrier secret store degraded to inline (Secret Manager client init failed)")
+	// carriersecrets.Build degrades to an InlineStore (degraded=true, no
+	// error) when the configured mode is "gcpsm"/"bao" but the Secret
+	// Manager client failed to construct — the API is allowed to run in
+	// that state because an InlineStore still errors loudly on a gsm://
+	// reference rather than passing it through (it just can't be
+	// resolved). But for THIS job, degraded in a non-"inline" mode means
+	// the sweep would run and fail every row needing a gsm:// or bao://
+	// credential — the exact failure mode mark8ly#166 was about. Treat
+	// it as fatal here instead of proceeding to a sweep that cannot
+	// possibly succeed. In "inline" mode, Build never sets degraded=true
+	// (see build.go: the degrade path is only reachable from the
+	// "gcpsm"/"bao" branch), so this check is unreachable there — an
+	// inline configuration never needs a Secret Manager client.
+	if degraded && cfg.ShippingSecretStore != "inline" {
+		log.Error("refund-sweep-cron: carrier secret store degraded to inline, refusing to sweep with a store that cannot resolve gsm:// or bao:// references",
+			"shipping_secret_store", cfg.ShippingSecretStore)
+		os.Exit(1)
 	}
 
 	res := orderrefund.NewResolver(conn).WithSecretStore(secretStore).WithEncryptor(apiKeyEncryptor)

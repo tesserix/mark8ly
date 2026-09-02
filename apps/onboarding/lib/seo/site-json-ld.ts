@@ -13,12 +13,25 @@ export const SITE_TAGLINE = "Quiet commerce for people who make things";
 export const SITE_DESCRIPTION =
   "A modern editorial commerce platform for independent merchants. Launch your store in an afternoon, keep every sale, and look considered from day one.";
 
+/**
+ * The `@id` of the Organization node below. Every page in the app carries
+ * this graph via the root layout, and Google merges same-page JSON-LD — so
+ * any other block that needs a publisher/author should reference this node
+ * rather than declaring a second Organization of its own. A duplicate
+ * declaration is invariably the poorer of the two (the guides' was missing
+ * the logo entirely, tesserix/mark8ly#600), and it competes with the real
+ * one for entity resolution.
+ *
+ * Exported so there is exactly one place the identifier is spelled.
+ */
+export const ORGANIZATION_ID = `${SITE_URL}#organization`;
+
 const jsonLd = {
   "@context": "https://schema.org",
   "@graph": [
     {
       "@type": "Organization",
-      "@id": `${SITE_URL}#organization`,
+      "@id": ORGANIZATION_ID,
       name: SITE_NAME,
       legalName: "Tesserix",
       url: SITE_URL,
@@ -49,7 +62,7 @@ const jsonLd = {
       url: SITE_URL,
       name: SITE_NAME,
       description: SITE_TAGLINE,
-      publisher: { "@id": `${SITE_URL}#organization` },
+      publisher: { "@id": ORGANIZATION_ID },
       inLanguage: "en",
     },
   ],

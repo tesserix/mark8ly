@@ -128,6 +128,8 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/ticket"
 	"github.com/mark8ly/marketplace-api/internal/userprofile"
 	"github.com/mark8ly/marketplace-api/internal/vendor"
+	"github.com/mark8ly/marketplace-api/internal/webhook"
+	"github.com/mark8ly/marketplace-api/internal/webhook/ssrfguard"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 	"github.com/mark8ly/marketplace-api/internal/webhookprune"
 	wlapple "github.com/mark8ly/marketplace-api/internal/whitelabel/apple"
@@ -1701,6 +1703,37 @@ func main() {
 		log.Info("outbox publisher started")
 	}
 
+	// Outbound webhooks (#562). Two loops beside the outbox publisher, on the
+	// same engines: a merchant subscription is admin-domain state, and the
+	// storefront replica must not run a second copy of either poll.
+	//
+	// In-process rather than a separate Deployment, deliberately. The
+	// alternative costs another chart, another ArgoCD Application and another
+	// pod's memory on a cluster that has already had rollouts deadlock under
+	// memory pressure. FOR UPDATE SKIP LOCKED makes both loops safe across
+	// KEDA replicas. The bounded worker batch and the 5s per-request timeout
+	// in internal/webhook cap what a slow merchant endpoint can tie up.
+	//
+	// Because dispatch and delivery are decoupled by webhook_deliveries,
+	// moving the delivery loop to its own workload later is a deployment
+	// change, not a redesign.
+	webhookCtx, webhookCancel := context.WithCancel(context.Background())
+	defer webhookCancel()
+	var webhookDispatcherDone, webhookWorkerDone <-chan struct{}
+	if m == mode.Admin || m == mode.Both {
+		whSubs := webhook.NewSubscriptionRepo(conn)
+		whDeliveries := webhook.NewDeliveryRepo(conn)
+		whSender := webhook.NewSender(ssrfguard.New(nil), nil)
+
+		dispatcher := webhook.NewDispatcher(conn, whSubs, whDeliveries, log, 100)
+		webhookDispatcherDone = dispatcher.Start(webhookCtx, 5*time.Second)
+
+		worker := webhook.NewWorker(whDeliveries, whSubs, whSender, log, 4, nil)
+		webhookWorkerDone = worker.Start(webhookCtx, 5*time.Second)
+
+		log.Info("webhook dispatcher and delivery worker started")
+	}
+
 	// Public country endpoint — available in ALL modes (admin, storefront, both).
 	// When storefront mode is active, it's already wired via storefrontDeps.
 	// For admin-only mode, we register it directly on the admin engine below.
@@ -2515,6 +2548,23 @@ func main() {
 			log.Info("outbox publisher stopped")
 		case <-time.After(5 * time.Second):
 			log.Warn("outbox publisher did not stop in time")
+		}
+	}
+	webhookCancel()
+	if webhookDispatcherDone != nil {
+		select {
+		case <-webhookDispatcherDone:
+			log.Info("webhook dispatcher stopped")
+		case <-time.After(5 * time.Second):
+			log.Warn("webhook dispatcher did not stop in time")
+		}
+	}
+	if webhookWorkerDone != nil {
+		select {
+		case <-webhookWorkerDone:
+			log.Info("webhook delivery worker stopped")
+		case <-time.After(5 * time.Second):
+			log.Warn("webhook delivery worker did not stop in time")
 		}
 	}
 	workerCancel()

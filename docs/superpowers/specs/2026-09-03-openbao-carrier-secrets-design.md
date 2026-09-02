@@ -96,7 +96,7 @@ third consumer.
 ## Reference format and path model
 
 ```
-bao://kv/mark8ly/<env>/marketplace-api/tenants/<tenantID>/<domain>/<provider>/<field>
+bao://kv/mark8ly/marketplace-api/tenants/<tenantID>/<domain>/<provider>/<field>
 ```
 
 A new self-describing prefix alongside `gsm://` and `noop:/aes:`.
@@ -106,8 +106,13 @@ rotation returns the identical reference. This preserves the property #319 calls
 out as load-bearing: rotation must not require rewriting references across the
 DB. `Get` always resolves latest.
 
-`<env>` preserves what GCP's `prefix` (`mark8ly-prod` / `mark8ly-test`) does
-today, so a test cluster can never resolve a production credential.
+**No `<env>` segment**, corrected during planning. GCP needed a
+`mark8ly-prod` / `mark8ly-test` prefix because both environments shared one GCP
+project. OpenBao runs *in cluster*, and the estate's convention is that the path
+prefix is the namespace name (`kv/data/homechef/*`, `kv/data/devai/devai-api/*`).
+Environment separation is therefore inherent — a different environment is a
+different cluster, a different OpenBao, and a different namespace. An `<env>`
+segment would be redundant and off-convention.
 
 ### The grant: two ServiceAccounts, three pod identities
 
@@ -119,9 +124,17 @@ credentials:
 | `mark8ly-marketplace-api-admin` | admin engine | settings saves (`Put`) |
 | `mark8ly-marketplace-api-storefront` | storefront engine | checkout, shipping rates, payment webhooks (`Get`) |
 
-Both therefore need a `namespaceWhitelist` entry and an OpenBao role
-(`app-mark8ly_<serviceaccount>`, matching the estate's existing
-`app-<namespace>_<app>` convention).
+**`namespaceWhitelist` is the wrong mechanism here**, corrected during
+planning. It auto-generates a **read-only** policy at
+`kv/data/<namespace>/<app>/*` — built for ESO-style consumers that only read.
+We need `create`/`update` (a merchant saving a key) and `delete` on metadata
+(`Destroy`), on a per-tenant path. Using the whitelist would grant read-only
+access to the wrong path and fail on the first save.
+
+Instead this uses explicit `bootstrap.policies` and `bootstrap.kubernetesRoles`
+entries. Policy names deliberately avoid the `app-` prefix: the secret-service
+console owns that prefix at runtime and the bootstrap Job never reconciles it,
+so an unprefixed name keeps the two from fighting over the same policy.
 
 **The CronJobs need no additional OpenBao role.** `refund-sweep` and the other
 marketplace-api CronJobs run under `serviceAccountName: {{ .Values.name }}` —
@@ -137,9 +150,19 @@ refusal. Phase 4 must add the label, and prove it with a live run.
 
 ### Policy
 
+**Two policies, least privilege.** Every `Put` and every `Destroy` in the
+codebase is admin-side (`handlers/admin/settings.go:553,720,1442` and
+`internal/domain/service.go:292,394`); storefront handlers only read. So the
+storefront engine gets no write capability at all:
+
 ```hcl
-path "kv/data/mark8ly/<env>/marketplace-api/tenants/*"     { capabilities = ["create","read","update"] }
-path "kv/metadata/mark8ly/<env>/marketplace-api/tenants/*" { capabilities = ["read","list","delete"] }
+# policy: mark8ly-marketplace-api-admin-carrier-secrets
+path "kv/data/mark8ly/marketplace-api/tenants/*"     { capabilities = ["create","read","update"] }
+path "kv/metadata/mark8ly/marketplace-api/tenants/*" { capabilities = ["read","list","delete"] }
+
+# policy: mark8ly-marketplace-api-storefront-carrier-secrets
+path "kv/data/mark8ly/marketplace-api/tenants/*"     { capabilities = ["read"] }
+path "kv/metadata/mark8ly/marketplace-api/tenants/*" { capabilities = ["read","list"] }
 ```
 
 `Destroy` deletes the **metadata** path, removing all versions — matching

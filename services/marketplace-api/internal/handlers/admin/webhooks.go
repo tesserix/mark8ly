@@ -437,6 +437,13 @@ func (h *WebhooksHandler) ListDeliveries(c *gin.Context) {
 // retries it. Scoped through ownedSubscription first, then again by
 // subscription id in the UPDATE itself, so a deliveryID that belongs to
 // another tenant's subscription can never be replayed by guessing it.
+//
+// A delivery that is ALREADY pending is not replayable and answers 404
+// here: it may be leased by a worker mid-send right now, and resetting
+// next_attempt_at under that lease would let a second worker claim and
+// send it too. It is also pointless — a pending delivery is already going
+// to be attempted. The admin UI only offers the button on settled rows;
+// this is the enforcement behind that.
 func (h *WebhooksHandler) ReplayDelivery(c *gin.Context) {
 	tenantID, storeID, ok := h.scope(c)
 	if !ok {

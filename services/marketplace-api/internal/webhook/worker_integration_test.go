@@ -167,3 +167,56 @@ func TestWorker_DisablesSubscriptionExactlyOnceAndNotifies(t *testing.T) {
 	driveOneDeliveryToDeadLetter()
 	require.EqualValues(t, 1, atomic.LoadInt32(&notifyCount), "notify must not fire again for an already-disabled subscription")
 }
+
+// Important review finding: auto-disable stopped NEW deliveries being
+// created (the dispatcher only matches enabled subscriptions) but did
+// nothing about the ones already pending. Those kept being claimed and sent
+// for hours — a softer version of the "cluster making outbound requests
+// indefinitely" that design decision 3 explicitly rejects. A pending
+// delivery for a disabled subscription must be retired, not sent.
+func TestWorker_DoesNotSendPendingDeliveriesForADisabledSubscription(t *testing.T) {
+	var hits int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	db := testdb.NewDB(t, "webhook_deliveries", "webhook_subscriptions", "outbox_events")
+	subs := webhook.NewSubscriptionRepo(db)
+	deliveries := webhook.NewDeliveryRepo(db)
+	guard := ssrfguard.New(func(string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("93.184.216.34")}, nil
+	})
+	w := webhook.NewWorker(deliveries, subs, webhook.NewSender(guard, srv.Client()), slog.Default(), 4, nil)
+	ctx := context.Background()
+
+	sub := newSub(t, subs, uuid.New(), []string{"order.placed"})
+	require.NoError(t, db.Exec(`UPDATE webhook_subscriptions SET url = ? WHERE id = ?`, srv.URL, sub.ID).Error)
+
+	// The delivery is created while the subscription is still enabled…
+	_, err := deliveries.FanOut(ctx, []webhook.Delivery{{
+		SubscriptionID: sub.ID, OutboxEventID: uuid.New(), EventType: "order.placed",
+		AggregateID: uuid.New(), Status: webhook.StatusPending,
+	}})
+	require.NoError(t, err)
+
+	// …and the subscription is disabled before the worker gets to it.
+	require.NoError(t, db.Exec(
+		`UPDATE webhook_subscriptions SET enabled = false, disabled_at = now() WHERE id = ?`, sub.ID).Error)
+
+	n, err := w.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n, "the delivery is still claimed — it has to be retired somewhere")
+	require.EqualValues(t, 0, atomic.LoadInt32(&hits), "no outbound request may be made for a disabled subscription")
+
+	var got webhook.Delivery
+	require.NoError(t, db.First(&got).Error)
+	require.Equal(t, webhook.StatusFailed, got.Status, "the delivery must be retired, not left pending to be re-claimed forever")
+
+	// And it must stay retired, not come back round on the next tick.
+	n2, err := w.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, n2)
+	require.EqualValues(t, 0, atomic.LoadInt32(&hits))
+}

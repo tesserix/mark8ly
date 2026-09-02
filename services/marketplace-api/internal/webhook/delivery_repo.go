@@ -3,31 +3,49 @@ package webhook
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type DeliveryRepo struct{ db *gorm.DB }
 
 func NewDeliveryRepo(db *gorm.DB) *DeliveryRepo { return &DeliveryRepo{db: db} }
 
-// FanOut inserts delivery rows, ignoring any that already exist.
+// FanOut inserts delivery rows in ONE statement, ignoring any that already
+// exist.
 //
 // ON CONFLICT DO NOTHING against idx_webhook_deliveries_event_sub is what
 // makes dispatch idempotent, and therefore what lets the dispatcher run
 // OUTSIDE the outbox publisher's transaction without risking duplicate
-// deliveries. Re-reading the same outbox rows is harmless.
+// deliveries. Re-reading the same outbox rows is harmless — which is also
+// what pays for the dispatcher's lookback window.
+//
+// next_attempt_at is SQL now(), not the caller's clock. Every timestamp in
+// this table is written by the database so that ClaimDue's `next_attempt_at
+// <= now()` compares two readings of the same clock; a Delivery's
+// NextAttemptAt field is ignored on insert for that reason.
 func (r *DeliveryRepo) FanOut(ctx context.Context, rows []Delivery) (int, error) {
 	if len(rows) == 0 {
 		return 0, nil
 	}
-	res := r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "outbox_event_id"}, {Name: "subscription_id"}},
-		DoNothing: true,
-	}).Create(&rows)
+	var b strings.Builder
+	b.WriteString(`INSERT INTO webhook_deliveries
+		(subscription_id, outbox_event_id, event_type, aggregate_id, status, next_attempt_at)
+		VALUES `)
+	args := make([]any, 0, len(rows)*5)
+	for i, d := range rows {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString("(?,?,?,?,?,now())")
+		args = append(args, d.SubscriptionID, d.OutboxEventID, d.EventType, d.AggregateID, d.Status)
+	}
+	b.WriteString(` ON CONFLICT (outbox_event_id, subscription_id) DO NOTHING`)
+
+	res := r.db.WithContext(ctx).Exec(b.String(), args...)
 	if res.Error != nil {
 		return 0, fmt.Errorf("webhook: fan out deliveries: %w", res.Error)
 	}
@@ -79,15 +97,30 @@ func (r *DeliveryRepo) ClaimDue(ctx context.Context, limit int) ([]Delivery, err
 		for i, d := range out {
 			ids[i] = d.ID
 		}
-		leaseUntil := time.Now().Add(LeaseWindow)
-		if err := tx.Exec(`UPDATE webhook_deliveries SET next_attempt_at = ? WHERE id IN ?`,
-			leaseUntil, ids).Error; err != nil {
+		// now() + interval, not a Go timestamp: the predicate above reads
+		// SQL now(), so the lease has to be written against the same clock
+		// or a pod running fast/slow shortens or extends every lease.
+		var leased []struct {
+			ID            uuid.UUID
+			NextAttemptAt time.Time
+		}
+		if err := tx.Raw(`
+			UPDATE webhook_deliveries
+			   SET next_attempt_at = now() + ?::interval
+			 WHERE id IN ?
+			RETURNING id, next_attempt_at`, intervalArg(LeaseWindow), ids).Scan(&leased).Error; err != nil {
 			return fmt.Errorf("webhook: lease deliveries: %w", err)
 		}
 		// Reflect the lease in what's returned too, so a caller reading
 		// NextAttemptAt off these structs doesn't see stale pre-lease data.
+		byID := make(map[uuid.UUID]time.Time, len(leased))
+		for _, l := range leased {
+			byID[l.ID] = l.NextAttemptAt
+		}
 		for i := range out {
-			out[i].NextAttemptAt = leaseUntil
+			if t, ok := byID[out[i].ID]; ok {
+				out[i].NextAttemptAt = t
+			}
 		}
 		return nil
 	})
@@ -97,17 +130,23 @@ func (r *DeliveryRepo) ClaimDue(ctx context.Context, limit int) ([]Delivery, err
 	return out, nil
 }
 
-// RecordOutcome writes the result of one attempt.
-func (r *DeliveryRepo) RecordOutcome(ctx context.Context, id uuid.UUID, status string, code *int, errMsg *string, next time.Time) error {
+// RecordOutcome writes the result of one attempt. retryIn is how far ahead
+// of SQL now() the next attempt becomes due; pass 0 for a terminal outcome.
+//
+// Every timestamp here comes from the database clock, matching FanOut and
+// ClaimDue. Mixing a pod clock into next_attempt_at while ClaimDue's
+// predicate reads now() is the same class of assumption that produced the
+// dispatcher's lost-event bug.
+func (r *DeliveryRepo) RecordOutcome(ctx context.Context, id uuid.UUID, status string, code *int, errMsg *string, retryIn time.Duration) error {
 	updates := map[string]any{
 		"status":           status,
 		"attempts":         gorm.Expr("attempts + 1"),
 		"last_status_code": code,
 		"last_error":       errMsg,
-		"next_attempt_at":  next,
+		"next_attempt_at":  gorm.Expr("now() + ?::interval", intervalArg(retryIn)),
 	}
 	if status == StatusDelivered {
-		updates["delivered_at"] = time.Now()
+		updates["delivered_at"] = gorm.Expr("now()")
 	}
 	if err := r.db.WithContext(ctx).Model(&Delivery{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return fmt.Errorf("webhook: record outcome: %w", err)
@@ -135,12 +174,20 @@ func (r *DeliveryRepo) ListForSubscription(ctx context.Context, subscriptionID u
 // verified that subscription belongs to their tenant and store — so a
 // deliveryID belonging to a different subscription is silently a no-op
 // rather than a cross-tenant write. Reports whether a row matched.
+//
+// `status <> pending` is a guard, not a filter for tidiness: a pending row
+// may be LEASED right now (see ClaimDue), mid-flight in some worker's
+// outbound request. Resetting next_attempt_at under it would break the
+// lease and let a second worker claim and send the same delivery — an admin
+// button that manufactures a duplicate send. Only a settled delivery
+// (delivered or failed) is replayable; a pending one is already going to be
+// attempted.
 func (r *DeliveryRepo) Replay(ctx context.Context, subscriptionID, deliveryID uuid.UUID) (bool, error) {
 	res := r.db.WithContext(ctx).Exec(`
 		UPDATE webhook_deliveries
 		   SET status = ?, attempts = 0, next_attempt_at = now()
-		 WHERE id = ? AND subscription_id = ?`,
-		StatusPending, deliveryID, subscriptionID)
+		 WHERE id = ? AND subscription_id = ? AND status <> ?`,
+		StatusPending, deliveryID, subscriptionID, StatusPending)
 	if res.Error != nil {
 		return false, fmt.Errorf("webhook: replay delivery: %w", res.Error)
 	}

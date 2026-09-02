@@ -236,6 +236,16 @@
   --color-danger:  var(--danger);
   --color-warning: var(--warning);
 
+  /* --destructive/--destructive-foreground existed as tokens but were never
+     exposed here, so `bg-destructive` generated NO utility and resolved to
+     transparent. @tesserix/web 2.4.2 switched AlertDialog's confirm button
+     from bg-warning to bg-destructive; with text-white on a white card that
+     made the "Discard" button invisible in production — clickable, and
+     impossible to see. A missing utility fails silently: no build error, no
+     console warning, just no rule. */
+  --color-destructive:            var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
   /* Semantic aliases */
   --color-background:           var(--background);
   --color-background-elevated:  var(--background-elevated);

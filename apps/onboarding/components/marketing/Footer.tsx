@@ -118,7 +118,18 @@ function FooterColumn({ title, links }: FooterColumnProps) {
       </h2>
       <ul className="space-y-3">
         {links.map((l) => (
-          <li key={`${l.href}-${l.label}`}>
+          // Key on href alone, NOT `${href}-${label}`. React keys are
+          // serialised into the RSC flight payload embedded in the page,
+          // and Googlebot harvests URL-shaped strings out of it: a key of
+          // "/blog-Journal" was crawled as a real path and returned 404.
+          // Search Console had five of these (#147) — /blog-Journal,
+          // /cookies-Cookies, /refunds-Refunds among them — and every
+          // footer link was generating another one.
+          //
+          // href is already unique within a column, and if it ever does
+          // leak into the payload it resolves to a real page instead of a
+          // phantom 404. Don't reintroduce a composite key here.
+          <li key={l.href}>
             <Link
               href={l.href}
               className="text-[0.9375rem] text-paper-400 hover:text-paper-50"

@@ -159,8 +159,30 @@ class ReusableCIContract(unittest.TestCase):
         for app, google_slot in next_apps.items():
             contents = (ROOT / f"apps/{app}/Dockerfile").read_text()
             with self.subTest(app=app):
-                self.assertIn("id=PACKAGE_READ_TOKEN", contents)
+                # PACKAGE_READ_TOKEN is deliberately NOT required. Every
+                # @tesserix/* package now comes from the public npm registry,
+                # so `npm ci` needs no credential and the scoped-registry
+                # .npmrc is gone. The reusable workflow still passes the
+                # secret; nothing consumes it. Asserting its ABSENCE instead
+                # would be wrong too — a Dockerfile is free to mount secrets
+                # this contract does not know about.
                 self.assertIn("id=APPLICATION_BUILD_SECRET", contents)
+                # The registry move is only complete if no .npmrc is COPYed
+                # in: the file no longer exists, so that instruction would
+                # fail the build outright. Checked against COPY lines rather
+                # than the whole file, so a comment explaining the migration
+                # does not trip it.
+                copied = [
+                    line for line in contents.splitlines()
+                    if line.startswith("COPY") and ".npmrc" in line
+                ]
+                self.assertEqual(copied, [], "Dockerfile still COPYs a deleted .npmrc")
+                # The builder must carry the per-workspace node_modules, not
+                # just the root tree. npm does not always hoist a workspace
+                # dependency, and copying only /src/node_modules drops it —
+                # which fails as "Module not found" during next build, long
+                # after the install step reported success.
+                self.assertIn("COPY --from=deps /src/apps ./apps", contents)
                 self.assertIn("ARG REUSABLE_BUILD_CACHE_FP", contents)
                 self.assertIn(
                     f"NEXT_PUBLIC_GOOGLE_CLIENT_ID=${google_slot}", contents

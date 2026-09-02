@@ -24,6 +24,29 @@ ALLOWLIST = {
     # them anyway. Proper bump blocked by the monorepo multi-version lockfile
     # (can't regen locally). Time-boxed: drop when eslint deps are refreshed.
     "GHSA-mh99-v99m-4gvg",
+    # image-size DoS via infinite loops in the ICNS (GHSA-w3rx-r6r6-pgpr) and
+    # JXL/HEIF (GHSA-5p2g-fcmc-qvqq) parsers. Reaches us only as a BUILD-TIME
+    # dependency of the React Native bundler:
+    #   apps/mobile-* -> react-native -> @react-native/community-cli-plugin
+    #                 -> metro -> image-size
+    # metro uses it to measure image assets while bundling, on a developer's
+    # machine or in the mobile build job. It is not present in any deployed web
+    # service image, and nothing in production feeds untrusted ICNS/JXL/HEIF
+    # through it, so there is no production exposure to a parser DoS here.
+    #
+    # NOT time-boxed to an upgrade, because there is nothing to upgrade to:
+    # both advisories list `image-size <= 2.0.2` affected with first patched
+    # version NONE, and 2.0.2 is the latest published release. An `overrides`
+    # pin therefore cannot fix it either — clearing this needs image-size to
+    # ship a fix, then metro, then react-native.
+    #
+    # Left un-allowlisted, these block EVERY pr in the repo: main went red on a
+    # completely unchanged lockfile when npm's audit feed picked the advisories
+    # up (they were published 2026-06-10; the gate started failing 2026-09-02).
+    # Revisit when react-native is next bumped — drop these two ids, re-run the
+    # gate, and see whether the chain has been patched upstream.
+    "GHSA-w3rx-r6r6-pgpr",
+    "GHSA-5p2g-fcmc-qvqq",
 }
 
 

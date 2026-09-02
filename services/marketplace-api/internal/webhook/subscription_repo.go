@@ -74,13 +74,23 @@ func (r *SubscriptionRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// MatchingEvent returns the ENABLED subscriptions for tenantID that selected
-// eventType. `event_types @> ARRAY[?]` uses the array containment operator so
-// the match happens in Postgres rather than by loading every subscription.
-func (r *SubscriptionRepo) MatchingEvent(ctx context.Context, tenantID uuid.UUID, eventType string) ([]Subscription, error) {
+// MatchingEvent returns the ENABLED subscriptions for one (tenant, store)
+// that selected eventType. `event_types @> ARRAY[?]` uses the array
+// containment operator so the match happens in Postgres rather than by
+// loading every subscription.
+//
+// store_id is part of the predicate, not decoration. It is NOT NULL on the
+// table, it scopes ListForStore and ownedSubscription, and merchants see it
+// in admin — so matching on tenant_id alone let a webhook registered on one
+// store receive another store's events for any merchant on a multi-store
+// plan (plangate FeatureStores). The payload is identifier-only, so the
+// merchant could not even see the leak: their follow-up API fetch just
+// 404s. Migration 000127 carries the matching partial index.
+func (r *SubscriptionRepo) MatchingEvent(ctx context.Context, tenantID, storeID uuid.UUID, eventType string) ([]Subscription, error) {
 	var out []Subscription
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND enabled AND event_types @> ARRAY[?]::text[]", tenantID, eventType).
+		Where("tenant_id = ? AND store_id = ? AND enabled AND event_types @> ARRAY[?]::text[]",
+			tenantID, storeID, eventType).
 		Find(&out).Error
 	if err != nil {
 		return nil, fmt.Errorf("webhook: match subscriptions: %w", err)

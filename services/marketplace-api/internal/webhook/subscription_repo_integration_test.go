@@ -15,9 +15,17 @@ import (
 
 func newSub(t *testing.T, repo *webhook.SubscriptionRepo, tenant uuid.UUID, events []string) *webhook.Subscription {
 	t.Helper()
+	return newSubForStore(t, repo, tenant, uuid.New(), events)
+}
+
+// newSubForStore is newSub with the store pinned. Fan-out matches on
+// (tenant_id, store_id), so any test asserting who receives a delivery has
+// to name the store rather than take a random one.
+func newSubForStore(t *testing.T, repo *webhook.SubscriptionRepo, tenant, store uuid.UUID, events []string) *webhook.Subscription {
+	t.Helper()
 	s := &webhook.Subscription{
 		TenantID:   tenant,
-		StoreID:    uuid.New(),
+		StoreID:    store,
 		URL:        "https://hooks.example.com/x",
 		EventTypes: events,
 		Secret:     "s3cret-value-for-test",
@@ -33,17 +41,39 @@ func TestMatchingEvent_ReturnsOnlyEnabledSubscriptionsWantingThatType(t *testing
 	tenant := uuid.New()
 	ctx := context.Background()
 
-	want := newSub(t, repo, tenant, []string{"order.placed", "order.refunded"})
-	newSub(t, repo, tenant, []string{"product.created"})  // wrong type
-	newSub(t, repo, uuid.New(), []string{"order.placed"}) // wrong tenant
-	disabled := newSub(t, repo, tenant, []string{"order.placed"})
+	store := uuid.New()
+	want := newSubForStore(t, repo, tenant, store, []string{"order.placed", "order.refunded"})
+	newSubForStore(t, repo, tenant, store, []string{"product.created"})   // wrong type
+	newSubForStore(t, repo, uuid.New(), store, []string{"order.placed"})  // wrong tenant
+	newSubForStore(t, repo, tenant, uuid.New(), []string{"order.placed"}) // wrong store
+	disabled := newSubForStore(t, repo, tenant, store, []string{"order.placed"})
 	_, err := repo.RecordFailure(ctx, disabled.ID, 1) // threshold 1 → disabled
 	require.NoError(t, err)
 
-	got, err := repo.MatchingEvent(ctx, tenant, "order.placed")
+	got, err := repo.MatchingEvent(ctx, tenant, store, "order.placed")
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	require.Equal(t, want.ID, got[0].ID)
+}
+
+// The Critical review finding on the whole branch: webhook_subscriptions
+// carries a NOT NULL store_id that scopes every merchant-facing read, but
+// the fan-out match ignored it — so on a multi-store plan a webhook
+// registered on Store A received Store B's events, with an
+// identifier-only payload that gave the merchant no way to tell.
+func TestMatchingEvent_DoesNotLeakAcrossStoresInOneTenant(t *testing.T) {
+	db := testdb.NewDB(t)
+	repo := webhook.NewSubscriptionRepo(db)
+	tenant := uuid.New()
+	storeA, storeB := uuid.New(), uuid.New()
+
+	subA := newSubForStore(t, repo, tenant, storeA, []string{"order.placed"})
+	newSubForStore(t, repo, tenant, storeB, []string{"order.placed"})
+
+	got, err := repo.MatchingEvent(context.Background(), tenant, storeA, "order.placed")
+	require.NoError(t, err)
+	require.Len(t, got, 1, "a store B subscription must not match a store A event")
+	require.Equal(t, subA.ID, got[0].ID)
 }
 
 func TestRecordFailure_DisablesAtThresholdAndRecordsWhy(t *testing.T) {

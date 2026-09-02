@@ -99,6 +99,20 @@ func TestWorker_RetriesWithBackoffThenDeadLetters(t *testing.T) {
 // must call the notify callback on the tick that flips the subscription
 // disabled, and never again for further failures against the same dead
 // endpoint.
+//
+// This drives the boundary directly rather than grinding up to it: earlier
+// this test drove FailureThreshold (10) separate deliveries through
+// MaxAttempts (6) real TLS round-trips each — 60 requests plus 60 DB
+// updates — to reach the one dead-letter that flips the subscription
+// disabled. That loop is not what's under test; RecordFailure only
+// increments consecutive_failures once per DEAD-LETTERED delivery (see
+// worker.go's disableIfExhausted), not once per failed HTTP attempt, so the
+// grind was purely mechanical repetition to get the counter to
+// FailureThreshold-1. Seeding consecutive_failures directly gets to the
+// same starting point in one UPDATE, and the two deliveries actually
+// exercised below are what the test is really asserting about: the
+// tick that crosses the threshold, and the tick after that proves the
+// notify doesn't fire again for the same already-disabled endpoint.
 func TestWorker_DisablesSubscriptionExactlyOnceAndNotifies(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
@@ -120,11 +134,12 @@ func TestWorker_DisablesSubscriptionExactlyOnceAndNotifies(t *testing.T) {
 	sub := newSub(t, subs, uuid.New(), []string{"order.placed"})
 	require.NoError(t, db.Exec(`UPDATE webhook_subscriptions SET url = ? WHERE id = ?`, srv.URL, sub.ID).Error)
 
-	// RecordFailure only increments once per DEAD-LETTERED delivery (see
-	// worker.go's disableIfExhausted), not once per failed HTTP attempt —
-	// so tripping FailureThreshold takes that many separate deliveries
-	// exhausting their retries, not that many attempts.
-	for i := 0; i < webhook.FailureThreshold; i++ {
+	// Seed one failure short of the threshold, so the very next dead-lettered
+	// delivery is the one that crosses it.
+	require.NoError(t, db.Exec(`UPDATE webhook_subscriptions SET consecutive_failures = ? WHERE id = ?`,
+		webhook.FailureThreshold-1, sub.ID).Error)
+
+	driveOneDeliveryToDeadLetter := func() {
 		_, err := deliveries.FanOut(ctx, []webhook.Delivery{{
 			SubscriptionID: sub.ID, OutboxEventID: uuid.New(), EventType: "order.placed",
 			AggregateID: uuid.New(), Status: webhook.StatusPending, NextAttemptAt: time.Now(),
@@ -137,9 +152,18 @@ func TestWorker_DisablesSubscriptionExactlyOnceAndNotifies(t *testing.T) {
 		}
 	}
 
-	require.EqualValues(t, 1, atomic.LoadInt32(&notifyCount), "notify must fire exactly once")
+	// First dead-letter crosses the threshold: notify fires, subscription disables.
+	driveOneDeliveryToDeadLetter()
+	require.EqualValues(t, 1, atomic.LoadInt32(&notifyCount), "notify must fire on the tick that disables the subscription")
 
 	var got webhook.Subscription
 	require.NoError(t, db.First(&got, "id = ?", sub.ID).Error)
 	require.False(t, got.Enabled)
+
+	// Second dead-letter against the same already-disabled endpoint: notify
+	// must NOT fire again. This is the half of the contract a naive
+	// implementation (notify on every dead-letter rather than only on the
+	// disabling transition) would silently fail.
+	driveOneDeliveryToDeadLetter()
+	require.EqualValues(t, 1, atomic.LoadInt32(&notifyCount), "notify must not fire again for an already-disabled subscription")
 }

@@ -12,7 +12,23 @@
 export type GuideBlock =
   | { type: "p"; text: string }
   | { type: "h2"; text: string }
-  | { type: "ul"; items: ReadonlyArray<string> };
+  | { type: "ul"; items: ReadonlyArray<string> }
+  /**
+   * Outbound citations, rendered as a "Sources" list and mirrored into
+   * the article's JSON-LD `citation`.
+   *
+   * These exist because two of these guides make claims that need
+   * backing rather than asserting — UPI settlement economics above all
+   * (tesserix/mark8ly#594). We publish under an Organization byline, so
+   * a reader has no named expert to weigh; a checkable primary source
+   * is the honest substitute, and it is a stronger signal than a
+   * confident tone. Cite the regulator or the processor's own
+   * documentation, never a secondary summary of one.
+   */
+  | {
+      type: "sources";
+      items: ReadonlyArray<{ label: string; url: string }>;
+    };
 
 export interface Guide {
   slug: string;
@@ -173,7 +189,19 @@ export const GUIDES: ReadonlyArray<Guide> = [
       { type: "h2", text: "What it costs" },
       {
         type: "p",
-        text: "UPI is one of the cheapest ways to take money online — processing is typically around 2%, and often lower than cards. The important thing to watch is whether your commerce platform adds its own fee on top of the processor's rate. That extra percentage is pure margin loss, and on Indian D2C margins it adds up fast. A platform with no per-sale platform fee means UPI costs you only what the processor charges.",
+        text: "UPI is unusual among payment methods: the merchant discount rate on person-to-merchant UPI payments has been nil since January 2020, when Section 10A of the Payment and Settlement Systems Act, 2007 and Section 269SU of the Income-tax Act, 1961 were amended to prohibit charging it. Before that it was capped at 0.30%. On the regulated side, in other words, accepting UPI costs an Indian merchant nothing at all.",
+      },
+      {
+        type: "p",
+        text: "That is not the same as UPI reaching you free, and the difference is where most sellers get confused. Payment gateways charge their own fee on top of the nil MDR, and that is the headline rate you were quoted. Razorpay's published pricing, for example, lists UPI as \u201cZero MDR \u2014 2% platform fee applies\u201d \u2014 the same 2% it charges on cards and wallets. So the roughly 2% you pay on a UPI order is your gateway's fee, not the cost of UPI itself. It is worth knowing which of the two you are being charged, because only one of them is anyone's to negotiate.",
+      },
+      {
+        type: "p",
+        text: "This is no longer a settled zero, either. The Taxation and Other Laws (Amendment) Bill, 2026 amends the Payment and Settlement Systems Act again, replacing the blanket prohibition with a framework under which MDR can be notified above a turnover threshold. Neither the rate nor the threshold has been set, and small merchants and lower-value person-to-merchant payments are expected to stay exempt \u2014 but it is worth watching rather than assuming.",
+      },
+      {
+        type: "p",
+        text: "The number to check on any commerce platform, then, is what it adds on top of your gateway's rate. That extra percentage is pure margin loss, and on Indian D2C margins it adds up fast. A platform with no per-sale fee means a UPI order costs you only what your gateway charges.",
       },
       { type: "h2", text: "Offer UPI, wallets, and cards behind one checkout" },
       {
@@ -200,6 +228,26 @@ export const GUIDES: ReadonlyArray<Guide> = [
       {
         type: "p",
         text: "For the fuller picture on selling to Indian customers — pricing in your own currency, your own domain, and a storefront that looks like a brand — see our guide to selling online in India.",
+      },
+      {
+        type: "sources",
+        items: [
+          {
+            label:
+              "Press Information Bureau \u2014 Cabinet incentive scheme for RuPay debit and low-value BHIM-UPI (P2M), stating the zero-MDR basis in Section 10A of the Payment and Settlement Systems Act, 2007 and Section 269SU of the Income-tax Act, 1961",
+            url: "https://www.pib.gov.in/PressReleasePage.aspx?PRID=1890314&reg=48&lang=2",
+          },
+          {
+            label:
+              "Razorpay \u2014 Pricing, listing UPI as \u201cZero MDR \u2014 2% platform fee applies\u201d",
+            url: "https://razorpay.com/pricing/",
+          },
+          {
+            label:
+              "PRS Legislative Research \u2014 The Taxation and Other Laws (Amendment) Bill, 2026, which amends the Payment and Settlement Systems Act, 2007",
+            url: "https://prsindia.org/billtrack/the-taxation-and-other-laws-amendment-bill-2026",
+          },
+        ],
       },
     ],
   },

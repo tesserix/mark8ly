@@ -46,6 +46,26 @@ function Block({ block }: { block: GuideBlock }) {
           ))}
         </ul>
       );
+    case "sources":
+      // Rendered, not hidden in the JSON-LD. A citation a reader cannot
+      // click is a schema decoration; the point is that someone can
+      // check the claim. Links stay dofollow on purpose \u2014 these are
+      // genuine references to a regulator and a processor, and
+      // nofollowing them would be disowning our own sources.
+      return (
+        <>
+          <h2>Sources</h2>
+          <ul>
+            {block.items.map((source) => (
+              <li key={source.url}>
+                <a href={source.url} target="_blank" rel="noopener noreferrer">
+                  {source.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </>
+      );
     case "p":
     default:
       return <p>{block.text}</p>;
@@ -58,6 +78,15 @@ export default async function GuidePage({ params }: PageProps) {
   if (!guide) notFound();
 
   const url = `${SITE_URL}/guides/${guide.slug}`;
+
+  const citations = guide.blocks
+    .filter((block) => block.type === "sources")
+    .flatMap((block) => block.items)
+    .map((source) => ({
+      "@type": "CreativeWork",
+      name: source.label,
+      url: source.url,
+    }));
 
   // Article JSON-LD — content is first-party, but we still escape `<`
   // in the serialized output as a matter of habit.
@@ -77,6 +106,12 @@ export default async function GuidePage({ params }: PageProps) {
     author: { "@id": ORGANIZATION_ID },
     publisher: { "@id": ORGANIZATION_ID },
     mainEntityOfPage: { "@type": "WebPage", "@id": url },
+    // Mirror any rendered "Sources" list into `citation`, so the
+    // references a reader can see are also the ones a crawler is told
+    // about. Omitted entirely when a guide cites nothing \u2014 an empty
+    // array would assert "we checked and there are none", which is a
+    // different and untrue claim from staying silent.
+    ...(citations.length > 0 ? { citation: citations } : {}),
   };
 
   const otherGuides = GUIDES.filter((g) => g.slug !== guide.slug);

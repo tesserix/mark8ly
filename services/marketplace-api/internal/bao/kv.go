@@ -2,6 +2,7 @@ package bao
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -138,6 +139,12 @@ func intFrom(v any) int {
 		return n
 	case float64:
 		return int(n)
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0
+		}
+		return int(i)
 	case string:
 		var i int
 		if _, err := fmt.Sscanf(n, "%d", &i); err != nil {

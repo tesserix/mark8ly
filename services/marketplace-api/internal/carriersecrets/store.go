@@ -84,9 +84,20 @@ type Rewrapper interface {
 // HybridStore — GCP Secret Manager primary, inline fallback for reads.
 // ─────────────────────────────────────────────────────────────────────
 
-// HybridStore is the production Store. It writes through to GCP
-// Secret Manager and reads from either GCP SM or inline ciphertext so
-// existing rows stay readable during migration.
+// HybridStore is NO LONGER the production Store on the wired path — main.go
+// now wires ChainStore (see chain.go) for every SHIPPING_SECRET_STORE value
+// including "gcpsm", since ChainStore is a strict superset (GCP-primary
+// ChainStore behaves identically to HybridStore, plus bao:// routing for
+// the rollback case — see pkg/config's OpenBao-required-in-gcpsm-mode
+// validation). HybridStore is retained here DELIBERATELY for a later
+// phase rather than deleted outright: it is a smaller, independently
+// understandable reference implementation of the primary+read-fallback
+// pattern ChainStore generalises, and removing it is not required by any
+// task in this migration. Do not wire it into main.go going forward —
+// ChainStore supersedes it.
+//
+// It writes through to GCP Secret Manager and reads from either GCP SM or
+// inline ciphertext so existing rows stay readable during migration.
 type HybridStore struct {
 	client    SecretClient
 	enc       crypto.Encryptor

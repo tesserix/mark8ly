@@ -33,6 +33,17 @@ const (
 // evidence that GCP Secret Manager still has live readers — phase 5 decides
 // whether GCP SM can be decommissioned by watching this counter stay at
 // zero for N days. Never fired for a bao:// read.
+//
+// This counter lives on ChainStore, which sits BELOW CachingStore in the
+// production wiring (main.go wraps the chain in a cache when bao is
+// primary). A cache hit never reaches ChainStore.Get at all, so this
+// counter's magnitude under-counts true gsm:// read volume by roughly the
+// cache hit ratio. That does not weaken the zero/non-zero property phase 5
+// actually relies on: every distinct reference still reaches the inner
+// ChainStore at least once per cache TTL (a miss, or an expiry), so a
+// reference that is still being read as gsm:// keeps firing this counter
+// at least that often — "durably zero" still means "no gsm:// reads
+// happened", just observed at a coarser cadence than raw request volume.
 const FallbackReadMetric = "carriersecrets_gsm_fallback_read"
 
 // RewrapFailedMetric is the label passed to CounterFn when

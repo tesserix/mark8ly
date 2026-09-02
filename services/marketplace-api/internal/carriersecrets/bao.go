@@ -63,6 +63,17 @@ func (b *BaoClient) CreateOrAddVersion(ctx context.Context, name string, payload
 	if err != nil {
 		return err
 	}
+	// ifVersion=0 is an unconditional write — no check-and-set. bao.Client
+	// supports CAS via a positive ifVersion (and returns the new version
+	// number), but nothing in this package's Put/CreateOrAddVersion path
+	// currently reads the returned version or ever passes a nonzero
+	// ifVersion, so CAS protection is NOT ACTUALLY IN EFFECT here despite
+	// the underlying client supporting it. A reader should not assume a
+	// concurrent write is safely rejected — two callers racing a
+	// CreateOrAddVersion on the same path today both simply succeed, with
+	// whichever writes last winning. Wiring real CAS would mean this
+	// method reading the current version before writing (from
+	// ReadSecret's second return) and threading it through here.
 	encoded := base64.StdEncoding.EncodeToString(payload)
 	if _, err := b.client.WriteSecret(ctx, rel, map[string]string{baoValueField: encoded}, 0); err != nil {
 		return fmt.Errorf("carriersecrets: bao write %s: %w", name, err)

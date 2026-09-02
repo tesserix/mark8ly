@@ -12,14 +12,9 @@ Webhooks are available on every plan. There is no gating by tier.
 the event name, the aggregate id and a timestamp — deliberately, so no customer
 data is sent to a merchant-supplied URL and a retry can never deliver a stale
 copy of an entity. To act on an event you fetch the entity from the REST API
-using the id. The read-only API is available on **Starter, Studio and Pro**
-(widened to Starter in #585 precisely so every plan that can register a webhook
-can also resolve what it delivers).
-
-On **Trial**, the read-only API is not enabled. Trial webhooks still work as
-pure signals — ping a Slack channel, increment a counter, prompt someone to
-open admin — but a Trial integration cannot fetch the order behind an
-`order.placed` until the store is on a paid plan.
+using the id. The read-only API is available on **every plan, Trial included**
+(#585) — precisely so that any plan able to register a webhook can also resolve
+what it delivers. Write access to the API (`FeatureFullAPI`) remains Pro-only.
 
 **How many endpoints you can register.** Each store may hold a limited number
 of subscriptions, because dispatch fan-out is `outbox rows × matching

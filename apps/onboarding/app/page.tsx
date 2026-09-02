@@ -354,20 +354,42 @@ function Hero() {
     <section className="relative overflow-hidden">
       <div className="mx-auto max-w-6xl px-6 pb-16 pt-16 lg:pb-24 lg:pt-20">
         <div className="max-w-3xl">
+          {/*
+            The H1 carries the offer as well as the brand line.
+
+            The <title> was rewritten to lead with the offer (#570), but
+            the H1 was not — so the page told two different stories
+            depending on how you arrived (tesserix/mark8ly#599). Someone
+            coming from search passes through the title first. Someone
+            tapping a link in an Instagram DM never sees the title at
+            all, and lands straight on the H1 — and that is the primary
+            acquisition channel, so it is the majority arrival path.
+
+            "A storefront worth opening" is a comparison claim: it only
+            lands against an implicit alternative, which a seller
+            currently taking orders in DMs does not have. It is kept,
+            because it is the brand line and it works on the migrator,
+            but it no longer stands alone.
+          */}
           <h1 className="font-serif text-5xl font-medium leading-[1.02] tracking-[-0.025em] text-foreground">
-            A storefront
+            A storefront worth opening.
             <br />
-            worth opening.
+            {/* nbsp keeps "ninety days." together: at 390px the serif
+                wraps to four lines and would otherwise orphan "days."
+                on a line of its own. text-wrap:balance does not help —
+                the explicit <br> splits the heading into two separate
+                balancing blocks, and measuring showed no effect. */}
+            Free for ninety&nbsp;days.
           </h1>
           <p className="mt-6 max-w-xl text-xl leading-[1.2] text-foreground">
-            Ninety days free, no card. And we never take a cut of what you
-            sell.
+            No card to start, and we never take a cut of what you sell.
           </p>
           <p className="mt-6 max-w-xl text-lg leading-[1.55] text-foreground-secondary">
             Mark8ly is a quiet, considered commerce platform for people who
-            actually make things. Set up in an afternoon. Keep your margins.
-            Sell on a storefront that doesn&rsquo;t look like everyone
-            else&rsquo;s.
+            actually make things. If you&rsquo;re taking orders through
+            Instagram DMs and a link in your bio today, this is the step
+            after that. Set up in an afternoon. Keep your margins. Sell on a
+            storefront that doesn&rsquo;t look like everyone else&rsquo;s.
           </p>
 
           <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">

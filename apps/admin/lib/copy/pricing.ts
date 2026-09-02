@@ -61,7 +61,24 @@ export const pricingCopy = {
   disclosureTemplate: (currency: string) =>
     `Prices shown in ${currency}. Annual billing bills upfront; monthly bills each month.`,
 
-  /** The three public plans. Backend uses starter / studio / pro. */
+  /**
+   * The three public plans. Backend uses starter / studio / pro.
+   *
+   * Every bullet must be something plangate actually grants on that plan.
+   * #413 caught this page quoting prices the billing catalog would not
+   * charge; #418 fixed the prices and left these feature bullets alone,
+   * and they turned out to describe a different product entirely —
+   * invented product/order/staff caps, wrong storefront counts in both
+   * directions, and "dedicated infrastructure" / "SLA-backed uptime" on a
+   * shared Cloud SQL micro instance (#564).
+   *
+   * Before adding a bullet: find its Feature constant in
+   * services/marketplace-api/internal/plangate/matrix.go, confirm it is
+   * enabled for that plan, and confirm a real handler enforces it. A
+   * numeric limit must be a number the code enforces, not one invented
+   * here. This page is public and indexed — pricing-copy.test.ts pins the
+   * counts against the matrix so a divergence fails the build.
+   */
   plans: [
     {
       id: 'starter' as const,
@@ -70,12 +87,11 @@ export const pricingCopy = {
       cta: 'Start free trial',
       ctaHref: '/signup?plan=starter',
       features: [
-        '1 storefront',
-        'Up to 100 products',
-        '500 orders / month',
-        '2 staff accounts',
-        'Standard analytics',
-        'Community support',
+        'Up to 2 storefronts',
+        'Unlimited products & orders',
+        '15,000 campaign emails / mo',
+        'Full colour palette & announcement bar',
+        'Your own domain',
       ],
     },
     {
@@ -85,14 +101,12 @@ export const pricingCopy = {
       cta: 'Start free trial',
       ctaHref: '/signup?plan=studio',
       features: [
-        '3 storefronts',
-        'Unlimited products',
-        '5,000 orders / month',
-        '10 staff accounts',
-        'Advanced analytics',
-        'Priority email support',
-        'Custom domain',
-        'Discount codes',
+        'Up to 5 storefronts',
+        '50 images per product',
+        '50,000 campaign emails / mo',
+        'Custom CSS & fonts',
+        'Read-only API',
+        '12-month audit log',
       ],
     },
     {
@@ -102,15 +116,12 @@ export const pricingCopy = {
       cta: 'Start a conversation',
       ctaHref: '/admin/settings/billing/pro-contact',
       features: [
-        'Unlimited storefronts',
-        'Unlimited everything',
-        'Dedicated infrastructure',
-        'SLA-backed uptime',
-        'Custom contract',
-        'Named account manager',
-        'Enterprise SSO',
-        'Audit log retention',
-        'Advanced fraud tooling',
+        'Up to 10 storefronts',
+        'Unlimited images',
+        'Full read/write API',
+        'SSO (SAML / OIDC)',
+        'Priority support (4h response)',
+        'Forever audit retention',
       ],
     },
   ] satisfies PlanCopyItem[],

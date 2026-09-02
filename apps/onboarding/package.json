@@ -16,7 +16,7 @@
     "@openpanel/nextjs": "^1.5.1",
     "@repo/ui": "*",
     "@tailwindcss/postcss": "^4.2.2",
-    "@tesserix/web": "^1.7.1",
+    "@tesserix/web": "^2.4.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^13.1.0",

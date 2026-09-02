@@ -8,7 +8,7 @@ The project is pre-launch. The marketing site at https://mark8ly.com is the prim
 
 ## Core pages
 
-- [Home](https://mark8ly.com/): The main landing page — product positioning, pricing, how it works, FAQs.
+- [Home](https://mark8ly.com): The main landing page — product positioning, pricing, how it works, FAQs.
 - [About](https://mark8ly.com/about): Who we are, what we believe, where we're based.
 - [Contact](https://mark8ly.com/contact): Email channels for general support, partnerships, legal, and press.
 - [Help & FAQ](https://mark8ly.com/help): Answers to the questions merchants actually ask — trial, pricing, domains, payments, shipping, inventory, data export.

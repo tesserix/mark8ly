@@ -83,7 +83,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
   // Canonical marketing pages — fully indexed.
   const primary: MetadataRoute.Sitemap = [
     {
-      url: `${SITE_URL}/`,
+      // `${SITE_URL}` with no trailing slash, matching the canonical the
+      // homepage actually renders (<link rel="canonical"
+      // href="https://mark8ly.com">). The sitemap used to say
+      // "https://mark8ly.com/" while the page said "https://mark8ly.com",
+      // so the two disagreed about the site's own front door
+      // (tesserix/mark8ly#603). Google normalises the pair, so this was
+      // never costing us rankings — it is fixed because there is no reason
+      // for a site to be inconsistent about its most important URL, and
+      // because the next person to diff the two should not have to work
+      // out which one is authoritative.
+      //
+      // No-slash is the form every other reference in the app already uses
+      // (SITE_URL itself, the JSON-LD @ids, the OG urls), so the sitemap
+      // was the single outlier.
+      url: SITE_URL,
       lastModified: lastModified("/"),
       changeFrequency: "weekly",
       priority: 1.0,

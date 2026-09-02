@@ -43,8 +43,24 @@ interface PlanMeta {
   features: string[]
 }
 
-// Feature list matches spec §9 exactly. Plans gate on these features
-// server-side via plangate; the copy here must not promise more.
+// Every bullet below must be something a merchant on that plan can actually
+// get today. Before adding or restoring one:
+//   1. Find its `plangate.Feature` constant in
+//      services/marketplace-api/internal/plangate/matrix.go, confirm it is
+//      enabled (non-Disabled) for that plan, AND grep for the constant
+//      outside matrix.go and its tests to confirm a real handler enforces
+//      it — a constant that only appears in matrix.go is a hedge for
+//      something unbuilt, not a shipped feature (see
+//      FeatureCustomCodeInjection).
+//   2. Check migrations/ for a later migration that withdrew the feature
+//      while its implementation code stayed behind (see
+//      000121_retire_untested_paypal — a complete gateway offered to
+//      nobody).
+//   3. For a numeric limit (stores, emails, images, retention), confirm the
+//      number is enforced in code, not just asserted in this file.
+// An implementation file existing is NOT evidence a feature is offered.
+// This exact mistake shipped twice on the live page — see #544 — before
+// anyone checked past "the code exists somewhere."
 const PLAN_META: readonly PlanMeta[] = [
   {
     id: 'starter',
@@ -67,7 +83,7 @@ const PLAN_META: readonly PlanMeta[] = [
       '50 images per product',
       '50,000 campaign emails / mo',
       'Custom CSS & fonts',
-      'Read-only API + webhooks',
+      'Read-only API',
       '12-month audit log',
     ],
   },
@@ -79,13 +95,14 @@ const PLAN_META: readonly PlanMeta[] = [
       'Up to 10 stores',
       'Unlimited images',
       'Full read/write API',
-      'Custom code injection',
       'SSO (SAML / OIDC)',
       'Priority support (4h response)',
       'Forever audit retention',
     ],
   },
 ] as const
+
+export { PLAN_META }
 
 // AU prices in the catalogue are GST-exclusive (spec §19.4).
 // Other countries either have no domestic tax or handle via reverse charge.

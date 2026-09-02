@@ -33,7 +33,20 @@ const jsonLd = {
       "@type": "Organization",
       "@id": ORGANIZATION_ID,
       name: SITE_NAME,
-      legalName: "Tesserix",
+      legalName: "Tesserix Pty Ltd",
+      // The registration numbers are the point of this block, not
+      // decoration. "Mark8ly" and "the Mark8ly team" are assertions;
+      // an ACN is a fact anyone can check against the ASIC register in
+      // about ten seconds, and an ABN against ABN Lookup. That is the
+      // one Authoritativeness signal available to a company with no
+      // trading history yet (tesserix/mark8ly#594), and it costs us
+      // nothing because both numbers are already published on /privacy,
+      // /terms, /security and /sub-processors. Digits only, unspaced —
+      // that is the form both registers index on.
+      identifier: [
+        { "@type": "PropertyValue", propertyID: "ACN", value: "694070865" },
+        { "@type": "PropertyValue", propertyID: "ABN", value: "59694070865" },
+      ],
       url: SITE_URL,
       // A square mark, not the 1200×630 social card. Google's
       // Organization logo guidance wants a logo image it can crop to
@@ -47,13 +60,17 @@ const jsonLd = {
         "https://instagram.com/mark8ly",
         "https://linkedin.com/company/mark8ly",
       ],
-      // Tesserix is an Australian entity. No specific locality
-      // is emitted here until the legal registration address is
-      // confirmed — fabricating a city to fill the schema shape is
+      // Tesserix is an Australian entity registered in New South
+      // Wales — that much is stated on /privacy, so emitting the region
+      // here is reporting our own published legal text, not guesswork.
+      // Still no locality: /privacy names Sydney as where operations
+      // are *conducted*, which is not the same claim as a registered
+      // office, and fabricating a city to fill the schema shape stays
       // worse than a narrower-but-accurate address.
       address: {
         "@type": "PostalAddress",
         addressCountry: "AU",
+        addressRegion: "NSW",
       },
     },
     {

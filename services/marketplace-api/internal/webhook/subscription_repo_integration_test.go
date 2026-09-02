@@ -89,3 +89,31 @@ func TestRecordSuccess_ResetsTheFailureCounter(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, disabled)
 }
+
+// A further failure against an already-disabled subscription must not
+// report a fresh disable, or Task 5's delivery worker would email the
+// merchant "your webhook was disabled" on every subsequent failure against
+// a dead endpoint instead of once.
+func TestRecordFailure_AlreadyDisabledDoesNotReportAFreshDisable(t *testing.T) {
+	db := testdb.NewDB(t)
+	repo := webhook.NewSubscriptionRepo(db)
+	ctx := context.Background()
+	s := newSub(t, repo, uuid.New(), []string{"order.placed"})
+
+	disabled, err := repo.RecordFailure(ctx, s.ID, 1)
+	require.NoError(t, err)
+	require.True(t, disabled, "first failure at threshold 1 disables and reports it")
+
+	disabled, err = repo.RecordFailure(ctx, s.ID, 1)
+	require.NoError(t, err)
+	require.False(t, disabled, "already-disabled subscription must not report another disable")
+}
+
+func TestRecordFailure_UnknownIDDoesNotReportADisable(t *testing.T) {
+	db := testdb.NewDB(t)
+	repo := webhook.NewSubscriptionRepo(db)
+
+	disabled, err := repo.RecordFailure(context.Background(), uuid.New(), 1)
+	require.NoError(t, err)
+	require.False(t, disabled, "an unknown id must not report a disable")
+}

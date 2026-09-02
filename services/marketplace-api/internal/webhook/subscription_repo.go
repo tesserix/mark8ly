@@ -45,29 +45,55 @@ func (r *SubscriptionRepo) MatchingEvent(ctx context.Context, tenantID uuid.UUID
 }
 
 // RecordFailure increments the consecutive-failure counter and disables the
-// subscription once it reaches threshold, reporting whether it did.
+// subscription once it reaches threshold, reporting whether THIS call is the
+// one that flipped it from enabled to disabled — not whether it is disabled
+// now. A subscription already disabled by a prior call must report false, or
+// Task 5's "notify the merchant once" logic would re-fire on every
+// subsequent failure against a dead endpoint.
 //
-// The increment and the disable happen in ONE statement so two delivery
-// workers failing concurrently cannot interleave a read-modify-write and
-// lose a count.
+// The `old` CTE takes the row lock (FOR UPDATE) and `upd` reads
+// consecutive_failures/enabled through that same locked row, so the whole
+// read-increment-disable happens as one statement: two delivery workers
+// failing concurrently cannot interleave a read-modify-write and lose a
+// count.
+//
+// An id that matches no row leaves both CTEs empty, so the final SELECT
+// returns zero rows; RowsAffected is then 0 and we report (false, nil)
+// rather than misreporting a disable for a subscription that doesn't exist.
 func (r *SubscriptionRepo) RecordFailure(ctx context.Context, id uuid.UUID, threshold int) (bool, error) {
-	var enabled bool
-	err := r.db.WithContext(ctx).Raw(`
-		UPDATE webhook_subscriptions
-		   SET consecutive_failures = consecutive_failures + 1,
-		       enabled = CASE WHEN consecutive_failures + 1 >= ? THEN false ELSE enabled END,
-		       disabled_reason = CASE WHEN consecutive_failures + 1 >= ?
-		            THEN 'Disabled automatically after ' || (consecutive_failures + 1) ||
-		                 ' consecutive delivery failures. Fix the endpoint and re-enable.'
-		            ELSE disabled_reason END,
-		       disabled_at = CASE WHEN consecutive_failures + 1 >= ? THEN now() ELSE disabled_at END,
-		       updated_at = now()
-		 WHERE id = ?
-		RETURNING enabled`, threshold, threshold, threshold, id).Scan(&enabled).Error
-	if err != nil {
-		return false, fmt.Errorf("webhook: record failure: %w", err)
+	var result struct {
+		WasEnabled bool
+		IsEnabled  bool
 	}
-	return !enabled, nil
+	tx := r.db.WithContext(ctx).Raw(`
+		WITH old AS (
+			SELECT enabled AS was_enabled, consecutive_failures
+			  FROM webhook_subscriptions
+			 WHERE id = ?
+			   FOR UPDATE
+		), upd AS (
+			UPDATE webhook_subscriptions s
+			   SET consecutive_failures = old.consecutive_failures + 1,
+			       enabled = CASE WHEN old.consecutive_failures + 1 >= ? THEN false ELSE s.enabled END,
+			       disabled_reason = CASE WHEN old.consecutive_failures + 1 >= ?
+			            THEN 'Disabled automatically after ' || (old.consecutive_failures + 1) ||
+			                 ' consecutive delivery failures. Fix the endpoint and re-enable.'
+			            ELSE s.disabled_reason END,
+			       disabled_at = CASE WHEN old.consecutive_failures + 1 >= ? THEN now() ELSE s.disabled_at END,
+			       updated_at = now()
+			  FROM old
+			 WHERE s.id = ?
+			RETURNING s.enabled AS is_enabled
+		)
+		SELECT old.was_enabled, upd.is_enabled FROM old, upd`,
+		id, threshold, threshold, threshold, id).Scan(&result)
+	if tx.Error != nil {
+		return false, fmt.Errorf("webhook: record failure: %w", tx.Error)
+	}
+	if tx.RowsAffected == 0 {
+		return false, nil
+	}
+	return result.WasEnabled && !result.IsEnabled, nil
 }
 
 // RecordSuccess clears the counter. Without this an endpoint that fails

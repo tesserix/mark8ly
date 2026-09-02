@@ -48,6 +48,21 @@ func TestMatrix_SSO_ProOnly(t *testing.T) {
 	require.True(t, plangate.IsAllowed(subscription.PlanPro, plangate.FeatureSSO))
 }
 
+// TestMatrix_ReadAPI_StarterAndAbove pins the #585 decision. Outbound
+// webhooks are available on every plan and carry a notify-and-fetch payload
+// (event + aggregate id only), so any plan that can register a webhook must
+// also be able to resolve what it points at. Trial is deliberately excluded
+// here — see #585; if Trial ever gains it, extend this test rather than
+// deleting it.
+func TestMatrix_ReadAPI_StarterAndAbove(t *testing.T) {
+	for _, p := range []subscription.SubscriptionPlan{
+		subscription.PlanStarter, subscription.PlanStudio, subscription.PlanPro,
+	} {
+		require.True(t, plangate.IsAllowed(p, plangate.FeatureReadAPI),
+			"plan %s can register webhooks, so it must be able to resolve the ids they deliver (#585)", p)
+	}
+}
+
 func TestMatrix_FullAPI_ProOnly(t *testing.T) {
 	require.True(t, plangate.IsAllowed(subscription.PlanStudio, plangate.FeatureReadAPI))
 	require.False(t, plangate.IsAllowed(subscription.PlanStudio, plangate.FeatureFullAPI))

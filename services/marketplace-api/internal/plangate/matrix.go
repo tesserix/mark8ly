@@ -165,10 +165,19 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		FeatureReviews:         1,
 		FeatureTickets:         1,
 		FeatureGiftCards:       1,
-		FeatureReadAPI:         Disabled,
-		FeatureFullAPI:         Disabled,
-		FeatureSSO:             Disabled,
-		FeatureUptimeSLA:       Disabled,
+		// #585: widened from Disabled. Outbound webhooks (#562) ship on
+		// every plan and use a notify-and-fetch payload — the delivery
+		// body carries only an event name and an aggregate id, so the
+		// merchant MUST call the read API to resolve it. Leaving this
+		// Disabled on Starter shipped "a doorbell with the door locked":
+		// a Starter merchant could register a webhook, receive
+		// order.placed, and have no supported way to act on it.
+		// Diverges from spec §9, deliberately — see #585 for the
+		// trade-off (the read API stops being a Studio differentiator).
+		FeatureReadAPI:   1,
+		FeatureFullAPI:   Disabled,
+		FeatureSSO:       Disabled,
+		FeatureUptimeSLA: Disabled,
 
 		FeatureStandardEmailSupport: 1,
 		FeaturePriorityEmailSupport: Disabled,

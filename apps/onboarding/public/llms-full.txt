@@ -38,7 +38,7 @@ Free for ninety days. No card required. Three clear plans after that, from $15 a
 
 Ninety days free to start. After that, three clear plans — no hidden fees, no transaction cuts from Mark8ly, only what your payment processor charges at their standard rate. Change plans any time; upgrades prorate, downgrades take effect at the end of your current period.
 
-- **Starter — $15/month billed yearly, or $19/month billed monthly.** For merchants opening their first store. Up to 2 stores, unlimited products and orders, 15,000 campaign emails/month, full colour palette and announcement bar, your own domain.
+- **Starter — $15/month billed yearly, or $19/month billed monthly.** For merchants opening their first store. Up to 2 stores, unlimited products and orders, 15,000 campaign emails/month, full colour palette and announcement bar, your own domain, read-only API.
 - **Studio — $39/month billed yearly, or $49/month billed monthly.** For stores finding their rhythm. Up to 5 stores, 50 images per product, 50,000 campaign emails/month, custom CSS and fonts, read-only API, 12-month audit log.
 - **Pro — $99/month billed yearly, or $119/month billed monthly.** For mid-market brands at scale. Up to 10 stores, unlimited images, full read/write API, SSO (SAML/OIDC), priority support with 4-hour response, forever audit retention.
 

@@ -277,3 +277,80 @@ func TestIntegration_ProductService_UpdateAggregate_OptionValueInUseRejected(t *
 		t.Fatalf("option value count = %d, want 2 (unchanged after rollback)", valueCount)
 	}
 }
+
+// The OptionValueInUse guard is reachable from exactly ONE of the two paths
+// into applyOptionsDiff, and that asymmetry is load-bearing (#400).
+//
+// UpdateAggregate only runs ValidateMatrix when req.Variants != nil. So:
+//
+//   - options-only edit  -> no ValidateMatrix, the guard is the sole
+//     enforcement, and it fires. Covered by
+//     TestIntegration_ProductService_UpdateAggregate_OptionValueInUseRejected
+//     above, which sends Options and no Variants.
+//   - variants supplied  -> ValidateMatrix rejects the same scenario first,
+//     on a different error, so the guard never sees it.
+//
+// This test pins the second half. Without it, someone reading "the guard
+// catches option-value removal" would reasonably assume it catches it on
+// every path, and moving or relaxing ValidateMatrix would silently change
+// which error a caller gets — or whether they get one at all.
+func TestIntegration_ProductService_UpdateAggregate_VariantsSuppliedPreemptsTheInUseGuard(t *testing.T) {
+	tx := testdb.NewTx(t)
+	storeID, tenantID, _ := seedStore(t, tx)
+	svc := buildService(tx, media.NewFakeUploader())
+	ctx := context.Background()
+
+	agg, err := svc.Create(ctx, product.CreateRequest{
+		StoreID: storeID, TenantID: tenantID, Title: "Simple",
+		Options: []product.OptionSpec{
+			{Name: "Size", Values: []product.OptionValueSpec{{Value: "S"}, {Value: "M"}}},
+		},
+		Variants: []product.VariantInput{
+			{SKU: "S-1", Price: decimal.NewFromInt(10), CurrencyCode: "USD", InitialStock: 1,
+				OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "S"}}},
+			{SKU: "S-2", Price: decimal.NewFromInt(11), CurrencyCode: "USD", InitialStock: 1,
+				OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "M"}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	// Same removal as the options-only test — drop Size=S while a stored
+	// variant still references it — but this time the caller also supplies
+	// the variant list, naming a value the desired options no longer have.
+	newOptions := []product.OptionSpec{
+		{Name: "Size", Values: []product.OptionValueSpec{{Value: "M"}}},
+	}
+	newVariants := []product.VariantInput{
+		{SKU: "S-1", Price: decimal.NewFromInt(10), CurrencyCode: "USD",
+			OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "S"}}},
+		{SKU: "S-2", Price: decimal.NewFromInt(11), CurrencyCode: "USD",
+			OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "M"}}},
+	}
+
+	_, err = svc.UpdateAggregate(ctx, product.UpdateAggregateRequest{
+		ID: agg.Product.ID, StoreID: storeID, TenantID: tenantID,
+		Options:  &newOptions,
+		Variants: &newVariants,
+	})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	// The point of the test: rejected, but NOT by the in-use guard.
+	if errors.Is(err, apperrors.ErrOptionValueInUse) {
+		t.Fatalf("expected ValidateMatrix to preempt the guard, but got ErrOptionValueInUse: %v", err)
+	}
+
+	// Nothing was written — the rejection happens before any DB work.
+	var valueCount int64
+	if err := tx.Raw(`
+		SELECT count(*) FROM product_option_values v
+		JOIN product_options o ON o.id = v.option_id
+		WHERE o.product_id = ?`, agg.Product.ID).Scan(&valueCount).Error; err != nil {
+		t.Fatalf("count values: %v", err)
+	}
+	if valueCount != 2 {
+		t.Fatalf("option value count = %d, want 2 (unchanged)", valueCount)
+	}
+}

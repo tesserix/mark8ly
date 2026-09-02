@@ -90,6 +90,18 @@ func (s *Service) UpdateAggregate(ctx context.Context, req UpdateAggregateReques
 	} else {
 		desiredOptions = optionSpecsFromExisting(existing.Options)
 	}
+	// ValidateMatrix runs ONLY when the caller supplies variants. That is
+	// what makes the OptionValueInUse guard in applyOptionsDiff live rather
+	// than dead code (#400): an options-only edit — req.Options set,
+	// req.Variants nil, which is the ordinary shape when an admin edits the
+	// Options section without touching the variant list — reaches
+	// applyOptionsDiff with no prior validation, so the guard is the sole
+	// thing standing between the request and deleting an option value a
+	// stored variant still references.
+	//
+	// When variants ARE supplied, ValidateMatrix rejects that same scenario
+	// first, on a different error, and the guard never sees it. Both halves
+	// of that asymmetry are pinned by tests in service_aggregate_test.go.
 	if req.Variants != nil {
 		// Force currency on every incoming variant.
 		vars := *req.Variants

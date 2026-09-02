@@ -67,7 +67,7 @@ jobs:
 
   nextjs:
     name: Next.js
-    uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@v2.2.1
+    uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@v2.3.0
     with:
       working_directory: .
       node_version: "22"
@@ -78,6 +78,32 @@ jobs:
         @mark8ly/onboarding
         @repo/ui
         @repo/otto-widget
+      # image-size DoS in the ICNS (GHSA-w3rx-r6r6-pgpr) and JXL/HEIF
+      # (GHSA-5p2g-fcmc-qvqq) parsers. Build-time only:
+      #   apps/mobile-* -> react-native -> @react-native/community-cli-plugin
+      #                 -> metro -> image-size
+      # metro measures image assets while bundling; the package is in no
+      # deployed service image and nothing in production feeds it untrusted
+      # ICNS/JXL/HEIF, so there is no production exposure to a parser DoS.
+      #
+      # Nothing to upgrade to: both advisories list `image-size <= 2.0.2`
+      # affected with first patched version NONE, and 2.0.2 is the latest
+      # release — so `npm audit fix`, `--force` and an `overrides` pin all
+      # have nothing to point at. Left un-allowlisted these blocked EVERY PR
+      # in the repo (main went red on an unchanged lockfile when npm's feed
+      # picked them up on 2026-09-02; they were published 2026-06-10).
+      #
+      # audit_workspaces above does NOT exclude these — `npm audit
+      # --workspace=` still audits the hoisted root tree, so react-native
+      # surfaces even though the mobile apps are not listed.
+      #
+      # The gate tolerates a vulnerability only when its COMPLETE advisory
+      # set is listed, so metro/react-native picking up anything unrelated
+      # still fails. Revisit on the next react-native bump: drop these two
+      # ids and see whether the chain has been patched upstream.
+      audit_allowlist: >-
+        GHSA-w3rx-r6r6-pgpr
+        GHSA-5p2g-fcmc-qvqq
     secrets:
       package_read_token: ${{ secrets.GHCR_PAT }}
 

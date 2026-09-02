@@ -76,33 +76,54 @@ func New(r Resolver) *Guard {
 // if ANY resolved address is non-public — an attacker needs only one private
 // answer to be selected at dial time.
 func (g *Guard) Check(raw string) (*url.URL, error) {
+	u, _, err := g.checkResolved(raw)
+	return u, err
+}
+
+// CheckResolved is Check, but also returns the addresses it validated the
+// host against.
+//
+// Check alone tells a caller a URL is safe to dial, but a caller that then
+// hands the URL to an http.Client lets the transport perform its OWN DNS
+// lookup at connect time — a second resolution, after the one Check just
+// did. A resolver that answers public here and private a moment later (a
+// fast DNS rebind) walks straight around the check: Check said yes, and the
+// transport dials whatever the second lookup returns. Callers that dial
+// after checking should pin the connection to one of these addresses
+// instead of letting the transport re-resolve the hostname, which is what
+// actually closes that window rather than just narrowing it.
+func (g *Guard) CheckResolved(raw string) (*url.URL, []net.IP, error) {
+	return g.checkResolved(raw)
+}
+
+func (g *Guard) checkResolved(raw string) (*url.URL, []net.IP, error) {
 	if raw == "" {
-		return nil, ErrMalformed
+		return nil, nil, ErrMalformed
 	}
 	if len(raw) > maxURLLen {
-		return nil, ErrTooLong
+		return nil, nil, ErrTooLong
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return nil, ErrMalformed
+		return nil, nil, ErrMalformed
 	}
 	if u.Scheme != "https" {
-		return nil, ErrNotHTTPS
+		return nil, nil, ErrNotHTTPS
 	}
 	if u.Hostname() == "" {
-		return nil, ErrMalformed
+		return nil, nil, ErrMalformed
 	}
 
 	ips, err := g.resolve(u.Hostname())
 	if err != nil || len(ips) == 0 {
-		return nil, ErrUnresolvable
+		return nil, nil, ErrUnresolvable
 	}
 	for _, ip := range ips {
 		if !isPublic(ip) {
-			return nil, ErrPrivateAddress
+			return nil, nil, ErrPrivateAddress
 		}
 	}
-	return u, nil
+	return u, ips, nil
 }
 
 // isPublic reports whether ip is globally routable. Everything else —

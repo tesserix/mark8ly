@@ -19,6 +19,19 @@ func (r *SubscriptionRepo) Create(ctx context.Context, s *Subscription) error {
 	return nil
 }
 
+// ByID returns one subscription, or (nil, nil) if it no longer exists.
+func (r *SubscriptionRepo) ByID(ctx context.Context, id uuid.UUID) (*Subscription, error) {
+	var s Subscription
+	err := r.db.WithContext(ctx).First(&s, "id = ?", id).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("webhook: get subscription: %w", err)
+	}
+	return &s, nil
+}
+
 func (r *SubscriptionRepo) ListForStore(ctx context.Context, tenantID, storeID uuid.UUID) ([]Subscription, error) {
 	var out []Subscription
 	err := r.db.WithContext(ctx).

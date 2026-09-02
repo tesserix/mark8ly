@@ -1,6 +1,6 @@
 // Package admin — apikeys_handler.go: §18.4 enterprise API-key admin
 // endpoints. Mounted under /admin/stores/:storeId/api-keys. Reads (GET)
-// are gated by plangate.RequireFeature(FeatureReadAPI) (Starter+ since
+// are gated by plangate.RequireFeature(FeatureReadAPI) (every plan since
 // #585); writes
 // (POST create/rotate, DELETE revoke) are gated by FeatureFullAPI (Pro).
 // The service layer additionally rejects write-scoped key creation when
@@ -251,9 +251,9 @@ func (h *APIKeysHandler) parseUser(c *gin.Context) (uuid.UUID, bool) {
 }
 
 // RegisterAPIKeys mounts the admin endpoints. List is gated by FeatureReadAPI
-// (Starter+ since #585); create/rotate/revoke are gated by FeatureFullAPI
-// (Pro). Read endpoints under FeatureReadAPI let Starter+ merchants list
-// their keys without upgrading; write endpoints require an explicit Pro plan.
+// (every plan since #585); create/rotate/revoke are gated by FeatureFullAPI
+// (Pro). Read endpoints under FeatureReadAPI let any merchant list their keys
+// without upgrading; write endpoints require an explicit Pro plan.
 func RegisterAPIKeys(storeRoute gin.IRouter, h *APIKeysHandler, fgaMw *authz.Middleware, logger *slog.Logger) {
 	if h == nil || h.resolver == nil {
 		return

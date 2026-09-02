@@ -145,10 +145,18 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		FeatureReviews:         1,
 		FeatureTickets:         1,
 		FeatureGiftCards:       1,
-		FeatureReadAPI:         Disabled,
-		FeatureFullAPI:         Disabled,
-		FeatureSSO:             Disabled,
-		FeatureUptimeSLA:       Disabled,
+		// #585 (follow-up): widened from Disabled for the same reason
+		// Starter was. Webhooks ship on every plan and deliver only an
+		// event name and an aggregate id, so a Trial merchant evaluating
+		// an integration could receive order.placed and have no way to
+		// resolve it — and would reasonably conclude webhooks are broken
+		// during the exact window we are trying to convert them in.
+		// The read API is consequently no longer a paid differentiator
+		// on any tier; FeatureFullAPI (write) remains Pro-only.
+		FeatureReadAPI:   1,
+		FeatureFullAPI:   Disabled,
+		FeatureSSO:       Disabled,
+		FeatureUptimeSLA: Disabled,
 
 		FeatureStandardEmailSupport: 1,
 		FeaturePriorityEmailSupport: Disabled,

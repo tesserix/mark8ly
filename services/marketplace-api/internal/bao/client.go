@@ -61,6 +61,15 @@ type Client struct {
 	tokenExpiry time.Time
 }
 
+// Mount returns the KV v2 mount this Client was configured with (defaulting
+// to "kv" when Config.Mount was left empty). It is the single source of
+// truth for the mount: every path this Client builds (dataPath, metadataPath)
+// is anchored on this same value, so callers that need to know the mount —
+// e.g. carriersecrets.BaoClient stripping a logical KV path's mount prefix —
+// must derive it from here rather than tracking their own copy, which could
+// silently drift out of sync with what this Client actually talks to.
+func (c *Client) Mount() string { return c.mount }
+
 // New builds a Client. It does not authenticate — that happens lazily on
 // first use.
 func New(cfg Config) (*Client, error) {

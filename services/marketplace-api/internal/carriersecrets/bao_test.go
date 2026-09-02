@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -28,14 +29,16 @@ func newFakeKV() *fakeKV {
 }
 
 // newFakeBaoServer wires a fakeKV behind an httptest server whose routes
-// match the real OpenBao KV v2 HTTP surface under mount "kv":
-// /v1/kv/data/<rest> and /v1/kv/metadata/<rest>. requestLog, if non-nil,
-// records every request path/method observed so tests can assert on which
-// URL the client actually hit.
+// match the real OpenBao KV v2 HTTP surface for ANY mount:
+// /v1/<mount>/data/<rest> and /v1/<mount>/metadata/<rest>. The mount is not
+// hardcoded to "kv" — TestBaoClient_UsesClientsConfiguredMount depends on
+// this server understanding a non-default mount ("secret") too. requestLog,
+// if non-nil, records every request path/method observed so tests can
+// assert on which URL the client actually hit. Storage keys are the full
+// "<mount>/data-or-metadata-relative-path>" so distinct mounts never
+// collide even if a rest path happens to repeat across them.
 func newFakeBaoServer(t *testing.T, kv *fakeKV, requestLog *[]string) *httptest.Server {
 	t.Helper()
-	const dataPrefix = "/v1/kv/data/"
-	const metaPrefix = "/v1/kv/metadata/"
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if requestLog != nil {
@@ -44,9 +47,25 @@ func newFakeBaoServer(t *testing.T, kv *fakeKV, requestLog *[]string) *httptest.
 		kv.mu.Lock()
 		defer kv.mu.Unlock()
 
+		path := strings.TrimPrefix(r.URL.Path, "/v1/")
+		var key string
+		var isData bool
 		switch {
-		case r.Method == http.MethodPut && len(r.URL.Path) > len(dataPrefix) && r.URL.Path[:len(dataPrefix)] == dataPrefix:
-			rest := r.URL.Path[len(dataPrefix):]
+		case strings.Contains(path, "/data/"):
+			mount, rest, _ := strings.Cut(path, "/data/")
+			key = mount + "/" + rest
+			isData = true
+		case strings.Contains(path, "/metadata/"):
+			mount, rest, _ := strings.Cut(path, "/metadata/")
+			key = mount + "/" + rest
+			isData = false
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		switch {
+		case isData && r.Method == http.MethodPut:
 			var body struct {
 				Data map[string]string `json:"data"`
 			}
@@ -54,29 +73,27 @@ func newFakeBaoServer(t *testing.T, kv *fakeKV, requestLog *[]string) *httptest.
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			kv.version[rest]++
-			kv.data[rest] = body.Data[baoValueField]
+			kv.version[key]++
+			kv.data[key] = body.Data[baoValueField]
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"data":{"version":%d}}`, kv.version[rest])
+			fmt.Fprintf(w, `{"data":{"version":%d}}`, kv.version[key])
 
-		case r.Method == http.MethodGet && len(r.URL.Path) > len(dataPrefix) && r.URL.Path[:len(dataPrefix)] == dataPrefix:
-			rest := r.URL.Path[len(dataPrefix):]
-			v, ok := kv.data[rest]
+		case isData && r.Method == http.MethodGet:
+			v, ok := kv.data[key]
 			if !ok {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"data":{"data":{%q:%q},"metadata":{"version":%d}}}`, baoValueField, v, kv.version[rest])
+			fmt.Fprintf(w, `{"data":{"data":{%q:%q},"metadata":{"version":%d}}}`, baoValueField, v, kv.version[key])
 
-		case r.Method == http.MethodDelete && len(r.URL.Path) > len(metaPrefix) && r.URL.Path[:len(metaPrefix)] == metaPrefix:
-			rest := r.URL.Path[len(metaPrefix):]
-			if _, ok := kv.data[rest]; !ok {
+		case !isData && r.Method == http.MethodDelete:
+			if _, ok := kv.data[key]; !ok {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			delete(kv.data, rest)
-			delete(kv.version, rest)
+			delete(kv.data, key)
+			delete(kv.version, key)
 			w.WriteHeader(http.StatusNoContent)
 
 		default:
@@ -97,7 +114,7 @@ func newTestBaoClient(t *testing.T, addr string) *BaoClient {
 	if err != nil {
 		t.Fatalf("bao.New: %v", err)
 	}
-	return NewBaoClient(c, "kv")
+	return NewBaoClient(c)
 }
 
 const testBaoPath = "kv/mark8ly/marketplace-api/tenants/tenant-1/payment/razorpay/api_key"
@@ -201,9 +218,13 @@ func TestBaoClient_DeleteNotFoundIsSuccess(t *testing.T) {
 	}
 }
 
-// TestBaoClient_RelativePathRejectsWrongMount pins that a logical path not
-// under this client's configured mount is rejected rather than silently
-// routed to the wrong OpenBao mount.
+// TestBaoClient_RelativePathRejectsWrongMount pins that a logical path
+// lacking this client's mount prefix is rejected rather than silently
+// stripped/misrouted. This does NOT cover the mount-disagreement case (a
+// BaoClient's mount differing from the underlying bao.Client's own
+// configured mount) — that class of bug is now structurally impossible
+// because NewBaoClient derives its mount from c.Mount() instead of
+// accepting a separate value; see TestBaoClient_UsesClientsConfiguredMount.
 func TestBaoClient_RelativePathRejectsWrongMount(t *testing.T) {
 	srv := newFakeBaoServer(t, newFakeKV(), nil)
 	bc := newTestBaoClient(t, srv.URL)
@@ -211,5 +232,58 @@ func TestBaoClient_RelativePathRejectsWrongMount(t *testing.T) {
 	err := bc.CreateOrAddVersion(t.Context(), "secret/mark8ly/foo", []byte("x"))
 	if err == nil {
 		t.Fatal("expected an error for a path outside this client's mount")
+	}
+}
+
+// TestBaoClient_UsesClientsConfiguredMount proves BaoClient derives its
+// mount from the underlying bao.Client (via Mount()) rather than assuming
+// the default "kv". A bao.Client configured with a non-default mount
+// ("secret") must route a write to "secret/data/...", not "kv/data/...".
+//
+// This is the regression test for the mount double-configuration risk: a
+// prior version of NewBaoClient took its own mount parameter independent of
+// the bao.Client's Config.Mount, so a caller could construct a BaoClient
+// whose mount ("kv") silently disagreed with the bao.Client it wrapped
+// (e.g. "secret") — every write would land in the wrong mount with no
+// error. Deriving the mount from c.Mount() makes that disagreement
+// impossible to express.
+func TestBaoClient_UsesClientsConfiguredMount(t *testing.T) {
+	kv := newFakeKV()
+	var requests []string
+	srv := newFakeBaoServer(t, kv, &requests)
+
+	c, err := bao.New(bao.Config{
+		Address: srv.URL,
+		Mount:   "secret",
+		Token:   "test-token",
+	})
+	if err != nil {
+		t.Fatalf("bao.New: %v", err)
+	}
+	bc := NewBaoClient(c)
+
+	// BaoPath always emits "kv/..." paths; a client mounted at "secret"
+	// naturally only ever receives "secret/..." paths from real callers.
+	// This input is shaped to match the client's own mount, not BaoPath's
+	// output — the point here is proving BaoClient followed c.Mount(),
+	// not that BaoPath and a non-default mount coexist.
+	const path = "secret/mark8ly/marketplace-api/tenants/tenant-1/payment/razorpay/api_key"
+
+	if err := bc.CreateOrAddVersion(t.Context(), path, []byte("x")); err != nil {
+		t.Fatalf("CreateOrAddVersion: %v", err)
+	}
+
+	wantPath := "PUT /v1/secret/data/mark8ly/marketplace-api/tenants/tenant-1/payment/razorpay/api_key"
+	found := false
+	for _, req := range requests {
+		if req == wantPath {
+			found = true
+		}
+		if req == "PUT /v1/kv/data/mark8ly/marketplace-api/tenants/tenant-1/payment/razorpay/api_key" {
+			t.Fatalf("write landed on the default \"kv\" mount instead of the client's configured \"secret\" mount: %v", requests)
+		}
+	}
+	if !found {
+		t.Fatalf("write never hit %q; requests observed: %v", wantPath, requests)
 	}
 }

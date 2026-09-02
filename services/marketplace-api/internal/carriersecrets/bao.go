@@ -31,13 +31,15 @@ type BaoClient struct {
 	mount  string
 }
 
-// NewBaoClient wraps an already-authenticated *bao.Client. mount is the KV
-// v2 mount that prefixes every logical path this client is handed (e.g.
-// "kv") — it must match the leading segment of carriersecrets.BaoPath's
-// output, and must match the Client's own configured mount, since
-// bao.Client re-adds its own mount when building the data/metadata URL.
-func NewBaoClient(c *bao.Client, mount string) *BaoClient {
-	return &BaoClient{client: c, mount: mount}
+// NewBaoClient wraps an already-authenticated *bao.Client. The mount used to
+// strip the logical-path prefix is derived from c.Mount(), not taken as a
+// parameter: bao.Client re-adds its own configured mount when building the
+// data/metadata URL, so accepting a separate mount argument here would let a
+// caller pass one that disagrees with what c actually talks to — silently
+// routing writes to the wrong mount. Deriving it from c makes that
+// impossible to express.
+func NewBaoClient(c *bao.Client) *BaoClient {
+	return &BaoClient{client: c, mount: c.Mount()}
 }
 
 // relativePath strips this client's mount prefix from a logical KV path,

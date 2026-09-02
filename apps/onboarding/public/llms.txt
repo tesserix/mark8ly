@@ -11,8 +11,18 @@ The project is pre-launch. The marketing site at https://mark8ly.com is the prim
 - [Home](https://mark8ly.com/): The main landing page — product positioning, pricing, how it works, FAQs.
 - [About](https://mark8ly.com/about): Who we are, what we believe, where we're based.
 - [Contact](https://mark8ly.com/contact): Email channels for general support, partnerships, legal, and press.
+- [Help & FAQ](https://mark8ly.com/help): Answers to the questions merchants actually ask — trial, pricing, domains, payments, shipping, inventory, data export.
+- [Integrations](https://mark8ly.com/integrations): What Mark8ly connects to today — payments, shipping, tax, email, and the REST API.
+- [Guides](https://mark8ly.com/guides): How-to guides for new merchants — starting a store, pricing handmade products, accepting UPI, adding your first product, connecting a domain.
 - [Privacy](https://mark8ly.com/privacy): Plain-language privacy policy. We don't sell personal information.
 - [Terms](https://mark8ly.com/terms): Terms of service.
+
+## Comparison pages
+
+- [Shopify alternative](https://mark8ly.com/shopify-alternative): For merchants comparing against Shopify, with no platform transaction fees.
+- [Etsy alternative](https://mark8ly.com/etsy-alternative): For sellers who want their own website rather than a marketplace listing.
+- [Ecommerce for makers](https://mark8ly.com/ecommerce-for-makers): For makers and handmade sellers.
+- [Sell online in India](https://mark8ly.com/sell-online-india): UPI, wallets, and local cards for Indian merchants.
 
 ## Pricing
 
@@ -30,7 +40,9 @@ Indie merchants, small batch makers, boutique brands, and established small-to-m
 
 ## Not indexed
 
-The onboarding funnel (/onboarding/*), the welcome page, and the "coming soon" stubs (blog, help, guides, integrations, legal security page) are intentionally excluded from indexing. They're either funnel destinations or placeholder content.
+The onboarding funnel (/onboarding/*) and the welcome page are intentionally excluded from indexing — they're funnel destinations, not content. The Journal (/blog) is also excluded while it has no articles yet, and the DPA (/dpa) is excluded because it's an auto-accepted contract rather than something anyone should find in search.
+
+Help, Guides, and Integrations were previously "coming soon" stubs and are no longer — they carry real content and are indexed. They're listed under Core pages above.
 
 ## Contact
 

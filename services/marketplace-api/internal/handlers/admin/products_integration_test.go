@@ -33,6 +33,8 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/vendor"
+	"github.com/mark8ly/marketplace-api/internal/webhook"
+	"github.com/mark8ly/marketplace-api/internal/webhook/ssrfguard"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
@@ -72,6 +74,8 @@ var productsTables = []string{
 	"product_categories",
 	"products",
 	"categories",
+	"webhook_deliveries",
+	"webhook_subscriptions",
 	"stores",
 }
 
@@ -130,6 +134,20 @@ func setupTestRouter(t *testing.T) *testEnv {
 	subHandler := admin.NewSubscriptionHandler(subSvc, nil)
 	promoHandler := admin.NewPromoHandler(db, promo.NewService(db, promo.NewRepository(), nil, nil), subscription.NewRepository(), nil)
 
+	// Outbound webhooks (#562 task 7). webhookTestResolver (defined in
+	// webhooks_test.go) answers public for any host except a couple of
+	// deliberately-private/unresolvable test hostnames, so SSRF-rejection
+	// tests need no real DNS and httptest servers (loopback, a literal IP
+	// host) still work via ssrfguard's documented literal-IP test path.
+	whGuard := ssrfguard.New(webhookTestResolver)
+	webhooksHandler := admin.NewWebhooksHandler(
+		webhook.NewSubscriptionRepo(db),
+		webhook.NewDeliveryRepo(db),
+		whGuard,
+		webhook.NewSender(whGuard, nil),
+		nil,
+	)
+
 	r := gin.New()
 	admin.RegisterAdmin(r.Group("/api/v1"), admin.Deps{
 		ProductHandler:      handler,
@@ -139,6 +157,7 @@ func setupTestRouter(t *testing.T) *testEnv {
 		SubscriptionHandler: subHandler,
 		PromoHandler:        promoHandler,
 		WarehousesHandler:   admin.NewWarehousesHandler(db, nil),
+		WebhooksHandler:     webhooksHandler,
 		StoresMiddleware:    storeMW,
 		AuthzMiddleware:     authzMW,
 		InternalSecret:      "",

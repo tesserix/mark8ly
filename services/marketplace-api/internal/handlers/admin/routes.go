@@ -73,15 +73,19 @@ type Deps struct {
 	// P13 — break-glass emergency admin login (§12.4). Mounted OUTSIDE
 	// the store-scoped + RequireActive group: this is the recovery
 	// path, it must survive read-only / store_closed states.
-	BreakGlassLoginHandler   *BreakGlassLoginHandler
-	AuditLogsHandler         *AuditLogsHandler
-	NotificationsHandler     *NotificationsHandler
-	DashboardHandler         *DashboardHandler
-	SetupProgressHandler     *SetupProgressHandler
-	TicketsHandler           *TicketsHandler
-	ShipmentsHandler         *ShipmentsHandler
-	BrandingHandler          *BrandingHandler
-	PagesHandler             *PagesHandler
+	BreakGlassLoginHandler *BreakGlassLoginHandler
+	AuditLogsHandler       *AuditLogsHandler
+	NotificationsHandler   *NotificationsHandler
+	DashboardHandler       *DashboardHandler
+	SetupProgressHandler   *SetupProgressHandler
+	TicketsHandler         *TicketsHandler
+	ShipmentsHandler       *ShipmentsHandler
+	BrandingHandler        *BrandingHandler
+	PagesHandler           *PagesHandler
+	// Outbound webhooks (#562 task 7) — merchant-managed subscriptions,
+	// test sends and delivery replay. Available on every plan, so
+	// deliberately not gated behind PlanResolver like SSO above.
+	WebhooksHandler          *WebhooksHandler
 	PlanResolver             *plangate.PlanResolver
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
 	SubscriptionStatusLoader gin.HandlerFunc // optional; runs after StoresMiddleware
@@ -962,6 +966,34 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				pagesGroup.DELETE("/:id",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.PageEditRole),
 					deps.PagesHandler.Delete)
+			}
+		}
+
+		// Outbound webhooks — #562 task 7.
+		if deps.WebhooksHandler != nil {
+			webhooks := storeRoute.Group("/webhooks")
+			{
+				webhooks.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
+					deps.WebhooksHandler.List)
+				webhooks.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.WebhooksHandler.Create)
+				webhooks.PATCH("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.WebhooksHandler.Patch)
+				webhooks.DELETE("/:id",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.WebhooksHandler.Delete)
+				webhooks.POST("/:id/test",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.WebhooksHandler.TestSend)
+				webhooks.GET("/:id/deliveries",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
+					deps.WebhooksHandler.ListDeliveries)
+				webhooks.POST("/:id/deliveries/:deliveryID/replay",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.WebhooksHandler.ReplayDelivery)
 			}
 		}
 	}

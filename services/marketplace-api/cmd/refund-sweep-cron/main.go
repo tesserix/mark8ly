@@ -53,7 +53,11 @@ func main() {
 	// enabled=true: the sweep is itself the recovery path for the
 	// REFUND_GATEWAY_ENABLED kill switch — a stuck pending row must still be
 	// re-driven so a later flip back to enabled doesn't leave it orphaned.
-	coord := orderrefund.NewCoordinator(conn, res, pay, orders, order.NewRepository(), true)
+	// WithLogger is what makes the sweep's per-row skips visible (#169).
+	// Without it ResumePending drops every skip silently and a persistently
+	// stuck refund looks identical to a clean run reporting resumed=0.
+	coord := orderrefund.NewCoordinator(conn, res, pay, orders, order.NewRepository(), true).
+		WithLogger(log)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

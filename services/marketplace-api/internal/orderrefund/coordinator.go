@@ -107,6 +107,12 @@ func (c *Coordinator) logError(msg string, args ...any) {
 	}
 }
 
+func (c *Coordinator) logWarn(msg string, args ...any) {
+	if c.logger != nil {
+		c.logger.Warn(msg, args...)
+	}
+}
+
 // storeCreditRefundID is the provider_refund_id for a refund that moved no
 // gateway money — the gateway portion was already fully returned and this
 // refund is pure store credit. A synthetic id keeps the ledger row uniform
@@ -509,14 +515,21 @@ func (c *Coordinator) ResumePending(ctx context.Context, olderThan time.Duration
 		row := rows[i]
 		oid, err := uuid.Parse(row.OrderID)
 		if err != nil {
+			c.logWarn("refund sweep: skipped row, unparseable order_id",
+				"refund_id", row.ID, "order_id", row.OrderID, "err", err)
 			continue
 		}
 		o, _, _, err := c.orderRepo.GetByID(ctx, c.db, oid)
 		if err != nil || o == nil {
+			c.logWarn("refund sweep: skipped row, order not loadable",
+				"refund_id", row.ID, "order_id", oid, "missing", o == nil, "err", err)
 			continue
 		}
 		gw, err := c.res.GatewayFor(ctx, o.StoreID, row.Provider)
 		if err != nil {
+			c.logWarn("refund sweep: skipped row, no gateway for store/provider",
+				"refund_id", row.ID, "order_id", oid, "store_id", o.StoreID,
+				"provider", row.Provider, "err", err)
 			continue
 		}
 
@@ -526,6 +539,8 @@ func (c *Coordinator) ResumePending(ctx context.Context, olderThan time.Duration
 		// for more than it captured.
 		split, err := c.resumeSplit(ctx, o, row)
 		if err != nil {
+			c.logWarn("refund sweep: skipped row, could not re-derive gateway/credit split",
+				"refund_id", row.ID, "order_id", oid, "err", err)
 			continue
 		}
 
@@ -540,9 +555,16 @@ func (c *Coordinator) ResumePending(ctx context.Context, olderThan time.Duration
 				// 'failed' so subsequent sweeps skip it (the claim query only
 				// selects 'pending'). Transient failures are left pending to
 				// retry on the next sweep.
-				if payment.IsPermanentGatewayError(rErr) {
+				permanent := payment.IsPermanentGatewayError(rErr)
+				if permanent {
 					_ = c.pay.MarkRefundFailed(ctx, c.db, row.ID)
 				}
+				// Permanent rows are logged once and never re-read (the claim
+				// query selects only 'pending'); a transient row logs on every
+				// sweep, which is what makes a persistently-stuck refund visible.
+				c.logWarn("refund sweep: gateway refund failed",
+					"refund_id", row.ID, "order_id", oid, "provider", row.Provider,
+					"permanent", permanent, "err", rErr)
 				continue
 			}
 			providerRefundID = ref.ProviderRefundID
@@ -587,6 +609,11 @@ func (c *Coordinator) ResumePending(ctx context.Context, olderThan time.Duration
 			c.returnGiftCardPortion(ctx, tx, locked, row.Reason)
 			return nil
 		}); err != nil {
+			// The gateway may already have moved money here — the row stays
+			// 'pending' and the next sweep re-drives it under the same
+			// idempotency key, so this logs until it resolves.
+			c.logWarn("refund sweep: finalize transaction failed, row left pending",
+				"refund_id", row.ID, "order_id", oid, "err", err)
 			continue
 		}
 		if finalized {

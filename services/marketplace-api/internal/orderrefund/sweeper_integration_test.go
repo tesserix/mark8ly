@@ -3,8 +3,11 @@
 package orderrefund_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -190,5 +193,72 @@ func TestResumePending_DoubleRun_BumpsOnce(t *testing.T) {
 	o := getOrder(t, db, orderID)
 	if !o.RefundedAmount.Equal(decimal.RequireFromString("100.00")) {
 		t.Fatalf("refunded_amount = %s, want 100.00 (must not be double-bumped by the second run)", o.RefundedAmount)
+	}
+}
+
+// TestResumePending_LogsSkippedRow pins the observability contract from #169:
+// a row the sweep cannot re-drive must leave a log line naming the refund and
+// the reason. Before this, every skip was a bare `continue` — a persistently
+// stuck refund was indistinguishable from a clean run reporting resumed=0,
+// which is exactly how one goes unnoticed for weeks.
+//
+// The gateway-failure path is used because it is the skip an operator is most
+// likely to actually hit (the sweeper CronJob has no secret store wired, so
+// every gsm:// credential re-drive fails there today).
+func TestResumePending_LogsSkippedRow(t *testing.T) {
+	db := testdb.NewDB(t, coordinatorTruncateTables...)
+	tenantID, storeID, orderID := uuid.New(), uuid.New(), uuid.New()
+	seedStore(t, db, storeID, tenantID)
+	seedPaidOrder(t, db, orderID, storeID, tenantID, "100.00", "0")
+	seedPaymentTxn(t, db, tenantID, storeID, orderID, seedPaymentTxnOpts{
+		Provider: "stripe", ProviderPaymentID: "pi_x", Amount: "100.00", Status: "captured",
+	})
+	seedGatewayConfig(t, db, tenantID, storeID, "stripe", true)
+
+	wantKey := "refund_" + orderID.String() + "_cancel"
+	seedPendingRefundTxn(t, db, tenantID, storeID, orderID, wantKey, "pi_x", "stripe", "100.00", time.Now().Add(-1*time.Hour))
+
+	var buf bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	gw := &fakeGateway{refundErr: errors.New("gateway: still down")}
+	c := newCoordinator(db, gw, true).WithLogger(log)
+
+	if _, err := c.ResumePending(context.Background(), 0, 200); err != nil {
+		t.Fatalf("ResumePending: %v", err)
+	}
+
+	out := buf.String()
+	if out == "" {
+		t.Fatal("sweep skipped a row but logged nothing — a stuck refund would be invisible")
+	}
+	for _, want := range []string{"gateway refund failed", orderID.String(), "gateway: still down"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log missing %q\ngot: %s", want, out)
+		}
+	}
+}
+
+// TestResumePending_NilLoggerDoesNotPanic guards the nil-safety of the log
+// helpers: WithLogger is optional and callers that skip it (any test, and any
+// future caller) must still be able to run a sweep that skips rows.
+func TestResumePending_NilLoggerDoesNotPanic(t *testing.T) {
+	db := testdb.NewDB(t, coordinatorTruncateTables...)
+	tenantID, storeID, orderID := uuid.New(), uuid.New(), uuid.New()
+	seedStore(t, db, storeID, tenantID)
+	seedPaidOrder(t, db, orderID, storeID, tenantID, "100.00", "0")
+	seedPaymentTxn(t, db, tenantID, storeID, orderID, seedPaymentTxnOpts{
+		Provider: "stripe", ProviderPaymentID: "pi_x", Amount: "100.00", Status: "captured",
+	})
+	seedGatewayConfig(t, db, tenantID, storeID, "stripe", true)
+
+	wantKey := "refund_" + orderID.String() + "_cancel"
+	seedPendingRefundTxn(t, db, tenantID, storeID, orderID, wantKey, "pi_x", "stripe", "100.00", time.Now().Add(-1*time.Hour))
+
+	gw := &fakeGateway{refundErr: errors.New("gateway: still down")}
+	c := newCoordinator(db, gw, true) // deliberately no WithLogger
+
+	if _, err := c.ResumePending(context.Background(), 0, 200); err != nil {
+		t.Fatalf("ResumePending with nil logger: %v", err)
 	}
 }

@@ -1,5 +1,4 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { CURRENCY_COOKIE_NAME, countryToCurrency } from '@repo/ui/subscription'
 import { SITE_JSON_LD } from './lib/seo/site-json-ld'
 import {
   buildCsp,
@@ -10,22 +9,36 @@ import {
 } from './lib/security/csp'
 
 /**
- * Onboarding middleware — sets the `mk8_currency` cookie on every
- * request so the marketing landing (`/#pricing`) can render geo-
- * localized prices without an extra round-trip. Mirrors the admin
- * app's `/pricing` middleware using the same shared country→currency
- * map, so both surfaces show the same currency for a given visitor.
+ * Onboarding middleware — sets the Content-Security-Policy, and
+ * deliberately nothing else.
  *
- * Cloudflare injects `CF-IPCountry` at the edge. Local dev lacks it —
- * the fallback to USD keeps the page rendering.
+ * It used to also write an `mk8_currency` cookie on every response,
+ * resolved from Cloudflare's `CF-IPCountry`, so the pricing section
+ * could render geo-localized prices without an extra round-trip.
  *
- * We set the cookie on every response rather than only on `/` because
- * marketing visitors hit various routes (/, /about, /guides, ...) and
- * the landing's pricing section needs the cookie regardless of their
- * entry point. Overhead is one header + one cookie write per request.
+ * That cookie is why nothing here was ever cacheable. A response
+ * carrying `Set-Cookie` cannot be shared between visitors — a cached
+ * copy would hand the next visitor the first visitor's currency — so
+ * Cloudflare reported `cf-cache-status: DYNAMIC` for every marketing
+ * page, and every visit paid a full origin round-trip to one pod in
+ * Sydney (tesserix/mark8ly#597).
+ *
+ * It had also stopped earning its keep. Since #607 nothing on the
+ * server reads the cookie: `/` prerenders at PRERENDER_CURRENCY and the
+ * currency-bearing islands correct themselves on mount, reading
+ * `document.cookie` from the client. Middleware was making the whole
+ * site uncacheable to write a value only client JS consumed.
+ *
+ * So the geo lookup moved to `app/api/geo-currency/route.ts`, which the
+ * client fetches once and then caches in the cookie itself. The HTML is
+ * now byte-identical for every visitor, which is what makes an edge
+ * Cache Rule safe.
+ *
+ * NOTE: removing the cookie makes caching *safe*, not automatic —
+ * Cloudflare does not cache HTML without a Cache Rule. If the marketing
+ * pages still report DYNAMIC, that rule is the missing half, and it
+ * must exclude `/api/*` so this endpoint stays per-request.
  */
-const COOKIE_MAX_AGE = 86_400 // 24 hours
-
 // The layout's JSON-LD is a constant, so its hash is computed once per
 // worker rather than per request.
 const jsonLdHash = sha256Source(SITE_JSON_LD)
@@ -45,24 +58,12 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
   const response = NextResponse.next({ request: { headers } })
   response.headers.set('Content-Security-Policy', csp)
-  const countryCode = request.headers.get('CF-IPCountry')
-  const currency = countryToCurrency(countryCode)
-  const isProduction = process.env.NODE_ENV === 'production'
-
-  response.cookies.set(CURRENCY_COOKIE_NAME, currency, {
-    maxAge: COOKIE_MAX_AGE,
-    path: '/',
-    sameSite: 'lax',
-    secure: isProduction,
-    httpOnly: false,
-  })
 
   return response
 }
 
 export const config = {
-  // Skip Next internals + static assets. Run on every user-facing
-  // route so the cookie is present on every page the pricing section
-  // might appear on.
+  // Skip Next internals + static assets. Runs on every user-facing
+  // route because every one of them needs the CSP header.
   matcher: ['/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)'],
 }

@@ -11,6 +11,10 @@
 //     fully-qualified GCP Secret Manager reference; always read at
 //     /versions/latest.
 //
+//   - "bao://kv/mark8ly/marketplace-api/tenants/{TENANTID}/{DOMAIN}/{PROVIDER}/{FIELD}"
+//     OpenBao KV v2 logical path reference; carries no version so rotations
+//     return the identical reference.
+//
 //   - "noop:..." / "aes:..."
 //     legacy inline ciphertext from crypto.Encryptor. Kept readable
 //     so existing rows keep working until the next save migrates
@@ -27,6 +31,14 @@ import (
 const (
 	// GSMRefPrefix marks a GCP Secret Manager resource reference.
 	GSMRefPrefix = "gsm://"
+	// BaoRefPrefix marks an OpenBao KV v2 reference. The path that follows is
+	// the logical KV path WITHOUT the `data/` or `metadata/` infix — those are
+	// KV v2 API details the client adds, not part of the stored reference.
+	//
+	// Deliberately carries NO version: KV v2 writes a new version at the same
+	// path, so a rotation returns this identical reference. Encoding a version
+	// here would turn every rotation into a reference rewrite across the DB.
+	BaoRefPrefix = "bao://"
 	// NoopRefPrefix marks a base64-wrapped dev-mode "ciphertext".
 	NoopRefPrefix = "noop:"
 	// AESRefPrefix marks an AES-256-GCM ciphertext.
@@ -43,6 +55,9 @@ func IsGSMRef(r string) bool { return strings.HasPrefix(r, GSMRefPrefix) }
 func IsInlineRef(r string) bool {
 	return strings.HasPrefix(r, NoopRefPrefix) || strings.HasPrefix(r, AESRefPrefix)
 }
+
+// IsBaoRef reports whether r is an OpenBao reference.
+func IsBaoRef(r string) bool { return strings.HasPrefix(r, BaoRefPrefix) }
 
 // SecretName returns the Secret Manager secret ID for a scope:
 //
@@ -81,6 +96,36 @@ func ParseReference(ref string) (resource string, ok bool) {
 		return "", false
 	}
 	return strings.TrimPrefix(ref, GSMRefPrefix), true
+}
+
+// baoPathPrefix is the namespace-scoped root for every carrier credential.
+// The estate convention is that the first path segment is the Kubernetes
+// namespace (compare kv/data/homechef/*, kv/data/devai/devai-api/*), and
+// environments are separated by cluster — so there is no env segment.
+const baoPathPrefix = "kv/mark8ly/marketplace-api/tenants"
+
+// BaoPath returns the logical KV path for a scope. Segments are sanitised
+// with the same rules as the GCP secret ID so a stray '/' or '..' in a
+// scope component cannot escape the tenant's subtree.
+func BaoPath(s Scope) string {
+	return fmt.Sprintf("%s/%s/%s/%s/%s",
+		baoPathPrefix,
+		sanitizeSegment(s.TenantID),
+		sanitizeSegment(strings.ToLower(s.Domain)),
+		sanitizeSegment(strings.ToLower(s.Provider)),
+		sanitizeSegment(strings.ToLower(s.Field)),
+	)
+}
+
+// FormatBaoReference returns the canonical reference persisted to the DB.
+func FormatBaoReference(s Scope) string { return BaoRefPrefix + BaoPath(s) }
+
+// ParseBaoReference extracts the logical KV path from a bao:// reference.
+func ParseBaoReference(ref string) (path string, ok bool) {
+	if !IsBaoRef(ref) {
+		return "", false
+	}
+	return strings.TrimPrefix(ref, BaoRefPrefix), true
 }
 
 // sanitizeSegment reduces a Scope segment to the character set GCP

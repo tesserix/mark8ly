@@ -885,11 +885,19 @@ func main() {
 		// wrappers over the same conn/ssrfguard, so nothing needs sharing
 		// between the HTTP surface and the background loops.
 		webhooksGuard := ssrfguard.New(nil)
+		// The shared planResolver (B2) is constructed further down, after
+		// subscriptionRepo. PlanResolver is stateless — just a *gorm.DB and
+		// a subscription.Repository — so building a second one here costs
+		// nothing and keeps the per-store webhook subscription cap (#586)
+		// an explicit, non-nil constructor argument rather than a setter
+		// that could be forgotten.
+		webhooksPlanResolver := plangate.NewPlanResolver(conn, subscription.NewRepository())
 		webhooksHandler := admin.NewWebhooksHandler(
 			webhook.NewSubscriptionRepo(conn),
 			webhook.NewDeliveryRepo(conn),
 			webhooksGuard,
 			webhook.NewSender(webhooksGuard, nil),
+			webhooksPlanResolver,
 			log,
 		)
 

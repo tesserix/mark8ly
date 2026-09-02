@@ -5,6 +5,7 @@ package admin_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"testing"
@@ -359,5 +360,98 @@ func TestTestSend_ReportsFailureWithoutServerError(t *testing.T) {
 	}
 	if data["error"] == nil || data["error"] == "" {
 		t.Fatalf("expected an error message, got %s", tw.Body.String())
+	}
+}
+
+// TestCreateWebhook_EnforcesPerStoreCap pins the #586 cap. Dispatch fan-out
+// is `outbox rows × matching subscriptions`, so an unbounded subscription
+// count turns one order.placed into an unbounded number of delivery rows and
+// outbound HTTP attempts against a shared db-f1-micro. A seeded store has no
+// subscription row, so PlanResolver falls back to PlanTrial — a cap of 5.
+func TestCreateWebhook_EnforcesPerStoreCap(t *testing.T) {
+	env, storeID, tenantID, userID := webhookOwnerEnv(t)
+
+	const trialCap = 5
+	for i := 0; i < trialCap; i++ {
+		w := request(t, env.router, http.MethodPost, webhooksURL(storeID),
+			webhookCreateBody(fmt.Sprintf("https://public.example.com/hooks/%d", i), []string{"order.placed"}),
+			authHeaders(userID, tenantID))
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create #%d: status = %d, body = %s (all %d should fit under the cap)",
+				i+1, w.Code, w.Body.String(), trialCap)
+		}
+	}
+
+	// The one past the cap must be refused with a 400 the merchant can act
+	// on — naming the limit, the current count and the plan.
+	w := request(t, env.router, http.MethodPost, webhooksURL(storeID),
+		webhookCreateBody("https://public.example.com/hooks/over", []string{"order.placed"}),
+		authHeaders(userID, tenantID))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("create past cap: status = %d, want 400, body = %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	if resp["error"] != "webhook_subscription_limit_reached" {
+		t.Fatalf("error code = %v, want webhook_subscription_limit_reached (body = %s)", resp["error"], w.Body.String())
+	}
+	if got := resp["limit"]; got != float64(trialCap) {
+		t.Fatalf("limit = %v, want %d — the response must name the cap so the UI can explain it", got, trialCap)
+	}
+	if got := resp["current"]; got != float64(trialCap) {
+		t.Fatalf("current = %v, want %d", got, trialCap)
+	}
+	if msg, _ := resp["message"].(string); msg == "" {
+		t.Fatal("expected a human-readable message a merchant can act on")
+	}
+
+	// The refusal must not have written a row.
+	subs := webhook.NewSubscriptionRepo(env.db)
+	n, err := subs.CountForStore(context.Background(), uuid.MustParse(tenantID), uuid.MustParse(storeID))
+	if err != nil {
+		t.Fatalf("CountForStore: %v", err)
+	}
+	if n != trialCap {
+		t.Fatalf("subscription count = %d, want %d — a rejected create must not persist", n, trialCap)
+	}
+}
+
+// TestCreateWebhook_DisabledSubscriptionsCountTowardCap closes the obvious
+// way around the cap: parking subscriptions in the disabled state. A disabled
+// row is still a row the merchant can flip back on, so it must count.
+func TestCreateWebhook_DisabledSubscriptionsCountTowardCap(t *testing.T) {
+	env, storeID, tenantID, userID := webhookOwnerEnv(t)
+
+	const trialCap = 5
+	var firstID string
+	for i := 0; i < trialCap; i++ {
+		w := request(t, env.router, http.MethodPost, webhooksURL(storeID),
+			webhookCreateBody(fmt.Sprintf("https://public.example.com/hooks/%d", i), []string{"order.placed"}),
+			authHeaders(userID, tenantID))
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create #%d: status = %d, body = %s", i+1, w.Code, w.Body.String())
+		}
+		if i == 0 {
+			first := dataObject(t, w.Body.Bytes())
+			firstID, _ = first["id"].(string)
+		}
+	}
+
+	// Disable one — this must NOT free a slot.
+	pw := request(t, env.router, http.MethodPatch, webhooksURL(storeID)+"/"+firstID,
+		map[string]any{"enabled": false}, authHeaders(userID, tenantID))
+	if pw.Code != http.StatusOK {
+		t.Fatalf("disable: status = %d, body = %s", pw.Code, pw.Body.String())
+	}
+
+	w := request(t, env.router, http.MethodPost, webhooksURL(storeID),
+		webhookCreateBody("https://public.example.com/hooks/after-disable", []string{"order.placed"}),
+		authHeaders(userID, tenantID))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("create after disabling one: status = %d, want 400 — disabling must not free a slot (body = %s)",
+			w.Code, w.Body.String())
 	}
 }

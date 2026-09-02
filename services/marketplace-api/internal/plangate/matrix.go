@@ -21,6 +21,14 @@ const (
 	FeatureAuditRetentionDays     Feature = "audit_retention_days"
 	FeatureCampaignEmailsPerMonth Feature = "campaign_emails_per_month"
 	FeatureTransactionalEmails    Feature = "transactional_emails"
+	// FeatureWebhookSubscriptions caps outbound webhook subscriptions per
+	// STORE (not per tenant) — #586. Dispatch fan-out is
+	// `outbox rows × matching subscriptions`, so an unbounded count turns
+	// one order.placed into an unbounded number of delivery rows and
+	// outbound HTTP attempts against a shared db-f1-micro. Enforced at
+	// creation only, mirroring FeatureImagesPerProduct: a downgrade does
+	// not delete a merchant's existing subscriptions.
+	FeatureWebhookSubscriptions Feature = "webhook_subscriptions"
 
 	// Storefront.
 	FeatureCustomDomain     Feature = "custom_domain"
@@ -74,6 +82,7 @@ var allFeatures = []Feature{
 	FeatureAuditRetentionDays,
 	FeatureCampaignEmailsPerMonth,
 	FeatureTransactionalEmails,
+	FeatureWebhookSubscriptions,
 	FeatureCustomDomain,
 	FeatureFullColorPalette,
 	FeatureAnnouncementBar,
@@ -120,6 +129,7 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		FeatureAuditRetentionDays:     90,
 		FeatureCampaignEmailsPerMonth: 5_000,
 		FeatureTransactionalEmails:    Unlimited, // ∞ with 100k/mo fair-use (§9)
+		FeatureWebhookSubscriptions:   5,
 
 		FeatureCustomDomain:        1,
 		FeatureFullColorPalette:    1,
@@ -150,6 +160,7 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		FeatureAuditRetentionDays:     90,
 		FeatureCampaignEmailsPerMonth: 15_000,
 		FeatureTransactionalEmails:    Unlimited,
+		FeatureWebhookSubscriptions:   10,
 
 		FeatureCustomDomain:        1,
 		FeatureFullColorPalette:    1,
@@ -189,6 +200,7 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		FeatureAuditRetentionDays:     365,
 		FeatureCampaignEmailsPerMonth: 50_000,
 		FeatureTransactionalEmails:    Unlimited,
+		FeatureWebhookSubscriptions:   25,
 
 		FeatureCustomDomain:        1,
 		FeatureFullColorPalette:    1,
@@ -219,6 +231,11 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		FeatureAuditRetentionDays:     Unlimited, // "Forever" (§9)
 		FeatureCampaignEmailsPerMonth: Negotiated,
 		FeatureTransactionalEmails:    Negotiated, // "Negotiated ceiling" (§9)
+		// 100, deliberately under the ~132 subscriptions that overflowed
+		// Postgres's 65535-parameter limit in the original fan-out outage
+		// (#562 chunked the insert; this keeps even the top tier away from
+		// the region that broke it).
+		FeatureWebhookSubscriptions: 100,
 
 		FeatureCustomDomain:        1,
 		FeatureFullColorPalette:    1,

@@ -174,28 +174,43 @@ export function VariantStockByWarehouse({
         </span>
       </div>
 
-      <div aria-live="polite">
-        {error && (
-          <div
-            role="alert"
-            className="rounded-md border border-[color:var(--danger)]/25 bg-[color:var(--danger)]/[0.06] px-4 py-2.5 text-sm text-[color:var(--danger)]"
-          >
-            {error}
-          </div>
-        )}
-        {saved && !error && (
-          <p className="text-sm text-[color:var(--moss-700)]">Stock saved.</p>
-        )}
-      </div>
+      {/* Status and the save control share one row, and the button is
+          right-aligned so it sits under the column of stock inputs above
+          rather than floating at the left margin. That alignment is what
+          stops it reading as "dangling in the middle of the page" — the
+          same complaint the product form's own Save had before it was
+          docked under the header.
 
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={pending}
-        className="rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {pending ? "Saving..." : "Save stock"}
-      </button>
+          It is deliberately SECONDARY. The page already has one filled
+          --ink-900 primary, the docked "Save changes". Two filled primaries
+          asking for different commits is precisely the "one accent per
+          view" rule this system sets, and the weaker weight also tells the
+          truth: warehouse stock is a smaller, self-contained commit than
+          saving the product. */}
+      <div className="flex items-center justify-between gap-4">
+        <div aria-live="polite" className="min-w-0">
+          {error && (
+            <div
+              role="alert"
+              className="rounded-md border border-[color:var(--danger)]/25 bg-[color:var(--danger)]/[0.06] px-4 py-2.5 text-sm text-[color:var(--danger)]"
+            >
+              {error}
+            </div>
+          )}
+          {saved && !error && (
+            <p className="text-sm text-[color:var(--moss-700)]">Stock saved.</p>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={pending}
+          className="shrink-0 rounded-md border border-[color:var(--ink-200)] px-4 py-2 text-sm font-medium text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {pending ? "Saving…" : "Save stock"}
+        </button>
+      </div>
     </section>
   );
 }

@@ -137,3 +137,26 @@ describe("VariantStockByWarehouse", () => {
     expect(screen.queryByText("Stock saved.")).toBeNull();
   });
 });
+
+// The product page docks one filled --ink-900 primary under the header
+// ("Save changes"). This panel's own commit must not be a second one:
+// two filled primaries competing for different commits is exactly what
+// "one accent per view" rules out, and a filled button floating at the
+// left margin mid-page is the "dangling in the middle of the page"
+// complaint that moved the form's Save in the first place.
+describe("VariantStockByWarehouse — the save control's weight", () => {
+  it("is a secondary control, not a second filled primary", () => {
+    renderEditor({ "wh-1": 18, "wh-2": 10 });
+    const save = screen.getByRole("button", { name: /save stock/i });
+    expect(save.className).not.toMatch(/bg-\[color:var\(--ink-900\)\]/);
+    expect(save.className).toMatch(/border-\[color:var\(--ink-200\)\]/);
+  });
+
+  it("sits on the status row, right-aligned under the stock inputs", () => {
+    renderEditor({ "wh-1": 18, "wh-2": 10 });
+    const save = screen.getByRole("button", { name: /save stock/i });
+    const row = save.parentElement!;
+    expect(row.className).toMatch(/justify-between/);
+    expect(row.querySelector('[aria-live="polite"]')).not.toBeNull();
+  });
+});

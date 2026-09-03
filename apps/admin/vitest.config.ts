@@ -50,6 +50,7 @@ export default defineConfig({
       "@repo/ui/app-store-badges": path.resolve(__dirname, "../../packages/ui/src/app-store-badges.tsx"),
       "@repo/ui/status-dot": path.resolve(__dirname, "../../packages/ui/src/status-dot.tsx"),
       "@repo/ui/auth/csrf": path.resolve(__dirname, "../../packages/ui/src/auth/csrf.ts"),
+      "@repo/ui/auth/zitadel-totp-code": path.resolve(__dirname, "../../packages/ui/src/auth/zitadel-totp-code.ts"),
       "@repo/ui": path.resolve(__dirname, "../../packages/ui/src/index.ts"),
       react: path.resolve(__dirname, "../../node_modules/react"),
       "react-dom": path.resolve(__dirname, "../../node_modules/react-dom"),

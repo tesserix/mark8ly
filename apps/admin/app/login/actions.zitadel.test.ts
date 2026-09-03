@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// `actions.ts` reads SESSION_ENCRYPT_KEY at module-evaluation time, which
+// happens before any statement in this file runs — so the env var has to
+// be set via vi.hoisted (which really does run before the imports below
+// are evaluated), not a plain top-level assignment.
+const { SESSION_ENCRYPT_KEY } = vi.hoisted(() => {
+  const key = "test-session-key-32-bytes-pad!!";
+  process.env.SESSION_ENCRYPT_KEY = key;
+  return { SESSION_ENCRYPT_KEY: key };
+});
+
 const cookieStore: { name: string; value: string }[] = [];
 const cookiesSetSpy = vi.fn((opts: { name: string; value: string }) => {
   cookieStore.push({ name: opts.name, value: opts.value });
@@ -40,6 +50,7 @@ vi.mock("@/lib/api/platform-api", async () => {
 
 import { zitadelLogin, zitadelTotp, AuthBffError } from "@/lib/auth/auth-bff";
 import { listMemberTenants } from "@/lib/api/platform-api";
+import { mintZitadelTotpCode, verifyZitadelTotpCode } from "@repo/ui/auth/zitadel-totp-code";
 import { signInWithZitadel, confirmZitadelTotp } from "./actions";
 
 const zitadelLoginMock = vi.mocked(zitadelLogin);
@@ -154,7 +165,7 @@ describe("signInWithZitadel", () => {
     }
   });
 
-  it("surfaces a totp_required session for the UI and mints no session cookie", async () => {
+  it("surfaces a totp_required session for the UI, mints a signed tenant code, and mints no session cookie", async () => {
     zitadelLoginMock.mockResolvedValue({
       kind: "totp_required",
       sessionId: "sess-1",
@@ -164,18 +175,23 @@ describe("signInWithZitadel", () => {
 
     const result = await signInWithZitadel(input);
 
-    expect(result).toEqual({
-      ok: true,
-      data: {
-        tenantId: "tenant-1",
-        multipleTenants: false,
-        mfaRequired: false,
-        emailOtpRequired: false,
-        totpRequired: true,
-        zitadelSessionId: "sess-1",
-        zitadelSessionToken: "sess-token-1",
-      },
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected an ok result");
+    expect(result.data).toMatchObject({
+      tenantId: "tenant-1",
+      multipleTenants: false,
+      mfaRequired: false,
+      emailOtpRequired: false,
+      totpRequired: true,
+      zitadelSessionId: "sess-1",
+      zitadelSessionToken: "sess-token-1",
     });
+    expect(typeof result.data.zitadelTenantCode).toBe("string");
+    // The tenant carried inside the opaque code is the server-resolved
+    // one, not anything a client could have chosen.
+    const claims = verifyZitadelTotpCode(result.data.zitadelTenantCode!, SESSION_ENCRYPT_KEY);
+    expect(claims.tenant_id).toBe("tenant-1");
+    expect(claims.multiple_tenants).toBe(false);
     expect(cookiesSetSpy).not.toHaveBeenCalled();
   });
 
@@ -278,14 +294,20 @@ describe("signInWithZitadel", () => {
 });
 
 describe("confirmZitadelTotp", () => {
-  const input = {
+  const baseInput = {
     authRequestId: "ar-1",
     sessionId: "sess-1",
     sessionToken: "sess-token-1",
     code: "123456",
-    tenantId: "tenant-1",
-    multipleTenants: false,
   };
+
+  function validCode(tenantId = "tenant-1", multipleTenants = false): string {
+    return mintZitadelTotpCode(
+      { tenant_id: tenantId, multiple_tenants: multipleTenants },
+      SESSION_ENCRYPT_KEY,
+      300,
+    );
+  }
 
   it("maps a complete outcome to a successful result and forwards Set-Cookie", async () => {
     zitadelTotpMock.mockResolvedValue({
@@ -296,7 +318,7 @@ describe("confirmZitadelTotp", () => {
       setCookies: ["m8_session=abc; Path=/; HttpOnly"],
     });
 
-    const result = await confirmZitadelTotp(input);
+    const result = await confirmZitadelTotp({ ...baseInput, zitadelTenantCode: validCode() });
 
     expect(result).toEqual({
       ok: true,
@@ -312,8 +334,71 @@ describe("confirmZitadelTotp", () => {
     );
   });
 
+  it("uses the tenant from the verified claims for workspace_tenant — not a client-supplied field, there isn't one on the input type", async () => {
+    zitadelTotpMock.mockResolvedValue({
+      kind: "complete",
+      uid: "u1",
+      email: "merchant@example.com",
+      tenantId: "tenant-9",
+      setCookies: [],
+    });
+
+    const result = await confirmZitadelTotp({
+      ...baseInput,
+      zitadelTenantCode: validCode("tenant-9", true),
+    });
+
+    expect(zitadelTotpMock).toHaveBeenCalledTimes(1);
+    const call = zitadelTotpMock.mock.calls[0]![0];
+    expect(call.workspaceTenant).toBe("tenant-9");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.tenantId).toBe("tenant-9");
+      expect(result.data.multipleTenants).toBe(true);
+    }
+  });
+
+  it("rejects a tampered code and returns {ok: false} rather than throwing", async () => {
+    const tampered = validCode().replace(/\.[^.]+$/, ".bad-signature");
+
+    const result = await confirmZitadelTotp({ ...baseInput, zitadelTenantCode: tampered });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("invalid_signature");
+    }
+    expect(zitadelTotpMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an expired code and returns {ok: false} rather than throwing", async () => {
+    const expired = mintZitadelTotpCode(
+      { tenant_id: "tenant-1", multiple_tenants: false },
+      SESSION_ENCRYPT_KEY,
+      -1,
+    );
+
+    const result = await confirmZitadelTotp({ ...baseInput, zitadelTenantCode: expired });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("expired");
+    }
+    expect(zitadelTotpMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed code and returns {ok: false} rather than throwing", async () => {
+    const result = await confirmZitadelTotp({ ...baseInput, zitadelTenantCode: "not-a-code" });
+
+    expect(result.ok).toBe(false);
+    expect(zitadelTotpMock).not.toHaveBeenCalled();
+  });
+
   it("rejects a blank code without calling zitadelTotp", async () => {
-    const result = await confirmZitadelTotp({ ...input, code: "   " });
+    const result = await confirmZitadelTotp({
+      ...baseInput,
+      code: "   ",
+      zitadelTenantCode: validCode(),
+    });
 
     expect(result).toEqual({
       ok: false,
@@ -328,7 +413,7 @@ describe("confirmZitadelTotp", () => {
       new AuthBffError(401, "invalid_code", "Incorrect verification code"),
     );
 
-    const result = await confirmZitadelTotp(input);
+    const result = await confirmZitadelTotp({ ...baseInput, zitadelTenantCode: validCode() });
 
     expect(result).toEqual({
       ok: false,
@@ -346,7 +431,7 @@ describe("confirmZitadelTotp", () => {
       setCookies: [],
     });
 
-    await confirmZitadelTotp(input);
+    await confirmZitadelTotp({ ...baseInput, zitadelTenantCode: validCode() });
 
     const call = zitadelTotpMock.mock.calls[0]![0];
     expect(call.userAgent).toBe("Mozilla/5.0 test-client");

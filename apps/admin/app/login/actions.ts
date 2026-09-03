@@ -26,9 +26,22 @@ import {
 } from "@/lib/api/platform-api";
 import { platformInternalHeaders } from "@/lib/api/server/platformInternal";
 import { publicConfig } from "@/lib/config";
+import {
+  mintZitadelTotpCode,
+  verifyZitadelTotpCode,
+  ZitadelTotpCodeError,
+} from "@repo/ui/auth/zitadel-totp-code";
 
 const PLATFORM_API_URL =
   process.env.PLATFORM_API_URL ?? "http://localhost:8086";
+
+// Same HMAC key every other short-lived admin handoff/exchange code in
+// this app signs with (see cross-domain-handoff.ts, auth/handoff/route.ts).
+const SESSION_ENCRYPT_KEY = process.env.SESSION_ENCRYPT_KEY ?? "";
+
+// Long enough for a user to fetch a code from their authenticator app,
+// short enough to be useless if it leaked anywhere afterward.
+const ZITADEL_TOTP_CODE_TTL_SECONDS = 300;
 
 // If the sign-in request is arriving at `{slug}-admin.mark8ly.com`,
 // resolve that slug to a tenant id. Returns null when the host is not
@@ -95,11 +108,19 @@ interface SignInSuccess {
   callbackUrl?: string;
   // true when Zitadel itself (not auth-bff's usermfa gate) demands a
   // TOTP code before the auth request can complete. zitadelSessionId /
-  // zitadelSessionToken must be carried by the UI into confirmZitadelTotp
-  // unchanged — no session cookie is minted at this point.
+  // zitadelSessionToken / zitadelTenantCode must be carried by the UI
+  // into confirmZitadelTotp unchanged — no session cookie is minted at
+  // this point.
   totpRequired?: boolean;
   zitadelSessionId?: string;
   zitadelSessionToken?: string;
+  // Opaque HMAC-signed code carrying the server-resolved tenantId /
+  // multipleTenants (see zitadel-totp-code.ts). confirmZitadelTotp
+  // verifies this instead of trusting client-supplied tenant fields —
+  // the tenant used for workspace_tenant must always come from the
+  // server's own resolution, the same posture the GIP path has via
+  // resolveWorkspaceTenant.
+  zitadelTenantCode?: string;
   // Present when auth-bff handed back a handoff to Zitadel's hosted UI
   // instead of completing the login inline.
   handoffUrl?: string;
@@ -243,22 +264,28 @@ export async function signInWithZitadel(
 /**
  * confirmZitadelTotp finishes a Zitadel sign-in that Zitadel itself
  * stepped up with a TOTP challenge (distinct from auth-bff's own
- * usermfa gate, which `confirmMFALogin` handles). The brief describes
- * this action's input as `{ authRequestId, sessionId, sessionToken,
- * code }`, but `zitadelTotp` also requires `workspace_tenant`, and there
- * is no pending-cookie mechanism yet on the Zitadel path to recover it
- * server-side the way `confirmMFALogin` recovers auth-bff's own
- * m8_mfa_pending cookie. So the caller — the UI, which already has
- * `tenantId`/`multipleTenants` from the preceding `signInWithZitadel`
- * result — must carry them through here too.
+ * usermfa gate, which `confirmMFALogin` handles). `zitadelTotp` needs
+ * `workspace_tenant`, and there is no pending-cookie mechanism yet on
+ * the Zitadel path to recover it server-side the way `confirmMFALogin`
+ * recovers auth-bff's own m8_mfa_pending cookie.
+ *
+ * The tenant therefore travels as `zitadelTenantCode` — an opaque,
+ * HMAC-signed code `signInWithZitadel` minted from its own
+ * `resolveWorkspaceTenant` result — rather than as raw `tenantId` /
+ * `multipleTenants` fields the client could set at will. auth-bff
+ * re-checks membership independently on every call, so a forged tenant
+ * id could never reach a tenant the caller doesn't belong to either
+ * way; this is about keeping this path's posture identical to the GIP
+ * path, where the tenant is always server-derived and never
+ * client-supplied, especially once GIP is retired and this is the only
+ * login path left.
  */
 export interface ConfirmZitadelTotpInput {
   authRequestId: string;
   sessionId: string;
   sessionToken: string;
   code: string;
-  tenantId: string;
-  multipleTenants: boolean;
+  zitadelTenantCode: string;
 }
 
 export async function confirmZitadelTotp(
@@ -274,18 +301,30 @@ export async function confirmZitadelTotp(
       };
     }
 
+    let claims: { tenant_id: string; multiple_tenants: boolean };
+    try {
+      claims = verifyZitadelTotpCode(input.zitadelTenantCode, SESSION_ENCRYPT_KEY);
+    } catch (err) {
+      const code = err instanceof ZitadelTotpCodeError ? err.code : "invalid_tenant_code";
+      return {
+        ok: false,
+        code,
+        message: "Your sign-in session expired. Please sign in again.",
+      };
+    }
+
     const h = await headers();
     const outcome = await zitadelTotp({
       authRequestId: input.authRequestId,
       sessionId: input.sessionId,
       sessionToken: input.sessionToken,
       code: trimmed,
-      workspaceTenant: input.tenantId,
+      workspaceTenant: claims.tenant_id,
       userAgent: h.get("user-agent") ?? undefined,
       forwardedFor: h.get("x-forwarded-for") ?? undefined,
     });
 
-    return await mapZitadelOutcome(outcome, input.tenantId, input.multipleTenants);
+    return await mapZitadelOutcome(outcome, claims.tenant_id, claims.multiple_tenants);
   } catch (err) {
     return fail(err);
   }
@@ -326,7 +365,12 @@ async function mapZitadelOutcome(
         ok: true,
         data: { tenantId, multipleTenants, mfaRequired: false, emailOtpRequired: true },
       };
-    case "totp_required":
+    case "totp_required": {
+      const zitadelTenantCode = mintZitadelTotpCode(
+        { tenant_id: tenantId, multiple_tenants: multipleTenants },
+        SESSION_ENCRYPT_KEY,
+        ZITADEL_TOTP_CODE_TTL_SECONDS,
+      );
       return {
         ok: true,
         data: {
@@ -337,8 +381,10 @@ async function mapZitadelOutcome(
           totpRequired: true,
           zitadelSessionId: outcome.sessionId,
           zitadelSessionToken: outcome.sessionToken,
+          zitadelTenantCode,
         },
       };
+    }
     case "handoff":
       return {
         ok: true,

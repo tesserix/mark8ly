@@ -222,7 +222,7 @@ describe("zitadelTotp", () => {
     });
   });
 
-  it("never leaks the submitted password into a thrown error (totp request carries no password, but must not echo any secret field)", async () => {
+  it("never leaks the submitted sessionToken or code into a thrown error", async () => {
     stubFetch(401, { error: "invalid_code", message: "Incorrect verification code" });
 
     let caught: unknown;
@@ -234,7 +234,9 @@ describe("zitadelTotp", () => {
 
     expect(caught).toBeInstanceOf(AuthBffError);
     const err = caught as AuthBffError;
-    expect(err.message).not.toContain(loginReq.password);
-    expect(JSON.stringify(err)).not.toContain(loginReq.password);
+    expect(err.message).not.toContain(totpReq.sessionToken);
+    expect(err.message).not.toContain(totpReq.code);
+    expect(JSON.stringify(err)).not.toContain(totpReq.sessionToken);
+    expect(JSON.stringify(err)).not.toContain(totpReq.code);
   });
 });

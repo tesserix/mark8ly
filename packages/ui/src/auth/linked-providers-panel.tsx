@@ -14,6 +14,13 @@ export interface LinkedProvidersPanelProps {
   variant?: "admin" | "storefront";
   /** Disable all controls while the parent is fetching/refreshing providers. */
   pending?: boolean;
+  /**
+   * Omit the "Link Google account" action entirely (not just disable it).
+   * Used by consumers where Google sign-in currently routes through an
+   * identity store that is mid-migration and must not be offered yet.
+   * Defaults to false so existing consumers are unaffected.
+   */
+  hideLinkGoogle?: boolean;
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -31,6 +38,7 @@ export function LinkedProvidersPanel({
   onUnlink,
   variant = "admin",
   pending = false,
+  hideLinkGoogle = false,
 }: LinkedProvidersPanelProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [linkingGoogle, setLinkingGoogle] = useState(false);
@@ -105,7 +113,7 @@ export function LinkedProvidersPanel({
         ))}
       </ul>
 
-      {!hasGoogle && (
+      {!hasGoogle && !hideLinkGoogle && (
         <button
           type="button"
           onClick={handleLinkGoogle}

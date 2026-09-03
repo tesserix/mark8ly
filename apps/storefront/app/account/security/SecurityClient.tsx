@@ -9,6 +9,14 @@ import {
 const TRAMPOLINE_BASE =
   process.env.NEXT_PUBLIC_MARK8LY_AUTH_URL ?? "https://mark8ly.com";
 
+// Matches apps/storefront/app/sign-in/actions.ts's AUTH_PROVIDER rule
+// exactly (see that file for the full rationale): only the literal string
+// "zitadel" switches this form off the GIP/Identity Toolkit path. Both
+// reads must agree, since the server action rejects a Zitadel-shaped
+// payload sent while the flag says GIP and vice versa.
+const AUTH_PROVIDER: "gip" | "zitadel" =
+  process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel" ? "zitadel" : "gip";
+
 interface SecurityClientProps {
   storeSlug: string;
 }
@@ -89,6 +97,7 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
             onLinkGoogle={handleLinkGoogle}
             onUnlink={handleUnlink}
             variant="storefront"
+            hideLinkGoogle={AUTH_PROVIDER === "zitadel"}
           />
         )}
         {error && (

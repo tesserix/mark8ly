@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/breakglass"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
@@ -183,6 +184,23 @@ type Deps struct {
 	// route to mount.
 	BreakGlass BreakGlassLister
 
+	// BreakGlassRotator, BreakGlassWriter, BreakGlassRateLimiter and
+	// BreakGlassIPHMACKey together serve the break-glass write endpoints
+	// (#404): POST /admin/break-glass/:tenantId/{rotate,disable,enable}
+	// and POST /admin/break-glass/clear-lockout. Nil BreakGlassRotator or
+	// BreakGlassWriter leaves those four routes unmounted while List
+	// (#333) keeps working — matching OutboxWriter's pattern. Like
+	// OutboxWriter, this ALSO requires DB and Emitter to be non-nil for
+	// the write routes to mount: a write endpoint that cannot be
+	// attributed to an operator should not exist rather than run silently
+	// unaudited (#287, F1). BreakGlassRateLimiter may be nil — the
+	// handler degrades to clearing only the durable DB lock and logs
+	// loudly rather than panicking (see BreakGlassWriteHandler's doc).
+	BreakGlassRotator     BreakGlassRotator
+	BreakGlassWriter      BreakGlassWriter
+	BreakGlassRateLimiter BreakGlassRateLimiter
+	BreakGlassIPHMACKey   breakglass.HMACKey
+
 	// PriceCatalog resolves the plan catalog the two billing read routes
 	// display amounts from (tesserix-home#328 phase C). Unlike every other
 	// optional field in this struct, nil does NOT unmount anything: it
@@ -305,6 +323,24 @@ func Register(g *gin.RouterGroup, deps Deps) {
 
 	if deps.BreakGlass != nil && deps.TenantDirectory != nil {
 		NewBreakGlassHandler(deps.DB, deps.BreakGlass, deps.TenantDirectory, deps.Logger).Register(group)
+	}
+
+	switch {
+	case deps.BreakGlassRotator != nil && deps.BreakGlassWriter != nil && deps.DB != nil && deps.Emitter != nil:
+		NewBreakGlassWriteHandler(
+			deps.DB, deps.BreakGlassWriter, deps.BreakGlassRotator,
+			deps.BreakGlassRateLimiter, deps.BreakGlassIPHMACKey,
+			NewOperatorActionAuditFunc(deps.Emitter), deps.Logger,
+		).Register(group)
+	case deps.BreakGlassRotator != nil || deps.BreakGlassWriter != nil:
+		// A write endpoint that cannot be attributed is worse than not
+		// having it (#287, F1) — not the nil-safe "just degraded" pattern
+		// the read routes above use.
+		if deps.Logger != nil {
+			deps.Logger.Warn("platformadmin: break-glass write routes not mounted — BreakGlassRotator, BreakGlassWriter, DB and Emitter are all required",
+				"rotator_nil", deps.BreakGlassRotator == nil, "writer_nil", deps.BreakGlassWriter == nil,
+				"db_nil", deps.DB == nil, "emitter_nil", deps.Emitter == nil)
+		}
 	}
 
 	if deps.EstateUsers != nil {

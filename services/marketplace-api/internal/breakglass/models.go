@@ -23,6 +23,12 @@ import (
 //     `secret_path`. Neither ever hits this row.
 //   - `rotation_scheduled_at` is set to now()+24h on every successful
 //     login; cleared when the rotator runs.
+//   - `disabled_at` is set only by an explicit operator action (POST
+//     .../disable, #404), never as a side effect of rotation —
+//     ReplaceAfterRotation (rotation.go) does not touch it. The login
+//     handler refuses a disabled account with a response
+//     byte-identical to a wrong-password failure; `disabled_reason` is
+//     for the audit log only and must never reach the HTTP response.
 type Account struct {
 	TenantID            uuid.UUID  `gorm:"column:tenant_id;type:uuid;primaryKey"`
 	SecretPath          string     `gorm:"column:secret_path;not null"`
@@ -32,6 +38,8 @@ type Account struct {
 	LastRotatedAt       time.Time  `gorm:"column:last_rotated_at;not null;default:now()"`
 	LastUsedAt          *time.Time `gorm:"column:last_used_at"`
 	RotationScheduledAt *time.Time `gorm:"column:rotation_scheduled_at"`
+	DisabledAt          *time.Time `gorm:"column:disabled_at"`
+	DisabledReason      *string    `gorm:"column:disabled_reason"`
 	CreatedAt           time.Time  `gorm:"column:created_at;not null;autoCreateTime"`
 	UpdatedAt           time.Time  `gorm:"column:updated_at;not null;autoUpdateTime"`
 }

@@ -172,7 +172,7 @@ func (a *stripeClientAdapter) CreateCheckoutSession(ctx context.Context, custome
 	desc := pricing.MustGetDescriptor(pricing.Plan(plan), pricing.PeriodMonthly, pricing.TierDeveloped)
 	sess, err := billingstripe.CreateCheckoutSession(ctx, a.c, billingstripe.CheckoutInput{
 		CustomerID: customerID,
-		PriceID:    "", // placeholder — real price ID populated after billing-bootstrap; 400s here are pre-existing (nil client = always broken)
+		PriceID:    "", // placeholder — real price ID populated once the catalog's Prices exist in Stripe (published by the console, #303); 400s here are pre-existing (nil client = always broken)
 		Currency:   desc.Baseline.Currency,
 		Plan:       string(plan),
 		Period:     string(pricing.PeriodMonthly),

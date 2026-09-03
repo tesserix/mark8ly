@@ -192,45 +192,58 @@ func TestExtend_RealStripeAndRealPostgres_HoldsLockAcrossNetworkCall(t *testing.
 	})
 	requireStep(t, "CreateCustomer", err)
 
-	product, err := billingstripe.CreateProduct(ctx, c, "Stripelive Task 8 Test Product "+runTag, "starter",
-		"stripelive-task8-product:"+runTag)
+	// billingstripe.CreateProduct/CreatePrice used to build this fixture, but
+	// #303 removed them: they existed only for cmd/billing-bootstrap, which
+	// is retired now that the console is the catalog's authoring surface,
+	// verified against live Stripe. This test isn't bootstrap — it needs a
+	// disposable Product/Price to hang a real trialing Subscription off of —
+	// so it goes straight to the raw SDK, the same way the cleanups below
+	// already did for the update/deactivate calls billingstripe never
+	// wrapped either.
+	raw := sdk.NewClient(stripeKey)
+
+	productParams := &sdk.ProductCreateParams{}
+	productParams.Context = ctx
+	productParams.IdempotencyKey = sdk.String("stripelive-task8-product:" + runTag)
+	productParams.Name = sdk.String("Stripelive Task 8 Test Product " + runTag)
+	productParams.AddMetadata("plan", "starter")
+	product, err := raw.V1Products.Create(ctx, productParams)
 	requireStep(t, "CreateProduct", err)
 	t.Cleanup(func() {
 		// Fix round 1 (F3): every run now creates a uniquely-named product,
 		// so the accumulation flagged after the first submission is worse
-		// unless each run also deactivates its own. billingstripe has no
-		// wrapper for this (checked product.go — CreateProduct/
-		// FindProductByMetadata only), so this uses the raw SDK, same as
-		// the subscription cancel below. Deactivating (not deleting) is
-		// deliberate: Stripe test-mode products with prices attached
-		// generally cannot be deleted, only archived via active=false.
-		raw := sdk.NewClient(stripeKey)
+		// unless each run also deactivates its own. Deactivating (not
+		// deleting) is deliberate: Stripe test-mode products with prices
+		// attached generally cannot be deleted, only archived via
+		// active=false.
 		if _, cerr := raw.V1Products.Update(context.Background(), product.ID, &sdk.ProductUpdateParams{Active: sdk.Bool(false)}); cerr != nil {
 			t.Logf("cleanup: failed to deactivate stripe test-mode product %s: %v", product.ID, cerr)
 		}
 	})
 
-	// A hand-built descriptor, not pricing.MustGetDescriptor's catalog
-	// value — see the runTag comment above for why the catalog's fixed
-	// LookupKey cannot be reused here. Baseline/Tier/Plan/Period mirror the
-	// catalog shape closely enough for CreatePrice's logic (single baseline
-	// currency, TierDeveloped's per-currency-options loop over an empty
-	// Options map is a no-op) without colliding with anything real.
-	desc := pricing.PriceDescriptor{
-		Plan:      pricing.PlanStarter,
-		Period:    pricing.PeriodMonthly,
-		Tier:      pricing.TierDeveloped,
-		Baseline:  pricing.Amount{Currency: "usd", UnitAmountMinor: 999},
-		Options:   map[string]pricing.Amount{},
-		LookupKey: "stripelive_task8_" + runTag,
+	// A hand-built lookup_key, not pricing.MustGetDescriptor's catalog value
+	// — see the runTag comment above for why the catalog's fixed LookupKey
+	// cannot be reused here. usd is not a zero-decimal Stripe currency, so
+	// UnitAmountMinor needs no boundary conversion (see catalog.go's
+	// zero-decimal currency note) to become the Price's unit_amount.
+	priceParams := &sdk.PriceCreateParams{}
+	priceParams.Context = ctx
+	priceParams.IdempotencyKey = sdk.String("stripelive-task8-price:" + runTag)
+	priceParams.Product = sdk.String(product.ID)
+	priceParams.Currency = sdk.String("usd")
+	priceParams.UnitAmount = sdk.Int64(999)
+	priceParams.LookupKey = sdk.String("stripelive_task8_" + runTag)
+	priceParams.Recurring = &sdk.PriceCreateRecurringParams{
+		Interval: sdk.String("month"),
 	}
-	price, err := billingstripe.CreatePrice(ctx, c, product.ID, desc)
+	priceParams.AddMetadata("plan", string(pricing.PlanStarter))
+	priceParams.AddMetadata("period", string(pricing.PeriodMonthly))
+	priceParams.AddMetadata("tier", string(pricing.TierDeveloped))
+	price, err := raw.V1Prices.Create(ctx, priceParams)
 	requireStep(t, "CreatePrice", err)
 	t.Cleanup(func() {
-		// Same rationale as the product cleanup above: no billingstripe
-		// wrapper exists (checked price.go), so this deactivates via the
-		// raw SDK. A Price cannot be deleted once created, only archived.
-		raw := sdk.NewClient(stripeKey)
+		// Same rationale as the product cleanup above. A Price cannot be
+		// deleted once created, only archived.
 		if _, cerr := raw.V1Prices.Update(context.Background(), price.ID, &sdk.PriceUpdateParams{Active: sdk.Bool(false)}); cerr != nil {
 			t.Logf("cleanup: failed to deactivate stripe test-mode price %s: %v", price.ID, cerr)
 		}

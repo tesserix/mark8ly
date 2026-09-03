@@ -269,10 +269,12 @@ func TestCatalog_PPPDescriptorCount(t *testing.T) {
 	require.Equal(t, 36, count, "expected 36 PPP descriptors (6 plan/period combos × 6 currencies)")
 }
 
-// TestCatalog_TotalDescriptorCount guards the total object count that
-// cmd/billing-bootstrap pushes to Stripe — the number tesserix/mark8ly#414
-// found stated as "8" in this package's doc and in the prod launch
-// checklist's B1.8 while init() produced 42.
+// TestCatalog_TotalDescriptorCount guards the total object count this
+// catalog describes — the same objects the console now authors and
+// publishes to Stripe (#303 retired cmd/billing-bootstrap, which used to be
+// the pusher) — the number tesserix/mark8ly#414 found stated as "8" in this
+// package's doc and in the prod launch checklist's B1.8 while init()
+// produced 42.
 //
 // What this adds over the two per-tier tests above, precisely: they already
 // catch a descriptor SWAPPED between tiers (developed would read 5 and PPP

@@ -2588,6 +2588,25 @@ func main() {
 		}
 	}()
 
+	// Prometheus scrape endpoint, on its own listener so the registry is not
+	// reachable through the public ingress. A failure here must never take
+	// the API down — an unscrapable service is a monitoring outage, not a
+	// customer-facing one — so this logs and gives up rather than exiting.
+	var metricsSrv *http.Server
+	if cfg.MetricsPort > 0 && cfg.MetricsPort != cfg.HTTPPort {
+		metricsSrv = newMetricsServer(cfg.MetricsPort)
+		go func() {
+			log.Info("metrics listening", slog.String("addr", metricsSrv.Addr))
+			if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("metrics listen", "err", err)
+			}
+		}()
+	} else {
+		log.Warn("metrics endpoint disabled",
+			slog.Int("metrics_port", cfg.MetricsPort),
+			slog.Int("http_port", cfg.HTTPPort))
+	}
+
 	// Graceful shutdown on SIGINT/SIGTERM.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -2596,6 +2615,11 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if metricsSrv != nil {
+		if err := metricsSrv.Shutdown(ctx); err != nil {
+			log.Warn("metrics shutdown", "err", err)
+		}
+	}
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error("shutdown", "err", err)
 		os.Exit(1)

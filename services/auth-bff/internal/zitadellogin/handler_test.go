@@ -617,19 +617,87 @@ func TestIDPFinishRefusesUnlinkedIdentityWithNoEmailClaim(t *testing.T) {
 	}
 }
 
-// TestIDPFinishRefusesToDuplicateAnExistingVerifiedAccount: when a verified
-// email already belongs to an existing Zitadel user, this handler must
-// refuse rather than register a second, disconnected account for the same
-// person. Neither creation nor session-minting may be reached.
-func TestIDPFinishRefusesToDuplicateAnExistingVerifiedAccount(t *testing.T) {
+// TestIDPFinishLinksAFirstTimeIdentityToAnExistingVerifiedAccount: when a
+// verified email already belongs to an existing Zitadel user, this handler
+// must attach the new Google identity to THAT account (via LinkIDPToUser)
+// rather than register a second, disconnected one — and must complete
+// sign-in as that existing user, not create anything new.
+func TestIDPFinishLinksAFirstTimeIdentityToAnExistingVerifiedAccount(t *testing.T) {
+	var fin, linkCalled, createCalled atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
-			w.Write([]byte(`{"idpInformation":{"idpId":"idp-1","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+			w.Write([]byte(`{"idpInformation":{"idpId":"386381087862948767","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
 			w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/existing-1/links":
+			linkCalled.Store(true)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			createCalled.Store(true)
+			t.Error("must not create a new user when the existing account can be linked instead")
+			w.WriteHeader(http.StatusInternalServerError)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
+		case r.URL.Path == "/management/v1/policies/login":
+			w.Write([]byte(policyNoMFA))
+		case strings.HasSuffix(r.URL.Path, "/authentication_methods"):
+			w.Write([]byte(`{"authMethodTypes":["AUTHENTICATION_METHOD_TYPE_PASSWORD"]}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"person@gmail.com"}}}}`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/oidc/auth_requests/"):
+			fin.Store(true)
+			w.Write([]byte(`{"callbackUrl":"https://admin.mark8ly.com/auth/callback?code=c&state=s"}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/sessions/"):
+			w.Write([]byte(`{"session":{"factors":{"user":{"id":"existing-1","organizationId":"o1"},"password":{"verifiedAt":"2026-09-04T01:00:00Z"}}}}`))
 		default:
-			t.Errorf("must not create a user or session when a verified email already matches an existing account: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	var gotUID string
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+		gotUID = lc.UID
+		return CompleteResult{}, nil
+	})
+
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !linkCalled.Load() {
+		t.Fatal("LinkIDPToUser (POST /v2/users/existing-1/links) was never called")
+	}
+	if createCalled.Load() {
+		t.Fatal("a new user must not be created when the existing account was linked")
+	}
+	if gotUID != "existing-1" {
+		t.Fatalf("complete() called with uid=%q, want existing-1", gotUID)
+	}
+	if !fin.Load() {
+		t.Fatal("finalize was never called")
+	}
+}
+
+// TestIDPFinishRefusesToLinkAnExistingAccountWithoutAVerifiedEmail is the
+// security boundary for the link path specifically: an existing-account
+// match must never be linked when the CURRENT sign-in attempt's identity
+// carries an unverified or absent email, even if some other lookup could in
+// principle find a matching account. Neither the link call nor the create
+// call may be reached — FindUserByVerifiedEmail itself must not even run,
+// since the email-verified gate is checked before it.
+func TestIDPFinishRefusesToLinkAnExistingAccountWithoutAVerifiedEmail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"idp-1","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":false}}}`))
+		default:
+			t.Errorf("must not look up, link, or create anything for an unverified email: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	}))
@@ -640,8 +708,8 @@ func TestIDPFinishRefusesToDuplicateAnExistingVerifiedAccount(t *testing.T) {
 	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
 		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
 
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -710,6 +778,76 @@ func TestIDPFinishRegistersAndSignsInAFirstTimeVerifiedGoogleAccount(t *testing.
 	}
 	if !fin.Load() {
 		t.Fatal("finalize was never called")
+	}
+}
+
+// TestIDPFinishSecondSignInResolvesViaUserIDAfterLinking mirrors
+// TestIDPFinishSecondSignInResolvesViaUserIDAfterRegistration for the link
+// path: once linked to an existing account, a subsequent retrieve for the
+// same provider identity comes back already resolved, so idpFinish signs in
+// through the ordinary linked path and never calls LinkIDPToUser again.
+func TestIDPFinishSecondSignInResolvesViaUserIDAfterLinking(t *testing.T) {
+	var linked, fin atomic.Bool
+	linkCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			if linked.Load() {
+				w.Write([]byte(`{"userId":"existing-1","idpInformation":{"idpId":"idp-1","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+			} else {
+				w.Write([]byte(`{"idpInformation":{"idpId":"idp-1","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/existing-1/links":
+			linkCalls++
+			linked.Store(true)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
+		case r.URL.Path == "/management/v1/policies/login":
+			w.Write([]byte(policyNoMFA))
+		case strings.HasSuffix(r.URL.Path, "/authentication_methods"):
+			w.Write([]byte(`{"authMethodTypes":["AUTHENTICATION_METHOD_TYPE_PASSWORD"]}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"person@gmail.com"}}}}`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/oidc/auth_requests/"):
+			fin.Store(true)
+			w.Write([]byte(`{"callbackUrl":"https://admin.mark8ly.com/auth/callback?code=c&state=s"}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/sessions/"):
+			w.Write([]byte(`{"session":{"factors":{"user":{"id":"existing-1","organizationId":"o1"},"password":{"verifiedAt":"2026-09-04T01:00:00Z"}}}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	var gotUIDs []string
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+		gotUIDs = append(gotUIDs, lc.UID)
+		return CompleteResult{}, nil
+	})
+
+	body := `{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`
+
+	rec1 := httptest.NewRecorder()
+	h.idpFinish(rec1, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish", strings.NewReader(body)))
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("first sign-in: status = %d, body = %s", rec1.Code, rec1.Body.String())
+	}
+
+	rec2 := httptest.NewRecorder()
+	h.idpFinish(rec2, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish", strings.NewReader(body)))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second sign-in: status = %d, body = %s", rec2.Code, rec2.Body.String())
+	}
+
+	if linkCalls != 1 {
+		t.Fatalf("LinkIDPToUser was called %d times, want exactly 1 — the second sign-in must resolve via user_id, not link again", linkCalls)
+	}
+	if len(gotUIDs) != 2 || gotUIDs[0] != "existing-1" || gotUIDs[1] != "existing-1" {
+		t.Fatalf("gotUIDs = %v, want [existing-1 existing-1]", gotUIDs)
 	}
 }
 

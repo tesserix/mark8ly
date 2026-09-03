@@ -346,6 +346,35 @@ func (c *Client) CreateHumanUserWithIDPLink(ctx context.Context, identity IDPIde
 	return wire.UserID, nil
 }
 
+// LinkIDPToUser attaches the given federated identity to an EXISTING
+// Zitadel user, so the very next retrieve of the same provider identity
+// resolves IDPIdentity.ZitadelUserID to userID directly.
+//
+// Guarded exactly like CreateHumanUserWithIDPLink, and for the identical
+// reason: linking an unverified provider email to an existing account is
+// account takeover. This refuses outright unless identity carries a
+// non-empty, verified email. Callers must ALSO have already resolved userID
+// themselves (e.g. via FindUserByVerifiedEmail) — this function does not
+// look anyone up, it only attaches.
+//
+// Verified 2026-09-04 against the live TESSERIX Zitadel instance:
+// POST /v2/users/{userId}/links with body {"idpLink":{"idpId","userId",
+// "userName"}} returns 200 and the link is confirmed to attach via
+// POST /v2/users/{userId}/links/_search afterwards.
+func (c *Client) LinkIDPToUser(ctx context.Context, userID string, identity IDPIdentity) error {
+	if identity.Email == "" || !identity.EmailVerified {
+		return fmt.Errorf("zitadellogin: refusing to link an empty or unverified email: %w", ErrUnavailable)
+	}
+	body := map[string]any{
+		"idpLink": map[string]any{
+			"idpId":    identity.IDPID,
+			"userId":   identity.ExternalUserID,
+			"userName": identity.ExternalUserName,
+		},
+	}
+	return c.do(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/links", body, nil, ErrUnavailable)
+}
+
 // VerifyTOTP submits a TOTP code.
 //
 // Two facts, both observed and both easy to get wrong:

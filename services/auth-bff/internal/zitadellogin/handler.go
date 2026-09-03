@@ -454,14 +454,11 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 	//     explicit false, never like "probably fine". This re-derives the
 	//     trust decision the brief for this endpoint always required;
 	//     registration is what makes it load-bearing rather than moot.
-	//  2. No EXISTING Zitadel user already holds that verified email
-	//     (FindUserByVerifiedEmail). If one does, this handler refuses
-	//     rather than silently creating a second, disconnected account for
-	//     the same person — see CreateHumanUserWithIDPLink's doc for why
-	//     skipping this check is unsafe. Linking the new identity onto
-	//     that EXISTING account (rather than merely refusing) is the
-	//     better outcome for that merchant, but is not implemented here:
-	//     see this handler's package README for why.
+	//  2. Whether an EXISTING Zitadel user already holds that verified
+	//     email (FindUserByVerifiedEmail) decides create vs. link below:
+	//     creating a second, disconnected account for someone who already
+	//     has one would be exactly as wrong as skipping this check — see
+	//     CreateHumanUserWithIDPLink's and LinkIDPToUser's docs.
 	if identity.ZitadelUserID == "" {
 		if identity.Email == "" || !identity.EmailVerified {
 			slog.WarnContext(ctx, "zitadellogin: idp finish rejected: unlinked identity with no verified email")
@@ -475,19 +472,31 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
 			return
 		}
-		if existingUserID != "" {
-			slog.WarnContext(ctx, "zitadellogin: idp finish refused: a verified email already belongs to an existing, unlinked account")
-			writeJSON(w, http.StatusConflict, map[string]any{"error": "account_exists_link_required"})
-			return
+		switch {
+		case existingUserID != "":
+			// A Zitadel user already holds this exact, verified email:
+			// attach this Google identity to THAT account rather than
+			// creating a second, disconnected one for the same person.
+			// Gated on the identical rule as creation above (checked
+			// again here, not merely relied upon, since LinkIDPToUser
+			// also refuses independently) — this is the whole security
+			// boundary: linking an unverified provider email to an
+			// existing account is account takeover.
+			if err := h.c.LinkIDPToUser(ctx, existingUserID, identity); err != nil {
+				slog.ErrorContext(ctx, "zitadellogin: idp finish: could not link identity to the existing account", "err", err)
+				writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+				return
+			}
+			slog.InfoContext(ctx, "zitadellogin: idp finish linked a first-time Google identity to an existing account", "user_id", existingUserID)
+		default:
+			newUserID, err := h.c.CreateHumanUserWithIDPLink(ctx, identity)
+			if err != nil {
+				slog.ErrorContext(ctx, "zitadellogin: idp finish: could not register a new user for this identity", "err", err)
+				writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+				return
+			}
+			slog.InfoContext(ctx, "zitadellogin: idp finish registered a new user for a first-time Google sign-in", "user_id", newUserID)
 		}
-
-		newUserID, err := h.c.CreateHumanUserWithIDPLink(ctx, identity)
-		if err != nil {
-			slog.ErrorContext(ctx, "zitadellogin: idp finish: could not register a new user for this identity", "err", err)
-			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
-			return
-		}
-		slog.InfoContext(ctx, "zitadellogin: idp finish registered a new user for a first-time Google sign-in", "user_id", newUserID)
 	}
 
 	sess, err := h.c.CreateIDPIntentSession(ctx, req.IntentID, req.IntentToken)

@@ -336,3 +336,26 @@ func TestAutoLogin_NilFGAClient_ReportsUnreachableNotPanic(t *testing.T) {
 		}
 	}
 }
+
+func TestCompleteLogin_RunsTheSameGauntletAsAutoLogin(t *testing.T) {
+	gipFake := gip.NewFakeVerifier()
+	gipFake.Add("good-token", gip.VerifiedToken{UID: "user-1", Email: "u@e.com", TenantID: "MP-Internal-test"})
+	fgaFake := authz.NewFake()
+	fgaFake.SetMembership("user-1", "tenant-uuid-1")
+
+	svc := newTestService(t, gipFake, fgaFake, fastPolicy)
+
+	viaAutoLogin := httptest.NewRecorder()
+	got, err := svc.AutoLogin(context.Background(), viaAutoLogin, Request{
+		IDToken: "good-token", ExpectedTenantID: "MP-Internal-test", WorkspaceTenant: "tenant-uuid-1",
+	})
+	if err != nil {
+		t.Fatalf("AutoLogin: %v", err)
+	}
+	if got.UID != "user-1" || got.TenantID != "tenant-uuid-1" {
+		t.Fatalf("result = %+v", got)
+	}
+	if len(viaAutoLogin.Result().Cookies()) == 0 {
+		t.Fatal("AutoLogin minted no cookie")
+	}
+}

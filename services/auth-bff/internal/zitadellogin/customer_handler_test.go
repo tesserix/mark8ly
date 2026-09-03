@@ -159,6 +159,40 @@ func TestCustomerLoginHandoffReturnsHostedLoginURL(t *testing.T) {
 	}
 }
 
+// TestCustomerLoginHandoffWithNoBaseConfiguredFailsLoudlyNotSilently pins the
+// fix for the gap where an unconfigured hosted login base URL produced a 200
+// with an empty handoff_url: a customer with an uncollectible factor (a
+// passkey, U2F, SMS OTP, recovery code, ...) and nowhere to go. That must
+// never come back as a silent empty string — it must be a distinguishable
+// error the storefront can render as "sign-in is unavailable".
+func TestCustomerLoginHandoffWithNoBaseConfiguredFailsLoudlyNotSilently(t *testing.T) {
+	var fin atomic.Bool
+	// Unrecognised factor type -> uncollectible -> OutcomeHandoff.
+	c := fakeZitadelCustomer(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_U2F"]`, factorsPasswordOnly, &fin)
+	h := NewCustomerHandler(c) // no WithHostedLoginBaseURL
+
+	rec := httptest.NewRecorder()
+	h.login(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/login",
+		strings.NewReader(`{"login_name":"a@b.test","password":"x"}`)))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := body["handoff_url"]; ok {
+		t.Fatalf("body = %v, must not carry an empty handoff_url", body)
+	}
+	if body["error"] != "signin_unavailable" {
+		t.Fatalf("body = %v, want error: signin_unavailable", body)
+	}
+	if fin.Load() {
+		t.Fatal("finalize was called for OutcomeHandoff")
+	}
+}
+
 // TestCustomerTotpWrongCodeReturns401WithoutLeakingZitadelBody mirrors
 // TestTotpWrongCodeReturns401WithoutLeakingZitadelBody.
 func TestCustomerTotpWrongCodeReturns401WithoutLeakingZitadelBody(t *testing.T) {

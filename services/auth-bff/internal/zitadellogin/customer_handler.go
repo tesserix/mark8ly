@@ -201,8 +201,22 @@ func (h *CustomerHandler) respondOutcome(
 		} else {
 			slog.InfoContext(ctx, "zitadellogin(customer): handoff (uncollectible factor or unreadable policy/session)")
 		}
+		// A customer who reaches this branch has a real, uncollectible
+		// factor (a passkey, U2F, SMS OTP, recovery code, ...) — see
+		// classifyEnrolledMethods — and handoff is the only door out. If no
+		// hosted login base URL is configured, handoffURL() returns "", and
+		// silently returning that string would be a 200 with nowhere to go:
+		// the customer would be stuck with no way to finish signing in. Fail
+		// loudly instead of leaving that empty, so the storefront can render
+		// "sign-in is unavailable" rather than a dead handoff link.
+		handoffURL := h.handoffURL()
+		if handoffURL == "" {
+			slog.ErrorContext(ctx, "zitadellogin(customer): handoff has no hosted login base URL configured; customer has no way to complete sign-in")
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "signin_unavailable"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"handoff_url": h.handoffURL(),
+			"handoff_url": handoffURL,
 		})
 	}
 }

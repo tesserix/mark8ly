@@ -302,7 +302,9 @@ func main() {
 		zitadelHandler.Register(v1)
 	}
 	if zitadelClient != nil {
-		zitadellogin.NewCustomerHandler(zitadelClient).Register(v1)
+		zitadellogin.NewCustomerHandler(zitadelClient).
+			WithHostedLoginBaseURL(cfg.ZitadelIssuer).
+			Register(v1)
 	}
 
 	// /api/v1 surface consumed by marketplace-api's account handler,

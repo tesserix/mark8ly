@@ -32,6 +32,7 @@ import (
 	"github.com/mark8ly/auth-bff/internal/gip"
 	"github.com/mark8ly/auth-bff/internal/session"
 	"github.com/mark8ly/auth-bff/internal/usersessions"
+	"github.com/mark8ly/auth-bff/internal/zitadellogin"
 )
 
 // MFAStatusChecker is the narrow interface autologin needs from the
@@ -175,6 +176,30 @@ var (
 	ErrChallengeSendFail = errors.New("autologin: failed to send sign-in code")
 )
 
+// Identity is the outcome of authenticating a user, independent of which
+// provider did it. Everything downstream of this type — membership, MFA,
+// device and OTP gating, session minting — is provider-agnostic and shared
+// between the GIP and Zitadel paths.
+type Identity struct {
+	UID      string
+	Email    string
+	TenantID string
+	// Provider labels the audit event's "method" field with who actually
+	// authenticated this login. Empty means GIP/AutoLogin's own default
+	// ("auto_login") applies; CompleteForProvider sets this explicitly so a
+	// Zitadel login is not misattributed to GIP in the audit trail.
+	Provider string
+}
+
+// auditMethod returns the audit event's "method" label for id, defaulting to
+// "auto_login" (the GIP path's historical value) when no provider is set.
+func auditMethod(id Identity) string {
+	if id.Provider == "" {
+		return "auto_login"
+	}
+	return id.Provider
+}
+
 // AutoLogin verifies the ID token, confirms tenant membership (with retry
 // to close the auth-bug #2 race window), mints a session cookie onto the
 // response, and returns the result.
@@ -194,8 +219,60 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 		}
 	}
 
+	return s.completeLogin(ctx, w, Identity{
+		UID:      tok.UID,
+		Email:    tok.Email,
+		TenantID: tok.TenantID,
+	}, req)
+}
+
+// CompleteForProvider is the exported entry point for a provider other than
+// GIP — currently Zitadel — that has already established a verified identity
+// by its own means (password + sufficiency checks) and just needs to run the
+// shared gauntlet: FGA membership, the MFA gate, deviceguard, the email-OTP
+// step-up, session minting.
+//
+// It is a thin wrapper around completeLogin so that gauntlet has exactly one
+// implementation regardless of which provider authenticated the user, and it
+// maps zitadellogin.LoginContext onto Request field-for-field so UserAgent,
+// IPAddress, Device and Country reach completeLogin exactly as they do on the
+// GIP path. Passing these empty is not an option: deviceguard fingerprints
+// the user agent, and Fingerprint("") is a constant every user would share —
+// silently collapsing new-device detection for every Zitadel login.
+func (s *Service) CompleteForProvider(ctx context.Context, w http.ResponseWriter, lc zitadellogin.LoginContext) (zitadellogin.CompleteResult, error) {
+	res, err := s.completeLogin(ctx, w, Identity{
+		UID:      lc.UID,
+		Email:    lc.Email,
+		TenantID: lc.TenantID,
+		Provider: "zitadel",
+	}, Request{
+		WorkspaceTenant: lc.TenantID,
+		Device:          lc.Device,
+		IPAddress:       lc.IPAddress,
+		UserAgent:       lc.UserAgent,
+		Country:         lc.Country,
+	})
+	if err != nil {
+		return zitadellogin.CompleteResult{}, err
+	}
+	return zitadellogin.CompleteResult{
+		MFARequired:      res.MFARequired,
+		EmailOTPRequired: res.EmailOTPRequired,
+	}, nil
+}
+
+// completeLogin runs every gate that stands between a verified identity and a
+// minted session: FGA membership (with the outbox-race retry), the MFA gate,
+// new-device evaluation, the email-OTP step-up, then the session cookie,
+// registry row and audit event.
+//
+// It is deliberately provider-agnostic. A Zitadel login that has satisfied its
+// own credential and factor checks arrives here with the same Identity a
+// verified GIP token produces, and is subject to exactly the same gates — so
+// the two providers cannot drift apart in what they enforce after login.
+func (s *Service) completeLogin(ctx context.Context, w http.ResponseWriter, id Identity, req Request) (*Result, error) {
 	// Step 2: check FGA membership with retry. THE BUG-FIX LOOP.
-	if err := s.checkMembershipWithRetry(ctx, tok.UID, req.WorkspaceTenant); err != nil {
+	if err := s.checkMembershipWithRetry(ctx, id.UID, req.WorkspaceTenant); err != nil {
 		return nil, err
 	}
 
@@ -206,22 +283,22 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 	// the GIP token, and flag MFARequired on the result so the handler
 	// can respond with the right HTTP shape.
 	if s.mfa != nil {
-		enabled, err := s.mfa.IsEnabled(ctx, tok.UID)
+		enabled, err := s.mfa.IsEnabled(ctx, id.UID)
 		if err != nil && s.logger != nil {
 			s.logger.Warn("autologin: mfa status check failed — treating as disabled",
-				"err", err, "user_id", tok.UID)
+				"err", err, "user_id", id.UID)
 		}
 		if enabled {
 			if err := s.sessions.MintPending(w, session.Pending{
-				UID:      tok.UID,
-				Email:    tok.Email,
+				UID:      id.UID,
+				Email:    id.Email,
 				TenantID: req.WorkspaceTenant,
 			}); err != nil {
 				return nil, fmt.Errorf("%w: %w", ErrSessionMintFail, err)
 			}
 			return &Result{
-				UID:         tok.UID,
-				Email:       tok.Email,
+				UID:         id.UID,
+				Email:       id.Email,
 				TenantID:    req.WorkspaceTenant,
 				MFARequired: true,
 			}, nil
@@ -243,8 +320,8 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 	newDevice := false
 	if s.devices != nil {
 		isNew, err := s.devices.Evaluate(ctx, deviceguard.Login{
-			UserID:      tok.UID,
-			Email:       tok.Email,
+			UserID:      id.UID,
+			Email:       id.Email,
 			Fingerprint: fingerprint,
 			Device:      device,
 			IPAddress:   req.IPAddress,
@@ -252,7 +329,7 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 			At:          time.Now().UTC(),
 		})
 		if err != nil && s.logger != nil {
-			s.logger.Warn("deviceguard: evaluate failed", "err", err, "user_id", tok.UID)
+			s.logger.Warn("deviceguard: evaluate failed", "err", err, "user_id", id.UID)
 		}
 		newDevice = isNew
 	}
@@ -261,16 +338,16 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 	// email before it gets a session. This is what makes signing in on a
 	// second device safe rather than merely possible.
 	if newDevice && s.emailOTP != nil {
-		if err := s.emailOTP.IssueChallenge(ctx, tok.Email, req.IPAddress); err != nil {
+		if err := s.emailOTP.IssueChallenge(ctx, id.Email, req.IPAddress); err != nil {
 			if s.logger != nil {
 				s.logger.Error("autologin: challenge send failed",
-					"err", err, "user_id", tok.UID, "tenant_id", req.WorkspaceTenant)
+					"err", err, "user_id", id.UID, "tenant_id", req.WorkspaceTenant)
 			}
 			return nil, fmt.Errorf("%w: %w", ErrChallengeSendFail, err)
 		}
 		if err := s.sessions.MintPending(w, session.Pending{
-			UID:         tok.UID,
-			Email:       tok.Email,
+			UID:         id.UID,
+			Email:       id.Email,
 			TenantID:    req.WorkspaceTenant,
 			Fingerprint: fingerprint,
 			Device:      device,
@@ -279,8 +356,8 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 			return nil, fmt.Errorf("%w: %w", ErrSessionMintFail, err)
 		}
 		return &Result{
-			UID:              tok.UID,
-			Email:            tok.Email,
+			UID:              id.UID,
+			Email:            id.Email,
 			TenantID:         req.WorkspaceTenant,
 			EmailOTPRequired: true,
 		}, nil
@@ -288,8 +365,8 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 
 	// Step 3: mint the session cookie.
 	if err := s.sessions.Mint(w, session.Session{
-		UID:      tok.UID,
-		Email:    tok.Email,
+		UID:      id.UID,
+		Email:    id.Email,
 		TenantID: req.WorkspaceTenant,
 	}); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrSessionMintFail, err)
@@ -300,14 +377,14 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 	// login — the user is already authenticated and the cookie is set.
 	if s.registry != nil {
 		if _, err := s.registry.Create(ctx, usersessions.CreateParams{
-			UserID:      tok.UID,
+			UserID:      id.UID,
 			TenantID:    req.WorkspaceTenant,
 			Device:      device,
 			IPAddress:   req.IPAddress,
 			UserAgent:   req.UserAgent,
 			Fingerprint: fingerprint,
 		}); err != nil && s.logger != nil {
-			s.logger.Warn("usersessions: create failed", "err", err, "user_id", tok.UID)
+			s.logger.Warn("usersessions: create failed", "err", err, "user_id", id.UID)
 		}
 	}
 
@@ -318,18 +395,18 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 		TenantID:     req.WorkspaceTenant,
 		Action:       "user.signed_in",
 		ResourceType: "user",
-		ResourceID:   tok.UID,
+		ResourceID:   id.UID,
 		ActorType:    "user",
-		ActorUserID:  tok.UID,
-		ActorEmail:   tok.Email,
+		ActorUserID:  id.UID,
+		ActorEmail:   id.Email,
 		IPAddress:    req.IPAddress,
 		UserAgent:    req.UserAgent,
-		Metadata:     map[string]any{"device": req.Device, "method": "auto_login"},
+		Metadata:     map[string]any{"device": req.Device, "method": auditMethod(id)},
 	})
 
 	return &Result{
-		UID:      tok.UID,
-		Email:    tok.Email,
+		UID:      id.UID,
+		Email:    id.Email,
 		TenantID: req.WorkspaceTenant,
 	}, nil
 }

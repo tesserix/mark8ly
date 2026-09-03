@@ -17,6 +17,8 @@ func clearAll(t *testing.T) {
 		"OAUTH_CLIENT_ID", "OAUTH_CLIENT_SECRET",
 		"SESSION_COOKIE_NAME", "SESSION_COOKIE_DOMAIN", "SESSION_ENCRYPT_KEY",
 		"FGA_API_URL", "FGA_STORE_ID",
+		"ZITADEL_ENABLED", "ZITADEL_ISSUER", "ZITADEL_LOGIN_CLIENT_TOKEN",
+		"ZITADEL_ADMIN_PROJECT_ID", "ZITADEL_STOREFRONT_PROJECT_ID",
 	} {
 		os.Unsetenv(k)
 	}
@@ -86,5 +88,28 @@ func TestLoad_AppliesDefaultsForOptionalFields(t *testing.T) {
 	}
 	if cfg.SessionCookieName != "m8_session" {
 		t.Errorf("SessionCookieName default = %q, want %q", cfg.SessionCookieName, "m8_session")
+	}
+}
+
+func TestZitadelIsDisabledAndUnrequiredByDefault(t *testing.T) {
+	for _, k := range []string{"ZITADEL_ENABLED", "ZITADEL_ISSUER", "ZITADEL_LOGIN_CLIENT_TOKEN", "ZITADEL_ADMIN_PROJECT_ID", "ZITADEL_STOREFRONT_PROJECT_ID"} {
+		os.Unsetenv(k)
+	}
+	// Only the pre-existing required vars are set.
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("GIP_PROJECT_ID", "p")
+	t.Setenv("GIP_PROJECT_NUMBER", "1")
+	t.Setenv("GIP_WEB_API_KEY", "k")
+	t.Setenv("GIP_INTERNAL_TENANT_ID", "t")
+	t.Setenv("OAUTH_CLIENT_ID", "c")
+	t.Setenv("OAUTH_CLIENT_SECRET", "s")
+	t.Setenv("SESSION_ENCRYPT_KEY", "thirtytwo-bytes-for-testing-only")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load must succeed with no Zitadel config at all: %v", err)
+	}
+	if cfg.ZitadelEnabled {
+		t.Error("ZitadelEnabled must default to false")
 	}
 }

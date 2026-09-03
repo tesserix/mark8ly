@@ -65,6 +65,14 @@ type Config struct {
 	// code hash, so a database leak alone does not yield usable codes.
 	// Must be at least 16 bytes. Empty disables the email-OTP gate.
 	EmailOTPPepper string `envconfig:"EMAIL_OTP_PEPPER"`
+
+	// Zitadel (#524 phase 2). All optional and unread unless ZitadelEnabled is
+	// set: GIP remains the live provider until the phase 6 cutover.
+	ZitadelEnabled             bool   `envconfig:"ZITADEL_ENABLED" default:"false"`
+	ZitadelIssuer              string `envconfig:"ZITADEL_ISSUER"`
+	ZitadelLoginClientToken    string `envconfig:"ZITADEL_LOGIN_CLIENT_TOKEN"`
+	ZitadelAdminProjectID      string `envconfig:"ZITADEL_ADMIN_PROJECT_ID"`
+	ZitadelStorefrontProjectID string `envconfig:"ZITADEL_STOREFRONT_PROJECT_ID"`
 }
 
 // Load reads .env (if present) and binds environment variables.

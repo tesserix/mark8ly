@@ -123,3 +123,34 @@ describe("admin middleware — tenant status gate", () => {
     expect(res.status).toBe(404);
   });
 });
+
+// Critical 2 fix (whole-branch review, phase 3a): canonical /login 404s
+// unless it carries a valid slug returnUrl — but Zitadel's login-client
+// model bounces the browser back to canonical /login?authRequest=V2_…
+// with no returnUrl (it lives in an httpOnly cookie instead). Without a
+// carve-out for `authRequest`, that return trip 404s and the Zitadel flag
+// can never be switched on.
+describe("admin middleware — canonical /login gate", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("passes /login?authRequest=V2_x on the canonical host with no returnUrl", async () => {
+    const req = new NextRequest(
+      "https://admin.mark8ly.com/login?authRequest=V2_x",
+      { headers: { host: "admin.mark8ly.com" } },
+    );
+    const res = await middleware(req);
+    expect(res.status).not.toBe(404);
+  });
+
+  it("still 404s canonical /login with neither authRequest nor a valid slug returnUrl", async () => {
+    const req = new NextRequest("https://admin.mark8ly.com/login", {
+      headers: { host: "admin.mark8ly.com" },
+    });
+    const res = await middleware(req);
+    expect(res.status).toBe(404);
+  });
+});

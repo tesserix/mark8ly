@@ -54,6 +54,7 @@ const PUBLIC_PREFIXES = [
   "/reset-password", // branded reset flow — lands here from the email link
   "/accept-invite", // Phase P: invitees must land here without a session
   "/auth/handoff", // cross-TLD admin handoff — mints a session for this host, so it MUST render before the cookie exists
+  "/auth/callback", // Zitadel OIDC callback (Task 4, #524) — by the time it's hit, auth-bff has already minted the session, but the canonical-host tenant-redirect logic below would otherwise bounce this path to a slug subdomain before it can complete the flow
   "/webhooks", // external provider callbacks (Stripe, etc.) — never gated
   "/api/health", // kubelet probe target; must not 30x to /login
   "/api/analytics-config", // non-secret client id, read before sign-in
@@ -218,10 +219,19 @@ async function handleRequest(
   // email-link landings (carry a token in the path/query and don't
   // need a returnUrl gate) or post-auth utilities. Login is the only
   // one a casual visitor could "just type" and expect a form.
+  //
+  // Zitadel's login-client model is the other legitimate way to land
+  // here with no `returnUrl`: /login/authorize sends the browser to
+  // Zitadel's /authorize, and Zitadel bounces it straight back to
+  // canonical `/login?authRequest=V2_…` — the original returnUrl rides
+  // in the httpOnly zt_return_url cookie instead of the query string
+  // (see app/login/authorize/route.ts). Without this carve-out that
+  // return trip 404s and the Zitadel flag can never be switched on.
   if (
     hostKind.kind === "canonical" &&
     (pathname === "/login" || pathname === "/login/") &&
-    !isValidSlugReturnUrl(req.nextUrl.searchParams.get("returnUrl"))
+    !isValidSlugReturnUrl(req.nextUrl.searchParams.get("returnUrl")) &&
+    !req.nextUrl.searchParams.get("authRequest")
   ) {
     return new NextResponse(null, { status: 404 });
   }

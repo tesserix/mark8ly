@@ -22,6 +22,13 @@ export const publicConfig = {
   // sign-in button stays hidden until then, because a button that 400s at
   // Apple is worse than no button.
   appleServicesId: process.env.NEXT_PUBLIC_APPLE_SERVICES_ID ?? "",
+  // Which identity provider the login screen drives. Defaults to GIP: Zitadel is
+  // opt-in until the phase-6 cutover, and an unset or unrecognised value must never
+  // silently switch the live login path.
+  authProvider: (process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel" ? "zitadel" : "gip") as "gip" | "zitadel",
+  // Zitadel OIDC configuration — only used if authProvider is "zitadel"
+  zitadelIssuer: process.env.NEXT_PUBLIC_ZITADEL_ISSUER ?? "",
+  zitadelAdminClientId: process.env.NEXT_PUBLIC_ZITADEL_ADMIN_CLIENT_ID ?? "",
 } as const;
 
 /**

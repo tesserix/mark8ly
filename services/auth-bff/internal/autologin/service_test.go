@@ -11,6 +11,7 @@ import (
 	"github.com/mark8ly/auth-bff/internal/authz"
 	"github.com/mark8ly/auth-bff/internal/gip"
 	"github.com/mark8ly/auth-bff/internal/session"
+	"github.com/mark8ly/auth-bff/internal/zitadellogin"
 )
 
 const testKey = "0123456789abcdef0123456789abcdef" // 32 bytes for AES-256
@@ -368,7 +369,15 @@ func TestCompleteForProvider_RunsTheSameGauntletAsCompleteLogin(t *testing.T) {
 	svc := newTestService(t, gipFake, fgaFake, fastPolicy)
 
 	rec := httptest.NewRecorder()
-	err := svc.CompleteForProvider(context.Background(), rec, "user-z1", "z@e.com", "tenant-uuid-1")
+	err := svc.CompleteForProvider(context.Background(), rec, zitadellogin.LoginContext{
+		UID:       "user-z1",
+		Email:     "z@e.com",
+		TenantID:  "tenant-uuid-1",
+		UserAgent: "ZitadelTestAgent/1.0",
+		IPAddress: "203.0.113.7",
+		Device:    "Browser",
+		Country:   "IN",
+	})
 	if err != nil {
 		t.Fatalf("CompleteForProvider: %v", err)
 	}
@@ -384,7 +393,11 @@ func TestCompleteForProvider_PropagatesMembershipFailure(t *testing.T) {
 	svc := newTestService(t, gipFake, fgaFake, fastPolicy)
 
 	rec := httptest.NewRecorder()
-	err := svc.CompleteForProvider(context.Background(), rec, "user-z2", "z2@e.com", "tenant-uuid-1")
+	err := svc.CompleteForProvider(context.Background(), rec, zitadellogin.LoginContext{
+		UID:      "user-z2",
+		Email:    "z2@e.com",
+		TenantID: "tenant-uuid-1",
+	})
 	if !errors.Is(err, ErrNotMember) {
 		t.Fatalf("err = %v, want ErrNotMember", err)
 	}

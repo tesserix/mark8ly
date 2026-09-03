@@ -32,6 +32,7 @@ import (
 	"github.com/mark8ly/auth-bff/internal/gip"
 	"github.com/mark8ly/auth-bff/internal/session"
 	"github.com/mark8ly/auth-bff/internal/usersessions"
+	"github.com/mark8ly/auth-bff/internal/zitadellogin"
 )
 
 // MFAStatusChecker is the narrow interface autologin needs from the
@@ -218,17 +219,24 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 // step-up, session minting.
 //
 // It is a thin wrapper around completeLogin so that gauntlet has exactly one
-// implementation regardless of which provider authenticated the user. It
-// takes only the fields a provider-agnostic caller can supply — device,
-// IP and user-agent metadata are unavailable to a Zitadel-authenticated
-// request through this path and are left zero, same as an empty Request
-// field would leave them for AutoLogin.
-func (s *Service) CompleteForProvider(ctx context.Context, w http.ResponseWriter, uid, email, tenantID string) error {
+// implementation regardless of which provider authenticated the user, and it
+// maps zitadellogin.LoginContext onto Request field-for-field so UserAgent,
+// IPAddress, Device and Country reach completeLogin exactly as they do on the
+// GIP path. Passing these empty is not an option: deviceguard fingerprints
+// the user agent, and Fingerprint("") is a constant every user would share —
+// silently collapsing new-device detection for every Zitadel login.
+func (s *Service) CompleteForProvider(ctx context.Context, w http.ResponseWriter, lc zitadellogin.LoginContext) error {
 	_, err := s.completeLogin(ctx, w, Identity{
-		UID:      uid,
-		Email:    email,
-		TenantID: tenantID,
-	}, Request{WorkspaceTenant: tenantID})
+		UID:      lc.UID,
+		Email:    lc.Email,
+		TenantID: lc.TenantID,
+	}, Request{
+		WorkspaceTenant: lc.TenantID,
+		Device:          lc.Device,
+		IPAddress:       lc.IPAddress,
+		UserAgent:       lc.UserAgent,
+		Country:         lc.Country,
+	})
 	return err
 }
 

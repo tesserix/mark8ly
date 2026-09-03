@@ -12,17 +12,40 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/mark8ly/auth-bff/internal/geoip"
 )
 
 // maxRequestBodyBytes bounds request decoding, matching the defensive limits
 // already used for Zitadel's own responses in client.go.
 const maxRequestBodyBytes = 8 * 1024
 
+// LoginContext is everything the shared post-identity gauntlet needs beyond
+// the identity itself. It exists because deviceguard fingerprints the user
+// agent and the email-OTP limiter keys on the client IP: passing these empty
+// silently disables both, since Fingerprint("") is a constant every user
+// would share — the first Zitadel login would look like a new device, and
+// every one after it, from anywhere, would look like the same familiar one.
+type LoginContext struct {
+	UID      string
+	Email    string
+	TenantID string
+	// UserAgent, IPAddress, Device and Country are best-effort client
+	// metadata, populated the same way autologin's own handler populates
+	// them for a GIP login (see Handler.loginContext below) so the two
+	// providers cannot silently diverge in what deviceguard, the email-OTP
+	// limiter, the session registry and audit events see.
+	UserAgent string
+	IPAddress string
+	Device    string
+	Country   string
+}
+
 // CompleteFunc runs the shared post-identity gauntlet — FGA membership, the
 // MFA gate, deviceguard, the email-OTP step-up, session minting. It is
 // injected rather than imported so this package stays a Zitadel client and
 // knows nothing about autologin.
-type CompleteFunc func(ctx context.Context, w http.ResponseWriter, uid, email, tenantID string) error
+type CompleteFunc func(ctx context.Context, w http.ResponseWriter, lc LoginContext) error
 
 // Handler is the HTTP layer over Client: it owns request/response shapes and
 // the outcome switch, and defers every credential and sufficiency decision to
@@ -56,12 +79,80 @@ func (h *Handler) WithHostedLoginBaseURL(baseURL string) *Handler {
 }
 
 // Register mounts the Zitadel login routes onto the given gin.RouterGroup.
-// The handlers are plain net/http (gin.WrapF) rather than gin.HandlerFunc:
-// this package has no dependency on gin beyond mounting, and stays testable
-// with httptest alone.
+// The handlers themselves are plain net/http funcs so this package's tests
+// stay httptest-only; the two routing closures below are the ONLY place gin
+// is touched, and exist solely to carry gin.Context.ClientIP() — the same
+// trusted-proxy-aware IP resolution autologin's handler uses via c.ClientIP()
+// — into the request context, since a plain http.Request has no equivalent.
 func (h *Handler) Register(r *gin.RouterGroup) {
-	r.POST("/zitadel/login", gin.WrapF(h.login))
-	r.POST("/zitadel/totp", gin.WrapF(h.totp))
+	r.POST("/zitadel/login", func(c *gin.Context) {
+		h.login(c.Writer, withClientIP(c.Request, c.ClientIP()))
+	})
+	r.POST("/zitadel/totp", func(c *gin.Context) {
+		h.totp(c.Writer, withClientIP(c.Request, c.ClientIP()))
+	})
+}
+
+type contextKey int
+
+const clientIPContextKey contextKey = iota
+
+// withClientIP attaches a pre-resolved client IP to the request context. Kept
+// as context plumbing (rather than widening login/totp's signature) so those
+// handlers stay plain (http.ResponseWriter, *http.Request) funcs that tests
+// can call directly, exactly like the existing handler tests do.
+func withClientIP(r *http.Request, ip string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), clientIPContextKey, ip))
+}
+
+// clientIPFromContext reads back the IP withClientIP attached. Returns "" for
+// a request built directly by a test rather than routed through Register —
+// same behaviour as an untested field, never a panic.
+func clientIPFromContext(ctx context.Context) string {
+	ip, _ := ctx.Value(clientIPContextKey).(string)
+	return ip
+}
+
+// deviceFromUA produces the same short device label autologin's handler
+// derives from a User-Agent (see internal/autologin/handler.go). Duplicated
+// rather than imported: this package must not depend on autologin, and the
+// label is a small, self-contained, presentation-only heuristic.
+func deviceFromUA(ua string) string {
+	ua = strings.ToLower(ua)
+	switch {
+	case ua == "":
+		return "Unknown device"
+	case strings.Contains(ua, "iphone"):
+		return "iPhone"
+	case strings.Contains(ua, "ipad"):
+		return "iPad"
+	case strings.Contains(ua, "android"):
+		return "Android"
+	case strings.Contains(ua, "mac os x"), strings.Contains(ua, "macintosh"):
+		return "Mac"
+	case strings.Contains(ua, "windows"):
+		return "Windows"
+	case strings.Contains(ua, "linux"):
+		return "Linux"
+	default:
+		return "Browser"
+	}
+}
+
+// loginContext assembles the client metadata half of LoginContext from the
+// inbound request, the same way autologin's handler assembles autologin.
+// Request's Device/IPAddress/UserAgent/Country fields for a GIP login.
+func (h *Handler) loginContext(r *http.Request, uid, email, tenantID string) LoginContext {
+	ua := r.UserAgent()
+	return LoginContext{
+		UID:       uid,
+		Email:     email,
+		TenantID:  tenantID,
+		UserAgent: ua,
+		IPAddress: clientIPFromContext(r.Context()),
+		Device:    deviceFromUA(ua),
+		Country:   geoip.CountryFromHeaders(r.Header),
+	}
 }
 
 type loginRequest struct {
@@ -108,7 +199,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	// Password login through this page is never a federated (Google/Apple)
 	// identity — those never present a password to us at all.
 	res, err := h.c.CompleteIfSufficient(ctx, req.AuthRequestID, sess, false)
-	h.respondOutcome(ctx, w, res, err, req.AuthRequestID, sess, req.LoginName, req.WorkspaceTenant)
+	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.LoginName, req.WorkspaceTenant)
 }
 
 // totp reads {auth_request_id, login_name, session_id, session_token, code,
@@ -135,14 +226,14 @@ func (h *Handler) totp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := h.c.CompleteAfterFactor(ctx, req.AuthRequestID, sess)
-	h.respondOutcome(ctx, w, res, err, req.AuthRequestID, sess, req.LoginName, req.WorkspaceTenant)
+	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.LoginName, req.WorkspaceTenant)
 }
 
 // respondOutcome is shared by login and totp: both end at CompleteIfSufficient
 // / CompleteAfterFactor and switch on the same three outcomes.
 func (h *Handler) respondOutcome(
-	ctx context.Context,
 	w http.ResponseWriter,
+	r *http.Request,
 	res Result,
 	resErr error,
 	authRequestID string,
@@ -150,6 +241,7 @@ func (h *Handler) respondOutcome(
 	loginName string,
 	workspaceTenant string,
 ) {
+	ctx := r.Context()
 	switch res.Outcome {
 	case OutcomeComplete:
 		if resErr != nil {
@@ -161,7 +253,7 @@ func (h *Handler) respondOutcome(
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
 			return
 		}
-		h.finishComplete(ctx, w, res, sess, loginName, workspaceTenant)
+		h.finishComplete(w, r, res, sess, loginName, workspaceTenant)
 
 	case OutcomeFactorRequired:
 		// No session minted here — this IS the MFA gate. Minting now would
@@ -194,7 +286,8 @@ func (h *Handler) respondOutcome(
 
 // finishComplete resolves the subject of the now-sufficient session and runs
 // the shared post-identity gauntlet via the injected CompleteFunc.
-func (h *Handler) finishComplete(ctx context.Context, w http.ResponseWriter, res Result, sess Session, loginName, workspaceTenant string) {
+func (h *Handler) finishComplete(w http.ResponseWriter, r *http.Request, res Result, sess Session, loginName, workspaceTenant string) {
+	ctx := r.Context()
 	// Result carries no subject — re-read it. Zitadel's login_name is the
 	// only identifier this package has for "email"; mark8ly logs in by
 	// email, so the value the caller submitted to /zitadel/login is used
@@ -211,7 +304,8 @@ func (h *Handler) finishComplete(ctx context.Context, w http.ResponseWriter, res
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
 		return
 	}
-	if err := h.complete(ctx, w, factors.UserID, loginName, workspaceTenant); err != nil {
+	lc := h.loginContext(r, factors.UserID, loginName, workspaceTenant)
+	if err := h.complete(ctx, w, lc); err != nil {
 		slog.ErrorContext(ctx, "zitadellogin: post-identity gauntlet failed", "err", err, "user_id", factors.UserID)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
 		return

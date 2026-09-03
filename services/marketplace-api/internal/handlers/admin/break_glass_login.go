@@ -119,6 +119,19 @@ func (h *BreakGlassLoginHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// 3.5. Refuse a disabled account with a response BYTE-IDENTICAL to a
+	// wrong-password failure (#404). No new dependency on this path:
+	// DisabledAt is a field on `acc`, the row step 3 already fetched — see
+	// the package constraint that nothing added here may introduce a new
+	// query or service call. Sits BEFORE the Secret Manager fetch (step 4)
+	// so a disabled account is refused even when Secret Manager is
+	// unreachable.
+	if acc.DisabledAt != nil {
+		h.recordFailure(c, ipHash, tenantID, "account_disabled")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials"})
+		return
+	}
+
 	// 4. Fetch blob from Secret Manager. Fetch failure is a 500 (ops
 	// needs to see it, not a security event).
 	blob, err := h.deps.Secrets.Fetch(ctx, acc.SecretPath)

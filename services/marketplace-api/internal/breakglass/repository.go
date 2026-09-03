@@ -108,6 +108,77 @@ func (r *Repository) ReplaceAfterRotation(ctx context.Context, tenantID uuid.UUI
 	return nil
 }
 
+// Disable marks tenantID's account disabled with reason (#404). The login
+// handler refuses a disabled account before ever reaching Secret Manager
+// (see break_glass_login.go step 3.5), by reading DisabledAt off the SAME
+// row GetByTenant already fetches — no new query is added to that path.
+// Returns ErrNotFound when the tenant has no account.
+func (r *Repository) Disable(ctx context.Context, tenantID uuid.UUID, reason string) error {
+	now := time.Now().UTC()
+	res := r.ctx(ctx).
+		Model(&Account{}).
+		Where("tenant_id = ?", tenantID).
+		Updates(map[string]any{
+			"disabled_at":     &now,
+			"disabled_reason": reason,
+			"updated_at":      now,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// Enable clears BOTH disabled_at and disabled_reason, restoring login.
+// A partial clear would leave stale forensic text on an otherwise clean,
+// re-enabled account. Returns ErrNotFound when the tenant has no account.
+//
+// Enable is the ONLY thing that clears disabled_at — rotation
+// (ReplaceAfterRotation, rotation.go) deliberately never touches it, so an
+// operator rotating credentials for an unrelated reason cannot silently
+// re-enable an account someone disabled on purpose.
+func (r *Repository) Enable(ctx context.Context, tenantID uuid.UUID) error {
+	res := r.ctx(ctx).
+		Model(&Account{}).
+		Where("tenant_id = ?", tenantID).
+		Updates(map[string]any{
+			"disabled_at":     nil,
+			"disabled_reason": nil,
+			"updated_at":      time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ClearIPLock deletes ACTIVE lockout rows (locked_until > now()) for
+// ipHash, returning how many were removed. An expired row is left alone —
+// it is already inert and harmless as forensic history, and deleting it
+// would not change anything IsIPLocked observes.
+//
+// ipHash MUST be computed with the same HMAC key the login path uses
+// (breakglass.HMACIPHash) — a mismatched key hashes to different bytes,
+// so this deletes zero rows while still reporting success.
+func (r *Repository) ClearIPLock(ctx context.Context, ipHash []byte) (int64, error) {
+	if len(ipHash) == 0 {
+		return 0, ErrInvalidCredentials
+	}
+	res := r.ctx(ctx).
+		Where("ip_hash = ? AND locked_until > ?", ipHash, time.Now().UTC()).
+		Delete(&Lockout{})
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return res.RowsAffected, nil
+}
+
 // FindDueForRotation returns every account that needs a new password
 // right now: either the post-use rotation clock has elapsed, or the
 // 90-day cadence has lapsed.

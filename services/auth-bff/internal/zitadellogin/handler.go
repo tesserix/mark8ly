@@ -436,7 +436,12 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
 		return
 	}
-	if req.AuthRequestID == "" || req.IntentID == "" || req.IntentToken == "" || req.WorkspaceTenant == "" {
+	// workspace_tenant is deliberately NOT required here (unlike login/totp):
+	// with Google, the merchant's identity is unknown until after the
+	// redirect back from Zitadel, so the admin app cannot know which tenant
+	// to send until this call has told it who signed in. See the
+	// tenant_required branch below.
+	if req.AuthRequestID == "" || req.IntentID == "" || req.IntentToken == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
 		return
 	}
@@ -543,6 +548,26 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 	sess, err := h.c.CreateIDPIntentSession(ctx, req.IntentID, req.IntentToken)
 	if err != nil {
 		h.respondSessionCreateError(ctx, w, err)
+		return
+	}
+
+	// The admin app cannot supply workspace_tenant on this call: with
+	// Google, which tenant the merchant belongs to is unknowable until AFTER
+	// this retrieve/pin/verify/link/session-create sequence has told it who
+	// signed in. Everything above this line — including creating the
+	// Zitadel session — still ran; only CompleteIfSufficient/finalize (which
+	// would mint an m8_session for a tenant not yet chosen) is deferred.
+	// Mirrors OutcomeFactorRequired's totp_required shape below: a session
+	// exists, something else (here, tenant selection) is still needed
+	// before completion. login_name is identity.Email — the email from the
+	// retrieved identity — never anything the caller supplied.
+	if req.WorkspaceTenant == "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"tenant_required": true,
+			"session_id":      sess.ID,
+			"session_token":   sess.Token,
+			"login_name":      identity.Email,
+		})
 		return
 	}
 

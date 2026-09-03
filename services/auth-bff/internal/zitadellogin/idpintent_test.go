@@ -107,6 +107,36 @@ func TestRetrieveIDPIntentReturnsALinkedIdentity(t *testing.T) {
 	}
 }
 
+// TestRetrieveIDPIntentReturnsTheExternalIdentityFields pins the fields
+// registration (CreateHumanUserWithIDPLink) needs: the IDP's own id and the
+// external provider's user id/name, read from idpInformation itself — not
+// from rawInformation, unlike Email/EmailVerified.
+func TestRetrieveIDPIntentReturnsTheExternalIdentityFields(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{
+			"idpInformation": {
+				"idpId": "386381087862948767",
+				"userId": "108234...google-sub",
+				"userName": "new.person@gmail.com",
+				"rawInformation": {"email":"new.person@gmail.com","email_verified":true}
+			}
+		}`))
+	})
+	got, err := c.RetrieveIDPIntent(context.Background(), "intent-1", "tok-abc")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got.IDPID != "386381087862948767" {
+		t.Errorf("IDPID = %q", got.IDPID)
+	}
+	if got.ExternalUserID != "108234...google-sub" {
+		t.Errorf("ExternalUserID = %q", got.ExternalUserID)
+	}
+	if got.ExternalUserName != "new.person@gmail.com" {
+		t.Errorf("ExternalUserName = %q", got.ExternalUserName)
+	}
+}
+
 func TestRetrieveIDPIntentReturnsAnUnlinkedIdentityWithEmptyZitadelUserID(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		// Zitadel elides the "userId" field entirely when the intent has not

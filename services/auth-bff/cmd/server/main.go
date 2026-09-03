@@ -287,7 +287,8 @@ func main() {
 		zitadelHandler = zitadellogin.NewHandler(zitadelClient, autologinSvc.CompleteForProvider).
 			WithHostedLoginBaseURL(cfg.ZitadelIssuer).
 			WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
-			WithReturnURLAllowlist(returnURLs)
+			WithReturnURLAllowlist(returnURLs).
+			WithGoogleIDPID(cfg.ZitadelGoogleIDPID)
 	}
 
 	// ─── Session introspection + logout ────────────────────────────────

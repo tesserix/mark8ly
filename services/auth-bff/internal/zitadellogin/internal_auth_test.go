@@ -77,6 +77,7 @@ func guardedEndpoints() []endpoint {
 			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
 				NewHandler(c, merchantComplete).WithInternalAuth(testInternalSecret).
 					WithReturnURLAllowlist(mustAllowlist(t, []string{"admin.mark8ly.com"}, nil)).
+					WithGoogleIDPID("idp-1").
 					idpStart(rec, r)
 			},
 		},

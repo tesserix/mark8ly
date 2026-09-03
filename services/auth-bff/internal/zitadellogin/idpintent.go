@@ -37,6 +37,22 @@ type IDPIdentity struct {
 	ZitadelUserID string
 	Email         string
 	EmailVerified bool
+
+	// IDPID, ExternalUserID and ExternalUserName identify the federated
+	// identity ITSELF — the Google IDP's own id on this Zitadel instance,
+	// the external provider's user id (Google's stable "sub"), and the
+	// display name/handle Zitadel recorded for it. These come from
+	// idpInformation.{idpId,userId,userName}, not from rawInformation, so
+	// (unlike Email/EmailVerified above) they are read from a field
+	// Zitadel's own schema guarantees.
+	//
+	// Used ONLY to register a brand-new Zitadel user pre-linked to this
+	// identity (see Client.CreateHumanUserWithIDPLink) when ZitadelUserID
+	// is empty — a normal Zitadel sign-in never needs them, since the
+	// session is created from the intent id/token, not from these values.
+	IDPID            string
+	ExternalUserID   string
+	ExternalUserName string
 }
 
 // StartIDPIntent begins Zitadel's IDP-intent flow for the given idp (e.g. the
@@ -76,6 +92,9 @@ func (c *Client) RetrieveIDPIntent(ctx context.Context, intentID, intentToken st
 	var wire struct {
 		UserID         string `json:"userId"`
 		IDPInformation struct {
+			IDPID          string         `json:"idpId"`
+			UserID         string         `json:"userId"`
+			UserName       string         `json:"userName"`
 			RawInformation map[string]any `json:"rawInformation"`
 		} `json:"idpInformation"`
 	}
@@ -84,9 +103,12 @@ func (c *Client) RetrieveIDPIntent(ctx context.Context, intentID, intentToken st
 	}
 	email, emailVerified := readRawEmail(wire.IDPInformation.RawInformation)
 	return IDPIdentity{
-		ZitadelUserID: wire.UserID,
-		Email:         email,
-		EmailVerified: emailVerified,
+		ZitadelUserID:    wire.UserID,
+		Email:            email,
+		EmailVerified:    emailVerified,
+		IDPID:            wire.IDPInformation.IDPID,
+		ExternalUserID:   wire.IDPInformation.UserID,
+		ExternalUserName: wire.IDPInformation.UserName,
 	}, nil
 }
 

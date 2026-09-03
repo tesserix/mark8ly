@@ -229,6 +229,123 @@ func (c *Client) CreateIDPIntentSession(ctx context.Context, intentID, intentTok
 	return Session{ID: wire.SessionID, Token: wire.SessionToken}, nil
 }
 
+// FindUserByVerifiedEmail searches for an EXISTING Zitadel user whose email
+// matches exactly and whose email Zitadel itself has separately marked
+// verified. Returns "" with a nil error when no such user exists — an
+// ordinary, expected outcome for a first-time federated identity, not a
+// failure.
+//
+// This exists to stop a brand-new federated sign-in from creating a
+// SECOND, disconnected account for someone who already has one: without
+// it, CreateHumanUserWithIDPLink would either fail on a duplicate-email
+// conflict or (worse, if Zitadel's own uniqueness constraint were ever
+// relaxed) silently split one person into two identities.
+//
+// NOT directly observed against a live instance with the v2 ListUsers
+// endpoint at the time this was written — modelled on Zitadel's documented
+// v2 UserService.ListUsers ("POST /v2/users") request/response shape: a
+// queries array carrying an emailQuery, and a "result" array of users each
+// optionally carrying a human profile. See this package's README for the
+// "observed vs documented" convention, and idpFinish's doc comment for why
+// this being unverified against a live instance matters here specifically.
+func (c *Client) FindUserByVerifiedEmail(ctx context.Context, email string) (string, error) {
+	body := map[string]any{
+		"queries": []any{
+			map[string]any{
+				"emailQuery": map[string]any{
+					"emailAddress": email,
+					"method":       "TEXT_QUERY_METHOD_EQUALS",
+				},
+			},
+		},
+	}
+	var wire struct {
+		Result []struct {
+			UserID string `json:"userId"`
+			Human  *struct {
+				Email struct {
+					Email      string `json:"email"`
+					IsVerified bool   `json:"isVerified"`
+				} `json:"email"`
+			} `json:"human"`
+		} `json:"result"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v2/users", body, &wire, ErrUnavailable); err != nil {
+		return "", err
+	}
+	for _, u := range wire.Result {
+		if u.Human != nil && u.Human.Email.Email == email && u.Human.Email.IsVerified {
+			return u.UserID, nil
+		}
+	}
+	return "", nil
+}
+
+// CreateHumanUserWithIDPLink registers a brand-new Zitadel human user
+// pre-linked to the given federated identity, so the VERY NEXT retrieve of
+// the same provider identity resolves IDPIdentity.ZitadelUserID immediately
+// — no second registration, no duplicate account.
+//
+// This is a genuine account-creation primitive and is guarded accordingly:
+// it refuses outright unless identity carries a non-empty, verified email.
+// Callers must ALSO have already checked FindUserByVerifiedEmail before
+// calling this — creating here without that check is how one person ends
+// up as two disconnected Zitadel accounts.
+//
+// Modelled on Zitadel's documented v2 UserService.AddHumanUser
+// ("POST /v2/users/human") request shape: profile + email + idpLinks. NOT
+// directly observed against a live instance at the time this was written —
+// see this package's README for the "observed vs documented" convention.
+// Deliberately does NOT use the deprecated addHumanUser field on the
+// idp-intent retrieve/session-create calls elsewhere in this package —
+// Zitadel's own API docs mark that field deprecated in favour of this
+// explicit, separate creation call.
+func (c *Client) CreateHumanUserWithIDPLink(ctx context.Context, identity IDPIdentity) (string, error) {
+	if identity.Email == "" || !identity.EmailVerified {
+		return "", fmt.Errorf("zitadellogin: refusing to create a user from an empty or unverified email: %w", ErrUnavailable)
+	}
+
+	// Zitadel requires non-empty given/family names on a human profile. The
+	// federated identity carries no name split reliably (rawInformation's
+	// shape is provider-defined and only email/email_verified are read
+	// elsewhere in this package — see readRawEmail), so this uses the
+	// email's local part as a functional placeholder. It makes the account
+	// usable for sign-in immediately; a merchant can correct the display
+	// name afterward like any other profile field.
+	localPart := identity.Email
+	if i := strings.IndexByte(localPart, '@'); i > 0 {
+		localPart = localPart[:i]
+	}
+
+	body := map[string]any{
+		"profile": map[string]any{
+			"givenName":  localPart,
+			"familyName": "Member",
+		},
+		"email": map[string]any{
+			"email":      identity.Email,
+			"isVerified": true,
+		},
+		"idpLinks": []any{
+			map[string]any{
+				"idpId":    identity.IDPID,
+				"userId":   identity.ExternalUserID,
+				"userName": identity.ExternalUserName,
+			},
+		},
+	}
+	var wire struct {
+		UserID string `json:"userId"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v2/users/human", body, &wire, ErrUnavailable); err != nil {
+		return "", err
+	}
+	if wire.UserID == "" {
+		return "", fmt.Errorf("zitadellogin: create human user: 200 without a userId: %w", ErrUnavailable)
+	}
+	return wire.UserID, nil
+}
+
 // VerifyTOTP submits a TOTP code.
 //
 // Two facts, both observed and both easy to get wrong:

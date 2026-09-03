@@ -101,6 +101,14 @@ type Config struct {
 	ZitadelReturnURLAllowedSuffixesAdmin      []string `envconfig:"ZITADEL_RETURN_URL_ALLOWED_SUFFIXES_ADMIN"`
 	ZitadelReturnURLAllowedHostsStorefront    []string `envconfig:"ZITADEL_RETURN_URL_ALLOWED_HOSTS_STOREFRONT"`
 	ZitadelReturnURLAllowedSuffixesStorefront []string `envconfig:"ZITADEL_RETURN_URL_ALLOWED_SUFFIXES_STOREFRONT"`
+
+	// ZitadelGoogleIDPID is the id of the Google IDP configured on the
+	// Zitadel org (currently "386381087862948767" for the live TESSERIX
+	// org). This is environment-specific — a staging instance or a
+	// replacement IDP has a different id — so it is read from config
+	// rather than hardcoded: repointing it must be a config change, not a
+	// code change and redeploy.
+	ZitadelGoogleIDPID string `envconfig:"ZITADEL_GOOGLE_IDP_ID"`
 }
 
 // Load reads .env (if present) and binds environment variables.
@@ -157,6 +165,9 @@ func (c *Config) ValidateZitadel() error {
 	}
 	if len(c.ZitadelReturnURLAllowedHostsStorefront) == 0 && len(c.ZitadelReturnURLAllowedSuffixesStorefront) == 0 {
 		missing = append(missing, "ZITADEL_RETURN_URL_ALLOWED_HOSTS_STOREFRONT or ZITADEL_RETURN_URL_ALLOWED_SUFFIXES_STOREFRONT")
+	}
+	if c.ZitadelGoogleIDPID == "" {
+		missing = append(missing, "ZITADEL_GOOGLE_IDP_ID")
 	}
 	if len(missing) == 0 {
 		return nil

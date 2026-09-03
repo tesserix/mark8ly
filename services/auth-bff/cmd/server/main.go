@@ -30,6 +30,7 @@ import (
 	"github.com/mark8ly/auth-bff/internal/session"
 	"github.com/mark8ly/auth-bff/internal/usermfa"
 	"github.com/mark8ly/auth-bff/internal/usersessions"
+	"github.com/mark8ly/auth-bff/internal/zitadellogin"
 	"github.com/mark8ly/auth-bff/pkg/config"
 	"github.com/mark8ly/auth-bff/pkg/httpserver"
 	"github.com/mark8ly/auth-bff/pkg/logger"
@@ -241,6 +242,25 @@ func main() {
 		Logger:   log,
 	})
 	autologinHandler := autologin.NewHandler(autologinSvc)
+
+	// ─── Zitadel login client (#524 phase 2) ────────────────────────────
+	// Constructed only when explicitly enabled AND fully configured; nil
+	// otherwise, so no route it backs is mounted. Refusing to boot on
+	// partial config is deliberate: a half-configured login path that fails
+	// at request time is worse than a loud failure here.
+	var zitadelClient *zitadellogin.Client
+	switch {
+	case !cfg.ZitadelEnabled:
+		log.Info("zitadel login disabled; GIP remains the auth provider")
+	case cfg.ZitadelIssuer == "" || cfg.ZitadelLoginClientToken == "":
+		log.Error("zitadel: ZITADEL_ENABLED is set but ZITADEL_ISSUER or ZITADEL_LOGIN_CLIENT_TOKEN is empty")
+		panic("zitadel: enabled but not configured")
+	default:
+		zitadelClient = zitadellogin.New(cfg.ZitadelIssuer, cfg.ZitadelLoginClientToken, nil)
+		log.Info("zitadel login client enabled", "issuer", cfg.ZitadelIssuer)
+	}
+	// Task 5 (wiring) will use zitadelClient to mount routes.
+	_ = zitadelClient
 
 	// ─── Session introspection + logout ────────────────────────────────
 	sessionHandler := session.NewHandler(sessions, fgaClient).

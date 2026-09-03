@@ -92,13 +92,34 @@ Two endpoints: start (validate return URL → `StartIDPIntent` → return `authU
 
 ---
 
+### Task 3b: Registration from an unlinked federated identity
+
+**Added mid-plan.** Task 3 revealed that nothing auto-creates a user in the login-client model: `isAutoCreation` is honoured by Zitadel's own hosted login UI, not by the API flow we drive. So `RetrieveIDPIntent` returns an empty `ZitadelUserID` for anyone who has not signed in through Zitadel before — which today is everyone — and the finish endpoint rejects them. Without this task the Google path cannot be exercised end to end by anybody.
+
+The retrieve response's `add_human_user` field is **deprecated**, so do not use it. Create the user explicitly.
+
+**The security rule that governs this task.** An unlinked identity may be attached to an **existing** Zitadel account by email address **only when the provider asserts that email is verified**. If it is not verified, refuse — do not create, do not link. Linking an unverified provider email to an existing account is account takeover: anyone who can register that address at any federated provider inherits the account. `IDPIdentity.EmailVerified` is read soft from raw claims and defaults to false when absent, so treat a false or missing value as "refuse", never as "probably fine".
+
+**Files:**
+- Modify: `services/auth-bff/internal/zitadellogin/idpintent.go` (or a new file in the package)
+- Modify: `handler.go` and its tests
+- Modify: `pkg/config/config.go` — the Google IDP id becomes configuration, not the package constant Task 3 introduced
+
+- [ ] **Step 1: Write the failing tests.** Cover: an unlinked identity with a verified email is created and linked, then signs in; an unlinked identity with `EmailVerified` false is refused with a distinct outcome and no user is created; an unlinked identity with the email claim absent entirely is refused the same way; an already-linked identity takes the existing path untouched; the created user carries the IDP link so the next sign-in resolves via `user_id`.
+- [ ] **Step 2: Run them, confirm they fail**
+- [ ] **Step 3: Implement**
+- [ ] **Step 4: `go test ./... && go vet ./...`**
+- [ ] **Step 5: Commit** — `feat(auth-bff): register an unlinked Google identity`
+
+---
+
 ### Task 4: The customer endpoints
 
 **Files:**
 - Modify: `services/auth-bff/internal/zitadellogin/customer_handler.go`
 - Modify: its test file
 
-Same two endpoints, but finish **returns an identity and mints nothing** — no session creation, no finalize. Mirror the decide-only shape the existing customer login already uses, and keep that file's import discipline (stdlib + gin only).
+Same two endpoints, and the same registration rule as Task 3b — an unlinked identity with a verified email is created and linked; an unverified or absent email is refused. Finish then **returns an identity and mints nothing** — no session creation, no finalize. Mirror the decide-only shape the existing customer login already uses, and keep that file's import discipline (stdlib + gin only).
 
 - [ ] **Step 1: Write the failing tests**, including: finish returns an identity without creating any Zitadel session; the guard is first; `user` is not trusted; an unlinked identity (no `user` param) still resolves via retrieve.
 - [ ] **Step 2: Run, confirm failure**

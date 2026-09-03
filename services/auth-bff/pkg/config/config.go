@@ -78,16 +78,29 @@ type Config struct {
 	ZitadelAdminProjectID      string `envconfig:"ZITADEL_ADMIN_PROJECT_ID"`
 	ZitadelStorefrontProjectID string `envconfig:"ZITADEL_STOREFRONT_PROJECT_ID"`
 
-	// ZitadelReturnURLAllowedHosts/Suffixes together form the allowlist an
-	// IDP-intent successUrl/failureUrl must satisfy (internal/zitadellogin's
+	// Zitadel IDP-intent return-URL allowlists (internal/zitadellogin's
 	// ReturnURLAllowlist) — the only control preventing an open redirect on
 	// a completed federated sign-in, since Zitadel itself does not validate
-	// that URL. Comma-separated. Hosts match exactly (e.g.
-	// "admin.mark8ly.com"); Suffixes permit any subdomain of the given
-	// domain (e.g. "mark8ly.com" permits "shop.mark8ly.com") but never the
-	// bare domain itself.
-	ZitadelReturnURLAllowedHosts    []string `envconfig:"ZITADEL_RETURN_URL_ALLOWED_HOSTS"`
-	ZitadelReturnURLAllowedSuffixes []string `envconfig:"ZITADEL_RETURN_URL_ALLOWED_SUFFIXES"`
+	// successUrl/failureUrl at all. Comma-separated. Hosts match exactly
+	// (e.g. "admin.mark8ly.com"); Suffixes permit any subdomain of the
+	// given domain (e.g. "mark8ly.com" permits "shop.mark8ly.com") but
+	// never the bare domain itself.
+	//
+	// Deliberately split in two, one per flow, rather than a single shared
+	// list: merchants self-provision storefront subdomains
+	// (*.mark8ly.com), so a flat allowlist covering both flows would make
+	// every merchant-controlled storefront a valid successUrl for an ADMIN
+	// sign-in too — a merchant-controlled origin able to receive a
+	// completed admin login. Admin gets its own narrow set (the fixed
+	// admin host, no subdomain suffixes needed); Storefront gets the
+	// tenant-subdomain suffix. The zitadellogin.ReturnURLAllowlist type
+	// itself stays flow-agnostic — selecting which one applies to a given
+	// request is the caller's job (the handler wired to /auth/zitadel/*
+	// vs. /auth/customer/*), not something this type or Config decides.
+	ZitadelReturnURLAllowedHostsAdmin         []string `envconfig:"ZITADEL_RETURN_URL_ALLOWED_HOSTS_ADMIN"`
+	ZitadelReturnURLAllowedSuffixesAdmin      []string `envconfig:"ZITADEL_RETURN_URL_ALLOWED_SUFFIXES_ADMIN"`
+	ZitadelReturnURLAllowedHostsStorefront    []string `envconfig:"ZITADEL_RETURN_URL_ALLOWED_HOSTS_STOREFRONT"`
+	ZitadelReturnURLAllowedSuffixesStorefront []string `envconfig:"ZITADEL_RETURN_URL_ALLOWED_SUFFIXES_STOREFRONT"`
 }
 
 // Load reads .env (if present) and binds environment variables.
@@ -134,8 +147,16 @@ func (c *Config) ValidateZitadel() error {
 	if c.MarketplaceInternalAuthSecret == "" {
 		missing = append(missing, "MARKETPLACE_INTERNAL_AUTH_SECRET")
 	}
-	if len(c.ZitadelReturnURLAllowedHosts) == 0 && len(c.ZitadelReturnURLAllowedSuffixes) == 0 {
-		missing = append(missing, "ZITADEL_RETURN_URL_ALLOWED_HOSTS or ZITADEL_RETURN_URL_ALLOWED_SUFFIXES")
+	// Both flows are mounted together whenever Zitadel is enabled (see
+	// cmd/server/main.go — there is no separate flag to run one without
+	// the other today), so both allowlists are required here. If that ever
+	// changes, this check must follow whatever signal decides a flow is
+	// actually mounted, not just assume both.
+	if len(c.ZitadelReturnURLAllowedHostsAdmin) == 0 && len(c.ZitadelReturnURLAllowedSuffixesAdmin) == 0 {
+		missing = append(missing, "ZITADEL_RETURN_URL_ALLOWED_HOSTS_ADMIN or ZITADEL_RETURN_URL_ALLOWED_SUFFIXES_ADMIN")
+	}
+	if len(c.ZitadelReturnURLAllowedHostsStorefront) == 0 && len(c.ZitadelReturnURLAllowedSuffixesStorefront) == 0 {
+		missing = append(missing, "ZITADEL_RETURN_URL_ALLOWED_HOSTS_STOREFRONT or ZITADEL_RETURN_URL_ALLOWED_SUFFIXES_STOREFRONT")
 	}
 	if len(missing) == 0 {
 		return nil

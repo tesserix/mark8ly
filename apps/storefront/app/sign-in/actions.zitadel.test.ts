@@ -44,7 +44,7 @@ vi.mock("@/lib/auth/auth-bff-customer", async () => {
   const actual = await vi.importActual<
     typeof import("@/lib/auth/auth-bff-customer")
   >("@/lib/auth/auth-bff-customer");
-  return { ...actual, verifyCustomerCredential: vi.fn() };
+  return { ...actual, verifyCustomerCredential: vi.fn(), verifyCustomerTotp: vi.fn() };
 });
 
 vi.mock("@/lib/api/server/platformInternal", () => ({
@@ -58,11 +58,13 @@ import {
 import {
   AuthBffCustomerError,
   verifyCustomerCredential,
+  verifyCustomerTotp,
 } from "@/lib/auth/auth-bff-customer";
 import { platformInternalFetch } from "@/lib/api/server/platformInternal";
 
 const verifyGIPIdTokenMock = vi.mocked(verifyGIPIdToken);
 const verifyCustomerCredentialMock = vi.mocked(verifyCustomerCredential);
+const verifyCustomerTotpMock = vi.mocked(verifyCustomerTotp);
 const platformInternalFetchMock = vi.mocked(platformInternalFetch);
 
 const originalFetch = globalThis.fetch;
@@ -90,6 +92,7 @@ beforeEach(() => {
 
   verifyGIPIdTokenMock.mockReset();
   verifyCustomerCredentialMock.mockReset();
+  verifyCustomerTotpMock.mockReset();
 
   platformInternalFetchMock.mockReset();
   platformInternalFetchMock.mockResolvedValue({
@@ -457,5 +460,164 @@ describe("customerSignIn — password never leaks", () => {
     });
 
     expect(JSON.stringify(result)).not.toContain(SUBMITTED_PASSWORD);
+  });
+});
+
+describe("customerSignIn — totp_required carries the data the code-entry step needs", () => {
+  it("hands back sessionId/sessionToken alongside the message", async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    verifyCustomerCredentialMock.mockResolvedValue({
+      kind: "totp_required",
+      sessionId: "s-abc",
+      sessionToken: "tok-xyz",
+    });
+    const { customerSignIn, isTotpRequiredResult } = await loadActions();
+
+    const result = await customerSignIn({
+      loginName: "e@x.com",
+      password: SUBMITTED_PASSWORD,
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(false);
+    if (isTotpRequiredResult(result)) {
+      expect(result.sessionId).toBe("s-abc");
+      expect(result.sessionToken).toBe("tok-xyz");
+    } else {
+      throw new Error("expected a totp_required result");
+    }
+  });
+});
+
+describe("confirmCustomerTotp — provider flag", () => {
+  it("with the flag unset, confirmCustomerTotp is unreachable via the GIP path (verifyCustomerCredential never yields totp_required)", async () => {
+    // The GIP path (verifyGIPIdToken) has no notion of a TOTP step-up at
+    // all — it either resolves a uid/email or throws. There is no code
+    // path in customerSignIn under GIP that could ever produce
+    // sessionId/sessionToken for the client to hand to confirmCustomerTotp.
+    verifyGIPIdTokenMock.mockResolvedValue({
+      uid: "u-gip",
+      email: "gip@example.com",
+      tenantId: "t",
+    });
+    const { customerSignIn } = await loadActions();
+
+    const result = await customerSignIn({
+      idToken: "id-token",
+      uid: "ignored",
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(verifyCustomerCredentialMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("confirmCustomerTotp — happy path", () => {
+  it("a valid code completes: sets mp_customer_session and runs the same profile/loyalty side effects as the password path", async () => {
+    verifyCustomerTotpMock.mockResolvedValue({
+      kind: "complete",
+      uid: "u-totp",
+      email: "totp@example.com",
+    });
+    const { confirmCustomerTotp } = await loadActions();
+
+    const result = await confirmCustomerTotp({
+      storeSlug: "shop",
+      sessionId: "s-1",
+      sessionToken: "tok-1",
+      code: "123456",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(cookiesSetSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "mp_customer_session", domain: HOST }),
+    );
+
+    const setCall = cookiesSetSpy.mock.calls[0]![0] as { value: string };
+    const decoded = decodeCookiePayload(setCall.value);
+    expect(decoded.uid).toBe("u-totp");
+    expect(decoded.email).toBe("totp@example.com");
+
+    const paths = fetchSpy.mock.calls.map((c) => String(c[0]));
+    expect(paths.some((p) => p.includes("/account"))).toBe(true);
+    expect(paths.some((p) => p.includes("/loyalty/enroll"))).toBe(true);
+  });
+});
+
+describe("confirmCustomerTotp — invalid code", () => {
+  it("returns a truthful, non-generic message and sets no cookie", async () => {
+    verifyCustomerTotpMock.mockResolvedValue({ kind: "rejected" });
+    const { confirmCustomerTotp } = await loadActions();
+
+    const result = await confirmCustomerTotp({
+      storeSlug: "shop",
+      sessionId: "s-1",
+      sessionToken: "tok-1",
+      code: "000000",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+    if (!result.ok) {
+      expect(result.message).not.toBe("Email or password is incorrect.");
+      expect(result.message.toLowerCase()).toContain("code");
+    }
+  });
+});
+
+describe("confirmCustomerTotp — the code never leaks", () => {
+  it("never appears in a console.error argument", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      verifyCustomerTotpMock.mockRejectedValue(
+        new AuthBffCustomerError(503, "zitadel_unavailable"),
+      );
+      const { confirmCustomerTotp } = await loadActions();
+
+      const SECRET_CODE = "987654";
+      await confirmCustomerTotp({
+        storeSlug: "shop",
+        sessionId: "s-1",
+        sessionToken: "tok-1",
+        code: SECRET_CODE,
+      });
+
+      for (const call of consoleErrorSpy.mock.calls) {
+        for (const arg of call) {
+          const serialized =
+            typeof arg === "string" ? arg : JSON.stringify(arg);
+          expect(serialized ?? "").not.toContain(SECRET_CODE);
+        }
+      }
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+});
+
+describe("confirmCustomerTotp — auth-bff failure never leaks internal detail", () => {
+  it("an AuthBffCustomerError produces the generic 'temporarily unavailable' message, not the internal string", async () => {
+    verifyCustomerTotpMock.mockRejectedValue(
+      new AuthBffCustomerError(503, "zitadel_unavailable"),
+    );
+    const { confirmCustomerTotp } = await loadActions();
+
+    const result = await confirmCustomerTotp({
+      storeSlug: "shop",
+      sessionId: "s-1",
+      sessionToken: "tok-1",
+      code: "123456",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toBe(
+        "Sign-in is temporarily unavailable. Please try again shortly.",
+      );
+      expect(result.message).not.toContain("503");
+      expect(result.message).not.toContain("zitadel_unavailable");
+      expect(result.message.toLowerCase()).not.toContain("auth-bff");
+    }
   });
 });

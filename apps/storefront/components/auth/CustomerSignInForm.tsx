@@ -3,7 +3,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { customerSignIn } from "@/app/sign-in/actions";
+import {
+  customerSignIn,
+  confirmCustomerTotp,
+  isTotpRequiredResult,
+} from "@/app/sign-in/actions";
 
 const TRAMPOLINE_BASE =
   process.env.NEXT_PUBLIC_MARK8LY_AUTH_URL ?? "https://mark8ly.com";
@@ -95,6 +99,20 @@ export function CustomerSignInForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // Zitadel's own TOTP step-up: verifyCustomerCredential returned
+  // "totp_required" instead of completing sign-in. sessionId/sessionToken
+  // must be carried unchanged into confirmCustomerTotp — see the comment
+  // on that action for why (only auth-bff holds the PAT that could mint
+  // the session server-side instead). Unreachable under GIP: that path
+  // never yields a totp_required outcome.
+  const [totpChallenge, setTotpChallenge] = useState<{
+    sessionId: string;
+    sessionToken: string;
+  } | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [totpError, setTotpError] = useState<string | null>(null);
+  const [totpPending, startTotpTransition] = useTransition();
+
   function handleGoogle() {
     if (typeof window === "undefined") return;
     const url = new URL("/auth/google", TRAMPOLINE_BASE);
@@ -145,6 +163,13 @@ export function CustomerSignInForm({
         }
 
         if (!result.ok) {
+          if (isTotpRequiredResult(result)) {
+            setTotpChallenge({
+              sessionId: result.sessionId,
+              sessionToken: result.sessionToken,
+            });
+            return;
+          }
           setError(result.message);
           return;
         }
@@ -159,6 +184,97 @@ export function CustomerSignInForm({
         }
       }
     });
+  }
+
+  function handleTotpSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!totpChallenge) return;
+    setTotpError(null);
+
+    startTotpTransition(async () => {
+      const result = await confirmCustomerTotp({
+        storeSlug,
+        sessionId: totpChallenge.sessionId,
+        sessionToken: totpChallenge.sessionToken,
+        code: totpCode,
+      });
+
+      if (!result.ok) {
+        setTotpError(result.message);
+        return;
+      }
+
+      router.push(returnUrl);
+      router.refresh();
+    });
+  }
+
+  function cancelTotp() {
+    setTotpChallenge(null);
+    setTotpCode("");
+    setTotpError(null);
+  }
+
+  if (totpChallenge) {
+    return (
+      <form onSubmit={handleTotpSubmit} noValidate className="mt-8 space-y-5">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
+          Enter the 6-digit code from your authenticator app to finish
+          signing in.
+        </p>
+
+        <div className="space-y-1.5">
+          <label
+            htmlFor="customer-totp-code"
+            className="block text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]"
+          >
+            Verification code
+          </label>
+          <input
+            id="customer-totp-code"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            placeholder="000000"
+            value={totpCode}
+            onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+            disabled={totpPending}
+            autoFocus
+            aria-invalid={totpError ? true : undefined}
+            aria-describedby={totpError ? "customer-totp-error" : undefined}
+            className="w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface)] px-3 py-2.5 text-base font-mono tracking-[0.4em] text-[color:var(--storefront-text,var(--ink-900))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+          />
+        </div>
+
+        {totpError && (
+          <p
+            id="customer-totp-error"
+            role="alert"
+            aria-live="polite"
+            className="text-sm text-[color:var(--storefront-danger)]"
+          >
+            {totpError}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={totpPending || totpCode.length !== 6}
+          className="w-full rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+        >
+          {totpPending ? "Verifying..." : "Verify and continue"}
+        </button>
+
+        <button
+          type="button"
+          onClick={cancelTotp}
+          className="inline-flex h-11 w-full items-center justify-center text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-70 underline underline-offset-4 hover:opacity-100"
+        >
+          Back to sign in
+        </button>
+      </form>
+    );
   }
 
   return (

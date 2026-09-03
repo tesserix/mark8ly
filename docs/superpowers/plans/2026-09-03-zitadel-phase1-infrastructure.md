@@ -108,6 +108,33 @@ class ProjectRoleCheckTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertIs(calls[0][2]["projectRoleCheck"], False)
 
+    def test_unmanaged_when_desired_is_none_and_live_is_true(self):
+        """Absent key must not disable a live-true gate. Regression test:
+        AgentGateway, AgentRegistry and Atlantis all have projectRoleCheck on
+        and declare nothing, so a False default would silently disable them."""
+        calls = []
+        bootstrap.reconcile_project_role_check(
+            project_id="9",
+            project_name="AgentGateway",
+            live={"id": "9", "name": "AgentGateway", "projectRoleCheck": True},
+            desired=None,
+            scope={},
+            request=self._recording_request(calls),
+        )
+        self.assertEqual(calls, [])
+
+    def test_unmanaged_when_desired_is_none_and_live_is_absent(self):
+        calls = []
+        bootstrap.reconcile_project_role_check(
+            project_id="9",
+            project_name="AgentGateway",
+            live={"id": "9", "name": "AgentGateway"},
+            desired=None,
+            scope={},
+            request=self._recording_request(calls),
+        )
+        self.assertEqual(calls, [])
+
     def test_raises_on_write_failure(self):
         with self.assertRaises(SystemExit):
             bootstrap.reconcile_project_role_check(
@@ -144,6 +171,13 @@ def reconcile_project_role_check(
     The management API has no partial update for a project: PUT replaces the
     whole resource, so name and roleAssertion are resent unchanged.
     """
+    # An absent key means UNMANAGED, not False. bootstrap.py reconciles
+    # field-by-field so console-set values survive; defaulting to False here
+    # would turn OFF the gate on every platformProject that has it on but does
+    # not declare it (AgentGateway, AgentRegistry and Atlantis all do today).
+    if desired is None:
+        return
+
     current = bool(live.get("projectRoleCheck", False))
     if current == bool(desired):
         return
@@ -172,7 +206,7 @@ Then call it from `reconcile_platform_project`, immediately after the `expectedI
         project_id=project_id,
         project_name=desired["name"],
         live=project,
-        desired=desired.get("projectRoleCheck", False),
+        desired=desired.get("projectRoleCheck"),  # absent => unmanaged, never False
         scope=scope,
     )
 ```

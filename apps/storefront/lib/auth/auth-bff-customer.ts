@@ -11,13 +11,19 @@
 // caller), never from client components.
 //
 // Shape reference: services/auth-bff/internal/zitadellogin/customer_handler.go
-//   POST /auth/customer/login  <- {auth_request_id, login_name, password}
-//   POST /auth/customer/totp   <- {auth_request_id, session_id, session_token, code}
+//   POST /auth/customer/login  <- {login_name, password}
+//   POST /auth/customer/totp   <- {session_id, session_token, code}
 //   200 complete   -> {"data": {"uid": string, "email": string}}
 //   200 factor-req -> {"totp_required": true, "session_id": string, "session_token": string}
-//   200 handoff    -> {"handoff_url": string, "auth_request_id": string}
+//   200 handoff    -> {"handoff_url": string}
 //   401 rejected   -> {"error": "invalid_credentials"} or {"error": "invalid_totp"}
 //   503/5xx        -> {"error": "zitadel_unavailable" | "internal_error" | ...}
+//
+// Neither endpoint takes an auth_request_id: the customer path makes a
+// sufficiency decision and returns an identity — it never finalizes, so it
+// never obtains (or needs) an OIDC authorization code. See
+// services/auth-bff/internal/zitadellogin/sufficiency.go's DecideSufficiency
+// / DecideAfterFactor and the file comment on customer_handler.go.
 //
 // The 401 case is deliberately collapsed to ONE outcome on the wire —
 // CustomerHandler.respondSessionCreateError returns the identical
@@ -44,7 +50,7 @@ const AUTH_BFF_URL = process.env.AUTH_BFF_URL ?? "http://localhost:8087";
 export type CustomerAuthOutcome =
   | { kind: "complete"; uid: string; email: string }
   | { kind: "totp_required"; sessionId: string; sessionToken: string }
-  | { kind: "handoff"; handoffUrl: string; authRequestId: string }
+  | { kind: "handoff"; handoffUrl: string }
   | { kind: "rejected" };
 
 /**
@@ -70,13 +76,11 @@ export class AuthBffCustomerError extends Error {
 }
 
 interface VerifyCustomerCredentialArgs {
-  authRequestId: string;
   loginName: string;
   password: string;
 }
 
 interface VerifyCustomerTotpArgs {
-  authRequestId: string;
   sessionId: string;
   sessionToken: string;
   code: string;
@@ -87,11 +91,11 @@ interface VerifyCustomerTotpArgs {
 type CustomerLoginBody =
   | { data: { uid: string; email: string } }
   | { totp_required: true; session_id: string; session_token: string }
-  | { handoff_url: string; auth_request_id: string };
+  | { handoff_url: string };
 
 /**
- * verifyCustomerCredential submits {auth_request_id, login_name, password}
- * to POST /auth/customer/login and returns the resulting outcome.
+ * verifyCustomerCredential submits {login_name, password} to
+ * POST /auth/customer/login and returns the resulting outcome.
  *
  * Never call this from a client component or route that ships to the
  * browser — see the file header.
@@ -100,7 +104,6 @@ export async function verifyCustomerCredential(
   args: VerifyCustomerCredentialArgs,
 ): Promise<CustomerAuthOutcome> {
   const res = await postToCustomerEndpoint("/auth/customer/login", {
-    auth_request_id: args.authRequestId,
     login_name: args.loginName,
     password: args.password,
   });
@@ -108,8 +111,8 @@ export async function verifyCustomerCredential(
 }
 
 /**
- * verifyCustomerTotp submits {auth_request_id, session_id, session_token,
- * code} to POST /auth/customer/totp and returns the resulting outcome.
+ * verifyCustomerTotp submits {session_id, session_token, code} to
+ * POST /auth/customer/totp and returns the resulting outcome.
  *
  * Never call this from a client component or route that ships to the
  * browser — see the file header.
@@ -118,7 +121,6 @@ export async function verifyCustomerTotp(
   args: VerifyCustomerTotpArgs,
 ): Promise<CustomerAuthOutcome> {
   const res = await postToCustomerEndpoint("/auth/customer/totp", {
-    auth_request_id: args.authRequestId,
     session_id: args.sessionId,
     session_token: args.sessionToken,
     code: args.code,
@@ -191,11 +193,7 @@ async function parseCustomerOutcome(
   }
 
   if ("handoff_url" in body && typeof body.handoff_url === "string") {
-    return {
-      kind: "handoff",
-      handoffUrl: body.handoff_url,
-      authRequestId: body.auth_request_id,
-    };
+    return { kind: "handoff", handoffUrl: body.handoff_url };
   }
 
   if ("data" in body && body.data && typeof body.data.uid === "string") {

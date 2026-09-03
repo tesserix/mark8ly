@@ -95,13 +95,22 @@ func mfaRequired(p LoginPolicy, federated bool) bool {
 	return p.ForceMFALocalOnly && !federated
 }
 
-// CompleteIfSufficient decides whether a freshly created session may finalize.
+// DecideSufficiency runs the same evaluation CompleteIfSufficient does —
+// SessionFactors, classifyEnrolledMethods, LoginPolicyForOrg, mfaRequired —
+// and stops there: it never calls finalize and never constructs the
+// sufficient{} witness, so it cannot obtain an OIDC authorization code.
+//
+// This is what the storefront customer path calls (see customer_handler.go
+// and spec D11): a sufficiency decision and, on OutcomeComplete, an identity
+// — never a callback URL. CompleteIfSufficient below is this function plus
+// finalize, and is the only thing that changed to make that split: the
+// decision logic itself is not duplicated anywhere.
 //
 // Zitadel does NOT enforce forceMfa for a login client: it issues an
 // authorization code for a password-only session and signals nothing. Every
 // uncertain input therefore fails closed to OutcomeHandoff, which is a
 // legitimate outcome rather than an error.
-func (c *Client) CompleteIfSufficient(ctx context.Context, authRequestID string, s Session, federated bool) (Result, error) {
+func (c *Client) DecideSufficiency(ctx context.Context, s Session, federated bool) (Result, error) {
 	factors, err := c.SessionFactors(ctx, s.ID)
 	if err != nil || factors.UserID == "" || factors.OrgID == "" {
 		slog.WarnContext(ctx, "zitadel sufficiency: cannot read session subject, handing off", "err", err)
@@ -126,6 +135,17 @@ func (c *Client) CompleteIfSufficient(ctx context.Context, authRequestID string,
 		}
 		return Result{Outcome: OutcomeFactorRequired, Factors: []string{methodTOTP}}, nil
 	}
+	return Result{Outcome: OutcomeComplete}, nil
+}
+
+// CompleteIfSufficient decides whether a freshly created session may finalize,
+// and finalizes it when it may. It is DecideSufficiency plus the finalize
+// call — the merchant path's behavior is unchanged by this split.
+func (c *Client) CompleteIfSufficient(ctx context.Context, authRequestID string, s Session, federated bool) (Result, error) {
+	res, err := c.DecideSufficiency(ctx, s, federated)
+	if err != nil || res.Outcome != OutcomeComplete {
+		return res, err
+	}
 	cb, err := c.finalize(ctx, authRequestID, s, sufficient{})
 	if err != nil {
 		return Result{Outcome: OutcomeHandoff}, err
@@ -133,12 +153,16 @@ func (c *Client) CompleteIfSufficient(ctx context.Context, authRequestID string,
 	return Result{Outcome: OutcomeComplete, CallbackURL: cb}, nil
 }
 
-// CompleteAfterFactor finalizes after a TOTP check.
+// DecideAfterFactor is CompleteAfterFactor's decision half: it re-reads the
+// session's factors after a TOTP check and reports whether TOTP is now
+// confirmed, without finalizing. Used by the storefront customer path's
+// /customer/totp step for the same reason DecideSufficiency exists — see its
+// doc comment.
 //
 // It re-reads the factors from Zitadel rather than trusting that VerifyTOTP
 // returned without error, because the caller may be holding a stale session
 // value from before the token rotated.
-func (c *Client) CompleteAfterFactor(ctx context.Context, authRequestID string, s Session) (Result, error) {
+func (c *Client) DecideAfterFactor(ctx context.Context, s Session) (Result, error) {
 	factors, err := c.SessionFactors(ctx, s.ID)
 	if err != nil {
 		slog.WarnContext(ctx, "zitadel sufficiency: cannot re-read factors after TOTP, handing off", "err", err)
@@ -146,6 +170,17 @@ func (c *Client) CompleteAfterFactor(ctx context.Context, authRequestID string, 
 	}
 	if !factors.TOTP {
 		return Result{Outcome: OutcomeHandoff}, nil
+	}
+	return Result{Outcome: OutcomeComplete}, nil
+}
+
+// CompleteAfterFactor finalizes after a TOTP check. It is DecideAfterFactor
+// plus the finalize call — the merchant path's behavior is unchanged by this
+// split.
+func (c *Client) CompleteAfterFactor(ctx context.Context, authRequestID string, s Session) (Result, error) {
+	res, err := c.DecideAfterFactor(ctx, s)
+	if err != nil || res.Outcome != OutcomeComplete {
+		return res, err
 	}
 	cb, err := c.finalize(ctx, authRequestID, s, sufficient{})
 	if err != nil {

@@ -170,3 +170,108 @@ func TestCompleteAfterFactorCompletesWhenTOTPIsConfirmed(t *testing.T) {
 		t.Fatalf("result = %+v finalized=%v", res, fin.Load())
 	}
 }
+
+// --- DecideSufficiency / DecideAfterFactor: the customer path's decision-only
+// functions must never finalize, no matter what the input is. ---
+
+// fakeZitadelNoFinalize serves the same fixtures as fakeZitadel but fails the
+// test outright if the finalize endpoint is ever hit — the strongest
+// assertion available that a code path never obtains an OIDC authorization
+// code, stronger than merely checking a bool afterward.
+func fakeZitadelNoFinalize(t *testing.T, policyJSON, methodsJSON, factorsJSON string) *Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/management/v1/policies/login":
+			w.Write([]byte(policyJSON))
+		case strings.HasSuffix(r.URL.Path, "/authentication_methods"):
+			w.Write([]byte(`{"authMethodTypes":` + methodsJSON + `}`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/oidc/auth_requests/"):
+			t.Fatalf("finalize endpoint was called: %s %s — a decision-only function must never finalize", r.Method, r.URL.Path)
+		case strings.HasPrefix(r.URL.Path, "/v2/sessions/"):
+			w.Write([]byte(factorsJSON))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return New(srv.URL, "pat", srv.Client())
+}
+
+func TestDecideSufficiencyCompletesWithoutFinalizingOrACallbackURL(t *testing.T) {
+	c := fakeZitadelNoFinalize(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly)
+	res, err := c.DecideSufficiency(context.Background(), Session{ID: "s1", Token: "t"}, false)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if res.Outcome != OutcomeComplete {
+		t.Fatalf("outcome = %v, want OutcomeComplete", res.Outcome)
+	}
+	if res.CallbackURL != "" {
+		t.Fatalf("CallbackURL = %q, want empty — a decision-only function must never carry one", res.CallbackURL)
+	}
+}
+
+func TestDecideSufficiencyStillRequiresMfaWhenForced(t *testing.T) {
+	// The MFA guarantee must survive the split: a password-only session
+	// under forceMfa must still land on OutcomeFactorRequired, never
+	// OutcomeComplete, from the decision-only function too.
+	c := fakeZitadelNoFinalize(t, policyForceMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_TOTP"]`, factorsPasswordOnly)
+	res, err := c.DecideSufficiency(context.Background(), Session{ID: "s1", Token: "t"}, false)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if res.Outcome != OutcomeFactorRequired {
+		t.Fatalf("outcome = %v, want OutcomeFactorRequired", res.Outcome)
+	}
+}
+
+func TestDecideSufficiencyFailsClosedOnEveryUncertainInput(t *testing.T) {
+	cases := []struct {
+		name        string
+		policyJSON  string
+		methodsJSON string
+		factorsJSON string
+	}{
+		{"unreadable policy", `{"policy":{"nonsense":true}}`, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly},
+		{"uncollectible factor", policyForceMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_PASSKEY"]`, factorsPasswordOnly},
+		{"unreadable session subject", policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, `{"session":{"factors":{}}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fakeZitadelNoFinalize(t, tc.policyJSON, tc.methodsJSON, tc.factorsJSON)
+			res, err := c.DecideSufficiency(context.Background(), Session{ID: "s1", Token: "t"}, false)
+			if err != nil {
+				t.Fatalf("err = %v (a handoff is an outcome, not an error)", err)
+			}
+			if res.Outcome != OutcomeHandoff {
+				t.Fatalf("outcome = %v, want OutcomeHandoff", res.Outcome)
+			}
+		})
+	}
+}
+
+func TestDecideAfterFactorCompletesWithoutFinalizingOrACallbackURL(t *testing.T) {
+	c := fakeZitadelNoFinalize(t, policyForceMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_TOTP"]`, factorsWithTOTP)
+	res, err := c.DecideAfterFactor(context.Background(), Session{ID: "s1", Token: "t"})
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if res.Outcome != OutcomeComplete {
+		t.Fatalf("outcome = %v, want OutcomeComplete", res.Outcome)
+	}
+	if res.CallbackURL != "" {
+		t.Fatalf("CallbackURL = %q, want empty — a decision-only function must never carry one", res.CallbackURL)
+	}
+}
+
+func TestDecideAfterFactorFailsClosedWhenTOTPIsNotConfirmed(t *testing.T) {
+	c := fakeZitadelNoFinalize(t, policyForceMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_TOTP"]`, factorsPasswordOnly)
+	res, err := c.DecideAfterFactor(context.Background(), Session{ID: "s1", Token: "t"})
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if res.Outcome != OutcomeHandoff {
+		t.Fatalf("outcome = %v, want OutcomeHandoff", res.Outcome)
+	}
+}

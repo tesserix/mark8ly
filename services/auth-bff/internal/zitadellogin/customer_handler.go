@@ -29,15 +29,20 @@
 // else it does today — resolving the host, resolving the store, minting the
 // cookie, driving profile/loyalty side effects. Only the "verify the
 // credential" step moves to Zitadel.
+//
+// It follows from this that the customer path must never finalize: an OIDC
+// authorization code is not an identity, and obtaining a genuine one needs
+// an auth_request_id from an OIDC authorize round trip the storefront does
+// not have. So login/totp below call sufficiency.go's decision-only
+// DecideSufficiency / DecideAfterFactor, never CompleteIfSufficient /
+// CompleteAfterFactor, and take no auth_request_id at all.
 package zitadellogin
 
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -81,23 +86,27 @@ func (h *CustomerHandler) Register(r *gin.RouterGroup) {
 	})
 }
 
+// Neither request shape carries an auth_request_id: the customer path makes
+// a sufficiency decision and returns an identity (see DecideSufficiency /
+// DecideAfterFactor in sufficiency.go and spec D11) — it never finalizes, so
+// it has no use for an OIDC authorization-request id. A caller that sends
+// one anyway (e.g. a client still carrying the auth_request_id plumbing
+// removed from the storefront in this same change) has it silently ignored:
+// decodeJSON does not reject unknown fields.
 type customerLoginRequest struct {
-	AuthRequestID string `json:"auth_request_id"`
-	LoginName     string `json:"login_name"`
-	Password      string `json:"password"`
+	LoginName string `json:"login_name"`
+	Password  string `json:"password"`
 }
 
 type customerTOTPRequest struct {
-	AuthRequestID string `json:"auth_request_id"`
-	SessionID     string `json:"session_id"`
-	SessionToken  string `json:"session_token"`
-	Code          string `json:"code"`
+	SessionID    string `json:"session_id"`
+	SessionToken string `json:"session_token"`
+	Code         string `json:"code"`
 }
 
-// login reads {auth_request_id, login_name, password}, creates a Zitadel
-// password session, and asks sufficiency.go whether that session may
-// finalize. It never mints a session or sets a cookie — see the file
-// comment.
+// login reads {login_name, password}, creates a Zitadel password session,
+// and asks sufficiency.go whether that session is sufficient. It never
+// mints a session, sets a cookie, or finalizes — see the file comment.
 func (h *CustomerHandler) login(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -106,7 +115,7 @@ func (h *CustomerHandler) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
 		return
 	}
-	if req.AuthRequestID == "" || req.LoginName == "" || req.Password == "" {
+	if req.LoginName == "" || req.Password == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
 		return
 	}
@@ -123,13 +132,13 @@ func (h *CustomerHandler) login(w http.ResponseWriter, r *http.Request) {
 
 	// Password login through this endpoint is never a federated
 	// (Google/Apple) identity — those never present a password to us at all.
-	res, err := h.c.CompleteIfSufficient(ctx, req.AuthRequestID, sess, false)
-	h.respondOutcome(ctx, w, res, err, req.AuthRequestID, sess)
+	res, err := h.c.DecideSufficiency(ctx, sess, false)
+	h.respondOutcome(ctx, w, res, err, sess)
 }
 
-// totp reads {auth_request_id, session_id, session_token, code}, submits the
-// TOTP code against the session opened by login, and re-asks sufficiency.go
-// whether the session may now finalize.
+// totp reads {session_id, session_token, code}, submits the TOTP code
+// against the session opened by login, and re-asks sufficiency.go whether
+// the session is now sufficient.
 func (h *CustomerHandler) totp(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -138,7 +147,7 @@ func (h *CustomerHandler) totp(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
 		return
 	}
-	if req.AuthRequestID == "" || req.SessionID == "" || req.SessionToken == "" || req.Code == "" {
+	if req.SessionID == "" || req.SessionToken == "" || req.Code == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
 		return
 	}
@@ -149,26 +158,27 @@ func (h *CustomerHandler) totp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.c.CompleteAfterFactor(ctx, req.AuthRequestID, sess)
-	h.respondOutcome(ctx, w, res, err, req.AuthRequestID, sess)
+	res, err := h.c.DecideAfterFactor(ctx, sess)
+	h.respondOutcome(ctx, w, res, err, sess)
 }
 
-// respondOutcome is shared by login and totp: both end at
-// CompleteIfSufficient / CompleteAfterFactor and switch on the same three
-// outcomes as Handler.respondOutcome, but OutcomeComplete here resolves and
-// returns an identity instead of running the post-identity gauntlet.
+// respondOutcome is shared by login and totp: both end at DecideSufficiency
+// / DecideAfterFactor and switch on the same three outcomes as
+// Handler.respondOutcome, but OutcomeComplete here resolves and returns an
+// identity instead of finalizing — the decision functions never call
+// finalize, so there is no callback URL to hand back and no
+// "handoff after a failed finalize" case to report.
 func (h *CustomerHandler) respondOutcome(
 	ctx context.Context,
 	w http.ResponseWriter,
 	res Result,
 	resErr error,
-	authRequestID string,
 	sess Session,
 ) {
 	switch res.Outcome {
 	case OutcomeComplete:
 		if resErr != nil {
-			// Not reachable per CompleteIfSufficient/CompleteAfterFactor's
+			// Not reachable per DecideSufficiency/DecideAfterFactor's
 			// contract, but refuse to report success on an outcome/error
 			// mismatch rather than trust an incoherent result.
 			slog.ErrorContext(ctx, "zitadellogin(customer): OutcomeComplete carried a non-nil error, refusing to complete", "err", resErr)
@@ -187,15 +197,12 @@ func (h *CustomerHandler) respondOutcome(
 
 	default: // OutcomeHandoff, including the zero value.
 		if resErr != nil {
-			slog.ErrorContext(ctx, "zitadellogin(customer): handoff after a failed finalize (positive decision, exchange failed)",
-				"err", resErr, "auth_request_id", authRequestID)
+			slog.ErrorContext(ctx, "zitadellogin(customer): handoff after a decision error", "err", resErr)
 		} else {
-			slog.InfoContext(ctx, "zitadellogin(customer): handoff (uncollectible factor or unreadable policy/session)",
-				"auth_request_id", authRequestID)
+			slog.InfoContext(ctx, "zitadellogin(customer): handoff (uncollectible factor or unreadable policy/session)")
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"handoff_url":     h.handoffURL(authRequestID),
-			"auth_request_id": authRequestID,
+			"handoff_url": h.handoffURL(),
 		})
 	}
 }
@@ -278,13 +285,16 @@ func (h *CustomerHandler) respondTOTPVerifyError(ctx context.Context, w http.Res
 	}
 }
 
-// handoffURL builds the Aurora-branded hosted login's continuation URL for an
-// auth request this endpoint decided it cannot (or should not) finish
-// itself. Mirrors Handler.handoffURL. Returns "" when no hosted login base
-// URL was configured; the caller still gets auth_request_id back.
-func (h *CustomerHandler) handoffURL(authRequestID string) string {
+// handoffURL builds the Aurora-branded hosted login's landing URL for a
+// login this endpoint decided it cannot (or should not) finish itself.
+// Unlike Handler.handoffURL on the merchant path, there is no
+// authRequestID to append — the customer path never has a genuine one (see
+// the file comment) — so this is a bare landing URL, not a continuation of
+// a specific auth request. Returns "" when no hosted login base URL was
+// configured.
+func (h *CustomerHandler) handoffURL() string {
 	if h.hostedLoginBaseURL == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/ui/v2/login/login?authRequestID=%s", h.hostedLoginBaseURL, url.QueryEscape(authRequestID))
+	return h.hostedLoginBaseURL + "/ui/v2/login/login"
 }

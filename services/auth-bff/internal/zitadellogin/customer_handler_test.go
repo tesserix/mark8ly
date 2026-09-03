@@ -51,8 +51,8 @@ func TestCustomerLoginSetsNoCookie(t *testing.T) {
 	if data["email"] != "a@b.test" {
 		t.Fatalf("data.email = %v, want a@b.test", data["email"])
 	}
-	if !fin.Load() {
-		t.Fatal("finalize was not called for a sufficient session")
+	if fin.Load() {
+		t.Fatal("finalize was called — the customer path must decide and stop, never finalize (spec D11)")
 	}
 }
 
@@ -148,7 +148,7 @@ func TestCustomerLoginHandoffReturnsHostedLoginURL(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	got, _ := body["handoff_url"].(string)
-	if !strings.HasPrefix(got, "https://login.mark8ly.zitadel.cloud/ui/v2/login/login?authRequestID=") {
+	if got != "https://login.mark8ly.zitadel.cloud/ui/v2/login/login" {
 		t.Fatalf("handoff_url = %q", got)
 	}
 	if fin.Load() {
@@ -210,8 +210,8 @@ func TestCustomerTotpCompleteReturnsIdentityAndSetsNoCookie(t *testing.T) {
 	if data == nil || data["uid"] != "u1" || data["email"] != "a@b.test" {
 		t.Fatalf("body = %v, want data.{uid: u1, email: a@b.test}", body)
 	}
-	if !fin.Load() {
-		t.Fatal("finalize was not called after a successful TOTP check")
+	if fin.Load() {
+		t.Fatal("finalize was called — the customer path must decide and stop, never finalize (spec D11)")
 	}
 }
 
@@ -269,7 +269,36 @@ func TestCustomerTotpRejectsMissingFields(t *testing.T) {
 
 func TestCustomerHandoffURLEmptyWithoutConfiguredBase(t *testing.T) {
 	h := NewCustomerHandler(New("http://unused.invalid", "pat", nil))
-	if got := h.handoffURL("V2_1"); got != "" {
+	if got := h.handoffURL(); got != "" {
 		t.Fatalf("handoffURL = %q, want empty when no base configured", got)
+	}
+}
+
+// TestCustomerEndpointsIgnoreAuthRequestID pins that a caller who still
+// sends auth_request_id (e.g. a client not yet updated) gets it silently
+// ignored rather than rejected — the field carries no meaning on this path
+// and decodeJSON does not reject unknown fields.
+func TestCustomerEndpointsIgnoreAuthRequestID(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelCustomer(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+	h := NewCustomerHandler(c)
+
+	rec := httptest.NewRecorder()
+	h.login(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/login",
+		strings.NewReader(`{"auth_request_id":"V2_1","login_name":"a@b.test","password":"x"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s — a stray auth_request_id must not cause a 400", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := body["auth_request_id"]; ok {
+		t.Fatalf("body = %v, must not echo auth_request_id back", body)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data == nil || data["uid"] != "u1" {
+		t.Fatalf("body = %v, want data.uid = u1", body)
 	}
 }

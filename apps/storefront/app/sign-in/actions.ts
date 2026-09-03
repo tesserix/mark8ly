@@ -55,16 +55,6 @@ interface CustomerSignInInput {
   loginName?: string;
   /** Zitadel path only: the password collected by the form. Never logged. */
   password?: string;
-  /**
-   * Zitadel path only: the auth-bff `auth_request_id` for this login
-   * attempt. Obtaining a real one requires an OIDC authorize round-trip
-   * (see apps/admin/app/login/authorize/route.ts for the merchant analog)
-   * that is out of scope for this task — see the phase's progress ledger.
-   * Defaults to "" until that plumbing exists, which auth-bff rejects
-   * with a 400 today, so the Zitadel path is not yet reachable end-to-end
-   * outside tests.
-   */
-  authRequestId?: string;
 }
 
 async function resolveStore(
@@ -194,7 +184,6 @@ export async function customerSignIn(
         };
       }
       const outcome = await verifyCustomerCredential({
-        authRequestId: input.authRequestId ?? "",
         loginName: input.loginName,
         password: input.password,
       });

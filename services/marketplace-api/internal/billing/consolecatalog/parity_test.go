@@ -36,8 +36,14 @@ func matchingCatalog() consolecatalog.Catalog {
 			if amt.Currency == "" {
 				continue
 			}
+			// Plan, Period and Tier are carried because a real console row
+			// always carries them (NOT NULL in the console schema) and Diff
+			// compares them: they are the fields the SERVING lookup keys on,
+			// so leaving them out of the "matching" fixture would make this
+			// test assert agreement over a response the console cannot send.
 			prices = append(prices, consolecatalog.Price{
 				LookupKey: d.LookupKey, Currency: cur,
+				Plan: string(d.Plan), Period: string(d.Period), Tier: string(d.Tier),
 				UnitAmountMinor: amt.UnitAmountMinor, TaxBehavior: amt.TaxBehavior,
 			})
 		}

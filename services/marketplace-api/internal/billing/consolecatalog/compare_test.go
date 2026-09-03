@@ -85,8 +85,13 @@ func TestDiff_ComparesEveryCurrencyOfADevelopedPrice(t *testing.T) {
 		LookupKey: "mark8ly_starter_monthly_developed_v1",
 	}}
 	console := consolecatalog.Catalog{Prices: []consolecatalog.Price{
-		{LookupKey: "mark8ly_starter_monthly_developed_v1", Currency: "usd", UnitAmountMinor: 1900, Tier: "developed"},
-		{LookupKey: "mark8ly_starter_monthly_developed_v1", Currency: "gbp", UnitAmountMinor: 9999, Tier: "developed"},
+		// Plan and Period are set because a real console row always carries
+		// them -- they are NOT NULL in the console's own schema. A fixture
+		// omitting them is not a response the console can produce, and since
+		// Diff now compares those fields it would report a difference this
+		// test is not about.
+		{LookupKey: "mark8ly_starter_monthly_developed_v1", Plan: "starter", Period: "monthly", Currency: "usd", UnitAmountMinor: 1900, Tier: "developed"},
+		{LookupKey: "mark8ly_starter_monthly_developed_v1", Plan: "starter", Period: "monthly", Currency: "gbp", UnitAmountMinor: 9999, Tier: "developed"},
 	}}
 
 	diffs := consolecatalog.Diff(console, compiled)
@@ -138,4 +143,85 @@ func TestDiff_IdenticalSourcesProduceNoDifferences(t *testing.T) {
 	}
 	require.NotEmpty(t, prices, "a vacuous comparison would prove nothing")
 	require.Empty(t, consolecatalog.Diff(consolecatalog.Catalog{Prices: prices}, compiled))
+}
+
+// plan, period and tier are compared, because they are what the SERVING
+// lookup keys on.
+//
+// `rowKey` is (lookup_key, currency), so before these fields were compared a
+// console row could carry a different plan, period or tier from the compiled
+// descriptor with the same lookup key and `differences=0` would still be
+// reported. That mattered once tesserix-home#328's cutover landed:
+// `platformadmin`'s price index finds a row by (plan, period, tier,
+// currency) -- a subscription row carries those and never a Stripe lookup
+// key -- so the check that gates the cutover would not have covered the path
+// the cutover creates.
+//
+// The three are verified identical across all 42 lookup keys in production
+// (2026-09-03), so this reports nothing today. The guard exists so a later
+// divergence is a signal rather than a discovery -- and the failure it
+// prevents is quiet: a tier mismatch would strip the amount from a
+// subscription's display rather than show a wrong number.
+func TestDiff_ComparesTheFieldsTheServingLookupKeysOn(t *testing.T) {
+	compiled := []pricing.PriceDescriptor{{
+		Plan: "starter", Period: "monthly", Tier: pricing.TierDeveloped,
+		Currency:  "usd",
+		Baseline:  pricing.Amount{Currency: "usd", UnitAmountMinor: 1900},
+		Options:   map[string]pricing.Amount{"usd": {Currency: "usd", UnitAmountMinor: 1900}},
+		LookupKey: "mark8ly_starter_monthly_developed_v1",
+	}}
+
+	base := consolecatalog.Price{
+		LookupKey: "mark8ly_starter_monthly_developed_v1",
+		Plan:      "starter", Period: "monthly", Tier: "developed",
+		Currency: "usd", UnitAmountMinor: 1900,
+	}
+
+	// The control: identical on all three, and the amount agrees, so nothing
+	// is reported. Without this a later change could make Diff report
+	// everything and the three cases below would still "pass".
+	require.Empty(t,
+		consolecatalog.Diff(consolecatalog.Catalog{Prices: []consolecatalog.Price{base}}, compiled),
+		"an agreeing row must report nothing")
+
+	for _, tc := range []struct {
+		field  string
+		mutate func(consolecatalog.Price) consolecatalog.Price
+	}{
+		{"plan", func(p consolecatalog.Price) consolecatalog.Price { p.Plan = "pro"; return p }},
+		{"period", func(p consolecatalog.Price) consolecatalog.Price { p.Period = "annual"; return p }},
+		{"tier", func(p consolecatalog.Price) consolecatalog.Price { p.Tier = "ppp"; return p }},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			diffs := consolecatalog.Diff(
+				consolecatalog.Catalog{Prices: []consolecatalog.Price{tc.mutate(base)}}, compiled)
+			require.Len(t, diffs, 1, "%s must be compared, not merely carried", tc.field)
+			require.Contains(t, diffs[0].Detail, tc.field+":",
+				"the report must name the field that differs, not just that something did")
+		})
+	}
+}
+
+// Case alone is not a divergence.
+//
+// The console stores these lower-cased and the compiled catalog's types are
+// Go string constants; if either side ever changes case, comparing raw would
+// report all 78 rows as divergent, the count would never reach zero, and the
+// evidence this whole package produces would be worthless. Same reasoning as
+// sameTaxBehavior, one field over.
+func TestDiff_FieldCaseAloneIsNotADivergence(t *testing.T) {
+	compiled := []pricing.PriceDescriptor{{
+		Plan: "starter", Period: "monthly", Tier: pricing.TierDeveloped,
+		Currency:  "usd",
+		Baseline:  pricing.Amount{Currency: "usd", UnitAmountMinor: 1900},
+		Options:   map[string]pricing.Amount{"usd": {Currency: "usd", UnitAmountMinor: 1900}},
+		LookupKey: "mark8ly_starter_monthly_developed_v1",
+	}}
+	console := consolecatalog.Catalog{Prices: []consolecatalog.Price{{
+		LookupKey: "mark8ly_starter_monthly_developed_v1",
+		Plan:      "Starter", Period: " MONTHLY ", Tier: "Developed",
+		Currency: "usd", UnitAmountMinor: 1900,
+	}}}
+
+	require.Empty(t, consolecatalog.Diff(console, compiled))
 }

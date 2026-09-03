@@ -98,7 +98,9 @@ func billingTrialsRouterAt(t *testing.T, trials platformadmin.TrialLister, dir p
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	platformadmin.NewBillingTrialsHandler(trials, dir, nil, func() time.Time { return asOf }, nil).Register(r.Group(""))
+	// nil CatalogResolver: these tests pin the compiled-catalog
+	// (rollback) behaviour, which is what an unconfigured console gives.
+	platformadmin.NewBillingTrialsHandler(trials, dir, nil, func() time.Time { return asOf }, nil, nil).Register(r.Group(""))
 	return r
 }
 

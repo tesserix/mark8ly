@@ -45,7 +45,8 @@ func billingSubscriptionsRouter(t *testing.T, subs platformadmin.SubscriptionLis
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	platformadmin.NewBillingSubscriptionsHandler(subs, dir, nil, nil).Register(r.Group(""))
+	// nil CatalogResolver: compiled catalog, the rollback state.
+	platformadmin.NewBillingSubscriptionsHandler(subs, dir, nil, nil, nil).Register(r.Group(""))
 	return r
 }
 

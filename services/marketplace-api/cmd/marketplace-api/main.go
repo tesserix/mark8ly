@@ -2335,6 +2335,7 @@ func main() {
 			EstateUsers:           estateUsersClient,
 			EmailSends:            platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
 			BreakGlass:            platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),
+			PriceCatalog:          newServingCatalogResolver(cfg, log),
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
@@ -2482,6 +2483,7 @@ func main() {
 				EstateUsers:           estateUsersClient,
 				EmailSends:            platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
 				BreakGlass:            platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),
+				PriceCatalog:          newServingCatalogResolver(cfg, log),
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

@@ -176,6 +176,9 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 	r.POST("/zitadel/idp/finish", func(c *gin.Context) {
 		h.idpFinish(c.Writer, withClientIP(c.Request, c.ClientIP()))
 	})
+	r.POST("/zitadel/idp/complete", func(c *gin.Context) {
+		h.idpComplete(c.Writer, withClientIP(c.Request, c.ClientIP()))
+	})
 }
 
 type contextKey int
@@ -575,6 +578,78 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 	// forceMfaLocalOnly (which applies only to local/password credentials —
 	// see LoginPolicy's doc) must not apply to it, unlike login()'s
 	// password path immediately below in this file.
+	res, err := h.c.CompleteIfSufficient(ctx, req.AuthRequestID, sess, true)
+	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant)
+}
+
+// idpCompleteRequest is what the admin app posts once it has resolved which
+// tenant a Google-authenticated merchant should land in — the counterpart to
+// idpFinish's tenant_required response, which hands back exactly
+// session_id/session_token/login_name for this purpose. Same shape as
+// totpRequest minus Code: there is no second factor to check here, only a
+// tenant to complete with.
+type idpCompleteRequest struct {
+	AuthRequestID   string `json:"auth_request_id"`
+	LoginName       string `json:"login_name"`
+	SessionID       string `json:"session_id"`
+	SessionToken    string `json:"session_token"`
+	WorkspaceTenant string `json:"workspace_tenant"`
+}
+
+// idpComplete reads {auth_request_id, login_name, session_id, session_token,
+// workspace_tenant} and completes a Google sign-in from a session idp/finish
+// already created — the admin app calls this once it knows which tenant the
+// merchant should land in. It is totp's completion path minus the code
+// check: there is no second factor to verify here, so it goes straight to
+// the same sufficiency decision idpFinish's own tail call makes (federated
+// = true, since every session reaching this endpoint was created by
+// CreateIDPIntentSession, never CreatePasswordSession) and the shared
+// respondOutcome/finishComplete path login, totp and idpFinish all end at.
+// Deliberately NOT a parallel completion implementation — see the package
+// doc on CompleteFunc for why that would be a mistake.
+//
+// req.LoginName is read only for the same required-field discipline totp
+// applies to it and is never used past validation: see finishComplete's doc
+// on why the subject's email is always re-resolved from Zitadel rather than
+// trusted from the request body.
+//
+// This endpoint accepts a session_id/session_token pair from its caller and
+// completes a login from it without any further binding to the original
+// caller. That is safe because: (1) it sits behind the same internalauth
+// guard as login/totp/idpFinish, so only the admin app's own backend can
+// reach it at all; (2) session_token is a high-entropy secret Zitadel mints
+// and hands back only in idpFinish's tenant_required response — it is not
+// guessable, and possessing it is already Zitadel's own definition of
+// controlling that session; and (3) totp already accepts this exact pair
+// with no additional binding, for the same reason. Adding a second
+// binding (e.g. requiring the caller to also prove it saw idpFinish's
+// response) would duplicate a guarantee Zitadel's session token already
+// provides and diverge from totp's precedent for no additional safety.
+func (h *Handler) idpComplete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// See login/totp/idpFinish: reject before any Zitadel call.
+	if !internalAuthorized(r, h.internalAuthSecret) {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req idpCompleteRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+	if req.AuthRequestID == "" || req.LoginName == "" || req.SessionID == "" || req.SessionToken == "" ||
+		req.WorkspaceTenant == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+
+	sess := Session{ID: req.SessionID, Token: req.SessionToken}
+
+	// federated=true: mirrors idpFinish's own tail call (see that function's
+	// comment on forceMfaLocalOnly) — a session reaching this endpoint is
+	// always the product of a Google IDP intent, never a password login.
 	res, err := h.c.CompleteIfSufficient(ctx, req.AuthRequestID, sess, true)
 	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant)
 }

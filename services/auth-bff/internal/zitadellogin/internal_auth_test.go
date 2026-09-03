@@ -92,6 +92,14 @@ func guardedEndpoints() []endpoint {
 			},
 		},
 		{
+			name: "zitadel/idp/complete",
+			path: "/auth/zitadel/idp/complete",
+			body: `{"auth_request_id":"V2_1","login_name":"a@b.test","session_id":"s1","session_token":"tok-1","workspace_tenant":"t1"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewHandler(c, merchantComplete).WithInternalAuth(testInternalSecret).idpComplete(rec, r)
+			},
+		},
+		{
 			name: "customer/login",
 			path: "/auth/customer/login",
 			body: `{"login_name":"a@b.test","password":"x"}`,

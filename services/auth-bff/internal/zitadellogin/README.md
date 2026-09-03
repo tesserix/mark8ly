@@ -116,6 +116,31 @@ The `deviceFromUA` function in this package is byte-identical to a function of t
 
 Because the duplication is presentation-only and unlikely to evolve differently, it is low-severity. However, before either copy diverges—or before a third consumer adds a third copy—the function should be extracted to a shared package (e.g. `internal/useragent/`) with appropriate placement in the codebase hierarchy. When you refactor this, treat it as a pure consolidation: no behavior change, copy the comments, run all handler tests from both packages.
 
+### 9. `login_name` on `/zitadel/totp` Was Client-Supplied and Unverified (FIXED)
+
+**The issue:** `handler.go`'s `totp` read `login_name` from the request body and passed it straight through to `finishComplete`, which used it as `LoginContext.Email`. On `/zitadel/login` that string is verified, because `CreatePasswordSession` checks it against the password in the same call. On `/zitadel/totp` nothing checks it against anything — the password check already happened on the prior `/zitadel/login` call, against a session the caller submitting `/zitadel/totp` may not even own.
+
+**Consequence:** anyone with valid credentials of their own could POST an arbitrary `login_name` to `/zitadel/totp` and receive a session cookie carrying that address, an audit event attributing the login to it, and — when the login looked like a new device — a mark8ly-branded sign-in code mailed to an address of their choosing. UID and FGA membership were unaffected (this is spoofing and unsolicited mail, not privilege escalation), but it was still a real defect.
+
+**The fix:** `Client.UserEmail` (in `client.go`) reads a user's email directly from Zitadel via `GET /v2/users/{id}`, keyed off the user id `SessionFactors` already returns. `finishComplete` now resolves the email this way on BOTH `/zitadel/login` and `/zitadel/totp`, so there is one source of truth regardless of which step is finishing the login. `login_name` from the request body is used for exactly one thing anywhere in this package: the credential check inside `CreatePasswordSession`.
+
+### 10. `CompleteForProvider` Discarded the Step-Up State (FIXED)
+
+**The issue:** `autologin.Service.CompleteForProvider` called `s.completeLogin` and threw away its `*Result`, keeping only the error. When auth-bff's own MFA gate or the new-device email-OTP gate fired inside the gauntlet, `completeLogin` minted a *pending* cookie (not a real session) and returned a nil error — so `finishComplete` would answer `200 {"callback_url": ...}`, telling the browser the login had finished while a step-up was still outstanding. The GIP path (`autologin/handler.go`) surfaces `MFARequired`/`EmailOTPRequired` correctly; the Zitadel path had no way to.
+
+**The fix:** `CompleteFunc` now returns `(CompleteResult, error)` instead of just `error`. `CompleteResult{MFARequired, EmailOTPRequired}` propagates out of `completeLogin` through `CompleteForProvider` to the handler. `finishComplete` checks these flags before answering: if either is set, it responds with the same `{"data": {"uid", "email", "tenant_id", "mfa_required", "email_otp_required"}}` shape the GIP handler uses for the same two cases — never `callback_url` — so the two providers cannot silently diverge in what they tell the browser.
+
+---
+
+## Deliberately Deferred Items
+
+These are known gaps, tracked here so a future reader recognizes them as accepted rather than missed. None block this branch; all are candidates for the phase-3 rewrite of this package's client contract.
+
+1. **The Zitadel `session_token` rides in the `/zitadel/login` JSON response body** when a factor is still required (`OutcomeFactorRequired`). This is bounded today — using it still requires the instance-level login-client PAT, which only this service holds — but the response contract for this endpoint is being rewritten in phase 3, and the token should move into the encrypted pending cookie at that point instead of the JSON body.
+2. **All gauntlet errors collapse to `500 internal_error` on the Zitadel path.** `autologin.ErrNotMember` (should be 403), `ErrFGAUnreachable` (503), and email-OTP rate-limiting (429) are all indistinguishable from a generic internal error until phase 3 gives this package a client shaped to carry that distinction to the handler.
+3. **`Identity.TenantID` is written by every caller and read by none.** Both `AutoLogin` and `CompleteForProvider` populate it, but nothing downstream consumes the field from `Identity` — `completeLogin` uses `req.WorkspaceTenant` instead. Not a bug (WorkspaceTenant is the correct value to use), but a bit of dead weight worth resolving when this type is next touched.
+4. **`arch_test.go` looks up `sufficiency.go` by filename**, not by content or symbol. Renaming that file — for any reason, including an unrelated refactor — would make `TestSufficientWitnessIsOnlyConstructedInSufficiency` and `TestSufficiencyNeverUsesTheUnscopedDisplayPolicy` pass vacuously (nothing named `sufficiency.go` would exist, so the `for` loop / lookup finds nothing to check). Treat any rename of that file as requiring a matching update to `arch_test.go` in the same change.
+
 ---
 
 ## Testing and Validation

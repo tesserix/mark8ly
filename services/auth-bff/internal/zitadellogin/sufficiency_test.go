@@ -32,6 +32,15 @@ func fakeZitadel(t *testing.T, policyJSON, methodsJSON, factorsJSON string, fina
 
 const factorsPasswordOnly = `{"session":{"factors":{"user":{"id":"u1","organizationId":"o1"},"password":{"verifiedAt":"2026-09-03T01:00:00Z"}}}}`
 const factorsWithTOTP = `{"session":{"factors":{"user":{"id":"u1","organizationId":"o1"},"password":{"verifiedAt":"2026-09-03T01:00:00Z"},"totp":{"verifiedAt":"2026-09-03T01:01:00Z"}}}}`
+
+// The lifetime value in these fixtures is deliberately trivial. The anchor check
+// is presence-only (client.go: `if _, ok := wire.Policy[policyAnchorKey]`), so the
+// duration never matters to any assertion here.
+//
+// Do not "improve" it to a realistic duration: GitGuardian's Generic Password
+// detector treats that key followed by a longer value as a hardcoded password and
+// fails CI. Eight fixtures tripped it once already, and so did the comment that
+// first explained this, by quoting the value verbatim.
 const policyNoMFA = `{"policy":{"passwordCheckLifetime":"0s"}}`
 const policyForceMFA = `{"policy":{"passwordCheckLifetime":"0s","forceMfa":true}}`
 const policyLocalOnly = `{"policy":{"passwordCheckLifetime":"0s","forceMfaLocalOnly":true}}`

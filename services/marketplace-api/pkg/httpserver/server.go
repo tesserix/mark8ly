@@ -34,6 +34,7 @@ func New(env string, m mode.Mode, log *slog.Logger) Engines {
 		r := gin.New()
 		r.Use(gin.Recovery())
 		r.Use(middleware.SecurityHeaders())
+		r.Use(middleware.Prometheus())
 		r.Use(requestLogger(log.With(slog.String("engine", label))))
 		return r
 	}
@@ -59,6 +60,7 @@ func MergedForBoth(env string, log *slog.Logger) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(middleware.SecurityHeaders())
+	r.Use(middleware.Prometheus())
 	r.Use(requestLogger(log))
 	return r
 }

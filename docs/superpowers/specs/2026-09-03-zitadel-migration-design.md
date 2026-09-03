@@ -365,9 +365,13 @@ this issue cites had them. The mitigation is exercising the real flows:
 
 1. **Storefront redirect round-trip.** D3 adds one to customer login. Acceptable
    for conversion, or worth a storefront-specific mitigation?
-2. **Mobile.** The repo has `apps/mobile-admin`, `apps/mobile-storefront` and
-   `apps/storefront-mobile`. The Native app registrations depend on which are
-   real; needs confirming before the claim files are written.
+2. **Mobile — likely resolved.** Of the three candidates, `apps/mobile-admin`
+   (317 TS files, last commit 2026-08-15) and `apps/storefront-mobile` (80
+   files, 2026-08-15) are live; `apps/mobile-storefront` (35 files, last commit
+   2026-05-10) appears abandoned and superseded by `storefront-mobile`. So
+   **two** Native registrations, not three. Confirm before writing the claim
+   files — a wrong guess here registers an app nobody uses, or omits one people
+   do.
 3. **`mark8ly-storefront` is `public`**, so any `TESSERIX` user can
    authenticate to it. Matches today, but should be an explicit acceptance.
 

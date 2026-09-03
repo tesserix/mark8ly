@@ -269,9 +269,25 @@ func main() {
 	}
 	var zitadelHandler *zitadellogin.Handler
 	if zitadelClient != nil {
+		// Backs /auth/zitadel/idp/start's return-URL check (Google sign-in,
+		// #524 phase 3c-2) — the only control preventing an open redirect on
+		// a completed federated sign-in, since Zitadel itself does not
+		// validate successUrl/failureUrl. This Handler is the MERCHANT path
+		// (admin has a fixed host), so it uses the Admin allowlist, not the
+		// Storefront one — see config.Config's doc on why the two are kept
+		// separate. ValidateZitadel above already guarantees at least one of
+		// the Admin fields is non-empty; a malformed entry among them is
+		// still a boot failure, never silently ignored.
+		returnURLs, err := zitadellogin.NewReturnURLAllowlist(
+			cfg.ZitadelReturnURLAllowedHostsAdmin, cfg.ZitadelReturnURLAllowedSuffixesAdmin)
+		if err != nil {
+			log.Error("zitadel: refusing to start", "err", err)
+			panic(err)
+		}
 		zitadelHandler = zitadellogin.NewHandler(zitadelClient, autologinSvc.CompleteForProvider).
 			WithHostedLoginBaseURL(cfg.ZitadelIssuer).
-			WithInternalAuth(cfg.MarketplaceInternalAuthSecret)
+			WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
+			WithReturnURLAllowlist(returnURLs)
 	}
 
 	// ─── Session introspection + logout ────────────────────────────────

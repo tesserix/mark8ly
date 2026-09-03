@@ -200,6 +200,35 @@ func (c *Client) CreatePasswordSession(ctx context.Context, loginName, password 
 	return Session{ID: wire.SessionID, Token: wire.SessionToken}, nil
 }
 
+// CreateIDPIntentSession creates a Zitadel session from a resolved IDP
+// intent (see RetrieveIDPIntent), mirroring CreatePasswordSession's shape but
+// with checks.idpIntent instead of checks.user + checks.password.
+//
+// Zitadel resolves the session's subject itself from the intent — this call
+// carries no user id, so a caller who only holds a genuine intent id/token
+// pair (never a claimed user id) is the only way to reach a session here.
+// The intent must already be linked to an existing Zitadel user (see
+// IDPIdentity.ZitadelUserID's doc); callers are expected to have checked
+// that via RetrieveIDPIntent before calling this.
+func (c *Client) CreateIDPIntentSession(ctx context.Context, intentID, intentToken string) (Session, error) {
+	body := map[string]any{
+		"checks": map[string]any{
+			"idpIntent": map[string]any{
+				"idpIntentId":    intentID,
+				"idpIntentToken": intentToken,
+			},
+		},
+	}
+	var wire struct {
+		SessionID    string `json:"sessionId"`
+		SessionToken string `json:"sessionToken"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v2/sessions", body, &wire, ErrUserNotFound); err != nil {
+		return Session{}, err
+	}
+	return Session{ID: wire.SessionID, Token: wire.SessionToken}, nil
+}
+
 // VerifyTOTP submits a TOTP code.
 //
 // Two facts, both observed and both easy to get wrong:

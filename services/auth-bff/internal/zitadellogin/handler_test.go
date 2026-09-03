@@ -48,6 +48,15 @@ func fakeZitadelHandler(t *testing.T, policyJSON, methodsJSON, factorsJSON strin
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/idp_intents":
+			// StartIDPIntent. The fixed authUrl lets idp/start tests assert
+			// on an exact value without needing per-test fixtures.
+			w.Write([]byte(`{"authUrl":"https://idp.example.test/auth?state=intent-1"}`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			// RetrieveIDPIntent. Always resolves to the same linked user
+			// ("u1") that SessionFactors/UserEmail below also resolve to, so
+			// idp/finish tests exercise the same identity throughout.
+			w.Write([]byte(`{"userId":"u1","idpInformation":{"rawInformation":{"email":"a@b.test","email_verified":true}}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
 			w.WriteHeader(http.StatusCreated)
 			w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
@@ -410,5 +419,208 @@ func TestRegisterResolvesTheGinClientIPIntoLoginContext(t *testing.T) {
 	}
 	if gotIP != "203.0.113.42" {
 		t.Fatalf("IPAddress = %q, want the gin-resolved client IP from X-Forwarded-For", gotIP)
+	}
+}
+
+// mustAllowlist builds a ReturnURLAllowlist from known-good entries for
+// tests that only care about idp/start's downstream behaviour, not
+// NewReturnURLAllowlist's own validation (that is returnurl_test.go's job).
+func mustAllowlist(t *testing.T, hosts, suffixes []string) ReturnURLAllowlist {
+	t.Helper()
+	a, err := NewReturnURLAllowlist(hosts, suffixes)
+	if err != nil {
+		t.Fatalf("NewReturnURLAllowlist(%v, %v): %v", hosts, suffixes, err)
+	}
+	return a
+}
+
+// policyForceMFALocalOnly is not shared with sufficiency_test.go: it exists
+// only to prove idp/finish threads federated=true into CompleteIfSufficient,
+// which login() cannot exercise (a password login is never federated).
+const policyForceMFALocalOnly = `{"policy":{"passwordCheckLifetime":"0s","forceMfaLocalOnly":true}}`
+
+func TestIDPStartRejectsDisallowedReturnURL(t *testing.T) {
+	// unreachableZitadel fails the test outright if Zitadel is ever called:
+	// the allowlist must reject this candidate before StartIDPIntent runs.
+	c := unreachableZitadel(t)
+	h := NewHandler(c, nil).
+		WithReturnURLAllowlist(mustAllowlist(t, []string{"admin.mark8ly.com"}, nil))
+
+	rec := httptest.NewRecorder()
+	h.idpStart(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/start",
+		strings.NewReader(`{"return_url":"https://evil.example.com/x"}`)))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIDPStartRejectsMissingFields(t *testing.T) {
+	c := unreachableZitadel(t)
+	h := NewHandler(c, nil).
+		WithReturnURLAllowlist(mustAllowlist(t, []string{"admin.mark8ly.com"}, nil))
+
+	rec := httptest.NewRecorder()
+	h.idpStart(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/start", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestIDPStartReturnsAuthURLForAnAllowedReturnURL(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelHandler(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+	h := NewHandler(c, nil).
+		WithReturnURLAllowlist(mustAllowlist(t, []string{"admin.mark8ly.com"}, nil))
+
+	rec := httptest.NewRecorder()
+	h.idpStart(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/start",
+		strings.NewReader(`{"return_url":"https://admin.mark8ly.com/auth/idp/finish"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["auth_url"] != "https://idp.example.test/auth?state=intent-1" {
+		t.Fatalf("body = %v", body)
+	}
+}
+
+// TestIDPFinishIgnoresATamperedUserQueryParam is the core anti-takeover
+// assertion for this endpoint: Zitadel's success redirect carries a `user`
+// value that is attacker-controlled (it rides in a URL the browser
+// followed), and the frontend may forward whatever it received in that
+// field. Two requests, identical except for that field, must resolve to the
+// exact same identity and mint a session for the exact same subject — proof
+// that `user` is never consulted.
+func TestIDPFinishIgnoresATamperedUserQueryParam(t *testing.T) {
+	for _, tamperedUser := range []string{"", "some-other-victim-user-id", "u1"} {
+		t.Run("user="+tamperedUser, func(t *testing.T) {
+			var fin atomic.Bool
+			c := fakeZitadelHandler(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+
+			var gotUID string
+			h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+				gotUID = lc.UID
+				return CompleteResult{}, nil
+			})
+
+			body := `{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1","user":"` + tamperedUser + `"}`
+			rec := httptest.NewRecorder()
+			h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish", strings.NewReader(body)))
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+			// SessionFactors in the fake always resolves to "u1" regardless
+			// of what the request's user field said — this is the fixed
+			// identity RetrieveIDPIntent + SessionFactors resolve, not
+			// req.User.
+			if gotUID != "u1" {
+				t.Fatalf("complete() called with uid=%q, want u1 regardless of the tampered user field", gotUID)
+			}
+			var respBody map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &respBody); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if respBody["callback_url"] != "https://admin.mark8ly.com/auth/callback?code=c&state=s" {
+				t.Fatalf("body = %v", respBody)
+			}
+		})
+	}
+}
+
+func TestIDPFinishRejectsMissingFields(t *testing.T) {
+	c := unreachableZitadel(t)
+	h := NewHandler(c, nil)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// TestIDPFinishRejectsAnUnlinkedIdentity pins the deliberate scope boundary:
+// this task signs in an ALREADY-linked Google account only. An intent that
+// resolves to no existing Zitadel user (ZitadelUserID == "") must be
+// rejected before any session is created — registration/linking is a
+// separate, later concern.
+func TestIDPFinishRejectsAnUnlinkedIdentity(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"rawInformation":{"email":"new.person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			t.Error("a session must never be created for an unlinked idp intent")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIDPFinishSurfacesAnInvalidIntentWithoutLeakingZitadelBody mirrors
+// TestLoginCollapsesUnknownUserAndWrongPasswordIntoOneAnswer's shape for the
+// retrieve step: a bad/expired/already-consumed intent must answer a clean
+// 401 without echoing Zitadel's own error body.
+func TestIDPFinishSurfacesAnInvalidIntentWithoutLeakingZitadelBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"code":5,"message":"intent not found (COMMAND-2Ls8f)","details":[{"id":"COMMAND-2Ls8f"}]}`))
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "COMMAND-2Ls8f") {
+		t.Fatalf("response leaks the Zitadel error id: %s", rec.Body.String())
+	}
+}
+
+// TestIDPFinishIsExemptFromForceMFALocalOnly proves finish() threads
+// federated=true into CompleteIfSufficient. Under forceMfaLocalOnly with no
+// TOTP verified, a password login (federated=false) would hand off or
+// demand a factor; a Google sign-in through this endpoint must complete.
+func TestIDPFinishIsExemptFromForceMFALocalOnly(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelHandler(t, policyForceMFALocalOnly, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+
+	completeCalled := false
+	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+		completeCalled = true
+		return CompleteResult{}, nil
+	})
+
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !completeCalled {
+		t.Fatal("complete() was not called — forceMfaLocalOnly must not apply to a federated Google sign-in")
+	}
+	if !fin.Load() {
+		t.Fatal("finalize was not called — forceMfaLocalOnly must not apply to a federated Google sign-in")
 	}
 }

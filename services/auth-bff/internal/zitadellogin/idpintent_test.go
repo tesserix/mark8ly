@@ -152,6 +152,23 @@ func TestRetrieveIDPIntentSendsTheIntentToken(t *testing.T) {
 	}
 }
 
+// TestReadRawEmailDefaultsToUnverifiedWhenKeyIsAbsent is the carried-over
+// item from the previous phase: every existing readRawEmail exercise either
+// passes "email_verified" explicitly as false or passes an empty claims map
+// without asserting the email fields at all. Neither proves the default-false
+// path this function's doc comment describes ("a provider that omits
+// email_verified reads as EmailVerified=false here") — this test does, by
+// omitting the key entirely rather than setting it.
+func TestReadRawEmailDefaultsToUnverifiedWhenKeyIsAbsent(t *testing.T) {
+	email, verified := readRawEmail(map[string]any{"email": "person@gmail.com"})
+	if verified {
+		t.Error("verified = true, want false when email_verified is entirely absent from raw claims")
+	}
+	if email != "person@gmail.com" {
+		t.Errorf("email = %q, want person@gmail.com", email)
+	}
+}
+
 func TestRetrieveIDPIntentSurfacesTheZitadelErrorID(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -168,4 +185,3 @@ func TestRetrieveIDPIntentSurfacesTheZitadelErrorID(t *testing.T) {
 		t.Errorf("error text = %q, want it to carry the Zitadel error id", err.Error())
 	}
 }
-

@@ -71,6 +71,24 @@ func guardedEndpoints() []endpoint {
 			},
 		},
 		{
+			name: "zitadel/idp/start",
+			path: "/auth/zitadel/idp/start",
+			body: `{"return_url":"https://admin.mark8ly.com/auth/idp/finish"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewHandler(c, merchantComplete).WithInternalAuth(testInternalSecret).
+					WithReturnURLAllowlist(mustAllowlist(t, []string{"admin.mark8ly.com"}, nil)).
+					idpStart(rec, r)
+			},
+		},
+		{
+			name: "zitadel/idp/finish",
+			path: "/auth/zitadel/idp/finish",
+			body: `{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok-1","workspace_tenant":"t1"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewHandler(c, merchantComplete).WithInternalAuth(testInternalSecret).idpFinish(rec, r)
+			},
+		},
+		{
 			name: "customer/login",
 			path: "/auth/customer/login",
 			body: `{"login_name":"a@b.test","password":"x"}`,

@@ -4,6 +4,7 @@ import { BrandBar } from "@repo/ui/brand-bar";
 
 import { SignInForm } from "@/components/auth/SignInForm";
 import { sanitizeReturnUrl } from "@/lib/auth/sanitize-return-url";
+import { publicConfig } from "@/lib/config";
 
 export const metadata: Metadata = { title: "Sign in" };
 
@@ -31,12 +32,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
   const { returnUrl, authRequest } = await searchParams;
   const safeReturnUrl = sanitizeReturnUrl(returnUrl);
 
-  // Defensive read: Task 6 adds `authProvider` to `publicConfig`. Until
-  // then — and for any unset or unrecognised value — this MUST resolve
-  // to the existing GIP path, so an unset env var can never switch a
-  // production login screen onto a flow with no configured Zitadel
-  // client.
-  const isZitadel = process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel";
+  const isZitadel = publicConfig.authProvider === "zitadel";
 
   if (isZitadel && !authRequest) {
     // Zitadel's login-client model needs an auth_request_id, which

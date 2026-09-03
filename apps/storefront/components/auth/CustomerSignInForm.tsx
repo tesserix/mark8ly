@@ -8,17 +8,16 @@ import {
   confirmCustomerTotp,
   isTotpRequiredResult,
 } from "@/app/sign-in/actions";
+import { getAuthProvider, isGoogleSignInOffered } from "@/lib/auth/provider";
 
 const TRAMPOLINE_BASE =
   process.env.NEXT_PUBLIC_MARK8LY_AUTH_URL ?? "https://mark8ly.com";
 
-// Matches apps/storefront/app/sign-in/actions.ts's AUTH_PROVIDER rule
-// exactly (see that file for the full rationale): only the literal string
-// "zitadel" switches this form off the GIP/Identity Toolkit path. Both
-// reads must agree, since the server action rejects a Zitadel-shaped
-// payload sent while the flag says GIP and vice versa.
-const AUTH_PROVIDER: "gip" | "zitadel" =
-  process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel" ? "zitadel" : "gip";
+// Reads the same flag as apps/storefront/app/sign-in/actions.ts's
+// AUTH_PROVIDER (see @/lib/auth/provider for the full rationale and its
+// test coverage). Both reads must agree, since the server action rejects
+// a Zitadel-shaped payload sent while the flag says GIP and vice versa.
+const AUTH_PROVIDER: "gip" | "zitadel" = getAuthProvider();
 
 interface GipConfig {
   apiKey: string;
@@ -342,7 +341,7 @@ export function CustomerSignInForm({
         {pending ? "Signing in..." : "Sign in"}
       </button>
 
-      {AUTH_PROVIDER === "gip" && (
+      {isGoogleSignInOffered() && (
         <>
           <div className="relative py-1">
             <div className="absolute inset-0 flex items-center" aria-hidden="true">

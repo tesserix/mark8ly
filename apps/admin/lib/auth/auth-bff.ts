@@ -8,6 +8,29 @@ import { parseLoginResponse, type LoginOutcome } from "./login-response";
 
 const base = config.authBffUrl;
 
+/**
+ * The shared service-to-service secret auth-bff's Zitadel credential
+ * endpoints require in the X-Internal-Auth header — the same scheme and the
+ * same env var this app already uses for marketplace-api's internal routes
+ * (see lib/api/marketplace-api.ts).
+ *
+ * auth-bff is publicly reachable (auth.mark8ly.com routes to it on any
+ * path) and /auth/zitadel/login answers whether a {login_name, password}
+ * pair is valid against an instance-level login-client PAT, so without this
+ * header the route is a credential oracle over every user in the Zitadel
+ * instance, merchant admins included. This module is imported from server
+ * actions only, so the header costs one line — read from server config,
+ * never a NEXT_PUBLIC_* variable, which would ship the secret to the
+ * browser bundle.
+ *
+ * Read at call time rather than module scope so a value injected after
+ * module evaluation (and a test's stubbed env) is still seen.
+ */
+function internalAuthHeader(): Record<string, string> {
+  const secret = process.env.MARKETPLACE_INTERNAL_AUTH_SECRET ?? "";
+  return secret ? { "X-Internal-Auth": secret } : {};
+}
+
 export class AuthBffError extends Error {
   constructor(
     public status: number,
@@ -383,7 +406,10 @@ interface ZitadelTotpRequest {
 export async function zitadelLogin(
   req: ZitadelLoginRequest,
 ): Promise<LoginOutcome & { setCookies: string[] }> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...internalAuthHeader(),
+  };
   if (req.userAgent) headers["User-Agent"] = req.userAgent;
   if (req.forwardedFor) headers["X-Forwarded-For"] = req.forwardedFor;
 
@@ -428,7 +454,10 @@ export async function zitadelLogin(
 export async function zitadelTotp(
   req: ZitadelTotpRequest,
 ): Promise<LoginOutcome & { setCookies: string[] }> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...internalAuthHeader(),
+  };
   if (req.userAgent) headers["User-Agent"] = req.userAgent;
   if (req.forwardedFor) headers["X-Forwarded-For"] = req.forwardedFor;
 

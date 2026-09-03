@@ -2,9 +2,14 @@
 
 // Server action for storefront customer sign-in.
 //
-// Customer auth skips auth-bff entirely — auth-bff's auto-login checks
-// OpenFGA tenant membership which customers don't have. Instead we:
-//   1. Verify the GIP id_token signature, project, tenant, and expiry.
+// Customer auth skips auth-bff's merchant gauntlet entirely — auth-bff's
+// auto-login checks OpenFGA tenant membership which customers don't have.
+// Instead we:
+//   1. Verify the credential — under GIP, the Identity Toolkit id_token
+//      (signature, project, tenant, expiry); under Zitadel, the login
+//      name + password via auth-bff's storefront-customer endpoint
+//      (see @/lib/auth/auth-bff-customer). This is the ONLY step that
+//      differs between providers — see the comment on AUTH_PROVIDER below.
 //   2. Set an HMAC-signed `mp_customer_session` cookie.
 //   3. Ensure the customer profile exists in marketplace-api.
 
@@ -14,6 +19,7 @@ import {
   GIPTokenVerificationError,
   verifyGIPIdToken,
 } from "@/lib/gip/verify-id-token";
+import { verifyCustomerCredential } from "@/lib/auth/auth-bff-customer";
 import { sanitizeHost } from "@/lib/host";
 import { platformInternalFetch } from "@/lib/api/server/platformInternal";
 
@@ -23,17 +29,32 @@ const STOREFRONT_KEY = process.env.MARKETPLACE_STOREFRONT_KEY ?? "";
 const GIP_PROJECT_ID = process.env.GIP_PROJECT_ID ?? "";
 const GIP_CUSTOMER_TENANT_ID = process.env.GIP_CUSTOMER_TENANT_ID ?? "";
 
+// Which identity provider verifies the credential in customerSignIn below.
+// Read defensively, matching apps/admin/lib/config.ts's publicConfig.authProvider
+// rule exactly: only the literal string "zitadel" switches the path — unset,
+// empty, or any other value (including "Zitadel" or "true") stays on GIP.
+// NEXT_PUBLIC_-prefixed (not server-only) because CustomerSignInForm, a client
+// component, must branch on the identical value to decide whether to call
+// Identity Toolkit from the browser at all.
+const AUTH_PROVIDER: "gip" | "zitadel" =
+  process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel" ? "zitadel" : "gip";
+
 type Result =
   | { ok: true }
   | { ok: false; code: string; message: string };
 
 interface CustomerSignInInput {
-  idToken: string;
-  /** Deprecated: ignored. The trusted UID comes from the verified idToken. */
-  uid: string;
   storeSlug: string;
-  /** Deprecated: ignored. The trusted email comes from the verified idToken. */
+  /** GIP path only: the verified Identity Toolkit id_token. */
+  idToken?: string;
+  /** Deprecated: ignored. The trusted UID comes from the verified credential. */
+  uid?: string;
+  /** Deprecated: ignored. The trusted email comes from the verified credential. */
   email?: string;
+  /** Zitadel path only: the login name (email) collected by the form. */
+  loginName?: string;
+  /** Zitadel path only: the password collected by the form. Never logged. */
+  password?: string;
 }
 
 async function resolveStore(
@@ -149,11 +170,75 @@ export async function customerSignIn(
       };
     }
 
-    const verified = await verifyGIPIdToken(
-      input.idToken,
-      GIP_PROJECT_ID,
-      GIP_CUSTOMER_TENANT_ID,
-    );
+    // The ONLY step that differs between providers: how the credential is
+    // verified and where {uid, email} come from. Everything below this
+    // block — cookie minting, domain scoping, profile/loyalty side
+    // effects — is identical on both paths.
+    let verified: { uid: string; email: string };
+    if (AUTH_PROVIDER === "zitadel") {
+      if (!input.loginName || !input.password) {
+        return {
+          ok: false,
+          code: "invalid_request",
+          message: "Email and password are required.",
+        };
+      }
+      const outcome = await verifyCustomerCredential({
+        loginName: input.loginName,
+        password: input.password,
+      });
+      // Each non-"complete" outcome gets its own truthful message. None of
+      // them may render as "email or password is incorrect" — that would
+      // be false for a customer who typed the right password but hit a
+      // factor this endpoint can't finish (totp_required) or can't collect
+      // at all (handoff), and would send them into a retry loop that can
+      // never succeed. No cookie is set for any outcome below.
+      switch (outcome.kind) {
+        case "complete":
+          verified = { uid: outcome.uid, email: outcome.email };
+          break;
+        case "rejected":
+          // The one case this message IS true for: a wrong password or an
+          // unknown login name, collapsed to a single outcome upstream
+          // (see auth-bff-customer.ts) so this response can't be used to
+          // enumerate accounts.
+          return {
+            ok: false,
+            code: "invalid_credentials",
+            message: "Email or password is incorrect.",
+          };
+        case "totp_required":
+          // Zero customers have a second factor enrolled today (per the
+          // phase's progress ledger) — an honest "not supported yet"
+          // message is the correct interim. Building a TOTP entry screen
+          // is real UI work deferred to phase 3c alongside the Google
+          // trampoline.
+          return {
+            ok: false,
+            code: "totp_required",
+            message:
+              "This account needs an authenticator code to finish signing in, and this page can't collect one yet. Please contact support for help.",
+          };
+        case "handoff":
+          // A real, uncollectible factor (passkey, U2F, SMS OTP, recovery
+          // code, ...). The handoff URL is deliberately never surfaced —
+          // it lands the customer in Zitadel's own hosted UI, which mints
+          // no `mp_customer_session`, so following it would not complete
+          // sign-in on this storefront either.
+          return {
+            ok: false,
+            code: "signin_method_unsupported",
+            message:
+              "This account uses a sign-in method this storefront can't complete yet. Please contact support for help signing in.",
+          };
+      }
+    } else {
+      verified = await verifyGIPIdToken(
+        input.idToken ?? "",
+        GIP_PROJECT_ID,
+        GIP_CUSTOMER_TENANT_ID,
+      );
+    }
 
     // Set the HMAC-signed customer session cookie. The storefront
     // layout decodes and verifies this on every request to hydrate
@@ -203,10 +288,17 @@ export async function customerSignIn(
         message: "Your sign-in session could not be verified. Please sign in again.",
       };
     }
+    // Anything else — including AuthBffCustomerError, whose .message is
+    // literally "auth-bff customer endpoint error: <code> (status <n>)" —
+    // must never reach the shopper verbatim. That string is meaningless as
+    // UI copy and hands an attacker internal error codes/status for free.
+    // Log the detail server-side and return one generic, actionable
+    // message instead.
+    console.error("customerSignIn failed with an unexpected error", err);
     return {
       ok: false,
       code: "unknown",
-      message: err instanceof Error ? err.message : String(err),
+      message: "Sign-in is temporarily unavailable. Please try again shortly.",
     };
   }
 }

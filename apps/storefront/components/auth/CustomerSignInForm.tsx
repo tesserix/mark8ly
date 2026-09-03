@@ -8,6 +8,14 @@ import { customerSignIn } from "@/app/sign-in/actions";
 const TRAMPOLINE_BASE =
   process.env.NEXT_PUBLIC_MARK8LY_AUTH_URL ?? "https://mark8ly.com";
 
+// Matches apps/storefront/app/sign-in/actions.ts's AUTH_PROVIDER rule
+// exactly (see that file for the full rationale): only the literal string
+// "zitadel" switches this form off the GIP/Identity Toolkit path. Both
+// reads must agree, since the server action rejects a Zitadel-shaped
+// payload sent while the flag says GIP and vice versa.
+const AUTH_PROVIDER: "gip" | "zitadel" =
+  process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel" ? "zitadel" : "gip";
+
 interface GipConfig {
   apiKey: string;
   tenantId: string;
@@ -111,17 +119,30 @@ export function CustomerSignInForm({
 
     startTransition(async () => {
       try {
-        const gipResult = await signInWithPassword(
-          email.trim(),
-          password,
-          gipConfig,
-        );
+        let result: Awaited<ReturnType<typeof customerSignIn>>;
 
-        const result = await customerSignIn({
-          idToken: gipResult.idToken,
-          uid: gipResult.uid,
-          storeSlug,
-        });
+        if (AUTH_PROVIDER === "zitadel") {
+          // Under Zitadel the browser never talks to Identity Toolkit —
+          // the password goes straight to the server action, which calls
+          // auth-bff's storefront-customer credential endpoint itself.
+          result = await customerSignIn({
+            loginName: email.trim(),
+            password,
+            storeSlug,
+          });
+        } else {
+          const gipResult = await signInWithPassword(
+            email.trim(),
+            password,
+            gipConfig,
+          );
+
+          result = await customerSignIn({
+            idToken: gipResult.idToken,
+            uid: gipResult.uid,
+            storeSlug,
+          });
+        }
 
         if (!result.ok) {
           setError(result.message);

@@ -2,12 +2,12 @@ package session
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/mark8ly/auth-bff/internal/internalauth"
 )
 
 // UserEraser is what /internal/users/:id needs from downstream state
@@ -66,7 +66,7 @@ func (h *InternalUsersHandler) deleteUser(c *gin.Context) {
 		})
 		return
 	}
-	if !constantTimeEqual(c.GetHeader("X-Internal-Auth"), h.secret) {
+	if !internalauth.Equal(c.GetHeader(internalauth.Header), h.secret) {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":   "unauthorized",
 			"message": "missing or invalid internal auth",
@@ -111,13 +111,4 @@ func (h *InternalUsersHandler) deleteUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{"user_id": userID, "erased": true},
 	})
-}
-
-func constantTimeEqual(got, want string) bool {
-	if got == "" || want == "" {
-		return false
-	}
-	gotSum := sha256.Sum256([]byte(got))
-	wantSum := sha256.Sum256([]byte(want))
-	return subtle.ConstantTimeCompare(gotSum[:], wantSum[:]) == 1
 }

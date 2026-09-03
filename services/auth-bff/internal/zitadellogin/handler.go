@@ -76,6 +76,11 @@ type Handler struct {
 	// auth_request_id, and logs a warning — the auth request itself is not
 	// lost, only the convenience redirect.
 	hostedLoginBaseURL string
+
+	// internalAuthSecret is the expected X-Internal-Auth value. See
+	// internal_auth.go: empty means unchecked, and the boot guard in
+	// config.ValidateZitadel is what stops that reaching production.
+	internalAuthSecret string
 }
 
 // NewHandler constructs a Handler. complete may be nil in tests that never
@@ -89,6 +94,14 @@ func NewHandler(c *Client, complete CompleteFunc) *Handler {
 // used elsewhere in this service (e.g. session.Handler.WithRegistry).
 func (h *Handler) WithHostedLoginBaseURL(baseURL string) *Handler {
 	h.hostedLoginBaseURL = strings.TrimSuffix(baseURL, "/")
+	return h
+}
+
+// WithInternalAuth requires every request to /auth/zitadel/{login,totp} to
+// present secret in the X-Internal-Auth header. Both callers are
+// server-side, so this costs them one header. See internal_auth.go.
+func (h *Handler) WithInternalAuth(secret string) *Handler {
+	h.internalAuthSecret = secret
 	return h
 }
 
@@ -191,6 +204,14 @@ type totpRequest struct {
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// First, before the body is even read: an unauthenticated caller must
+	// never reach CreatePasswordSession, or this endpoint tells them
+	// whether a credential is valid.
+	if !internalAuthorized(r, h.internalAuthSecret) {
+		writeUnauthorized(w)
+		return
+	}
+
 	var req loginRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
@@ -221,6 +242,12 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 // login, and re-asks sufficiency.go whether the session may now finalize.
 func (h *Handler) totp(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	// See login: reject before any Zitadel call.
+	if !internalAuthorized(r, h.internalAuthSecret) {
+		writeUnauthorized(w)
+		return
+	}
 
 	var req totpRequest
 	if err := decodeJSON(r, &req); err != nil {

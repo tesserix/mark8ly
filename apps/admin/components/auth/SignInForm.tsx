@@ -16,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Input } from "@tesserix/web";
+import { Input, AuthOtpStep } from "@tesserix/web";
 import { Field } from "@repo/ui/field";
 import { GoogleMark } from "@repo/ui/google-mark";
 import { AppleMark } from "@repo/ui/apple-mark";
@@ -28,6 +28,8 @@ import { appleSignInEnabled } from "@/lib/config";
 import { linkGoogleToInternalPassword } from "@/lib/gip/link";
 import {
   signIn,
+  signInWithZitadel,
+  confirmZitadelTotp,
   confirmMFALogin,
   confirmEmailOTPLogin,
   resendEmailOTPCode,
@@ -60,13 +62,23 @@ interface SignInFormProps {
    * Zitadel's `auth_request_id`, present once `/login` has bounced
    * through Zitadel's `/authorize` and back (see
    * app/login/authorize/route.ts and app/auth/callback/route.ts).
-   * Unused under GIP. Task 5 wires this into `signInWithZitadel`.
+   * Unused under GIP. Wired into `signInWithZitadel` below.
    */
   authRequestId?: string;
+  /**
+   * Which identity provider backs this sign-in. Read defensively: only
+   * the exact literal `"zitadel"` switches this form onto the Zitadel
+   * path — anything else, including undefined, keeps today's GIP flow.
+   * The flag itself does not exist yet (Task 6 wires it from
+   * `publicConfig` into `/login/page.tsx`), so in practice this prop is
+   * unset in production until then.
+   */
+  provider?: string;
 }
 
-export function SignInForm({ returnUrl }: SignInFormProps = {}) {
+export function SignInForm({ returnUrl, authRequestId, provider }: SignInFormProps = {}) {
   const router = useRouter();
+  const isZitadel = provider === "zitadel";
 
   // Full-page navigation when returnUrl crosses origins (the common
   // case: signing in at admin.mark8ly.com → bouncing to
@@ -115,6 +127,20 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
   const [mfaPending, setMfaPending] = useState(false);
   const [mfaMultipleTenants, setMfaMultipleTenants] = useState(false);
 
+  // Zitadel's own TOTP step-up — a different mechanism from auth-bff's
+  // `usermfa` gate above. Zitadel itself demands a verified
+  // authenticator code before the auth request can complete, and hands
+  // back a session id/token plus a server-signed tenant code that must
+  // ride unchanged into confirmZitadelTotp. Unreachable under GIP.
+  const [zitadelTotpStep, setZitadelTotpStep] = useState(false);
+  const [zitadelTotpCode, setZitadelTotpCode] = useState("");
+  const [zitadelTotpPending, setZitadelTotpPending] = useState(false);
+  const [zitadelTotpChallenge, setZitadelTotpChallenge] = useState<{
+    sessionId: string;
+    sessionToken: string;
+    tenantCode: string;
+  } | null>(null);
+
   const {
     register,
     handleSubmit,
@@ -129,9 +155,64 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
 
   const disabled = pending || googlePending || applePending;
 
+  // Shared by the Zitadel sign-in call and the Zitadel TOTP confirmation
+  // below — both return the same `Result<SignInSuccess>` shape, so the
+  // mfa/email-otp/totp/handoff/redirect branching only needs to live
+  // once.
+  async function afterZitadelResult(
+    r: Awaited<ReturnType<typeof signInWithZitadel>>,
+  ) {
+    if (!r.ok) {
+      if (r.code === "tenant_not_found") {
+        setSubmitError(
+          "We couldn't find a store for this account. Did you finish onboarding?",
+        );
+      } else {
+        setSubmitError(r.message);
+      }
+      return;
+    }
+    const { data } = r;
+    if (data.totpRequired) {
+      setMfaMultipleTenants(data.multipleTenants);
+      setZitadelTotpChallenge({
+        sessionId: data.zitadelSessionId ?? "",
+        sessionToken: data.zitadelSessionToken ?? "",
+        tenantCode: data.zitadelTenantCode ?? "",
+      });
+      setZitadelTotpStep(true);
+      return;
+    }
+    if (data.mfaRequired || data.emailOtpRequired) {
+      setMfaMultipleTenants(data.multipleTenants);
+      setChallenge(data.mfaRequired ? "mfa" : "email_otp");
+      setMfaStep(true);
+      return;
+    }
+    if (data.handoffUrl) {
+      if (typeof window !== "undefined") {
+        window.location.assign(data.handoffUrl);
+      }
+      return;
+    }
+    await goToDestination(data.multipleTenants ? "/pick-tenant" : "/dashboard");
+  }
+
   function onValid(values: FormValues) {
     setSubmitError(null);
     const trimmedEmail = values.email.trim().toLowerCase();
+
+    if (isZitadel) {
+      startTransition(async () => {
+        const r = await signInWithZitadel({
+          email: trimmedEmail,
+          password: values.password,
+          authRequestId: authRequestId ?? "",
+        });
+        await afterZitadelResult(r);
+      });
+      return;
+    }
 
     startTransition(async () => {
       let idToken = "";
@@ -173,6 +254,31 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
       }
       await goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
     });
+  }
+
+  async function handleZitadelTotp(code: string) {
+    if (!zitadelTotpChallenge) return;
+    setSubmitError(null);
+    setZitadelTotpPending(true);
+    try {
+      const r = await confirmZitadelTotp({
+        authRequestId: authRequestId ?? "",
+        sessionId: zitadelTotpChallenge.sessionId,
+        sessionToken: zitadelTotpChallenge.sessionToken,
+        code,
+        zitadelTenantCode: zitadelTotpChallenge.tenantCode,
+      });
+      await afterZitadelResult(r);
+    } finally {
+      setZitadelTotpPending(false);
+    }
+  }
+
+  function cancelZitadelTotp() {
+    setZitadelTotpStep(false);
+    setZitadelTotpChallenge(null);
+    setZitadelTotpCode("");
+    setSubmitError(null);
   }
 
   async function completeSignIn(idToken: string, uid: string) {
@@ -320,6 +426,44 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
     }
   }
 
+  if (zitadelTotpStep) {
+    return (
+      <div className="w-full max-w-md">
+        <div className="space-y-2">
+          <p className="eyebrow">mark8ly admin</p>
+          <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground">
+            Two-factor check
+          </h1>
+          <p className="text-base leading-7 text-foreground-secondary">
+            Enter the 6-digit code from your authenticator app to finish signing in.
+          </p>
+        </div>
+
+        <div className="mt-8">
+          <AuthOtpStep
+            value={zitadelTotpCode}
+            onValueChange={setZitadelTotpCode}
+            onSubmit={handleZitadelTotp}
+            factor="totp"
+            length={6}
+            loading={zitadelTotpPending}
+            error={submitError}
+            label="Verification code"
+            submitLabel={zitadelTotpPending ? "Verifying…" : "Verify and continue"}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={cancelZitadelTotp}
+          className="mt-5 inline-flex h-11 w-full items-center justify-center text-sm text-foreground-secondary underline underline-offset-4 decoration-border-subtle hover:text-foreground"
+        >
+          Use a different account
+        </button>
+      </div>
+    );
+  }
+
   if (mfaStep) {
     return (
       <div className="w-full max-w-md">
@@ -460,40 +604,47 @@ export function SignInForm({ returnUrl }: SignInFormProps = {}) {
           {pending ? "Signing in…" : "Sign in"}
         </button>
 
-        <div className="relative py-1">
-          <div className="absolute inset-0 flex items-center" aria-hidden="true">
-            <div className="w-full border-t border-border-subtle" />
-          </div>
-          <div className="relative flex justify-center">
-            <span className="bg-background px-3 text-xs uppercase tracking-wider text-foreground-tertiary">
-              or
-            </span>
-          </div>
-        </div>
+        {/* Google/Apple still authenticate through GIP, which is out of
+            scope for the Zitadel path in this phase. */}
+        {!isZitadel && (
+          <>
+            <div className="relative py-1">
+              <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                <div className="w-full border-t border-border-subtle" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-background px-3 text-xs uppercase tracking-wider text-foreground-tertiary">
+                  or
+                </span>
+              </div>
+            </div>
 
-        <button
-          type="button"
-          onClick={handleGoogle}
-          disabled={disabled}
-          className="inline-flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <GoogleMark />
-          {googlePending ? "Opening Google…" : "Continue with Google"}
-        </button>
+            <button
+              type="button"
+              onClick={handleGoogle}
+              disabled={disabled}
+              className="inline-flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <GoogleMark />
+              {googlePending ? "Opening Google…" : "Continue with Google"}
+            </button>
 
-        {/* Rendered only when a Services ID is configured. Apple treats web
-            as a separate client from the iOS app, so until that exists the
-            button would fail at Apple rather than in our code. */}
-        {appleSignInEnabled && (
-          <button
-            type="button"
-            onClick={handleApple}
-            disabled={disabled}
-            className="mt-3 inline-flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <AppleMark />
-            {applePending ? "Opening Apple…" : "Continue with Apple"}
-          </button>
+            {/* Rendered only when a Services ID is configured. Apple treats
+                web as a separate client from the iOS app, so until that
+                exists the button would fail at Apple rather than in our
+                code. */}
+            {appleSignInEnabled && (
+              <button
+                type="button"
+                onClick={handleApple}
+                disabled={disabled}
+                className="mt-3 inline-flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <AppleMark />
+                {applePending ? "Opening Apple…" : "Continue with Apple"}
+              </button>
+            )}
+          </>
         )}
 
         <p className="text-center text-xs text-foreground-tertiary">

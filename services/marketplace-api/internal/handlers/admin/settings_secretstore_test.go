@@ -27,7 +27,9 @@ func TestShippingSettings_WithSecretStore_PutAndMask(t *testing.T) {
 	if !strings.HasPrefix(ref, "gsm://") {
 		t.Fatalf("reference not a gsm:// value: %s", ref)
 	}
-	wantRef := "gsm://projects/tesseracthub-480811/secrets/mark8ly-test-4a47610c-3f0c-4ef7-a64c-892480c4635e-shipping-delhivery-api_key"
+	// "api_key" contains a literal '_', which encodeSegment escapes to "__"
+	// to stay injective (see #606).
+	wantRef := "gsm://projects/tesseracthub-480811/secrets/mark8ly-test-4a47610c-3f0c-4ef7-a64c-892480c4635e-shipping-delhivery-api__key"
 	if ref != wantRef {
 		t.Fatalf("unexpected ref: got %q want %q", ref, wantRef)
 	}
@@ -71,7 +73,7 @@ func TestPaymentSettings_WithSecretStore_ScopeIsPaymentDomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("putCredential: %v", err)
 	}
-	if !strings.Contains(ref, "-payment-razorpay-api_key") {
+	if !strings.Contains(ref, "-payment-razorpay-api__key") {
 		t.Fatalf("reference doesn't carry payment scope: %s", ref)
 	}
 }
@@ -86,7 +88,7 @@ func TestTaxSettings_WithSecretStore_ScopeIsTaxDomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("putCredential: %v", err)
 	}
-	if !strings.Contains(ref, "-tax-taxjar-api_key") {
+	if !strings.Contains(ref, "-tax-taxjar-api__key") {
 		t.Fatalf("reference doesn't carry tax scope: %s", ref)
 	}
 }

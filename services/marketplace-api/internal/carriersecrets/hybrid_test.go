@@ -30,11 +30,13 @@ func TestHybridStore_Put_WritesGSMReference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	wantRef := "gsm://projects/tesseracthub-480811/secrets/mark8ly-test-4a47610c-3f0c-4ef7-a64c-892480c4635e-shipping-delhivery-api_key"
+	// "api_key" contains a literal '_', which encodeSegment escapes to "__"
+	// to stay injective (see #606).
+	wantRef := "gsm://projects/tesseracthub-480811/secrets/mark8ly-test-4a47610c-3f0c-4ef7-a64c-892480c4635e-shipping-delhivery-api__key"
 	if ref != wantRef {
 		t.Fatalf("ref = %q, want %q", ref, wantRef)
 	}
-	if !fake.Has("projects/tesseracthub-480811/secrets/mark8ly-test-4a47610c-3f0c-4ef7-a64c-892480c4635e-shipping-delhivery-api_key") {
+	if !fake.Has("projects/tesseracthub-480811/secrets/mark8ly-test-4a47610c-3f0c-4ef7-a64c-892480c4635e-shipping-delhivery-api__key") {
 		t.Fatal("FakeClient doesn't have the secret after Put")
 	}
 	got, err := s.Get(ctx, ref)

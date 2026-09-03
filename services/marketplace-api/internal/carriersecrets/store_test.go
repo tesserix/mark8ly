@@ -45,7 +45,10 @@ func TestSecretName_CanonicalLayout(t *testing.T) {
 		Field:    "api_key",
 	}
 	got := SecretName("mark8ly-prod", s)
-	want := "mark8ly-prod-4a47610c-3f0c-4ef7-a64c-892480c4635e-shipping-delhivery-api_key"
+	// "api_key" contains a literal '_', which encodeSegment escapes to "__"
+	// to stay injective (see #606) — the plain byte '_' would otherwise be
+	// indistinguishable from an escaped one.
+	want := "mark8ly-prod-4a47610c-3f0c-4ef7-a64c-892480c4635e-shipping-delhivery-api__key"
 	if got != want {
 		t.Fatalf("SecretName = %q, want %q", got, want)
 	}
@@ -72,7 +75,7 @@ func TestFormatReference_And_ParseReference(t *testing.T) {
 	if !ok {
 		t.Fatalf("ParseReference rejected a value we just formatted: %s", ref)
 	}
-	if res != "projects/proj/secrets/mark8ly-dev-tenant-payment-razorpay-secret_key" {
+	if res != "projects/proj/secrets/mark8ly-dev-tenant-payment-razorpay-secret__key" {
 		t.Fatalf("parsed resource wrong: %s", res)
 	}
 }

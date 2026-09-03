@@ -255,16 +255,16 @@ type Config struct {
 	// at startup by Validate — a typo here must not silently leave the
 	// wrong backend primary (see ErrShippingSecretStoreUnknown).
 	ShippingSecretStore string `envconfig:"SHIPPING_SECRET_STORE" default:"inline"`
-	// GCPProjectID is the project that hosts the per-tenant carrier
-	// secrets. Required when ShippingSecretStore is "gcpsm" or "bao" —
-	// even bao-primary chains still route legacy gsm:// reads through
-	// GCP Secret Manager. Unused when "inline".
+	// GCPProjectID is the GCP project used by the merchant-push Pub/Sub
+	// publisher (see pushevents.NewPublisher in cmd/marketplace-api).
+	//
+	// It has NOTHING to do with carrier secrets any more: mark8ly#621
+	// removed the GCP Secret Manager backend, and Validate no longer
+	// requires this for any ShippingSecretStore mode. It is still
+	// load-bearing though — push publishing is skipped when it is empty,
+	// and that skip only logs, so removing it from a deployment disables
+	// merchant push silently rather than failing loudly.
 	GCPProjectID string `envconfig:"GCP_PROJECT_ID" default:""`
-	// SecretNamePrefix goes at the head of every per-tenant secret ID,
-	// e.g. "mark8ly-prod", "mark8ly-test". Isolates dev and prod
-	// clusters that share the same GCP project by scoping IAM
-	// bindings via resource.name.startsWith.
-	SecretNamePrefix string `envconfig:"SECRET_NAME_PREFIX" default:"mark8ly-dev"`
 
 	// OpenBaoAddr is the OpenBao API address. Required whenever
 	// ShippingSecretStore != "inline" — ChainStore routes any bao://
@@ -353,13 +353,6 @@ var (
 	// error on the first merchant credential save instead of at boot.
 	ErrOpenBaoKVMountUnsupported = errors.New(
 		"marketplace config: OPENBAO_KV_MOUNT must be \"kv\" when SHIPPING_SECRET_STORE=bao (carriersecrets.BaoPath currently assumes the \"kv\" mount)")
-	// ErrGCPProjectIDRequiredForBao fires when ShippingSecretStore=bao
-	// and GCP_PROJECT_ID is unset. A bao-primary ChainStore still routes
-	// legacy gsm:// reads (and destroys) through GCP Secret Manager, so
-	// GCP_PROJECT_ID is a genuine prerequisite for "bao" mode, not just
-	// "gcpsm" mode.
-	ErrGCPProjectIDRequiredForBao = errors.New(
-		"marketplace config: GCP_PROJECT_ID must be set when SHIPPING_SECRET_STORE=bao (legacy gsm:// rows must still resolve through GCP Secret Manager)")
 )
 
 // Load reads .env (if present) and binds environment variables into Config.
@@ -475,9 +468,6 @@ func (c *Config) validateShippingSecretStore() error {
 	if c.OpenBaoKVMount != "kv" {
 		return fmt.Errorf("%w (got OPENBAO_KV_MOUNT=%q)", ErrOpenBaoKVMountUnsupported, c.OpenBaoKVMount)
 	}
-	if c.GCPProjectID == "" {
-		return ErrGCPProjectIDRequiredForBao
-	}
 	return nil
 }
 
@@ -489,8 +479,6 @@ func (c *Config) validateShippingSecretStore() error {
 type CarrierSecretJobConfig struct {
 	DatabaseURL         string
 	ShippingSecretStore string
-	GCPProjectID        string
-	SecretNamePrefix    string
 	OpenBaoAddr         string
 	OpenBaoRole         string
 	OpenBaoKVMount      string
@@ -511,8 +499,6 @@ type CarrierSecretJobConfig struct {
 type carrierSecretJobEnv struct {
 	DatabaseURL         string `envconfig:"DATABASE_URL" required:"true"`
 	ShippingSecretStore string `envconfig:"SHIPPING_SECRET_STORE" default:"inline"`
-	GCPProjectID        string `envconfig:"GCP_PROJECT_ID" default:""`
-	SecretNamePrefix    string `envconfig:"SECRET_NAME_PREFIX" default:"mark8ly-dev"`
 	OpenBaoAddr         string `envconfig:"OPENBAO_ADDR" default:"http://openbao-active.openbao.svc.cluster.local:8200"`
 	OpenBaoRole         string `envconfig:"OPENBAO_ROLE" default:""`
 	OpenBaoKVMount      string `envconfig:"OPENBAO_KV_MOUNT" default:"kv"`
@@ -554,7 +540,6 @@ func LoadCarrierSecretJob() (*CarrierSecretJobConfig, error) {
 	// copy the (possibly normalised) value back out.
 	validation := &Config{
 		ShippingSecretStore: env.ShippingSecretStore,
-		GCPProjectID:        env.GCPProjectID,
 		OpenBaoAddr:         env.OpenBaoAddr,
 		OpenBaoRole:         env.OpenBaoRole,
 		OpenBaoKVMount:      env.OpenBaoKVMount,
@@ -566,8 +551,6 @@ func LoadCarrierSecretJob() (*CarrierSecretJobConfig, error) {
 	return &CarrierSecretJobConfig{
 		DatabaseURL:         env.DatabaseURL,
 		ShippingSecretStore: validation.ShippingSecretStore,
-		GCPProjectID:        env.GCPProjectID,
-		SecretNamePrefix:    env.SecretNamePrefix,
 		OpenBaoAddr:         env.OpenBaoAddr,
 		OpenBaoRole:         env.OpenBaoRole,
 		OpenBaoKVMount:      env.OpenBaoKVMount,

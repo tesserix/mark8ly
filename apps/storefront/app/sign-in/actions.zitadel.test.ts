@@ -490,11 +490,13 @@ describe("customerSignIn — totp_required carries the data the code-entry step 
 });
 
 describe("confirmCustomerTotp — provider flag", () => {
-  it("with the flag unset, confirmCustomerTotp is unreachable via the GIP path (verifyCustomerCredential never yields totp_required)", async () => {
+  it("with the flag unset, customerSignIn's GIP path never yields totp_required, so the UI never obtains a sessionId/sessionToken to call confirmCustomerTotp with", async () => {
     // The GIP path (verifyGIPIdToken) has no notion of a TOTP step-up at
     // all — it either resolves a uid/email or throws. There is no code
     // path in customerSignIn under GIP that could ever produce
     // sessionId/sessionToken for the client to hand to confirmCustomerTotp.
+    // This test exercises customerSignIn, not confirmCustomerTotp itself —
+    // see the next test for that.
     verifyGIPIdTokenMock.mockResolvedValue({
       uid: "u-gip",
       email: "gip@example.com",
@@ -510,6 +512,33 @@ describe("confirmCustomerTotp — provider flag", () => {
 
     expect(result.ok).toBe(true);
     expect(verifyCustomerCredentialMock).not.toHaveBeenCalled();
+  });
+
+  it("confirmCustomerTotp itself has no provider gate: with the flag unset it still calls verifyCustomerTotp and completes", async () => {
+    // confirmCustomerTotp never reads AUTH_PROVIDER — it is only
+    // unreachable from the UI under GIP because customerSignIn's GIP
+    // path can never hand it a sessionId/sessionToken (previous test).
+    // If confirmCustomerTotp ever grew an accidental flag check that
+    // short-circuited it under GIP, this is the test that would catch
+    // it — calling the action directly, bypassing the UI/customerSignIn
+    // gate entirely.
+    delete process.env.NEXT_PUBLIC_AUTH_PROVIDER;
+    verifyCustomerTotpMock.mockResolvedValue({
+      kind: "complete",
+      uid: "u-flag-unset",
+      email: "flag-unset@example.com",
+    });
+    const { confirmCustomerTotp } = await loadActions();
+
+    const result = await confirmCustomerTotp({
+      storeSlug: "shop",
+      sessionId: "s-1",
+      sessionToken: "tok-1",
+      code: "123456",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(verifyCustomerTotpMock).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -600,6 +629,32 @@ describe("confirmCustomerTotp — a repeat totp_required is a FRESH challenge, n
   });
 });
 
+// Serializes a console.error argument for a leak check. Plain
+// JSON.stringify is not enough here: Error's message/stack/name are
+// non-enumerable, so JSON.stringify(new Error("987654")) is "{}" — a
+// leaked code embedded in a logged Error would sail straight through a
+// JSON.stringify-only check with the assertion still passing. This pulls
+// name/message/stack (and a cause, if present) explicitly for Error
+// instances, and falls back to JSON.stringify (including non-enumerable
+// own properties, via Object.getOwnPropertyNames as the replacer) for
+// everything else.
+function serializeForLeakCheck(value: unknown): string {
+  if (value instanceof Error) {
+    const cause =
+      "cause" in value ? ` cause=${serializeForLeakCheck(value.cause)}` : "";
+    return `${value.name}: ${value.message}\n${value.stack ?? ""}${cause}`;
+  }
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    try {
+      return JSON.stringify(value, Object.getOwnPropertyNames(value));
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 describe("confirmCustomerTotp — the code never leaks", () => {
   it("never appears in a console.error argument", async () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -619,14 +674,27 @@ describe("confirmCustomerTotp — the code never leaks", () => {
 
       for (const call of consoleErrorSpy.mock.calls) {
         for (const arg of call) {
-          const serialized =
-            typeof arg === "string" ? arg : JSON.stringify(arg);
-          expect(serialized ?? "").not.toContain(SECRET_CODE);
+          expect(serializeForLeakCheck(arg)).not.toContain(SECRET_CODE);
         }
       }
     } finally {
       consoleErrorSpy.mockRestore();
     }
+  });
+
+  // Proves the assertion above is actually capable of failing — a bare
+  // JSON.stringify(new Error(...)) check would pass even with the code
+  // embedded in a logged Error's message, since Error's own enumerable
+  // properties are empty. This test intentionally logs the code the way
+  // a regression might, and expects THIS test to fail if
+  // serializeForLeakCheck stops inspecting message/stack.
+  it("sanity check: serializeForLeakCheck actually catches a code embedded in a logged Error", () => {
+    const SECRET_CODE = "555444";
+    const leaky = new Error(`totp confirm failed for code ${SECRET_CODE}`);
+    expect(serializeForLeakCheck(leaky)).toContain(SECRET_CODE);
+    // And a bare JSON.stringify over the same Error would have missed it
+    // entirely — this is the gap the sanity check above closes.
+    expect(JSON.stringify(leaky)).not.toContain(SECRET_CODE);
   });
 });
 

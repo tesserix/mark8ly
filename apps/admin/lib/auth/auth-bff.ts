@@ -4,6 +4,7 @@
 // for forwarding to the browser via Next's response headers.
 
 import { config } from "@/lib/config";
+import { parseLoginResponse, type LoginOutcome } from "./login-response";
 
 const base = config.authBffUrl;
 
@@ -343,4 +344,122 @@ export async function completeMFAChallenge(
     tenant_id: body.data.tenant_id,
     setCookies: readAllSetCookies(res),
   };
+}
+
+interface ZitadelLoginRequest {
+  authRequestId: string;
+  loginName: string;
+  password: string;
+  workspaceTenant: string;
+  /** Forwarded to auth-bff for device fingerprinting and the email-OTP
+   *  rate limiter. auth-bff previously fingerprinted every user
+   *  identically when this arrived empty from the server side (phase 2
+   *  fix) — dropping it here from the browser side recreates the exact
+   *  same silent failure, so it MUST be forwarded whenever the caller
+   *  has it. */
+  userAgent?: string;
+  forwardedFor?: string;
+}
+
+interface ZitadelTotpRequest {
+  authRequestId: string;
+  sessionId: string;
+  sessionToken: string;
+  code: string;
+  workspaceTenant: string;
+  /** See ZitadelLoginRequest.userAgent. */
+  userAgent?: string;
+  forwardedFor?: string;
+}
+
+/**
+ * zitadelLogin submits a Zitadel login-name + password pair against an
+ * existing Zitadel auth request. The response can be a completed
+ * sign-in, a TOTP step-up, auth-bff's own MFA/email-OTP step-up, or a
+ * handoff to Zitadel's hosted UI — parseLoginResponse normalises all of
+ * that, so this function does no parsing of its own beyond handing the
+ * 2xx body to it.
+ */
+export async function zitadelLogin(
+  req: ZitadelLoginRequest,
+): Promise<LoginOutcome & { setCookies: string[] }> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (req.userAgent) headers["User-Agent"] = req.userAgent;
+  if (req.forwardedFor) headers["X-Forwarded-For"] = req.forwardedFor;
+
+  const res = await fetch(`${base}/auth/zitadel/login`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      auth_request_id: req.authRequestId,
+      login_name: req.loginName,
+      password: req.password,
+      workspace_tenant: req.workspaceTenant,
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new AuthBffError(
+      res.status,
+      body.error ?? "auth_bff_error",
+      body.message ?? `HTTP ${res.status}`,
+    );
+  }
+
+  const body = await res.json();
+  const outcome = parseLoginResponse(body);
+  return { ...outcome, setCookies: readAllSetCookies(res) };
+}
+
+/**
+ * zitadelTotp completes a Zitadel login that required a TOTP step-up.
+ * The caller passes the session_id/session_token parseLoginResponse
+ * returned from zitadelLogin's totp_required outcome, plus the 6-digit
+ * code the user typed. Like zitadelLogin, the 2xx body is handed to
+ * parseLoginResponse rather than parsed here.
+ */
+export async function zitadelTotp(
+  req: ZitadelTotpRequest,
+): Promise<LoginOutcome & { setCookies: string[] }> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (req.userAgent) headers["User-Agent"] = req.userAgent;
+  if (req.forwardedFor) headers["X-Forwarded-For"] = req.forwardedFor;
+
+  const res = await fetch(`${base}/auth/zitadel/totp`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      auth_request_id: req.authRequestId,
+      session_id: req.sessionId,
+      session_token: req.sessionToken,
+      code: req.code,
+      workspace_tenant: req.workspaceTenant,
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new AuthBffError(
+      res.status,
+      body.error ?? "auth_bff_error",
+      body.message ?? `HTTP ${res.status}`,
+    );
+  }
+
+  const body = await res.json();
+  const outcome = parseLoginResponse(body);
+  return { ...outcome, setCookies: readAllSetCookies(res) };
 }

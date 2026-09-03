@@ -5,9 +5,23 @@
  *   - /auth/auto-login success  -> { data: { uid, email, tenant_id, mfa_required?, email_otp_required? } }
  *   - /auth/otp/verify success  -> { uid, tenant_id }            (top level, no data)
  *   - any error                 -> { error, message }            (flat)
- *   - /auth/zitadel/login       -> { totp_required, session_id, session_token } or
+ *   - /auth/zitadel/{login,totp,idp/finish} -> { totp_required, session_id, session_token } or
  *                                  { handoff_url, auth_request_id } or
- *                                  { callback_url, data: { ... } }
+ *                                  { callback_url } alone — auth-bff's finishComplete
+ *                                  (services/auth-bff/internal/zitadellogin/handler.go's
+ *                                  `writeJSON(w, 200, map[string]any{"callback_url": res.CallbackURL})`,
+ *                                  pinned by handler_test.go's
+ *                                  TestLoginCompleteCallsCompleteAndReturnsCallbackURL) sends ONLY
+ *                                  callback_url on a real completed Zitadel sign-in — no `data`,
+ *                                  no `uid`, no `tenant_id`. Earlier versions of this module required
+ *                                  uid/tenantId to recognise "complete", which meant every genuine
+ *                                  Zitadel completion (password or Google) threw and fell through to
+ *                                  a generic "Something went wrong" error — a real defect, caught only
+ *                                  because a fixture supplied fields the service never actually sends.
+ *                                  uid/email/tenantId are therefore OPTIONAL on "complete": no caller
+ *                                  in this app reads them off that outcome (every caller already
+ *                                  carries its own server-resolved tenantId into signIn/mapZitadelOutcome
+ *                                  separately — see app/login/actions.ts), only callbackUrl is used.
  *
  * Two DIFFERENT second factors are represented here. Zitadel's own TOTP arrives
  * as top-level `totp_required`; auth-bff's usermfa gate arrives as nested
@@ -16,7 +30,7 @@
  * client read only mfa_required, and the code-entry screen never rendered.
  */
 export type LoginOutcome =
-  | { kind: "complete"; uid: string; email: string; tenantId: string; callbackUrl?: string }
+  | { kind: "complete"; uid?: string; email?: string; tenantId?: string; callbackUrl?: string }
   | { kind: "totp_required"; sessionId: string; sessionToken: string }
   | { kind: "mfa_required" }
   | { kind: "email_otp_required" }
@@ -73,9 +87,23 @@ export function parseLoginResponse(body: unknown): LoginOutcome {
     typeof data.tenant_id === "string" ? data.tenant_id
     : typeof top.tenant_id === "string" ? top.tenant_id : "";
   const email = typeof data.email === "string" ? data.email : "";
-  if (!uid || !tenantId) {
-    throw new LoginResponseError("login response carried neither a step-up nor an identity");
-  }
   const callbackUrl = typeof top.callback_url === "string" ? top.callback_url : undefined;
-  return { kind: "complete", uid, email, tenantId, ...(callbackUrl ? { callbackUrl } : {}) };
+
+  // A real completed Zitadel sign-in (password or Google) sends ONLY
+  // callback_url — see the file header. An identity (uid/tenantId, from
+  // /auth/auto-login or /auth/otp/verify) is the other, older way this
+  // function recognises "complete". Either one alone is enough; a body
+  // with NEITHER a step-up, an identity, NOR a callback_url carries no
+  // information this function understands at all, and must still throw
+  // rather than being silently read as done.
+  if (!uid && !tenantId && !callbackUrl) {
+    throw new LoginResponseError("login response carried neither a step-up nor an identity nor a callback_url");
+  }
+  return {
+    kind: "complete",
+    ...(uid ? { uid } : {}),
+    ...(email ? { email } : {}),
+    ...(tenantId ? { tenantId } : {}),
+    ...(callbackUrl ? { callbackUrl } : {}),
+  };
 }

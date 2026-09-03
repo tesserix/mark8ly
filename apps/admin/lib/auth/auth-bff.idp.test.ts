@@ -68,12 +68,20 @@ const finishReq = {
   workspaceTenant: "tenant-1",
 };
 
+// This is the EXACT body auth-bff sends on a genuine completed Zitadel sign-in
+// (password or Google) — services/auth-bff/internal/zitadellogin/handler.go's
+// finishComplete: `writeJSON(w, 200, map[string]any{"callback_url": res.CallbackURL})`,
+// pinned server-side by handler_test.go's
+// TestLoginCompleteCallsCompleteAndReturnsCallbackURL. No `data`, no `uid`, no
+// `tenant_id` — see login-response.ts's file header for why parseLoginResponse
+// must accept this shape as "complete" rather than throwing on it.
+const REAL_COMPLETE_BODY = {
+  callback_url: "https://admin.mark8ly.com/auth/callback?code=c&state=s",
+};
+
 describe("zitadelIdpFinish", () => {
   it("sends the exact snake_case field names auth-bff expects", async () => {
-    const fetchMock = stubFetch(200, {
-      callback_url: "https://admin.mark8ly.com/auth/callback?code=c",
-      data: { uid: "u1", email: "merchant@example.com", tenant_id: "tenant-1" },
-    });
+    const fetchMock = stubFetch(200, REAL_COMPLETE_BODY);
 
     await zitadelIdpFinish(finishReq);
 
@@ -89,10 +97,7 @@ describe("zitadelIdpFinish", () => {
   });
 
   it("never sends a `user` field — there is no parameter for it", async () => {
-    const fetchMock = stubFetch(200, {
-      callback_url: "https://admin.mark8ly.com/auth/callback?code=c",
-      data: { uid: "u1", email: "merchant@example.com", tenant_id: "tenant-1" },
-    });
+    const fetchMock = stubFetch(200, REAL_COMPLETE_BODY);
 
     await zitadelIdpFinish(finishReq);
 
@@ -103,10 +108,7 @@ describe("zitadelIdpFinish", () => {
   });
 
   it("forwards User-Agent and X-Forwarded-For when supplied", async () => {
-    const fetchMock = stubFetch(200, {
-      callback_url: "https://admin.mark8ly.com/auth/callback?code=c",
-      data: { uid: "u1", email: "merchant@example.com", tenant_id: "tenant-1" },
-    });
+    const fetchMock = stubFetch(200, REAL_COMPLETE_BODY);
 
     await zitadelIdpFinish({ ...finishReq, userAgent: "Mozilla/5.0 test-agent", forwardedFor: "203.0.113.5" });
 
@@ -116,13 +118,19 @@ describe("zitadelIdpFinish", () => {
     expect(headers["X-Forwarded-For"]).toBe("203.0.113.5");
   });
 
+  it("parses the REAL auth-bff wire shape (callback_url alone) as a complete outcome", async () => {
+    stubFetch(200, REAL_COMPLETE_BODY);
+
+    const result = await zitadelIdpFinish(finishReq);
+
+    expect(result).toMatchObject({
+      kind: "complete",
+      callbackUrl: "https://admin.mark8ly.com/auth/callback?code=c&state=s",
+    });
+  });
+
   it("collects every Set-Cookie header on a completed sign-in", async () => {
-    const res = new Response(
-      JSON.stringify({
-        callback_url: "https://admin.mark8ly.com/auth/callback?code=c",
-        data: { uid: "u1", email: "merchant@example.com", tenant_id: "tenant-1" },
-      }),
-      {
+    const res = new Response(JSON.stringify(REAL_COMPLETE_BODY), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
@@ -149,10 +157,7 @@ describe("zitadelIdpFinish", () => {
 
   it("sends X-Internal-Auth from server config", async () => {
     vi.stubEnv("MARKETPLACE_INTERNAL_AUTH_SECRET", "s3cret-internal");
-    const fetchMock = stubFetch(200, {
-      callback_url: "https://admin.mark8ly.com/auth/callback?code=c",
-      data: { uid: "u1", email: "merchant@example.com", tenant_id: "tenant-1" },
-    });
+    const fetchMock = stubFetch(200, REAL_COMPLETE_BODY);
 
     await zitadelIdpFinish(finishReq);
 

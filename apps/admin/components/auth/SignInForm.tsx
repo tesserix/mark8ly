@@ -24,7 +24,8 @@ import { AppleMark } from "@repo/ui/apple-mark";
 import { signInWithPassword, signInWithGoogle, signInWithApple, GIPError } from "@/lib/gip/signup";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
 import { getAppleCredential } from "@/lib/gip/apple-js";
-import { appleSignInEnabled } from "@/lib/config";
+import { appleSignInEnabled, publicConfig } from "@/lib/config";
+import { isTrustedZitadelHostedUrl } from "@/lib/auth/zitadel-oidc";
 import { linkGoogleToInternalPassword } from "@/lib/gip/link";
 import {
   signIn,
@@ -190,8 +191,29 @@ export function SignInForm({ returnUrl, authRequestId, provider }: SignInFormPro
       return;
     }
     if (data.handoffUrl) {
-      if (typeof window !== "undefined") {
+      // Server-supplied URL — validate against the one legitimate target
+      // (Zitadel's own hosted login UI) before navigating. A bare
+      // window.location.assign on an unchecked server value is an open
+      // redirect if auth-bff (or anything sitting in front of it) is
+      // ever compromised or mis-configured.
+      if (
+        typeof window !== "undefined" &&
+        isTrustedZitadelHostedUrl(data.handoffUrl, publicConfig.zitadelIssuer)
+      ) {
         window.location.assign(data.handoffUrl);
+      }
+      return;
+    }
+    if (data.callbackUrl) {
+      // A completed Zitadel login carries its own /auth/callback URL —
+      // navigate there instead of straight to the dashboard so that
+      // route can verify state, clear the flow cookies, and only then
+      // land the user on their destination. Skipping this made Task 4
+      // (the callback route, the PKCE pair, the state check) dead code
+      // the flow never traversed, and left the flow cookies alive for
+      // their full TTL.
+      if (typeof window !== "undefined") {
+        window.location.assign(data.callbackUrl);
       }
       return;
     }

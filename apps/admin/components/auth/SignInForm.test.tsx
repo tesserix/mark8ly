@@ -59,7 +59,14 @@ vi.mock("@/lib/auth/cross-domain-handoff", () => ({
   prepareCrossDomainNavigation: vi.fn(async () => ({ kind: "same-origin" })),
 }));
 
+vi.mock("@/lib/config", () => ({
+  appleSignInEnabled: false,
+  publicConfig: { zitadelIssuer: "https://auth.tesserix.app" },
+}));
+
 import { SignInForm } from "./SignInForm";
+
+const assign = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -67,6 +74,11 @@ beforeEach(() => {
   signIn.mockResolvedValue({
     ok: true,
     data: { multipleTenants: false, mfaRequired: false, emailOtpRequired: false },
+  });
+  assign.mockReset();
+  Object.defineProperty(window, "location", {
+    writable: true,
+    value: { assign },
   });
 });
 
@@ -156,5 +168,81 @@ describe("SignInForm — provider branch", () => {
     expect(
       screen.getByRole("button", { name: /continue with google/i }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("SignInForm — Zitadel callbackUrl handoff (Important 1)", () => {
+  it("a complete outcome with a callbackUrl navigates there instead of straight to the dashboard", async () => {
+    signInWithZitadel.mockResolvedValue({
+      ok: true,
+      data: {
+        multipleTenants: false,
+        mfaRequired: false,
+        emailOtpRequired: false,
+        callbackUrl: "https://admin.mark8ly.com/auth/callback?state=abc",
+      },
+    });
+
+    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    await fillAndSubmit();
+
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith(
+        "https://admin.mark8ly.com/auth/callback?state=abc",
+      ),
+    );
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("a complete outcome with no callbackUrl falls back to the existing destination logic", async () => {
+    signInWithZitadel.mockResolvedValue({
+      ok: true,
+      data: { multipleTenants: false, mfaRequired: false, emailOtpRequired: false },
+    });
+
+    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    await fillAndSubmit();
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
+    expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+describe("SignInForm — handoffUrl validation (Minor)", () => {
+  it("navigates to a handoffUrl on Zitadel's own hosted-login origin", async () => {
+    signInWithZitadel.mockResolvedValue({
+      ok: true,
+      data: {
+        multipleTenants: false,
+        mfaRequired: false,
+        emailOtpRequired: false,
+        handoffUrl: "https://auth.tesserix.app/ui/v2/login",
+      },
+    });
+
+    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    await fillAndSubmit();
+
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith("https://auth.tesserix.app/ui/v2/login"),
+    );
+  });
+
+  it("refuses to navigate to a handoffUrl on an untrusted origin", async () => {
+    signInWithZitadel.mockResolvedValue({
+      ok: true,
+      data: {
+        multipleTenants: false,
+        mfaRequired: false,
+        emailOtpRequired: false,
+        handoffUrl: "https://evil.example.com/steal",
+      },
+    });
+
+    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    await fillAndSubmit();
+
+    await waitFor(() => expect(signInWithZitadel).toHaveBeenCalledTimes(1));
+    expect(assign).not.toHaveBeenCalled();
   });
 });

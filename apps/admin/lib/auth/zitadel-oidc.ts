@@ -70,3 +70,25 @@ export function buildZitadelAuthorizeUrl(input: BuildAuthorizeUrlInput): string 
   url.searchParams.set("code_challenge_method", "S256");
   return url.toString();
 }
+
+/**
+ * isTrustedZitadelHostedUrl checks a server-supplied `handoff_url` (see
+ * `LoginOutcome`'s "handoff" case) against the one legitimate target for
+ * it: Zitadel's own hosted login UI, at the configured issuer's origin.
+ *
+ * `sanitizeReturnUrl` doesn't fit here — it only allows mark8ly.com (and
+ * localhost), and a handoff by definition leaves that origin for
+ * Zitatel's own domain. This is a narrower, purpose-built check rather
+ * than a second general-purpose sanitiser: exact-origin match against
+ * `issuer`, nothing else.
+ */
+export function isTrustedZitadelHostedUrl(url: string, issuer: string): boolean {
+  if (!issuer) return false;
+  try {
+    const target = new URL(url);
+    if (target.protocol !== "https:") return false;
+    return target.origin === new URL(issuer).origin;
+  } catch {
+    return false;
+  }
+}

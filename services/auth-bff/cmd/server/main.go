@@ -301,6 +301,9 @@ func main() {
 	if zitadelHandler != nil {
 		zitadelHandler.Register(v1)
 	}
+	if zitadelClient != nil {
+		zitadellogin.NewCustomerHandler(zitadelClient).Register(v1)
+	}
 
 	// /api/v1 surface consumed by marketplace-api's account handler,
 	// which proxies admin UI requests through to us. Kept separate from

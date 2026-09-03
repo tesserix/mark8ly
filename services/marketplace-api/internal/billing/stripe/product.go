@@ -10,7 +10,7 @@ import (
 // ErrNotFound is returned when a Stripe resource lookup yields no matching object.
 var ErrNotFound = errors.New("stripe: resource not found")
 
-// Product represents a Stripe Product object (fields used by billing-bootstrap).
+// Product represents a Stripe Product object.
 type Product struct {
 	ID       string            `json:"id"`
 	Name     string            `json:"name"`
@@ -18,25 +18,11 @@ type Product struct {
 	Active   bool              `json:"active"`
 }
 
-// CreateProduct calls POST /v1/products with metadata[plan] set so subsequent
-// FindProductByMetadata lookups succeed without storing the Stripe ID locally.
-func CreateProduct(ctx context.Context, c *Client, name, planKey, idempotencyKey string) (*Product, error) {
-	params := &sdk.ProductCreateParams{}
-	params.Context = ctx
-	params.IdempotencyKey = sdk.String(idempotencyKey)
-	params.Name = sdk.String(name)
-	params.AddMetadata("plan", planKey)
-
-	p, err := c.sdk.V1Products.Create(ctx, params)
-	if err != nil {
-		return nil, toAPIError(err)
-	}
-	return mapProduct(p), nil
-}
-
 // FindProductByMetadata searches the first page of active products (limit=100)
-// for a product whose metadata.plan matches planKey. This makes the bootstrap
-// job idempotent without the service persisting Stripe product IDs locally.
+// for a product whose metadata.plan matches planKey. This is the read side of
+// product lookup: the console is the authoring surface for the plan catalog
+// now (#303), and this lets callers resolve a Product without the service
+// persisting Stripe product IDs locally.
 func FindProductByMetadata(ctx context.Context, c *Client, planKey string) (*Product, error) {
 	listParams := &sdk.ProductListParams{
 		Active: sdk.Bool(true),

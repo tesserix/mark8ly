@@ -403,11 +403,43 @@ func (h *CustomerHandler) idpFinish(w http.ResponseWriter, r *http.Request) {
 			newUserID, err := h.c.CreateHumanUserWithIDPLink(ctx, identity)
 			if err != nil {
 				if errors.Is(err, ErrEmailAlreadyExists) {
-					// A race: some other request claimed this email between
-					// FindUserByVerifiedEmail's search and this call. Refuse
-					// rather than guess which account is now authoritative.
-					slog.WarnContext(ctx, "zitadellogin(customer): idp finish rejected: email claimed by another account between lookup and create")
-					writeJSON(w, http.StatusConflict, map[string]any{"error": "email_ambiguous"})
+					// Deliberately a DIFFERENT outcome than email_ambiguous
+					// above, not a reuse of it — the two are NOT the same
+					// situation and must stay separable in logs and in
+					// customer-facing copy:
+					//
+					//   - email_ambiguous (above): FindUserByVerifiedEmail
+					//     itself found more than one VERIFIED match. A
+					//     genuine race between two requests resolves on a
+					//     fresh Google click — the loser here can simply
+					//     retry.
+					//   - email_taken (here): FindUserByVerifiedEmail found
+					//     NO verified match (that is precisely why this
+					//     create was attempted), yet Zitadel's create still
+					//     400s because some UNVERIFIED account already holds
+					//     this exact email — an abandoned signup, an
+					//     unverified invite, or an attacker who typed the
+					//     victim's address and set their own password. This
+					//     is a genuine (if rare) race only in the narrow
+					//     window against a concurrent request; far more
+					//     often it is a PERMANENT lockout: retrying changes
+					//     nothing, ever, for as long as that unverified
+					//     account exists.
+					//
+					// Refusing is still correct either way — Google proving
+					// the person owns the address does NOT make it safe to
+					// link them to an account someone else may control (see
+					// LinkIDPToUser's doc: linking an unverified provider
+					// email to an existing account is account takeover, and
+					// the same reasoning applies to an unverified account
+					// that already holds this email — it may not belong to
+					// the person signing in now). What must not happen is
+					// telling the customer this looks like a transient race
+					// when it usually is not: distinct code, so the
+					// storefront can render something other than "try
+					// again" and a support path can find these in logs.
+					slog.WarnContext(ctx, "zitadellogin(customer): idp finish rejected: email already claimed by another account (verified-match search found none — likely an unverified account, not necessarily a race)")
+					writeJSON(w, http.StatusConflict, map[string]any{"error": "email_taken"})
 					return
 				}
 				slog.ErrorContext(ctx, "zitadellogin(customer): idp finish: could not create a new account for this identity", "err", err)

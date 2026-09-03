@@ -111,11 +111,20 @@ type requestOptions struct {
 	orgID string
 	// badRequestErr overrides do()'s default ErrBadCredentials mapping for
 	// an HTTP 400. Most callers want the default (a 400 from a
-	// credential-shaped call really does mean "bad credentials"), but a
-	// call like AddHumanUser can also 400 on a duplicate email — a
-	// completely different situation a caller needs to tell apart, not
-	// something that should read as a wrong password.
+	// credential-shaped call really does mean "bad credentials").
 	badRequestErr error
+	// badRequestCode, when non-zero, narrows badRequestErr to apply ONLY
+	// when the response body's top-level grpc-style `code` field equals
+	// it; any other 400 falls back to ErrUnavailable instead. Without this,
+	// withBadRequestError(ErrEmailAlreadyExists) on AddHumanUser turned
+	// EVERY 400 from that call — a malformed profile field, a future
+	// Zitadel validation change, any policy rejection — into
+	// "email already exists", which is both wrong and, worse, reads as a
+	// transient race a caller could retry past when it is neither. Set via
+	// withBadRequestErrorForCode; zero (the default) means "no narrowing",
+	// preserving the unconditional behaviour every other caller of
+	// withBadRequestError still wants.
+	badRequestCode int
 	// logPath replaces path in every error string do() builds, WITHOUT
 	// affecting the actual HTTP request (which always uses the real path).
 	// Defaults to path itself. Use withLogPath when path carries a
@@ -134,6 +143,19 @@ func withOrgID(orgID string) requestOption {
 
 func withBadRequestError(err error) requestOption {
 	return func(ro *requestOptions) { ro.badRequestErr = err }
+}
+
+// withBadRequestErrorForCode is withBadRequestError narrowed to one
+// grpc-style error code: a 400 whose body's `code` field matches maps to
+// err; any other 400 maps to ErrUnavailable instead (see badRequestCode's
+// doc for why this narrowing exists). code 6 is grpc's ALREADY_EXISTS —
+// observed on Zitadel's AddHumanUser duplicate-email rejection (see
+// client_test.go).
+func withBadRequestErrorForCode(code int, err error) requestOption {
+	return func(ro *requestOptions) {
+		ro.badRequestErr = err
+		ro.badRequestCode = code
+	}
 }
 
 func withLogPath(label string) requestOption {
@@ -173,10 +195,18 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any, not
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		id := readZitadelErrorID(resp.Body)
+		code, id := readZitadelError(resp.Body)
 		switch {
 		case resp.StatusCode == http.StatusBadRequest:
-			return fmt.Errorf("zitadellogin: %s %s: %s: %w", method, logPath, id, ro.badRequestErr)
+			badReqErr := ro.badRequestErr
+			if ro.badRequestCode != 0 && code != ro.badRequestCode {
+				// Narrowed mapping configured (withBadRequestErrorForCode)
+				// but this 400 is not the specific case it targets — refuse
+				// to guess, fall back to a generic failure rather than
+				// mislabel it.
+				badReqErr = ErrUnavailable
+			}
+			return fmt.Errorf("zitadellogin: %s %s: %s: %w", method, logPath, id, badReqErr)
 		case resp.StatusCode == http.StatusNotFound:
 			return fmt.Errorf("zitadellogin: %s %s: %s: %w", method, logPath, id, notFound)
 		default:
@@ -192,22 +222,29 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any, not
 	return nil
 }
 
-// readZitadelErrorID extracts ONLY details[0].id (e.g. "COMMAND-3M0fs"). The
-// raw error body is never surfaced, because that is exactly where Zitadel puts
+// readZitadelError extracts ONLY the top-level grpc-style `code` and
+// details[0].id (e.g. "COMMAND-3M0fs") from a Zitadel error body. The raw
+// error body is never surfaced, because that is exactly where Zitadel puts
 // failedAttempts — a counter that must not reach a caller or a log line.
-func readZitadelErrorID(r io.Reader) string {
+// code is 0 when absent or undecodable — the same "unknown" convention id
+// already uses, so a caller narrowing on a specific code (see
+// withBadRequestErrorForCode) never confuses "no code in the body" with a
+// genuine code 0 (which grpc does not assign to any status).
+func readZitadelError(r io.Reader) (code int, id string) {
 	var wire struct {
+		Code    int `json:"code"`
 		Details []struct {
 			ID string `json:"id"`
 		} `json:"details"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r, maxErrorBodyBytes)).Decode(&wire); err != nil {
-		return "unknown"
+		return 0, "unknown"
 	}
-	if len(wire.Details) == 0 || wire.Details[0].ID == "" {
-		return "unknown"
+	id = "unknown"
+	if len(wire.Details) > 0 && wire.Details[0].ID != "" {
+		id = wire.Details[0].ID
 	}
-	return wire.Details[0].ID
+	return wire.Code, id
 }
 
 func (c *Client) AuthRequest(ctx context.Context, id string) (AuthRequest, error) {
@@ -372,22 +409,29 @@ func (c *Client) CreateHumanUserWithIDPLink(ctx context.Context, identity IDPIde
 		return "", fmt.Errorf("zitadellogin: refusing to create a user from an empty or unverified email: %w", ErrUnavailable)
 	}
 
-	// Zitadel requires non-empty given/family names on a human profile. The
-	// federated identity carries no name split reliably (rawInformation's
-	// shape is provider-defined and only email/email_verified are read
-	// elsewhere in this package — see readRawEmail), so this uses the
-	// email's local part as a functional placeholder. It makes the account
-	// usable for sign-in immediately; a merchant can correct the display
-	// name afterward like any other profile field.
+	// Zitadel requires non-empty given/family names on a human profile.
+	// Prefer Google's own given_name/family_name claims (identity.GivenName/
+	// FamilyName — read best-effort from rawInformation, see readRawName)
+	// when the provider sent them; a shopper's real name reads better than a
+	// placeholder and there is no reason to discard it when Google already
+	// handed it over. Fall back to the email's local part / a neutral
+	// placeholder ONLY when a claim is missing — never merchant-flavoured
+	// wording like "Member" on what may be a shopper account. The account
+	// is usable for sign-in immediately either way; the identity's own
+	// holder can correct their display name afterward like any other
+	// profile field. Bounded defensively: a provider payload is untrusted
+	// input, even for a field this package never makes a trust decision on.
 	localPart := identity.Email
 	if i := strings.IndexByte(localPart, '@'); i > 0 {
 		localPart = localPart[:i]
 	}
+	givenName := boundedProfileName(identity.GivenName, localPart)
+	familyName := boundedProfileName(identity.FamilyName, "User")
 
 	body := map[string]any{
 		"profile": map[string]any{
-			"givenName":  localPart,
-			"familyName": "Member",
+			"givenName":  givenName,
+			"familyName": familyName,
 		},
 		"email": map[string]any{
 			"email":      identity.Email,
@@ -404,20 +448,41 @@ func (c *Client) CreateHumanUserWithIDPLink(ctx context.Context, identity IDPIde
 	var wire struct {
 		UserID string `json:"userId"`
 	}
-	// withBadRequestError: a 400 from AddHumanUser most often means the
-	// email is already taken by another user (typically the same address
-	// in a different case than a case-insensitive FindUserByVerifiedEmail
-	// search already ruled out, but also possible on a race). That is not
-	// "bad credentials" — do()'s default 400 mapping — so callers get
-	// ErrEmailAlreadyExists instead and can answer with a distinct,
-	// actionable outcome rather than a generic failure.
-	if err := c.do(ctx, http.MethodPost, "/v2/users/human", body, &wire, ErrUnavailable, withBadRequestError(ErrEmailAlreadyExists)); err != nil {
+	// withBadRequestErrorForCode(6, ...): grpc code 6 is ALREADY_EXISTS —
+	// the specific case where AddHumanUser 400s because the email is
+	// already taken (typically the same address in a different case than a
+	// case-insensitive FindUserByVerifiedEmail search already ruled out,
+	// but also possible on a genuine race — see idpFinish's handling of
+	// ErrEmailAlreadyExists). Narrowed to that one code, not every 400: a
+	// malformed profile field or any other validation/policy rejection
+	// must NOT be mislabelled "email already exists" — that reads as a
+	// retryable race to a caller when it is neither. See badRequestCode's
+	// doc on requestOptions.
+	if err := c.do(ctx, http.MethodPost, "/v2/users/human", body, &wire, ErrUnavailable, withBadRequestErrorForCode(6, ErrEmailAlreadyExists)); err != nil {
 		return "", err
 	}
 	if wire.UserID == "" {
 		return "", fmt.Errorf("zitadellogin: create human user: 200 without a userId: %w", ErrUnavailable)
 	}
 	return wire.UserID, nil
+}
+
+// maxProfileNameLength bounds a human profile name field defensively. This
+// package makes no trust decision on given_name/family_name (unlike
+// email/email_verified), but a provider payload is still untrusted input —
+// an unbounded value should not flow into a Zitadel API call unexamined.
+const maxProfileNameLength = 200
+
+// boundedProfileName returns raw, truncated to maxProfileNameLength, or
+// fallback when raw is empty.
+func boundedProfileName(raw, fallback string) string {
+	if raw == "" {
+		return fallback
+	}
+	if len(raw) > maxProfileNameLength {
+		return raw[:maxProfileNameLength]
+	}
+	return raw
 }
 
 // LinkIDPToUser attaches the given federated identity to an EXISTING

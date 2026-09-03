@@ -67,6 +67,63 @@ func (a registryAdapter) CreateSession(ctx context.Context, p loginotp.CreatePar
 	return err
 }
 
+// zitadelHandlers holds both Zitadel-backed Google sign-in HTTP handlers —
+// the merchant one and the customer one — built together by
+// newZitadelHandlers so that function is the SOLE place deciding which
+// return-URL allowlist each gets. Splitting this out of main() makes that
+// decision independently testable (see TestZitadelHandlersUseTheCorrectReturnURLAllowlist
+// in main_test.go) — a swap here would otherwise only be caught by a live
+// open-redirect, not by any test in the package.
+type zitadelHandlers struct {
+	merchant *zitadellogin.Handler
+	customer *zitadellogin.CustomerHandler
+}
+
+// newZitadelHandlers builds the merchant and customer Google sign-in
+// handlers from cfg. zitadelClient must be non-nil — callers check
+// cfg.ZitadelEnabled and cfg.ValidateZitadel() first, exactly like main()
+// does before calling this.
+//
+// The property this function exists to make testable in isolation: the
+// merchant Handler gets the ADMIN return-URL allowlist
+// (ZitadelReturnURLAllowedHosts/SuffixesAdmin) and the customer
+// CustomerHandler gets the STOREFRONT one
+// (ZitadelReturnURLAllowedHosts/SuffixesStorefront) — never swapped, never
+// shared. Tenant subdomains under the storefront allowlist are
+// merchant-self-provisioned, so if this were ever swapped, a
+// merchant-controlled storefront origin would become a valid successUrl for
+// an ADMIN sign-in (or vice versa) — see config.Config's doc on why the two
+// lists are kept separate. Every other test in this package stays green if
+// that one line is swapped; TestZitadelHandlersUseTheCorrectReturnURLAllowlist
+// is the one that would not.
+func newZitadelHandlers(cfg *config.Config, zitadelClient *zitadellogin.Client, complete zitadellogin.CompleteFunc) (*zitadelHandlers, error) {
+	adminReturnURLs, err := zitadellogin.NewReturnURLAllowlist(
+		cfg.ZitadelReturnURLAllowedHostsAdmin, cfg.ZitadelReturnURLAllowedSuffixesAdmin)
+	if err != nil {
+		return nil, err
+	}
+	merchant := zitadellogin.NewHandler(zitadelClient, complete).
+		WithHostedLoginBaseURL(cfg.ZitadelIssuer).
+		WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
+		WithReturnURLAllowlist(adminReturnURLs).
+		WithGoogleIDPID(cfg.ZitadelGoogleIDPID).
+		WithOrgID(cfg.ZitadelOrgID)
+
+	storefrontReturnURLs, err := zitadellogin.NewReturnURLAllowlist(
+		cfg.ZitadelReturnURLAllowedHostsStorefront, cfg.ZitadelReturnURLAllowedSuffixesStorefront)
+	if err != nil {
+		return nil, err
+	}
+	customer := zitadellogin.NewCustomerHandler(zitadelClient).
+		WithHostedLoginBaseURL(cfg.ZitadelIssuer).
+		WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
+		WithReturnURLAllowlist(storefrontReturnURLs).
+		WithGoogleIDPID(cfg.ZitadelGoogleIDPID).
+		WithOrgID(cfg.ZitadelOrgID)
+
+	return &zitadelHandlers{merchant: merchant, customer: customer}, nil
+}
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -267,29 +324,13 @@ func main() {
 		zitadelClient = zitadellogin.New(cfg.ZitadelIssuer, cfg.ZitadelLoginClientToken, nil)
 		log.Info("zitadel login client enabled", "issuer", cfg.ZitadelIssuer)
 	}
-	var zitadelHandler *zitadellogin.Handler
+	var zh *zitadelHandlers
 	if zitadelClient != nil {
-		// Backs /auth/zitadel/idp/start's return-URL check (Google sign-in,
-		// #524 phase 3c-2) — the only control preventing an open redirect on
-		// a completed federated sign-in, since Zitadel itself does not
-		// validate successUrl/failureUrl. This Handler is the MERCHANT path
-		// (admin has a fixed host), so it uses the Admin allowlist, not the
-		// Storefront one — see config.Config's doc on why the two are kept
-		// separate. ValidateZitadel above already guarantees at least one of
-		// the Admin fields is non-empty; a malformed entry among them is
-		// still a boot failure, never silently ignored.
-		returnURLs, err := zitadellogin.NewReturnURLAllowlist(
-			cfg.ZitadelReturnURLAllowedHostsAdmin, cfg.ZitadelReturnURLAllowedSuffixesAdmin)
+		zh, err = newZitadelHandlers(cfg, zitadelClient, autologinSvc.CompleteForProvider)
 		if err != nil {
 			log.Error("zitadel: refusing to start", "err", err)
 			panic(err)
 		}
-		zitadelHandler = zitadellogin.NewHandler(zitadelClient, autologinSvc.CompleteForProvider).
-			WithHostedLoginBaseURL(cfg.ZitadelIssuer).
-			WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
-			WithReturnURLAllowlist(returnURLs).
-			WithGoogleIDPID(cfg.ZitadelGoogleIDPID).
-			WithOrgID(cfg.ZitadelOrgID)
 	}
 
 	// ─── Session introspection + logout ────────────────────────────────
@@ -325,32 +366,9 @@ func main() {
 	if otpHandler != nil {
 		otpHandler.Register(v1)
 	}
-	if zitadelHandler != nil {
-		zitadelHandler.Register(v1)
-	}
-	if zitadelClient != nil {
-		// Backs /auth/customer/idp/start's return-URL check (Google sign-in,
-		// #524 phase 3c-2). This is the CUSTOMER path — merchants
-		// self-provision storefront subdomains, so it uses the Storefront
-		// allowlist, never the Admin one (see config.Config's doc on why the
-		// two are kept separate: a merchant-controlled storefront subdomain
-		// must never be a valid successUrl for an admin sign-in, and the
-		// same boundary runs the other way here). ValidateZitadel above
-		// already guarantees at least one of the Storefront fields is
-		// non-empty.
-		storefrontReturnURLs, err := zitadellogin.NewReturnURLAllowlist(
-			cfg.ZitadelReturnURLAllowedHostsStorefront, cfg.ZitadelReturnURLAllowedSuffixesStorefront)
-		if err != nil {
-			log.Error("zitadel: refusing to start", "err", err)
-			panic(err)
-		}
-		zitadellogin.NewCustomerHandler(zitadelClient).
-			WithHostedLoginBaseURL(cfg.ZitadelIssuer).
-			WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
-			WithReturnURLAllowlist(storefrontReturnURLs).
-			WithGoogleIDPID(cfg.ZitadelGoogleIDPID).
-			WithOrgID(cfg.ZitadelOrgID).
-			Register(v1)
+	if zh != nil {
+		zh.merchant.Register(v1)
+		zh.customer.Register(v1)
 	}
 
 	// /api/v1 surface consumed by marketplace-api's account handler,

@@ -363,6 +363,81 @@ func TestCreateHumanUserWithIDPLinkMapsADuplicateEmailDistinctly(t *testing.T) {
 	}
 }
 
+// TestCreateHumanUserWithIDPLinkDoesNotMapAnUnrelated400ToEmailAlreadyExists
+// is the fix for review Finding 3: the ErrEmailAlreadyExists mapping is
+// narrowed to grpc code 6 (ALREADY_EXISTS). A 400 from AddHumanUser for any
+// OTHER reason — a malformed profile field, a future validation rule, any
+// policy rejection — must never surface as "email already exists": that
+// reads as a retryable race to a caller when it might be a permanent,
+// unrelated failure.
+func TestCreateHumanUserWithIDPLinkDoesNotMapAnUnrelated400ToEmailAlreadyExists(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"code":3,"message":"invalid profile (COMMAND-9zK2p)","details":[{"id":"COMMAND-9zK2p"}]}`))
+	})
+	_, err := c.CreateHumanUserWithIDPLink(context.Background(), IDPIdentity{
+		Email: "person@gmail.com", EmailVerified: true, IDPID: "idp-1", ExternalUserID: "google-sub-1",
+	})
+	if errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("err = %v, must NOT read as ErrEmailAlreadyExists for an unrelated 400 (code 3, not 6)", err)
+	}
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable as the generic fallback", err)
+	}
+}
+
+// TestCreateHumanUserWithIDPLinkUsesGoogleGivenAndFamilyNameWhenPresent is
+// the fix for review Finding 6: a merchant-flavoured "Member" placeholder
+// must not land on a shopper account when Google already sent a real name.
+func TestCreateHumanUserWithIDPLinkUsesGoogleGivenAndFamilyNameWhenPresent(t *testing.T) {
+	var gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.Write([]byte(`{"userId":"new-user-1"}`))
+	})
+	_, err := c.CreateHumanUserWithIDPLink(context.Background(), IDPIdentity{
+		Email: "person@gmail.com", EmailVerified: true, IDPID: "idp-1", ExternalUserID: "google-sub-1",
+		GivenName: "Priya", FamilyName: "Shah",
+	})
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(gotBody, `"givenName":"Priya"`) || !strings.Contains(gotBody, `"familyName":"Shah"`) {
+		t.Fatalf("request body = %q, want Google's given/family name used", gotBody)
+	}
+	if strings.Contains(gotBody, "Member") {
+		t.Fatalf("request body = %q, must not fall back to the placeholder when Google sent a real name", gotBody)
+	}
+}
+
+// TestCreateHumanUserWithIDPLinkFallsBackToNeutralNamesWhenAbsent pins the
+// fallback shape when Google sends no given_name/family_name at all: the
+// email's local part for the given name, and a neutral (not
+// merchant-flavoured) placeholder for the family name.
+func TestCreateHumanUserWithIDPLinkFallsBackToNeutralNamesWhenAbsent(t *testing.T) {
+	var gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.Write([]byte(`{"userId":"new-user-1"}`))
+	})
+	_, err := c.CreateHumanUserWithIDPLink(context.Background(), IDPIdentity{
+		Email: "person@gmail.com", EmailVerified: true, IDPID: "idp-1", ExternalUserID: "google-sub-1",
+	})
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(gotBody, `"givenName":"person"`) {
+		t.Fatalf("request body = %q, want the email local part as the given name fallback", gotBody)
+	}
+	if strings.Contains(gotBody, `"familyName":"Member"`) {
+		t.Fatalf("request body = %q, must not use the merchant-flavoured \"Member\" placeholder", gotBody)
+	}
+}
+
 func TestLinkIDPToUserSendsTheIDPLink(t *testing.T) {
 	var gotPath, gotBody string
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {

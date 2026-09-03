@@ -38,6 +38,16 @@ type IDPIdentity struct {
 	Email         string
 	EmailVerified bool
 
+	// GivenName and FamilyName are read best-effort from the same raw
+	// userinfo payload as Email/EmailVerified (see readRawName) — Google's
+	// "given_name"/"family_name" claims, when the provider sends them.
+	// Used ONLY as an optional profile hint for CreateHumanUserWithIDPLink's
+	// brand-new-user profile; empty means "not sent", never an error, and
+	// no caller makes a trust decision off either field the way it does
+	// for Email/EmailVerified.
+	GivenName  string
+	FamilyName string
+
 	// IDPID, ExternalUserID and ExternalUserName identify the federated
 	// identity ITSELF — the Google IDP's own id on this Zitadel instance,
 	// the external provider's user id (Google's stable "sub"), and the
@@ -108,10 +118,13 @@ func (c *Client) RetrieveIDPIntent(ctx context.Context, intentID, intentToken st
 		return IDPIdentity{}, err
 	}
 	email, emailVerified := readRawEmail(wire.IDPInformation.RawInformation)
+	givenName, familyName := readRawName(wire.IDPInformation.RawInformation)
 	return IDPIdentity{
 		ZitadelUserID:    wire.UserID,
 		Email:            email,
 		EmailVerified:    emailVerified,
+		GivenName:        givenName,
+		FamilyName:       familyName,
 		IDPID:            wire.IDPInformation.IDPID,
 		ExternalUserID:   wire.IDPInformation.UserID,
 		ExternalUserName: wire.IDPInformation.UserName,
@@ -135,4 +148,22 @@ func readRawEmail(raw map[string]any) (email string, verified bool) {
 		verified = v
 	}
 	return email, verified
+}
+
+// readRawName pulls given_name/family_name out of the provider's raw
+// userinfo payload the same best-effort way readRawEmail reads
+// email/email_verified: empty when absent or not exactly a string, never an
+// error. Used only as an optional profile hint (see IDPIdentity's doc) —
+// never for a trust decision.
+func readRawName(raw map[string]any) (givenName, familyName string) {
+	if raw == nil {
+		return "", ""
+	}
+	if v, ok := raw["given_name"].(string); ok {
+		givenName = v
+	}
+	if v, ok := raw["family_name"].(string); ok {
+		familyName = v
+	}
+	return givenName, familyName
 }

@@ -400,12 +400,17 @@ func TestCustomerIDPStartReturnsAuthURLForAnAllowedStorefrontHost(t *testing.T) 
 	}
 }
 
-// TestCustomerIDPFinishIgnoresATamperedUserQueryParam mirrors
-// TestIDPFinishIgnoresATamperedUserQueryParam: `user` is attacker-controlled
-// and must never be consulted, on the customer path any more than the
-// merchant one.
-func TestCustomerIDPFinishIgnoresATamperedUserQueryParam(t *testing.T) {
-	for _, tamperedUser := range []string{"", "some-other-victim-user-id", "u1"} {
+// TestCustomerIDPFinishIgnoresATamperedUserBodyField mirrors
+// TestIDPFinishIgnoresATamperedUserQueryParam: `user` is a JSON body field
+// on this endpoint (there is no query param involved at all — the frontend
+// forwards whatever it received in Zitadel's redirect as a body field), and
+// it is attacker-controlled and must never be consulted, on the customer
+// path any more than the merchant one. Every case here is a value genuinely
+// DIFFERENT from the real resolved id ("u1") — a case equal to it would
+// prove nothing, since the field being silently ignored and the field being
+// (coincidentally) correct are indistinguishable.
+func TestCustomerIDPFinishIgnoresATamperedUserBodyField(t *testing.T) {
+	for _, tamperedUser := range []string{"", "some-other-victim-user-id", "u2"} {
 		t.Run("user="+tamperedUser, func(t *testing.T) {
 			idpIntentBody := `{"userId":"u1","idpInformation":{"idpId":"` + testGoogleIDPID + `","rawInformation":{"email":"a@b.test","email_verified":true}}}`
 			extra := map[string]http.HandlerFunc{
@@ -654,6 +659,60 @@ func TestCustomerIDPFinishCreatesAUserWhenNoExistingAccountMatches(t *testing.T)
 	data, _ := body["data"].(map[string]any)
 	if data == nil || data["uid"] != "new-1" || data["email"] != "new.person@gmail.com" {
 		t.Fatalf("body = %v, want data.{uid: new-1, email: new.person@gmail.com}", body)
+	}
+}
+
+// TestCustomerIDPFinishRefusesAnEmailAlreadyTakenByAnUnverifiedAccountDistinctly
+// is review Finding 1/4's fix: FindUserByVerifiedEmail found no VERIFIED
+// match (so this path reaches CreateHumanUserWithIDPLink), but the create
+// itself 400s because the email is already held by an unverified account.
+// This is usually a PERMANENT lockout, not a race — refusing is correct
+// either way (Google proving ownership does not make it safe to link to an
+// account someone else may control), but it MUST answer a distinct code
+// (email_taken) from the pre-create ambiguity case (email_ambiguous):
+// collapsing them would make a permanent dead end look like a transient
+// race the customer could retry past.
+func TestCustomerIDPFinishRefusesAnEmailAlreadyTakenByAnUnverifiedAccountDistinctly(t *testing.T) {
+	var linkCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			// No VERIFIED match — this is exactly why CreateHumanUserWithIDPLink
+			// gets attempted below.
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":6,"message":"user already exists (COMMAND-oR9nS)","details":[{"id":"COMMAND-oR9nS"}]}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/links"):
+			linkCalled.Store(true)
+			t.Error("must not link to an account this endpoint never verified belongs to this identity")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			t.Errorf("must not go further: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish",
+		strings.NewReader(`{"intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "email_taken" {
+		t.Fatalf("body = %v, want error: email_taken — distinct from the pre-create email_ambiguous case", body)
+	}
+	if linkCalled.Load() {
+		t.Fatal("must not attempt to link")
 	}
 }
 

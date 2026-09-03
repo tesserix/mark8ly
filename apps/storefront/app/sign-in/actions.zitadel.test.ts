@@ -61,6 +61,7 @@ import {
   verifyCustomerTotp,
 } from "@/lib/auth/auth-bff-customer";
 import { platformInternalFetch } from "@/lib/api/server/platformInternal";
+import { isTotpRequiredResult } from "@/lib/auth/customer-sign-in-result";
 
 const verifyGIPIdTokenMock = vi.mocked(verifyGIPIdToken);
 const verifyCustomerCredentialMock = vi.mocked(verifyCustomerCredential);
@@ -471,7 +472,7 @@ describe("customerSignIn — totp_required carries the data the code-entry step 
       sessionId: "s-abc",
       sessionToken: "tok-xyz",
     });
-    const { customerSignIn, isTotpRequiredResult } = await loadActions();
+    const { customerSignIn } = await loadActions();
 
     const result = await customerSignIn({
       loginName: "e@x.com",
@@ -602,7 +603,7 @@ describe("confirmCustomerTotp — a repeat totp_required is a FRESH challenge, n
       sessionId: "s-fresh",
       sessionToken: "tok-fresh",
     });
-    const { confirmCustomerTotp, isTotpRequiredResult } = await loadActions();
+    const { confirmCustomerTotp } = await loadActions();
 
     const result = await confirmCustomerTotp({
       storeSlug: "shop",

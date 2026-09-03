@@ -3,11 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  customerSignIn,
-  confirmCustomerTotp,
-  isTotpRequiredResult,
-} from "@/app/sign-in/actions";
+import { customerSignIn, confirmCustomerTotp } from "@/app/sign-in/actions";
+import { isTotpRequiredResult } from "@/lib/auth/customer-sign-in-result";
 import { getAuthProvider, isGoogleSignInOffered } from "@/lib/auth/provider";
 
 const TRAMPOLINE_BASE =

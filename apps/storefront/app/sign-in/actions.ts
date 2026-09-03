@@ -25,6 +25,7 @@ import {
 } from "@/lib/auth/auth-bff-customer";
 import { sanitizeHost } from "@/lib/host";
 import { platformInternalFetch } from "@/lib/api/server/platformInternal";
+import type { CustomerSignInResult as Result } from "@/lib/auth/customer-sign-in-result";
 
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
@@ -42,32 +43,16 @@ const GIP_CUSTOMER_TENANT_ID = process.env.GIP_CUSTOMER_TENANT_ID ?? "";
 const AUTH_PROVIDER: "gip" | "zitadel" =
   process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel" ? "zitadel" : "gip";
 
-type TotpRequiredResult = {
-  ok: false;
-  code: "totp_required";
-  message: string;
-  sessionId: string;
-  sessionToken: string;
-};
-
-type Result =
-  | { ok: true }
-  | { ok: false; code: string; message: string }
-  | TotpRequiredResult;
-
-/**
- * isTotpRequiredResult narrows a `Result` to the totp_required variant.
- *
- * `code` can't be used as an automatic discriminant here — the plain
- * failure variant types `code` as `string`, not a set of literals, which
- * disqualifies it from TypeScript's discriminated-union narrowing (an
- * equality check like `result.code === "totp_required"` type-checks but
- * does not narrow `result` itself). Callers (the sign-in form,
- * corresponding tests) use this instead of that equality check.
- */
-export function isTotpRequiredResult(r: Result): r is TotpRequiredResult {
-  return !r.ok && r.code === "totp_required";
-}
+// `Result` (aliased above from `CustomerSignInResult`) and the
+// `isTotpRequiredResult` guard for it live in
+// @/lib/auth/customer-sign-in-result, NOT here — this file is a
+// `"use server"` module, and Next.js strips any runtime export from such a
+// module that isn't an async function. `isTotpRequiredResult` is a plain
+// synchronous function, so it can't be exported from this file (see the
+// comment in that module for the full explanation). `type`/`interface`
+// exports are erased at compile time and are exempt, but the type is kept
+// in the same shared module as the guard rather than split, so both
+// modules can never define the shape differently.
 
 interface CustomerSignInInput {
   storeSlug: string;

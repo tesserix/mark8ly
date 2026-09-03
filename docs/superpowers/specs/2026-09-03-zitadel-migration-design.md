@@ -56,6 +56,48 @@ customers. The data risk grows; the code risk does not shrink by waiting.
 | D7 | Drop the `tenant_id` custom claim; resolve tenancy from FGA. |
 | D8 | Delete `gipkey` and the server/browser API key split. |
 | D9 | `Platform-9bu14` is out of scope — it is tesserix-home's pool and no mark8ly Go code reads it. |
+| D10 | Storefront customers get a separate `auth-bff` login path that skips the OpenFGA membership check. |
+
+### D10 — customers need their own path, because they are not FGA members
+
+VERIFIED 2026-09-03 by reading the code: **customer login never touches
+`auth-bff` today.** `apps/storefront/app/sign-in/actions.ts` says why in its own
+header — "auth-bff's auto-login checks OpenFGA tenant membership which customers
+don't have". The whole flow is a storefront server action calling GIP's REST API,
+verifying the ID token locally against Google's certs, and minting
+`mp_customer_session` itself; `marketplace-api` supplies the profile.
+
+| | Merchant admin | Storefront customer |
+|---|---|---|
+| Auth path | `auth-bff` `/auth/auto-login` | storefront server action -> GIP direct |
+| Session | `m8_session`, AES-GCM, `.mark8ly.com` | `mp_customer_session`, HMAC, exact host |
+| Backend | auth-bff + OpenFGA | marketplace-api only |
+
+That breaks the original phase-3 framing. Everything phase 2 built mints
+`m8_session` through `completeLogin`, which runs the FGA membership check
+customers are *supposed* to fail. Pointing the storefront at those endpoints
+would reject every customer.
+
+**Decision: add a customer login path to `auth-bff` that skips the membership
+check**, and have the storefront turn its result into `mp_customer_session` as it
+does today. The alternatives were rejected:
+
+- Having the storefront drive Zitadel's Session API itself would put the
+  **instance-level login-client PAT** — which can mint a session for any user of
+  any product on the shared instance — into a customer-facing app. The PAT's
+  blast radius is the dominant constraint, and keeping it in one service is the
+  argument for this whole shape.
+- Moving the endpoints into `marketplace-api` would spread Zitadel credentials
+  across a second service for the same reason.
+
+The cost is real and must be designed for: a second login path inside the service
+whose entire job is gating, deliberately weaker than the first. It must be
+obvious in the code which path skips what, and the customer path must still run
+deviceguard, the email-OTP step-up, and the sufficiency check — it skips
+membership only.
+
+Phase 3 therefore splits: **3a** moves merchant admin onto the phase-2 endpoints;
+**3b** builds the customer path and moves the storefront and its trampoline.
 
 ### D1 — one org, one human, one account
 

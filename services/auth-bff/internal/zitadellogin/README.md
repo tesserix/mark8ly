@@ -143,6 +143,60 @@ These are known gaps, tracked here so a future reader recognizes them as accepte
 
 ---
 
+## The Storefront Customer Path
+
+This package also contains `customer_handler.go`, which handles login for the **storefront** (end-customer purchases). It is deliberately incomplete compared to `handler.go` (the merchant admin path) and operates under a different contract.
+
+### Why the Customer Endpoint Mints No Session and Touches No OpenFGA
+
+**The design:** The customer endpoint verifies a credential against Zitadel and returns `{uid, email}`. It stops there. It mints no cookie, calls nothing in `internal/autologin`, and touches no OpenFGA. The storefront's existing sign-in action (see `apps/storefront/app/sign-in/actions.ts`) handles everything else: resolving the store, minting the `mp_customer_session` cookie, and driving profile side effects.
+
+**Why it cannot be "completed" by centralizing session minting here:** The storefront's `mp_customer_session` cookie is minted in a different format from `m8_session` and is scoped to the exact request host — a customer signed in on one store's subdomain (e.g. `store1.mark8ly.com`) must never be handed a session usable on another store's subdomain (e.g. `store2.mark8ly.com`). Minting the session here would require either:
+- Adding a third session format to this package (beside `m8_session` and `mp_customer_session`), or
+- Having this auth-bff package know about individual store subdomains, violating the separation of concerns between a centralized auth service and store-specific frontend logic.
+
+Both destroy the per-store isolation the storefront's own minting code provides for free. The current design is simpler and safer: auth-bff verifies the identity; the storefront applies the store-scoped isolation.
+
+### The Customer Path Never Calls Finalize
+
+**The design:** The customer path's `login` and `totp` handlers call `DecideSufficiency` and `DecideAfterFactor` from `sufficiency.go`. These methods evaluate whether a session meets the MFA policy and return a decision — `OutcomeComplete`, `OutcomeFactorRequired`, or `OutcomeHandoff` — but they never call the unexported `finalize` function. On `OutcomeComplete`, the customer handler returns `{uid, email}`. No `finalize` call. No authorization code.
+
+**Why no authorization code:** An authorization code is a handle to complete an OIDC flow that requires an `auth_request_id` from an earlier OIDC authorize round trip. The storefront never performs that round trip — it already has an identity from the password/TOTP verification and jumps straight to minting its own session. Asking for an authorization code would be asking for something the storefront has no way to use.
+
+**Why the decision logic is not duplicated:** The merchant path (`Handler`) and customer path (`CustomerHandler`) share the same decision functions in `sufficiency.go`. `CompleteIfSufficient` and `CompleteAfterFactor` in that file call `DecideSufficiency` and `DecideAfterFactor` respectively and then call `finalize` — so they apply the same MFA enforcement with one decision path. Having two separate decision paths, even if they started identical, is how one drifts into a bypass without anyone noticing. By keeping the decision in one place and having one caller path through `finalize` and another skip it, the enforcement stays single-source-of-truth.
+
+### KNOWN LIMITATION — Customers with a Second Factor Cannot Complete Sign-In on This Path
+
+**The issue:** A customer whose Zitadel account has enrolled a second factor (TOTP, passkey, U2F, SMS OTP, recovery code) cannot complete the sign-in flow on the storefront.
+
+**TOTP case:** If the customer has TOTP enrolled, the endpoint returns `{"totp_required": true, "session_id": "...", "session_token": "..."}` and the storefront would need a code-entry screen to submit the TOTP token to `/customer/totp`. No such screen exists today, so the flow stops with a browser message saying "TOTP entry not supported here."
+
+**Other second factors (passkey, U2F, SMS OTP, recovery code):** The `classifyEnrolledMethods` function maintains an include-list of known, collectible method types. PASSWORD and TOTP are in it; everything else is treated as uncollectible. When a customer has enrolled a method outside this list, the endpoint returns `{"handoff_url": "..."}` pointing to Zitadel's managed login UI. If no hosted login base URL is configured, it returns `{"error": "signin_unavailable"}` (a 503) rather than leaving the customer hung with a dead link.
+
+**Why these are honest dead ends, not oversights:** As of this writing, **zero customers have a second factor enrolled**. Building a TOTP entry screen is real UI work that belongs with the Google trampoline phase (3c) when that work is planned. Before this fix, both conditions rendered as the identical error message — "Email or password is incorrect" — which incorrectly told a customer with a correct password that it was wrong. Now the messages are honest: "We require an extra verification step we don't support here" for TOTP, and "Complete your sign-in in our full login UI" for other methods.
+
+### KNOWN LIMITATION — Network Timing May Still Distinguish a Wrong Password from an Unknown User
+
+**The limitation:** The customer endpoint returns byte-identical responses for a user-not-found error and a bad-credentials error: both produce `401 {"error": "invalid_credentials"}`. This is asserted by tests. However, Zitadel's internal password hashing happens on different code paths — roughly 0.7 seconds was observed in a sibling project for the correct-username-wrong-password case, while the user-not-found path is faster.
+
+**Why this is not ours to fix:** This storefront is a public website that anyone can probe. The endpoint's response symmetry is correct. Zitadel's latency asymmetry is Zitadel's problem, not this package's. If the consumer of this data wants to mitigate timing attacks from the browser side, they can use a client-side artificial delay before rendering the error, but this endpoint alone cannot close that gap without making legitimate requests artificially slow. Do not interpret the identical response bodies as proof of protection against timing attacks; they are necessary but not sufficient.
+
+### The Google Trampoline Is Phase 3c
+
+**The design:** The onboarding wizard (where merchants start) and the storefront (where customers purchase) both use Google Sign-In. When a user signs in with Google, the sign-in token comes from Google's Identity Services JavaScript SDK (`accounts.google.com/gsi/client`). To bounce that token from the multi-tenant mark8ly.com trampoline back to a tenant's own subdomain (e.g. `mystore.mark8ly.com`), the token is wrapped in an HMAC-signed exchange code and sent to the target store's `/auth/google/finish` handler.
+
+**Constraint that makes it its own phase:** The onboarding app's Content-Security-Policy allowlists `accounts.google.com/gsi/client` by host with no `strict-dynamic`. Any replacement or supplementary script origin needs an explicit CSP change, which requires coordination across multiple deployments. Additionally, the exchange-code protocol carries its own HMAC-based authentication and host-matching defenses. This phase (3b) touches only the Zitadel customer login path and leaves the Google trampoline untouched. Replacing or securing that integration is phase 3c.
+
+### Carried from Phase 3a: `exchange-code.ts` Has No `kind` Field
+
+**The issue:** The file `packages/ui/src/auth/exchange-code.ts` mints and verifies HMAC-signed exchange codes used by the Google trampoline. It has two sibling files that also mint and verify codes for different purposes. All three use `SESSION_ENCRYPT_KEY` as their signing key. However, unlike its two siblings, `exchange-code.ts` has no `kind` field to distinguish its intended purpose — a code minted for one purpose will pass the HMAC signature check when validated by another purpose's verifier, because they share the same key and the payload structure is compatible.
+
+**Example of the risk:** If a code minted for "Google sign-in on the storefront" and a code minted for "password-reset confirmation" both use the same key and are both JSON payloads, an attacker could swap them and potentially complete the wrong action (if the receiving handler doesn't validate the intent strictly enough).
+
+**Why it is not fixed in this phase:** This came to light in phase 3a and remains open. It lives on the Google trampoline path, which is explicitly not touched by this phase. When the trampoline integration is revisited in phase 3c, this gap should be closed by adding a `kind` field to `ExchangeCodeClaims` and validating it strictly in every verifier.
+
+---
+
 ## Testing and Validation
 
 The three architecture tests (`TestFinalizeIsOnlyCalledFromSufficiency`, `TestSufficientWitnessIsOnlyConstructedInSufficiency`, `TestSufficiencyNeverUsesTheUnscopedDisplayPolicy`) are not unit tests in the traditional sense. They are code-inspection tests that verify file-level invariants. They catch the obvious mistakes but accept the blind spot described in section 2.

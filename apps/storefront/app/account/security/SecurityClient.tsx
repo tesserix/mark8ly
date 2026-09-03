@@ -5,10 +5,8 @@ import {
   LinkedProvidersPanel,
   type LinkedProvider,
 } from "@repo/ui/auth/linked-providers-panel";
-import { isGoogleSignInOffered } from "@/lib/auth/provider";
-
-const TRAMPOLINE_BASE =
-  process.env.NEXT_PUBLIC_MARK8LY_AUTH_URL ?? "https://mark8ly.com";
+import { isGoogleLinkOffered } from "@/lib/auth/provider";
+import { resolveGoogleSignInUrl } from "@/lib/auth/google-sign-in";
 
 interface SecurityClientProps {
   storeSlug: string;
@@ -18,7 +16,14 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
   const [providers, setProviders] = useState<LinkedProvider[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const canLinkGoogle = isGoogleSignInOffered();
+  // NOT isGoogleSignInOffered — that answers "is Google offered for
+  // sign-in/sign-up at all" (true on both providers). Linking an
+  // existing account needs an authenticated "link this provider to my
+  // account" backend endpoint that doesn't exist under Zitadel, so
+  // "Add Google" must be hidden there rather than left to silently
+  // switch the shopper to a different, self-registered account. See
+  // isGoogleLinkOffered's doc.
+  const canLinkGoogle = isGoogleLinkOffered();
 
   useEffect(() => {
     let cancelled = false;
@@ -51,16 +56,19 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
     };
   }, []);
 
-  function handleLinkGoogle(): void {
+  async function handleLinkGoogle(): Promise<void> {
     if (typeof window === "undefined") return;
-    const url = new URL("/auth/google", TRAMPOLINE_BASE);
-    url.searchParams.set(
-      "return_to",
-      `${window.location.origin}/account/security`,
-    );
-    url.searchParams.set("store_slug", storeSlug);
-    url.searchParams.set("intent", "link");
-    window.location.assign(url.toString());
+    const result = await resolveGoogleSignInUrl({
+      storeSlug,
+      intent: "link",
+      dest: "/account/security",
+      origin: window.location.origin,
+    });
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    window.location.assign(result.url);
   }
 
   async function handleUnlink(_providerId: string): Promise<void> {

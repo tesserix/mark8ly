@@ -12,6 +12,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// testGoogleIDPID is the fixed Google IDP id every fake/fixture in this file
+// uses. A Handler under test must be configured with
+// WithGoogleIDPID(testGoogleIDPID) for idp/finish to accept an identity
+// carrying it — see the idp-id pinning check in idpFinish.
+const testGoogleIDPID = "idp-1"
+
 func TestLoginCollapsesUnknownUserAndWrongPasswordIntoOneAnswer(t *testing.T) {
 	// A different status or message for "no such user" is an account-
 	// enumeration oracle. Both must look identical to the browser.
@@ -48,6 +54,17 @@ func fakeZitadelHandler(t *testing.T, policyJSON, methodsJSON, factorsJSON strin
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/idp_intents":
+			// StartIDPIntent. The fixed authUrl lets idp/start tests assert
+			// on an exact value without needing per-test fixtures.
+			w.Write([]byte(`{"authUrl":"https://idp.example.test/auth?state=intent-1"}`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			// RetrieveIDPIntent. Always resolves to the same linked user
+			// ("u1") that SessionFactors/UserEmail below also resolve to, so
+			// idp/finish tests exercise the same identity throughout.
+			// idpId is testGoogleIDPID — a Handler under test must be built
+			// with WithGoogleIDPID(testGoogleIDPID) to accept this fixture.
+			w.Write([]byte(`{"userId":"u1","idpInformation":{"idpId":"` + testGoogleIDPID + `","rawInformation":{"email":"a@b.test","email_verified":true}}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
 			w.WriteHeader(http.StatusCreated)
 			w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
@@ -410,5 +427,516 @@ func TestRegisterResolvesTheGinClientIPIntoLoginContext(t *testing.T) {
 	}
 	if gotIP != "203.0.113.42" {
 		t.Fatalf("IPAddress = %q, want the gin-resolved client IP from X-Forwarded-For", gotIP)
+	}
+}
+
+// mustAllowlist builds a ReturnURLAllowlist from known-good entries for
+// tests that only care about idp/start's downstream behaviour, not
+// NewReturnURLAllowlist's own validation (that is returnurl_test.go's job).
+func mustAllowlist(t *testing.T, hosts, suffixes []string) ReturnURLAllowlist {
+	t.Helper()
+	a, err := NewReturnURLAllowlist(hosts, suffixes)
+	if err != nil {
+		t.Fatalf("NewReturnURLAllowlist(%v, %v): %v", hosts, suffixes, err)
+	}
+	return a
+}
+
+// policyForceMFALocalOnly is not shared with sufficiency_test.go: it exists
+// only to prove idp/finish threads federated=true into CompleteIfSufficient,
+// which login() cannot exercise (a password login is never federated).
+const policyForceMFALocalOnly = `{"policy":{"passwordCheckLifetime":"0s","forceMfaLocalOnly":true}}`
+
+func TestIDPStartRejectsDisallowedReturnURL(t *testing.T) {
+	// unreachableZitadel fails the test outright if Zitadel is ever called:
+	// the allowlist must reject this candidate before StartIDPIntent runs.
+	c := unreachableZitadel(t)
+	h := NewHandler(c, nil).
+		WithReturnURLAllowlist(mustAllowlist(t, []string{"admin.mark8ly.com"}, nil))
+
+	rec := httptest.NewRecorder()
+	h.idpStart(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/start",
+		strings.NewReader(`{"return_url":"https://evil.example.com/x"}`)))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIDPStartRejectsMissingFields(t *testing.T) {
+	c := unreachableZitadel(t)
+	h := NewHandler(c, nil).
+		WithReturnURLAllowlist(mustAllowlist(t, []string{"admin.mark8ly.com"}, nil))
+
+	rec := httptest.NewRecorder()
+	h.idpStart(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/start", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// TestIDPStartRefusesWithoutAConfiguredGoogleIDPID pins the config item: the
+// idp id is no longer a compiled-in constant, so a Handler built without
+// WithGoogleIDPID must fail closed with a clean 500 rather than sending
+// Zitadel an empty idpId.
+func TestIDPStartRefusesWithoutAConfiguredGoogleIDPID(t *testing.T) {
+	c := unreachableZitadel(t)
+	h := NewHandler(c, nil).
+		WithReturnURLAllowlist(mustAllowlist(t, []string{"admin.mark8ly.com"}, nil))
+
+	rec := httptest.NewRecorder()
+	h.idpStart(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/start",
+		strings.NewReader(`{"return_url":"https://admin.mark8ly.com/auth/idp/finish"}`)))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIDPStartReturnsAuthURLForAnAllowedReturnURL(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelHandler(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+	h := NewHandler(c, nil).
+		WithReturnURLAllowlist(mustAllowlist(t, []string{"admin.mark8ly.com"}, nil)).
+		WithGoogleIDPID("idp-1")
+
+	rec := httptest.NewRecorder()
+	h.idpStart(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/start",
+		strings.NewReader(`{"return_url":"https://admin.mark8ly.com/auth/idp/finish"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["auth_url"] != "https://idp.example.test/auth?state=intent-1" {
+		t.Fatalf("body = %v", body)
+	}
+}
+
+// TestIDPFinishIgnoresATamperedUserQueryParam is the core anti-takeover
+// assertion for this endpoint: Zitadel's success redirect carries a `user`
+// value that is attacker-controlled (it rides in a URL the browser
+// followed), and the frontend may forward whatever it received in that
+// field. Two requests, identical except for that field, must resolve to the
+// exact same identity and mint a session for the exact same subject — proof
+// that `user` is never consulted.
+func TestIDPFinishIgnoresATamperedUserQueryParam(t *testing.T) {
+	for _, tamperedUser := range []string{"", "some-other-victim-user-id", "u1"} {
+		t.Run("user="+tamperedUser, func(t *testing.T) {
+			var fin atomic.Bool
+			c := fakeZitadelHandler(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+
+			var gotUID string
+			h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+				gotUID = lc.UID
+				return CompleteResult{}, nil
+			}).WithGoogleIDPID(testGoogleIDPID)
+
+			body := `{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1","user":"` + tamperedUser + `"}`
+			rec := httptest.NewRecorder()
+			h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish", strings.NewReader(body)))
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+			// SessionFactors in the fake always resolves to "u1" regardless
+			// of what the request's user field said — this is the fixed
+			// identity RetrieveIDPIntent + SessionFactors resolve, not
+			// req.User.
+			if gotUID != "u1" {
+				t.Fatalf("complete() called with uid=%q, want u1 regardless of the tampered user field", gotUID)
+			}
+			var respBody map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &respBody); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if respBody["callback_url"] != "https://admin.mark8ly.com/auth/callback?code=c&state=s" {
+				t.Fatalf("body = %v", respBody)
+			}
+		})
+	}
+}
+
+func TestIDPFinishRejectsMissingFields(t *testing.T) {
+	c := unreachableZitadel(t)
+	h := NewHandler(c, nil)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// TestIDPFinishRefusesUnlinkedIdentityWithUnverifiedEmail is the absolute
+// rule from the security review: an unlinked federated identity may be
+// attached to an account by email ONLY when the provider asserts that
+// email is verified. false must refuse WITHOUT ever reaching the account
+// lookup or creation calls — proven the unreachableZitadel way, not merely
+// by asserting the response.
+func TestIDPFinishRefusesUnlinkedIdentityWithUnverifiedEmail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"idp-1","userId":"ext-1","userName":"new.person@gmail.com","rawInformation":{"email":"new.person@gmail.com","email_verified":false}}}`))
+		default:
+			t.Errorf("must not be called for an unverified email: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIDPFinishRefusesUnlinkedIdentityWithNoEmailClaim covers the other half
+// of the same rule: a provider that omits the email claim entirely (not
+// merely marks it false) must refuse identically — readRawEmail's
+// default-false-on-absent behaviour (see idpintent_test.go) must never be
+// mistaken for "probably fine" here.
+func TestIDPFinishRefusesUnlinkedIdentityWithNoEmailClaim(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"idp-1","userId":"ext-1","userName":"","rawInformation":{}}}`))
+		default:
+			t.Errorf("must not be called with no email claim: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIDPFinishLinksAFirstTimeIdentityToAnExistingVerifiedAccount: when a
+// verified email already belongs to an existing Zitadel user, this handler
+// must attach the new Google identity to THAT account (via LinkIDPToUser)
+// rather than register a second, disconnected one — and must complete
+// sign-in as that existing user, not create anything new.
+func TestIDPFinishLinksAFirstTimeIdentityToAnExistingVerifiedAccount(t *testing.T) {
+	var fin, linkCalled, createCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/existing-1/links":
+			linkCalled.Store(true)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			createCalled.Store(true)
+			t.Error("must not create a new user when the existing account can be linked instead")
+			w.WriteHeader(http.StatusInternalServerError)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
+		case r.URL.Path == "/management/v1/policies/login":
+			w.Write([]byte(policyNoMFA))
+		case strings.HasSuffix(r.URL.Path, "/authentication_methods"):
+			w.Write([]byte(`{"authMethodTypes":["AUTHENTICATION_METHOD_TYPE_PASSWORD"]}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"person@gmail.com"}}}}`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/oidc/auth_requests/"):
+			fin.Store(true)
+			w.Write([]byte(`{"callbackUrl":"https://admin.mark8ly.com/auth/callback?code=c&state=s"}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/sessions/"):
+			w.Write([]byte(`{"session":{"factors":{"user":{"id":"existing-1","organizationId":"o1"},"password":{"verifiedAt":"2026-09-04T01:00:00Z"}}}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	var gotUID string
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+		gotUID = lc.UID
+		return CompleteResult{}, nil
+	}).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !linkCalled.Load() {
+		t.Fatal("LinkIDPToUser (POST /v2/users/existing-1/links) was never called")
+	}
+	if createCalled.Load() {
+		t.Fatal("a new user must not be created when the existing account was linked")
+	}
+	if gotUID != "existing-1" {
+		t.Fatalf("complete() called with uid=%q, want existing-1", gotUID)
+	}
+	if !fin.Load() {
+		t.Fatal("finalize was never called")
+	}
+}
+
+// TestIDPFinishRejectsAnIntentFromAnUnexpectedIDP is the fix for the review
+// finding that this endpoint never checked which IDP an intent came from.
+// The instance can (and does) carry more than one IDP (e.g. a separately
+// added Apple IDP); an intent retrieved from anything other than the
+// configured Google IDP must be refused before ANY lookup, link, or
+// creation call runs — otherwise a weaker or attacker-influenced provider's
+// email_verified claim would be trusted exactly like Google's.
+func TestIDPFinishRejectsAnIntentFromAnUnexpectedIDP(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			// A DIFFERENT idp id than testGoogleIDPID — simulating an
+			// intent started against some other IDP on the instance (e.g.
+			// Apple), carrying its own verified-email claim for the same
+			// victim address.
+			w.Write([]byte(`{"idpInformation":{"idpId":"some-other-idp","userId":"ext-1","userName":"victim@merchant.com","rawInformation":{"email":"victim@merchant.com","email_verified":true}}}`))
+		default:
+			t.Errorf("must not look up, link, or create anything for an intent from an unexpected idp: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIDPFinishRefusesAnAmbiguousEmailMatchAndCreatesNothing is the fix for
+// the review finding that FindUserByVerifiedEmail took the first match: two
+// orgs on a shared instance can each hold a verified copy of the same
+// email, so more than one match within even a single scoped search must be
+// treated as an ambiguity to refuse, never a result to pick from — and
+// certainly never grounds to fall through to creation.
+func TestIDPFinishRefusesAnAmbiguousEmailMatchAndCreatesNothing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[
+				{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}},
+				{"userId":"existing-2","human":{"email":{"email":"person@gmail.com","isVerified":true}}}
+			]}`))
+		default:
+			t.Errorf("must not link or create anything on an ambiguous match: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIDPFinishRefusesWhenNoAdminAccountMatchesAndCreatesNothing is Finding
+// 4's ruling: the merchant path is LINK-ONLY. A verified, unlinked identity
+// with no existing account match must be refused — never registered.
+// Merchant authorization is FGA tenant membership keyed by user id, so a
+// freshly created user is guaranteed to fail that gauntlet; creating one
+// here would be pure garbage generation. CreateHumanUserWithIDPLink must
+// never be reached from this endpoint.
+func TestIDPFinishRefusesWhenNoAdminAccountMatchesAndCreatesNothing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"108234...google-sub","userName":"new.person@gmail.com","rawInformation":{"email":"new.person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[]}`))
+		default:
+			t.Errorf("the merchant path must never create a user: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIDPFinishRefusesToLinkAnExistingAccountWithoutAVerifiedEmail is the
+// security boundary for the link path specifically: an existing-account
+// match must never be linked when the CURRENT sign-in attempt's identity
+// carries an unverified or absent email, even if some other lookup could in
+// principle find a matching account. Neither the link call nor the create
+// call may be reached — FindUserByVerifiedEmail itself must not even run,
+// since the email-verified gate is checked before it.
+func TestIDPFinishRefusesToLinkAnExistingAccountWithoutAVerifiedEmail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"idp-1","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":false}}}`))
+		default:
+			t.Errorf("must not look up, link, or create anything for an unverified email: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIDPFinishSecondSignInResolvesViaUserIDAfterLinking proves the point of
+// linking at all: once linked to an existing account, a subsequent
+// retrieve for the same provider identity comes back already resolved, so
+// idpFinish signs in through the ordinary linked path and never calls
+// LinkIDPToUser again.
+func TestIDPFinishSecondSignInResolvesViaUserIDAfterLinking(t *testing.T) {
+	var linked, fin atomic.Bool
+	linkCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			if linked.Load() {
+				w.Write([]byte(`{"userId":"existing-1","idpInformation":{"idpId":"idp-1","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+			} else {
+				w.Write([]byte(`{"idpInformation":{"idpId":"idp-1","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/existing-1/links":
+			linkCalls++
+			linked.Store(true)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
+		case r.URL.Path == "/management/v1/policies/login":
+			w.Write([]byte(policyNoMFA))
+		case strings.HasSuffix(r.URL.Path, "/authentication_methods"):
+			w.Write([]byte(`{"authMethodTypes":["AUTHENTICATION_METHOD_TYPE_PASSWORD"]}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"person@gmail.com"}}}}`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/oidc/auth_requests/"):
+			fin.Store(true)
+			w.Write([]byte(`{"callbackUrl":"https://admin.mark8ly.com/auth/callback?code=c&state=s"}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/sessions/"):
+			w.Write([]byte(`{"session":{"factors":{"user":{"id":"existing-1","organizationId":"o1"},"password":{"verifiedAt":"2026-09-04T01:00:00Z"}}}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	var gotUIDs []string
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+		gotUIDs = append(gotUIDs, lc.UID)
+		return CompleteResult{}, nil
+	}).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+
+	body := `{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`
+
+	rec1 := httptest.NewRecorder()
+	h.idpFinish(rec1, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish", strings.NewReader(body)))
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("first sign-in: status = %d, body = %s", rec1.Code, rec1.Body.String())
+	}
+
+	rec2 := httptest.NewRecorder()
+	h.idpFinish(rec2, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish", strings.NewReader(body)))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second sign-in: status = %d, body = %s", rec2.Code, rec2.Body.String())
+	}
+
+	if linkCalls != 1 {
+		t.Fatalf("LinkIDPToUser was called %d times, want exactly 1 — the second sign-in must resolve via user_id, not link again", linkCalls)
+	}
+	if len(gotUIDs) != 2 || gotUIDs[0] != "existing-1" || gotUIDs[1] != "existing-1" {
+		t.Fatalf("gotUIDs = %v, want [existing-1 existing-1]", gotUIDs)
+	}
+}
+
+// TestIDPFinishSurfacesAnInvalidIntentWithoutLeakingZitadelBody mirrors
+// TestLoginCollapsesUnknownUserAndWrongPasswordIntoOneAnswer's shape for the
+// retrieve step: a bad/expired/already-consumed intent must answer a clean
+// 401 without echoing Zitadel's own error body.
+func TestIDPFinishSurfacesAnInvalidIntentWithoutLeakingZitadelBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"code":5,"message":"intent not found (COMMAND-2Ls8f)","details":[{"id":"COMMAND-2Ls8f"}]}`))
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "COMMAND-2Ls8f") {
+		t.Fatalf("response leaks the Zitadel error id: %s", rec.Body.String())
+	}
+}
+
+// TestIDPFinishIsExemptFromForceMFALocalOnly proves finish() threads
+// federated=true into CompleteIfSufficient. Under forceMfaLocalOnly with no
+// TOTP verified, a password login (federated=false) would hand off or
+// demand a factor; a Google sign-in through this endpoint must complete.
+func TestIDPFinishIsExemptFromForceMFALocalOnly(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelHandler(t, policyForceMFALocalOnly, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+
+	completeCalled := false
+	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+		completeCalled = true
+		return CompleteResult{}, nil
+	}).WithGoogleIDPID(testGoogleIDPID)
+
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !completeCalled {
+		t.Fatal("complete() was not called — forceMfaLocalOnly must not apply to a federated Google sign-in")
+	}
+	if !fin.Load() {
+		t.Fatal("finalize was not called — forceMfaLocalOnly must not apply to a federated Google sign-in")
 	}
 }

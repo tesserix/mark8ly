@@ -224,3 +224,137 @@ async function parseCustomerOutcome(
 
   throw new AuthBffCustomerError(res.status, "unrecognised_response_shape");
 }
+
+// ---------------------------------------------------------------------------
+// Google-through-Zitadel: POST /auth/customer/idp/start and
+// POST /auth/customer/idp/finish.
+//
+// Unlike verifyCustomerCredential/verifyCustomerTotp above, idp/finish's
+// non-2xx responses are NOT collapsed to one outcome — there is no
+// account-enumeration concern here (an intent id/token pair is not a
+// guessable credential the way a password is), and each business outcome
+// (email_not_verified, email_taken, email_ambiguous, unexpected_idp,
+// invalid_intent, ...) needs to stay distinguishable so the caller can
+// show a truthful, distinct message for each — see
+// apps/storefront/app/auth/idp/finish/route.ts and the phase brief's
+// constraint that email_taken (permanent lockout) must never be worded
+// like email_not_verified or a transient failure.
+//
+// A genuinely unreadable failure (malformed body, transport error) still
+// throws AuthBffCustomerError, exactly like the password path, so a
+// caller can tell "auth-bff told us no" from "we couldn't find out".
+
+/** Wire shape for POST /auth/customer/idp/start. */
+interface StartCustomerIDPStartBody {
+  auth_url?: string;
+}
+
+/**
+ * startCustomerIDPIntent submits {return_url} to
+ * POST /auth/customer/idp/start and returns the authUrl the browser must
+ * be redirected to. returnUrl must already be this store's own
+ * /auth/idp/finish route (validated server-side against auth-bff's
+ * storefront return-url allowlist) — see idpintent.go's StartIDPIntent
+ * doc: Zitadel does not validate it at all, so a bad value here is an
+ * open redirect waiting to happen.
+ *
+ * Never call this from a client component — see the file header.
+ */
+export async function startCustomerIDPIntent(returnUrl: string): Promise<string> {
+  const res = await postToCustomerEndpoint("/auth/customer/idp/start", {
+    return_url: returnUrl,
+  });
+
+  if (!res.ok) {
+    throw new AuthBffCustomerError(res.status, await readErrorCode(res));
+  }
+
+  let body: StartCustomerIDPStartBody;
+  try {
+    body = (await res.json()) as StartCustomerIDPStartBody;
+  } catch {
+    throw new AuthBffCustomerError(res.status, "invalid_response_body");
+  }
+  if (!body.auth_url) {
+    throw new AuthBffCustomerError(res.status, "unrecognised_response_shape");
+  }
+  return body.auth_url;
+}
+
+/** Outcome of POST /auth/customer/idp/finish. */
+export type CustomerIDPFinishOutcome =
+  | { kind: "complete"; uid: string; email: string }
+  /**
+   * `code` is one of auth-bff's documented idp/finish outcomes
+   * (email_not_verified, email_taken, email_ambiguous, unexpected_idp,
+   * invalid_intent, zitadel_unavailable, internal_error, ...) or an
+   * `http_<status>`/`*_response_*` fallback for anything unrecognised.
+   * Never rendered to the shopper verbatim — the caller maps each known
+   * code to its own truthful copy and falls back to a generic message for
+   * anything else. See the file-header doc above for why these are kept
+   * distinguishable instead of collapsed the way a 401 is on the
+   * credential path.
+   */
+  | { kind: "failed"; code: string };
+
+interface FinishCustomerIDPArgs {
+  intentId: string;
+  intentToken: string;
+}
+
+/** Wire shape for POST /auth/customer/idp/finish. */
+type CustomerIDPFinishBody = { data: { uid: string; email: string } };
+
+/**
+ * finishCustomerIDPIntent submits {intent_id, intent_token} to
+ * POST /auth/customer/idp/finish and returns the resulting outcome.
+ *
+ * Deliberately takes ONLY intentId/intentToken — never a `user` value.
+ * Zitadel's redirect back to the browser can carry a `user` query param,
+ * but it rides in a URL the browser followed and is attacker-controlled;
+ * the caller (apps/storefront/app/auth/idp/finish/route.ts) must never
+ * read it for anything, and this function has no parameter for it at all
+ * so there is nothing to accidentally forward.
+ *
+ * Mints no session/cookie — same as verifyCustomerCredential/
+ * verifyCustomerTotp, the caller does that via completeCustomerSignIn.
+ *
+ * Never call this from a client component — see the file header.
+ */
+export async function finishCustomerIDPIntent(
+  args: FinishCustomerIDPArgs,
+): Promise<CustomerIDPFinishOutcome> {
+  const res = await postToCustomerEndpoint("/auth/customer/idp/finish", {
+    intent_id: args.intentId,
+    intent_token: args.intentToken,
+  });
+
+  if (!res.ok) {
+    return { kind: "failed", code: await readErrorCode(res) };
+  }
+
+  let body: CustomerIDPFinishBody;
+  try {
+    body = (await res.json()) as CustomerIDPFinishBody;
+  } catch {
+    return { kind: "failed", code: "invalid_response_body" };
+  }
+  if (body.data && typeof body.data.uid === "string") {
+    return { kind: "complete", uid: body.data.uid, email: body.data.email };
+  }
+  return { kind: "failed", code: "unrecognised_response_shape" };
+}
+
+/** Shared best-effort `{error}` field extraction for a non-2xx response. */
+async function readErrorCode(res: Response): Promise<string> {
+  let code = `http_${res.status}`;
+  try {
+    const errBody = (await res.json()) as { error?: string };
+    if (typeof errBody.error === "string" && errBody.error) {
+      code = errBody.error;
+    }
+  } catch {
+    // Non-JSON error body — keep the http_<status> fallback code.
+  }
+  return code;
+}

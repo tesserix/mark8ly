@@ -6,9 +6,7 @@ import Link from "next/link";
 import { customerSignIn, confirmCustomerTotp } from "@/app/sign-in/actions";
 import { isTotpRequiredResult } from "@/lib/auth/customer-sign-in-result";
 import { getAuthProvider, isGoogleSignInOffered } from "@/lib/auth/provider";
-
-const TRAMPOLINE_BASE =
-  process.env.NEXT_PUBLIC_MARK8LY_AUTH_URL ?? "https://mark8ly.com";
+import { resolveGoogleSignInUrl } from "@/lib/auth/google-sign-in";
 
 // Reads the same flag as apps/storefront/app/sign-in/actions.ts's
 // AUTH_PROVIDER (see @/lib/auth/provider for the full rationale and its
@@ -26,6 +24,13 @@ interface CustomerSignInFormProps {
   gipConfig: GipConfig;
   storeSlug: string;
   returnUrl: string;
+  /**
+   * A truthful, ready-to-render message from apps/storefront/app/sign-in/
+   * page.tsx when this render was reached via the Zitadel Google finish
+   * route's ?error=<code> redirect (see googleIdpErrorMessage). null when
+   * there is nothing to show — the ordinary case.
+   */
+  initialError?: string | null;
 }
 
 class GIPError extends Error {
@@ -88,11 +93,12 @@ export function CustomerSignInForm({
   gipConfig,
   storeSlug,
   returnUrl,
+  initialError = null,
 }: CustomerSignInFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [pending, startTransition] = useTransition();
 
   // Zitadel's own TOTP step-up: verifyCustomerCredential returned
@@ -111,11 +117,19 @@ export function CustomerSignInForm({
 
   function handleGoogle() {
     if (typeof window === "undefined") return;
-    const url = new URL("/auth/google", TRAMPOLINE_BASE);
-    url.searchParams.set("return_to", `${window.location.origin}/account`);
-    url.searchParams.set("store_slug", storeSlug);
-    url.searchParams.set("intent", "signin");
-    window.location.assign(url.toString());
+    startTransition(async () => {
+      const result = await resolveGoogleSignInUrl({
+        storeSlug,
+        intent: "signin",
+        dest: "/account",
+        origin: window.location.origin,
+      });
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      window.location.assign(result.url);
+    });
   }
 
   function handleSubmit(e: React.FormEvent) {

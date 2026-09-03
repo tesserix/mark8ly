@@ -71,6 +71,27 @@ func guardedEndpoints() []endpoint {
 			},
 		},
 		{
+			name: "zitadel/idp/start",
+			path: "/auth/zitadel/idp/start",
+			body: `{"return_url":"https://admin.mark8ly.com/auth/idp/finish"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewHandler(c, merchantComplete).WithInternalAuth(testInternalSecret).
+					WithReturnURLAllowlist(mustAllowlist(t, []string{"admin.mark8ly.com"}, nil)).
+					WithGoogleIDPID("idp-1").
+					idpStart(rec, r)
+			},
+		},
+		{
+			name: "zitadel/idp/finish",
+			path: "/auth/zitadel/idp/finish",
+			body: `{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok-1","workspace_tenant":"t1"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewHandler(c, merchantComplete).WithInternalAuth(testInternalSecret).
+					WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1").
+					idpFinish(rec, r)
+			},
+		},
+		{
 			name: "customer/login",
 			path: "/auth/customer/login",
 			body: `{"login_name":"a@b.test","password":"x"}`,
@@ -84,6 +105,27 @@ func guardedEndpoints() []endpoint {
 			body: `{"session_id":"s1","session_token":"tok-1","code":"123456"}`,
 			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
 				NewCustomerHandler(c).WithInternalAuth(testInternalSecret).totp(rec, r)
+			},
+		},
+		{
+			name: "customer/idp/start",
+			path: "/auth/customer/idp/start",
+			body: `{"return_url":"https://shop.mark8ly.com/auth/idp/finish"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewCustomerHandler(c).WithInternalAuth(testInternalSecret).
+					WithReturnURLAllowlist(mustAllowlist(t, nil, []string{"mark8ly.com"})).
+					WithGoogleIDPID(testGoogleIDPID).
+					idpStart(rec, r)
+			},
+		},
+		{
+			name: "customer/idp/finish",
+			path: "/auth/customer/idp/finish",
+			body: `{"intent_id":"i1","intent_token":"tok-1"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewCustomerHandler(c).WithInternalAuth(testInternalSecret).
+					WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1").
+					idpFinish(rec, r)
 			},
 		},
 	}

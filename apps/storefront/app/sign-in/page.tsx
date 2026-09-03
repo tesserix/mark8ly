@@ -4,6 +4,7 @@ import { resolveStoreSlug } from "@/lib/slug";
 import { fetchStoreBySlug } from "@/lib/api/platform-api";
 import { CustomerSignInForm } from "@/components/auth/CustomerSignInForm";
 import { StorefrontNav } from "@/components/StorefrontNav";
+import { googleIdpErrorMessage } from "@/lib/auth/google-idp-error-messages";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -34,10 +35,17 @@ function sanitizeNextPath(next: string | undefined): string {
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; error?: string }>;
 }) {
-  const { next } = await searchParams;
+  const { next, error } = await searchParams;
   const safeNext = sanitizeNextPath(next);
+  // Populated only when the browser was just bounced back here by
+  // apps/storefront/app/auth/idp/finish/route.ts's ?error=<code> redirect
+  // (the Zitadel Google flow's failure path). `error` is always one of a
+  // small fixed set of codes that route itself put in the URL — never raw
+  // text from auth-bff/Zitadel — so this lookup never risks rendering an
+  // internal error string; see googleIdpErrorMessage's file header.
+  const googleError = googleIdpErrorMessage(error);
   const h = await headers();
   const host = h.get("host");
   const storeSlug =
@@ -76,6 +84,7 @@ export default async function SignInPage({
           gipConfig={gipConfig}
           storeSlug={storeSlug}
           returnUrl={`${origin}${safeNext}`}
+          initialError={googleError}
         />
       </main>
     </div>

@@ -217,3 +217,263 @@ func TestUserEmailRefusesAMachineUserWithNoHumanProfile(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnavailable for a user with no human.email", err)
 	}
 }
+
+func TestFindUserByVerifiedEmailSendsTheOrgIDHeader(t *testing.T) {
+	var gotOrgHeader, gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotOrgHeader = r.Header.Get("x-zitadel-orgid")
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.Write([]byte(`{"result":[]}`))
+	})
+	if _, err := c.FindUserByVerifiedEmail(context.Background(), "org-1", "person@gmail.com"); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if gotOrgHeader != "org-1" {
+		t.Fatalf("x-zitadel-orgid = %q, want org-1 — an unscoped search could match a verified email in an unrelated org", gotOrgHeader)
+	}
+	if !strings.Contains(gotBody, "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE") {
+		t.Fatalf("request body %q missing the case-insensitive query method", gotBody)
+	}
+}
+
+func TestFindUserByVerifiedEmailRefusesAnEmptyOrgID(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("must not search instance-wide with an empty org id")
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	_, err := c.FindUserByVerifiedEmail(context.Background(), "", "person@gmail.com")
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+}
+
+// TestFindUserByVerifiedEmailMatchesCaseInsensitively is the fix for the
+// functional bug where a stored "Person@x.com" never matched Google's
+// "person@x.com": Zitadel's own account uniqueness is case-insensitive, so
+// this search must be too.
+func TestFindUserByVerifiedEmailMatchesCaseInsensitively(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"Person@Gmail.com","isVerified":true}}}]}`))
+	})
+	got, err := c.FindUserByVerifiedEmail(context.Background(), "org-1", "person@gmail.com")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "existing-1" {
+		t.Fatalf("userID = %q, want existing-1 to match despite the case difference", got)
+	}
+}
+
+// TestFindUserByVerifiedEmailRefusesAmbiguousMatches is the fix for the
+// review finding that this function took the first match: two orgs on a
+// shared instance (or, within a single scoped search, any duplicate) can
+// each hold a verified copy of the same email — picking one is an
+// unspecified-ordering decision this code must not make.
+func TestFindUserByVerifiedEmailRefusesAmbiguousMatches(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"result":[
+			{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}},
+			{"userId":"existing-2","human":{"email":{"email":"person@gmail.com","isVerified":true}}}
+		]}`))
+	})
+	_, err := c.FindUserByVerifiedEmail(context.Background(), "org-1", "person@gmail.com")
+	if !errors.Is(err, ErrAmbiguousEmailMatch) {
+		t.Fatalf("err = %v, want ErrAmbiguousEmailMatch", err)
+	}
+}
+
+func TestFindUserByVerifiedEmailIgnoresAnUnverifiedMatch(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":false}}}]}`))
+	})
+	got, err := c.FindUserByVerifiedEmail(context.Background(), "org-1", "person@gmail.com")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "" {
+		t.Fatalf("userID = %q, want empty for an unverified match", got)
+	}
+}
+
+func TestCreateHumanUserWithIDPLinkSendsProfileEmailAndIDPLinks(t *testing.T) {
+	var gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v2/users/human" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.Write([]byte(`{"userId":"new-user-1"}`))
+	})
+	identity := IDPIdentity{
+		Email:            "person@gmail.com",
+		EmailVerified:    true,
+		IDPID:            "idp-1",
+		ExternalUserID:   "google-sub-1",
+		ExternalUserName: "person@gmail.com",
+	}
+	got, err := c.CreateHumanUserWithIDPLink(context.Background(), identity)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "new-user-1" {
+		t.Fatalf("userID = %q", got)
+	}
+	for _, want := range []string{
+		`"email":"person@gmail.com"`, `"isVerified":true`,
+		`"idpId":"idp-1"`, `"userId":"google-sub-1"`, `"userName":"person@gmail.com"`,
+	} {
+		if !strings.Contains(gotBody, want) {
+			t.Errorf("request body %q missing %q", gotBody, want)
+		}
+	}
+}
+
+func TestCreateHumanUserWithIDPLinkRefusesAnUnverifiedEmailWithoutCallingZitadel(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("must not create a user from an unverified email")
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	_, err := c.CreateHumanUserWithIDPLink(context.Background(), IDPIdentity{Email: "person@gmail.com", EmailVerified: false})
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+}
+
+// TestCreateHumanUserWithIDPLinkMapsADuplicateEmailDistinctly is the fix for
+// the functional bug where a 400 here (most often a duplicate email in a
+// different case) mapped to the generic ErrBadCredentials, which reads as
+// "wrong password" for something that is neither.
+func TestCreateHumanUserWithIDPLinkMapsADuplicateEmailDistinctly(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"code":6,"message":"user already exists (COMMAND-oR9nS)","details":[{"id":"COMMAND-oR9nS"}]}`))
+	})
+	_, err := c.CreateHumanUserWithIDPLink(context.Background(), IDPIdentity{
+		Email: "person@gmail.com", EmailVerified: true, IDPID: "idp-1", ExternalUserID: "google-sub-1",
+	})
+	if !errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("err = %v, want ErrEmailAlreadyExists", err)
+	}
+	if errors.Is(err, ErrBadCredentials) {
+		t.Fatal("must not also read as ErrBadCredentials — that reads as a wrong password to a caller checking the wrong sentinel")
+	}
+}
+
+// TestCreateHumanUserWithIDPLinkDoesNotMapAnUnrelated400ToEmailAlreadyExists
+// is the fix for review Finding 3: the ErrEmailAlreadyExists mapping is
+// narrowed to grpc code 6 (ALREADY_EXISTS). A 400 from AddHumanUser for any
+// OTHER reason — a malformed profile field, a future validation rule, any
+// policy rejection — must never surface as "email already exists": that
+// reads as a retryable race to a caller when it might be a permanent,
+// unrelated failure.
+func TestCreateHumanUserWithIDPLinkDoesNotMapAnUnrelated400ToEmailAlreadyExists(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"code":3,"message":"invalid profile (COMMAND-9zK2p)","details":[{"id":"COMMAND-9zK2p"}]}`))
+	})
+	_, err := c.CreateHumanUserWithIDPLink(context.Background(), IDPIdentity{
+		Email: "person@gmail.com", EmailVerified: true, IDPID: "idp-1", ExternalUserID: "google-sub-1",
+	})
+	if errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("err = %v, must NOT read as ErrEmailAlreadyExists for an unrelated 400 (code 3, not 6)", err)
+	}
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable as the generic fallback", err)
+	}
+}
+
+// TestCreateHumanUserWithIDPLinkUsesGoogleGivenAndFamilyNameWhenPresent is
+// the fix for review Finding 6: a merchant-flavoured "Member" placeholder
+// must not land on a shopper account when Google already sent a real name.
+func TestCreateHumanUserWithIDPLinkUsesGoogleGivenAndFamilyNameWhenPresent(t *testing.T) {
+	var gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.Write([]byte(`{"userId":"new-user-1"}`))
+	})
+	_, err := c.CreateHumanUserWithIDPLink(context.Background(), IDPIdentity{
+		Email: "person@gmail.com", EmailVerified: true, IDPID: "idp-1", ExternalUserID: "google-sub-1",
+		GivenName: "Priya", FamilyName: "Shah",
+	})
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(gotBody, `"givenName":"Priya"`) || !strings.Contains(gotBody, `"familyName":"Shah"`) {
+		t.Fatalf("request body = %q, want Google's given/family name used", gotBody)
+	}
+	if strings.Contains(gotBody, "Member") {
+		t.Fatalf("request body = %q, must not fall back to the placeholder when Google sent a real name", gotBody)
+	}
+}
+
+// TestCreateHumanUserWithIDPLinkFallsBackToNeutralNamesWhenAbsent pins the
+// fallback shape when Google sends no given_name/family_name at all: the
+// email's local part for the given name, and a neutral (not
+// merchant-flavoured) placeholder for the family name.
+func TestCreateHumanUserWithIDPLinkFallsBackToNeutralNamesWhenAbsent(t *testing.T) {
+	var gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.Write([]byte(`{"userId":"new-user-1"}`))
+	})
+	_, err := c.CreateHumanUserWithIDPLink(context.Background(), IDPIdentity{
+		Email: "person@gmail.com", EmailVerified: true, IDPID: "idp-1", ExternalUserID: "google-sub-1",
+	})
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(gotBody, `"givenName":"person"`) {
+		t.Fatalf("request body = %q, want the email local part as the given name fallback", gotBody)
+	}
+	if strings.Contains(gotBody, `"familyName":"Member"`) {
+		t.Fatalf("request body = %q, must not use the merchant-flavoured \"Member\" placeholder", gotBody)
+	}
+}
+
+func TestLinkIDPToUserSendsTheIDPLink(t *testing.T) {
+	var gotPath, gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.WriteHeader(http.StatusOK)
+	})
+	identity := IDPIdentity{
+		Email:            "person@gmail.com",
+		EmailVerified:    true,
+		IDPID:            "idp-1",
+		ExternalUserID:   "google-sub-1",
+		ExternalUserName: "person@gmail.com",
+	}
+	if err := c.LinkIDPToUser(context.Background(), "existing-1", identity); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if gotPath != "/v2/users/existing-1/links" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	for _, want := range []string{`"idpId":"idp-1"`, `"userId":"google-sub-1"`, `"userName":"person@gmail.com"`} {
+		if !strings.Contains(gotBody, want) {
+			t.Errorf("request body %q missing %q", gotBody, want)
+		}
+	}
+}
+
+func TestLinkIDPToUserRefusesAnUnverifiedEmailWithoutCallingZitadel(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("must not link an unverified email to an existing account")
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	err := c.LinkIDPToUser(context.Background(), "existing-1", IDPIdentity{Email: "person@gmail.com", EmailVerified: false})
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+}

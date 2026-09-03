@@ -139,4 +139,57 @@ describe("parseLoginResponse", () => {
     expect(parseLoginResponse({ data: { handoff_url: "https://auth.tesserix.app/ui/v2/login", auth_request_id: "V2_1" } }))
       .toEqual({ kind: "handoff", handoffUrl: "https://auth.tesserix.app/ui/v2/login" });
   });
+
+  describe("a real completed Zitadel sign-in — callback_url alone, no uid/tenant_id", () => {
+    // This is the EXACT body services/auth-bff/internal/zitadellogin/handler.go's
+    // finishComplete sends on a genuine completed sign-in (password OR Google):
+    // `writeJSON(w, 200, map[string]any{"callback_url": res.CallbackURL})`, pinned
+    // server-side by handler_test.go's TestLoginCompleteCallsCompleteAndReturnsCallbackURL.
+    // An earlier version of this function required uid/tenantId to recognise
+    // "complete" and threw on this exact shape — every real Zitadel completion
+    // (password or Google) fell through to a generic error. Nothing in this app
+    // reads uid/email/tenantId off a "complete" outcome (every caller carries its
+    // own server-resolved tenantId separately — see app/login/actions.ts), so
+    // those fields are optional and their absence must not be an error.
+
+    it("parses as complete with only a callbackUrl", () => {
+      const out = parseLoginResponse({
+        callback_url: "https://admin.mark8ly.com/auth/callback?code=c&state=s",
+      });
+      expect(out).toEqual({
+        kind: "complete",
+        callbackUrl: "https://admin.mark8ly.com/auth/callback?code=c&state=s",
+      });
+    });
+
+    it("still lets a step-up win over a body that also carries callback_url", () => {
+      expect(
+        parseLoginResponse({
+          callback_url: "https://admin.mark8ly.com/auth/callback?code=c",
+          mfa_required: true,
+        }).kind,
+      ).toBe("mfa_required");
+
+      expect(
+        parseLoginResponse({
+          callback_url: "https://admin.mark8ly.com/auth/callback?code=c",
+          email_otp_required: true,
+        }).kind,
+      ).toBe("email_otp_required");
+
+      expect(
+        parseLoginResponse({
+          callback_url: "https://admin.mark8ly.com/auth/callback?code=c",
+          totp_required: true,
+          session_id: "s1",
+          session_token: "tok",
+        }).kind,
+      ).toBe("totp_required");
+    });
+
+    it("still throws when a body carries neither a step-up, an identity, nor a callback_url", () => {
+      expect(() => parseLoginResponse({})).toThrow();
+      expect(() => parseLoginResponse({ something: "else" })).toThrow();
+    });
+  });
 });

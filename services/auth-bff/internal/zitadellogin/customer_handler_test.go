@@ -308,6 +308,491 @@ func TestCustomerHandoffURLEmptyWithoutConfiguredBase(t *testing.T) {
 	}
 }
 
+// fakeZitadelCustomerIDP wires the same idp_intents/users/links/human routes
+// fakeZitadelHandler wires, plus a customizable idp_intents response, so the
+// customer idp/start and idp/finish tests can drive Google sign-in against
+// one fake without duplicating handler_test.go's whole fixture.
+func fakeZitadelCustomerIDP(t *testing.T, idpIntentBody string, extra map[string]http.HandlerFunc) *Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Method + " " + r.URL.Path
+		for pattern, fn := range extra {
+			parts := strings.SplitN(pattern, " ", 2)
+			if len(parts) == 2 && r.Method == parts[0] && strings.HasPrefix(r.URL.Path, parts[1]) {
+				fn(w, r)
+				return
+			}
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/idp_intents":
+			w.Write([]byte(`{"authUrl":"https://idp.example.test/auth?state=intent-1"}`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(idpIntentBody))
+		default:
+			t.Errorf("unexpected call: %s (no fixture wired for it)", key)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return New(srv.URL, "pat", srv.Client())
+}
+
+// TestCustomerIDPStartRejectsDisallowedReturnURL mirrors
+// TestIDPStartRejectsDisallowedReturnURL: a host outside the configured
+// (storefront) allowlist must be rejected before StartIDPIntent ever runs —
+// proven the unreachableZitadel way, not merely by asserting the response.
+func TestCustomerIDPStartRejectsDisallowedReturnURL(t *testing.T) {
+	c := unreachableZitadel(t)
+	h := NewCustomerHandler(c).
+		WithReturnURLAllowlist(mustAllowlist(t, nil, []string{"mark8ly.com"})).
+		WithGoogleIDPID(testGoogleIDPID)
+
+	rec := httptest.NewRecorder()
+	h.idpStart(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/start",
+		strings.NewReader(`{"return_url":"https://evil.example.com/x"}`)))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCustomerIDPStartUsesTheConfiguredAllowlistNotAHardcodedOne pins that
+// idp/start validates against WHATEVER ReturnURLAllowlist was configured on
+// this CustomerHandler — main.go's job is wiring the STOREFRONT allowlist
+// (ZitadelReturnURLAllowedHosts/SuffixesStorefront) into it, never the admin
+// one, so a merchant-only host must be rejected when the configured
+// allowlist does not carry it, exactly like any other disallowed host.
+func TestCustomerIDPStartUsesTheConfiguredAllowlistNotAHardcodedOne(t *testing.T) {
+	c := unreachableZitadel(t)
+	// A storefront allowlist that does NOT include the admin host.
+	h := NewCustomerHandler(c).
+		WithReturnURLAllowlist(mustAllowlist(t, nil, []string{"shop.mark8ly.com"})).
+		WithGoogleIDPID(testGoogleIDPID)
+
+	rec := httptest.NewRecorder()
+	h.idpStart(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/start",
+		strings.NewReader(`{"return_url":"https://admin.mark8ly.com/auth/idp/finish"}`)))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s — the admin host is not in this handler's configured allowlist", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCustomerIDPStartReturnsAuthURLForAnAllowedStorefrontHost(t *testing.T) {
+	c := fakeZitadelCustomerIDP(t, `{}`, nil)
+	h := NewCustomerHandler(c).
+		WithReturnURLAllowlist(mustAllowlist(t, nil, []string{"mark8ly.com"})).
+		WithGoogleIDPID(testGoogleIDPID)
+
+	rec := httptest.NewRecorder()
+	h.idpStart(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/start",
+		strings.NewReader(`{"return_url":"https://shop.mark8ly.com/auth/idp/finish"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["auth_url"] != "https://idp.example.test/auth?state=intent-1" {
+		t.Fatalf("body = %v", body)
+	}
+}
+
+// TestCustomerIDPFinishIgnoresATamperedUserBodyField mirrors
+// TestIDPFinishIgnoresATamperedUserQueryParam: `user` is a JSON body field
+// on this endpoint (there is no query param involved at all — the frontend
+// forwards whatever it received in Zitadel's redirect as a body field), and
+// it is attacker-controlled and must never be consulted, on the customer
+// path any more than the merchant one. Every case here is a value genuinely
+// DIFFERENT from the real resolved id ("u1") — a case equal to it would
+// prove nothing, since the field being silently ignored and the field being
+// (coincidentally) correct are indistinguishable.
+func TestCustomerIDPFinishIgnoresATamperedUserBodyField(t *testing.T) {
+	for _, tamperedUser := range []string{"", "some-other-victim-user-id", "u2"} {
+		t.Run("user="+tamperedUser, func(t *testing.T) {
+			idpIntentBody := `{"userId":"u1","idpInformation":{"idpId":"` + testGoogleIDPID + `","rawInformation":{"email":"a@b.test","email_verified":true}}}`
+			extra := map[string]http.HandlerFunc{
+				"GET /v2/users/": func(w http.ResponseWriter, r *http.Request) {
+					w.Write([]byte(`{"user":{"human":{"email":{"email":"a@b.test"}}}}`))
+				},
+			}
+			c := fakeZitadelCustomerIDP(t, idpIntentBody, extra)
+			h := NewCustomerHandler(c).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+
+			body := `{"intent_id":"i1","intent_token":"tok","user":"` + tamperedUser + `"}`
+			rec := httptest.NewRecorder()
+			h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish", strings.NewReader(body)))
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+			var respBody map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &respBody); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			data, _ := respBody["data"].(map[string]any)
+			if data == nil || data["uid"] != "u1" {
+				t.Fatalf("body = %v, want data.uid = u1 regardless of the tampered user field", respBody)
+			}
+			if len(rec.Result().Cookies()) != 0 {
+				t.Fatalf("cookies set: %v — the customer idp path must never mint a session", rec.Result().Cookies())
+			}
+		})
+	}
+}
+
+func TestCustomerIDPFinishRejectsMissingFields(t *testing.T) {
+	c := unreachableZitadel(t)
+	h := NewCustomerHandler(c)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish", strings.NewReader(`{}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+// TestCustomerIDPFinishRejectsAnIntentFromAnUnexpectedIDP mirrors
+// TestIDPFinishRejectsAnIntentFromAnUnexpectedIDP: an Apple (or any
+// non-Google) intent must be refused before any lookup, link, or create.
+func TestCustomerIDPFinishRejectsAnIntentFromAnUnexpectedIDP(t *testing.T) {
+	idpIntentBody := `{"idpInformation":{"idpId":"some-other-idp","userId":"ext-1","userName":"victim@merchant.com","rawInformation":{"email":"victim@merchant.com","email_verified":true}}}`
+	c := fakeZitadelCustomerIDP(t, idpIntentBody, nil)
+	h := NewCustomerHandler(c).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish",
+		strings.NewReader(`{"intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCustomerIDPFinishRefusesUnlinkedIdentityWithUnverifiedEmail mirrors the
+// merchant test of the same shape: the gate is absolute, proven the
+// unreachableZitadel way — no lookup, link, or create call may be reached.
+func TestCustomerIDPFinishRefusesUnlinkedIdentityWithUnverifiedEmail(t *testing.T) {
+	idpIntentBody := `{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"new.person@gmail.com","rawInformation":{"email":"new.person@gmail.com","email_verified":false}}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(idpIntentBody))
+		default:
+			t.Errorf("must not be called for an unverified email: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithGoogleIDPID(testGoogleIDPID)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish",
+		strings.NewReader(`{"intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCustomerIDPFinishRefusesUnlinkedIdentityWithNoEmailClaim mirrors the
+// merchant test: an absent email_verified claim must refuse identically to
+// an explicit false.
+func TestCustomerIDPFinishRefusesUnlinkedIdentityWithNoEmailClaim(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"","rawInformation":{}}}`))
+		default:
+			t.Errorf("must not be called with no email claim: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithGoogleIDPID(testGoogleIDPID)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish",
+		strings.NewReader(`{"intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCustomerIDPFinishRefusesAnAmbiguousEmailMatchAndCreatesNothing mirrors
+// the merchant test of the same shape.
+func TestCustomerIDPFinishRefusesAnAmbiguousEmailMatchAndCreatesNothing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[
+				{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}},
+				{"userId":"existing-2","human":{"email":{"email":"person@gmail.com","isVerified":true}}}
+			]}`))
+		default:
+			t.Errorf("must not link or create anything on an ambiguous match: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish",
+		strings.NewReader(`{"intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCustomerIDPFinishLinksAFirstTimeIdentityToAnExistingVerifiedAccount is
+// the customer-path analogue of the merchant link test: an unlinked but
+// verified identity that matches an existing account is linked, not
+// duplicated, and no session or finalize call ever happens.
+func TestCustomerIDPFinishLinksAFirstTimeIdentityToAnExistingVerifiedAccount(t *testing.T) {
+	var linkCalled, createCalled, sessionCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/existing-1/links":
+			linkCalled.Store(true)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			createCalled.Store(true)
+			t.Error("must not create a new user when the existing account can be linked instead")
+			w.WriteHeader(http.StatusInternalServerError)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			sessionCalled.Store(true)
+			t.Error("the customer idp path must never create a Zitadel session")
+			w.WriteHeader(http.StatusInternalServerError)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"person@gmail.com"}}}}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish",
+		strings.NewReader(`{"intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !linkCalled.Load() {
+		t.Fatal("LinkIDPToUser (POST /v2/users/existing-1/links) was never called")
+	}
+	if createCalled.Load() {
+		t.Fatal("a new user must not be created when the existing account was linked")
+	}
+	if sessionCalled.Load() {
+		t.Fatal("a Zitadel session must never be created on the customer idp path")
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data == nil || data["uid"] != "existing-1" || data["email"] != "person@gmail.com" {
+		t.Fatalf("body = %v, want data.{uid: existing-1, email: person@gmail.com}", body)
+	}
+}
+
+// TestCustomerIDPFinishCreatesAUserWhenNoExistingAccountMatches is the
+// customer-path registration case that has no merchant analogue at all: a
+// verified, unlinked identity with no existing match must be CREATED here —
+// the opposite of the merchant path's link-only refusal — because
+// self-registration is the whole point of a storefront sign-in.
+func TestCustomerIDPFinishCreatesAUserWhenNoExistingAccountMatches(t *testing.T) {
+	var createCalled, linkCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"new.person@gmail.com","rawInformation":{"email":"new.person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			createCalled.Store(true)
+			w.Write([]byte(`{"userId":"new-1"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/links"):
+			linkCalled.Store(true)
+			t.Error("must not link when there is no existing account to link to")
+			w.WriteHeader(http.StatusInternalServerError)
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"new.person@gmail.com"}}}}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish",
+		strings.NewReader(`{"intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !createCalled.Load() {
+		t.Fatal("CreateHumanUserWithIDPLink (POST /v2/users/human) was never called")
+	}
+	if linkCalled.Load() {
+		t.Fatal("LinkIDPToUser must not be called when a new account was created instead")
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data == nil || data["uid"] != "new-1" || data["email"] != "new.person@gmail.com" {
+		t.Fatalf("body = %v, want data.{uid: new-1, email: new.person@gmail.com}", body)
+	}
+}
+
+// TestCustomerIDPFinishRefusesAnEmailAlreadyTakenByAnUnverifiedAccountDistinctly
+// is review Finding 1/4's fix: FindUserByVerifiedEmail found no VERIFIED
+// match (so this path reaches CreateHumanUserWithIDPLink), but the create
+// itself 400s because the email is already held by an unverified account.
+// This is usually a PERMANENT lockout, not a race — refusing is correct
+// either way (Google proving ownership does not make it safe to link to an
+// account someone else may control), but it MUST answer a distinct code
+// (email_taken) from the pre-create ambiguity case (email_ambiguous):
+// collapsing them would make a permanent dead end look like a transient
+// race the customer could retry past.
+func TestCustomerIDPFinishRefusesAnEmailAlreadyTakenByAnUnverifiedAccountDistinctly(t *testing.T) {
+	var linkCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			// No VERIFIED match — this is exactly why CreateHumanUserWithIDPLink
+			// gets attempted below.
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":6,"message":"user already exists (COMMAND-oR9nS)","details":[{"id":"COMMAND-oR9nS"}]}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/links"):
+			linkCalled.Store(true)
+			t.Error("must not link to an account this endpoint never verified belongs to this identity")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			t.Errorf("must not go further: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish",
+		strings.NewReader(`{"intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "email_taken" {
+		t.Fatalf("body = %v, want error: email_taken — distinct from the pre-create email_ambiguous case", body)
+	}
+	if linkCalled.Load() {
+		t.Fatal("must not attempt to link")
+	}
+}
+
+// TestCustomerIDPFinishSurfacesAnInvalidIntentWithoutLeakingZitadelBody
+// mirrors the merchant test.
+func TestCustomerIDPFinishSurfacesAnInvalidIntentWithoutLeakingZitadelBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"code":5,"message":"intent not found (COMMAND-2Ls8f)","details":[{"id":"COMMAND-2Ls8f"}]}`))
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithGoogleIDPID(testGoogleIDPID)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish",
+		strings.NewReader(`{"intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "COMMAND-2Ls8f") {
+		t.Fatalf("response leaks the Zitadel error id: %s", rec.Body.String())
+	}
+}
+
+// TestCustomerIDPFinishSecondSignInResolvesViaUserIDAfterLinking mirrors the
+// merchant test proving the point of linking: once linked, a subsequent
+// retrieve resolves directly and never links or creates again.
+func TestCustomerIDPFinishSecondSignInResolvesViaUserIDAfterLinking(t *testing.T) {
+	var linked atomic.Bool
+	linkCalls, createCalls := 0, 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			if linked.Load() {
+				w.Write([]byte(`{"userId":"existing-1","idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+			} else {
+				w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/existing-1/links":
+			linkCalls++
+			linked.Store(true)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			createCalls++
+			w.Write([]byte(`{"userId":"should-not-happen"}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"person@gmail.com"}}}}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	body := `{"intent_id":"i1","intent_token":"tok"}`
+
+	rec1 := httptest.NewRecorder()
+	h.idpFinish(rec1, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish", strings.NewReader(body)))
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("first sign-in: status = %d, body = %s", rec1.Code, rec1.Body.String())
+	}
+
+	rec2 := httptest.NewRecorder()
+	h.idpFinish(rec2, httptest.NewRequest(http.MethodPost, "/auth/customer/idp/finish", strings.NewReader(body)))
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second sign-in: status = %d, body = %s", rec2.Code, rec2.Body.String())
+	}
+
+	if linkCalls != 1 {
+		t.Fatalf("LinkIDPToUser was called %d times, want exactly 1", linkCalls)
+	}
+	if createCalls != 0 {
+		t.Fatalf("CreateHumanUserWithIDPLink was called %d times, want 0", createCalls)
+	}
+}
+
 // TestCustomerEndpointsIgnoreAuthRequestID pins that a caller who still
 // sends auth_request_id (e.g. a client not yet updated) gets it silently
 // ignored rather than rejected — the field carries no meaning on this path

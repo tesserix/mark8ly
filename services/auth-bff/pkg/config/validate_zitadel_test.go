@@ -8,10 +8,14 @@ import (
 
 func zitadelReadyConfig() Config {
 	return Config{
-		ZitadelEnabled:                true,
-		ZitadelIssuer:                 "https://login.mark8ly.zitadel.cloud",
-		ZitadelLoginClientToken:       "pat",
-		MarketplaceInternalAuthSecret: "s3cret-internal",
+		ZitadelEnabled:                            true,
+		ZitadelIssuer:                             "https://login.mark8ly.zitadel.cloud",
+		ZitadelLoginClientToken:                   "pat",
+		MarketplaceInternalAuthSecret:             "s3cret-internal",
+		ZitadelReturnURLAllowedHostsAdmin:         []string{"admin.mark8ly.com"},
+		ZitadelReturnURLAllowedSuffixesStorefront: []string{"mark8ly.com"},
+		ZitadelGoogleIDPID:                        "386381087862948767",
+		ZitadelOrgID:                              "339070697432875523",
 	}
 }
 
@@ -46,6 +50,16 @@ func TestValidateZitadelRefusesOnEachMissingValue(t *testing.T) {
 		{"issuer", func(c *Config) { c.ZitadelIssuer = "" }, "ZITADEL_ISSUER"},
 		{"login client token", func(c *Config) { c.ZitadelLoginClientToken = "" }, "ZITADEL_LOGIN_CLIENT_TOKEN"},
 		{"internal secret", func(c *Config) { c.MarketplaceInternalAuthSecret = "" }, "MARKETPLACE_INTERNAL_AUTH_SECRET"},
+		{"admin return url allowlist", func(c *Config) {
+			c.ZitadelReturnURLAllowedHostsAdmin = nil
+			c.ZitadelReturnURLAllowedSuffixesAdmin = nil
+		}, "ZITADEL_RETURN_URL_ALLOWED_HOSTS_ADMIN"},
+		{"storefront return url allowlist", func(c *Config) {
+			c.ZitadelReturnURLAllowedHostsStorefront = nil
+			c.ZitadelReturnURLAllowedSuffixesStorefront = nil
+		}, "ZITADEL_RETURN_URL_ALLOWED_HOSTS_STOREFRONT"},
+		{"google idp id", func(c *Config) { c.ZitadelGoogleIDPID = "" }, "ZITADEL_GOOGLE_IDP_ID"},
+		{"org id", func(c *Config) { c.ZitadelOrgID = "" }, "ZITADEL_ORG_ID"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,6 +86,42 @@ func TestValidateZitadelNeverEchoesASecretValue(t *testing.T) {
 		if strings.Contains(err.Error(), secret) {
 			t.Fatalf("err = %v leaks a configured secret value", err)
 		}
+	}
+}
+
+// TestValidateZitadelAcceptsEitherAllowlistFieldAlonePerFlow: hosts and
+// suffixes serve different shapes (fixed admin host vs. per-tenant
+// storefront subdomains) and a deployment need not use both within a flow.
+func TestValidateZitadelAcceptsEitherAllowlistFieldAlonePerFlow(t *testing.T) {
+	cfg := zitadelReadyConfig()
+	cfg.ZitadelReturnURLAllowedSuffixesAdmin = nil // was already nil; hosts alone carries admin
+	if err := cfg.ValidateZitadel(); err != nil {
+		t.Fatalf("admin hosts alone: ValidateZitadel = %v, want nil", err)
+	}
+
+	cfg = zitadelReadyConfig()
+	cfg.ZitadelReturnURLAllowedHostsStorefront = nil // was already nil; suffixes alone carries storefront
+	if err := cfg.ValidateZitadel(); err != nil {
+		t.Fatalf("storefront suffixes alone: ValidateZitadel = %v, want nil", err)
+	}
+}
+
+// TestValidateZitadelKeepsAdminAndStorefrontAllowlistsIndependent: this is
+// the config-level half of the admin/storefront split — configuring one
+// flow's allowlist must never satisfy the other's requirement. (The actual
+// cross-flow rejection — a storefront subdomain used as an admin
+// successUrl — is exercised by choosing which ReturnURLAllowlist to
+// validate against, not by Config; this test only pins that ValidateZitadel
+// requires BOTH sets, not either-or across flows.)
+func TestValidateZitadelKeepsAdminAndStorefrontAllowlistsIndependent(t *testing.T) {
+	cfg := zitadelReadyConfig()
+	cfg.ZitadelReturnURLAllowedHostsStorefront = nil
+	cfg.ZitadelReturnURLAllowedSuffixesStorefront = nil
+	// Admin is still fully configured, but storefront is now empty — must
+	// still fail, since a flat "any allowlist configured" check would have
+	// silently passed here.
+	if err := cfg.ValidateZitadel(); err == nil {
+		t.Fatal("ValidateZitadel = nil; admin being configured must not excuse an empty storefront allowlist")
 	}
 }
 

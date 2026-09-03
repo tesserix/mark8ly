@@ -35,7 +35,6 @@ vi.mock("@/lib/auth/auth-bff", async () => {
     ...actual,
     zitadelLogin: vi.fn(),
     zitadelTotp: vi.fn(),
-    zitadelIdpFinish: vi.fn(),
   };
 });
 
@@ -49,14 +48,13 @@ vi.mock("@/lib/api/platform-api", async () => {
   };
 });
 
-import { zitadelLogin, zitadelTotp, zitadelIdpFinish, AuthBffError } from "@/lib/auth/auth-bff";
+import { zitadelLogin, zitadelTotp, AuthBffError } from "@/lib/auth/auth-bff";
 import { listMemberTenants } from "@/lib/api/platform-api";
 import { mintZitadelTotpCode, verifyZitadelTotpCode } from "@repo/ui/auth/zitadel-totp-code";
-import { signInWithZitadel, confirmZitadelTotp, finishZitadelGoogleSignIn } from "./actions";
+import { signInWithZitadel, confirmZitadelTotp } from "./actions";
 
 const zitadelLoginMock = vi.mocked(zitadelLogin);
 const zitadelTotpMock = vi.mocked(zitadelTotp);
-const zitadelIdpFinishMock = vi.mocked(zitadelIdpFinish);
 const listMemberTenantsMock = vi.mocked(listMemberTenants);
 
 const SUBMITTED_PASSWORD = "correct-horse-battery-staple";
@@ -456,114 +454,6 @@ describe("confirmZitadelTotp", () => {
     await confirmZitadelTotp({ ...baseInput, zitadelTenantCode: validCode() });
 
     const call = zitadelTotpMock.mock.calls[0]![0];
-    expect(call.userAgent).toBe("Mozilla/5.0 test-client");
-    expect(call.forwardedFor).toBe("198.51.100.7");
-  });
-});
-
-describe("finishZitadelGoogleSignIn", () => {
-  const input = {
-    authRequestId: "ar-1",
-    intentId: "intent-1",
-    intentToken: "intent-token-1",
-    workspaceTenant: "tenant-1",
-  };
-
-  it("submits intentId/intentToken/workspaceTenant to zitadelIdpFinish — never a `user` field", async () => {
-    zitadelIdpFinishMock.mockResolvedValue({
-      kind: "complete",
-      uid: "u1",
-      email: "merchant@example.com",
-      tenantId: "tenant-1",
-      callbackUrl: "https://admin.mark8ly.com/auth/callback?code=c",
-      setCookies: ["m8_session=abc; Path=/; HttpOnly"],
-    });
-
-    await finishZitadelGoogleSignIn(input);
-
-    expect(zitadelIdpFinishMock).toHaveBeenCalledTimes(1);
-    const call = zitadelIdpFinishMock.mock.calls[0]![0];
-    expect(call).toMatchObject({
-      authRequestId: "ar-1",
-      intentId: "intent-1",
-      intentToken: "intent-token-1",
-      workspaceTenant: "tenant-1",
-    });
-    expect(call).not.toHaveProperty("user");
-  });
-
-  it("mints m8_session via the same cookie-forwarding path signInWithZitadel uses", async () => {
-    zitadelIdpFinishMock.mockResolvedValue({
-      kind: "complete",
-      uid: "u1",
-      email: "merchant@example.com",
-      tenantId: "tenant-1",
-      setCookies: ["m8_session=abc; Path=/; HttpOnly"],
-    });
-
-    const result = await finishZitadelGoogleSignIn(input);
-
-    expect(result.ok).toBe(true);
-    expect(cookiesSetSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "m8_session", value: "abc" }),
-    );
-  });
-
-  it("never mints a cookie when zitadelIdpFinish rejects", async () => {
-    zitadelIdpFinishMock.mockRejectedValue(
-      new AuthBffError(403, "no_admin_account", "http_403"),
-    );
-
-    const result = await finishZitadelGoogleSignIn(input);
-
-    expect(result).toEqual({ ok: false, code: "no_admin_account", message: "http_403" });
-    expect(cookiesSetSpy).not.toHaveBeenCalled();
-  });
-
-  it("never mints a cookie when the outcome is a still-outstanding step-up with no cookies", async () => {
-    zitadelIdpFinishMock.mockResolvedValue({
-      kind: "mfa_required",
-      setCookies: [],
-    });
-
-    const result = await finishZitadelGoogleSignIn(input);
-
-    expect(result).toEqual({
-      ok: true,
-      data: { tenantId: "tenant-1", multipleTenants: false, mfaRequired: true, emailOtpRequired: false },
-    });
-    expect(cookiesSetSpy).not.toHaveBeenCalled();
-  });
-
-  it("always reports multipleTenants:false — this path never offers a tenant picker", async () => {
-    zitadelIdpFinishMock.mockResolvedValue({
-      kind: "complete",
-      uid: "u1",
-      email: "merchant@example.com",
-      tenantId: "tenant-1",
-      setCookies: [],
-    });
-
-    const result = await finishZitadelGoogleSignIn(input);
-
-    expect(result).toEqual({
-      ok: true,
-      data: { tenantId: "tenant-1", multipleTenants: false, mfaRequired: false, emailOtpRequired: false },
-    });
-  });
-
-  it("forwards User-Agent and X-Forwarded-For from the incoming request", async () => {
-    zitadelIdpFinishMock.mockResolvedValue({
-      kind: "complete",
-      uid: "u1",
-      email: "merchant@example.com",
-      tenantId: "tenant-1",
-      setCookies: [],
-    });
-
-    await finishZitadelGoogleSignIn(input);
-
-    const call = zitadelIdpFinishMock.mock.calls[0]![0];
     expect(call.userAgent).toBe("Mozilla/5.0 test-client");
     expect(call.forwardedFor).toBe("198.51.100.7");
   });

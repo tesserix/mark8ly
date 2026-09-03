@@ -35,8 +35,6 @@ import {
   confirmEmailOTPLogin,
   resendEmailOTPCode,
 } from "@/app/login/actions";
-import { startAdminGoogleSignIn } from "@/app/auth/idp/actions";
-import { messageForAdminGoogleError } from "@/lib/auth/google-sign-in-admin";
 import { prepareCrossDomainNavigation } from "@/lib/auth/cross-domain-handoff";
 import { LinkProviderPrompt } from "@repo/ui/auth/link-provider-prompt";
 
@@ -72,27 +70,14 @@ interface SignInFormProps {
    * Which identity provider backs this sign-in. Read defensively: only
    * the exact literal `"zitadel"` switches this form onto the Zitadel
    * path — anything else, including undefined, keeps today's GIP flow.
-   * Wired from `publicConfig` by `/login/page.tsx`.
+   * The flag itself does not exist yet (Task 6 wires it from
+   * `publicConfig` into `/login/page.tsx`), so in practice this prop is
+   * unset in production until then.
    */
   provider?: string;
-  /**
-   * An outcome code from a completed (and rejected, or interrupted)
-   * Google-through-Zitadel sign-in attempt — set by app/login/page.tsx
-   * from `?error=` when app/auth/idp/finish/route.ts redirects back here.
-   * Unused under GIP, where Google never leaves this page at all.
-   * Mapped to a truthful, distinct message via messageForAdminGoogleError
-   * rather than rendered directly — this value is a fixed code, never an
-   * internal error string.
-   */
-  googleErrorCode?: string;
 }
 
-export function SignInForm({
-  returnUrl,
-  authRequestId,
-  provider,
-  googleErrorCode,
-}: SignInFormProps = {}) {
+export function SignInForm({ returnUrl, authRequestId, provider }: SignInFormProps = {}) {
   const router = useRouter();
   const isZitadel = provider === "zitadel";
 
@@ -118,9 +103,7 @@ export function SignInForm({
     router.push(defaultPath);
   }
 
-  const [submitError, setSubmitError] = useState<string | null>(
-    googleErrorCode ? messageForAdminGoogleError(googleErrorCode) : null,
-  );
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [googlePending, setGooglePending] = useState(false);
   const [applePending, setApplePending] = useState(false);
@@ -383,39 +366,7 @@ export function SignInForm({
     }
   }
 
-  /**
-   * Under Zitadel there is no popup/credential exchange the way GIP has:
-   * this asks auth-bff (via startAdminGoogleSignIn) for a Google authUrl
-   * and does a full-page navigation there. The browser leaves this page
-   * entirely and comes back at app/auth/idp/finish/route.ts, which mints
-   * the session and redirects onward — there is nothing further for this
-   * function to do on success, unlike the GIP path below.
-   */
-  async function handleGoogleZitadel() {
-    setSubmitError(null);
-    setGooglePending(true);
-    try {
-      const result = await startAdminGoogleSignIn(authRequestId ?? "");
-      if (!result.ok) {
-        setSubmitError(result.message);
-        setGooglePending(false);
-        return;
-      }
-      if (typeof window !== "undefined") {
-        window.location.assign(result.authUrl);
-      }
-      // Leave googlePending true — the page is navigating away.
-    } catch {
-      setSubmitError("Google sign-in failed. Please try again.");
-      setGooglePending(false);
-    }
-  }
-
   async function handleGoogle() {
-    if (isZitadel) {
-      await handleGoogleZitadel();
-      return;
-    }
     setSubmitError(null);
     setGooglePending(true);
     try {
@@ -690,32 +641,31 @@ export function SignInForm({
           {pending ? "Signing in…" : "Sign in"}
         </button>
 
-        {/* Google now authenticates through Zitadel's IDP-intent flow
-            (Task 6) — under both providers this renders. Apple is out of
-            scope for the Zitadel path in this phase and stays GIP-only. */}
-        <div className="relative py-1">
-          <div className="absolute inset-0 flex items-center" aria-hidden="true">
-            <div className="w-full border-t border-border-subtle" />
-          </div>
-          <div className="relative flex justify-center">
-            <span className="bg-background px-3 text-xs uppercase tracking-wider text-foreground-tertiary">
-              or
-            </span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleGoogle}
-          disabled={disabled}
-          className="inline-flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <GoogleMark />
-          {googlePending ? "Opening Google…" : "Continue with Google"}
-        </button>
-
+        {/* Google/Apple still authenticate through GIP, which is out of
+            scope for the Zitadel path in this phase. */}
         {!isZitadel && (
           <>
+            <div className="relative py-1">
+              <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                <div className="w-full border-t border-border-subtle" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-background px-3 text-xs uppercase tracking-wider text-foreground-tertiary">
+                  or
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogle}
+              disabled={disabled}
+              className="inline-flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <GoogleMark />
+              {googlePending ? "Opening Google…" : "Continue with Google"}
+            </button>
+
             {/* Rendered only when a Services ID is configured. Apple treats
                 web as a separate client from the iOS app, so until that
                 exists the button would fail at Apple rather than in our

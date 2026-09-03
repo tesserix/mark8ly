@@ -16,7 +16,6 @@ import {
   completeMFAChallenge,
   zitadelLogin,
   zitadelTotp,
-  zitadelIdpFinish,
   AuthBffError,
 } from "@/lib/auth/auth-bff";
 import type { LoginOutcome } from "@/lib/auth/login-response";
@@ -25,13 +24,16 @@ import {
   PlatformApiError,
   type Membership,
 } from "@/lib/api/platform-api";
+import { platformInternalHeaders } from "@/lib/api/server/platformInternal";
 import { publicConfig } from "@/lib/config";
-import { tenantIdForHostSlug } from "@/lib/auth/tenant-host";
 import {
   mintZitadelTotpCode,
   verifyZitadelTotpCode,
   ZitadelTotpCodeError,
 } from "@repo/ui/auth/zitadel-totp-code";
+
+const PLATFORM_API_URL =
+  process.env.PLATFORM_API_URL ?? "http://localhost:8086";
 
 // Same HMAC key every other short-lived admin handoff/exchange code in
 // this app signs with (see cross-domain-handoff.ts, auth/handoff/route.ts).
@@ -40,6 +42,32 @@ const SESSION_ENCRYPT_KEY = process.env.SESSION_ENCRYPT_KEY ?? "";
 // Long enough for a user to fetch a code from their authenticator app,
 // short enough to be useless if it leaked anywhere afterward.
 const ZITADEL_TOTP_CODE_TTL_SECONDS = 300;
+
+// If the sign-in request is arriving at `{slug}-admin.mark8ly.com`,
+// resolve that slug to a tenant id. Returns null when the host is not
+// a per-tenant subdomain, when platform-api is unreachable, or when
+// the slug isn't a known store. Best-effort — never throws.
+async function tenantIdForHostSlug(
+  hostHeader: string | null | undefined,
+): Promise<string | null> {
+  if (!hostHeader) return null;
+  // Strip the port if one was appended (e.g. during local dev or tests).
+  const host = hostHeader.split(":")[0] ?? "";
+  const match = host.match(/^([^.]+)-admin\.mark8ly\.com$/);
+  if (!match || !match[1]) return null;
+  const slug = match[1];
+  try {
+    const res = await fetch(
+      `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(slug)}`,
+      { cache: "no-store", headers: platformInternalHeaders() },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data?: { tenant_id?: string } };
+    return body.data?.tenant_id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 type Result<T> =
   | { ok: true; data: T }
@@ -306,56 +334,6 @@ export async function confirmZitadelTotp(
     });
 
     return await mapZitadelOutcome(outcome, claims.tenant_id, claims.multiple_tenants);
-  } catch (err) {
-    return fail(err);
-  }
-}
-
-/**
- * finishZitadelGoogleSignIn is the Google-through-Zitadel counterpart of
- * `signInWithZitadel`: instead of a login-name/password pair, the caller
- * (app/auth/idp/finish/route.ts) hands over the intent id/token Zitadel
- * appended to its redirect back to the browser, plus the `workspaceTenant`
- * it resolved from the request host (see lib/auth/tenant-host.ts) — the
- * merchant Google identity is not known until auth-bff resolves the
- * intent, so unlike the password path there is no email to run
- * `resolveWorkspaceTenant` against ahead of the call.
- *
- * Reuses `mapZitadelOutcome`, the exact same session-minting path
- * `signInWithZitadel`/`confirmZitadelTotp` use — a completed sign-in here
- * mints `m8_session` (or a callback_url to auth-bff's own OIDC finalize)
- * exactly the way a password sign-in does, never a second cookie-minting
- * path. `multipleTenants` is always false: this path never offers a
- * tenant picker — the host already picked one tenant to try, and
- * auth-bff's FGA membership check independently confirms or rejects it.
- *
- * `intentId`/`intentToken` are the ONLY inputs identity is derived from —
- * see zitadelIdpFinish's doc and idpFinishRequest.User's doc on
- * auth-bff's side for why the `user` query param Zitadel's redirect can
- * carry is never read, here or anywhere upstream of this call.
- */
-export interface FinishZitadelGoogleSignInInput {
-  authRequestId: string;
-  intentId: string;
-  intentToken: string;
-  workspaceTenant: string;
-}
-
-export async function finishZitadelGoogleSignIn(
-  input: FinishZitadelGoogleSignInInput,
-): Promise<Result<SignInSuccess>> {
-  try {
-    const h = await headers();
-    const outcome = await zitadelIdpFinish({
-      authRequestId: input.authRequestId,
-      intentId: input.intentId,
-      intentToken: input.intentToken,
-      workspaceTenant: input.workspaceTenant,
-      userAgent: h.get("user-agent") ?? undefined,
-      forwardedFor: h.get("x-forwarded-for") ?? undefined,
-    });
-
-    return await mapZitadelOutcome(outcome, input.workspaceTenant, false);
   } catch (err) {
     return fail(err);
   }

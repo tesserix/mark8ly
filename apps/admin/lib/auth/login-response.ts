@@ -24,6 +24,18 @@ export type LoginOutcome =
 
 export class LoginResponseError extends Error {}
 
+/** True when `key` is exactly `true` at EITHER nesting level.
+ *
+ * auth-bff's envelopes are inconsistent by endpoint — /auth/auto-login nests under
+ * `data`, /auth/otp/verify does not, and /auth/zitadel/login mixes both in one body.
+ * Checking only the level we expect is what makes a nesting change silently complete
+ * a login with a factor outstanding, which is the defect class this module exists to
+ * stop. We act only on `=== true`, so an unexpected placement can at worst prompt for
+ * a factor that was not needed — never skip one. */
+function flagAtEitherLevel(top: Record<string, unknown>, data: Record<string, unknown>, key: string): boolean {
+  return top[key] === true || data[key] === true;
+}
+
 export function parseLoginResponse(body: unknown): LoginOutcome {
   if (typeof body !== "object" || body === null) {
     throw new LoginResponseError("login response was not an object");
@@ -35,19 +47,25 @@ export function parseLoginResponse(body: unknown): LoginOutcome {
 
   // Step-ups first: a body carrying both a factor requirement and a completion
   // must never be read as complete.
-  if (top.totp_required === true) {
-    const sessionId = typeof top.session_id === "string" ? top.session_id : "";
-    const sessionToken = typeof top.session_token === "string" ? top.session_token : "";
+  if (flagAtEitherLevel(top, data, "totp_required")) {
+    const sessionId =
+      typeof top.session_id === "string" ? top.session_id
+      : typeof data.session_id === "string" ? data.session_id : "";
+    const sessionToken =
+      typeof top.session_token === "string" ? top.session_token
+      : typeof data.session_token === "string" ? data.session_token : "";
     if (!sessionId || !sessionToken) {
       throw new LoginResponseError("totp_required without a session to continue");
     }
     return { kind: "totp_required", sessionId, sessionToken };
   }
-  if (data.mfa_required === true) return { kind: "mfa_required" };
-  if (data.email_otp_required === true) return { kind: "email_otp_required" };
+  if (flagAtEitherLevel(top, data, "mfa_required")) return { kind: "mfa_required" };
+  if (flagAtEitherLevel(top, data, "email_otp_required")) return { kind: "email_otp_required" };
 
-  if (typeof top.handoff_url === "string" && top.handoff_url) {
-    return { kind: "handoff", handoffUrl: top.handoff_url };
+  const handoffUrl = typeof top.handoff_url === "string" ? top.handoff_url
+    : typeof data.handoff_url === "string" ? data.handoff_url : "";
+  if (handoffUrl) {
+    return { kind: "handoff", handoffUrl };
   }
 
   const uid = typeof data.uid === "string" ? data.uid : typeof top.uid === "string" ? top.uid : "";

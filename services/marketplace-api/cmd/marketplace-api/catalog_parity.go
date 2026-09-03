@@ -31,6 +31,26 @@ const checkTimeout = 30 * time.Second
 // the console one bad deploy away from the payment path even when cached.
 // On its own ticker it cannot, whatever it does.
 //
+// # Why this fetches directly and NOT through consolecatalog.Cache
+//
+// Deliberate, and revisited when the cache landed (tesserix-home#328). This
+// monitor's output is evidence of two things: that the console's data agrees
+// with the compiled catalog, and that the console is reachable from this
+// service every interval. Routing it through the Cache would destroy the
+// second: with a 6h TTL and a 15m interval, ~23 of every 24 checks would be
+// answered from memory and would re-compare bytes already compared, while a
+// console that went down would keep producing "parity clean" until the TTL
+// expired. A monitor that reports healthy through an outage is worse than no
+// monitor.
+//
+// The cache is exercised instead by startAdminCatalogResolve in
+// catalog_admin_resolve.go, which runs on this same pod and has the opposite
+// job: it proves the READ PATH — token, fetch, cache, fail-open, compiled
+// fallback — works, which is what phase C will serve from. Two jobs, two
+// call sites on one pod, neither substituting for the other. When phase C
+// moves serving onto the Cache, that is where the cached read belongs; this
+// monitor should keep reading directly for as long as it exists.
+//
 // # Unconfigured is a supported state, not a degraded one
 //
 // Absent credentials mean no goroutine, no reads, and behaviour identical to

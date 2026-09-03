@@ -1004,6 +1004,20 @@ func main() {
 		// invariant. Unconfigured, nothing is started at all.
 		startCatalogParityRun(cfg, log)
 
+		// tesserix-home#328 phase B — exercise the Cache's READ PATH.
+		//
+		// Sits beside the parity run because both belong on the pod that
+		// reads the plan catalog, and does a deliberately different job: the
+		// monitor above fetches directly to evidence reachability and data
+		// agreement, this one resolves through the cache to exercise what
+		// phase C will serve from (platformadmin/money.go, planchange,
+		// reconciliation — all admin-side). It logs and discards; prices
+		// still come from the compiled catalog. It carries its own
+		// m.RunsAdmin() gate rather than relying on this block, so the mode
+		// contract is stated and tested in one place.
+		// See catalog_admin_resolve.go.
+		startAdminCatalogResolve(m, cfg, log)
+
 		subscriptionSvc := subscription.NewService(subscription.ServiceConfig{
 			DB:     conn,
 			Repo:   subscriptionRepo,

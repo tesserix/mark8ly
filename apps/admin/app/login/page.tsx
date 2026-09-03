@@ -53,7 +53,11 @@ export default async function LoginPage({ searchParams }: PageProps) {
       <BrandBar />
       <main id="main" className="px-6 py-16 sm:py-24">
         <div className="mx-auto w-full max-w-md">
-          <SignInForm returnUrl={safeReturnUrl} authRequestId={authRequest} />
+          <SignInForm
+            returnUrl={safeReturnUrl}
+            authRequestId={authRequest}
+            provider={publicConfig.authProvider}
+          />
           {/* Operator disclosure on the sign-in screen: this is where a
               merchant decides to trust the platform, and the entity on their
               settlement statement should not be a surprise later. */}

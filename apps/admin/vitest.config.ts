@@ -45,6 +45,7 @@ export default defineConfig({
       // @repo/ui sub-path exports — vitest needs explicit aliases because
       // it does not process package.json "exports" maps at test time.
       "@repo/ui/subscription": path.resolve(__dirname, "../../packages/ui/src/subscription/index.ts"),
+      "@repo/ui/brand-bar": path.resolve(__dirname, "../../packages/ui/src/brand-bar.tsx"),
       "@repo/ui/price-display": path.resolve(__dirname, "../../packages/ui/src/price-display.tsx"),
       "@repo/ui/role-badge": path.resolve(__dirname, "../../packages/ui/src/role-badge.tsx"),
       "@repo/ui/app-store-badges": path.resolve(__dirname, "../../packages/ui/src/app-store-badges.tsx"),

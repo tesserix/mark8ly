@@ -55,6 +55,10 @@ func fakeZitadelHandler(t *testing.T, policyJSON, methodsJSON, factorsJSON strin
 			w.Write([]byte(policyJSON))
 		case strings.HasSuffix(r.URL.Path, "/authentication_methods"):
 			w.Write([]byte(`{"authMethodTypes":` + methodsJSON + `}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+			// UserEmail: the fixed handler resolves email from Zitadel, not
+			// from the request body, so every handler test needs this.
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"a@b.test"}}}}`))
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/oidc/auth_requests/"):
 			finalized.Store(true)
 			w.Write([]byte(`{"callbackUrl":"https://admin.mark8ly.com/auth/callback?code=c&state=s"}`))
@@ -76,9 +80,9 @@ func TestLoginFactorRequiredDoesNotMintSession(t *testing.T) {
 	c := fakeZitadelHandler(t, policyForceMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_TOTP"]`, factorsPasswordOnly, &fin)
 
 	completeCalled := false
-	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) error {
+	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
 		completeCalled = true
-		return nil
+		return CompleteResult{}, nil
 	})
 
 	rec := httptest.NewRecorder()
@@ -108,9 +112,9 @@ func TestLoginCompleteCallsCompleteAndReturnsCallbackURL(t *testing.T) {
 	c := fakeZitadelHandler(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
 
 	var gotUID, gotEmail, gotTenant string
-	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) error {
+	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
 		gotUID, gotEmail, gotTenant = lc.UID, lc.Email, lc.TenantID
-		return nil
+		return CompleteResult{}, nil
 	})
 
 	rec := httptest.NewRecorder()
@@ -139,9 +143,9 @@ func TestLoginHandoffReturnsHandoffURLAndDoesNotCallComplete(t *testing.T) {
 	c := fakeZitadelHandler(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_U2F"]`, factorsPasswordOnly, &fin)
 
 	completeCalled := false
-	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) error {
+	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
 		completeCalled = true
-		return nil
+		return CompleteResult{}, nil
 	}).WithHostedLoginBaseURL("https://login.mark8ly.zitadel.cloud")
 
 	rec := httptest.NewRecorder()
@@ -193,9 +197,9 @@ func TestTotpCompleteCallsCompleteAndReturnsCallbackURL(t *testing.T) {
 	c := fakeZitadelHandler(t, policyForceMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_TOTP"]`, factorsWithTOTP, &fin)
 
 	completeCalled := false
-	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) error {
+	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
 		completeCalled = true
-		return nil
+		return CompleteResult{}, nil
 	})
 
 	rec := httptest.NewRecorder()
@@ -237,9 +241,9 @@ func TestLoginPassesTheUserAgentThroughSoDeviceguardStillWorks(t *testing.T) {
 
 	const wantUA = "Mark8lyZitadelLoginTest/1.0 (distinctive-ua)"
 	var got LoginContext
-	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) error {
+	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
 		got = lc
-		return nil
+		return CompleteResult{}, nil
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/zitadel/login",

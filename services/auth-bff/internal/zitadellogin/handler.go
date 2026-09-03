@@ -41,11 +41,25 @@ type LoginContext struct {
 	Country   string
 }
 
+// CompleteResult is what CompleteFunc reports back about the shared
+// post-identity gauntlet, beyond a plain error. Without this, CompleteFunc
+// had no way to say "a step-up is still outstanding" — the handler would
+// answer 200 with a callback_url while the browser still owed an MFA code or
+// an email-OTP, telling it the login was finished when it was not.
+type CompleteResult struct {
+	// MFARequired is true when the gauntlet minted only a pending cookie
+	// pending a TOTP code via POST /auth/mfa-challenge.
+	MFARequired bool
+	// EmailOTPRequired is true when the gauntlet minted only a pending
+	// cookie pending a mailed code via POST /auth/otp/verify.
+	EmailOTPRequired bool
+}
+
 // CompleteFunc runs the shared post-identity gauntlet — FGA membership, the
 // MFA gate, deviceguard, the email-OTP step-up, session minting. It is
 // injected rather than imported so this package stays a Zitadel client and
 // knows nothing about autologin.
-type CompleteFunc func(ctx context.Context, w http.ResponseWriter, lc LoginContext) error
+type CompleteFunc func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error)
 
 // Handler is the HTTP layer over Client: it owns request/response shapes and
 // the outcome switch, and defers every credential and sufficiency decision to
@@ -199,7 +213,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	// Password login through this page is never a federated (Google/Apple)
 	// identity — those never present a password to us at all.
 	res, err := h.c.CompleteIfSufficient(ctx, req.AuthRequestID, sess, false)
-	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.LoginName, req.WorkspaceTenant)
+	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant)
 }
 
 // totp reads {auth_request_id, login_name, session_id, session_token, code,
@@ -225,8 +239,15 @@ func (h *Handler) totp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// req.LoginName is NOT used from here on. On this step it is an
+	// unverified claim from the request body — the password check that
+	// verified login_name happened on the earlier /zitadel/login call, on a
+	// session this caller may not even own. finishComplete resolves the
+	// real subject's email from Zitadel via SessionFactors + UserEmail
+	// instead, so a caller cannot walk away with a session cookie, an audit
+	// event, or a mailed sign-in code addressed to an email of their choice.
 	res, err := h.c.CompleteAfterFactor(ctx, req.AuthRequestID, sess)
-	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.LoginName, req.WorkspaceTenant)
+	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant)
 }
 
 // respondOutcome is shared by login and totp: both end at CompleteIfSufficient
@@ -238,7 +259,6 @@ func (h *Handler) respondOutcome(
 	resErr error,
 	authRequestID string,
 	sess Session,
-	loginName string,
 	workspaceTenant string,
 ) {
 	ctx := r.Context()
@@ -253,7 +273,7 @@ func (h *Handler) respondOutcome(
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
 			return
 		}
-		h.finishComplete(w, r, res, sess, loginName, workspaceTenant)
+		h.finishComplete(w, r, res, sess, workspaceTenant)
 
 	case OutcomeFactorRequired:
 		// No session minted here — this IS the MFA gate. Minting now would
@@ -286,15 +306,27 @@ func (h *Handler) respondOutcome(
 
 // finishComplete resolves the subject of the now-sufficient session and runs
 // the shared post-identity gauntlet via the injected CompleteFunc.
-func (h *Handler) finishComplete(w http.ResponseWriter, r *http.Request, res Result, sess Session, loginName, workspaceTenant string) {
+func (h *Handler) finishComplete(w http.ResponseWriter, r *http.Request, res Result, sess Session, workspaceTenant string) {
 	ctx := r.Context()
-	// Result carries no subject — re-read it. Zitadel's login_name is the
-	// only identifier this package has for "email"; mark8ly logs in by
-	// email, so the value the caller submitted to /zitadel/login is used
-	// as-is rather than guessed at again here.
+	// Result carries no subject — re-read it.
 	factors, err := h.c.SessionFactors(ctx, sess.ID)
 	if err != nil || factors.UserID == "" {
 		slog.ErrorContext(ctx, "zitadellogin: could not resolve session subject after a sufficient decision", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+		return
+	}
+
+	// The email MUST come from Zitadel's own record of this session's
+	// subject, never from a request body. login_name on /zitadel/login is
+	// verified because it is checked against the password in the same call;
+	// login_name on /zitadel/totp is NOT verified against anything — a
+	// caller who owns valid credentials of their own could submit any
+	// address there and, without this resolution, walk away with a session
+	// cookie, an audit event, and a new-device sign-in email addressed to a
+	// victim of their choosing.
+	email, err := h.c.UserEmail(ctx, factors.UserID)
+	if err != nil {
+		slog.ErrorContext(ctx, "zitadellogin: could not resolve the verified email for session subject", "err", err, "user_id", factors.UserID)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
 		return
 	}
@@ -304,10 +336,30 @@ func (h *Handler) finishComplete(w http.ResponseWriter, r *http.Request, res Res
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
 		return
 	}
-	lc := h.loginContext(r, factors.UserID, loginName, workspaceTenant)
-	if err := h.complete(ctx, w, lc); err != nil {
+	lc := h.loginContext(r, factors.UserID, email, workspaceTenant)
+	cr, err := h.complete(ctx, w, lc)
+	if err != nil {
 		slog.ErrorContext(ctx, "zitadellogin: post-identity gauntlet failed", "err", err, "user_id", factors.UserID)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+		return
+	}
+
+	// A step-up (MFA or email-OTP) is still outstanding: the gauntlet minted
+	// only a pending cookie, not a real session. Answering with callback_url
+	// here would tell the browser the login finished when it did not — the
+	// exact defect this branch exists to prevent. Mirror the shape
+	// autologin's own GIP handler uses for the same two cases so the two
+	// providers answer identically.
+	if cr.MFARequired || cr.EmailOTPRequired {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"uid":                factors.UserID,
+				"email":              email,
+				"tenant_id":          workspaceTenant,
+				"mfa_required":       cr.MFARequired,
+				"email_otp_required": cr.EmailOTPRequired,
+			},
+		})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"callback_url": res.CallbackURL})

@@ -119,6 +119,13 @@ type Config struct {
 	ConsoleCatalogScope    string        `envconfig:"CONSOLE_CATALOG_SCOPE" default:""`
 	ConsoleCatalogMode     string        `envconfig:"CONSOLE_CATALOG_MODE" default:"test"`
 	ConsoleCatalogInterval time.Duration `envconfig:"CONSOLE_CATALOG_INTERVAL" default:"15m"`
+	// How long a fetched catalog stays fresh before the cache tries the
+	// console again. Generous on purpose: the catalog changes a few times a
+	// year, so a long TTL costs no correctness and keeps the console off
+	// anything a customer waits on. A short TTL would not make prices more
+	// current — it would only multiply the reads that can discover an
+	// outage. Zero or negative takes consolecatalog.DefaultTTL.
+	ConsoleCatalogCacheTTL time.Duration `envconfig:"CONSOLE_CATALOG_CACHE_TTL" default:"6h"`
 
 	// RESEND_WEBHOOK_SECRET verifies inbound provider delivery events
 	// (#348B). Empty leaves the endpoint mounted but inert: it answers 503

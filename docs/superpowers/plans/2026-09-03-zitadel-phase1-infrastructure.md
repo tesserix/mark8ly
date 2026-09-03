@@ -35,7 +35,7 @@ The `restricted` gate is the entire structural guarantee of spec decision D2 —
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `platformProjects[].projectRoleCheck` (bool, optional, default `False`) is honoured by the reconciler. Task 3 sets it to `true` for `mark8ly-admin`.
+- Produces: `platformProjects[].projectRoleCheck` (bool, optional) is honoured by the reconciler. **Absent means unmanaged — the reconciler does not touch the flag.** Task 3 declares it explicitly on both mark8ly projects (`true` for `mark8ly-admin`, `false` for `mark8ly-storefront`).
 
 - [ ] **Step 1: Write the failing tests**
 

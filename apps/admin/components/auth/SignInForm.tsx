@@ -25,7 +25,7 @@ import { signInWithPassword, signInWithGoogle, signInWithApple, GIPError } from 
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
 import { getAppleCredential } from "@/lib/gip/apple-js";
 import { appleSignInEnabled, publicConfig } from "@/lib/config";
-import { isTrustedZitadelHostedUrl } from "@/lib/auth/zitadel-oidc";
+import { isTrustedZitadelHostedUrl, isTrustedCallbackUrl } from "@/lib/auth/zitadel-oidc";
 import { linkGoogleToInternalPassword } from "@/lib/gip/link";
 import {
   signIn,
@@ -212,10 +212,25 @@ export function SignInForm({ returnUrl, authRequestId, provider }: SignInFormPro
       // (the callback route, the PKCE pair, the state check) dead code
       // the flow never traversed, and left the flow cookies alive for
       // their full TTL.
-      if (typeof window !== "undefined") {
+      //
+      // Validate first: the state check on /auth/callback only runs if
+      // the browser lands there at all — callbackUrl is what decides
+      // where the browser goes, so an unchecked server value here is an
+      // open redirect on a freshly-authenticated session. The only
+      // legitimate target is this app's own /auth/callback, on this
+      // app's own origin.
+      if (
+        typeof window !== "undefined" &&
+        isTrustedCallbackUrl(data.callbackUrl, window.location.origin)
+      ) {
         window.location.assign(data.callbackUrl);
+        return;
       }
-      return;
+      // Untrusted callbackUrl: the session is already valid at this
+      // point, so don't strand the merchant — log the rejection and
+      // fall through to the normal destination logic below, exactly as
+      // if no callbackUrl had been supplied.
+      console.error("rejected an untrusted Zitadel callbackUrl", data.callbackUrl);
     }
     await goToDestination(data.multipleTenants ? "/pick-tenant" : "/dashboard");
   }

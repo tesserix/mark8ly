@@ -78,7 +78,7 @@ beforeEach(() => {
   assign.mockReset();
   Object.defineProperty(window, "location", {
     writable: true,
-    value: { assign },
+    value: { assign, origin: "https://admin.mark8ly.com" },
   });
 });
 
@@ -204,6 +204,28 @@ describe("SignInForm — Zitadel callbackUrl handoff (Important 1)", () => {
     await fillAndSubmit();
 
     await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("refuses to navigate to a callbackUrl on a foreign origin, and still completes login via the normal destination", async () => {
+    const hostileUrl = "https://evil.example.com/steal?state=abc";
+    signInWithZitadel.mockResolvedValue({
+      ok: true,
+      data: {
+        multipleTenants: false,
+        mfaRequired: false,
+        emailOtpRequired: false,
+        callbackUrl: hostileUrl,
+      },
+    });
+
+    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    await fillAndSubmit();
+
+    // Login still completes — the session is already valid, so a
+    // rejected callbackUrl must not strand the merchant.
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
+    expect(assign).not.toHaveBeenCalledWith(hostileUrl);
     expect(assign).not.toHaveBeenCalled();
   });
 });

@@ -92,3 +92,23 @@ export function isTrustedZitadelHostedUrl(url: string, issuer: string): boolean 
     return false;
   }
 }
+
+/**
+ * isTrustedCallbackUrl checks a server-supplied `callback_url` (see
+ * `LoginOutcome`'s "complete" case) against the one legitimate target for
+ * it: this application's own `/auth/callback` route, on this app's own
+ * origin. Unlike `handoffUrl`, which deliberately leaves this origin for
+ * Zitadel's hosted UI, `callbackUrl` should never point anywhere else —
+ * auth-bff only ever hands this route's own URL back. A sibling check
+ * rather than reusing `isTrustedZitadelHostedUrl`, which validates a
+ * different destination (Zitadel's origin, not this app's).
+ */
+export function isTrustedCallbackUrl(url: string, appOrigin: string): boolean {
+  if (!appOrigin) return false;
+  try {
+    const target = new URL(url);
+    return target.origin === new URL(appOrigin).origin;
+  } catch {
+    return false;
+  }
+}

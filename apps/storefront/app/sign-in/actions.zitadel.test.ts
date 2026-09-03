@@ -55,7 +55,10 @@ import {
   GIPTokenVerificationError,
   verifyGIPIdToken,
 } from "@/lib/gip/verify-id-token";
-import { verifyCustomerCredential } from "@/lib/auth/auth-bff-customer";
+import {
+  AuthBffCustomerError,
+  verifyCustomerCredential,
+} from "@/lib/auth/auth-bff-customer";
 import { platformInternalFetch } from "@/lib/api/server/platformInternal";
 
 const verifyGIPIdTokenMock = vi.mocked(verifyGIPIdToken);
@@ -251,6 +254,94 @@ describe("customerSignIn — failed verification sets no cookie", () => {
 
     expect(result.ok).toBe(false);
     expect(cookiesSetSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("customerSignIn — truthful messages for outcomes other than a wrong credential", () => {
+  it("a wrong password still produces the credential message (the useful signal isn't flattened away)", async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    verifyCustomerCredentialMock.mockResolvedValue({ kind: "rejected" });
+    const { customerSignIn } = await loadActions();
+
+    const result = await customerSignIn({
+      loginName: "e@x.com",
+      password: "wrong-password",
+      storeSlug: "shop",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "invalid_credentials",
+      message: "Email or password is incorrect.",
+    });
+  });
+
+  it('a "totp_required" outcome does NOT say the password is incorrect, and has its own message', async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    verifyCustomerCredentialMock.mockResolvedValue({
+      kind: "totp_required",
+      sessionId: "s1",
+      sessionToken: "tok1",
+    });
+    const { customerSignIn } = await loadActions();
+
+    const result = await customerSignIn({
+      loginName: "e@x.com",
+      password: SUBMITTED_PASSWORD,
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).not.toBe("Email or password is incorrect.");
+      expect(result.message.toLowerCase()).toContain("authenticator");
+    }
+  });
+
+  it('a "handoff" outcome does NOT say the password is incorrect, does not surface the handoff URL, and has its own message', async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    verifyCustomerCredentialMock.mockResolvedValue({
+      kind: "handoff",
+      handoffUrl: "https://zitadel.example/ui/v2/login/login",
+    });
+    const { customerSignIn } = await loadActions();
+
+    const result = await customerSignIn({
+      loginName: "e@x.com",
+      password: SUBMITTED_PASSWORD,
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).not.toBe("Email or password is incorrect.");
+      expect(result.message).not.toContain("zitadel.example");
+      expect(result.message.toLowerCase()).toContain("sign-in method");
+    }
+  });
+
+  it("an AuthBffCustomerError produces a generic message with no internal detail", async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    verifyCustomerCredentialMock.mockRejectedValue(
+      new AuthBffCustomerError(503, "zitadel_unavailable"),
+    );
+    const { customerSignIn } = await loadActions();
+
+    const result = await customerSignIn({
+      loginName: "e@x.com",
+      password: SUBMITTED_PASSWORD,
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toBe(
+        "Sign-in is temporarily unavailable. Please try again shortly.",
+      );
+      expect(result.message).not.toContain("503");
+      expect(result.message).not.toContain("zitadel_unavailable");
+      expect(result.message.toLowerCase()).not.toContain("auth-bff");
+    }
   });
 });
 

@@ -187,18 +187,51 @@ export async function customerSignIn(
         loginName: input.loginName,
         password: input.password,
       });
-      if (outcome.kind !== "complete") {
-        // Covers `rejected` (wrong credential — collapsed to one outcome,
-        // see auth-bff-customer.ts) as well as `totp_required` and
-        // `handoff`, neither of which the storefront form collects yet.
-        // No cookie is set in any of these cases.
-        return {
-          ok: false,
-          code: "invalid_credentials",
-          message: "Email or password is incorrect.",
-        };
+      // Each non-"complete" outcome gets its own truthful message. None of
+      // them may render as "email or password is incorrect" — that would
+      // be false for a customer who typed the right password but hit a
+      // factor this endpoint can't finish (totp_required) or can't collect
+      // at all (handoff), and would send them into a retry loop that can
+      // never succeed. No cookie is set for any outcome below.
+      switch (outcome.kind) {
+        case "complete":
+          verified = { uid: outcome.uid, email: outcome.email };
+          break;
+        case "rejected":
+          // The one case this message IS true for: a wrong password or an
+          // unknown login name, collapsed to a single outcome upstream
+          // (see auth-bff-customer.ts) so this response can't be used to
+          // enumerate accounts.
+          return {
+            ok: false,
+            code: "invalid_credentials",
+            message: "Email or password is incorrect.",
+          };
+        case "totp_required":
+          // Zero customers have a second factor enrolled today (per the
+          // phase's progress ledger) — an honest "not supported yet"
+          // message is the correct interim. Building a TOTP entry screen
+          // is real UI work deferred to phase 3c alongside the Google
+          // trampoline.
+          return {
+            ok: false,
+            code: "totp_required",
+            message:
+              "This account needs an authenticator code to finish signing in, and this page can't collect one yet. Please contact support for help.",
+          };
+        case "handoff":
+          // A real, uncollectible factor (passkey, U2F, SMS OTP, recovery
+          // code, ...). The handoff URL is deliberately never surfaced —
+          // it lands the customer in Zitadel's own hosted UI, which mints
+          // no `mp_customer_session`, so following it would not complete
+          // sign-in on this storefront either.
+          return {
+            ok: false,
+            code: "signin_method_unsupported",
+            message:
+              "This account uses a sign-in method this storefront can't complete yet. Please contact support for help signing in.",
+          };
       }
-      verified = { uid: outcome.uid, email: outcome.email };
     } else {
       verified = await verifyGIPIdToken(
         input.idToken ?? "",
@@ -255,10 +288,17 @@ export async function customerSignIn(
         message: "Your sign-in session could not be verified. Please sign in again.",
       };
     }
+    // Anything else — including AuthBffCustomerError, whose .message is
+    // literally "auth-bff customer endpoint error: <code> (status <n>)" —
+    // must never reach the shopper verbatim. That string is meaningless as
+    // UI copy and hands an attacker internal error codes/status for free.
+    // Log the detail server-side and return one generic, actionable
+    // message instead.
+    console.error("customerSignIn failed with an unexpected error", err);
     return {
       ok: false,
       code: "unknown",
-      message: err instanceof Error ? err.message : String(err),
+      message: "Sign-in is temporarily unavailable. Please try again shortly.",
     };
   }
 }

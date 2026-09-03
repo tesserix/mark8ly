@@ -19,6 +19,11 @@ func main() {
 	dryRun := flag.Bool("dry-run", true,
 		"report what would migrate without writing anything to the Store or the DB. "+
 			"Default true — pass -dry-run=false to actually write.")
+	verify := flag.Bool("verify", false,
+		"read every stored reference through the Store and report whether each "+
+			"resolves, plus a census by reference scheme. Never writes. Used by "+
+			"mark8ly#621 to prove the credential paths were actually exercised "+
+			"before GCP Secret Manager is deleted.")
 	flag.Parse()
 
 	// LoadCarrierSecretJob mirrors cmd/refund-sweep-cron: it reads only
@@ -100,6 +105,23 @@ func main() {
 		Store:  secretStore,
 		DryRun: *dryRun,
 		Logger: log,
+	}
+
+	if *verify {
+		vres, verr := b.Verify(context.Background())
+		if verr != nil {
+			log.Error("carrier-secrets-backfill: verify failed", "err", verr)
+			os.Exit(1)
+		}
+		log.Info("carrier-secrets-backfill: verify done",
+			"examined", vres.Examined,
+			"resolved", vres.Resolved,
+			"failed", vres.Failed,
+			"by_scheme", vres.ByScheme)
+		if vres.Failed > 0 {
+			os.Exit(1)
+		}
+		return
 	}
 
 	res, err := b.Run(context.Background())

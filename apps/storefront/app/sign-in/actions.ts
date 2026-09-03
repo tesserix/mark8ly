@@ -68,7 +68,13 @@ interface CustomerSignInInput {
   password?: string;
 }
 
-async function resolveStore(
+/**
+ * resolveStore looks up a store's tenant_id/store_id by slug via
+ * platform-api. Exported so apps/storefront/app/auth/idp/finish/route.ts
+ * can resolve the same store shape completeCustomerSignIn needs, without
+ * a second copy of this lookup.
+ */
+export async function resolveStore(
   storeSlug: string,
 ): Promise<{ tenant_id: string; store_id: string } | null> {
   try {
@@ -162,8 +168,15 @@ async function ensureLoyaltyEnrollment(
  * and `confirmCustomerTotp` (authenticator-code path) both call this
  * instead of each carrying their own copy — a second copy of this tail
  * would drift the moment one path changed and the other didn't.
+ *
+ * Exported so apps/storefront/app/auth/idp/finish/route.ts — the Zitadel
+ * Google finish route, which resolves a {uid, email} from auth-bff's
+ * idp/finish endpoint rather than from a password/id-token — can reuse
+ * this exact tail too. See the phase brief: a second cookie-minting path
+ * there would drift from this one the same way a second copy of this
+ * function would.
  */
-async function completeCustomerSignIn(
+export async function completeCustomerSignIn(
   store: { tenant_id: string; store_id: string },
   cookieHost: string,
   storeSlug: string,

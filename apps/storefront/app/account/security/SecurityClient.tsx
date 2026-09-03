@@ -6,9 +6,7 @@ import {
   type LinkedProvider,
 } from "@repo/ui/auth/linked-providers-panel";
 import { isGoogleSignInOffered } from "@/lib/auth/provider";
-
-const TRAMPOLINE_BASE =
-  process.env.NEXT_PUBLIC_MARK8LY_AUTH_URL ?? "https://mark8ly.com";
+import { resolveGoogleSignInUrl } from "@/lib/auth/google-sign-in";
 
 interface SecurityClientProps {
   storeSlug: string;
@@ -51,16 +49,19 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
     };
   }, []);
 
-  function handleLinkGoogle(): void {
+  async function handleLinkGoogle(): Promise<void> {
     if (typeof window === "undefined") return;
-    const url = new URL("/auth/google", TRAMPOLINE_BASE);
-    url.searchParams.set(
-      "return_to",
-      `${window.location.origin}/account/security`,
-    );
-    url.searchParams.set("store_slug", storeSlug);
-    url.searchParams.set("intent", "link");
-    window.location.assign(url.toString());
+    const result = await resolveGoogleSignInUrl({
+      storeSlug,
+      intent: "link",
+      dest: "/account/security",
+      origin: window.location.origin,
+    });
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    window.location.assign(result.url);
   }
 
   async function handleUnlink(_providerId: string): Promise<void> {

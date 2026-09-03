@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AuthBffCustomerError,
+  finishCustomerIDPIntent,
+  startCustomerIDPIntent,
   verifyCustomerCredential,
   verifyCustomerTotp,
 } from "./auth-bff-customer";
@@ -195,6 +197,141 @@ describe("verifyCustomerTotp", () => {
     stubFetch(503, { error: "zitadel_unavailable" });
 
     await expect(verifyCustomerTotp(totpArgs)).rejects.toBeInstanceOf(
+      AuthBffCustomerError,
+    );
+  });
+});
+
+describe("startCustomerIDPIntent", () => {
+  it("sends the exact snake_case wire field for /auth/customer/idp/start", async () => {
+    const fetchMock = stubFetch(200, {
+      auth_url: "https://zitadel.example.com/idp/authorize/abc",
+    });
+
+    await startCustomerIDPIntent("https://shop.mark8ly.com/auth/idp/finish");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("http://localhost:8087/auth/customer/idp/start");
+    const parsedBody = JSON.parse(init.body as string);
+    expect(parsedBody).toEqual({
+      return_url: "https://shop.mark8ly.com/auth/idp/finish",
+    });
+  });
+
+  it("returns the auth_url on a 2xx response", async () => {
+    stubFetch(200, { auth_url: "https://zitadel.example.com/idp/authorize/abc" });
+
+    const authUrl = await startCustomerIDPIntent(
+      "https://shop.mark8ly.com/auth/idp/finish",
+    );
+
+    expect(authUrl).toBe("https://zitadel.example.com/idp/authorize/abc");
+  });
+
+  it("throws a distinguishable error on invalid_return_url (400)", async () => {
+    stubFetch(400, { error: "invalid_return_url" });
+
+    const rejection = startCustomerIDPIntent("https://evil.example.com/x");
+    await expect(rejection).rejects.toBeInstanceOf(AuthBffCustomerError);
+    await expect(rejection).rejects.toMatchObject({
+      status: 400,
+      code: "invalid_return_url",
+    });
+  });
+
+  it("throws a distinguishable error on a 5xx", async () => {
+    stubFetch(503, { error: "zitadel_unavailable" });
+
+    await expect(
+      startCustomerIDPIntent("https://shop.mark8ly.com/auth/idp/finish"),
+    ).rejects.toMatchObject({ status: 503, code: "zitadel_unavailable" });
+  });
+});
+
+describe("finishCustomerIDPIntent", () => {
+  const finishArgs = { intentId: "intent-1", intentToken: "intent-token-1" };
+
+  it("sends the exact snake_case wire fields for /auth/customer/idp/finish, and NEVER a user field", async () => {
+    const fetchMock = stubFetch(200, {
+      data: { uid: "u1", email: "customer@example.com" },
+    });
+
+    await finishCustomerIDPIntent(finishArgs);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("http://localhost:8087/auth/customer/idp/finish");
+    const parsedBody = JSON.parse(init.body as string);
+    expect(parsedBody).toEqual({
+      intent_id: "intent-1",
+      intent_token: "intent-token-1",
+    });
+    expect(parsedBody).not.toHaveProperty("user");
+  });
+
+  it("has no parameter for a `user` value at all — a tampered one has nothing to attach to", async () => {
+    stubFetch(200, { data: { uid: "u1", email: "customer@example.com" } });
+
+    // finishCustomerIDPIntent's signature only accepts intentId/intentToken
+    // (see FinishCustomerIDPArgs) — there is no field to smuggle an
+    // attacker-controlled `user` value through even if a caller tried.
+    const outcome = await finishCustomerIDPIntent({
+      ...finishArgs,
+      // @ts-expect-error — proving the extra field is not part of the type
+      user: "attacker@evil.com",
+    });
+
+    expect(outcome).toEqual({ kind: "complete", uid: "u1", email: "customer@example.com" });
+  });
+
+  it("maps a 2xx identity response to the completed outcome", async () => {
+    stubFetch(200, { data: { uid: "u1", email: "customer@example.com" } });
+
+    const outcome = await finishCustomerIDPIntent(finishArgs);
+
+    expect(outcome).toEqual({
+      kind: "complete",
+      uid: "u1",
+      email: "customer@example.com",
+    });
+  });
+
+  it.each([
+    ["email_not_verified", 401],
+    ["email_taken", 409],
+    ["email_ambiguous", 409],
+    ["unexpected_idp", 401],
+    ["invalid_intent", 401],
+    ["zitadel_unavailable", 503],
+  ])(
+    "maps %s (%i) to a distinct failed outcome, not a thrown error",
+    async (code, status) => {
+      stubFetch(status, { error: code });
+
+      const outcome = await finishCustomerIDPIntent(finishArgs);
+
+      expect(outcome).toEqual({ kind: "failed", code });
+    },
+  );
+
+  it("email_taken and email_ambiguous stay distinguishable from each other", async () => {
+    stubFetch(409, { error: "email_taken" });
+    const taken = await finishCustomerIDPIntent(finishArgs);
+
+    stubFetch(409, { error: "email_ambiguous" });
+    const ambiguous = await finishCustomerIDPIntent(finishArgs);
+
+    expect(taken).toEqual({ kind: "failed", code: "email_taken" });
+    expect(ambiguous).toEqual({ kind: "failed", code: "email_ambiguous" });
+    expect(taken).not.toEqual(ambiguous);
+  });
+
+  it("throws (not a failed outcome) on a transport failure", async () => {
+    const fn = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+    vi.stubGlobal("fetch", fn);
+
+    await expect(finishCustomerIDPIntent(finishArgs)).rejects.toBeInstanceOf(
       AuthBffCustomerError,
     );
   });

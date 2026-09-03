@@ -14,11 +14,13 @@ export function getAuthProvider(): "gip" | "zitadel" {
     : "gip";
 }
 
-// Google-through-Zitadel is phase 3c-2 and does not exist yet. Until it
-// does, the storefront must not offer any Google sign-in/sign-up/link
-// control while running against Zitadel — that control would still send
-// the customer's credential through GIP, the identity store we are
-// migrating off.
+// Google-through-Zitadel (phase 3c-2) now exists on both providers: under
+// GIP the control still goes through the mark8ly.com/auth/google
+// trampoline exactly as before, and under Zitadel it drives auth-bff's
+// own Google IDP intent instead (see @/lib/auth/google-sign-in). Kept as
+// its own function, rather than inlining `true` at each call site, so a
+// future gap in Google-through-Zitadel coverage (e.g. a third provider)
+// has one place to express "is Google offered at all" again.
 export function isGoogleSignInOffered(): boolean {
-  return getAuthProvider() === "gip";
+  return true;
 }

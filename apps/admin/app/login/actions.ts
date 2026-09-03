@@ -14,11 +14,15 @@ import {
   completeEmailOTPChallenge,
   resendEmailOTP,
   completeMFAChallenge,
+  zitadelLogin,
+  zitadelTotp,
   AuthBffError,
 } from "@/lib/auth/auth-bff";
+import type { LoginOutcome } from "@/lib/auth/login-response";
 import {
   listMemberTenants,
   PlatformApiError,
+  type Membership,
 } from "@/lib/api/platform-api";
 import { platformInternalHeaders } from "@/lib/api/server/platformInternal";
 import { publicConfig } from "@/lib/config";
@@ -86,45 +90,87 @@ interface SignInSuccess {
   // with no error — the UI must collect the code and call
   // confirmEmailOTPLogin.
   emailOtpRequired: boolean;
+  // Present when the sign-in came back with a Zitadel-issued
+  // callback_url on completion. The GIP path never sets this.
+  callbackUrl?: string;
+  // true when Zitadel itself (not auth-bff's usermfa gate) demands a
+  // TOTP code before the auth request can complete. zitadelSessionId /
+  // zitadelSessionToken must be carried by the UI into confirmZitadelTotp
+  // unchanged — no session cookie is minted at this point.
+  totpRequired?: boolean;
+  zitadelSessionId?: string;
+  zitadelSessionToken?: string;
+  // Present when auth-bff handed back a handoff to Zitadel's hosted UI
+  // instead of completing the login inline.
+  handoffUrl?: string;
+}
+
+/**
+ * resolveWorkspaceTenant picks the tenant a sign-in should land in.
+ *
+ * Phase P: multi-tenant membership. A user can own one tenant and be
+ * staff on another, so "find my workspace tenant" is no longer a
+ * single-row lookup. We list every tenant the identity key has any
+ * role on, pick the first, and flag the caller if there's more than
+ * one so the UI can offer a picker.
+ *
+ * Subdomain-aware primary selection: when the user signs in on
+ * `{slug}-admin.mark8ly.com` AND the slug resolves to a tenant the
+ * user belongs to, use that tenant instead of `tenants[0]`. Without
+ * this, a founder who owns `india-store` but also has a staff role on
+ * `demo-store` lands on the demo-store picker even though the
+ * india-store subdomain is unambiguous.
+ *
+ * Shared by both the GIP (`signIn`) and Zitadel (`signInWithZitadel`)
+ * paths so they cannot diverge on which tenant they pick. `identityKey`
+ * is the GIP uid on the GIP path; on the Zitadel path there is no GIP
+ * uid yet, so the caller passes the Zitadel login name (email), which
+ * platform-api's membership lookup accepts identically.
+ */
+async function resolveWorkspaceTenant(
+  identityKey: string,
+): Promise<
+  | { ok: true; primary: Membership; multipleTenants: boolean }
+  | { ok: false; code: string; message: string }
+> {
+  const tenants = await listMemberTenants(identityKey);
+  if (tenants.length === 0) {
+    return {
+      ok: false,
+      code: "tenant_not_found",
+      message: "no store found for this account",
+    };
+  }
+
+  const h = await headers();
+  const hostTenantId = await tenantIdForHostSlug(h.get("host"));
+  const hostMatched = hostTenantId
+    ? tenants.find((t) => t.tenant_id === hostTenantId) ?? null
+    : null;
+  const primary = hostMatched ?? tenants[0];
+  if (!primary) {
+    return {
+      ok: false,
+      code: "tenant_not_found",
+      message: "no store found for this account",
+    };
+  }
+
+  // When the host uniquely selects a tenant, skip the picker even if
+  // the user belongs to multiple stores — we've already committed to
+  // the one their subdomain points at.
+  const multipleTenants = tenants.length > 1 && !hostMatched;
+
+  return { ok: true, primary, multipleTenants };
 }
 
 export async function signIn(
   input: SignInInput,
 ): Promise<Result<SignInSuccess>> {
   try {
-    // Phase P: multi-tenant membership. A user can own one tenant and
-    // be staff on another, so "find my workspace tenant" is no longer
-    // a single-row lookup. We list every tenant the uid has any role
-    // on, pick the first, and flag the caller if there's more than
-    // one so the UI can offer a picker.
-    const tenants = await listMemberTenants(input.uid);
-    if (tenants.length === 0) {
-      return {
-        ok: false,
-        code: "tenant_not_found",
-        message: "no store found for this account",
-      };
-    }
-
-    // Subdomain-aware primary selection. When the user signs in on
-    // `{slug}-admin.mark8ly.com` AND the slug resolves to a tenant
-    // the user belongs to, use that tenant instead of `tenants[0]`.
-    // Without this, a founder who owns `india-store` but also has a
-    // staff role on `demo-store` lands on the demo-store picker even
-    // though the india-store subdomain is unambiguous.
-    const h = await headers();
-    const hostTenantId = await tenantIdForHostSlug(h.get("host"));
-    const hostMatched = hostTenantId
-      ? tenants.find((t) => t.tenant_id === hostTenantId) ?? null
-      : null;
-    const primary = hostMatched ?? tenants[0];
-    if (!primary) {
-      return {
-        ok: false,
-        code: "tenant_not_found",
-        message: "no store found for this account",
-      };
-    }
+    const resolution = await resolveWorkspaceTenant(input.uid);
+    if (!resolution.ok) return resolution;
+    const { primary, multipleTenants } = resolution;
 
     const result = await autoLogin({
       idToken: input.idToken,
@@ -132,29 +178,7 @@ export async function signIn(
       workspaceTenant: primary.tenant_id,
     });
 
-    if (result.setCookies.length) {
-      const c = await cookies();
-      for (const raw of result.setCookies) {
-        const parsed = parseSetCookie(raw);
-        if (parsed) {
-          c.set({
-            name: parsed.name,
-            value: parsed.value,
-            path: parsed.path ?? "/",
-            domain: parsed.domain,
-            httpOnly: parsed.httpOnly,
-            secure: parsed.secure,
-            sameSite: "lax",
-            maxAge: parsed.maxAge,
-          });
-        }
-      }
-    }
-
-    // When the host uniquely selects a tenant, skip the picker even if
-    // the user belongs to multiple stores — we've already committed to
-    // the one their subdomain points at.
-    const multipleTenants = tenants.length > 1 && !hostMatched;
+    await applySetCookies(result.setCookies);
 
     return {
       ok: true,
@@ -167,6 +191,169 @@ export async function signIn(
     };
   } catch (err) {
     return fail(err);
+  }
+}
+
+/**
+ * signInWithZitadel is the Zitadel-path counterpart of `signIn`: it
+ * resolves the workspace tenant with the exact same helper (so the two
+ * paths can never pick different tenants for the same account), submits
+ * the login-name + password pair to auth-bff's Zitadel endpoint, and
+ * maps whatever `LoginOutcome` comes back onto the same `SignInSuccess`
+ * shape the login form already reads.
+ *
+ * User-Agent and X-Forwarded-For are read from the incoming request and
+ * forwarded to auth-bff. This is load-bearing, not hygiene: auth-bff
+ * fingerprints the device from the user agent and rate-limits email OTP
+ * by client IP. Phase 2 fixed exactly this defect one layer down
+ * (server-to-server); omitting it here would silently re-create it one
+ * layer up (browser-to-server) — every user would collapse onto one
+ * device fingerprint with no failing test and no error log.
+ */
+export interface SignInWithZitadelInput {
+  email: string;
+  password: string;
+  authRequestId: string;
+}
+
+export async function signInWithZitadel(
+  input: SignInWithZitadelInput,
+): Promise<Result<SignInSuccess>> {
+  try {
+    const resolution = await resolveWorkspaceTenant(input.email);
+    if (!resolution.ok) return resolution;
+    const { primary, multipleTenants } = resolution;
+
+    const h = await headers();
+    const outcome = await zitadelLogin({
+      authRequestId: input.authRequestId,
+      loginName: input.email,
+      password: input.password,
+      workspaceTenant: primary.tenant_id,
+      userAgent: h.get("user-agent") ?? undefined,
+      forwardedFor: h.get("x-forwarded-for") ?? undefined,
+    });
+
+    return await mapZitadelOutcome(outcome, primary.tenant_id, multipleTenants);
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * confirmZitadelTotp finishes a Zitadel sign-in that Zitadel itself
+ * stepped up with a TOTP challenge (distinct from auth-bff's own
+ * usermfa gate, which `confirmMFALogin` handles). The brief describes
+ * this action's input as `{ authRequestId, sessionId, sessionToken,
+ * code }`, but `zitadelTotp` also requires `workspace_tenant`, and there
+ * is no pending-cookie mechanism yet on the Zitadel path to recover it
+ * server-side the way `confirmMFALogin` recovers auth-bff's own
+ * m8_mfa_pending cookie. So the caller — the UI, which already has
+ * `tenantId`/`multipleTenants` from the preceding `signInWithZitadel`
+ * result — must carry them through here too.
+ */
+export interface ConfirmZitadelTotpInput {
+  authRequestId: string;
+  sessionId: string;
+  sessionToken: string;
+  code: string;
+  tenantId: string;
+  multipleTenants: boolean;
+}
+
+export async function confirmZitadelTotp(
+  input: ConfirmZitadelTotpInput,
+): Promise<Result<SignInSuccess>> {
+  try {
+    const trimmed = input.code.trim();
+    if (!trimmed) {
+      return {
+        ok: false,
+        code: "invalid_code",
+        message: "Enter the 6-digit code from your authenticator app.",
+      };
+    }
+
+    const h = await headers();
+    const outcome = await zitadelTotp({
+      authRequestId: input.authRequestId,
+      sessionId: input.sessionId,
+      sessionToken: input.sessionToken,
+      code: trimmed,
+      workspaceTenant: input.tenantId,
+      userAgent: h.get("user-agent") ?? undefined,
+      forwardedFor: h.get("x-forwarded-for") ?? undefined,
+    });
+
+    return await mapZitadelOutcome(outcome, input.tenantId, input.multipleTenants);
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
+ * mapZitadelOutcome forwards whatever cookies auth-bff minted (none, for
+ * a step-up outcome) and maps a `LoginOutcome` onto the existing
+ * `Result<SignInSuccess>` shape, shared by `signInWithZitadel` and
+ * `confirmZitadelTotp`.
+ */
+async function mapZitadelOutcome(
+  outcome: LoginOutcome & { setCookies: string[] },
+  tenantId: string,
+  multipleTenants: boolean,
+): Promise<Result<SignInSuccess>> {
+  await applySetCookies(outcome.setCookies);
+
+  switch (outcome.kind) {
+    case "complete":
+      return {
+        ok: true,
+        data: {
+          tenantId,
+          multipleTenants,
+          mfaRequired: false,
+          emailOtpRequired: false,
+          ...(outcome.callbackUrl ? { callbackUrl: outcome.callbackUrl } : {}),
+        },
+      };
+    case "mfa_required":
+      return {
+        ok: true,
+        data: { tenantId, multipleTenants, mfaRequired: true, emailOtpRequired: false },
+      };
+    case "email_otp_required":
+      return {
+        ok: true,
+        data: { tenantId, multipleTenants, mfaRequired: false, emailOtpRequired: true },
+      };
+    case "totp_required":
+      return {
+        ok: true,
+        data: {
+          tenantId,
+          multipleTenants,
+          mfaRequired: false,
+          emailOtpRequired: false,
+          totpRequired: true,
+          zitadelSessionId: outcome.sessionId,
+          zitadelSessionToken: outcome.sessionToken,
+        },
+      };
+    case "handoff":
+      return {
+        ok: true,
+        data: {
+          tenantId,
+          multipleTenants,
+          mfaRequired: false,
+          emailOtpRequired: false,
+          handoffUrl: outcome.handoffUrl,
+        },
+      };
+    default: {
+      const _exhaustive: never = outcome;
+      throw new Error(`unhandled LoginOutcome kind: ${JSON.stringify(_exhaustive)}`);
+    }
   }
 }
 
@@ -274,6 +461,32 @@ export async function resendEmailOTPCode(): Promise<Result<null>> {
     return { ok: true, data: null };
   } catch (err) {
     return fail(err);
+  }
+}
+
+// applySetCookies forwards every Set-Cookie header auth-bff emitted to the
+// browser response, exactly the way `signIn` has always done inline. Used
+// by the Zitadel path (signInWithZitadel / confirmZitadelTotp via
+// mapZitadelOutcome) — left as a standalone helper rather than folded into
+// the GIP path's existing inline blocks so confirmMFALogin and
+// confirmEmailOTPLogin are untouched.
+async function applySetCookies(setCookies: string[]): Promise<void> {
+  if (!setCookies.length) return;
+  const c = await cookies();
+  for (const raw of setCookies) {
+    const parsed = parseSetCookie(raw);
+    if (parsed) {
+      c.set({
+        name: parsed.name,
+        value: parsed.value,
+        path: parsed.path ?? "/",
+        domain: parsed.domain,
+        httpOnly: parsed.httpOnly,
+        secure: parsed.secure,
+        sameSite: "lax",
+        maxAge: parsed.maxAge,
+      });
+    }
   }
 }
 

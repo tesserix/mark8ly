@@ -77,7 +77,16 @@ function fail(err: unknown): { ok: false; code: string; message: string } {
   if (err instanceof PlatformApiError || err instanceof AuthBffError) {
     return { ok: false, code: err.code, message: err.message };
   }
-  return { ok: false, code: "unknown", message: String(err) };
+  // An error we didn't anticipate (e.g. a thrown LoginResponseError from
+  // parseLoginResponse) must never surface as user-facing copy — that
+  // leaks internal error shapes/messages to the browser. Log the detail
+  // server-side and hand the client a generic message instead.
+  console.error("login action failed with an unexpected error", err);
+  return {
+    ok: false,
+    code: "unknown",
+    message: "Something went wrong. Please try again.",
+  };
 }
 
 interface SignInInput {

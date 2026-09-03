@@ -279,6 +279,26 @@ describe("signInWithZitadel", () => {
     }
   });
 
+  it("maps an unexpected (non-AuthBffError) failure to a generic message via fail(), logging the detail instead", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const internal = new Error("LoginResponseError: unrecognised login response shape");
+    zitadelLoginMock.mockRejectedValue(internal);
+
+    const result = await signInWithZitadel(input);
+
+    expect(result).toEqual({
+      ok: false,
+      code: "unknown",
+      message: "Something went wrong. Please try again.",
+    });
+    expect(JSON.stringify(result)).not.toContain("LoginResponseError");
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "login action failed with an unexpected error",
+      internal,
+    );
+    consoleErrorSpy.mockRestore();
+  });
+
   it("returns tenant_not_found when the account has no memberships", async () => {
     listMemberTenantsMock.mockResolvedValue([]);
 

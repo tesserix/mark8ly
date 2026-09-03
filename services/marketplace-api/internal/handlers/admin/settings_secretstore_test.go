@@ -12,11 +12,11 @@ import (
 // TestShippingSettings_WithSecretStore_PutAndMask is the handler-level
 // pin for the write/read contract: an admin who saves a Delhivery
 // config with a carriersecrets.FakeStore wired must see the DB row
-// carry a "gsm://" reference AND the masked response preserve the
-// plaintext tail. If this test fails, the hybrid-store wiring broke
+// carry a "bao://" reference AND the masked response preserve the
+// plaintext tail. If this test fails, the ChainStore wiring broke
 // somewhere between putCredential and maskKeyField.
 func TestShippingSettings_WithSecretStore_PutAndMask(t *testing.T) {
-	store := carriersecrets.NewFakeStore("tesseracthub-480811", "mark8ly-test", crypto.NewNoopEncryptor())
+	store := carriersecrets.NewFakeStore(crypto.NewNoopEncryptor())
 	h := (&ShippingSettingsHandler{}).WithSecretStore(store)
 	ctx := context.Background()
 
@@ -24,12 +24,12 @@ func TestShippingSettings_WithSecretStore_PutAndMask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("putCredential: %v", err)
 	}
-	if !strings.HasPrefix(ref, "gsm://") {
-		t.Fatalf("reference not a gsm:// value: %s", ref)
+	if !strings.HasPrefix(ref, "bao://") {
+		t.Fatalf("reference not a bao:// value: %s", ref)
 	}
 	// "api_key" contains a literal '_', which encodeSegment escapes to "__"
 	// to stay injective (see #606).
-	wantRef := "gsm://projects/tesseracthub-480811/secrets/mark8ly-test-4a47610c-3f0c-4ef7-a64c-892480c4635e-shipping-delhivery-api__key"
+	wantRef := "bao://kv/mark8ly/marketplace-api/tenants/4a47610c-3f0c-4ef7-a64c-892480c4635e/shipping/delhivery/api__key"
 	if ref != wantRef {
 		t.Fatalf("unexpected ref: got %q want %q", ref, wantRef)
 	}
@@ -49,8 +49,8 @@ func TestShippingSettings_WithoutSecretStore_FallbackToEncryptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("putCredential: %v", err)
 	}
-	if strings.HasPrefix(ref, "gsm://") {
-		t.Fatalf("Encryptor-only handler unexpectedly produced a gsm:// reference: %s", ref)
+	if strings.HasPrefix(ref, "bao://") {
+		t.Fatalf("Encryptor-only handler unexpectedly produced a bao:// reference: %s", ref)
 	}
 	if !strings.HasPrefix(ref, "noop:") {
 		t.Fatalf("expected noop: prefix, got %s", ref)
@@ -62,18 +62,17 @@ func TestShippingSettings_WithoutSecretStore_FallbackToEncryptor(t *testing.T) {
 
 // TestPaymentSettings_WithSecretStore_ScopeIsPaymentDomain guards
 // against a copy-paste that would file Razorpay keys under the
-// "shipping" domain in GCP SM. An IAM binding scoped to
-// `resource.name.startsWith("…-shipping-…")` would silently deny
-// access without this.
+// "shipping" domain. A reference-prefix check scoped to
+// ".../payment/..." would silently miss this without it.
 func TestPaymentSettings_WithSecretStore_ScopeIsPaymentDomain(t *testing.T) {
-	store := carriersecrets.NewFakeStore("proj", "pfx", crypto.NewNoopEncryptor())
+	store := carriersecrets.NewFakeStore(crypto.NewNoopEncryptor())
 	h := (&PaymentSettingsHandler{}).WithSecretStore(store)
 	ctx := context.Background()
 	ref, err := h.putCredential(ctx, "tenant-1", "razorpay", "api_key", "rzp_test_xxxx")
 	if err != nil {
 		t.Fatalf("putCredential: %v", err)
 	}
-	if !strings.Contains(ref, "-payment-razorpay-api__key") {
+	if !strings.Contains(ref, "/payment/razorpay/api__key") {
 		t.Fatalf("reference doesn't carry payment scope: %s", ref)
 	}
 }
@@ -81,21 +80,21 @@ func TestPaymentSettings_WithSecretStore_ScopeIsPaymentDomain(t *testing.T) {
 // TestTaxSettings_WithSecretStore_ScopeIsTaxDomain mirrors the
 // payment-domain guard for TaxJar credentials.
 func TestTaxSettings_WithSecretStore_ScopeIsTaxDomain(t *testing.T) {
-	store := carriersecrets.NewFakeStore("proj", "pfx", crypto.NewNoopEncryptor())
+	store := carriersecrets.NewFakeStore(crypto.NewNoopEncryptor())
 	h := (&TaxSettingsHandler{}).WithSecretStore(store)
 	ctx := context.Background()
 	ref, err := h.putCredential(ctx, "tenant-1", "taxjar", "api_key", "tj_live_zzzz")
 	if err != nil {
 		t.Fatalf("putCredential: %v", err)
 	}
-	if !strings.Contains(ref, "-tax-taxjar-api__key") {
+	if !strings.Contains(ref, "/tax/taxjar/api__key") {
 		t.Fatalf("reference doesn't carry tax scope: %s", ref)
 	}
 }
 
 // TestMaskStoredKey_Behaviour exercises the cross-cutting resolver
 // mask the way a handler's response DTO uses it. Empty -> empty;
-// nil store -> ****; gsm reference -> plaintext tail.
+// nil store -> ****; bao reference -> plaintext tail.
 func TestMaskStoredKey_Behaviour(t *testing.T) {
 	ctx := context.Background()
 	// nil store
@@ -103,7 +102,7 @@ func TestMaskStoredKey_Behaviour(t *testing.T) {
 		t.Errorf("nil store mask = %q, want ****", got)
 	}
 	// empty ref
-	store := carriersecrets.NewFakeStore("p", "pfx", crypto.NewNoopEncryptor())
+	store := carriersecrets.NewFakeStore(crypto.NewNoopEncryptor())
 	if got := maskStoredKey(ctx, store, ""); got != "" {
 		t.Errorf("empty ref mask = %q, want empty", got)
 	}

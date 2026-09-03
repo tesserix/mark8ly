@@ -12,38 +12,31 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 )
 
-// Backend names one of the two credential backends a ChainStore can route
-// to. It is never inferred from a mode flag — routing is always by
-// reference prefix (see ChainStore.Get/Destroy) — Backend only says which
-// backend Put writes to and which format counts as "primary" for
-// MaybeRewrap and the fallback counter.
+// Backend names the credential backend a ChainStore writes new secrets to.
+// It is never inferred — a ChainStore only ever writes through OpenBao. The
+// type is kept (rather than collapsing ChainConfig.Primary to a bool or
+// dropping it) because it is the value MaybeRewrap logs and because a
+// second backend has existed here twice already (GCP Secret Manager, now
+// retired — mark8ly#621) and may again; requiring an explicit, named
+// Primary keeps that door open without re-deriving routing from a mode
+// flag.
 type Backend string
 
 const (
-	// BackendBao routes Put to OpenBao and marks bao:// as the primary
-	// (non-fallback) reference format.
+	// BackendBao marks bao:// as the primary (non-fallback) reference
+	// format and routes Put to OpenBao. Currently the ONLY valid value —
+	// see NewChainStore.
 	BackendBao Backend = "bao"
-	// BackendGCP routes Put to GCP Secret Manager and marks gsm:// as the
-	// primary (non-fallback) reference format.
-	BackendGCP Backend = "gcp"
 )
 
 // FallbackReadMetric is the label passed to CounterFn when a gsm://
-// reference is read while OpenBao is primary. It is the migration's only
-// evidence that GCP Secret Manager still has live readers — phase 5 decides
-// whether GCP SM can be decommissioned by watching this counter stay at
-// zero for N days. Never fired for a bao:// read.
-//
-// This counter lives on ChainStore, which sits BELOW CachingStore in the
-// production wiring (main.go wraps the chain in a cache when bao is
-// primary). A cache hit never reaches ChainStore.Get at all, so this
-// counter's magnitude under-counts true gsm:// read volume by roughly the
-// cache hit ratio. That does not weaken the zero/non-zero property phase 5
-// actually relies on: every distinct reference still reaches the inner
-// ChainStore at least once per cache TTL (a miss, or an expiry), so a
-// reference that is still being read as gsm:// keeps firing this counter
-// at least that often — "durably zero" still means "no gsm:// reads
-// happened", just observed at a coarser cadence than raw request volume.
+// reference is read. GCP Secret Manager was retired in mark8ly#621, so
+// this counter no longer marks "GCP SM still has live readers" — every
+// gsm:// hit now fails outright (see Get) — but it stays wired and firing:
+// a non-zero count post-retirement means the carrier-secrets-backfill
+// census (cmd/carrier-secrets-backfill/verify.go) missed a row, which is
+// exactly the kind of miss an operator needs paged on, not silently
+// swallowed into the generic "unrecognised reference" error path.
 const FallbackReadMetric = "gsm_fallback_read"
 
 // RewrapFailedMetric is the label passed to CounterFn when
@@ -66,25 +59,15 @@ type ChainConfig struct {
 	// Bao is the OpenBao-backed SecretClient (usually a *BaoClient wrapping
 	// Task 2's *bao.Client, or a fake in tests). Required.
 	Bao SecretClient
-	// GCP is the GCP SM-backed SecretClient (usually *GCPStore, or a fake
-	// in tests). Required.
-	GCP SecretClient
 	// Encryptor decodes legacy inline (noop:/aes:) values on read. Nil
 	// disables inline-compat reads — an inline reference then errors
 	// instead of silently failing to decode.
 	Encryptor crypto.Encryptor
-	// Primary selects which backend Put writes to, and which reference
-	// format counts as "already migrated" for MaybeRewrap and the
-	// fallback counter. Required — must be BackendBao or BackendGCP.
+	// Primary selects which backend Put writes to. Required — must be
+	// BackendBao; ChainStore panics on any other value (see
+	// NewChainStore). GCP Secret Manager (BackendGCP) was retired in
+	// mark8ly#621.
 	Primary Backend
-	// GCPProjectID is the GCP project hosting GCP SM secrets. Required —
-	// used to build the gsm:// reference/resource path regardless of
-	// which backend is primary, since a bao-primary chain still needs to
-	// read and destroy pre-cutover gsm:// rows.
-	GCPProjectID string
-	// GCPPrefix is the cluster identifier prefixed onto every GCP SM
-	// secret ID (see SecretName). Required, same reason as GCPProjectID.
-	GCPPrefix string
 	// Counter receives fallback-read events. Nil installs a no-op so
 	// callers that don't care about metrics (most tests) don't have to
 	// pass one.
@@ -97,19 +80,17 @@ type ChainConfig struct {
 	Logger *slog.Logger
 }
 
-// ChainStore is the Store that lets bao:// and gsm:// references coexist
-// during the OpenBao migration. Routing is always by the reference's
-// prefix, never by which backend is "primary" — Primary only decides where
-// Put writes and what MaybeRewrap upgrades toward.
+// ChainStore is the Store used for every non-inline deployment. It routes
+// bao:// references to OpenBao by prefix; a gsm:// reference (a row the
+// mark8ly#621 backfill missed) fails with an explicit, self-explaining
+// error instead of ever reaching GCP Secret Manager — that backend was
+// retired and this package holds no client for it any more.
 type ChainStore struct {
-	bao          SecretClient
-	gcp          SecretClient
-	enc          crypto.Encryptor
-	primary      Backend
-	gcpProjectID string
-	gcpPrefix    string
-	counter      CounterFn
-	logger       *slog.Logger
+	bao     SecretClient
+	enc     crypto.Encryptor
+	primary Backend
+	counter CounterFn
+	logger  *slog.Logger
 
 	// rewrapDisabled latches to true the first time MaybeRewrap's write
 	// is refused with bao.ErrForbidden. Once set, every subsequent
@@ -124,22 +105,13 @@ type ChainStore struct {
 
 // NewChainStore constructs a ChainStore. Panics on a missing required
 // field or an unrecognised Primary — callers must pass a usable config at
-// boot, exactly like NewHybridStore.
+// boot, exactly like NewInlineStore.
 func NewChainStore(cfg ChainConfig) *ChainStore {
 	if cfg.Bao == nil {
 		panic("carriersecrets: ChainStore requires a Bao SecretClient")
 	}
-	if cfg.GCP == nil {
-		panic("carriersecrets: ChainStore requires a GCP SecretClient")
-	}
-	if cfg.Primary != BackendBao && cfg.Primary != BackendGCP {
-		panic(fmt.Sprintf("carriersecrets: ChainStore requires Primary to be %q or %q, got %q", BackendBao, BackendGCP, cfg.Primary))
-	}
-	if cfg.GCPProjectID == "" {
-		panic("carriersecrets: ChainStore requires GCPProjectID")
-	}
-	if cfg.GCPPrefix == "" {
-		panic("carriersecrets: ChainStore requires GCPPrefix")
+	if cfg.Primary != BackendBao {
+		panic(fmt.Sprintf("carriersecrets: ChainStore requires Primary to be %q, got %q", BackendBao, cfg.Primary))
 	}
 	counter := cfg.Counter
 	if counter == nil {
@@ -150,52 +122,48 @@ func NewChainStore(cfg ChainConfig) *ChainStore {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	return &ChainStore{
-		bao:          cfg.Bao,
-		gcp:          cfg.GCP,
-		enc:          cfg.Encryptor,
-		primary:      cfg.Primary,
-		gcpProjectID: cfg.GCPProjectID,
-		gcpPrefix:    cfg.GCPPrefix,
-		counter:      counter,
-		logger:       logger,
+		bao:     cfg.Bao,
+		enc:     cfg.Encryptor,
+		primary: cfg.Primary,
+		counter: counter,
+		logger:  logger,
 	}
 }
 
-// Put writes plaintext to the primary backend ONLY and returns its
-// canonical reference. On error it returns the error — it never falls back
-// to the other backend. A silent write fallback would mint gsm:// (or
-// bao://) references after cutover and make the fallback-read counter a
-// lie, which is the sole evidence phase 5 uses to decide GCP SM is safe to
-// decommission.
+// gsmRetiredError is returned for every operation against a gsm:// (GCP
+// Secret Manager) reference. GCP Secret Manager was retired from this
+// package in mark8ly#621: there is no client left to route the call to,
+// and this error is what makes an unmigrated row diagnosable instead of
+// falling through to the generic "unrecognised reference" branch, whose
+// message deliberately names nothing (see referencePrefix).
+func gsmRetiredError() error {
+	return errors.New("carriersecrets: gsm:// reference received but GCP Secret Manager was retired (mark8ly#621); this reference cannot be resolved")
+}
+
+// Put writes plaintext to OpenBao and returns its canonical reference. On
+// error it returns the error — it never falls back to another backend. A
+// silent write fallback would mint gsm:// references again and make the
+// mark8ly#621 decommission evidence (a durably-zero fallback counter and
+// clean verify census) a lie.
 func (c *ChainStore) Put(ctx context.Context, scope Scope, plaintext string) (string, error) {
 	if err := scope.Validate(); err != nil {
 		return "", err
 	}
-	switch c.primary {
-	case BackendBao:
-		path := BaoPath(scope)
-		if err := c.bao.CreateOrAddVersion(ctx, path, []byte(plaintext)); err != nil {
-			return "", fmt.Errorf("carriersecrets: put %s: %w", path, err)
-		}
-		return FormatBaoReference(scope), nil
-	default: // BackendGCP
-		resource := SecretResource(c.gcpProjectID, c.gcpPrefix, scope)
-		if err := c.gcp.CreateOrAddVersion(ctx, resource, []byte(plaintext)); err != nil {
-			return "", fmt.Errorf("carriersecrets: put %s: %w", resource, err)
-		}
-		return GSMRefPrefix + resource, nil
+	path := BaoPath(scope)
+	if err := c.bao.CreateOrAddVersion(ctx, path, []byte(plaintext)); err != nil {
+		return "", fmt.Errorf("carriersecrets: put %s: %w", path, err)
 	}
+	return FormatBaoReference(scope), nil
 }
 
 // Get resolves reference to plaintext. Routing is strictly by prefix:
 //
-//   - "" -> ("", nil), matching HybridStore.
-//   - "bao://..." -> OpenBao only. Never falls back to GCP on error — the
-//     value simply isn't there, and falling back would turn a transient
-//     OpenBao failure into a confusing not-found against the wrong backend.
-//   - "gsm://..." -> GCP SM. Increments the fallback counter when OpenBao
-//     is primary (a gsm:// row read while primary=bao is exactly the
-//     "still depends on GCP SM" signal phase 5 needs).
+//   - "" -> ("", nil).
+//   - "bao://..." -> OpenBao only.
+//   - "gsm://..." -> always fails with gsmRetiredError, after counting the
+//     attempt under FallbackReadMetric. GCP Secret Manager was retired in
+//     mark8ly#621 — there is no backend left to route this to, and a row
+//     still carrying this prefix means the backfill missed it.
 //   - "noop:"/"aes:" -> the configured Encryptor.
 //   - anything else -> a clear error naming the prefix. Never treated as
 //     plaintext — that would hand a raw DB value to a payment gateway.
@@ -212,20 +180,12 @@ func (c *ChainStore) Get(ctx context.Context, reference string) (string, error) 
 		}
 		return string(data), nil
 	case IsGSMRef(reference):
-		resource, _ := ParseReference(reference)
-		// Count the ATTEMPT, not the success: a failing gsm:// read is
-		// still a live dependency on GCP Secret Manager, and that
-		// dependency must be visible even when the read errors out — a
-		// broken GCP path must never look identical to "no gsm:// reads
-		// happened" in the fallback counter.
-		if c.primary == BackendBao {
-			c.counter(FallbackReadMetric, 1)
-		}
-		data, err := c.gcp.AccessLatest(ctx, resource)
-		if err != nil {
-			return "", fmt.Errorf("carriersecrets: get %s: %w", resource, err)
-		}
-		return string(data), nil
+		// Count the ATTEMPT: a gsm:// reference reaching this code at
+		// all — whether or not it would have resolved — is evidence a
+		// row still needs migrating, and that must be visible even
+		// though the read errors out unconditionally now.
+		c.counter(FallbackReadMetric, 1)
+		return "", gsmRetiredError()
 	case IsInlineRef(reference):
 		if c.enc == nil {
 			return "", errors.New("carriersecrets: inline reference received but no encryptor wired")
@@ -241,8 +201,8 @@ func (c *ChainStore) Get(ctx context.Context, reference string) (string, error) 
 }
 
 // Destroy deletes the underlying secret, routed by prefix. Inline
-// references (and anything else unrecognised) are a no-op, matching
-// HybridStore — there is no detached resource to clean up.
+// references (and anything else unrecognised) are a no-op — there is no
+// detached resource to clean up.
 func (c *ChainStore) Destroy(ctx context.Context, reference string) error {
 	if reference == "" {
 		return nil
@@ -255,39 +215,35 @@ func (c *ChainStore) Destroy(ctx context.Context, reference string) error {
 		}
 		return nil
 	case IsGSMRef(reference):
-		resource, _ := ParseReference(reference)
-		if err := c.gcp.DeleteSecret(ctx, resource); err != nil {
-			return fmt.Errorf("carriersecrets: destroy %s: %w", resource, err)
-		}
-		return nil
+		// No GCP client to route to (retired in mark8ly#621) — fail
+		// loudly rather than silently reporting a delete that never
+		// happened. The GCP secret this reference names still exists
+		// (deleting it is a later, human-operator step) and this
+		// package must never claim otherwise.
+		return gsmRetiredError()
 	default:
 		return nil
 	}
 }
 
-// MaybeRewrap migrates oldRef toward the CURRENT primary backend's format,
-// in whichever direction that is — it is symmetric, not one-way. Under
-// Bao-primary that upgrades gsm:// -> bao://; under GCP-primary it moves
-// bao:// -> gsm://. This is deliberate and it is what makes rollback safe:
-// if a deployment flips SHIPPING_SECRET_STORE (or the equivalent config)
-// back from baokv to gcpsm after some rows have already migrated to
-// OpenBao, MaybeRewrap does not need special-casing to undo that — the very
-// next save of a bao:// row under GCP-primary rewraps it back into GCP
-// Secret Manager, gradually bringing rows home. Reads keep working
-// throughout regardless of which format a given row is in, because Get
-// routes by the reference's own prefix, never by which backend is primary.
+// MaybeRewrap migrates oldRef to the primary (bao://) format when it isn't
+// already in that format. It writes through Put (so it inherits Put's
+// no-fallback guarantee) and returns the new reference and true, UNLESS
+// oldRef is empty, already bao://, or the rewrap write itself fails — a
+// transient backend blip must not fail the surrounding read path; the next
+// read tries again.
 //
-// Concretely: it writes through Put (so it inherits Put's no-fallback
-// guarantee) and returns the new reference and true, UNLESS oldRef is
-// already in the primary's format, in which case it is a no-op. Returns
-// ("", false) when oldRef is empty, already in the primary's format, or the
-// rewrap write itself fails — a transient backend blip must not fail the
-// surrounding read path; the next read tries again.
+// oldRef being gsm:// here is only reachable if a caller already resolved
+// its plaintext some other way, since Get now fails every gsm:// read
+// before returning plaintext — MaybeRewrap can no longer be reached via
+// the normal Get-then-rewrap flow for those rows. Migrating any remaining
+// gsm:// row is the active backfill's job (cmd/carrier-secrets-backfill),
+// not lazy rewrap's.
 //
 // The storefront engine holds no OpenBao write grant by design (least
-// privilege on the internet-facing engine — see the design doc), so under
-// Bao-primary every call on that path fails Put with bao.ErrForbidden. A
-// failure here is never swallowed silently: it is logged and counted under
+// privilege on the internet-facing engine — see the design doc), so every
+// call on that path fails Put with bao.ErrForbidden. A failure here is
+// never swallowed silently: it is logged and counted under
 // RewrapFailedMetric so the failure is visible instead of an inert no-op
 // with a failing round-trip on every read. The FIRST time the failure is
 // specifically bao.ErrForbidden, rewrapDisabled latches so every
@@ -297,11 +253,7 @@ func (c *ChainStore) Destroy(ctx context.Context, reference string) error {
 // grant. Migration for these rows is then the active backfill's job, not
 // lazy rewrap's.
 func (c *ChainStore) MaybeRewrap(ctx context.Context, oldRef string, scope Scope, plaintext string) (string, bool) {
-	if oldRef == "" {
-		return "", false
-	}
-	alreadyPrimary := (c.primary == BackendBao && IsBaoRef(oldRef)) || (c.primary == BackendGCP && IsGSMRef(oldRef))
-	if alreadyPrimary {
+	if oldRef == "" || IsBaoRef(oldRef) {
 		return "", false
 	}
 	if c.rewrapDisabled.Load() {

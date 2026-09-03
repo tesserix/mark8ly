@@ -63,14 +63,16 @@ func (f *FakeClient) Has(name string) bool {
 	return ok
 }
 
-// NewFakeStore builds a ready-to-use HybridStore around a FakeClient.
-// Exposed to tests and wiring helpers that want the full Store
-// surface (including MaybeRewrap) without a real GCP client.
-func NewFakeStore(projectID, prefix string, enc crypto.Encryptor) *HybridStore {
-	return NewHybridStore(HybridConfig{
-		Client:    NewFakeClient(),
+// NewFakeStore builds a ready-to-use ChainStore around a FakeClient
+// standing in for OpenBao. Exposed to tests and wiring helpers that want
+// the full Store surface (including MaybeRewrap) without a real OpenBao
+// client. Primary is always BackendBao — GCP Secret Manager was retired
+// from this package in mark8ly#621, so there is no second backend left to
+// fake.
+func NewFakeStore(enc crypto.Encryptor) *ChainStore {
+	return NewChainStore(ChainConfig{
+		Bao:       NewFakeClient(),
 		Encryptor: enc,
-		ProjectID: projectID,
-		Prefix:    prefix,
+		Primary:   BackendBao,
 	})
 }

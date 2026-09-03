@@ -18,7 +18,12 @@
 //   - "noop:..." / "aes:..."
 //     legacy inline ciphertext from crypto.Encryptor. Kept readable
 //     so existing rows keep working until the next save migrates
-//     them. HybridStore.MaybeRewrap performs that lazy migration.
+//     them. ChainStore.MaybeRewrap performs that lazy migration.
+//
+// "gsm://" (GCP Secret Manager) references are recognised for
+// classification (IsGSMRef) but no longer resolve: GCP Secret Manager was
+// retired from this package in mark8ly#621. A stored gsm:// reference now
+// means a row the mark8ly#621 backfill missed, not a live credential path.
 package carriersecrets
 
 import (
@@ -46,9 +51,11 @@ const (
 	AESRefPrefix = "aes:"
 )
 
-// IsGSMRef reports whether r is a GCP SM reference — i.e. a value
-// this package produced on a previous Put against a GCPStore or
-// HybridStore in gcpsm mode.
+// IsGSMRef reports whether r is a GCP SM reference — i.e. a value this
+// package wrote before mark8ly#621 retired the GCP Secret Manager backend.
+// Never resolves any more (see ChainStore.Get); kept purely for
+// classification so an unmigrated row fails with an explicit, named error
+// instead of the generic "unrecognised reference" one.
 func IsGSMRef(r string) bool { return strings.HasPrefix(r, GSMRefPrefix) }
 
 // IsInlineRef reports whether r is a legacy inline-encrypted value
@@ -69,6 +76,13 @@ func IsBaoRef(r string) bool { return strings.HasPrefix(r, BaoRefPrefix) }
 // limit: a prefix of <= 20 chars + a UUID (36) + three short
 // segments (~40 chars combined) is ~96 chars for any realistic
 // tenant.
+//
+// GCP Secret Manager itself was retired from this package in mark8ly#621
+// (no code writes gsm:// references any more). This — and SecretResource,
+// FormatReference, ParseReference below — stay only because
+// cmd/carrier-secrets-backfill's tests use them to synthesise a legacy
+// gsm:// reference to exercise the backfill's migration path; nothing in
+// the production Store construction (Build, ChainStore) calls them.
 func SecretName(prefix string, s Scope) string {
 	tenant := encodeSegment(s.TenantID)
 	domain := encodeSegment(strings.ToLower(s.Domain))

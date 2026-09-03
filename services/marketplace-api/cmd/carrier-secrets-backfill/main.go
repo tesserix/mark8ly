@@ -77,8 +77,6 @@ func main() {
 
 	secretStore, degraded, buildErr := carriersecrets.Build(context.Background(), carriersecrets.BuildParams{
 		Mode:         cfg.ShippingSecretStore,
-		GCPProjectID: cfg.GCPProjectID,
-		SecretPrefix: cfg.SecretNamePrefix,
 		OpenBaoAddr:  cfg.OpenBaoAddr,
 		OpenBaoMount: cfg.OpenBaoKVMount,
 		OpenBaoRole:  cfg.OpenBaoRole,

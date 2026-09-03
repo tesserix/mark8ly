@@ -56,6 +56,13 @@ interface SignInFormProps {
    * trusts this value and does a full-page navigation to it.
    */
   returnUrl?: string;
+  /**
+   * Zitadel's `auth_request_id`, present once `/login` has bounced
+   * through Zitadel's `/authorize` and back (see
+   * app/login/authorize/route.ts and app/auth/callback/route.ts).
+   * Unused under GIP. Task 5 wires this into `signInWithZitadel`.
+   */
+  authRequestId?: string;
 }
 
 export function SignInForm({ returnUrl }: SignInFormProps = {}) {

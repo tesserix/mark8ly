@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { BrandBar } from "@repo/ui/brand-bar";
 
 import { SignInForm } from "@/components/auth/SignInForm";
+import { sanitizeReturnUrl } from "@/lib/auth/sanitize-return-url";
 
 export const metadata: Metadata = { title: "Sign in" };
 
 interface PageProps {
-  searchParams: Promise<{ returnUrl?: string }>;
+  searchParams: Promise<{ returnUrl?: string; authRequest?: string }>;
 }
 
 /**
@@ -26,15 +28,36 @@ interface PageProps {
  * .mark8ly.com so it carries across the bounce.
  */
 export default async function LoginPage({ searchParams }: PageProps) {
-  const { returnUrl } = await searchParams;
+  const { returnUrl, authRequest } = await searchParams;
   const safeReturnUrl = sanitizeReturnUrl(returnUrl);
+
+  // Defensive read: Task 6 adds `authProvider` to `publicConfig`. Until
+  // then — and for any unset or unrecognised value — this MUST resolve
+  // to the existing GIP path, so an unset env var can never switch a
+  // production login screen onto a flow with no configured Zitadel
+  // client.
+  const isZitadel = process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel";
+
+  if (isZitadel && !authRequest) {
+    // Zitadel's login-client model needs an auth_request_id, which
+    // only exists after Zitadel's /authorize bounces the browser back
+    // here with ?authRequest=. /login/authorize is a Route Handler
+    // (not inline here) because minting the PKCE verifier + state
+    // cookies requires cookie writes, and Next.js only allows those
+    // from a Server Action or Route Handler — never a Server
+    // Component's render.
+    const params = new URLSearchParams();
+    if (safeReturnUrl) params.set("returnUrl", safeReturnUrl);
+    const suffix = params.toString();
+    redirect(`/login/authorize${suffix ? `?${suffix}` : ""}`);
+  }
 
   return (
     <>
       <BrandBar />
       <main id="main" className="px-6 py-16 sm:py-24">
         <div className="mx-auto w-full max-w-md">
-          <SignInForm returnUrl={safeReturnUrl} />
+          <SignInForm returnUrl={safeReturnUrl} authRequestId={authRequest} />
           {/* Operator disclosure on the sign-in screen: this is where a
               merchant decides to trust the platform, and the entity on their
               settlement statement should not be a surprise later. */}
@@ -47,28 +70,4 @@ export default async function LoginPage({ searchParams }: PageProps) {
       </main>
     </>
   );
-}
-
-/**
- * sanitizeReturnUrl accepts only URLs under mark8ly.com (and its
- * subdomains). Anything else — an external host, a javascript: URL,
- * or a protocol-relative `//evil.com` — gets dropped to prevent
- * open-redirect abuse.
- */
-function sanitizeReturnUrl(raw: string | undefined): string | undefined {
-  if (!raw) return undefined;
-  try {
-    const u = new URL(raw);
-    if (u.protocol !== "https:" && u.protocol !== "http:") return undefined;
-    if (
-      u.hostname === "mark8ly.com" ||
-      u.hostname.endsWith(".mark8ly.com") ||
-      u.hostname === "localhost"
-    ) {
-      return u.toString();
-    }
-  } catch {
-    // fall through
-  }
-  return undefined;
 }

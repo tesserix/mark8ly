@@ -54,6 +54,7 @@ const PUBLIC_PREFIXES = [
   "/reset-password", // branded reset flow — lands here from the email link
   "/accept-invite", // Phase P: invitees must land here without a session
   "/auth/handoff", // cross-TLD admin handoff — mints a session for this host, so it MUST render before the cookie exists
+  "/auth/callback", // Zitadel OIDC callback (Task 4, #524) — by the time it's hit, auth-bff has already minted the session, but the canonical-host tenant-redirect logic below would otherwise bounce this path to a slug subdomain before it can complete the flow
   "/webhooks", // external provider callbacks (Stripe, etc.) — never gated
   "/api/health", // kubelet probe target; must not 30x to /login
   "/api/analytics-config", // non-secret client id, read before sign-in

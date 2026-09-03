@@ -17,12 +17,16 @@ type Repository interface {
 	// tx rolls back and the rows become visible to the next poll. Returns
 	// the number of rows the callback saw.
 	//
-	// PENDING means published_at IS NULL *and* error IS NULL. A row with
-	// error set is terminal and is never re-selected — see MarkFailedInTx.
-	// The partial index outbox_unpublished_idx (migration 000001) is on
-	// published_at IS NULL; the error term is a filter on top of it, which
-	// is fine while failed rows are ~0. If they ever become common, that
-	// index is the thing to revisit.
+	// PENDING means published_at IS NULL *and* error IS NULL *and*
+	// dead_lettered_at IS NULL. A row with error set is terminal and is
+	// never re-selected — see MarkFailedInTx. A row with dead_lettered_at
+	// set is ALSO terminal and is excluded EXPLICITLY (#405), not inferred
+	// from error also being set: an operator dead-letter with a NULL error
+	// must never be picked back up and delivered. The partial index
+	// outbox_unpublished_idx (migration 000001) is on published_at IS NULL;
+	// the error and dead_lettered_at terms are filters on top of it, which
+	// is fine while both are ~0. If they ever become common, that index is
+	// the thing to revisit.
 	ProcessBatch(ctx context.Context, limit int,
 		fn func(tx *gorm.DB, rows []OutboxEvent) error) (int, error)
 	MarkPublishedInTx(tx *gorm.DB, ids []string) error
@@ -60,11 +64,15 @@ func (r *gormRepository) ProcessBatch(ctx context.Context, limit int,
 	var seen int
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var rows []OutboxEvent
+		// dead_lettered_at IS NULL is EXPLICIT here, not inferred from error
+		// also being set: a dead-letter written with a NULL error must never
+		// be picked back up and delivered — that would defeat the whole
+		// point of the operation (#405).
 		if err := tx.Raw(`
 			SELECT id, tenant_id, aggregate, aggregate_id, event_type,
 			       payload, created_at, published_at, error
 			FROM outbox_events
-			WHERE published_at IS NULL AND error IS NULL
+			WHERE published_at IS NULL AND error IS NULL AND dead_lettered_at IS NULL
 			ORDER BY tenant_id, created_at
 			LIMIT ?
 			FOR UPDATE SKIP LOCKED`, limit).Scan(&rows).Error; err != nil {

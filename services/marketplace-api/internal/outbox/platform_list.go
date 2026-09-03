@@ -16,10 +16,16 @@ import (
 // Derived status values. These are computed in SQL, not stored: the issue
 // requires the console not reimplement the null-check, and deriving it
 // server-side is what keeps one definition of "pending" in the estate.
+//
+// Precedence, most to least authoritative: published > dead_lettered >
+// failed > pending. published is checked FIRST so a row carrying both
+// published_at and error (or dead_lettered_at) still reports published —
+// see TestIntegration_ListPlatform_PublishedWinsOverError.
 const (
-	StatusPending   = "pending"
-	StatusFailed    = "failed"
-	StatusPublished = "published"
+	StatusPending      = "pending"
+	StatusFailed       = "failed"
+	StatusPublished    = "published"
+	StatusDeadLettered = "dead_lettered"
 )
 
 // Page bounds, matching notification and ticket exactly so the platform
@@ -36,8 +42,10 @@ const (
 // TenantID NARROWS rather than scopes: this endpoint is cross-tenant by
 // design, and the console uses it to answer estate-wide questions.
 type PlatformListFilter struct {
-	TenantID  *uuid.UUID
-	Status    string // StatusPending | StatusFailed | StatusPublished | "" (any)
+	TenantID *uuid.UUID
+	// Status is one of StatusPending | StatusFailed | StatusPublished |
+	// StatusDeadLettered | "" (any).
+	Status    string
 	EventType string
 	// OlderThanMinutes, when > 0, narrows to UNPUBLISHED rows at least that
 	// old. It deliberately does NOT match published rows: this filter
@@ -107,15 +115,20 @@ func ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter,
 	// unknown parameter on this surface behaves.
 	switch f.Status {
 	case StatusPending:
-		q = q.Where("published_at IS NULL AND error IS NULL")
+		q = q.Where("published_at IS NULL AND error IS NULL AND dead_lettered_at IS NULL")
 	case StatusFailed:
-		q = q.Where("published_at IS NULL AND error IS NOT NULL")
+		q = q.Where("published_at IS NULL AND error IS NOT NULL AND dead_lettered_at IS NULL")
 	case StatusPublished:
 		q = q.Where("published_at IS NOT NULL")
+	case StatusDeadLettered:
+		q = q.Where("dead_lettered_at IS NOT NULL")
 	}
 	if f.OlderThanMinutes > 0 {
+		// dead_lettered_at IS NULL: a dead-lettered row is terminal, not
+		// stuck — same reasoning as excluding it from the pending/failed
+		// filters above.
 		cutoff := asOf.Add(-time.Duration(f.OlderThanMinutes) * time.Minute)
-		q = q.Where("published_at IS NULL AND created_at <= ?", cutoff)
+		q = q.Where("published_at IS NULL AND dead_lettered_at IS NULL AND created_at <= ?", cutoff)
 	}
 	if f.From != nil {
 		q = q.Where("created_at >= ?", *f.From)
@@ -148,16 +161,17 @@ func ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter,
 	if err := q.
 		Select(`id, tenant_id, aggregate, aggregate_id, event_type, created_at, published_at, error,
 			CASE
-				WHEN published_at IS NOT NULL THEN ?
-				WHEN error IS NOT NULL        THEN ?
-				ELSE                               ?
+				WHEN published_at IS NOT NULL      THEN ?
+				WHEN dead_lettered_at IS NOT NULL   THEN ?
+				WHEN error IS NOT NULL              THEN ?
+				ELSE                                     ?
 			END AS status,
 			CASE
 				WHEN published_at IS NULL
 				THEN EXTRACT(EPOCH FROM (? - created_at))::bigint
 				ELSE NULL
 			END AS age_seconds`,
-			StatusPublished, StatusFailed, StatusPending, asOf).
+			StatusPublished, StatusDeadLettered, StatusFailed, StatusPending, asOf).
 		Order("created_at DESC").
 		Limit(limit).Offset((page - 1) * limit).
 		Scan(&result.Rows).Error; err != nil {

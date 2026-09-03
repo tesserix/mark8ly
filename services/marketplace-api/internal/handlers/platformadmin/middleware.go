@@ -106,6 +106,10 @@ var RequiredWriteCapabilities = map[string]string{
 	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/tenants/:id/suspend"):            "",
 	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/tenants/:id/unsuspend"):          "",
 	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/tenants/:id/purge"):              "",
+	// #405: outbox requeue (single + batch) and dead-letter.
+	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/outbox/:id/requeue"):     "",
+	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/outbox/requeue"):         "",
+	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/outbox/:id/dead-letter"): "",
 }
 
 // RequiredReadCapabilities declares reads that require a specific

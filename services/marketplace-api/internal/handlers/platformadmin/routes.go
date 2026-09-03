@@ -107,6 +107,16 @@ type Deps struct {
 	// while looking as though it worked.
 	Outbox OutboxLister
 
+	// OutboxWriter serves the requeue/dead-letter writes on top of Outbox
+	// above: POST /admin/outbox/:id/requeue, POST /admin/outbox/requeue
+	// (batch), and POST /admin/outbox/:id/dead-letter (#405). Nil leaves
+	// those three routes unmounted while List (#331) keeps working — the
+	// nil-safe pattern used across this surface. Like TrialExtender, it
+	// ALSO requires DB and Emitter to be non-nil for the write routes to
+	// mount: a write endpoint that cannot be attributed to an operator
+	// should not exist rather than run silently unaudited (#287, F1).
+	OutboxWriter OutboxWriter
+
 	// TrialExtender serves POST /admin/billing/trials/:storeID/extend (#286),
 	// this surface's second WRITE. Like TenantLifecycle it needs DB and
 	// Emitter as well: a write endpoint that cannot be attributed to an
@@ -280,7 +290,13 @@ func Register(g *gin.RouterGroup, deps Deps) {
 	}
 
 	if deps.Outbox != nil {
-		NewOutboxHandler(deps.DB, deps.Outbox, deps.Logger).Register(group)
+		var writer OutboxWriter
+		var auditFn outboxAuditFunc
+		if deps.OutboxWriter != nil && deps.DB != nil && deps.Emitter != nil {
+			writer = deps.OutboxWriter
+			auditFn = NewOperatorActionAuditFunc(deps.Emitter)
+		}
+		NewOutboxHandler(deps.DB, deps.Outbox, writer, auditFn, deps.Logger).Register(group)
 	}
 
 	if deps.EmailSends != nil {

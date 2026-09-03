@@ -19,7 +19,13 @@ func TestRazorpayRefund_SendsIdempotencyHeaderAndNotes(t *testing.T) {
 	var body []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotKey = r.Header.Get("X-Refund-Idempotency")
-		body, _ = io.ReadAll(r.Body)
+		var readErr error
+		// Swallowing this made a read failure look like an assertion failure
+		// on the body below (#169). t.Errorf is safe from a handler
+		// goroutine; t.Fatalf is not.
+		if body, readErr = io.ReadAll(r.Body); readErr != nil {
+			t.Errorf("read request body: %v", readErr)
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"id":"rfnd_1","status":"processed","amount":5000}`))
 	}))

@@ -79,6 +79,39 @@ func (h *OrderDetailHandler) WithRefunds(c *orderrefund.Coordinator) *OrderDetai
 	return h
 }
 
+// dispatchRefundEmail fires the refund-issued notification on a detached
+// context, mirroring the admin path's dispatchRefundEmail
+// (handlers/admin/orders.go). Before #169 a customer who self-cancelled a
+// PAID order was refunded but only ever told the order was cancelled — the
+// same customer got a different experience depending on who pressed the
+// button.
+//
+// The order is re-read inside the goroutine rather than reusing the copy the
+// handler loaded before refunding. Two reasons, and the second is the one
+// that bites: the pre-refund row still reports the OLD refunded_amount, and
+// adding res.Amount to it would OVER-report, because res.Amount includes the
+// gift-card slice while orders.refunded_amount counts gateway money only.
+// The admin path sidesteps both by passing its post-refund row.
+func (h *OrderDetailHandler) dispatchRefundEmail(orderID uuid.UUID, refundAmount decimal.Decimal) {
+	if h.docMailer == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		post, _, _, err := h.orderRepo.GetByID(ctx, h.db, orderID)
+		if err != nil {
+			h.logger.Warn("orderdoc: refund email skipped — could not re-read order for the running total",
+				"order_id", orderID, "err", err)
+			return
+		}
+		if err := h.docMailer.SendRefund(ctx, orderID, refundAmount, post.RefundedAmount); err != nil {
+			h.logger.Warn("orderdoc: customer cancel refund email dispatch failed",
+				"order_id", orderID, "err", err)
+		}
+	}()
+}
+
 // storefrontOrderResponse is the customer-facing DTO.
 type storefrontOrderResponse struct {
 	ID            string `json:"id"`
@@ -680,10 +713,21 @@ func (h *OrderDetailHandler) Cancel(c *gin.Context) {
 	// gateway blip leaves the order cancelled + a pending ledger row for the
 	// sweeper, so the customer is never blocked on the cancel response.
 	if h.refunds != nil && o.PaymentStatus == string(order.PaymentStatusPaid) {
-		if _, rerr := h.refunds.Refund(c.Request.Context(), orderrefund.RefundCommand{
+		res, rerr := h.refunds.Refund(c.Request.Context(), orderrefund.RefundCommand{
 			OrderID: orderID, Amount: nil, Reason: "order cancelled", Actor: "customer", ScopeID: "cancel",
-		}); rerr != nil {
+		})
+		switch {
+		case rerr != nil:
+			// A gateway blip leaves a pending ledger row for the sweeper, so
+			// the money has NOT moved yet. Deliberately no refund email here:
+			// telling a customer they have been refunded when the refund is
+			// still queued is worse than telling them nothing (#169).
 			h.logger.Warn("cancel auto-refund deferred", "order_id", orderID, "err", rerr)
+		case res.AlreadyDone:
+			// Idempotent replay of a refund that already happened — the email
+			// went out the first time.
+		case res.Amount.IsPositive():
+			h.dispatchRefundEmail(orderID, res.Amount)
 		}
 	}
 

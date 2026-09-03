@@ -369,7 +369,7 @@ func TestCompleteForProvider_RunsTheSameGauntletAsCompleteLogin(t *testing.T) {
 	svc := newTestService(t, gipFake, fgaFake, fastPolicy)
 
 	rec := httptest.NewRecorder()
-	err := svc.CompleteForProvider(context.Background(), rec, zitadellogin.LoginContext{
+	_, err := svc.CompleteForProvider(context.Background(), rec, zitadellogin.LoginContext{
 		UID:       "user-z1",
 		Email:     "z@e.com",
 		TenantID:  "tenant-uuid-1",
@@ -393,7 +393,7 @@ func TestCompleteForProvider_PropagatesMembershipFailure(t *testing.T) {
 	svc := newTestService(t, gipFake, fgaFake, fastPolicy)
 
 	rec := httptest.NewRecorder()
-	err := svc.CompleteForProvider(context.Background(), rec, zitadellogin.LoginContext{
+	_, err := svc.CompleteForProvider(context.Background(), rec, zitadellogin.LoginContext{
 		UID:      "user-z2",
 		Email:    "z2@e.com",
 		TenantID: "tenant-uuid-1",

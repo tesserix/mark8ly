@@ -225,8 +225,8 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 // GIP path. Passing these empty is not an option: deviceguard fingerprints
 // the user agent, and Fingerprint("") is a constant every user would share —
 // silently collapsing new-device detection for every Zitadel login.
-func (s *Service) CompleteForProvider(ctx context.Context, w http.ResponseWriter, lc zitadellogin.LoginContext) error {
-	_, err := s.completeLogin(ctx, w, Identity{
+func (s *Service) CompleteForProvider(ctx context.Context, w http.ResponseWriter, lc zitadellogin.LoginContext) (zitadellogin.CompleteResult, error) {
+	res, err := s.completeLogin(ctx, w, Identity{
 		UID:      lc.UID,
 		Email:    lc.Email,
 		TenantID: lc.TenantID,
@@ -237,7 +237,13 @@ func (s *Service) CompleteForProvider(ctx context.Context, w http.ResponseWriter
 		UserAgent:       lc.UserAgent,
 		Country:         lc.Country,
 	})
-	return err
+	if err != nil {
+		return zitadellogin.CompleteResult{}, err
+	}
+	return zitadellogin.CompleteResult{
+		MFARequired:      res.MFARequired,
+		EmailOTPRequired: res.EmailOTPRequired,
+	}, nil
 }
 
 // completeLogin runs every gate that stands between a verified identity and a

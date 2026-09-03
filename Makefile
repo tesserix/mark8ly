@@ -86,6 +86,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	  go test -tags=integration -p 1 \
 	    . \
 	    ./cmd/backfill-email/... \
+	    ./cmd/carrier-secrets-backfill/... \
 	    ./internal/apikeys/... \
 	    ./internal/arbitrage/... \
 	    ./internal/attestation/... \

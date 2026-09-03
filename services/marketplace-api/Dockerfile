@@ -26,7 +26,9 @@ RUN go build -trimpath -ldflags="-s -w" \
  && go build -trimpath -ldflags="-s -w" \
       -o /out/stock-hold-sweep-cron ./cmd/stock-hold-sweep-cron \
  && go build -trimpath -ldflags="-s -w" \
-      -o /out/webhook-delivery-prune-cron ./cmd/webhook-delivery-prune-cron
+      -o /out/webhook-delivery-prune-cron ./cmd/webhook-delivery-prune-cron \
+ && go build -trimpath -ldflags="-s -w" \
+      -o /out/carrier-secrets-backfill ./cmd/carrier-secrets-backfill
 
 # ─── migrate ────────────────────────────────────────────────────────────
 # Standalone image used by the K8s Job pattern.
@@ -51,5 +53,12 @@ COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
 COPY --from=builder --chown=10001:10001 /out/refund-sweep-cron /usr/local/bin/refund-sweep-cron
 COPY --from=builder --chown=10001:10001 /out/stock-hold-sweep-cron /usr/local/bin/stock-hold-sweep-cron
 COPY --from=builder --chown=10001:10001 /out/webhook-delivery-prune-cron /usr/local/bin/webhook-delivery-prune-cron
+# carrier-secrets-backfill is a ONE-OFF migration tool, not a CronJob: it is
+# run by hand as a Job when credentials need moving from GCP Secret Manager to
+# OpenBao (mark8ly#319 phase 3). It defaults to --dry-run and refuses to run
+# unless SHIPPING_SECRET_STORE=bao. Shipped in the image so it runs in-cluster
+# under the real ServiceAccount, rather than from an operator's laptop with
+# production credentials port-forwarded to it.
+COPY --from=builder --chown=10001:10001 /out/carrier-secrets-backfill /usr/local/bin/carrier-secrets-backfill
 EXPOSE 8091
 CMD ["/usr/local/bin/marketplace-api"]

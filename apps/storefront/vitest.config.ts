@@ -7,7 +7,7 @@ export default defineConfig({
     globals: false,
     include: [
       "lib/**/*.{test,spec}.{ts,tsx}",
-      "app/api/**/*.{test,spec}.{ts,tsx}",
+      "app/**/*.{test,spec}.{ts,tsx}",
     ],
     exclude: ["**/node_modules/**", "**/tests/e2e/**", "**/.next/**"],
   },

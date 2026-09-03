@@ -20,17 +20,30 @@ import (
 var listAsOf = time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 
 // seedRow inserts one outbox_events row in a chosen state. published and
-// errMsg are independent so the three states can be built explicitly rather
-// than inferred.
+// errMsg are independent so the three legacy states can be built explicitly
+// rather than inferred. Delegates to seedRowFull with no dead-letter
+// columns.
 func seedRow(t *testing.T, db *gorm.DB, tenantID string, eventType string,
 	createdAt time.Time, published *time.Time, errMsg *string) string {
+	t.Helper()
+	return seedRowFull(t, db, tenantID, eventType, createdAt, published, errMsg, nil, nil)
+}
+
+// seedRowFull is seedRow plus the two dead-letter columns (#405), so a
+// fourth, dead_lettered state can be built explicitly too.
+func seedRowFull(t *testing.T, db *gorm.DB, tenantID string, eventType string,
+	createdAt time.Time, published *time.Time, errMsg *string,
+	deadLetteredAt *time.Time, deadLetterReason *string) string {
 	t.Helper()
 	id := uuid.NewString()
 	err := db.Exec(`
 		INSERT INTO outbox_events
-			(id, tenant_id, aggregate, aggregate_id, event_type, payload, created_at, published_at, error)
-		VALUES (?, ?, 'product', ?, ?, '{"store_id":"11111111-1111-1111-1111-111111111111","secret":"do-not-leak"}'::jsonb, ?, ?, ?)`,
-		id, tenantID, uuid.NewString(), eventType, createdAt, published, errMsg).Error
+			(id, tenant_id, aggregate, aggregate_id, event_type, payload, created_at, published_at, error,
+			 dead_lettered_at, dead_letter_reason)
+		VALUES (?, ?, 'product', ?, ?, '{"store_id":"11111111-1111-1111-1111-111111111111","secret":"do-not-leak"}'::jsonb,
+			?, ?, ?, ?, ?)`,
+		id, tenantID, uuid.NewString(), eventType, createdAt, published, errMsg,
+		deadLetteredAt, deadLetterReason).Error
 	require.NoError(t, err)
 	return id
 }
@@ -76,15 +89,56 @@ func TestIntegration_ListPlatform_DerivesAllThreeStates(t *testing.T) {
 	require.Nil(t, byID[pendingID].Error)
 }
 
+// ListPlatform derives all FOUR states (#405 adds dead_lettered to the
+// pending/failed/published set), and published still wins over BOTH error
+// and dead_lettered_at — the precedence pinned by
+// TestIntegration_ListPlatform_PublishedWinsOverError must not regress when
+// a row also carries a dead-letter mark.
+func TestIntegration_ListPlatform_DerivesAllFourStates(t *testing.T) {
+	db := testdb.NewDB(t, "outbox_events")
+	tenantID := uuid.NewString()
+	pubAt := listAsOf.Add(-30 * time.Minute)
+	failReason := outbox.ReasonPayloadUnparseable
+	deadAt := listAsOf.Add(-5 * time.Minute)
+	deadReason := "manual duplicate"
+
+	pendingID := seedRow(t, db, tenantID, "product.created", listAsOf.Add(-10*time.Minute), nil, nil)
+	failedID := seedRow(t, db, tenantID, "product.updated", listAsOf.Add(-20*time.Minute), nil, &failReason)
+	publishedID := seedRow(t, db, tenantID, "product.deleted", listAsOf.Add(-40*time.Minute), &pubAt, nil)
+	deadLetteredID := seedRowFull(t, db, tenantID, "order.placed", listAsOf.Add(-15*time.Minute), nil, nil, &deadAt, &deadReason)
+	// published_at AND both error and dead_lettered_at set: published must
+	// still win over both.
+	publishedButMarkedID := seedRowFull(t, db, tenantID, "order.cancelled", listAsOf.Add(-50*time.Minute), &pubAt, &failReason, &deadAt, &deadReason)
+
+	got, err := outbox.ListPlatform(context.Background(), db, outbox.PlatformListFilter{}, listAsOf)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), got.Total)
+
+	byID := map[string]outbox.PlatformRow{}
+	for _, r := range got.Rows {
+		byID[r.ID] = r
+	}
+
+	require.Equal(t, outbox.StatusPending, byID[pendingID].Status)
+	require.Equal(t, outbox.StatusFailed, byID[failedID].Status)
+	require.Equal(t, outbox.StatusPublished, byID[publishedID].Status)
+	require.Equal(t, outbox.StatusDeadLettered, byID[deadLetteredID].Status)
+	require.Equal(t, outbox.StatusPublished, byID[publishedButMarkedID].Status,
+		"published_at wins over both error and dead_lettered_at")
+}
+
 func TestIntegration_ListPlatform_StatusFilterNarrows(t *testing.T) {
 	db := testdb.NewDB(t, "outbox_events")
 	tenantID := uuid.NewString()
 	pubAt := listAsOf.Add(-30 * time.Minute)
 	failReason := outbox.ReasonStoreNotFound
+	deadAt := listAsOf.Add(-15 * time.Minute)
+	deadReason := "confirmed duplicate of a manually-corrected order"
 
 	seedRow(t, db, tenantID, "product.created", listAsOf.Add(-10*time.Minute), nil, nil)
 	seedRow(t, db, tenantID, "product.updated", listAsOf.Add(-20*time.Minute), nil, &failReason)
 	seedRow(t, db, tenantID, "product.deleted", listAsOf.Add(-40*time.Minute), &pubAt, nil)
+	seedRowFull(t, db, tenantID, "order.placed", listAsOf.Add(-25*time.Minute), nil, nil, &deadAt, &deadReason)
 
 	for _, tc := range []struct {
 		status string
@@ -93,6 +147,7 @@ func TestIntegration_ListPlatform_StatusFilterNarrows(t *testing.T) {
 		{outbox.StatusPending, 1},
 		{outbox.StatusFailed, 1},
 		{outbox.StatusPublished, 1},
+		{outbox.StatusDeadLettered, 1},
 	} {
 		got, err := outbox.ListPlatform(context.Background(), db,
 			outbox.PlatformListFilter{Status: tc.status}, listAsOf)
@@ -107,7 +162,7 @@ func TestIntegration_ListPlatform_StatusFilterNarrows(t *testing.T) {
 	got, err := outbox.ListPlatform(context.Background(), db,
 		outbox.PlatformListFilter{Status: "banana"}, listAsOf)
 	require.NoError(t, err)
-	require.Equal(t, int64(3), got.Total, "an unknown status must narrow nothing")
+	require.Equal(t, int64(4), got.Total, "an unknown status must narrow nothing")
 
 }
 
@@ -246,4 +301,20 @@ func TestIntegration_ListPlatform_PublishedPlusOlderThanIsDeliberatelyEmpty(t *t
 	require.Equal(t, int64(0), got.Total,
 		"older_than_minutes narrows to UNPUBLISHED rows, so pairing it with status=published is a "+
 			"contradiction that returns nothing — deliberate, not a bug")
+
+	// Symmetric contradiction on the fourth state (#405): a dead-lettered
+	// row is terminal, not stuck, so older_than_minutes excludes it via its
+	// own "AND dead_lettered_at IS NULL" term — pairing it with
+	// status=dead_lettered is the same kind of deliberate-empty combination,
+	// not a bug to investigate.
+	deadAt := listAsOf.Add(-10 * time.Minute)
+	deadReason := "duplicate"
+	seedRowFull(t, db, tenantID, "product.updated", listAsOf.Add(-600*time.Minute), nil, nil, &deadAt, &deadReason)
+
+	got, err = outbox.ListPlatform(context.Background(), db,
+		outbox.PlatformListFilter{Status: outbox.StatusDeadLettered, OlderThanMinutes: 30}, listAsOf)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), got.Total,
+		"older_than_minutes narrows to rows with dead_lettered_at IS NULL, so pairing it with "+
+			"status=dead_lettered is also a deliberate-empty contradiction")
 }

@@ -37,7 +37,7 @@ func outboxRouter(t *testing.T, lister platformadmin.OutboxLister) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	platformadmin.NewOutboxHandler(nil, lister, nil).Register(r.Group(""))
+	platformadmin.NewOutboxHandler(nil, lister, nil, nil, nil).Register(r.Group(""))
 	return r
 }
 

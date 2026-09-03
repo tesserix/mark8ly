@@ -16,10 +16,16 @@ import (
 // Derived status values. These are computed in SQL, not stored: the issue
 // requires the console not reimplement the null-check, and deriving it
 // server-side is what keeps one definition of "pending" in the estate.
+//
+// Precedence, most to least authoritative: published > dead_lettered >
+// failed > pending. published is checked FIRST so a row carrying both
+// published_at and error (or dead_lettered_at) still reports published —
+// see TestIntegration_ListPlatform_PublishedWinsOverError.
 const (
-	StatusPending   = "pending"
-	StatusFailed    = "failed"
-	StatusPublished = "published"
+	StatusPending      = "pending"
+	StatusFailed       = "failed"
+	StatusPublished    = "published"
+	StatusDeadLettered = "dead_lettered"
 )
 
 // Page bounds, matching notification and ticket exactly so the platform
@@ -36,8 +42,10 @@ const (
 // TenantID NARROWS rather than scopes: this endpoint is cross-tenant by
 // design, and the console uses it to answer estate-wide questions.
 type PlatformListFilter struct {
-	TenantID  *uuid.UUID
-	Status    string // StatusPending | StatusFailed | StatusPublished | "" (any)
+	TenantID *uuid.UUID
+	// Status is one of StatusPending | StatusFailed | StatusPublished |
+	// StatusDeadLettered | "" (any).
+	Status    string
 	EventType string
 	// OlderThanMinutes, when > 0, narrows to UNPUBLISHED rows at least that
 	// old. It deliberately does NOT match published rows: this filter
@@ -70,6 +78,12 @@ type PlatformRow struct {
 	CreatedAt   time.Time
 	PublishedAt *time.Time
 	Error       *string
+	// DeadLetteredAt and DeadLetterReason carry the operator's decision out
+	// to the console. Status alone says a row was dead-lettered; without the
+	// reason the console cannot say WHY, which is the whole of "dead-letter
+	// with a reason" (#260).
+	DeadLetteredAt   *time.Time
+	DeadLetterReason *string
 	// AgeSeconds is how long an UNPUBLISHED row has been waiting, measured
 	// from the caller's asOf. It is nil for a published row: that row is
 	// settled, so it has no waiting time, and a number that grew forever
@@ -107,15 +121,28 @@ func ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter,
 	// unknown parameter on this surface behaves.
 	switch f.Status {
 	case StatusPending:
-		q = q.Where("published_at IS NULL AND error IS NULL")
+		q = q.Where("published_at IS NULL AND error IS NULL AND dead_lettered_at IS NULL")
 	case StatusFailed:
-		q = q.Where("published_at IS NULL AND error IS NOT NULL")
+		q = q.Where("published_at IS NULL AND error IS NOT NULL AND dead_lettered_at IS NULL")
 	case StatusPublished:
 		q = q.Where("published_at IS NOT NULL")
+	case StatusDeadLettered:
+		// published_at IS NULL keeps this filter in step with the CASE
+		// below, which ranks published ABOVE dead_lettered. Without it a
+		// row carrying both markers would be RETURNED by
+		// status=dead_lettered while REPORTING status "published" — the
+		// filter and the derived state would disagree about the same row.
+		// Only reachable by hand-written SQL today, since DeadLetterOne
+		// refuses a published row, but the two definitions should not be
+		// allowed to drift.
+		q = q.Where("dead_lettered_at IS NOT NULL AND published_at IS NULL")
 	}
 	if f.OlderThanMinutes > 0 {
+		// dead_lettered_at IS NULL: a dead-lettered row is terminal, not
+		// stuck — same reasoning as excluding it from the pending/failed
+		// filters above.
 		cutoff := asOf.Add(-time.Duration(f.OlderThanMinutes) * time.Minute)
-		q = q.Where("published_at IS NULL AND created_at <= ?", cutoff)
+		q = q.Where("published_at IS NULL AND dead_lettered_at IS NULL AND created_at <= ?", cutoff)
 	}
 	if f.From != nil {
 		q = q.Where("created_at >= ?", *f.From)
@@ -147,17 +174,19 @@ func ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter,
 	// published row by the same CASE that makes its status 'published'.
 	if err := q.
 		Select(`id, tenant_id, aggregate, aggregate_id, event_type, created_at, published_at, error,
+			dead_lettered_at, dead_letter_reason,
 			CASE
-				WHEN published_at IS NOT NULL THEN ?
-				WHEN error IS NOT NULL        THEN ?
-				ELSE                               ?
+				WHEN published_at IS NOT NULL      THEN ?
+				WHEN dead_lettered_at IS NOT NULL   THEN ?
+				WHEN error IS NOT NULL              THEN ?
+				ELSE                                     ?
 			END AS status,
 			CASE
 				WHEN published_at IS NULL
 				THEN EXTRACT(EPOCH FROM (? - created_at))::bigint
 				ELSE NULL
 			END AS age_seconds`,
-			StatusPublished, StatusFailed, StatusPending, asOf).
+			StatusPublished, StatusDeadLettered, StatusFailed, StatusPending, asOf).
 		Order("created_at DESC").
 		Limit(limit).Offset((page - 1) * limit).
 		Scan(&result.Rows).Error; err != nil {

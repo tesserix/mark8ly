@@ -51,6 +51,11 @@ vi.mock("@/app/login/actions", () => ({
   resendEmailOTPCode: vi.fn(),
 }));
 
+const startAdminGoogleSignIn = vi.fn();
+vi.mock("@/app/auth/idp/actions", () => ({
+  startAdminGoogleSignIn: (...args: unknown[]) => startAdminGoogleSignIn(...args),
+}));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
 }));
@@ -65,6 +70,11 @@ vi.mock("@/lib/config", () => ({
 }));
 
 import { SignInForm } from "./SignInForm";
+import { signInWithGoogle } from "@/lib/gip/signup";
+import { getGoogleCredential } from "@/lib/gip/google-gsi";
+
+const signInWithGoogleMock = vi.mocked(signInWithGoogle);
+const getGoogleCredentialMock = vi.mocked(getGoogleCredential);
 
 const assign = vi.fn();
 
@@ -153,11 +163,11 @@ describe("SignInForm — provider branch", () => {
     expect(confirmZitadelTotp).not.toHaveBeenCalled();
   });
 
-  it("hides Google and Apple when provider=zitadel", () => {
+  it("shows Google but hides Apple when provider=zitadel", () => {
     render(<SignInForm provider="zitadel" authRequestId="req-1" />);
     expect(
-      screen.queryByRole("button", { name: /continue with google/i }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: /continue with google/i }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /continue with apple/i }),
     ).not.toBeInTheDocument();
@@ -168,6 +178,64 @@ describe("SignInForm — provider branch", () => {
     expect(
       screen.getByRole("button", { name: /continue with google/i }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("SignInForm — Google through Zitadel", () => {
+  it("with provider=zitadel, clicking Google calls startAdminGoogleSignIn and navigates to the returned authUrl, never touching GIP's getGoogleCredential", async () => {
+    startAdminGoogleSignIn.mockResolvedValue({
+      ok: true,
+      authUrl: "https://zitadel.example/idp/authorize?intent=1",
+    });
+
+    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    await userEvent.click(screen.getByRole("button", { name: /continue with google/i }));
+
+    await waitFor(() => expect(startAdminGoogleSignIn).toHaveBeenCalledWith("req-1"));
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith("https://zitadel.example/idp/authorize?intent=1"),
+    );
+    expect(signInWithGoogle).not.toHaveBeenCalled();
+  });
+
+  it("with provider unset, clicking Google never calls startAdminGoogleSignIn", async () => {
+    getGoogleCredentialMock.mockResolvedValue({ credential: "cred-1" });
+    signInWithGoogleMock.mockResolvedValue({ kind: "complete", idToken: "id-1", uid: "uid-1" });
+
+    render(<SignInForm />);
+    await userEvent.click(screen.getByRole("button", { name: /continue with google/i }));
+
+    await waitFor(() => expect(signInWithGoogleMock).toHaveBeenCalled());
+    expect(startAdminGoogleSignIn).not.toHaveBeenCalled();
+  });
+
+  it("renders a truthful, distinct message for a no_admin_account error and never suggests retrying", () => {
+    render(
+      <SignInForm
+        provider="zitadel"
+        authRequestId="req-1"
+        googleErrorCode="no_admin_account"
+      />,
+    );
+
+    const message = screen.getByRole("alert").textContent ?? "";
+    expect(message.toLowerCase()).toContain("no admin account");
+    expect(message.toLowerCase()).not.toMatch(/try again|retry/);
+  });
+
+  it("shows a generic error and stays on the form when startAdminGoogleSignIn fails", async () => {
+    startAdminGoogleSignIn.mockResolvedValue({
+      ok: false,
+      message: "Google sign-in is temporarily unavailable. Please try again shortly.",
+    });
+
+    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    await userEvent.click(screen.getByRole("button", { name: /continue with google/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toMatch(/temporarily unavailable/i),
+    );
+    expect(assign).not.toHaveBeenCalled();
   });
 });
 

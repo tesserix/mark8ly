@@ -1,13 +1,16 @@
 package carriersecrets
 
 import (
+	"math/rand"
 	"strings"
 	"testing"
 )
 
 func TestBaoPath_IsScopeInPathForm(t *testing.T) {
 	s := Scope{TenantID: "11111111-2222-3333-4444-555555555555", Domain: "payment", Provider: "razorpay", Field: "secret_key"}
-	want := "kv/mark8ly/marketplace-api/tenants/11111111-2222-3333-4444-555555555555/payment/razorpay/secret_key"
+	// "secret_key" contains a literal '_', which encodeSegment escapes to
+	// "__" to stay injective (see #606).
+	want := "kv/mark8ly/marketplace-api/tenants/11111111-2222-3333-4444-555555555555/payment/razorpay/secret__key"
 	if got := BaoPath(s); got != want {
 		t.Fatalf("BaoPath = %q, want %q", got, want)
 	}
@@ -68,5 +71,80 @@ func TestBaoPath_SanitisesSegments(t *testing.T) {
 	}
 	if strings.Count(got, "/") != 7 {
 		t.Fatalf("unexpected segment count in %q — a segment contained an unsanitised separator", got)
+	}
+}
+
+// --- Issue #606: injective segment encoding ---
+
+func TestEncodeSegment_RoundTrips(t *testing.T) {
+	cases := []string{
+		"",
+		"api_key",
+		"shop.example.com",
+		"müller.com",
+		"möller.com",
+		"11111111-2222-3333-4444-555555555555",
+		"a/b",
+		"a..b",
+		"has\x00nul",
+	}
+	for _, s := range cases {
+		enc := encodeSegment(s)
+		dec, err := decodeSegment(enc)
+		if err != nil {
+			t.Fatalf("decodeSegment(encodeSegment(%q)=%q) returned error: %v", s, enc, err)
+		}
+		if dec != s {
+			t.Fatalf("decodeSegment(encodeSegment(%q)) = %q, want %q", s, dec, s)
+		}
+	}
+}
+
+// These are the specific pairs the old sanitizeSegment collided on. This
+// test must FAIL against the old sanitizeSegment-based encoding — confirmed
+// before encodeSegment was implemented (see #606 report).
+func TestEncodeSegment_Injective(t *testing.T) {
+	pairs := [][2]string{
+		{"t_1", "t/1"},
+		{"müller.com", "möller.com"},
+	}
+	for _, p := range pairs {
+		a, b := encodeSegment(p[0]), encodeSegment(p[1])
+		if a == b {
+			t.Fatalf("encodeSegment(%q) == encodeSegment(%q) == %q, want distinct encodings", p[0], p[1], a)
+		}
+	}
+}
+
+func TestEncodeSegment_OutputCharset(t *testing.T) {
+	rnd := rand.New(rand.NewSource(606))
+	for i := 0; i < 300; i++ {
+		n := rnd.Intn(24)
+		buf := make([]byte, n)
+		for j := range buf {
+			buf[j] = byte(rnd.Intn(256))
+		}
+		s := string(buf)
+		enc := encodeSegment(s)
+		for _, b := range []byte(enc) {
+			ok := (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_' || b == '-'
+			if !ok {
+				t.Fatalf("encodeSegment(%q) = %q contains disallowed byte %q", s, enc, b)
+			}
+		}
+		if strings.Contains(enc, "/") {
+			t.Fatalf("encodeSegment(%q) = %q contains '/'", s, enc)
+		}
+		if strings.Contains(enc, "..") {
+			t.Fatalf("encodeSegment(%q) = %q contains '..'", s, enc)
+		}
+	}
+}
+
+func TestBaoPath_DistinctScopesDistinctPaths(t *testing.T) {
+	a := Scope{TenantID: "11111111-2222-3333-4444-555555555555", Domain: "platform", Provider: "cloudflare", Field: "t_1"}
+	b := Scope{TenantID: "11111111-2222-3333-4444-555555555555", Domain: "platform", Provider: "cloudflare", Field: "t/1"}
+	if BaoPath(a) == BaoPath(b) {
+		t.Fatalf("BaoPath collided for distinct Fields %q and %q: %q", a.Field, b.Field, BaoPath(a))
 	}
 }

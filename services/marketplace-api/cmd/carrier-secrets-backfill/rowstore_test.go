@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -32,7 +33,8 @@ func TestPaymentRows_ScopeMapping(t *testing.T) {
 		if got[i].Scope != wantScope {
 			t.Fatalf("row %d scope = %+v, want %+v", i, got[i].Scope, wantScope)
 		}
-		wantPath := "kv/mark8ly/marketplace-api/tenants/" + tenant.String() + "/payment/razorpay/" + field
+		// encodeSegment escapes a literal '_' to "__" to stay injective (#606).
+		wantPath := "kv/mark8ly/marketplace-api/tenants/" + tenant.String() + "/payment/razorpay/" + strings.ReplaceAll(field, "_", "__")
 		if gotPath := carriersecrets.BaoPath(got[i].Scope); gotPath != wantPath {
 			t.Fatalf("BaoPath(%+v) = %q, want %q", got[i].Scope, gotPath, wantPath)
 		}
@@ -65,7 +67,8 @@ func TestShippingRows_ScopeMapping(t *testing.T) {
 		if got[i].Scope != wantScope {
 			t.Fatalf("row %d scope = %+v, want %+v", i, got[i].Scope, wantScope)
 		}
-		wantPath := "kv/mark8ly/marketplace-api/tenants/" + tenant.String() + "/shipping/delhivery/" + field
+		// encodeSegment escapes a literal '_' to "__" to stay injective (#606).
+		wantPath := "kv/mark8ly/marketplace-api/tenants/" + tenant.String() + "/shipping/delhivery/" + strings.ReplaceAll(field, "_", "__")
 		if gotPath := carriersecrets.BaoPath(got[i].Scope); gotPath != wantPath {
 			t.Fatalf("BaoPath(%+v) = %q, want %q", got[i].Scope, gotPath, wantPath)
 		}
@@ -94,7 +97,8 @@ func TestTaxRows_ScopeMapping(t *testing.T) {
 	if got[0].Scope != wantScope {
 		t.Fatalf("scope = %+v, want %+v", got[0].Scope, wantScope)
 	}
-	wantPath := "kv/mark8ly/marketplace-api/tenants/" + tenant.String() + "/tax/taxjar/api_key"
+	// encodeSegment escapes a literal '_' to "__" to stay injective (#606).
+	wantPath := "kv/mark8ly/marketplace-api/tenants/" + tenant.String() + "/tax/taxjar/api__key"
 	if gotPath := carriersecrets.BaoPath(got[0].Scope); gotPath != wantPath {
 		t.Fatalf("BaoPath = %q, want %q", gotPath, wantPath)
 	}
@@ -126,8 +130,10 @@ func TestDomainRows_ScopeMapping(t *testing.T) {
 	if got[0].Scope != wantScope {
 		t.Fatalf("scope = %+v, want %+v", got[0].Scope, wantScope)
 	}
-	// FQDN dots are sanitized to underscores in the KV path.
-	wantPath := "kv/mark8ly/marketplace-api/tenants/" + tenant.String() + "/platform/cloudflare/shop_example_com"
+	// FQDN dots are hex-escaped by encodeSegment ('.' -> "_2E") to stay
+	// injective (#606) — a literal '_' would otherwise be indistinguishable
+	// from an escape sequence, and two distinct FQDNs could collide.
+	wantPath := "kv/mark8ly/marketplace-api/tenants/" + tenant.String() + "/platform/cloudflare/shop_2Eexample_2Ecom"
 	if gotPath := carriersecrets.BaoPath(got[0].Scope); gotPath != wantPath {
 		t.Fatalf("BaoPath = %q, want %q", gotPath, wantPath)
 	}

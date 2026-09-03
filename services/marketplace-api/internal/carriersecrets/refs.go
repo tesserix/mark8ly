@@ -23,6 +23,7 @@ package carriersecrets
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -69,10 +70,10 @@ func IsBaoRef(r string) bool { return strings.HasPrefix(r, BaoRefPrefix) }
 // segments (~40 chars combined) is ~96 chars for any realistic
 // tenant.
 func SecretName(prefix string, s Scope) string {
-	tenant := sanitizeSegment(s.TenantID)
-	domain := sanitizeSegment(strings.ToLower(s.Domain))
-	provider := sanitizeSegment(strings.ToLower(s.Provider))
-	field := sanitizeSegment(strings.ToLower(s.Field))
+	tenant := encodeSegment(s.TenantID)
+	domain := encodeSegment(strings.ToLower(s.Domain))
+	provider := encodeSegment(strings.ToLower(s.Provider))
+	field := encodeSegment(strings.ToLower(s.Field))
 	return fmt.Sprintf("%s-%s-%s-%s-%s", prefix, tenant, domain, provider, field)
 }
 
@@ -110,10 +111,10 @@ const baoPathPrefix = "kv/mark8ly/marketplace-api/tenants"
 func BaoPath(s Scope) string {
 	return fmt.Sprintf("%s/%s/%s/%s/%s",
 		baoPathPrefix,
-		sanitizeSegment(s.TenantID),
-		sanitizeSegment(strings.ToLower(s.Domain)),
-		sanitizeSegment(strings.ToLower(s.Provider)),
-		sanitizeSegment(strings.ToLower(s.Field)),
+		encodeSegment(s.TenantID),
+		encodeSegment(strings.ToLower(s.Domain)),
+		encodeSegment(strings.ToLower(s.Provider)),
+		encodeSegment(strings.ToLower(s.Field)),
 	)
 }
 
@@ -128,23 +129,78 @@ func ParseBaoReference(ref string) (path string, ok bool) {
 	return strings.TrimPrefix(ref, BaoRefPrefix), true
 }
 
-// sanitizeSegment reduces a Scope segment to the character set GCP
-// Secret Manager accepts: letters, digits, '_' and '-'. Anything else
-// becomes '_' so a stray dot/slash never produces an InvalidArgument
-// from the API.
-func sanitizeSegment(s string) string {
+// encodeSegment reduces a Scope segment to the character set both GCP
+// Secret Manager names and OpenBao KV paths accept — [A-Za-z0-9_-] — while
+// staying INJECTIVE: distinct inputs always produce distinct outputs. That
+// matters because a Scope segment (e.g. a merchant-registered domain) is
+// untrusted, and two distinct segments folding to the same encoded path
+// would let one tenant's per-tenant carrier credential silently overwrite
+// another's config in the same slot (see #606).
+//
+// Encoding, byte-wise (not rune-wise, so multi-byte UTF-8 becomes a run of
+// escapes):
+//   - '[A-Za-z0-9-]'  -> unchanged
+//   - '_'             -> "__"
+//   - anything else   -> '_' followed by its two-digit uppercase hex value
+//
+// decodeSegment is its exact inverse and exists to make injectivity
+// testable (round-trip), not because any caller needs to decode a stored
+// path — see below.
+//
+// Changing this function does NOT require a migration: every stored
+// reference is self-describing (ParseBaoReference/ParseReference recover
+// the path straight out of the reference string, never by recomputing it
+// from a Scope), so old rows keep resolving at their old paths and only
+// new writes land on paths produced by this version.
+func encodeSegment(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
-	for _, r := range s {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
 		switch {
-		case r >= 'a' && r <= 'z',
-			r >= 'A' && r <= 'Z',
-			r >= '0' && r <= '9',
-			r == '_', r == '-':
-			b.WriteRune(r)
+		case c >= 'a' && c <= 'z',
+			c >= 'A' && c <= 'Z',
+			c >= '0' && c <= '9',
+			c == '-':
+			b.WriteByte(c)
+		case c == '_':
+			b.WriteString("__")
 		default:
-			b.WriteByte('_')
+			fmt.Fprintf(&b, "_%02X", c)
 		}
 	}
 	return b.String()
+}
+
+// decodeSegment is the inverse of encodeSegment. It returns an error on a
+// malformed escape: a trailing lone '_', or a '_' followed by non-hex
+// digits.
+func decodeSegment(s string) (string, error) {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c != '_' {
+			b.WriteByte(c)
+			continue
+		}
+		if i+1 >= len(s) {
+			return "", fmt.Errorf("carriersecrets: malformed segment %q: trailing '_'", s)
+		}
+		if s[i+1] == '_' {
+			b.WriteByte('_')
+			i++
+			continue
+		}
+		if i+2 >= len(s) {
+			return "", fmt.Errorf("carriersecrets: malformed segment %q: incomplete escape at offset %d", s, i)
+		}
+		hexByte, err := strconv.ParseUint(s[i+1:i+3], 16, 8)
+		if err != nil {
+			return "", fmt.Errorf("carriersecrets: malformed segment %q: invalid hex escape at offset %d: %w", s, i, err)
+		}
+		b.WriteByte(byte(hexByte))
+		i += 2
+	}
+	return b.String(), nil
 }

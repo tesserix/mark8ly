@@ -359,3 +359,33 @@ func TestCompleteLogin_RunsTheSameGauntletAsAutoLogin(t *testing.T) {
 		t.Fatal("AutoLogin minted no cookie")
 	}
 }
+
+func TestCompleteForProvider_RunsTheSameGauntletAsCompleteLogin(t *testing.T) {
+	gipFake := gip.NewFakeVerifier()
+	fgaFake := authz.NewFake()
+	fgaFake.SetMembership("user-z1", "tenant-uuid-1")
+
+	svc := newTestService(t, gipFake, fgaFake, fastPolicy)
+
+	rec := httptest.NewRecorder()
+	err := svc.CompleteForProvider(context.Background(), rec, "user-z1", "z@e.com", "tenant-uuid-1")
+	if err != nil {
+		t.Fatalf("CompleteForProvider: %v", err)
+	}
+	if len(rec.Result().Cookies()) == 0 {
+		t.Fatal("CompleteForProvider minted no cookie")
+	}
+}
+
+func TestCompleteForProvider_PropagatesMembershipFailure(t *testing.T) {
+	gipFake := gip.NewFakeVerifier()
+	fgaFake := authz.NewFake() // no membership set
+
+	svc := newTestService(t, gipFake, fgaFake, fastPolicy)
+
+	rec := httptest.NewRecorder()
+	err := svc.CompleteForProvider(context.Background(), rec, "user-z2", "z2@e.com", "tenant-uuid-1")
+	if !errors.Is(err, ErrNotMember) {
+		t.Fatalf("err = %v, want ErrNotMember", err)
+	}
+}

@@ -259,8 +259,11 @@ func main() {
 		zitadelClient = zitadellogin.New(cfg.ZitadelIssuer, cfg.ZitadelLoginClientToken, nil)
 		log.Info("zitadel login client enabled", "issuer", cfg.ZitadelIssuer)
 	}
-	// Task 5 (wiring) will use zitadelClient to mount routes.
-	_ = zitadelClient
+	var zitadelHandler *zitadellogin.Handler
+	if zitadelClient != nil {
+		zitadelHandler = zitadellogin.NewHandler(zitadelClient, autologinSvc.CompleteForProvider).
+			WithHostedLoginBaseURL(cfg.ZitadelIssuer)
+	}
 
 	// ─── Session introspection + logout ────────────────────────────────
 	sessionHandler := session.NewHandler(sessions, fgaClient).
@@ -294,6 +297,9 @@ func main() {
 	adminHandoffHandler.Register(v1)
 	if otpHandler != nil {
 		otpHandler.Register(v1)
+	}
+	if zitadelHandler != nil {
+		zitadelHandler.Register(v1)
 	}
 
 	// /api/v1 surface consumed by marketplace-api's account handler,

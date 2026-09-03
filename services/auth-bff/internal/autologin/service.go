@@ -211,6 +211,27 @@ func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Requ
 	}, req)
 }
 
+// CompleteForProvider is the exported entry point for a provider other than
+// GIP — currently Zitadel — that has already established a verified identity
+// by its own means (password + sufficiency checks) and just needs to run the
+// shared gauntlet: FGA membership, the MFA gate, deviceguard, the email-OTP
+// step-up, session minting.
+//
+// It is a thin wrapper around completeLogin so that gauntlet has exactly one
+// implementation regardless of which provider authenticated the user. It
+// takes only the fields a provider-agnostic caller can supply — device,
+// IP and user-agent metadata are unavailable to a Zitadel-authenticated
+// request through this path and are left zero, same as an empty Request
+// field would leave them for AutoLogin.
+func (s *Service) CompleteForProvider(ctx context.Context, w http.ResponseWriter, uid, email, tenantID string) error {
+	_, err := s.completeLogin(ctx, w, Identity{
+		UID:      uid,
+		Email:    email,
+		TenantID: tenantID,
+	}, Request{WorkspaceTenant: tenantID})
+	return err
+}
+
 // completeLogin runs every gate that stands between a verified identity and a
 // minted session: FGA membership (with the outbox-race retry), the MFA gate,
 // new-device evaluation, the email-OTP step-up, then the session cookie,

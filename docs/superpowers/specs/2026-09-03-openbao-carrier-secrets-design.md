@@ -285,31 +285,54 @@ Every new test is verified to fail before it passes.
 see the grant table above) and, if the default doesn't match this
 cluster's OpenBao, `OPENBAO_ADDR`. `OPENBAO_KV_MOUNT` must stay `"kv"`
 (`carriersecrets.BaoPath` hardcodes that mount prefix; `pkg/config.Validate`
-rejects anything else at boot). `GCP_PROJECT_ID` must also stay set — a
-bao-primary `ChainStore` still routes legacy `gsm://` rows through GCP SM.
+rejects anything else at boot).
 
-**To roll back from `bao` to `gcpsm`:** flip `SHIPPING_SECRET_STORE` back
-to `gcpsm` — **and leave `OPENBAO_ROLE` and `OPENBAO_ADDR` set**. This is
-the constraint the whole-branch review's Blocker 1 exists to enforce:
-`ChainStore.Get`/`Destroy` route a `bao://` reference to OpenBao **by
-prefix**, not by which backend is configured as primary. Any tenant whose
-credential already migrated to `bao://` is still resolved through OpenBao
-after the rollback — removing the OpenBao settings at the same time would
-make that read fail hard (`gcpsm` has no cache to serve a stale value, so
-this is not a graceful degradation — it is a checkout/shipping-rate/
-webhook outage for every already-migrated tenant). `pkg/config.Validate`
-enforces this by requiring `OPENBAO_ROLE`/`OPENBAO_ADDR` whenever
-`SHIPPING_SECRET_STORE != "inline"`, not only when it is `"bao"` — a
-`gcpsm` deployment with those settings unset fails at boot instead of
-failing individual reads later.
+**UPDATE (mark8ly#621, phase 5): `gcpsm` is retired — there is no rollback
+to it any more.** Everything below this line, up to "Reading which mode is
+live", described a rollback path that no longer exists; it is kept only so
+the history of the decision is legible, not as a live procedure.
+
+Verified in production on `main-6e3bf31` immediately before this change:
+`carrier-secrets-backfill -verify` reported `examined=6, resolved=3,
+failed=0, by_scheme = {bao: 3, empty: 3}` — no `gsm://` reference existed
+anywhere in the estate, and `carriersecrets_events_total{event=
+"gsm_fallback_read"}` had read zero on both the admin and storefront
+engines. A column-ownership audit confirmed the four `*_encrypted` columns
+the census covers (`payment_gateway_configs`, `shipping_carrier_configs`,
+`tax_provider_configs`, `custom_domains`) are the only carrier-credential
+columns that exist, so nothing was invisible to that census. On that
+evidence, `internal/carriersecrets.ChainStore` no longer holds a GCP
+Secret Manager client at all: `SHIPPING_SECRET_STORE=gcpsm` is now a
+**startup config error** (`Build` refuses to construct anything and names
+the mode), and a `gsm://` reference reaching `ChainStore.Get`/`Destroy` —
+which would only happen if the backfill's census above turns out to have
+missed a row — fails with an explicit, self-explaining error instead of
+silently falling through or reaching GCP.
+
+**Recovery for a `gsm://` row surfacing after this change is restoring
+from OpenBao, not from GCP.** Concretely: `carrier-secrets-backfill
+-verify` still classifies and reports any `gsm://` row by scheme (see
+`referenceScheme` in `cmd/carrier-secrets-backfill/verify.go`) without ever
+touching GCP, so it remains the right first step to confirm scope. Actually
+migrating that row is now a human-operator task: read the plaintext out of
+the GCP Secret Manager console for that tenant/domain/provider/field (the
+GCP secrets themselves are **not deleted** by this change — that is a
+separate, later step — so the value is still there to recover), then
+re-save the credential through the normal admin/storefront write path
+(`ChainStore.Put`, or a handler's `MaybeRewrap` on next save), which writes
+a fresh `bao://` reference. The old automatic backfill migration path
+(`Backfiller.Run`/`migrateRow` reading the old `gsm://` value straight
+through the `Store`) no longer works, because `Store.Get` on a `gsm://`
+reference now fails unconditionally, before ever reaching the read-back
+verification that made that job safe.
 
 **Reading which mode is live:** `carriersecrets: chain store online` logs
-`primary` and `cached` at boot (`cmd/marketplace-api/main.go`). The
-`carriersecrets_gsm_fallback_read` counter tells you whether any reads are
-still landing on GCP SM under bao-primary; it is measured at the
-`ChainStore` layer, below the cache, so its magnitude under-counts true
-volume by roughly the cache hit ratio, but "durably zero" still means "no
-gsm:// reads happened" — see the comment on `FallbackReadMetric`.
+`primary` and `cached` at boot (`cmd/marketplace-api/main.go`); `primary`
+is now always `bao`. The `carriersecrets_gsm_fallback_read` counter no
+longer means "still landing on GCP SM" (there is no GCP SM to land on) —
+it now means "a `gsm://` row was hit and refused to resolve", i.e. the
+mark8ly#621 backfill census missed something. It should stay durably
+zero; a non-zero reading is a bug report, not a degrade.
 
 **Rolling all the way back to `inline`** (abandoning both backends) is a
 separate, simpler path: it does not go through `ChainStore` at all

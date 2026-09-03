@@ -11,17 +11,18 @@ import (
 
 // Regression: GatewayFor passed payment_gateway_configs.api_key_encrypted /
 // secret_key_encrypted straight into payment.NewGateway. Those columns hold
-// a REFERENCE, not a credential — "gsm://projects/.../secrets/..." once the
-// row has been rewrapped. Razorpay was therefore handed the literal gsm://
-// string as its API key and answered
+// a REFERENCE, not a credential — "gsm://projects/.../secrets/..." (now
+// "bao://kv/..." — GCP Secret Manager was retired in mark8ly#621) once the
+// row has been rewrapped. Razorpay was therefore handed the literal
+// reference string as its API key and answered
 //
 //	401 {"code":"BAD_REQUEST_ERROR","description":"Authentication failed"}
 //
 // so every refund 500'd. Observed in prod 2026-07-17 on store my-god
 // (order 3936309a-587f-4060-943a-b4a4983305c8).
 
-func TestResolveCred_ResolvesGSMReference(t *testing.T) {
-	store := carriersecrets.NewFakeStore("tesseracthub-480811", "mark8ly-test", crypto.NewNoopEncryptor())
+func TestResolveCred_ResolvesBaoReference(t *testing.T) {
+	store := carriersecrets.NewFakeStore(crypto.NewNoopEncryptor())
 	r := (&Resolver{}).WithSecretStore(store)
 	ctx := context.Background()
 
@@ -35,19 +36,19 @@ func TestResolveCred_ResolvesGSMReference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if !strings.HasPrefix(ref, "gsm://") {
-		t.Fatalf("precondition: want gsm:// ref, got %q", ref)
+	if !strings.HasPrefix(ref, "bao://") {
+		t.Fatalf("precondition: want bao:// ref, got %q", ref)
 	}
 
 	got, err := r.resolveCred(ctx, ref)
 	if err != nil {
-		t.Fatalf("resolveCred(gsm ref): %v", err)
+		t.Fatalf("resolveCred(bao ref): %v", err)
 	}
 	if got != plaintext {
 		t.Errorf("credential = %q, want %q", got, plaintext)
 	}
-	// The whole point: a gsm:// reference must never reach the gateway.
-	if strings.HasPrefix(got, "gsm://") {
+	// The whole point: a raw reference must never reach the gateway.
+	if strings.HasPrefix(got, "bao://") {
 		t.Error("resolveCred returned the raw reference — gateway would 401")
 	}
 }
@@ -86,7 +87,7 @@ func TestResolveCred_UnwiredFailsLoudlyInsteadOfLeakingRef(t *testing.T) {
 
 func TestResolveCred_EmptyRefIsNotAnError(t *testing.T) {
 	r := (&Resolver{}).WithSecretStore(
-		carriersecrets.NewFakeStore("p", "mark8ly-test", crypto.NewNoopEncryptor()),
+		carriersecrets.NewFakeStore(crypto.NewNoopEncryptor()),
 	)
 	got, err := r.resolveCred(context.Background(), "")
 	if err != nil {

@@ -12,8 +12,9 @@ import (
 // Regression: verify-payment resolved the Razorpay signing secret through
 // the Encryptor directly, which only understands the legacy inline "aes:"
 // envelope. Once a payment_gateway_configs row had been rewrapped its
-// secret_key_encrypted column holds a "gsm://" reference, so every
-// verification failed with `not an AES-encrypted value` and returned
+// secret_key_encrypted column holds a "gsm://" reference (now "bao://" —
+// GCP Secret Manager was retired in mark8ly#621), so every verification
+// failed with `not an AES-encrypted value` and returned
 // 503 {"error":"gateway not configured"} — the customer paid at Razorpay
 // and the order stayed pending. Observed in prod 2026-07-17 on
 // store my-god (order M-MYG-260717-00001).
@@ -22,8 +23,8 @@ import (
 // the carriersecrets.Store when wired. These tests pin that contract for
 // both storage formats.
 
-func TestDecryptAPIKey_ResolvesGSMReference(t *testing.T) {
-	store := carriersecrets.NewFakeStore("tesseracthub-480811", "mark8ly-test", crypto.NewNoopEncryptor())
+func TestDecryptAPIKey_ResolvesBaoReference(t *testing.T) {
+	store := carriersecrets.NewFakeStore(crypto.NewNoopEncryptor())
 	h := (&WebhookHandler{}).WithSecretStore(store)
 	ctx := context.Background()
 
@@ -37,15 +38,15 @@ func TestDecryptAPIKey_ResolvesGSMReference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if !strings.HasPrefix(ref, "gsm://") {
-		t.Fatalf("precondition: want a gsm:// reference, got %q", ref)
+	if !strings.HasPrefix(ref, "bao://") {
+		t.Fatalf("precondition: want a bao:// reference, got %q", ref)
 	}
 
 	// This is the exact call verify-payment makes. Before the fix the
 	// equivalent Encryptor-only path returned "not an AES-encrypted value".
 	got, err := h.decryptAPIKey(ctx, ref)
 	if err != nil {
-		t.Fatalf("decryptAPIKey(gsm ref) failed — verify-payment would 503: %v", err)
+		t.Fatalf("decryptAPIKey(bao ref) failed — verify-payment would 503: %v", err)
 	}
 	if got != plaintext {
 		t.Errorf("plaintext = %q, want %q", got, plaintext)
@@ -79,7 +80,7 @@ func TestDecryptAPIKey_FallsBackToEncryptorForInlineCiphertext(t *testing.T) {
 // must resolve to empty rather than erroring.
 func TestDecryptAPIKey_EmptyReference(t *testing.T) {
 	h := (&WebhookHandler{}).WithSecretStore(
-		carriersecrets.NewFakeStore("p", "mark8ly-test", crypto.NewNoopEncryptor()),
+		carriersecrets.NewFakeStore(crypto.NewNoopEncryptor()),
 	)
 	got, err := h.decryptAPIKey(context.Background(), "")
 	if err != nil {

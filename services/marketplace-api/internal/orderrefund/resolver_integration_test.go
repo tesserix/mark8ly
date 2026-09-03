@@ -299,7 +299,7 @@ func TestGatewayFor_WithSecretStoreResolvesWrappedReference(t *testing.T) {
 	tenantID, storeID := uuid.New(), uuid.New()
 	seedStore(t, db, storeID, tenantID)
 
-	store := carriersecrets.NewFakeStore("tesseracthub-480811", "mark8ly-test", crypto.NewNoopEncryptor())
+	store := carriersecrets.NewFakeStore(crypto.NewNoopEncryptor())
 	ctx := context.Background()
 	const wantAPIKey = "rzp_test_realapikey123"
 	apiKeyRef, err := store.Put(ctx, carriersecrets.Scope{
@@ -340,7 +340,7 @@ func TestGatewayFor_WithoutSecretStoreFailsLoudly(t *testing.T) {
 	tenantID, storeID := uuid.New(), uuid.New()
 	seedStore(t, db, storeID, tenantID)
 
-	store := carriersecrets.NewFakeStore("tesseracthub-480811", "mark8ly-test", crypto.NewNoopEncryptor())
+	store := carriersecrets.NewFakeStore(crypto.NewNoopEncryptor())
 	ctx := context.Background()
 	apiKeyRef, err := store.Put(ctx, carriersecrets.Scope{
 		TenantID: tenantID.String(), Domain: "payment", Provider: "razorpay", Field: "api_key",

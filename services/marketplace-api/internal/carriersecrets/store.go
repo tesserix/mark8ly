@@ -3,7 +3,6 @@ package carriersecrets
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 )
@@ -42,9 +41,32 @@ func (s Scope) Validate() error {
 	return nil
 }
 
+// SecretClient is the minimal secret-backend surface a Store depends on.
+// The only production implementation left is *BaoClient (see bao.go),
+// wrapping OpenBao; tests wire in a FakeClient (in-memory, deterministic).
+// GCP Secret Manager's implementation (*GCPStore) was retired in
+// mark8ly#621 — see chain.go's explicit gsm:// error.
+type SecretClient interface {
+	// CreateOrAddVersion creates the secret (idempotent) and appends a
+	// new version. name is the backend's canonical resource identifier
+	// (a GCP resource path historically; an OpenBao KV path now).
+	CreateOrAddVersion(ctx context.Context, name string, payload []byte) error
+	// AccessLatest returns the latest version's payload, mapping
+	// "doesn't exist" to ErrSecretNotFound so the Store can distinguish
+	// "never existed" from "transient failure".
+	AccessLatest(ctx context.Context, name string) ([]byte, error)
+	// DeleteSecret removes the secret and all its versions. Idempotent:
+	// "already gone" is treated as success.
+	DeleteSecret(ctx context.Context, name string) error
+}
+
+// ErrSecretNotFound is the sentinel returned by AccessLatest when the
+// secret (or its latest version) doesn't exist.
+var ErrSecretNotFound = errors.New("carriersecrets: secret not found")
+
 // Store is the public surface every handler depends on. Main wires up
-// either a HybridStore (GCP SM + inline fallback) or an InlineStore
-// (crypto.Encryptor only — dev without GCP creds) at boot time.
+// either a ChainStore (OpenBao, see chain.go) or an InlineStore
+// (crypto.Encryptor only — dev without OpenBao creds) at boot time.
 type Store interface {
 	// Put writes plaintext under scope and returns an opaque reference
 	// the caller persists to the DB. Safe to invoke on a fresh scope
@@ -63,10 +85,11 @@ type Store interface {
 	Destroy(ctx context.Context, reference string) error
 }
 
-// Rewrapper is an optional extension satisfied by HybridStore. When a
-// handler's read path hits a legacy inline reference while running in
-// gcpsm mode, it can call MaybeRewrap to migrate the value to GCP SM
-// and persist the new reference in place of the old column value.
+// Rewrapper is an optional extension satisfied by ChainStore. When a
+// handler's read path hits a legacy reference (inline, or a stray
+// pre-cutover gsm://) it can call MaybeRewrap to migrate the value to the
+// primary backend and persist the new reference in place of the old
+// column value.
 //
 // The store deliberately does NOT own the DB row — that would require
 // a passthrough of gorm.DB and turn this package into a DB writer
@@ -81,151 +104,14 @@ type Rewrapper interface {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// HybridStore — GCP Secret Manager primary, inline fallback for reads.
+// InlineStore — pure envelope-encryption, no external secret backend.
 // ─────────────────────────────────────────────────────────────────────
 
-// HybridStore is NO LONGER the production Store on the wired path — main.go
-// now wires ChainStore (see chain.go) for every SHIPPING_SECRET_STORE value
-// including "gcpsm", since ChainStore is a strict superset (GCP-primary
-// ChainStore behaves identically to HybridStore, plus bao:// routing for
-// the rollback case — see pkg/config's OpenBao-required-in-gcpsm-mode
-// validation). HybridStore is retained here DELIBERATELY for a later
-// phase rather than deleted outright: it is a smaller, independently
-// understandable reference implementation of the primary+read-fallback
-// pattern ChainStore generalises, and removing it is not required by any
-// task in this migration. Do not wire it into main.go going forward —
-// ChainStore supersedes it.
-//
-// It writes through to GCP Secret Manager and reads from either GCP SM or
-// inline ciphertext so existing rows stay readable during migration.
-type HybridStore struct {
-	client    SecretClient
-	enc       crypto.Encryptor
-	projectID string
-	prefix    string
-}
-
-// HybridConfig bundles the knobs for constructing a HybridStore.
-type HybridConfig struct {
-	// Client is the GCP SM adapter (usually *GCPStore backed by the
-	// Google SDK, or *FakeClient in tests).
-	Client SecretClient
-	// Encryptor decodes legacy inline values on read. Nil disables
-	// inline-compat reads — use that only in tests that want to
-	// assert references are GCP SM references.
-	Encryptor crypto.Encryptor
-	// ProjectID is the GCP project hosting the secrets. Required.
-	ProjectID string
-	// Prefix goes at the start of every secret ID — the cluster
-	// identifier, e.g. "mark8ly-prod" or "mark8ly-test".
-	Prefix string
-}
-
-// NewHybridStore constructs a HybridStore. Panics on missing
-// required fields; callers must pass a usable config at boot.
-func NewHybridStore(cfg HybridConfig) *HybridStore {
-	if cfg.Client == nil {
-		panic("carriersecrets: HybridStore requires a SecretClient")
-	}
-	if cfg.ProjectID == "" {
-		panic("carriersecrets: HybridStore requires ProjectID")
-	}
-	if cfg.Prefix == "" {
-		panic("carriersecrets: HybridStore requires Prefix")
-	}
-	return &HybridStore{
-		client:    cfg.Client,
-		enc:       cfg.Encryptor,
-		projectID: cfg.ProjectID,
-		prefix:    cfg.Prefix,
-	}
-}
-
-// Put creates the secret if missing and appends a new version.
-func (h *HybridStore) Put(ctx context.Context, scope Scope, plaintext string) (string, error) {
-	if err := scope.Validate(); err != nil {
-		return "", err
-	}
-	resource := SecretResource(h.projectID, h.prefix, scope)
-	if err := h.client.CreateOrAddVersion(ctx, resource, []byte(plaintext)); err != nil {
-		return "", fmt.Errorf("carriersecrets: put %s: %w", resource, err)
-	}
-	return GSMRefPrefix + resource, nil
-}
-
-// Get resolves a reference. Routes by prefix: GSM references go to
-// the SDK; inline references go to the encryptor.
-func (h *HybridStore) Get(ctx context.Context, reference string) (string, error) {
-	if reference == "" {
-		return "", nil
-	}
-	if resource, ok := ParseReference(reference); ok {
-		data, err := h.client.AccessLatest(ctx, resource)
-		if err != nil {
-			return "", fmt.Errorf("carriersecrets: get %s: %w", resource, err)
-		}
-		return string(data), nil
-	}
-	if IsInlineRef(reference) {
-		if h.enc == nil {
-			return "", errors.New("carriersecrets: inline reference received but no encryptor wired")
-		}
-		plain, err := h.enc.Decrypt(reference)
-		if err != nil {
-			return "", fmt.Errorf("carriersecrets: decrypt inline: %w", err)
-		}
-		return plain, nil
-	}
-	// Unknown shape — treat as plaintext legacy value (pre-encryption
-	// rows). NoopEncryptor.Decrypt has the same pass-through
-	// behaviour, so this keeps dev setups working.
-	return reference, nil
-}
-
-// Destroy deletes the GCP SM secret. No-op for inline references
-// since there is no detached resource to clean up.
-func (h *HybridStore) Destroy(ctx context.Context, reference string) error {
-	if reference == "" {
-		return nil
-	}
-	resource, ok := ParseReference(reference)
-	if !ok {
-		return nil
-	}
-	if err := h.client.DeleteSecret(ctx, resource); err != nil {
-		return fmt.Errorf("carriersecrets: destroy %s: %w", resource, err)
-	}
-	return nil
-}
-
-// MaybeRewrap upgrades a legacy inline reference to GCP SM lazily.
-// Returns ("", false) when oldRef is already a gsm:// reference or
-// empty — the caller must skip the DB UPDATE in that case. A rewrap
-// failure is swallowed (returns "", false) so a transient SM blip
-// never fails the surrounding read path; the next read will try
-// again.
-func (h *HybridStore) MaybeRewrap(ctx context.Context, oldRef string, scope Scope, plaintext string) (string, bool) {
-	if oldRef == "" || IsGSMRef(oldRef) {
-		return "", false
-	}
-	if err := scope.Validate(); err != nil {
-		return "", false
-	}
-	newRef, err := h.Put(ctx, scope, plaintext)
-	if err != nil {
-		return "", false
-	}
-	return newRef, true
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// InlineStore — pure envelope-encryption, no GCP dependency.
-// ─────────────────────────────────────────────────────────────────────
-
-// InlineStore is the fallback Store used when GCP SM is unavailable
+// InlineStore is the fallback Store used when OpenBao is unavailable
 // (local dev without credentials, CI integration tests, emergency
-// boot after an IAM misconfiguration). It never talks to GCP — every
-// Put returns an inline ciphertext, and Get decodes the same.
+// boot after an IAM misconfiguration). It never talks to an external
+// secret backend — every Put returns an inline ciphertext, and Get
+// decodes the same.
 type InlineStore struct {
 	enc crypto.Encryptor
 }
@@ -256,7 +142,7 @@ func (s *InlineStore) Get(_ context.Context, reference string) (string, error) {
 		return "", nil
 	}
 	if IsGSMRef(reference) {
-		return "", errors.New("carriersecrets: InlineStore cannot resolve gsm:// references — wire HybridStore")
+		return "", errors.New("carriersecrets: InlineStore cannot resolve gsm:// references — wire ChainStore")
 	}
 	return s.enc.Decrypt(reference)
 }

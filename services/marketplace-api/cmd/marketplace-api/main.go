@@ -434,8 +434,6 @@ func main() {
 	// continue) is made for the API process specifically.
 	carrierSecretStore, carrierSecretStoreDegraded, buildErr := carriersecrets.Build(context.Background(), carriersecrets.BuildParams{
 		Mode:         cfg.ShippingSecretStore,
-		GCPProjectID: cfg.GCPProjectID,
-		SecretPrefix: cfg.SecretNamePrefix,
 		OpenBaoAddr:  cfg.OpenBaoAddr,
 		OpenBaoMount: cfg.OpenBaoKVMount,
 		OpenBaoRole:  cfg.OpenBaoRole,

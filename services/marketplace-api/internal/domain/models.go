@@ -48,11 +48,13 @@ type CustomDomain struct {
 	CloudflareZoneID      *string      `gorm:"column:cloudflare_zone_id;type:varchar(100)"`
 	CloudflareDNSRecordID *string      `gorm:"column:cloudflare_dns_record_id;type:varchar(100)"`
 	// CFAPITokenRef is an opaque reference to the merchant's Cloudflare
-	// API token in GCP Secret Manager (e.g. "gsm://projects/.../secrets/...").
+	// API token (e.g. "bao://kv/..."; historically "gsm://projects/.../
+	// secrets/..." before GCP Secret Manager was retired in mark8ly#621).
 	// Resolved at use time via the SecretStore. The legacy column name
 	// (cf_api_token_encrypted) is preserved so we don't need a schema
-	// migration; HybridStore.Get accepts gsm://, aes:/noop: and bare
-	// plaintext, so any pre-existing rows keep working.
+	// migration; ChainStore.Get accepts bao://, aes:/noop: and bare
+	// plaintext — a stray gsm:// row now fails with an explicit error
+	// instead of resolving (see internal/carriersecrets/chain.go).
 	CFAPITokenRef string     `gorm:"column:cf_api_token_encrypted;type:text;default:''"`
 	SSLStatus     SSLStatus  `gorm:"column:ssl_status;type:varchar(20);not null;default:pending"`
 	VerifiedAt    *time.Time `gorm:"column:verified_at"`

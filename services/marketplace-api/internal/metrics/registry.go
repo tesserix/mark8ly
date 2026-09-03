@@ -245,6 +245,29 @@ func init() {
 		APIKeyRateLimitedTotal,
 		CarrierSecretEventsTotal,
 	)
+
+	// Pre-declare every carriersecrets event series at 0.
+	//
+	// A CounterVec exports nothing for a label value it has never
+	// observed, which makes an absent series ambiguous: "wired and
+	// genuinely zero" is indistinguishable from "never wired, or the code
+	// path is unreachable". mark8ly#621 retires GCP Secret Manager on the
+	// strength of gsm_fallback_read reading zero, so that ambiguity must
+	// not sit under the decision — an affirmative 0 also proves the sink
+	// reaches the exported registry.
+	for _, event := range carrierSecretEvents {
+		CarrierSecretEventsTotal.WithLabelValues(event).Add(0)
+	}
+}
+
+// carrierSecretEvents lists every event value the carriersecrets package
+// fires. Kept here rather than imported from carriersecrets so this package
+// stays free of a dependency on its consumer; the values are asserted
+// against the carriersecrets constants in TestCarrierSecretEvents_MatchConstants.
+var carrierSecretEvents = []string{
+	"gsm_fallback_read",
+	"stale_read",
+	"rewrap_failed",
 }
 
 // CarrierSecretCounter is the single carriersecrets.CounterFn-shaped sink

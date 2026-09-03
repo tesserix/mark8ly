@@ -5,7 +5,7 @@ import {
   LinkedProvidersPanel,
   type LinkedProvider,
 } from "@repo/ui/auth/linked-providers-panel";
-import { isGoogleSignInOffered } from "@/lib/auth/provider";
+import { isGoogleLinkOffered } from "@/lib/auth/provider";
 import { resolveGoogleSignInUrl } from "@/lib/auth/google-sign-in";
 
 interface SecurityClientProps {
@@ -16,7 +16,14 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
   const [providers, setProviders] = useState<LinkedProvider[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const canLinkGoogle = isGoogleSignInOffered();
+  // NOT isGoogleSignInOffered — that answers "is Google offered for
+  // sign-in/sign-up at all" (true on both providers). Linking an
+  // existing account needs an authenticated "link this provider to my
+  // account" backend endpoint that doesn't exist under Zitadel, so
+  // "Add Google" must be hidden there rather than left to silently
+  // switch the shopper to a different, self-registered account. See
+  // isGoogleLinkOffered's doc.
+  const canLinkGoogle = isGoogleLinkOffered();
 
   useEffect(() => {
     let cancelled = false;

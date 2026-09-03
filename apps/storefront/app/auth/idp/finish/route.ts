@@ -16,13 +16,19 @@
 //
 // This route mints the SAME `mp_customer_session` cookie as
 // apps/storefront/app/sign-in/actions.ts's customerSignIn, via the
-// identical completeCustomerSignIn tail — never a second cookie-minting
-// path. No cookie is set on any failure branch below.
+// shared completeCustomerSignIn tail in @/lib/auth/customer-session —
+// never a second cookie-minting path. No cookie is set on any failure
+// branch below.
+//
+// Guarded on NEXT_PUBLIC_AUTH_PROVIDER === "zitadel" below: this route
+// only exists to finish a Zitadel IDP intent, so under GIP it must not
+// process anything — an intent minted against a Zitadel-flagged store
+// must not be replayable against a GIP-flagged store's finish route.
 
 import { NextResponse } from "next/server";
 import { resolveStoreSlug } from "@/lib/slug";
 import { sanitizeHost } from "@/lib/host";
-import { completeCustomerSignIn, resolveStore } from "@/app/sign-in/actions";
+import { completeCustomerSignIn, resolveStore } from "@/lib/auth/customer-session";
 import {
   AuthBffCustomerError,
   finishCustomerIDPIntent,
@@ -38,6 +44,14 @@ export const dynamic = "force-dynamic";
 const DEFAULT_DEST: GoogleSignInDest = "/account";
 
 export async function GET(req: Request): Promise<Response> {
+  // This route only applies under the Zitadel provider — under GIP there
+  // is no flow that could ever legitimately land a browser here, and an
+  // intent minted against a Zitadel-flagged store must not be replayable
+  // against a GIP-flagged store's finish route.
+  if (process.env.NEXT_PUBLIC_AUTH_PROVIDER !== "zitadel") {
+    return new NextResponse(null, { status: 404 });
+  }
+
   const url = new URL(req.url);
   const intentId = url.searchParams.get("id");
   const intentToken = url.searchParams.get("token");

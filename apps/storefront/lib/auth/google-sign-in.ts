@@ -56,6 +56,19 @@ export type ResolveGoogleSignInUrlResult =
  * startCustomerGoogleSignIn server action). Returns a result instead of
  * throwing so the caller can render a truthful message rather than an
  * unhandled rejection.
+ *
+ * `args.storeSlug` and `args.intent` are used by the GIP branch
+ * (buildTrampolineUrl embeds both in the trampoline URL) but
+ * deliberately NOT passed to startCustomerGoogleSignIn on the Zitadel
+ * branch: Zitadel resolves the store from the request's own host
+ * server-side (see app/auth/idp/actions.ts), so storeSlug travels
+ * nowhere, and auth-bff's customer IDP-start endpoint self-registers or
+ * signs in identically regardless of signin/signup intent, so there is
+ * nothing for `intent` to change there either. This is why the "link"
+ * intent value existed only for the trampoline shape and was never
+ * something the Zitadel branch could honor as an actual account-linking
+ * operation — see SecurityClient, which no longer offers "Add Google"
+ * under Zitadel for exactly that reason.
  */
 export async function resolveGoogleSignInUrl(
   args: GoogleSignInArgs,

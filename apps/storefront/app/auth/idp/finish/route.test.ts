@@ -5,7 +5,7 @@ vi.mock("@/lib/slug", () => ({
   resolveStoreSlug: vi.fn(),
 }));
 
-vi.mock("@/app/sign-in/actions", () => ({
+vi.mock("@/lib/auth/customer-session", () => ({
   resolveStore: vi.fn(),
   completeCustomerSignIn: vi.fn(),
 }));
@@ -18,7 +18,7 @@ vi.mock("@/lib/auth/auth-bff-customer", async () => {
 });
 
 import { resolveStoreSlug } from "@/lib/slug";
-import { completeCustomerSignIn, resolveStore } from "@/app/sign-in/actions";
+import { completeCustomerSignIn, resolveStore } from "@/lib/auth/customer-session";
 import { finishCustomerIDPIntent } from "@/lib/auth/auth-bff-customer";
 import { GET } from "./route";
 
@@ -42,13 +42,52 @@ beforeEach(() => {
   completeCustomerSignInMock.mockReset();
   finishCustomerIDPIntentMock.mockReset();
 
+  // This route only processes anything under the Zitadel flag — see the
+  // "provider guard" describe block below for the flag-unset behavior.
+  process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+
   resolveStoreSlugMock.mockResolvedValue("shop");
   resolveStoreMock.mockResolvedValue(STORE);
   completeCustomerSignInMock.mockResolvedValue({ ok: true });
 });
 
 afterEach(() => {
+  delete process.env.NEXT_PUBLIC_AUTH_PROVIDER;
   vi.clearAllMocks();
+});
+
+describe("GET /auth/idp/finish — provider guard", () => {
+  it("flag unset: returns 404 and calls nothing downstream", async () => {
+    delete process.env.NEXT_PUBLIC_AUTH_PROVIDER;
+
+    const res = await GET(makeRequest("?id=intent-1&token=tok-1"));
+
+    expect(res.status).toBe(404);
+    expect(resolveStoreSlugMock).not.toHaveBeenCalled();
+    expect(finishCustomerIDPIntentMock).not.toHaveBeenCalled();
+    expect(completeCustomerSignInMock).not.toHaveBeenCalled();
+  });
+
+  it('flag "gip": returns 404', async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "gip";
+
+    const res = await GET(makeRequest("?id=intent-1&token=tok-1"));
+
+    expect(res.status).toBe(404);
+  });
+
+  it('flag "zitadel": processes the request normally', async () => {
+    finishCustomerIDPIntentMock.mockResolvedValue({
+      kind: "complete",
+      uid: "u1",
+      email: "customer@example.com",
+    });
+
+    const res = await GET(makeRequest("?id=intent-1&token=tok-1"));
+
+    expect(res.status).toBe(303);
+    expect(completeCustomerSignInMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("GET /auth/idp/finish — success", () => {

@@ -566,6 +566,40 @@ describe("confirmCustomerTotp — invalid code", () => {
   });
 });
 
+describe("confirmCustomerTotp — a repeat totp_required is a FRESH challenge, not a wrong code", () => {
+  it("hands back the NEW sessionId/sessionToken, not the caller's original pair", async () => {
+    verifyCustomerTotpMock.mockResolvedValue({
+      kind: "totp_required",
+      sessionId: "s-fresh",
+      sessionToken: "tok-fresh",
+    });
+    const { confirmCustomerTotp, isTotpRequiredResult } = await loadActions();
+
+    const result = await confirmCustomerTotp({
+      storeSlug: "shop",
+      sessionId: "s-original",
+      sessionToken: "tok-original",
+      code: "123456",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+    if (!isTotpRequiredResult(result)) {
+      throw new Error("expected a totp_required result");
+    }
+    // Pin the credentials, not just the message: a bug that discards
+    // outcome.sessionId/sessionToken and echoes the caller's original
+    // pair back would still produce a truthful-sounding "enter a new
+    // code" message and pass a message-only assertion.
+    expect(result.sessionId).toBe("s-fresh");
+    expect(result.sessionToken).toBe("tok-fresh");
+    expect(result.sessionId).not.toBe("s-original");
+    expect(result.sessionToken).not.toBe("tok-original");
+    // And it must not be confused with an ordinary wrong code.
+    expect(result.message).not.toBe("That code is incorrect. Please try again.");
+  });
+});
+
 describe("confirmCustomerTotp — the code never leaks", () => {
   it("never appears in a console.error argument", async () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});

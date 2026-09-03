@@ -235,6 +235,13 @@ async function completeCustomerSignIn(
  * shopper. The detail is logged server-side only.
  */
 function handleSignInError(err: unknown, logLabel: string): Result {
+  // GIPTokenVerificationError can only be thrown by customerSignIn's GIP
+  // branch (verifyGIPIdToken) — confirmCustomerTotp is Zitadel-only and
+  // never throws this. Kept in the shared helper anyway rather than
+  // split into two near-identical functions: one caller needing a case
+  // the other never hits isn't worth forking the error-mapping logic in
+  // two, and a stray GIPTokenVerificationError from confirmCustomerTotp
+  // (there shouldn't ever be one) still gets a sane, non-leaking message.
   if (err instanceof GIPTokenVerificationError) {
     return {
       ok: false,
@@ -425,14 +432,22 @@ export async function confirmCustomerTotp(input: {
           message: "That code is incorrect. Please try again.",
         };
       case "totp_required":
-        // The endpoint asked for another code — the session id/token it
-        // returned may differ from the one just used, so this can't be
-        // silently retried with the caller's original values. Send the
-        // shopper back to re-enter a fresh code rather than guessing.
+        // A FRESH challenge, not a wrong code — Zitadel wants another
+        // code and handed back a new sessionId/sessionToken pair.
+        // Mirrors apps/admin/app/login/actions.ts's mapZitadelOutcome,
+        // which returns fresh zitadelSessionId/zitadelSessionToken on a
+        // repeat challenge for the same reason: the caller's original
+        // pair is now stale, and silently discarding the new one here
+        // (returning the old "That code is incorrect" wording) would
+        // make every subsequent retry submit stale credentials that can
+        // never succeed, while blaming the code the customer typed.
         return {
           ok: false,
-          code: "invalid_code",
-          message: "That code is incorrect. Please try again.",
+          code: "totp_required",
+          message:
+            "Enter the new 6-digit code from your authenticator app to finish signing in.",
+          sessionId: outcome.sessionId,
+          sessionToken: outcome.sessionToken,
         };
       case "handoff":
         // Same genuine dead end customerSignIn's "handoff" case is — a

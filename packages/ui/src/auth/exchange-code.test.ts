@@ -6,7 +6,7 @@ import {
   ExchangeCodeError,
   EXCHANGE_CODE_KIND,
 } from "./exchange-code";
-import { ADMIN_HANDOFF_KIND, mintAdminHandoffCode } from "./admin-handoff-code";
+import { mintAdminHandoffCode } from "./admin-handoff-code";
 
 const KEY = "test-key-32-bytes-padded-padded!!";
 

@@ -200,6 +200,20 @@ export function CustomerSignInForm({
       });
 
       if (!result.ok) {
+        if (isTotpRequiredResult(result)) {
+          // A FRESH challenge, not a wrong code — Zitadel handed back a
+          // new sessionId/sessionToken pair. Update the held challenge
+          // so the next submission carries the new credentials instead
+          // of the stale ones the customer just used; retrying with the
+          // old pair could never succeed.
+          setTotpChallenge({
+            sessionId: result.sessionId,
+            sessionToken: result.sessionToken,
+          });
+          setTotpCode("");
+          setTotpError(result.message);
+          return;
+        }
         setTotpError(result.message);
         return;
       }

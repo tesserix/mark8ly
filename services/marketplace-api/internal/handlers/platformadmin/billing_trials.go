@@ -61,6 +61,15 @@ type BillingTrialsHandler struct {
 	dir    TenantDirectory
 	db     *gorm.DB
 	logger *slog.Logger
+	// catalog resolves the plan catalog each response is priced from
+	// (tesserix-home#328 phase C). Nil prices from the compiled catalog —
+	// see compiledPriceCatalog for why that nil is the cutover's kill
+	// switch and not a degraded state.
+	catalog CatalogResolver
+	// fallbackLog throttles the warning that a page was priced from a
+	// non-fresh catalog. Per handler, not per package, so the interval is
+	// testable without global state.
+	fallbackLog *catalogFallbackLog
 	// now is overridable in tests; production uses time.Now. The single
 	// instant it returns is used for BOTH the query window and every row's
 	// days_remaining — two clocks in one response is a defect this project
@@ -74,11 +83,14 @@ type BillingTrialsHandler struct {
 // clock so the fixture's TrialEndsAt values and the resulting
 // days_remaining stay deterministic, mirroring the clock parameter pattern
 // used by trial.NewExpiryCron and friends.
-func NewBillingTrialsHandler(trials TrialLister, dir TenantDirectory, db *gorm.DB, clock func() time.Time, logger *slog.Logger) *BillingTrialsHandler {
+func NewBillingTrialsHandler(trials TrialLister, dir TenantDirectory, db *gorm.DB, clock func() time.Time, catalog CatalogResolver, logger *slog.Logger) *BillingTrialsHandler {
 	if clock == nil {
 		clock = time.Now
 	}
-	return &BillingTrialsHandler{trials: trials, dir: dir, db: db, logger: logger, now: clock}
+	return &BillingTrialsHandler{
+		trials: trials, dir: dir, db: db, logger: logger, now: clock,
+		catalog: catalog, fallbackLog: newCatalogFallbackLog(),
+	}
 }
 
 // Register mounts the route on the supplied group.
@@ -148,12 +160,18 @@ func (h *BillingTrialsHandler) list(c *gin.Context) {
 		return
 	}
 
+	// Resolved ONCE for the whole page, off the request's context — never
+	// context.Background(): a client that has gone away must be able to
+	// cancel the console read this may perform, like every other upstream
+	// call on this path.
+	pc := resolvePriceCatalog(ctx, h.catalog, h.fallbackLog, h.logger)
+
 	// Allocate before appending: a nil slice marshals to {}, which defeats a
 	// caller's `?? []` and crashes their page precisely when there is no
 	// data — same reasoning as toTenantRow's caller in entities_tenants.go.
 	out := make([]trialRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, toTrialRow(r, names, asOf))
+		out = append(out, toTrialRow(r, names, asOf, pc))
 	}
 
 	c.JSON(http.StatusOK, billingTrialsResponse{
@@ -208,7 +226,7 @@ func (h *BillingTrialsHandler) lookupTenantNames(ctx context.Context, rows []tri
 	return names, nil
 }
 
-func toTrialRow(r trial.ExpiringRow, names map[string]string, asOf time.Time) trialRow {
+func toTrialRow(r trial.ExpiringRow, names map[string]string, asOf time.Time, pc priceCatalog) trialRow {
 	row := trialRow{
 		TenantID:      r.TenantID,
 		TenantName:    names[r.TenantID],
@@ -226,7 +244,7 @@ func toTrialRow(r trial.ExpiringRow, names map[string]string, asOf time.Time) tr
 		StripeManaged:       r.StripeManaged,
 	}
 
-	if m, ok := resolveMoney(r.Plan, r.Period, r.BillingCurrency, r.PriceTier); ok {
+	if m, ok := pc.resolveMoney(r.Plan, r.Period, r.BillingCurrency, r.PriceTier); ok {
 		row.Amount = &m
 	}
 

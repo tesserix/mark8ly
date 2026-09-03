@@ -172,6 +172,15 @@ type Deps struct {
 	// Trials/AllSubscriptions pattern above: both must be non-nil for the
 	// route to mount.
 	BreakGlass BreakGlassLister
+
+	// PriceCatalog resolves the plan catalog the two billing read routes
+	// display amounts from (tesserix-home#328 phase C). Unlike every other
+	// optional field in this struct, nil does NOT unmount anything: it
+	// prices from the catalog compiled into internal/billing/pricing, which
+	// is what those routes did before the cutover. That is the rollback —
+	// unsetting CONSOLE_CATALOG_* in the chart reverts this surface to the
+	// compiled amounts without a code change. See compiledPriceCatalog.
+	PriceCatalog CatalogResolver
 }
 
 // TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
@@ -255,11 +264,11 @@ func Register(g *gin.RouterGroup, deps Deps) {
 	}
 
 	if deps.Trials != nil && deps.TenantDirectory != nil {
-		NewBillingTrialsHandler(deps.Trials, deps.TenantDirectory, deps.DB, nil, deps.Logger).Register(group)
+		NewBillingTrialsHandler(deps.Trials, deps.TenantDirectory, deps.DB, nil, deps.PriceCatalog, deps.Logger).Register(group)
 	}
 
 	if deps.AllSubscriptions != nil && deps.TenantDirectory != nil {
-		NewBillingSubscriptionsHandler(deps.AllSubscriptions, deps.TenantDirectory, deps.DB, deps.Logger).Register(group)
+		NewBillingSubscriptionsHandler(deps.AllSubscriptions, deps.TenantDirectory, deps.DB, deps.PriceCatalog, deps.Logger).Register(group)
 	}
 
 	if deps.Tickets != nil {

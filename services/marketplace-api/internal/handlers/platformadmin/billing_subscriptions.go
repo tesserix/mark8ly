@@ -99,11 +99,21 @@ type BillingSubscriptionsHandler struct {
 	dir    TenantDirectory
 	db     *gorm.DB
 	logger *slog.Logger
+	// catalog and fallbackLog mirror BillingTrialsHandler exactly — the two
+	// surfaces must not disagree about what a plan costs, so they price
+	// from the same resolver through the same helper (tesserix-home#328).
+	catalog     CatalogResolver
+	fallbackLog *catalogFallbackLog
 }
 
 // NewBillingSubscriptionsHandler constructs the handler. logger may be nil.
-func NewBillingSubscriptionsHandler(subs SubscriptionLister, dir TenantDirectory, db *gorm.DB, logger *slog.Logger) *BillingSubscriptionsHandler {
-	return &BillingSubscriptionsHandler{subs: subs, dir: dir, db: db, logger: logger}
+// catalog may be nil, which prices from the compiled catalog — see
+// compiledPriceCatalog for why that is the cutover's kill switch.
+func NewBillingSubscriptionsHandler(subs SubscriptionLister, dir TenantDirectory, db *gorm.DB, catalog CatalogResolver, logger *slog.Logger) *BillingSubscriptionsHandler {
+	return &BillingSubscriptionsHandler{
+		subs: subs, dir: dir, db: db, logger: logger,
+		catalog: catalog, fallbackLog: newCatalogFallbackLog(),
+	}
 }
 
 // Register mounts the route on the supplied group.
@@ -175,11 +185,15 @@ func (h *BillingSubscriptionsHandler) list(c *gin.Context) {
 		return
 	}
 
+	// Resolved ONCE for the whole page, off the request's context — never
+	// context.Background(). See the matching comment in billing_trials.go.
+	pc := resolvePriceCatalog(ctx, h.catalog, h.fallbackLog, h.logger)
+
 	// Allocate before appending: a nil slice marshals to {}, which defeats a
 	// caller's `?? []`.
 	out := make([]subscriptionRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, toSubscriptionRow(r, names))
+		out = append(out, toSubscriptionRow(r, names, pc))
 	}
 
 	c.JSON(http.StatusOK, billingSubscriptionsResponse{
@@ -235,7 +249,7 @@ func (h *BillingSubscriptionsHandler) lookupTenantNames(ctx context.Context, row
 	return names, nil
 }
 
-func toSubscriptionRow(r subscription.StoreSubscription, names map[string]string) subscriptionRow {
+func toSubscriptionRow(r subscription.StoreSubscription, names map[string]string, pc priceCatalog) subscriptionRow {
 	tenantID := r.TenantID.String()
 	row := subscriptionRow{
 		TenantID:          tenantID,
@@ -247,7 +261,7 @@ func toSubscriptionRow(r subscription.StoreSubscription, names map[string]string
 		CancelAtPeriodEnd: r.CancelAtPeriodEnd,
 	}
 
-	if m, ok := resolveMoney(string(r.Plan), string(r.SubscriptionPeriod), r.BillingCurrency, r.PriceTier); ok {
+	if m, ok := pc.resolveMoney(string(r.Plan), string(r.SubscriptionPeriod), r.BillingCurrency, r.PriceTier); ok {
 		row.Amount = &m
 	}
 

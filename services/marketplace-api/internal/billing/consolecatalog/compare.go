@@ -24,6 +24,25 @@ type rowKey struct {
 type row struct {
 	amountMinor int64
 	taxBehavior string
+	// plan, period and tier are compared as well as keyed on, and that is
+	// deliberate rather than redundant.
+	//
+	// `rowKey` is (lookup_key, currency) because that is what identifies an
+	// amount on both sides. These three are the fields the SERVING lookup
+	// keys on: `platformadmin`'s price index finds a row by (plan, period,
+	// tier, currency), because a subscription row carries those and never a
+	// Stripe lookup_key. Before they were compared here, `differences=0`
+	// evidenced the amounts while saying nothing about the three fields the
+	// cutover reads by -- so the check that gates the cutover did not cover
+	// the path the cutover creates.
+	//
+	// Verified identical across all 42 lookup keys on 2026-09-03, so adding
+	// them reports nothing new today. That is the point: the guard is being
+	// put in place while it is known to pass, so a later divergence is a
+	// signal rather than a discovery.
+	plan   string
+	period string
+	tier   string
 }
 
 // Diff compares the console's catalog against the compiled one and returns
@@ -53,6 +72,24 @@ func Diff(console Catalog, compiled []pricing.PriceDescriptor) []Difference {
 		if !sameTaxBehavior(l.taxBehavior, r.taxBehavior) {
 			diffs = append(diffs, Difference{k.lookupKey, k.currency,
 				fmt.Sprintf("tax_behavior: compiled=%q console=%q", r.taxBehavior, l.taxBehavior)})
+			continue
+		}
+		// Reported one field at a time, worst-first like the checks above, so
+		// a report names the specific field rather than dumping both rows and
+		// leaving a reader to spot the difference.
+		if l.plan != r.plan {
+			diffs = append(diffs, Difference{k.lookupKey, k.currency,
+				fmt.Sprintf("plan: compiled=%q console=%q", r.plan, l.plan)})
+			continue
+		}
+		if l.period != r.period {
+			diffs = append(diffs, Difference{k.lookupKey, k.currency,
+				fmt.Sprintf("period: compiled=%q console=%q", r.period, l.period)})
+			continue
+		}
+		if l.tier != r.tier {
+			diffs = append(diffs, Difference{k.lookupKey, k.currency,
+				fmt.Sprintf("tier: compiled=%q console=%q", r.tier, l.tier)})
 		}
 	}
 	for k, r := range right {
@@ -74,7 +111,15 @@ func Diff(console Catalog, compiled []pricing.PriceDescriptor) []Difference {
 func consoleRows(c Catalog) map[rowKey]row {
 	out := make(map[rowKey]row, len(c.Prices))
 	for _, p := range c.Prices {
-		out[rowKey{p.LookupKey, strings.ToLower(p.Currency)}] = row{p.UnitAmountMinor, p.TaxBehavior}
+		out[rowKey{p.LookupKey, strings.ToLower(p.Currency)}] = row{
+			amountMinor: p.UnitAmountMinor,
+			taxBehavior: p.TaxBehavior,
+			// Lower-folded on both sides so a case difference alone cannot
+			// report a divergence. The serving index folds the same way.
+			plan:   strings.ToLower(strings.TrimSpace(p.Plan)),
+			period: strings.ToLower(strings.TrimSpace(p.Period)),
+			tier:   strings.ToLower(strings.TrimSpace(p.Tier)),
+		}
 	}
 	return out
 }
@@ -97,7 +142,13 @@ func compiledRows(descriptors []pricing.PriceDescriptor) map[rowKey]row {
 			if amt.Currency == "" {
 				continue
 			}
-			out[rowKey{d.LookupKey, strings.ToLower(cur)}] = row{amt.UnitAmountMinor, amt.TaxBehavior}
+			out[rowKey{d.LookupKey, strings.ToLower(cur)}] = row{
+				amountMinor: amt.UnitAmountMinor,
+				taxBehavior: amt.TaxBehavior,
+				plan:        strings.ToLower(strings.TrimSpace(string(d.Plan))),
+				period:      strings.ToLower(strings.TrimSpace(string(d.Period))),
+				tier:        strings.ToLower(strings.TrimSpace(string(d.Tier))),
+			}
 		}
 	}
 	return out

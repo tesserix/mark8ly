@@ -154,3 +154,32 @@ describe("admin middleware — canonical /login gate", () => {
     expect(res.status).toBe(404);
   });
 });
+
+// Task 4 (#524, phase 3c2b): a merchant returning from Google lands on
+// `/auth/idp/finish` with no `m8_session` cookie yet — auth-bff mints the
+// session inside that handler. Same shape as /auth/callback (phase 3a):
+// without an allowlist entry, the canonical-host "no cookie" branch 404s
+// the request before the route ever runs.
+describe("admin middleware — Google IdP finish route", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("lets /auth/idp/finish through on the canonical host with no session", async () => {
+    const req = new NextRequest("https://admin.mark8ly.com/auth/idp/finish?code=abc", {
+      headers: { host: "admin.mark8ly.com" },
+    });
+    const res = await middleware(req);
+    expect(res.status).not.toBe(404);
+  });
+
+  it("still blocks an unrelated protected path with no session — allowlist did not widen", async () => {
+    const req = new NextRequest("https://admin.mark8ly.com/dashboard", {
+      headers: { host: "admin.mark8ly.com" },
+    });
+    const res = await middleware(req);
+    expect(res.status).toBe(404);
+  });
+});

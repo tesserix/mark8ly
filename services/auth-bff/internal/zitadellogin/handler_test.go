@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestLoginCollapsesUnknownUserAndWrongPasswordIntoOneAnswer(t *testing.T) {
@@ -266,5 +268,147 @@ func TestHandoffURLEmptyWithoutConfiguredBase(t *testing.T) {
 	h := NewHandler(New("http://unused.invalid", "pat", nil), nil)
 	if got := h.handoffURL("V2_1"); got != "" {
 		t.Fatalf("handoffURL = %q, want empty when no base configured", got)
+	}
+}
+
+// TestTotpIgnoresAClientSuppliedLoginNameAndResolvesTheRealUser pins the fix
+// for a spoofing defect: login_name on /zitadel/totp is never checked against
+// anything (the password check that verifies login_name happens on the
+// earlier /zitadel/login call, against a session this caller might not even
+// own). Without resolving the email from Zitadel, anyone with valid
+// credentials of their own could submit an arbitrary login_name here and walk
+// away with a session cookie, an audit event, and a mailed sign-in code
+// addressed to a victim's email of their choosing.
+func TestTotpIgnoresAClientSuppliedLoginNameAndResolvesTheRealUser(t *testing.T) {
+	var fin atomic.Bool
+	factorsWithTOTP := `{"session":{"factors":{"user":{"id":"u1","organizationId":"o1"},"password":{"verifiedAt":"2026-09-03T01:00:00Z"},"totp":{"verifiedAt":"2026-09-03T01:01:00Z"}}}}`
+	c := fakeZitadelHandler(t, policyForceMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_TOTP"]`, factorsWithTOTP, &fin)
+
+	var got LoginContext
+	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+		got = lc
+		return CompleteResult{}, nil
+	})
+
+	rec := httptest.NewRecorder()
+	h.totp(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/totp",
+		strings.NewReader(`{"auth_request_id":"V2_1","login_name":"attacker-chosen@evil.test","session_id":"s1","session_token":"tok-1","code":"123456","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got.Email == "attacker-chosen@evil.test" {
+		t.Fatalf("LoginContext.Email = %q — a client-supplied, unverified login_name reached the gauntlet on the TOTP step", got.Email)
+	}
+	if got.Email != "a@b.test" {
+		t.Fatalf("LoginContext.Email = %q, want the email resolved from Zitadel (a@b.test), regardless of what login_name was submitted", got.Email)
+	}
+}
+
+// TestLoginCompleteWithMFARequiredDoesNotReturnCallbackURL pins the fix for
+// CompleteForProvider discarding the step-up state: if auth-bff's own MFA
+// gate fires inside the gauntlet, the response must say so instead of
+// answering with a callback_url that would tell the browser the login is
+// finished while a step-up is still outstanding.
+func TestLoginCompleteWithMFARequiredDoesNotReturnCallbackURL(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelHandler(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+
+	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+		return CompleteResult{MFARequired: true}, nil
+	})
+
+	rec := httptest.NewRecorder()
+	h.login(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/login",
+		strings.NewReader(`{"auth_request_id":"V2_1","login_name":"a@b.test","password":"x","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := body["callback_url"]; ok {
+		t.Fatalf("body = %v carries callback_url while auth-bff's own MFA step-up is outstanding", body)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data == nil || data["mfa_required"] != true {
+		t.Fatalf("body = %v, want data.mfa_required = true", body)
+	}
+	if data["email_otp_required"] != false {
+		t.Fatalf("body = %v, want data.email_otp_required = false", body)
+	}
+}
+
+// TestLoginCompleteWithEmailOTPRequiredDoesNotReturnCallbackURL is the
+// email-OTP twin of the MFA case above: a new-device challenge must also
+// suppress callback_url, not just MFA.
+func TestLoginCompleteWithEmailOTPRequiredDoesNotReturnCallbackURL(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelHandler(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+
+	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+		return CompleteResult{EmailOTPRequired: true}, nil
+	})
+
+	rec := httptest.NewRecorder()
+	h.login(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/login",
+		strings.NewReader(`{"auth_request_id":"V2_1","login_name":"a@b.test","password":"x","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := body["callback_url"]; ok {
+		t.Fatalf("body = %v carries callback_url while the email-OTP step-up is outstanding", body)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data == nil || data["email_otp_required"] != true {
+		t.Fatalf("body = %v, want data.email_otp_required = true", body)
+	}
+	if data["mfa_required"] != false {
+		t.Fatalf("body = %v, want data.mfa_required = false", body)
+	}
+}
+
+// TestRegisterResolvesTheGinClientIPIntoLoginContext exercises the actual
+// Register -> withClientIP plumbing through a real gin router, rather than
+// calling h.login/h.totp directly as every other test in this file does. No
+// prior test routed through Register, so a break in that wiring (IPAddress
+// silently landing as "") would have gone unnoticed — the same shape of gap
+// as the Fingerprint("") defect this phase already found and fixed.
+func TestRegisterResolvesTheGinClientIPIntoLoginContext(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelHandler(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+
+	var gotIP string
+	h := NewHandler(c, func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+		gotIP = lc.IPAddress
+		return CompleteResult{}, nil
+	})
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h.Register(r.Group("/auth"))
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/zitadel/login",
+		strings.NewReader(`{"auth_request_id":"V2_1","login_name":"a@b.test","password":"x","workspace_tenant":"t1"}`))
+	req.Header.Set("X-Forwarded-For", "203.0.113.42")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if gotIP == "" {
+		t.Fatal("IPAddress reaching CompleteFunc is empty — the Register -> withClientIP plumbing is broken; " +
+			"the email-OTP limiter would key on a constant for every Zitadel login")
+	}
+	if gotIP != "203.0.113.42" {
+		t.Fatalf("IPAddress = %q, want the gin-resolved client IP from X-Forwarded-For", gotIP)
 	}
 }

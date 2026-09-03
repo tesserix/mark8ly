@@ -98,7 +98,13 @@ func (c *Client) RetrieveIDPIntent(ctx context.Context, intentID, intentToken st
 			RawInformation map[string]any `json:"rawInformation"`
 		} `json:"idpInformation"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/v2/idp_intents/"+url.PathEscape(intentID), body, &wire, ErrIDPIntentInvalid); err != nil {
+	// withLogPath: the intent id is request-scoped input, not a secret the
+	// way intentToken is, but there is no reason for it to ride along into
+	// every error string this call can produce (which a caller may log) —
+	// drop it from the logged path the same way the token is already kept
+	// out of it entirely.
+	if err := c.do(ctx, http.MethodPost, "/v2/idp_intents/"+url.PathEscape(intentID), body, &wire, ErrIDPIntentInvalid,
+		withLogPath("/v2/idp_intents/{id}")); err != nil {
 		return IDPIdentity{}, err
 	}
 	email, emailVerified := readRawEmail(wire.IDPInformation.RawInformation)

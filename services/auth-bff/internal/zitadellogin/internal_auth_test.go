@@ -86,7 +86,9 @@ func guardedEndpoints() []endpoint {
 			path: "/auth/zitadel/idp/finish",
 			body: `{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok-1","workspace_tenant":"t1"}`,
 			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
-				NewHandler(c, merchantComplete).WithInternalAuth(testInternalSecret).idpFinish(rec, r)
+				NewHandler(c, merchantComplete).WithInternalAuth(testInternalSecret).
+					WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1").
+					idpFinish(rec, r)
 			},
 		},
 		{

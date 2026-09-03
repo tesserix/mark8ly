@@ -109,6 +109,14 @@ type Config struct {
 	// rather than hardcoded: repointing it must be a config change, not a
 	// code change and redeploy.
 	ZitadelGoogleIDPID string `envconfig:"ZITADEL_GOOGLE_IDP_ID"`
+
+	// ZitadelOrgID scopes idp/finish's link-an-existing-account lookup
+	// (internal/zitadellogin's Client.FindUserByVerifiedEmail) to the
+	// merchant org. Required: the login-client PAT is instance-level and
+	// Zitadel's email uniqueness is per-org, so an unscoped search could
+	// match a verified email in a completely unrelated org sharing this
+	// instance.
+	ZitadelOrgID string `envconfig:"ZITADEL_ORG_ID"`
 }
 
 // Load reads .env (if present) and binds environment variables.
@@ -168,6 +176,9 @@ func (c *Config) ValidateZitadel() error {
 	}
 	if c.ZitadelGoogleIDPID == "" {
 		missing = append(missing, "ZITADEL_GOOGLE_IDP_ID")
+	}
+	if c.ZitadelOrgID == "" {
+		missing = append(missing, "ZITADEL_ORG_ID")
 	}
 	if len(missing) == 0 {
 		return nil

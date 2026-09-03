@@ -288,7 +288,8 @@ func main() {
 			WithHostedLoginBaseURL(cfg.ZitadelIssuer).
 			WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
 			WithReturnURLAllowlist(returnURLs).
-			WithGoogleIDPID(cfg.ZitadelGoogleIDPID)
+			WithGoogleIDPID(cfg.ZitadelGoogleIDPID).
+			WithOrgID(cfg.ZitadelOrgID)
 	}
 
 	// ─── Session introspection + logout ────────────────────────────────

@@ -98,6 +98,12 @@ type Handler struct {
 	// to repoint it. Empty means idp/start is not usable — see
 	// WithGoogleIDPID.
 	googleIDPID string
+
+	// orgID scopes FindUserByVerifiedEmail (idp/finish's link path) to the
+	// merchant org. Required for that call to run at all — see
+	// Client.FindUserByVerifiedEmail's doc for why an unscoped, instance-
+	// wide search is unsafe on a shared instance. Set via WithOrgID.
+	orgID string
 }
 
 // NewHandler constructs a Handler. complete may be nil in tests that never
@@ -135,6 +141,14 @@ func (h *Handler) WithReturnURLAllowlist(a ReturnURLAllowlist) *Handler {
 // configuration rather than a constant.
 func (h *Handler) WithGoogleIDPID(id string) *Handler {
 	h.googleIDPID = id
+	return h
+}
+
+// WithOrgID sets the merchant org id that idp/finish's link path scopes
+// Client.FindUserByVerifiedEmail to. See the orgID field doc for why an
+// unset value refuses that lookup rather than searching instance-wide.
+func (h *Handler) WithOrgID(id string) *Handler {
+	h.orgID = id
 	return h
 }
 
@@ -435,30 +449,53 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// This endpoint is Google sign-in specifically, not "any federated
+	// identity Zitadel happens to have" — the instance can (and, as of
+	// 2026-09-04, does) carry more than one IDP. Without this check, an
+	// intent from a WEAKER or attacker-influenced provider would be
+	// accepted here and its email_verified claim trusted exactly like
+	// Google's: start an intent against that other provider, register
+	// victim@merchant.com there, and this endpoint would link it straight
+	// onto the victim's Zitadel account. Every trust decision below this
+	// line assumes "Google asserted this" — this is what actually makes
+	// that assumption true, rather than merely convenient to write.
+	if identity.IDPID == "" || identity.IDPID != h.googleIDPID {
+		slog.WarnContext(ctx, "zitadellogin: idp finish rejected: intent did not come from the configured google idp")
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unexpected_idp"})
+		return
+	}
+
 	// A first-time Google sign-in: this intent has never been linked to any
-	// Zitadel user. Register one, pre-linked to this identity, so the very
-	// next sign-in resolves ZitadelUserID immediately.
+	// Zitadel user. The merchant path is LINK-ONLY — it never registers a
+	// new user. Two independent reasons, not one:
 	//
-	// The security rule that governs everything in this block: an unlinked
+	//   - Merchant authorization is FGA tenant membership, keyed by user
+	//     id. A user that did not exist a moment ago cannot be a member of
+	//     anything, so a freshly created merchant user is GUARANTEED to
+	//     fail the post-identity gauntlet a few lines below. Creating one
+	//     here is pure garbage generation: unbounded user-table growth by
+	//     any unauthenticated visitor with a Google account, and every row
+	//     becomes a future verified-email match target — see
+	//     FindUserByVerifiedEmail's doc on ambiguous matches.
+	//   - Merchants get an account through onboarding, not through the
+	//     login page. If no admin account exists for this identity, the
+	//     correct answer is a clean refusal, not a bootstrap.
+	//
+	// (CreateHumanUserWithIDPLink still exists as a primitive for a future
+	// customer path, where self-registration IS the desired behaviour —
+	// see the storefront customer sign-in design — it is simply never
+	// called from here.)
+	//
+	// The security rule that governs the link decision: an unlinked
 	// federated identity may be attached to an account by email ONLY when
 	// the provider asserts that email is verified. Anyone able to register
 	// a victim's address at any federated provider would otherwise inherit
 	// that victim's existing account — this is an account-takeover
-	// primitive, not a convenience feature, and the two checks below (both
-	// required, in this order) are what stop it:
-	//
-	//  1. identity.EmailVerified must be true and identity.Email non-empty.
-	//     EmailVerified is read SOFT from the provider's raw claims (see
-	//     IDPIdentity's doc) and defaults to false when the claim is
-	//     absent — so an absent claim refuses here exactly like an
-	//     explicit false, never like "probably fine". This re-derives the
-	//     trust decision the brief for this endpoint always required;
-	//     registration is what makes it load-bearing rather than moot.
-	//  2. Whether an EXISTING Zitadel user already holds that verified
-	//     email (FindUserByVerifiedEmail) decides create vs. link below:
-	//     creating a second, disconnected account for someone who already
-	//     has one would be exactly as wrong as skipping this check — see
-	//     CreateHumanUserWithIDPLink's and LinkIDPToUser's docs.
+	// primitive, not a convenience feature, and the check below is what
+	// stops it. identity.EmailVerified is read SOFT from the provider's
+	// raw claims (see IDPIdentity's doc) and defaults to false when the
+	// claim is absent — so an absent claim refuses here exactly like an
+	// explicit false, never like "probably fine".
 	if identity.ZitadelUserID == "" {
 		if identity.Email == "" || !identity.EmailVerified {
 			slog.WarnContext(ctx, "zitadellogin: idp finish rejected: unlinked identity with no verified email")
@@ -466,37 +503,41 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		existingUserID, err := h.c.FindUserByVerifiedEmail(ctx, identity.Email)
+		existingUserID, err := h.c.FindUserByVerifiedEmail(ctx, h.orgID, identity.Email)
 		if err != nil {
+			if errors.Is(err, ErrAmbiguousEmailMatch) {
+				// More than one user in the org matched — a refusal, not
+				// an error to retry: see FindUserByVerifiedEmail's doc for
+				// why picking one would be unsafe.
+				slog.WarnContext(ctx, "zitadellogin: idp finish rejected: more than one existing account matched the verified email")
+				writeJSON(w, http.StatusConflict, map[string]any{"error": "email_ambiguous"})
+				return
+			}
 			slog.ErrorContext(ctx, "zitadellogin: idp finish: could not check for an existing account by email", "err", err)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
 			return
 		}
-		switch {
-		case existingUserID != "":
-			// A Zitadel user already holds this exact, verified email:
-			// attach this Google identity to THAT account rather than
-			// creating a second, disconnected one for the same person.
-			// Gated on the identical rule as creation above (checked
-			// again here, not merely relied upon, since LinkIDPToUser
-			// also refuses independently) — this is the whole security
-			// boundary: linking an unverified provider email to an
-			// existing account is account takeover.
-			if err := h.c.LinkIDPToUser(ctx, existingUserID, identity); err != nil {
-				slog.ErrorContext(ctx, "zitadellogin: idp finish: could not link identity to the existing account", "err", err)
-				writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
-				return
-			}
-			slog.InfoContext(ctx, "zitadellogin: idp finish linked a first-time Google identity to an existing account", "user_id", existingUserID)
-		default:
-			newUserID, err := h.c.CreateHumanUserWithIDPLink(ctx, identity)
-			if err != nil {
-				slog.ErrorContext(ctx, "zitadellogin: idp finish: could not register a new user for this identity", "err", err)
-				writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
-				return
-			}
-			slog.InfoContext(ctx, "zitadellogin: idp finish registered a new user for a first-time Google sign-in", "user_id", newUserID)
+		if existingUserID == "" {
+			// No admin account exists for this identity. Merchants are
+			// provisioned through onboarding, not created here — see the
+			// link-only rationale above.
+			slog.WarnContext(ctx, "zitadellogin: idp finish rejected: no admin account exists for this identity")
+			writeJSON(w, http.StatusForbidden, map[string]any{"error": "no_admin_account"})
+			return
 		}
+
+		// A Zitadel user already holds this exact, verified email: attach
+		// this Google identity to THAT account. LinkIDPToUser re-checks
+		// the same email-verified rule independently rather than trusting
+		// this call site alone — this is the whole security boundary:
+		// linking an unverified provider email to an existing account is
+		// account takeover.
+		if err := h.c.LinkIDPToUser(ctx, existingUserID, identity); err != nil {
+			slog.ErrorContext(ctx, "zitadellogin: idp finish: could not link identity to the existing account", "err", err)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+			return
+		}
+		slog.InfoContext(ctx, "zitadellogin: idp finish linked a first-time Google identity to an existing account", "user_id", existingUserID)
 	}
 
 	sess, err := h.c.CreateIDPIntentSession(ctx, req.IntentID, req.IntentToken)

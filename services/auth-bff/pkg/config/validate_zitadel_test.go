@@ -15,6 +15,7 @@ func zitadelReadyConfig() Config {
 		ZitadelReturnURLAllowedHostsAdmin:         []string{"admin.mark8ly.com"},
 		ZitadelReturnURLAllowedSuffixesStorefront: []string{"mark8ly.com"},
 		ZitadelGoogleIDPID:                        "386381087862948767",
+		ZitadelOrgID:                              "339070697432875523",
 	}
 }
 
@@ -58,6 +59,7 @@ func TestValidateZitadelRefusesOnEachMissingValue(t *testing.T) {
 			c.ZitadelReturnURLAllowedSuffixesStorefront = nil
 		}, "ZITADEL_RETURN_URL_ALLOWED_HOSTS_STOREFRONT"},
 		{"google idp id", func(c *Config) { c.ZitadelGoogleIDPID = "" }, "ZITADEL_GOOGLE_IDP_ID"},
+		{"org id", func(c *Config) { c.ZitadelOrgID = "" }, "ZITADEL_ORG_ID"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -65,6 +65,29 @@ type CustomerHandler struct {
 	// internal_auth.go: empty means unchecked, and the boot guard in
 	// config.ValidateZitadel is what stops that reaching production.
 	internalAuthSecret string
+
+	// returnURLs is the allowlist idp/start validates every caller-supplied
+	// return_url against before handing it to Zitadel as successUrl/
+	// failureUrl. This MUST be the STOREFRONT allowlist
+	// (config.Config.ZitadelReturnURLAllowedHosts/SuffixesStorefront), never
+	// the admin one: tenant subdomains under it are merchant-self-
+	// provisioned, and the two lists are kept separate precisely so a
+	// merchant-controlled storefront origin can never be a valid successUrl
+	// for an ADMIN sign-in (see returnurl.go's file doc). The zero value
+	// rejects every candidate, so an unconfigured CustomerHandler fails
+	// closed. Set via WithReturnURLAllowlist.
+	returnURLs ReturnURLAllowlist
+
+	// googleIDPID is the id of the Google IDP on the Zitadel org that
+	// idp/start opens an intent against, and idp/finish pins every
+	// retrieved identity to (see idpFinish). Same instance-wide IDP the
+	// merchant path uses — set via WithGoogleIDPID.
+	googleIDPID string
+
+	// orgID scopes idp/finish's FindUserByVerifiedEmail lookup. Same
+	// Zitadel org as the merchant path (one instance, two projects) — set
+	// via WithOrgID.
+	orgID string
 }
 
 // NewCustomerHandler constructs a CustomerHandler.
@@ -88,6 +111,28 @@ func (h *CustomerHandler) WithInternalAuth(secret string) *CustomerHandler {
 	return h
 }
 
+// WithReturnURLAllowlist sets the allowlist idp/start validates every
+// caller-supplied return_url against. MUST be built from the storefront
+// hosts/suffixes — see the returnURLs field doc.
+func (h *CustomerHandler) WithReturnURLAllowlist(a ReturnURLAllowlist) *CustomerHandler {
+	h.returnURLs = a
+	return h
+}
+
+// WithGoogleIDPID sets the Zitadel org's Google IDP id. See the googleIDPID
+// field doc.
+func (h *CustomerHandler) WithGoogleIDPID(id string) *CustomerHandler {
+	h.googleIDPID = id
+	return h
+}
+
+// WithOrgID sets the org idp/finish's account lookup is scoped to. See the
+// orgID field doc.
+func (h *CustomerHandler) WithOrgID(id string) *CustomerHandler {
+	h.orgID = id
+	return h
+}
+
 // Register mounts the customer login routes onto the given gin.RouterGroup.
 // Like Handler.Register, the handlers are plain net/http funcs; gin is only
 // used to route, matching this package's existing style.
@@ -97,6 +142,12 @@ func (h *CustomerHandler) Register(r *gin.RouterGroup) {
 	})
 	r.POST("/customer/totp", func(c *gin.Context) {
 		h.totp(c.Writer, c.Request)
+	})
+	r.POST("/customer/idp/start", func(c *gin.Context) {
+		h.idpStart(c.Writer, c.Request)
+	})
+	r.POST("/customer/idp/finish", func(c *gin.Context) {
+		h.idpFinish(c.Writer, c.Request)
 	})
 }
 
@@ -116,6 +167,27 @@ type customerTOTPRequest struct {
 	SessionID    string `json:"session_id"`
 	SessionToken string `json:"session_token"`
 	Code         string `json:"code"`
+}
+
+// customerIDPStartRequest mirrors idpStartRequest (handler.go).
+type customerIDPStartRequest struct {
+	ReturnURL string `json:"return_url"`
+}
+
+// customerIDPFinishRequest mirrors idpFinishRequest's shape, minus
+// AuthRequestID and WorkspaceTenant: this endpoint decides and returns an
+// identity (see the file comment and customerLoginRequest's doc above), it
+// never finalizes an OIDC auth request and never mints a per-tenant session,
+// so it has no use for either field.
+type customerIDPFinishRequest struct {
+	IntentID    string `json:"intent_id"`
+	IntentToken string `json:"intent_token"`
+
+	// User is NEVER READ past decoding — see idpFinishRequest.User's doc in
+	// handler.go for why: it is attacker-controlled, riding in a URL the
+	// browser followed, and the authoritative identity comes only from
+	// RetrieveIDPIntent(IntentID, IntentToken).
+	User string `json:"user"`
 }
 
 // login reads {login_name, password}, creates a Zitadel password session,
@@ -188,6 +260,184 @@ func (h *CustomerHandler) totp(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.c.DecideAfterFactor(ctx, sess)
 	h.respondOutcome(ctx, w, res, err, sess)
+}
+
+// idpStart validates the caller-supplied return URL against the STOREFRONT
+// allowlist and starts a Zitadel IDP intent for Google. Mirrors
+// Handler.idpStart (handler.go) exactly except for which allowlist it
+// checks against — see the returnURLs field doc for why that split matters.
+func (h *CustomerHandler) idpStart(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// First, before the body is even read — same discipline as login/totp.
+	if !internalAuthorized(r, h.internalAuthSecret) {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req customerIDPStartRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+	if req.ReturnURL == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+
+	returnURL, err := h.returnURLs.ValidateReturnURL(req.ReturnURL)
+	if err != nil {
+		slog.WarnContext(ctx, "zitadellogin(customer): idp start rejected: return url not allowed")
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_return_url"})
+		return
+	}
+
+	if h.googleIDPID == "" {
+		slog.ErrorContext(ctx, "zitadellogin(customer): idp start: no google idp id configured (see WithGoogleIDPID)")
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+		return
+	}
+
+	authURL, err := h.c.StartIDPIntent(ctx, h.googleIDPID, returnURL, returnURL)
+	if err != nil {
+		slog.ErrorContext(ctx, "zitadellogin(customer): start idp intent failed", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"auth_url": authURL})
+}
+
+// idpFinish exchanges the intent id/token for the federated identity and
+// decides: link it to an existing verified account, register a brand-new
+// account for it, or resolve it directly when already linked. It then
+// RETURNS THAT IDENTITY AND STOPS — no Zitadel session, no finalize. See the
+// file comment for why, and Handler.idpFinish (handler.go) for the merchant
+// mirror of the IDP-pinning and email-verified checks below, which are
+// IDENTICAL here.
+func (h *CustomerHandler) idpFinish(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// First, before the body is even read: an unauthenticated caller must
+	// never reach RetrieveIDPIntent or any account lookup/link/create call.
+	if !internalAuthorized(r, h.internalAuthSecret) {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req customerIDPFinishRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+	if req.IntentID == "" || req.IntentToken == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+
+	// The ONLY source of identity for this endpoint. req.User (see its doc
+	// comment above) is never consulted, here or anywhere below.
+	identity, err := h.c.RetrieveIDPIntent(ctx, req.IntentID, req.IntentToken)
+	if err != nil {
+		h.respondIDPIntentError(ctx, w, err)
+		return
+	}
+
+	// Pin the IDP exactly like the merchant path: this endpoint is Google
+	// sign-in specifically, and the instance can carry more than one IDP
+	// (e.g. Apple). Checked immediately after retrieve, before the email
+	// gate, find, link, or create — see Handler.idpFinish's doc for the
+	// full rationale, which applies here unchanged.
+	if identity.IDPID == "" || identity.IDPID != h.googleIDPID {
+		slog.WarnContext(ctx, "zitadellogin(customer): idp finish rejected: intent did not come from the configured google idp")
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unexpected_idp"})
+		return
+	}
+
+	userID := identity.ZitadelUserID
+	if userID == "" {
+		// A first-time Google sign-in. Unlike the merchant path, self-
+		// registration IS the desired behaviour here: shoppers are not FGA
+		// members of anything, so a freshly created customer account carries
+		// no authorization gap the way a freshly created merchant one would.
+		// The security rule is identical to the merchant path though, and
+		// just as absolute: an unlinked identity may be linked OR used to
+		// register a new account ONLY when the provider asserts the email is
+		// verified. identity.EmailVerified defaults to false when the claim
+		// is absent (see IDPIdentity's doc) — refuse exactly like an
+		// explicit false, never like "probably fine".
+		if identity.Email == "" || !identity.EmailVerified {
+			slog.WarnContext(ctx, "zitadellogin(customer): idp finish rejected: unlinked identity with no verified email")
+			writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "email_not_verified"})
+			return
+		}
+
+		existingUserID, err := h.c.FindUserByVerifiedEmail(ctx, h.orgID, identity.Email)
+		if err != nil {
+			if errors.Is(err, ErrAmbiguousEmailMatch) {
+				slog.WarnContext(ctx, "zitadellogin(customer): idp finish rejected: more than one existing account matched the verified email")
+				writeJSON(w, http.StatusConflict, map[string]any{"error": "email_ambiguous"})
+				return
+			}
+			slog.ErrorContext(ctx, "zitadellogin(customer): idp finish: could not check for an existing account by email", "err", err)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+			return
+		}
+
+		if existingUserID != "" {
+			// A Zitadel user already holds this exact, verified email:
+			// attach this Google identity to THAT account rather than
+			// registering a second, disconnected one. LinkIDPToUser
+			// re-checks the same email-verified rule independently.
+			if err := h.c.LinkIDPToUser(ctx, existingUserID, identity); err != nil {
+				slog.ErrorContext(ctx, "zitadellogin(customer): idp finish: could not link identity to the existing account", "err", err)
+				writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+				return
+			}
+			slog.InfoContext(ctx, "zitadellogin(customer): idp finish linked a first-time Google identity to an existing account", "user_id", existingUserID)
+			userID = existingUserID
+		} else {
+			// No account exists for this identity at all: unlike the
+			// merchant path, this is the normal case worth handling, not a
+			// refusal — shoppers self-register. CreateHumanUserWithIDPLink
+			// independently re-checks the same email-verified rule.
+			newUserID, err := h.c.CreateHumanUserWithIDPLink(ctx, identity)
+			if err != nil {
+				if errors.Is(err, ErrEmailAlreadyExists) {
+					// A race: some other request claimed this email between
+					// FindUserByVerifiedEmail's search and this call. Refuse
+					// rather than guess which account is now authoritative.
+					slog.WarnContext(ctx, "zitadellogin(customer): idp finish rejected: email claimed by another account between lookup and create")
+					writeJSON(w, http.StatusConflict, map[string]any{"error": "email_ambiguous"})
+					return
+				}
+				slog.ErrorContext(ctx, "zitadellogin(customer): idp finish: could not create a new account for this identity", "err", err)
+				writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+				return
+			}
+			slog.InfoContext(ctx, "zitadellogin(customer): idp finish registered a new customer account for a first-time Google identity", "user_id", newUserID)
+			userID = newUserID
+		}
+	}
+
+	// The email in the response MUST come from Zitadel's own record of
+	// userID, never from the request or trusted verbatim off the raw
+	// provider claim above — same defensive resolution finishComplete uses
+	// for the password path.
+	email, err := h.c.UserEmail(ctx, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "zitadellogin(customer): could not resolve the email for the resolved identity", "err", err, "user_id", userID)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+		return
+	}
+
+	// No session, no cookie, no finalize — see the file comment. This
+	// endpoint decides and stops.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"uid":   userID,
+			"email": email,
+		},
+	})
 }
 
 // respondOutcome is shared by login and totp: both end at DecideSufficiency
@@ -323,6 +573,23 @@ func (h *CustomerHandler) respondTOTPVerifyError(ctx context.Context, w http.Res
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
 	default:
 		slog.ErrorContext(ctx, "zitadellogin(customer): unexpected error verifying totp", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+	}
+}
+
+// respondIDPIntentError maps RetrieveIDPIntent's errors. Mirrors
+// Handler.respondIDPIntentError (handler.go): log the real reason, answer
+// the caller with a code that carries no Zitadel error detail.
+func (h *CustomerHandler) respondIDPIntentError(ctx context.Context, w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrIDPIntentInvalid):
+		slog.WarnContext(ctx, "zitadellogin(customer): idp finish rejected: intent invalid")
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid_intent"})
+	case errors.Is(err, ErrUnavailable):
+		slog.ErrorContext(ctx, "zitadellogin(customer): zitadel unavailable retrieving idp intent", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+	default:
+		slog.ErrorContext(ctx, "zitadellogin(customer): unexpected error retrieving idp intent", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
 	}
 }

@@ -329,9 +329,27 @@ func main() {
 		zitadelHandler.Register(v1)
 	}
 	if zitadelClient != nil {
+		// Backs /auth/customer/idp/start's return-URL check (Google sign-in,
+		// #524 phase 3c-2). This is the CUSTOMER path — merchants
+		// self-provision storefront subdomains, so it uses the Storefront
+		// allowlist, never the Admin one (see config.Config's doc on why the
+		// two are kept separate: a merchant-controlled storefront subdomain
+		// must never be a valid successUrl for an admin sign-in, and the
+		// same boundary runs the other way here). ValidateZitadel above
+		// already guarantees at least one of the Storefront fields is
+		// non-empty.
+		storefrontReturnURLs, err := zitadellogin.NewReturnURLAllowlist(
+			cfg.ZitadelReturnURLAllowedHostsStorefront, cfg.ZitadelReturnURLAllowedSuffixesStorefront)
+		if err != nil {
+			log.Error("zitadel: refusing to start", "err", err)
+			panic(err)
+		}
 		zitadellogin.NewCustomerHandler(zitadelClient).
 			WithHostedLoginBaseURL(cfg.ZitadelIssuer).
 			WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
+			WithReturnURLAllowlist(storefrontReturnURLs).
+			WithGoogleIDPID(cfg.ZitadelGoogleIDPID).
+			WithOrgID(cfg.ZitadelOrgID).
 			Register(v1)
 	}
 

@@ -107,6 +107,27 @@ func guardedEndpoints() []endpoint {
 				NewCustomerHandler(c).WithInternalAuth(testInternalSecret).totp(rec, r)
 			},
 		},
+		{
+			name: "customer/idp/start",
+			path: "/auth/customer/idp/start",
+			body: `{"return_url":"https://shop.mark8ly.com/auth/idp/finish"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewCustomerHandler(c).WithInternalAuth(testInternalSecret).
+					WithReturnURLAllowlist(mustAllowlist(t, nil, []string{"mark8ly.com"})).
+					WithGoogleIDPID(testGoogleIDPID).
+					idpStart(rec, r)
+			},
+		},
+		{
+			name: "customer/idp/finish",
+			path: "/auth/customer/idp/finish",
+			body: `{"intent_id":"i1","intent_token":"tok-1"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewCustomerHandler(c).WithInternalAuth(testInternalSecret).
+					WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1").
+					idpFinish(rec, r)
+			},
+		},
 	}
 }
 

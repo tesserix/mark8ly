@@ -77,6 +77,17 @@ type Config struct {
 	ZitadelLoginClientToken    string `envconfig:"ZITADEL_LOGIN_CLIENT_TOKEN"`
 	ZitadelAdminProjectID      string `envconfig:"ZITADEL_ADMIN_PROJECT_ID"`
 	ZitadelStorefrontProjectID string `envconfig:"ZITADEL_STOREFRONT_PROJECT_ID"`
+
+	// ZitadelReturnURLAllowedHosts/Suffixes together form the allowlist an
+	// IDP-intent successUrl/failureUrl must satisfy (internal/zitadellogin's
+	// ReturnURLAllowlist) — the only control preventing an open redirect on
+	// a completed federated sign-in, since Zitadel itself does not validate
+	// that URL. Comma-separated. Hosts match exactly (e.g.
+	// "admin.mark8ly.com"); Suffixes permit any subdomain of the given
+	// domain (e.g. "mark8ly.com" permits "shop.mark8ly.com") but never the
+	// bare domain itself.
+	ZitadelReturnURLAllowedHosts    []string `envconfig:"ZITADEL_RETURN_URL_ALLOWED_HOSTS"`
+	ZitadelReturnURLAllowedSuffixes []string `envconfig:"ZITADEL_RETURN_URL_ALLOWED_SUFFIXES"`
 }
 
 // Load reads .env (if present) and binds environment variables.
@@ -122,6 +133,9 @@ func (c *Config) ValidateZitadel() error {
 	}
 	if c.MarketplaceInternalAuthSecret == "" {
 		missing = append(missing, "MARKETPLACE_INTERNAL_AUTH_SECRET")
+	}
+	if len(c.ZitadelReturnURLAllowedHosts) == 0 && len(c.ZitadelReturnURLAllowedSuffixes) == 0 {
+		missing = append(missing, "ZITADEL_RETURN_URL_ALLOWED_HOSTS or ZITADEL_RETURN_URL_ALLOWED_SUFFIXES")
 	}
 	if len(missing) == 0 {
 		return nil

@@ -8,10 +8,12 @@ import (
 
 func zitadelReadyConfig() Config {
 	return Config{
-		ZitadelEnabled:                true,
-		ZitadelIssuer:                 "https://login.mark8ly.zitadel.cloud",
-		ZitadelLoginClientToken:       "pat",
-		MarketplaceInternalAuthSecret: "s3cret-internal",
+		ZitadelEnabled:                  true,
+		ZitadelIssuer:                   "https://login.mark8ly.zitadel.cloud",
+		ZitadelLoginClientToken:         "pat",
+		MarketplaceInternalAuthSecret:   "s3cret-internal",
+		ZitadelReturnURLAllowedHosts:    []string{"admin.mark8ly.com"},
+		ZitadelReturnURLAllowedSuffixes: []string{"mark8ly.com"},
 	}
 }
 
@@ -46,6 +48,10 @@ func TestValidateZitadelRefusesOnEachMissingValue(t *testing.T) {
 		{"issuer", func(c *Config) { c.ZitadelIssuer = "" }, "ZITADEL_ISSUER"},
 		{"login client token", func(c *Config) { c.ZitadelLoginClientToken = "" }, "ZITADEL_LOGIN_CLIENT_TOKEN"},
 		{"internal secret", func(c *Config) { c.MarketplaceInternalAuthSecret = "" }, "MARKETPLACE_INTERNAL_AUTH_SECRET"},
+		{"return url allowlist", func(c *Config) {
+			c.ZitadelReturnURLAllowedHosts = nil
+			c.ZitadelReturnURLAllowedSuffixes = nil
+		}, "ZITADEL_RETURN_URL_ALLOWED_HOSTS"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,6 +78,23 @@ func TestValidateZitadelNeverEchoesASecretValue(t *testing.T) {
 		if strings.Contains(err.Error(), secret) {
 			t.Fatalf("err = %v leaks a configured secret value", err)
 		}
+	}
+}
+
+// TestValidateZitadelAcceptsEitherAllowlistFieldAlone: hosts and suffixes
+// serve different shapes (fixed admin host vs. per-tenant storefront
+// subdomains) and a deployment need not use both.
+func TestValidateZitadelAcceptsEitherAllowlistFieldAlone(t *testing.T) {
+	cfg := zitadelReadyConfig()
+	cfg.ZitadelReturnURLAllowedSuffixes = nil
+	if err := cfg.ValidateZitadel(); err != nil {
+		t.Fatalf("hosts alone: ValidateZitadel = %v, want nil", err)
+	}
+
+	cfg = zitadelReadyConfig()
+	cfg.ZitadelReturnURLAllowedHosts = nil
+	if err := cfg.ValidateZitadel(); err != nil {
+		t.Fatalf("suffixes alone: ValidateZitadel = %v, want nil", err)
 	}
 }
 

@@ -221,11 +221,16 @@ git commit -m "feat(admin): normalise every auth-bff login response shape in one
 export async function zitadelLogin(req: {
   authRequestId: string; loginName: string; password: string; workspaceTenant: string;
   userAgent?: string; forwardedFor?: string;
-}): Promise<{ outcome: LoginOutcome; setCookies: string[] }>;
+}): Promise<LoginOutcome & { setCookies: string[] }>;
 
 export async function zitadelTotp(req: {
   authRequestId: string; sessionId: string; sessionToken: string; code: string; workspaceTenant: string;
-}): Promise<{ outcome: LoginOutcome; setCookies: string[] }>;
+}): Promise<LoginOutcome & { setCookies: string[] }>;
+
+// NOTE the intersection rather than `{ outcome, setCookies }`: it still narrows on
+// `.kind` after a discriminant check, and it matches how `autoLogin` and
+// `completeEmailOTPChallenge` already return `setCookies` flat alongside their
+// payload. Callers read `result.kind`, not `result.outcome.kind`.
 ```
 
 Task 3 consumes both.

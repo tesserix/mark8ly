@@ -31,6 +31,11 @@ type ShippingRatesHandler struct {
 	// read half) to the store-level warehouses row. Stateless, so
 	// constructing it here costs nothing.
 	warehouseRepo *warehouse.Repository
+	// carrierFactory, when set, substitutes a stub Carrier without
+	// standing up a live provider or an HTTPS test server — mirrors
+	// (*ShipmentsHandler).WithCarrierFactory in internal/handlers/admin.
+	// Production code never sets this.
+	carrierFactory func(provider string) (shipping.Carrier, bool)
 }
 
 // NewShippingRatesHandler constructs a ShippingRatesHandler.
@@ -43,6 +48,14 @@ func NewShippingRatesHandler(db *gorm.DB, enc crypto.Encryptor, logger *slog.Log
 // rows on read. Chainable.
 func (h *ShippingRatesHandler) WithSecretStore(s carriersecrets.Store) *ShippingRatesHandler {
 	h.secretStore = s
+	return h
+}
+
+// WithCarrierFactory lets tests substitute a stub Carrier without
+// requiring a live provider or an HTTPS test server. Returns the receiver
+// for chaining. Production code never sets this.
+func (h *ShippingRatesHandler) WithCarrierFactory(fn func(provider string) (shipping.Carrier, bool)) *ShippingRatesHandler {
+	h.carrierFactory = fn
 	return h
 }
 
@@ -91,6 +104,11 @@ type shippingRateResponse struct {
 	Price         string `json:"price"`
 	CurrencyCode  string `json:"currency_code"`
 	EstimatedDays int    `json:"estimated_days"`
+	// ShipmentCount is additive (#541): the number of parcels/origins
+	// this quote combines. Omitted (zero value) on the single-origin
+	// path, which is unchanged from before #541 — existing storefront
+	// clients that ignore this field keep working.
+	ShipmentCount int `json:"shipment_count,omitempty"`
 }
 
 // carrierConfigRow mirrors the shipping_carrier_configs table for direct
@@ -149,6 +167,31 @@ func parcelWeightGrams(variantWeight *int, configured int) int {
 }
 
 func (carrierConfigRow) TableName() string { return "shipping_carrier_configs" }
+
+// rateItemsToOriginLines adapts the wire request items to originLineItem
+// for buildOriginGroups. Returns errMissingVariantID for any item with no
+// variant_id — shippingRateItemRequest.VariantID deliberately has no
+// binding:"required" tag, so this is a real, expected input shape, not a
+// validation bug.
+func rateItemsToOriginLines(items []shippingRateItemRequest) ([]originLineItem, error) {
+	lines := make([]originLineItem, 0, len(items))
+	for _, it := range items {
+		if it.VariantID == "" {
+			return nil, errMissingVariantID
+		}
+		lines = append(lines, originLineItem{
+			VariantID: it.VariantID,
+			Quantity:  it.Quantity,
+			Parcel: shipping.ParcelItem{
+				WeightGrams: it.WeightGrams,
+				LengthCM:    it.LengthCM,
+				WidthCM:     it.WidthCM,
+				HeightCM:    it.HeightCM,
+			},
+		})
+	}
+	return lines, nil
+}
 
 // GetRates handles POST /storefront/stores/:storeSlug/shipping-rates.
 func (h *ShippingRatesHandler) GetRates(c *gin.Context) {
@@ -252,6 +295,68 @@ func (h *ShippingRatesHandler) GetRates(c *gin.Context) {
 			"error":   "internal",
 			"message": "internal server error",
 		})
+		return
+	}
+
+	// Allow tests to substitute a stub Carrier without a live provider or
+	// an HTTPS test server. Nil override → use the resolved production
+	// carrier.
+	if h.carrierFactory != nil {
+		if c2, ok := h.carrierFactory(cfg.Provider); ok {
+			carrier = c2
+		}
+	}
+
+	// Attempt to quote per fulfilling warehouse (#541): a variant's stock
+	// can span warehouses since #177, and pricing from one fixed origin
+	// under-quotes an order that will actually ship as more than one
+	// parcel. Falls back to the single-origin path below — unchanged from
+	// before #541 — whenever the split cannot be computed; see
+	// buildOriginGroups for the exact conditions.
+	if lineItems, splitErr := rateItemsToOriginLines(req.Items); splitErr != nil {
+		if h.logger != nil {
+			h.logger.Info("shipping_rates: split-origin quote unavailable, using single origin",
+				"store_id", store.ID, "reason", splitErr.Error())
+		}
+	} else if groups, gErr := buildOriginGroups(ctx, h.db, h.warehouseRepo, store.ID, lineItems); gErr != nil {
+		if h.logger != nil {
+			h.logger.Info("shipping_rates: split-origin quote unavailable, using single origin",
+				"store_id", store.ID, "reason", gErr.Error())
+		}
+	} else if len(groups) > 1 {
+		toAddr := shipping.Address{
+			Line1:       req.ShipTo.Line1,
+			City:        req.ShipTo.City,
+			Region:      req.ShipTo.Region,
+			PostalCode:  req.ShipTo.PostalCode,
+			CountryCode: req.ShipTo.CountryCode,
+		}
+		combined, ferr := quoteSplitOrigins(ctx, carrier, toAddr, store.CurrencyCode, groups)
+		if ferr != nil {
+			if h.logger != nil {
+				h.logger.Error("shipping_rates: carrier.GetRates failed (split origin)",
+					"provider", cfg.Provider,
+					"err", ferr)
+			}
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"error":   "internal",
+				"message": "unable to calculate shipping rates",
+			})
+			return
+		}
+
+		result := make([]shippingRateResponse, 0, len(combined))
+		for _, r := range combined {
+			result = append(result, shippingRateResponse{
+				Service:       r.Service,
+				Carrier:       r.Carrier,
+				Price:         r.Price.Add(cfg.HandlingFee).StringFixed(2),
+				CurrencyCode:  r.CurrencyCode,
+				EstimatedDays: r.EstimatedDays,
+				ShipmentCount: len(groups),
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{"data": result})
 		return
 	}
 

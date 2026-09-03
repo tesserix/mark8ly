@@ -65,6 +65,11 @@ type CheckoutExtHandler struct {
 	// it here costs nothing, matching the other shipping-adjacent
 	// handlers' warehouseRepo field.
 	warehouseRepo *warehouse.Repository
+	// carrierFactory, when set, substitutes a stub Carrier without
+	// standing up a live provider or an HTTPS test server — mirrors
+	// (*ShipmentsHandler).WithCarrierFactory in internal/handlers/admin.
+	// Production code never sets this.
+	carrierFactory func(provider string) (shipping.Carrier, bool)
 }
 
 // NewCheckoutExtHandler constructs a CheckoutExtHandler.
@@ -99,6 +104,14 @@ func (h *CheckoutExtHandler) WithSecretStore(s carriersecrets.Store) *CheckoutEx
 // checkouts fire in-app notifications to the merchant. Nil-safe.
 func (h *CheckoutExtHandler) WithNotifier(n *notification.Service) *CheckoutExtHandler {
 	h.notify = n
+	return h
+}
+
+// WithCarrierFactory lets tests substitute a stub Carrier without
+// requiring a live provider or an HTTPS test server. Returns the receiver
+// for chaining. Production code never sets this.
+func (h *CheckoutExtHandler) WithCarrierFactory(fn func(provider string) (shipping.Carrier, bool)) *CheckoutExtHandler {
+	h.carrierFactory = fn
 	return h
 }
 
@@ -851,6 +864,57 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+// variantShipRow is the per-variant weight/dimensions projection used to
+// build carrier parcel data — both for the legacy single-origin rate
+// request below and for the split-origin path's per-warehouse parcels
+// (checkoutItemsToOriginLines).
+type variantShipRow struct {
+	ID          string
+	WeightGrams *int
+	LengthCM    *decimal.Decimal
+	WidthCM     *decimal.Decimal
+	HeightCM    *decimal.Decimal
+}
+
+// checkoutItemsToOriginLines adapts checkout request items to
+// originLineItem for buildOriginGroups, resolving each item's parcel data
+// from shipByVariant the same way the legacy single-origin parcel loop
+// below does. Returns errMissingVariantID for any item with a nil or
+// empty VariantID — checkout_lowstock.go and stockLinesFromItems treat
+// that as a legitimate unstocked/custom line, but #541 requires falling
+// back to the single-origin path entirely when it happens, rather than
+// guess which warehouse (if any) ships it.
+func checkoutItemsToOriginLines(
+	items []CheckoutItemRequest,
+	shipByVariant map[string]variantShipRow,
+	defaultParcelWeightGrams int,
+) ([]originLineItem, error) {
+	lines := make([]originLineItem, 0, len(items))
+	for _, it := range items {
+		if it.VariantID == nil || *it.VariantID == "" {
+			return nil, errMissingVariantID
+		}
+		p := shipping.ParcelItem{WeightGrams: parcelWeightGrams(nil, defaultParcelWeightGrams)}
+		if vs, ok := shipByVariant[*it.VariantID]; ok {
+			p.WeightGrams = parcelWeightGrams(vs.WeightGrams, defaultParcelWeightGrams)
+			if vs.LengthCM != nil {
+				f, _ := vs.LengthCM.Float64()
+				p.LengthCM = f
+			}
+			if vs.WidthCM != nil {
+				f, _ := vs.WidthCM.Float64()
+				p.WidthCM = f
+			}
+			if vs.HeightCM != nil {
+				f, _ := vs.HeightCM.Float64()
+				p.HeightCM = f
+			}
+		}
+		lines = append(lines, originLineItem{VariantID: *it.VariantID, Quantity: it.Quantity, Parcel: p})
+	}
+	return lines, nil
+}
+
 // calculateShipping resolves the carrier config and gets the rate for the
 // selected service. Returns the final price including handling fee plus
 // the resolved carrier provider name so the order can persist what the
@@ -897,6 +961,15 @@ func (h *CheckoutExtHandler) calculateShipping(
 		return decimal.Zero, "", fmt.Errorf("carrier init: %w", err)
 	}
 
+	// Allow tests to substitute a stub Carrier without a live provider or
+	// an HTTPS test server. Nil override → use the resolved production
+	// carrier.
+	if h.carrierFactory != nil {
+		if c2, ok := h.carrierFactory(cfg.Provider); ok {
+			carrier = c2
+		}
+	}
+
 	// Fetch per-variant weight + dims so the carrier rate request gets
 	// real numbers. Without this every shipment looks like a 0-gram
 	// envelope to ShipEngine, which Australia Post rejects with
@@ -906,13 +979,6 @@ func (h *CheckoutExtHandler) calculateShipping(
 		if it.VariantID != nil && *it.VariantID != "" {
 			variantIDs = append(variantIDs, *it.VariantID)
 		}
-	}
-	type variantShipRow struct {
-		ID          string
-		WeightGrams *int
-		LengthCM    *decimal.Decimal
-		WidthCM     *decimal.Decimal
-		HeightCM    *decimal.Decimal
 	}
 	shipByVariant := map[string]variantShipRow{}
 	if len(variantIDs) > 0 {
@@ -925,6 +991,47 @@ func (h *CheckoutExtHandler) calculateShipping(
 			for _, r := range rows {
 				shipByVariant[r.ID] = r
 			}
+		}
+	}
+
+	// Attempt to price this order per fulfilling warehouse (#541), so the
+	// amount actually charged matches what GetRates quoted for the same
+	// cart. Falls back to the single-origin computation below — unchanged
+	// from before #541 — whenever the split cannot be computed; see
+	// buildOriginGroups for the exact conditions.
+	if lineItems, splitErr := checkoutItemsToOriginLines(req.Items, shipByVariant, cfg.DefaultParcelWeightGrams); splitErr != nil {
+		if h.logger != nil {
+			h.logger.Warn("checkout: split-origin shipping unavailable, using single origin",
+				"store_id", store.ID, "reason", splitErr.Error())
+		}
+	} else if groups, gErr := buildOriginGroups(ctx, h.db, h.warehouseRepo, store.ID, lineItems); gErr != nil {
+		if h.logger != nil {
+			h.logger.Warn("checkout: split-origin shipping unavailable, using single origin",
+				"store_id", store.ID, "reason", gErr.Error())
+		}
+	} else if len(groups) > 1 {
+		toAddr := shipping.Address{
+			Line1:       req.ShippingAddress.Line1,
+			City:        req.ShippingAddress.City,
+			Region:      derefString(req.ShippingAddress.Region),
+			PostalCode:  derefString(req.ShippingAddress.PostalCode),
+			CountryCode: req.ShippingAddress.CountryCode,
+		}
+		combined, sErr := quoteSplitOrigins(ctx, carrier, toAddr, store.CurrencyCode, groups)
+		if sErr != nil {
+			return decimal.Zero, "", fmt.Errorf("carrier.GetRates (split origin): %w", sErr)
+		}
+		if price, ok := selectShippingPrice(combined, req.ShippingService, cfg.HandlingFee, cfg.FreeShippingMin, req.Subtotal); ok {
+			return price, cfg.Provider, nil
+		}
+		// Empty intersection: no (carrier, service) pair can ship every
+		// parcel of this order. Falling through to the single-origin
+		// computation below — rather than charging zero — is the safer
+		// failure: this order still needs a price, and a same-origin
+		// best-effort one beats a free ride.
+		if h.logger != nil {
+			h.logger.Warn("checkout: split-origin quote had an empty intersection, using single origin",
+				"store_id", store.ID)
 		}
 	}
 

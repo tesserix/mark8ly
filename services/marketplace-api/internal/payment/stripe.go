@@ -232,6 +232,18 @@ func stripeRefundReason(raw string) string {
 
 // RefundPayment creates a refund via POST /v1/refunds.
 func (s *StripeGateway) RefundPayment(ctx context.Context, in RefundInput) (*Refund, error) {
+	// An unconfigured key is a local configuration fault, not a Stripe one.
+	// Sent as empty basic auth it comes back as a bare 401, which reads as
+	// "Stripe rejected our credentials" and sends an operator to the Stripe
+	// dashboard mid-incident instead of to their own config (#169).
+	//
+	// Scoped to the refund path deliberately: that is the surface #164/#169
+	// cover, and the other Stripe calls have their own callers and tests.
+	// The same guard would suit them.
+	if s.apiKey == "" {
+		return nil, fmt.Errorf("stripe: refund payment: no API key configured for this store")
+	}
+
 	amountMinor := toMinorUnits(in.Amount, in.CurrencyCode)
 
 	form := url.Values{}

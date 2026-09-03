@@ -125,6 +125,11 @@ type outboxRow struct {
 	AgeSeconds  *int64  `json:"age_seconds,omitempty"`
 	PublishedAt *string `json:"published_at,omitempty"`
 	Error       *string `json:"error,omitempty"`
+	// The operator's dead-letter decision. `status` already says a row is
+	// dead-lettered; these say when and why. Operator-written text, not
+	// event content — `payload` stays absent by construction.
+	DeadLetteredAt   *string `json:"dead_lettered_at,omitempty"`
+	DeadLetterReason *string `json:"dead_letter_reason,omitempty"`
 }
 
 type outboxListResponse struct {
@@ -196,6 +201,11 @@ func toOutboxRow(r outbox.PlatformRow) outboxRow {
 		s := r.PublishedAt.UTC().Format(time.RFC3339)
 		row.PublishedAt = &s
 	}
+	if r.DeadLetteredAt != nil {
+		s := r.DeadLetteredAt.UTC().Format(time.RFC3339)
+		row.DeadLetteredAt = &s
+	}
+	row.DeadLetterReason = r.DeadLetterReason
 	return row
 }
 

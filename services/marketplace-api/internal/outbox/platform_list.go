@@ -78,6 +78,12 @@ type PlatformRow struct {
 	CreatedAt   time.Time
 	PublishedAt *time.Time
 	Error       *string
+	// DeadLetteredAt and DeadLetterReason carry the operator's decision out
+	// to the console. Status alone says a row was dead-lettered; without the
+	// reason the console cannot say WHY, which is the whole of "dead-letter
+	// with a reason" (#260).
+	DeadLetteredAt   *time.Time
+	DeadLetterReason *string
 	// AgeSeconds is how long an UNPUBLISHED row has been waiting, measured
 	// from the caller's asOf. It is nil for a published row: that row is
 	// settled, so it has no waiting time, and a number that grew forever
@@ -121,7 +127,15 @@ func ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter,
 	case StatusPublished:
 		q = q.Where("published_at IS NOT NULL")
 	case StatusDeadLettered:
-		q = q.Where("dead_lettered_at IS NOT NULL")
+		// published_at IS NULL keeps this filter in step with the CASE
+		// below, which ranks published ABOVE dead_lettered. Without it a
+		// row carrying both markers would be RETURNED by
+		// status=dead_lettered while REPORTING status "published" — the
+		// filter and the derived state would disagree about the same row.
+		// Only reachable by hand-written SQL today, since DeadLetterOne
+		// refuses a published row, but the two definitions should not be
+		// allowed to drift.
+		q = q.Where("dead_lettered_at IS NOT NULL AND published_at IS NULL")
 	}
 	if f.OlderThanMinutes > 0 {
 		// dead_lettered_at IS NULL: a dead-lettered row is terminal, not
@@ -160,6 +174,7 @@ func ListPlatform(ctx context.Context, db *gorm.DB, f PlatformListFilter,
 	// published row by the same CASE that makes its status 'published'.
 	if err := q.
 		Select(`id, tenant_id, aggregate, aggregate_id, event_type, created_at, published_at, error,
+			dead_lettered_at, dead_letter_reason,
 			CASE
 				WHEN published_at IS NOT NULL      THEN ?
 				WHEN dead_lettered_at IS NOT NULL   THEN ?

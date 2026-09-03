@@ -19,6 +19,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderrefund"
 	"github.com/mark8ly/marketplace-api/internal/outbox"
@@ -93,9 +94,6 @@ func main() {
 	// error): resolving credentials is the entire point of this job, so
 	// a build that can't produce a working store must not run a sweep
 	// that will just fail every row's gateway call again.
-	carrierSecretCounter := func(label string, n int64) {
-		log.Info("carriersecrets: metric", "label", label, "count", n)
-	}
 	secretStore, degraded, buildErr := carriersecrets.Build(context.Background(), carriersecrets.BuildParams{
 		Mode:         cfg.ShippingSecretStore,
 		GCPProjectID: cfg.GCPProjectID,
@@ -105,7 +103,7 @@ func main() {
 		OpenBaoRole:  cfg.OpenBaoRole,
 		Encryptor:    apiKeyEncryptor,
 		Logger:       log,
-		Counter:      carrierSecretCounter,
+		Counter:      metrics.CarrierSecretCounter,
 	})
 	if buildErr != nil {
 		log.Error("refund-sweep-cron: carrier secret store build failed", "err", buildErr, "shipping_secret_store", cfg.ShippingSecretStore)

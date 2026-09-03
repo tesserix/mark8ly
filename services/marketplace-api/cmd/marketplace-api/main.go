@@ -424,24 +424,6 @@ func main() {
 	// independently of whatever mount the OpenBao client is configured
 	// with, so a mismatch there would otherwise fail every read/write
 	// at runtime instead of at boot).
-	// carrierSecretCounter feeds ChainStore's fallback-read counter and
-	// CachingStore's stale-read counter. There is no existing Prometheus
-	// CounterVec for carriersecrets metrics and this task's file scope
-	// (main.go / pkg/config) doesn't extend to adding one in
-	// internal/metrics, so this is a logging sink rather than a silent
-	// nil — grep logs for "carriersecrets: metric" to watch these two
-	// counters until a real CounterVec lands.
-	//
-	// IMPORTANT — phase-2 placeholder only, tracked separately as a
-	// blocker: a log line has no aggregation, no retention guarantee,
-	// and is vulnerable to sampling/log-loss across pods. A REAL metric
-	// (a Prometheus CounterVec) is REQUIRED before FallbackReadMetric
-	// can be trusted for the "zero for N days" decision that gates
-	// decommissioning GCP Secret Manager. Do not treat this closure as
-	// sufficient evidence for that decision.
-	carrierSecretCounter := func(label string, n int64) {
-		log.Info("carriersecrets: metric", "label", label, "count", n)
-	}
 	// The construction itself — the mode switch this comment block
 	// describes — lives in internal/carriersecrets.Build, shared with
 	// cmd/refund-sweep-cron so the two callers cannot drift the way that
@@ -459,7 +441,7 @@ func main() {
 		OpenBaoRole:  cfg.OpenBaoRole,
 		Encryptor:    apiKeyEncryptor,
 		Logger:       log,
-		Counter:      carrierSecretCounter,
+		Counter:      metrics.CarrierSecretCounter,
 	})
 	if buildErr != nil {
 		log.Error("carriersecrets: build failed", "err", buildErr, "shipping_secret_store", cfg.ShippingSecretStore)

@@ -199,3 +199,65 @@ describe("verifyCustomerTotp", () => {
     );
   });
 });
+
+// The X-Internal-Auth header is what stops auth-bff's publicly reachable
+// /auth/customer/{login,totp} from being a credential-validity oracle over
+// every user in the Zitadel instance. These pin that this server-side-only
+// client actually sends it, and that it never comes from a NEXT_PUBLIC_*
+// variable (which would ship the secret to the browser bundle).
+describe("internal auth header", () => {
+  const loginArgs = {
+    loginName: "customer@example.com",
+    password: SECRET_PASSWORD,
+  };
+  const totpArgs = {
+    sessionId: "s1",
+    sessionToken: "tok-1",
+    code: "123456",
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("sends X-Internal-Auth on /auth/customer/login", async () => {
+    vi.stubEnv("MARKETPLACE_INTERNAL_AUTH_SECRET", "s3cret-internal");
+    const fetchMock = stubFetch(200, {
+      data: { uid: "u1", email: "customer@example.com" },
+    });
+
+    await verifyCustomerCredential(loginArgs);
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Internal-Auth"]).toBe("s3cret-internal");
+  });
+
+  it("sends X-Internal-Auth on /auth/customer/totp", async () => {
+    vi.stubEnv("MARKETPLACE_INTERNAL_AUTH_SECRET", "s3cret-internal");
+    const fetchMock = stubFetch(200, {
+      data: { uid: "u1", email: "customer@example.com" },
+    });
+
+    await verifyCustomerTotp(totpArgs);
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Internal-Auth"]).toBe("s3cret-internal");
+  });
+
+  it("never reads the secret from a NEXT_PUBLIC_ variable", async () => {
+    vi.stubEnv("MARKETPLACE_INTERNAL_AUTH_SECRET", "");
+    vi.stubEnv("NEXT_PUBLIC_MARKETPLACE_INTERNAL_AUTH_SECRET", "leaked");
+    const fetchMock = stubFetch(200, {
+      data: { uid: "u1", email: "customer@example.com" },
+    });
+
+    await verifyCustomerCredential(loginArgs);
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Internal-Auth"]).toBeUndefined();
+    expect(JSON.stringify(init)).not.toContain("leaked");
+  });
+});

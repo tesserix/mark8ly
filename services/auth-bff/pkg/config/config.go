@@ -2,6 +2,10 @@
 package config
 
 import (
+	"errors"
+	"fmt"
+	"strings"
+
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 )
@@ -84,4 +88,43 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// ErrZitadelNotConfigured is returned by ValidateZitadel when ZITADEL_ENABLED
+// is set but a value the Zitadel login path cannot run safely without is
+// missing. Wrapped errors carry the NAME of the missing variable only —
+// never its value.
+var ErrZitadelNotConfigured = errors.New("zitadel: enabled but not configured")
+
+// ValidateZitadel reports whether the Zitadel login path may be mounted.
+//
+// It returns nil when Zitadel is disabled: nothing is mounted, so nothing
+// needs configuring. When it is enabled, every field below is mandatory and
+// a missing one is a boot failure, not a request-time one.
+//
+// MarketplaceInternalAuthSecret is in that list because /auth/zitadel/login
+// and /auth/customer/login answer whether a {login_name, password} pair is
+// valid, auth-bff is publicly reachable, and the login-client PAT behind
+// them is instance-level. Without the shared secret those routes are an
+// unauthenticated credential oracle over every user in the instance. A
+// silently-unauthenticated auth endpoint is exactly what the header check
+// exists to prevent, so refusing to boot is the only safe answer.
+func (c *Config) ValidateZitadel() error {
+	if !c.ZitadelEnabled {
+		return nil
+	}
+	var missing []string
+	if c.ZitadelIssuer == "" {
+		missing = append(missing, "ZITADEL_ISSUER")
+	}
+	if c.ZitadelLoginClientToken == "" {
+		missing = append(missing, "ZITADEL_LOGIN_CLIENT_TOKEN")
+	}
+	if c.MarketplaceInternalAuthSecret == "" {
+		missing = append(missing, "MARKETPLACE_INTERNAL_AUTH_SECRET")
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: missing %s", ErrZitadelNotConfigured, strings.Join(missing, ", "))
 }

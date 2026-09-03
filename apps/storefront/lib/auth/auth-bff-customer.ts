@@ -38,6 +38,28 @@
 const AUTH_BFF_URL = process.env.AUTH_BFF_URL ?? "http://localhost:8087";
 
 /**
+ * The shared service-to-service secret auth-bff's Zitadel credential
+ * endpoints require in the X-Internal-Auth header — the same scheme and the
+ * same env var this app already uses for marketplace-api's internal routes
+ * (see app/api/internal/orders/[id]/invoice/route.ts).
+ *
+ * auth-bff is publicly reachable (auth.mark8ly.com routes to it on any
+ * path) and /auth/customer/login answers whether a {login_name, password}
+ * pair is valid, so without this header those routes are a credential
+ * oracle over every user in the Zitadel instance. This module is
+ * server-side only, so the header costs one line — read from server config,
+ * never a NEXT_PUBLIC_* variable, which would ship the secret to the
+ * browser bundle.
+ *
+ * Read at call time rather than module scope so a value injected after
+ * module evaluation (and a test's stubbed env) is still seen.
+ */
+function internalAuthHeader(): Record<string, string> {
+  const secret = process.env.MARKETPLACE_INTERNAL_AUTH_SECRET ?? "";
+  return secret ? { "X-Internal-Auth": secret } : {};
+}
+
+/**
  * Outcome union mirroring the endpoint's four possible shapes. Modeled on
  * apps/admin/lib/auth/login-response.ts's LoginOutcome so the merchant and
  * customer login paths read alike, but intentionally NOT shared code —
@@ -136,7 +158,7 @@ async function postToCustomerEndpoint(
   try {
     return await fetch(`${AUTH_BFF_URL}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...internalAuthHeader() },
       body: JSON.stringify(body),
       cache: "no-store",
     });

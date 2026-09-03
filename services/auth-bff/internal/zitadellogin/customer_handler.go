@@ -60,6 +60,11 @@ type CustomerHandler struct {
 	// factors this endpoint cannot collect. Optional: set via
 	// WithHostedLoginBaseURL.
 	hostedLoginBaseURL string
+
+	// internalAuthSecret is the expected X-Internal-Auth value. See
+	// internal_auth.go: empty means unchecked, and the boot guard in
+	// config.ValidateZitadel is what stops that reaching production.
+	internalAuthSecret string
 }
 
 // NewCustomerHandler constructs a CustomerHandler.
@@ -71,6 +76,15 @@ func NewCustomerHandler(c *Client) *CustomerHandler {
 // OutcomeHandoff redirect target. Mirrors Handler.WithHostedLoginBaseURL.
 func (h *CustomerHandler) WithHostedLoginBaseURL(baseURL string) *CustomerHandler {
 	h.hostedLoginBaseURL = strings.TrimSuffix(baseURL, "/")
+	return h
+}
+
+// WithInternalAuth requires every request to /auth/customer/{login,totp} to
+// present secret in the X-Internal-Auth header. The storefront calls these
+// from a server action only, so this costs it one header. See
+// internal_auth.go.
+func (h *CustomerHandler) WithInternalAuth(secret string) *CustomerHandler {
+	h.internalAuthSecret = secret
 	return h
 }
 
@@ -110,6 +124,14 @@ type customerTOTPRequest struct {
 func (h *CustomerHandler) login(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// First, before the body is even read: an unauthenticated caller must
+	// never reach CreatePasswordSession, or this endpoint tells them
+	// whether a credential is valid.
+	if !internalAuthorized(r, h.internalAuthSecret) {
+		writeUnauthorized(w)
+		return
+	}
+
 	var req customerLoginRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
@@ -141,6 +163,12 @@ func (h *CustomerHandler) login(w http.ResponseWriter, r *http.Request) {
 // the session is now sufficient.
 func (h *CustomerHandler) totp(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	// See login: reject before any Zitadel call.
+	if !internalAuthorized(r, h.internalAuthSecret) {
+		writeUnauthorized(w)
+		return
+	}
 
 	var req customerTOTPRequest
 	if err := decodeJSON(r, &req); err != nil {

@@ -240,3 +240,56 @@ describe("zitadelTotp", () => {
     expect(JSON.stringify(err)).not.toContain(totpReq.code);
   });
 });
+
+// The X-Internal-Auth header is what stops auth-bff's publicly reachable
+// /auth/zitadel/{login,totp} from being a credential-validity oracle over
+// every user in the Zitadel instance — the login-client PAT behind them is
+// instance-level, so merchant admins are in scope too. These pin that this
+// server-actions-only client sends it, and never from a NEXT_PUBLIC_*
+// variable (which would ship the secret to the browser bundle).
+describe("internal auth header", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("sends X-Internal-Auth on /auth/zitadel/login", async () => {
+    vi.stubEnv("MARKETPLACE_INTERNAL_AUTH_SECRET", "s3cret-internal");
+    const fetchMock = stubFetch(200, {
+      data: { uid: "u1", email: "merchant@example.com", tenant_id: "tenant-1" },
+    });
+
+    await zitadelLogin(loginReq);
+
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Internal-Auth"]).toBe("s3cret-internal");
+  });
+
+  it("sends X-Internal-Auth on /auth/zitadel/totp", async () => {
+    vi.stubEnv("MARKETPLACE_INTERNAL_AUTH_SECRET", "s3cret-internal");
+    const fetchMock = stubFetch(200, {
+      data: { uid: "u1", email: "merchant@example.com", tenant_id: "tenant-1" },
+    });
+
+    await zitadelTotp(totpReq);
+
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Internal-Auth"]).toBe("s3cret-internal");
+  });
+
+  it("never reads the secret from a NEXT_PUBLIC_ variable", async () => {
+    vi.stubEnv("MARKETPLACE_INTERNAL_AUTH_SECRET", "");
+    vi.stubEnv("NEXT_PUBLIC_MARKETPLACE_INTERNAL_AUTH_SECRET", "leaked");
+    const fetchMock = stubFetch(200, {
+      data: { uid: "u1", email: "merchant@example.com", tenant_id: "tenant-1" },
+    });
+
+    await zitadelLogin(loginReq);
+
+    const [, init] = fetchMock.mock.calls[0];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Internal-Auth"]).toBeUndefined();
+    expect(JSON.stringify(init)).not.toContain("leaked");
+  });
+});

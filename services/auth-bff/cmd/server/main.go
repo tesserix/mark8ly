@@ -248,21 +248,30 @@ func main() {
 	// otherwise, so no route it backs is mounted. Refusing to boot on
 	// partial config is deliberate: a half-configured login path that fails
 	// at request time is worse than a loud failure here.
+	//
+	// MARKETPLACE_INTERNAL_AUTH_SECRET is part of "fully configured": the
+	// four Zitadel credential routes are gated on that shared header (see
+	// internal/zitadellogin/internal_auth.go), and mounting them without it
+	// would publish an unauthenticated credential-validity oracle.
+	// cfg.ValidateZitadel owns that list.
 	var zitadelClient *zitadellogin.Client
 	switch {
 	case !cfg.ZitadelEnabled:
 		log.Info("zitadel login disabled; GIP remains the auth provider")
-	case cfg.ZitadelIssuer == "" || cfg.ZitadelLoginClientToken == "":
-		log.Error("zitadel: ZITADEL_ENABLED is set but ZITADEL_ISSUER or ZITADEL_LOGIN_CLIENT_TOKEN is empty")
-		panic("zitadel: enabled but not configured")
 	default:
+		if err := cfg.ValidateZitadel(); err != nil {
+			// err names the missing variables, never their values.
+			log.Error("zitadel: refusing to start", "err", err)
+			panic(err)
+		}
 		zitadelClient = zitadellogin.New(cfg.ZitadelIssuer, cfg.ZitadelLoginClientToken, nil)
 		log.Info("zitadel login client enabled", "issuer", cfg.ZitadelIssuer)
 	}
 	var zitadelHandler *zitadellogin.Handler
 	if zitadelClient != nil {
 		zitadelHandler = zitadellogin.NewHandler(zitadelClient, autologinSvc.CompleteForProvider).
-			WithHostedLoginBaseURL(cfg.ZitadelIssuer)
+			WithHostedLoginBaseURL(cfg.ZitadelIssuer).
+			WithInternalAuth(cfg.MarketplaceInternalAuthSecret)
 	}
 
 	// ─── Session introspection + logout ────────────────────────────────
@@ -304,6 +313,7 @@ func main() {
 	if zitadelClient != nil {
 		zitadellogin.NewCustomerHandler(zitadelClient).
 			WithHostedLoginBaseURL(cfg.ZitadelIssuer).
+			WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
 			Register(v1)
 	}
 

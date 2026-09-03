@@ -26,11 +26,19 @@ import {
   buildZitadelAuthorizeUrl,
 } from "@/lib/auth/zitadel-oidc";
 import { sanitizeReturnUrl } from "@/lib/auth/sanitize-return-url";
+import { publicConfig } from "@/lib/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest): Promise<Response> {
+  // This route only applies under the Zitadel provider. Under GIP it
+  // must not exist at all — a route that sets flow cookies and 500s on
+  // an unset issuer for every anonymous GET is worse than no route.
+  if (publicConfig.authProvider !== "zitadel") {
+    return new NextResponse(null, { status: 404 });
+  }
+
   const issuer = process.env.NEXT_PUBLIC_ZITADEL_ISSUER ?? "";
   const clientId = process.env.NEXT_PUBLIC_ZITADEL_ADMIN_CLIENT_ID ?? "";
   if (!issuer || !clientId) {

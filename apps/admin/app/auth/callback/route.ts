@@ -21,6 +21,7 @@ import {
   ZITADEL_RETURN_URL_COOKIE,
 } from "@/lib/auth/zitadel-oidc";
 import { sanitizeReturnUrl } from "@/lib/auth/sanitize-return-url";
+import { publicConfig } from "@/lib/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +29,12 @@ export const dynamic = "force-dynamic";
 const DEFAULT_DESTINATION = "/dashboard";
 
 export async function GET(req: NextRequest): Promise<Response> {
+  // This route only applies under the Zitadel provider — under GIP there
+  // is no flow that could ever land a browser here.
+  if (publicConfig.authProvider !== "zitadel") {
+    return new NextResponse(null, { status: 404 });
+  }
+
   const stateParam = req.nextUrl.searchParams.get("state");
   const stateCookie = req.cookies.get(ZITADEL_STATE_COOKIE)?.value;
 

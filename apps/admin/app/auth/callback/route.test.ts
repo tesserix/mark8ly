@@ -1,5 +1,13 @@
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Important 2 (whole-branch review, phase 3a): this route is reachable
+// regardless of the provider flag. Default every test in this file to
+// the Zitadel provider so the pre-existing behaviour tests below keep
+// exercising the route the way they did before the gate was added; the
+// dedicated describe block further down flips the flag off.
+const configMock = vi.hoisted(() => ({ authProvider: "zitadel" as "gip" | "zitadel" }));
+vi.mock("@/lib/config", () => ({ publicConfig: configMock }));
 
 import { GET } from "./route";
 import {
@@ -7,6 +15,10 @@ import {
   ZITADEL_RETURN_URL_COOKIE,
   ZITADEL_VERIFIER_COOKIE,
 } from "@/lib/auth/zitadel-oidc";
+
+beforeEach(() => {
+  configMock.authProvider = "zitadel";
+});
 
 function makeRequest(
   search: string,
@@ -125,5 +137,22 @@ describe("GET /auth/callback", () => {
     const res = await GET(req);
 
     expect(res.cookies.get(ZITADEL_STATE_COOKIE)?.value).toBe("");
+  });
+});
+
+describe("GET /auth/callback — provider gate", () => {
+  afterEach(() => {
+    configMock.authProvider = "zitadel";
+  });
+
+  it("404s when the provider is not zitadel", async () => {
+    configMock.authProvider = "gip";
+    const req = makeRequest("?code=abc&state=s1", {
+      [ZITADEL_STATE_COOKIE]: "s1",
+    });
+
+    const res = await GET(req);
+
+    expect(res.status).toBe(404);
   });
 });

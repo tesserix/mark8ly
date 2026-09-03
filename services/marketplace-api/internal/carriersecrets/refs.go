@@ -152,6 +152,10 @@ func ParseBaoReference(ref string) (path string, ok bool) {
 // the path straight out of the reference string, never by recomputing it
 // from a Scope), so old rows keep resolving at their old paths and only
 // new writes land on paths produced by this version.
+// upperHexDigits indexes the two-digit uppercase hex escape emitted by
+// encodeSegment; decodeSegment parses it back with strconv.ParseUint.
+const upperHexDigits = "0123456789ABCDEF"
+
 func encodeSegment(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -166,7 +170,14 @@ func encodeSegment(s string) string {
 		case c == '_':
 			b.WriteString("__")
 		default:
-			fmt.Fprintf(&b, "_%02X", c)
+			// Hand-rolled hex rather than a formatting helper: the
+			// log-shipping PII guard rejects the print-family calls in
+			// service code, and suppressing that guard inside the encoder
+			// for per-tenant secret paths would be the wrong signal. This
+			// is also allocation-free.
+			b.WriteByte('_')
+			b.WriteByte(upperHexDigits[c>>4])
+			b.WriteByte(upperHexDigits[c&0x0F])
 		}
 	}
 	return b.String()

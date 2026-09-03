@@ -44,7 +44,7 @@ const (
 // reference that is still being read as gsm:// keeps firing this counter
 // at least that often — "durably zero" still means "no gsm:// reads
 // happened", just observed at a coarser cadence than raw request volume.
-const FallbackReadMetric = "carriersecrets_gsm_fallback_read"
+const FallbackReadMetric = "gsm_fallback_read"
 
 // RewrapFailedMetric is the label passed to CounterFn when
 // ChainStore.MaybeRewrap's write fails. The storefront engine holds no
@@ -54,7 +54,7 @@ const FallbackReadMetric = "carriersecrets_gsm_fallback_read"
 // row — this counter, together with the once-per-process log line at the
 // forbidden transition, is what makes that failure VISIBLE instead of a
 // silent no-op with a failing round-trip on every read.
-const RewrapFailedMetric = "carriersecrets_rewrap_failed"
+const RewrapFailedMetric = "rewrap_failed"
 
 // CounterFn is the metric injection hook, called with (label, increment)
 // once per event. Kept generic — like webhookprune.CounterFn — so this
@@ -213,12 +213,17 @@ func (c *ChainStore) Get(ctx context.Context, reference string) (string, error) 
 		return string(data), nil
 	case IsGSMRef(reference):
 		resource, _ := ParseReference(reference)
+		// Count the ATTEMPT, not the success: a failing gsm:// read is
+		// still a live dependency on GCP Secret Manager, and that
+		// dependency must be visible even when the read errors out — a
+		// broken GCP path must never look identical to "no gsm:// reads
+		// happened" in the fallback counter.
+		if c.primary == BackendBao {
+			c.counter(FallbackReadMetric, 1)
+		}
 		data, err := c.gcp.AccessLatest(ctx, resource)
 		if err != nil {
 			return "", fmt.Errorf("carriersecrets: get %s: %w", resource, err)
-		}
-		if c.primary == BackendBao {
-			c.counter(FallbackReadMetric, 1)
 		}
 		return string(data), nil
 	case IsInlineRef(reference):

@@ -378,6 +378,55 @@ func TestChainStore_GSMReadIncrementsFallbackCounter(t *testing.T) {
 	}
 }
 
+// TestChainStore_FallbackCounterFiresOnFailedGSMRead: a gsm:// read that
+// ERRORS is still a live dependency on GCP Secret Manager — that dependency
+// must be counted even though the read never returns plaintext. Before the
+// fix, ChainStore.Get only incremented the counter AFTER c.gcp.AccessLatest
+// succeeded, so a broken GCP path (down, misconfigured, revoked creds) was
+// invisible to the fallback counter — making a fully-broken GCP dependency
+// look identical to a fully-migrated one, exactly the confusion that could
+// wrongly justify decommissioning a backend still in use.
+func TestChainStore_FallbackCounterFiresOnFailedGSMRead(t *testing.T) {
+	scope := testScope()
+	bao := newRecordingClient()
+	gsmErr := errors.New("gcp secret manager: permission denied")
+	gcp := &erroringClient{err: gsmErr}
+	resource := SecretResource(testProjectID, testPrefix, scope)
+
+	var gotLabel string
+	var gotIncrement int64
+	calls := 0
+	store := NewChainStore(ChainConfig{
+		Bao:          bao,
+		GCP:          gcp,
+		Primary:      BackendBao,
+		GCPProjectID: testProjectID,
+		GCPPrefix:    testPrefix,
+		Counter: func(label string, increment int64) {
+			calls++
+			gotLabel = label
+			gotIncrement = increment
+		},
+	})
+
+	_, err := store.Get(context.Background(), GSMRefPrefix+resource)
+	if err == nil {
+		t.Fatal("Get() error = nil, want error — GCP Secret Manager is down")
+	}
+	if !errors.Is(err, gsmErr) {
+		t.Errorf("Get() error = %v, want it to wrap %v", err, gsmErr)
+	}
+	if calls != 1 {
+		t.Fatalf("counter called %d times, want 1 — a FAILED gsm:// read is still a live GCP SM dependency and must be counted", calls)
+	}
+	if gotLabel != FallbackReadMetric {
+		t.Errorf("counter label = %q, want %q", gotLabel, FallbackReadMetric)
+	}
+	if gotIncrement != 1 {
+		t.Errorf("counter increment = %d, want 1", gotIncrement)
+	}
+}
+
 // TestChainStore_BaoReadDoesNotIncrementFallbackCounter: reading a bao://
 // row must NOT increment the fallback counter.
 func TestChainStore_BaoReadDoesNotIncrementFallbackCounter(t *testing.T) {

@@ -201,6 +201,25 @@ var (
 		},
 		[]string{"tier"},
 	)
+
+	// CarrierSecretEventsTotal counts carriersecrets fall-through-read and
+	// rewrap-failure events, labeled by event
+	// (gsm_fallback_read | stale_read | rewrap_failed). It counts ONLY
+	// reads that fell through to a backend client call — a CachingStore
+	// hit never reaches this counter, so its magnitude under-counts true
+	// credential-read volume by roughly the cache hit ratio. That does
+	// NOT weaken the "zero for N days" decommission signal
+	// gsm_fallback_read exists for: every reference still reaches the
+	// inner store at least once per cache TTL (a miss or an expiry), so a
+	// reference still being read as gsm:// keeps firing this counter at
+	// that coarser cadence regardless of cache hits.
+	CarrierSecretEventsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "carriersecrets_events_total",
+			Help: "Count of carriersecrets fall-through-read and rewrap-failure events, labeled by event (gsm_fallback_read | stale_read | rewrap_failed). Counts fall-through reads only, not all credential reads — CachingStore sits above this counter, so the magnitude under-counts true read volume by the cache hit ratio; the zero/non-zero property still holds because each reference reaches the inner store at least once per cache TTL.",
+		},
+		[]string{"event"},
+	)
 )
 
 func init() {
@@ -224,5 +243,16 @@ func init() {
 		APIKeyUsedTotal,
 		APIKeyAuthFailedTotal,
 		APIKeyRateLimitedTotal,
+		CarrierSecretEventsTotal,
 	)
+}
+
+// CarrierSecretCounter is the single carriersecrets.CounterFn-shaped sink
+// wired into every production Store construction (cmd/marketplace-api,
+// cmd/refund-sweep-cron, cmd/carrier-secrets-backfill). Centralizing it
+// here means the three binaries can never again drift the way that
+// produced mark8ly#166 — each hand-rolling its own counter closure instead
+// of sharing one.
+func CarrierSecretCounter(event string, n int64) {
+	CarrierSecretEventsTotal.WithLabelValues(event).Add(float64(n))
 }

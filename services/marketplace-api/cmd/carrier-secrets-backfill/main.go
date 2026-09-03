@@ -8,6 +8,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
+	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/pkg/config"
 	"github.com/mark8ly/marketplace-api/pkg/db"
 )
@@ -69,9 +70,6 @@ func main() {
 		apiKeyEncryptor = crypto.NewNoopEncryptor()
 	}
 
-	carrierSecretCounter := func(label string, n int64) {
-		log.Info("carriersecrets: metric", "label", label, "count", n)
-	}
 	secretStore, degraded, buildErr := carriersecrets.Build(context.Background(), carriersecrets.BuildParams{
 		Mode:         cfg.ShippingSecretStore,
 		GCPProjectID: cfg.GCPProjectID,
@@ -81,7 +79,7 @@ func main() {
 		OpenBaoRole:  cfg.OpenBaoRole,
 		Encryptor:    apiKeyEncryptor,
 		Logger:       log,
-		Counter:      carrierSecretCounter,
+		Counter:      metrics.CarrierSecretCounter,
 	})
 	if buildErr != nil {
 		log.Error("carrier-secrets-backfill: carrier secret store build failed", "err", buildErr)

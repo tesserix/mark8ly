@@ -11,7 +11,7 @@ import (
 // failed. This is the only signal that OpenBao (or GCP SM) had a blip
 // that checkout/shipping-rates/payment-webhook rode out on a cached
 // credential instead of failing outright.
-const StaleReadMetric = "carriersecrets_stale_read"
+const StaleReadMetric = "stale_read"
 
 // cacheEntry holds one cached reference's plaintext and the clock time it
 // was fetched at.

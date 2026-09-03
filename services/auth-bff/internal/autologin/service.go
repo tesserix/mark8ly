@@ -184,6 +184,20 @@ type Identity struct {
 	UID      string
 	Email    string
 	TenantID string
+	// Provider labels the audit event's "method" field with who actually
+	// authenticated this login. Empty means GIP/AutoLogin's own default
+	// ("auto_login") applies; CompleteForProvider sets this explicitly so a
+	// Zitadel login is not misattributed to GIP in the audit trail.
+	Provider string
+}
+
+// auditMethod returns the audit event's "method" label for id, defaulting to
+// "auto_login" (the GIP path's historical value) when no provider is set.
+func auditMethod(id Identity) string {
+	if id.Provider == "" {
+		return "auto_login"
+	}
+	return id.Provider
 }
 
 // AutoLogin verifies the ID token, confirms tenant membership (with retry
@@ -230,6 +244,7 @@ func (s *Service) CompleteForProvider(ctx context.Context, w http.ResponseWriter
 		UID:      lc.UID,
 		Email:    lc.Email,
 		TenantID: lc.TenantID,
+		Provider: "zitadel",
 	}, Request{
 		WorkspaceTenant: lc.TenantID,
 		Device:          lc.Device,
@@ -386,7 +401,7 @@ func (s *Service) completeLogin(ctx context.Context, w http.ResponseWriter, id I
 		ActorEmail:   id.Email,
 		IPAddress:    req.IPAddress,
 		UserAgent:    req.UserAgent,
-		Metadata:     map[string]any{"device": req.Device, "method": "auto_login"},
+		Metadata:     map[string]any{"device": req.Device, "method": auditMethod(id)},
 	})
 
 	return &Result{

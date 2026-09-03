@@ -2,12 +2,15 @@ package autologin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mark8ly/auth-bff/internal/audit"
 	"github.com/mark8ly/auth-bff/internal/authz"
 	"github.com/mark8ly/auth-bff/internal/gip"
 	"github.com/mark8ly/auth-bff/internal/session"
@@ -400,5 +403,101 @@ func TestCompleteForProvider_PropagatesMembershipFailure(t *testing.T) {
 	})
 	if !errors.Is(err, ErrNotMember) {
 		t.Fatalf("err = %v, want ErrNotMember", err)
+	}
+}
+
+// TestCompleteForProviderLabelsTheAuditEventAsZitadel pins the fix for the
+// audit "method" field: every login used to record "auto_login", even a
+// Zitadel one, which misattributed the login method in the audit trail.
+// CompleteForProvider must now carry "zitadel" through, while the GIP path
+// (AutoLogin) keeps its historical "auto_login" label.
+func TestCompleteForProviderLabelsTheAuditEventAsZitadel(t *testing.T) {
+	events := make(chan audit.Event, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ev audit.Event
+		if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
+			t.Errorf("decode audit event: %v", err)
+		}
+		events <- ev
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	gipFake := gip.NewFakeVerifier()
+	fgaFake := authz.NewFake()
+	fgaFake.SetMembership("user-z3", "tenant-uuid-1")
+
+	sm, err := session.NewManager(session.Config{
+		CookieName: "m8_test", Domain: "localhost", Secure: false, EncryptKey: testKey,
+	})
+	if err != nil {
+		t.Fatalf("session manager: %v", err)
+	}
+	svc := NewService(Config{
+		GIP: gipFake, FGA: fgaFake, Sessions: sm, Policy: fastPolicy,
+		Audit: audit.New(srv.URL, "", nil),
+	})
+
+	rec := httptest.NewRecorder()
+	if _, err := svc.CompleteForProvider(context.Background(), rec, zitadellogin.LoginContext{
+		UID: "user-z3", Email: "z3@e.com", TenantID: "tenant-uuid-1",
+	}); err != nil {
+		t.Fatalf("CompleteForProvider: %v", err)
+	}
+
+	select {
+	case ev := <-events:
+		if got, _ := ev.Metadata["method"].(string); got != "zitadel" {
+			t.Fatalf("audit event metadata.method = %q, want %q", got, "zitadel")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the audit event")
+	}
+}
+
+// TestAutoLoginLabelsTheAuditEventAsAutoLogin proves the GIP path's audit
+// label is unchanged by the fix above.
+func TestAutoLoginLabelsTheAuditEventAsAutoLogin(t *testing.T) {
+	events := make(chan audit.Event, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ev audit.Event
+		if err := json.NewDecoder(r.Body).Decode(&ev); err != nil {
+			t.Errorf("decode audit event: %v", err)
+		}
+		events <- ev
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	gipFake := gip.NewFakeVerifier()
+	gipFake.Add("good-token", gip.VerifiedToken{UID: "user-g1", Email: "g@e.com", TenantID: "MP-Internal-test"})
+	fgaFake := authz.NewFake()
+	fgaFake.SetMembership("user-g1", "tenant-uuid-1")
+
+	sm, err := session.NewManager(session.Config{
+		CookieName: "m8_test", Domain: "localhost", Secure: false, EncryptKey: testKey,
+	})
+	if err != nil {
+		t.Fatalf("session manager: %v", err)
+	}
+	svc := NewService(Config{
+		GIP: gipFake, FGA: fgaFake, Sessions: sm, Policy: fastPolicy,
+		Audit: audit.New(srv.URL, "", nil),
+	})
+
+	rec := httptest.NewRecorder()
+	if _, err := svc.AutoLogin(context.Background(), rec, Request{
+		IDToken: "good-token", ExpectedTenantID: "MP-Internal-test", WorkspaceTenant: "tenant-uuid-1",
+	}); err != nil {
+		t.Fatalf("AutoLogin: %v", err)
+	}
+
+	select {
+	case ev := <-events:
+		if got, _ := ev.Metadata["method"].(string); got != "auto_login" {
+			t.Fatalf("audit event metadata.method = %q, want %q", got, "auto_login")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the audit event")
 	}
 }

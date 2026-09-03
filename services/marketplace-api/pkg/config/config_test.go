@@ -237,14 +237,25 @@ func TestConfig_BaoModeRejectsNonKVMount(t *testing.T) {
 // bao mode still routes legacy gsm:// reads/destroys through GCP Secret
 // Manager, so GCP_PROJECT_ID is a genuine prerequisite for "bao" mode too,
 // not just "gcpsm" — selecting bao without it is a startup error.
-func TestConfig_BaoModeRequiresGCPProjectID(t *testing.T) {
+// GCP_PROJECT_ID used to be REQUIRED in bao mode, on the reasoning that a
+// bao-primary ChainStore still routed legacy gsm:// rows through GCP Secret
+// Manager. mark8ly#621 removed the GCP backend entirely, so that reasoning
+// no longer holds and the variable is dead input.
+//
+// This must be asserted before the env var is removed from the k8s
+// deployments, not after: while Validate still demanded it, deleting the
+// variable from the cluster would have crashlooped both engines at boot.
+// That is the #610 failure mode in reverse — adding a required variable
+// means "cluster first, then code", but removing one means "code first,
+// then cluster".
+func TestConfig_BaoModeNoLongerRequiresGCPProjectID(t *testing.T) {
 	baseEnv(t)
 	t.Setenv("SHIPPING_SECRET_STORE", "bao")
 	t.Setenv("OPENBAO_ROLE", "marketplace-api")
 	t.Setenv("GCP_PROJECT_ID", "")
 
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() with SHIPPING_SECRET_STORE=bao and no GCP_PROJECT_ID = nil, want error")
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load() with SHIPPING_SECRET_STORE=bao and no GCP_PROJECT_ID = %v, want nil", err)
 	}
 }
 

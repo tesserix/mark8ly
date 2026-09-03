@@ -265,6 +265,32 @@ func (c *Client) EnrolledMethodTypes(ctx context.Context, userID string) ([]stri
 	return wire.AuthMethodTypes, nil
 }
 
+// UserEmail fetches a user's email address by user id.
+//
+// This is the ONLY email the handler should trust for a Zitadel-authenticated
+// session: it comes from Zitadel's own record of who the session's factors
+// belong to, not from anything the caller typed into a request body. Reading
+// it here — rather than trusting a client-supplied login_name on the TOTP
+// step — is what makes a spoofed login_name on /zitadel/totp inert.
+func (c *Client) UserEmail(ctx context.Context, userID string) (string, error) {
+	var wire struct {
+		User struct {
+			Human *struct {
+				Email struct {
+					Email string `json:"email"`
+				} `json:"email"`
+			} `json:"human"`
+		} `json:"user"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/v2/users/"+url.PathEscape(userID), nil, &wire, ErrUserNotFound); err != nil {
+		return "", err
+	}
+	if wire.User.Human == nil {
+		return "", fmt.Errorf("zitadellogin: user has no human profile, cannot resolve email: %w", ErrUnavailable)
+	}
+	return wire.User.Human.Email.Email, nil
+}
+
 var mfaPolicyKeys = []string{"forceMfa", "forceMfaLocalOnly"}
 
 // policyAnchorKey proves a 200 really carried a login-policy object.

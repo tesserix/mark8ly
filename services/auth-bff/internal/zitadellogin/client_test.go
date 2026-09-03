@@ -164,3 +164,56 @@ func TestTransportFailureMapsToUnavailable(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
 }
+
+func TestUserEmailReadsTheHumanEmail(t *testing.T) {
+	var gotPath string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write([]byte(`{"user":{"human":{"email":{"email":"real-owner@mark8ly.com","isVerified":true}}}}`))
+	})
+	email, err := c.UserEmail(context.Background(), "u1")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if email != "real-owner@mark8ly.com" {
+		t.Fatalf("email = %q", email)
+	}
+	if gotPath != "/v2/users/u1" {
+		t.Fatalf("path = %q, want /v2/users/u1", gotPath)
+	}
+}
+
+func TestUserEmailEscapesTheUserID(t *testing.T) {
+	var gotPath string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.Write([]byte(`{"user":{"human":{"email":{"email":"a@b.test"}}}}`))
+	})
+	if _, err := c.UserEmail(context.Background(), "u/1"); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if gotPath != "/v2/users/u%2F1" {
+		t.Fatalf("path = %q, want the id path-escaped", gotPath)
+	}
+}
+
+func TestUserEmailMapsNotFound(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"code":5,"message":"User could not be found (QUERY-Dfbg2)","details":[{"id":"QUERY-Dfbg2"}]}`))
+	})
+	_, err := c.UserEmail(context.Background(), "missing")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("err = %v, want ErrUserNotFound", err)
+	}
+}
+
+func TestUserEmailRefusesAMachineUserWithNoHumanProfile(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"user":{"machine":{"name":"svc-account"}}}`))
+	})
+	_, err := c.UserEmail(context.Background(), "svc-1")
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable for a user with no human.email", err)
+	}
+}

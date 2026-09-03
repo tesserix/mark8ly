@@ -44,7 +44,7 @@ vi.mock("@/lib/auth/auth-bff-customer", async () => {
   const actual = await vi.importActual<
     typeof import("@/lib/auth/auth-bff-customer")
   >("@/lib/auth/auth-bff-customer");
-  return { ...actual, verifyCustomerCredential: vi.fn() };
+  return { ...actual, verifyCustomerCredential: vi.fn(), verifyCustomerTotp: vi.fn() };
 });
 
 vi.mock("@/lib/api/server/platformInternal", () => ({
@@ -58,11 +58,14 @@ import {
 import {
   AuthBffCustomerError,
   verifyCustomerCredential,
+  verifyCustomerTotp,
 } from "@/lib/auth/auth-bff-customer";
 import { platformInternalFetch } from "@/lib/api/server/platformInternal";
+import { isTotpRequiredResult } from "@/lib/auth/customer-sign-in-result";
 
 const verifyGIPIdTokenMock = vi.mocked(verifyGIPIdToken);
 const verifyCustomerCredentialMock = vi.mocked(verifyCustomerCredential);
+const verifyCustomerTotpMock = vi.mocked(verifyCustomerTotp);
 const platformInternalFetchMock = vi.mocked(platformInternalFetch);
 
 const originalFetch = globalThis.fetch;
@@ -90,6 +93,7 @@ beforeEach(() => {
 
   verifyGIPIdTokenMock.mockReset();
   verifyCustomerCredentialMock.mockReset();
+  verifyCustomerTotpMock.mockReset();
 
   platformInternalFetchMock.mockReset();
   platformInternalFetchMock.mockResolvedValue({
@@ -457,5 +461,266 @@ describe("customerSignIn — password never leaks", () => {
     });
 
     expect(JSON.stringify(result)).not.toContain(SUBMITTED_PASSWORD);
+  });
+});
+
+describe("customerSignIn — totp_required carries the data the code-entry step needs", () => {
+  it("hands back sessionId/sessionToken alongside the message", async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    verifyCustomerCredentialMock.mockResolvedValue({
+      kind: "totp_required",
+      sessionId: "s-abc",
+      sessionToken: "tok-xyz",
+    });
+    const { customerSignIn } = await loadActions();
+
+    const result = await customerSignIn({
+      loginName: "e@x.com",
+      password: SUBMITTED_PASSWORD,
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(false);
+    if (isTotpRequiredResult(result)) {
+      expect(result.sessionId).toBe("s-abc");
+      expect(result.sessionToken).toBe("tok-xyz");
+    } else {
+      throw new Error("expected a totp_required result");
+    }
+  });
+});
+
+describe("confirmCustomerTotp — provider flag", () => {
+  it("with the flag unset, customerSignIn's GIP path never yields totp_required, so the UI never obtains a sessionId/sessionToken to call confirmCustomerTotp with", async () => {
+    // The GIP path (verifyGIPIdToken) has no notion of a TOTP step-up at
+    // all — it either resolves a uid/email or throws. There is no code
+    // path in customerSignIn under GIP that could ever produce
+    // sessionId/sessionToken for the client to hand to confirmCustomerTotp.
+    // This test exercises customerSignIn, not confirmCustomerTotp itself —
+    // see the next test for that.
+    verifyGIPIdTokenMock.mockResolvedValue({
+      uid: "u-gip",
+      email: "gip@example.com",
+      tenantId: "t",
+    });
+    const { customerSignIn } = await loadActions();
+
+    const result = await customerSignIn({
+      idToken: "id-token",
+      uid: "ignored",
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(verifyCustomerCredentialMock).not.toHaveBeenCalled();
+  });
+
+  it("confirmCustomerTotp itself has no provider gate: with the flag unset it still calls verifyCustomerTotp and completes", async () => {
+    // confirmCustomerTotp never reads AUTH_PROVIDER — it is only
+    // unreachable from the UI under GIP because customerSignIn's GIP
+    // path can never hand it a sessionId/sessionToken (previous test).
+    // If confirmCustomerTotp ever grew an accidental flag check that
+    // short-circuited it under GIP, this is the test that would catch
+    // it — calling the action directly, bypassing the UI/customerSignIn
+    // gate entirely.
+    delete process.env.NEXT_PUBLIC_AUTH_PROVIDER;
+    verifyCustomerTotpMock.mockResolvedValue({
+      kind: "complete",
+      uid: "u-flag-unset",
+      email: "flag-unset@example.com",
+    });
+    const { confirmCustomerTotp } = await loadActions();
+
+    const result = await confirmCustomerTotp({
+      storeSlug: "shop",
+      sessionId: "s-1",
+      sessionToken: "tok-1",
+      code: "123456",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(verifyCustomerTotpMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("confirmCustomerTotp — happy path", () => {
+  it("a valid code completes: sets mp_customer_session and runs the same profile/loyalty side effects as the password path", async () => {
+    verifyCustomerTotpMock.mockResolvedValue({
+      kind: "complete",
+      uid: "u-totp",
+      email: "totp@example.com",
+    });
+    const { confirmCustomerTotp } = await loadActions();
+
+    const result = await confirmCustomerTotp({
+      storeSlug: "shop",
+      sessionId: "s-1",
+      sessionToken: "tok-1",
+      code: "123456",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(cookiesSetSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "mp_customer_session", domain: HOST }),
+    );
+
+    const setCall = cookiesSetSpy.mock.calls[0]![0] as { value: string };
+    const decoded = decodeCookiePayload(setCall.value);
+    expect(decoded.uid).toBe("u-totp");
+    expect(decoded.email).toBe("totp@example.com");
+
+    const paths = fetchSpy.mock.calls.map((c) => String(c[0]));
+    expect(paths.some((p) => p.includes("/account"))).toBe(true);
+    expect(paths.some((p) => p.includes("/loyalty/enroll"))).toBe(true);
+  });
+});
+
+describe("confirmCustomerTotp — invalid code", () => {
+  it("returns a truthful, non-generic message and sets no cookie", async () => {
+    verifyCustomerTotpMock.mockResolvedValue({ kind: "rejected" });
+    const { confirmCustomerTotp } = await loadActions();
+
+    const result = await confirmCustomerTotp({
+      storeSlug: "shop",
+      sessionId: "s-1",
+      sessionToken: "tok-1",
+      code: "000000",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+    if (!result.ok) {
+      expect(result.message).not.toBe("Email or password is incorrect.");
+      expect(result.message.toLowerCase()).toContain("code");
+    }
+  });
+});
+
+describe("confirmCustomerTotp — a repeat totp_required is a FRESH challenge, not a wrong code", () => {
+  it("hands back the NEW sessionId/sessionToken, not the caller's original pair", async () => {
+    verifyCustomerTotpMock.mockResolvedValue({
+      kind: "totp_required",
+      sessionId: "s-fresh",
+      sessionToken: "tok-fresh",
+    });
+    const { confirmCustomerTotp } = await loadActions();
+
+    const result = await confirmCustomerTotp({
+      storeSlug: "shop",
+      sessionId: "s-original",
+      sessionToken: "tok-original",
+      code: "123456",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+    if (!isTotpRequiredResult(result)) {
+      throw new Error("expected a totp_required result");
+    }
+    // Pin the credentials, not just the message: a bug that discards
+    // outcome.sessionId/sessionToken and echoes the caller's original
+    // pair back would still produce a truthful-sounding "enter a new
+    // code" message and pass a message-only assertion.
+    expect(result.sessionId).toBe("s-fresh");
+    expect(result.sessionToken).toBe("tok-fresh");
+    expect(result.sessionId).not.toBe("s-original");
+    expect(result.sessionToken).not.toBe("tok-original");
+    // And it must not be confused with an ordinary wrong code.
+    expect(result.message).not.toBe("That code is incorrect. Please try again.");
+  });
+});
+
+// Serializes a console.error argument for a leak check. Plain
+// JSON.stringify is not enough here: Error's message/stack/name are
+// non-enumerable, so JSON.stringify(new Error("987654")) is "{}" — a
+// leaked code embedded in a logged Error would sail straight through a
+// JSON.stringify-only check with the assertion still passing. This pulls
+// name/message/stack (and a cause, if present) explicitly for Error
+// instances, and falls back to JSON.stringify (including non-enumerable
+// own properties, via Object.getOwnPropertyNames as the replacer) for
+// everything else.
+function serializeForLeakCheck(value: unknown): string {
+  if (value instanceof Error) {
+    const cause =
+      "cause" in value ? ` cause=${serializeForLeakCheck(value.cause)}` : "";
+    return `${value.name}: ${value.message}\n${value.stack ?? ""}${cause}`;
+  }
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    try {
+      return JSON.stringify(value, Object.getOwnPropertyNames(value));
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+describe("confirmCustomerTotp — the code never leaks", () => {
+  it("never appears in a console.error argument", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      verifyCustomerTotpMock.mockRejectedValue(
+        new AuthBffCustomerError(503, "zitadel_unavailable"),
+      );
+      const { confirmCustomerTotp } = await loadActions();
+
+      const SECRET_CODE = "987654";
+      await confirmCustomerTotp({
+        storeSlug: "shop",
+        sessionId: "s-1",
+        sessionToken: "tok-1",
+        code: SECRET_CODE,
+      });
+
+      for (const call of consoleErrorSpy.mock.calls) {
+        for (const arg of call) {
+          expect(serializeForLeakCheck(arg)).not.toContain(SECRET_CODE);
+        }
+      }
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  // Proves the assertion above is actually capable of failing — a bare
+  // JSON.stringify(new Error(...)) check would pass even with the code
+  // embedded in a logged Error's message, since Error's own enumerable
+  // properties are empty. This test intentionally logs the code the way
+  // a regression might, and expects THIS test to fail if
+  // serializeForLeakCheck stops inspecting message/stack.
+  it("sanity check: serializeForLeakCheck actually catches a code embedded in a logged Error", () => {
+    const SECRET_CODE = "555444";
+    const leaky = new Error(`totp confirm failed for code ${SECRET_CODE}`);
+    expect(serializeForLeakCheck(leaky)).toContain(SECRET_CODE);
+    // And a bare JSON.stringify over the same Error would have missed it
+    // entirely — this is the gap the sanity check above closes.
+    expect(JSON.stringify(leaky)).not.toContain(SECRET_CODE);
+  });
+});
+
+describe("confirmCustomerTotp — auth-bff failure never leaks internal detail", () => {
+  it("an AuthBffCustomerError produces the generic 'temporarily unavailable' message, not the internal string", async () => {
+    verifyCustomerTotpMock.mockRejectedValue(
+      new AuthBffCustomerError(503, "zitadel_unavailable"),
+    );
+    const { confirmCustomerTotp } = await loadActions();
+
+    const result = await confirmCustomerTotp({
+      storeSlug: "shop",
+      sessionId: "s-1",
+      sessionToken: "tok-1",
+      code: "123456",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toBe(
+        "Sign-in is temporarily unavailable. Please try again shortly.",
+      );
+      expect(result.message).not.toContain("503");
+      expect(result.message).not.toContain("zitadel_unavailable");
+      expect(result.message.toLowerCase()).not.toContain("auth-bff");
+    }
   });
 });

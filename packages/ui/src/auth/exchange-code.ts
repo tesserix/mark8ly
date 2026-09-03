@@ -11,7 +11,10 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+export const EXCHANGE_CODE_KIND = "google_exchange_v1" as const;
+
 export interface ExchangeCodeClaims {
+  kind: typeof EXCHANGE_CODE_KIND;
   idToken: string;
   storeSlug: string;
   returnTo: string;
@@ -47,6 +50,7 @@ export function mintExchangeCode(
 ): string {
   if (!key) throw new ExchangeCodeError("missing_key", "key is required");
   const claims: ExchangeCodeClaims = {
+    kind: EXCHANGE_CODE_KIND,
     ...input,
     exp: Math.floor(Date.now() / 1000) + ttlSeconds,
   };
@@ -76,6 +80,13 @@ export function verifyExchangeCode(code: string, key: string): ExchangeCodeClaim
     claims = JSON.parse(Buffer.from(payload, "base64url").toString()) as ExchangeCodeClaims;
   } catch {
     throw new ExchangeCodeError("malformed_payload", "payload is not valid JSON");
+  }
+
+  if (claims.kind !== EXCHANGE_CODE_KIND) {
+    throw new ExchangeCodeError(
+      "wrong_kind",
+      `expected kind ${EXCHANGE_CODE_KIND}, got ${claims.kind}`,
+    );
   }
 
   if (Math.floor(Date.now() / 1000) >= claims.exp) {

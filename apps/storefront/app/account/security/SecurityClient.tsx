@@ -5,6 +5,7 @@ import {
   LinkedProvidersPanel,
   type LinkedProvider,
 } from "@repo/ui/auth/linked-providers-panel";
+import { isGoogleSignInOffered } from "@/lib/auth/provider";
 
 const TRAMPOLINE_BASE =
   process.env.NEXT_PUBLIC_MARK8LY_AUTH_URL ?? "https://mark8ly.com";
@@ -17,6 +18,7 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
   const [providers, setProviders] = useState<LinkedProvider[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const canLinkGoogle = isGoogleSignInOffered();
 
   useEffect(() => {
     let cancelled = false;
@@ -74,8 +76,9 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
         Linked sign-in methods
       </h2>
       <p className="mt-1 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
-        Add Google to sign in faster. Removing a sign-in method requires
-        contacting support for now.
+        {canLinkGoogle
+          ? "Add Google to sign in faster. Removing a sign-in method requires contacting support for now."
+          : "Removing a sign-in method requires contacting support for now."}
       </p>
 
       <div className="mt-5">
@@ -89,6 +92,7 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
             onLinkGoogle={handleLinkGoogle}
             onUnlink={handleUnlink}
             variant="storefront"
+            canLinkGoogle={canLinkGoogle}
           />
         )}
         {error && (

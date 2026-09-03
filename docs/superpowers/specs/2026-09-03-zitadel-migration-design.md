@@ -57,6 +57,50 @@ customers. The data risk grows; the code risk does not shrink by waiting.
 | D8 | Delete `gipkey` and the server/browser API key split. |
 | D9 | `Platform-9bu14` is out of scope — it is tesserix-home's pool and no mark8ly Go code reads it. |
 | D10 | Storefront customers get a separate `auth-bff` login path that skips the OpenFGA membership check. |
+| D11 | That customer path returns an identity and mints nothing; it does not run the merchant gauntlet at all. |
+
+### D11 — the customer path verifies credentials and returns an identity, nothing more
+
+D10 said the customer path would "skip the membership check". Reading the code
+made a simpler and safer shape available, and this supersedes that framing.
+
+**What `auth-bff` will do for a customer:** drive Zitadel's Session API to check
+the credential, apply the fail-closed sufficiency decision, and return
+`{uid, email}`. That is all. It does **not** call `completeLogin`, mint a cookie,
+or touch OpenFGA.
+
+**What the storefront keeps doing, exactly as today:** resolve the host, resolve
+the store, mint `mp_customer_session`, and drive the profile and loyalty side
+effects. VERIFIED by reading `apps/storefront/app/sign-in/actions.ts` — `auth-bff`
+would replace only the "verify the token" step; every other step already lives
+there and works.
+
+Three reasons this beats a membership-skipping variant of `completeLogin`:
+
+- **No weaker path inside the gating service.** A customer request never enters
+  the merchant gauntlet, so there is no second code path through it that
+  deliberately bypasses a gate — the thing D10 correctly called out as the cost.
+- **The cookie formats are incompatible anyway.** `auth-bff` mints an AES-GCM
+  encrypted blob scoped to `.mark8ly.com`; the storefront mints an HMAC-signed
+  base64 payload scoped to the **exact host**, so that "store-a's session can't be
+  sent to store-b". They share the `SESSION_ENCRYPT_KEY` *name* and nothing else.
+  Having `auth-bff` mint the customer cookie would mean either a third cookie
+  format or giving up the per-store host scoping.
+- **`auth-bff` has no notion of which surface a request is for.** All routes sit on
+  one flat `/auth` group. Keeping the customer endpoint to "verify and return"
+  means that plumbing stays a route prefix rather than becoming a mode that alters
+  what the gauntlet does.
+
+**Accepted consequence, decided rather than defaulted:** storefront login gets no
+new-device detection and no email-OTP step-up, because it has neither today.
+Routing customers through `completeLogin` would add both — a security improvement
+and new friction on the shopper conversion path. That is a product decision, and it
+should be made deliberately rather than arriving as a side effect of a migration.
+It remains available later.
+
+The PAT is still why this lives in `auth-bff` at all: the storefront cannot drive
+Zitadel's Session API without the instance-level login-client credential, which
+must not be deployed into a customer-facing app.
 
 ### D10 — customers need their own path, because they are not FGA members
 

@@ -960,7 +960,7 @@ func main() {
 		// Redis is optional: if REDIS_URL is unset, advisory-lock fallback is used.
 		campaignBudgetSvc := campaignbudget.NewService(conn)
 		campaignbudget.MustRegisterMetrics(prometheus.DefaultRegisterer)
-		campaignSlotAcquirer := concurrency.Select(nil, conn) // nil = no Redis → advisory-lock
+		campaignSlotAcquirer := concurrency.NewAdvisoryLockAcquirer(conn)
 		campaignHandler := admin.NewCampaignHandler(campaignSvc, campaignRepo, log).
 			WithBudgetGate(campaignBudgetSvc, campaignSlotAcquirer)
 		segmentHandler := admin.NewSegmentHandler(campaignSvc, log)

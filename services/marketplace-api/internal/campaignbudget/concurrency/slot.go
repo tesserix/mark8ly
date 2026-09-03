@@ -1,16 +1,24 @@
-// Package concurrency enforces the max-3 concurrent-send limit per store.
-// Two implementations: Redis INCR (preferred, cluster-wide) and a Postgres
-// advisory-lock fallback (single-instance, used when Redis is absent).
+// Package concurrency enforces the max-3 concurrent-send limit per store,
+// using a Postgres session-scoped advisory lock.
+//
+// It used to carry a second, Redis-backed implementation chosen by Select().
+// That path was already unreachable — cmd/marketplace-api passed a hardcoded
+// nil Redis client and no deployment ever set a Redis URL — so mark8ly#234
+// removed it rather than keep a limiter nobody could reach.
+//
+// Advisory locks are cluster-wide, not per-pod: every marketplace-api replica
+// shares one Postgres, so a lock taken by one pod is visible to all of them.
+// (The old package comment called this path "single-instance", which was
+// wrong.) They also beat the Redis path on crash recovery: a killed pod drops
+// its connection, Postgres tears the backend down, and the slot frees
+// immediately — where Redis held it for a 10-minute TTL.
 package concurrency
 
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 )
 
 // MaxConcurrentSends is the per-store cap on simultaneously active campaign sends.
@@ -20,17 +28,8 @@ const MaxConcurrentSends = 3
 // MaxConcurrentSends active send jobs.
 var ErrTooManyConcurrentSends = errors.New("too many concurrent campaign sends")
 
-// SlotAcquirer abstracts the concurrency backend. Callers depend on this
-// interface and main.go wires either the Redis or Postgres implementation.
+// SlotAcquirer abstracts the concurrency backend so handlers depend on an
+// interface rather than on the advisory-lock implementation.
 type SlotAcquirer interface {
 	AcquireSlot(ctx context.Context, storeID uuid.UUID) (release func(), err error)
-}
-
-// Select returns a Redis-backed acquirer when redisClient is non-nil, else the
-// Postgres advisory-lock fallback. Called once from main.go at startup.
-func Select(redisClient *redis.Client, db *gorm.DB) SlotAcquirer {
-	if redisClient != nil {
-		return NewRedisAcquirer(redisClient, 10*time.Minute)
-	}
-	return NewAdvisoryLockAcquirer(db)
 }

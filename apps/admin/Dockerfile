@@ -61,6 +61,14 @@ ARG NEXT_PUBLIC_APPLE_SERVICES_ID=""
 # Build-time only — see apps/storefront/Dockerfile for why a chart env
 # var cannot flip this.
 ARG NEXT_PUBLIC_AUTH_PROVIDER="zitadel"
+# The Zitadel login-client flow needs these IN THE BUNDLE: /login/authorize
+# mints the PKCE redirect from them and 500s "zitadel_misconfigured"
+# without them. Both are NEXT_PUBLIC_* and therefore build-time only —
+# a chart env var cannot supply them. The client id is public by design
+# (it ships in the browser for PKCE); the client SECRET stays server-side
+# in auth-bff and is not here.
+ARG NEXT_PUBLIC_ZITADEL_ISSUER=""
+ARG NEXT_PUBLIC_ZITADEL_ADMIN_CLIENT_ID=""
 ENV NEXT_PUBLIC_GIP_PROJECT_ID=$REUSABLE_PUBLIC_BUILD_ARG_1 \
     NEXT_PUBLIC_GIP_TENANT_ID=$REUSABLE_PUBLIC_BUILD_ARG_2 \
     NEXT_PUBLIC_GIP_API_KEY=$REUSABLE_PUBLIC_BUILD_ARG_3 \
@@ -70,6 +78,8 @@ ENV NEXT_PUBLIC_GIP_PROJECT_ID=$REUSABLE_PUBLIC_BUILD_ARG_1 \
     NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN=$REUSABLE_PUBLIC_BUILD_ARG_8 \
     NEXT_PUBLIC_APPLE_SERVICES_ID=$NEXT_PUBLIC_APPLE_SERVICES_ID \
     NEXT_PUBLIC_AUTH_PROVIDER=$NEXT_PUBLIC_AUTH_PROVIDER \
+    NEXT_PUBLIC_ZITADEL_ISSUER=$NEXT_PUBLIC_ZITADEL_ISSUER \
+    NEXT_PUBLIC_ZITADEL_ADMIN_CLIENT_ID=$NEXT_PUBLIC_ZITADEL_ADMIN_CLIENT_ID \
     NEXT_TELEMETRY_DISABLED=1
 
 # Server Action IDs are hashed with this key as the salt (Next.js wires

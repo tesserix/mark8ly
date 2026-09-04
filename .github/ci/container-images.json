@@ -66,7 +66,7 @@
       "dockerfile": "apps/admin/Dockerfile",
       "target": "runtime",
       "source_root": "apps/admin",
-      "build_args": "NEXT_PUBLIC_APPLE_SERVICES_ID=com.mark8ly.admin.web\nNEXT_PUBLIC_AUTH_PROVIDER=zitadel",
+      "build_args": "NEXT_PUBLIC_APPLE_SERVICES_ID=com.mark8ly.admin.web\nNEXT_PUBLIC_AUTH_PROVIDER=zitadel\nNEXT_PUBLIC_ZITADEL_ISSUER=https://auth.tesserix.app\nNEXT_PUBLIC_ZITADEL_ADMIN_CLIENT_ID=389070493069606927",
       "requires_application_build_secret": true,
       "trivy_ignore_file": ".trivyignore",
       "smoke_port": 4202,

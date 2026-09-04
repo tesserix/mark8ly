@@ -19,13 +19,20 @@
  *   - After a successful 201, we redirect to the credentials upload page.
  *
  * Proration preview:
- *   - Derived client-side from CurrentPlan.periodEnd (co-termination date)
- *     and amount_due_cents from the purchase response preview shown to the
- *     merchant before submission via a static calculation.
- *   - The annual Pro add-on list price is $2,000/yr (server-side ProrationCents
- *     includes a setup component too — we show `amount_due_cents` from the
- *     actual response AFTER purchase; pre-purchase we show "$2,000/yr" as
- *     the full-year anchor).
+ *   - The co-termination date is CurrentPlan.periodEnd. The amount actually
+ *     charged comes back as `amount_due_cents` on the purchase response, so
+ *     before purchase all this page can honestly show is the list price.
+ *   - Per spec §3.4 the add-on lists at $199/mo — $2,388 for a full year —
+ *     plus a separate one-time, non-refundable $2,000 setup fee. Server-side
+ *     `ProrationCents` charges `(remaining_days / 365) × $2,388 + $2,000` up
+ *     front, so the up-front charge and the full-year figure are legitimately
+ *     different numbers. Conflating them is how the $2,000 setup fee once
+ *     ended up on the full-year line here.
+ *   - The full-year figure is read from SHARED_PRICING_CATALOGUE (generated
+ *     from the Go `pricing.ProAppAnnual` constant) rather than hardcoded, so
+ *     it cannot drift from the billing constants again. The add-on bills in
+ *     USD globally (spec §4.1.2), so the USD row is read explicitly and
+ *     rendered as USD — never relabelled with the merchant's currency.
  *
  * Accessibility:
  *   - Checkbox associated via htmlFor/id.
@@ -44,7 +51,11 @@ import { usePurchaseProApp } from '@/lib/api/subscription/hooks/useProApp'
 import { ApiError } from '@/lib/api/client'
 import { useToast } from '@/components/feedback/Toaster'
 import { subscriptionCopy } from '@/lib/copy/subscription'
-import { Money } from '@repo/ui/subscription'
+import {
+  Money,
+  SHARED_PRICING_CATALOGUE,
+  getAddOnPrice,
+} from '@repo/ui/subscription'
 import { formatBillingDate } from '@/lib/format/date'
 
 // ---------------------------------------------------------------------------
@@ -57,8 +68,14 @@ interface ProAppPurchaseClientProps {
 
 const copy = subscriptionCopy.proApp.purchase
 
-/** Annual White-label App add-on price in cents (used for the next-year line). */
-const ANNUAL_ADDON_PRICE_CENTS = 200000
+/**
+ * Full-year White-label App add-on list price, in USD cents, for the
+ * next-year line. Derived from the shared catalogue rather than written
+ * here: the same figure lives in Go as `pricing.ProAppAnnual` and
+ * `appaddon.AppAnnualCents`, and a third hand-maintained copy is exactly
+ * what drifted before.
+ */
+const { price: proAppUsdPrice } = getAddOnPrice(SHARED_PRICING_CATALOGUE.proApp, 'USD')
 
 /** RHF form schema — only the acknowledgement checkbox. */
 const formSchema = z.object({
@@ -129,10 +146,9 @@ function AlreadyActiveState() {
 
 interface ProrationPreviewCardProps {
   renewalAt: string | null
-  currency: string
 }
 
-function ProrationPreviewCard({ renewalAt, currency }: ProrationPreviewCardProps) {
+function ProrationPreviewCard({ renewalAt }: ProrationPreviewCardProps) {
   const formattedRenewal = formatBillingDate(renewalAt)
 
   return (
@@ -154,7 +170,7 @@ function ProrationPreviewCard({ renewalAt, currency }: ProrationPreviewCardProps
         <p>
           Next full-year charge:{' '}
           <span className="font-medium text-[var(--ink-900)]">
-            <Money amount={ANNUAL_ADDON_PRICE_CENTS} currency={currency} />
+            <Money amount={proAppUsdPrice.annual} currency="USD" />
           </span>
           {renewalAt && (
             <> on {formattedRenewal}</>
@@ -173,10 +189,9 @@ function ProrationPreviewCard({ renewalAt, currency }: ProrationPreviewCardProps
 interface PurchaseFormProps {
   storeId: string
   renewalAt: string | null
-  currency: string
 }
 
-function PurchaseForm({ storeId, renewalAt, currency }: PurchaseFormProps) {
+function PurchaseForm({ storeId, renewalAt }: PurchaseFormProps) {
   const router = useRouter()
   const { toast } = useToast()
   const mutation = usePurchaseProApp(storeId)
@@ -231,7 +246,7 @@ function PurchaseForm({ storeId, renewalAt, currency }: PurchaseFormProps) {
       aria-label={copy.heading}
       className="max-w-2xl space-y-6"
     >
-      <ProrationPreviewCard renewalAt={renewalAt} currency={currency} />
+      <ProrationPreviewCard renewalAt={renewalAt} />
 
       {/* Apple 4.2.6 acknowledgement */}
       <div className="space-y-1">
@@ -321,10 +336,6 @@ export function ProAppPurchaseClient({ storeId }: ProAppPurchaseClientProps) {
   }
 
   return (
-    <PurchaseForm
-      storeId={storeId}
-      renewalAt={plan.periodEnd}
-      currency={plan.billingCurrency}
-    />
+    <PurchaseForm storeId={storeId} renewalAt={plan.periodEnd} />
   )
 }

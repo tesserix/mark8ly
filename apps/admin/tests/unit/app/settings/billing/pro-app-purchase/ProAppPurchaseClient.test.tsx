@@ -79,8 +79,12 @@ vi.mock('@/lib/api/subscription/hooks/useBilling', () => ({
   useCurrentPlan: (...args: unknown[]) => mockUseCurrentPlan(...args),
 }))
 
-// Money component stub — renders amount/100 formatted simply
-vi.mock('@repo/ui/subscription', () => ({
+// Money component stub — renders amount/100 formatted simply.
+// Everything else (SHARED_PRICING_CATALOGUE, getAddOnPrice) stays REAL: the
+// component reads the add-on's full-year price out of the generated
+// catalogue, so stubbing it would make the price assertions vacuous.
+vi.mock('@repo/ui/subscription', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@repo/ui/subscription')>()),
   Money: ({ amount, currency }: { amount: number; currency: string }) => (
     <span>{currency.toUpperCase()} {(amount / 100).toFixed(2)}</span>
   ),
@@ -194,6 +198,36 @@ describe('ProAppPurchaseClient', () => {
     expect(screen.getByRole('form', { name: /add the white-label app/i })).toBeInTheDocument()
     expect(screen.getByRole('checkbox')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /add to plan/i })).toBeInTheDocument()
+  })
+
+  it('next full-year charge is the $2,388 add-on list price, not the $2,000 setup fee', () => {
+    mockUseCurrentPlan.mockReturnValue({
+      data: makePlan(),
+      isLoading: false,
+      isError: false,
+    })
+    renderComponent()
+
+    // $199/mo x 12 = $2,388/yr (spec 3.4), matching pricing.ProAppAnnual and
+    // appaddon.AppAnnualCents. $2,000 is the ONE-TIME setup fee and must
+    // never appear on this line.
+    expect(screen.getByText(/next full-year charge/i)).toBeInTheDocument()
+    expect(screen.getByText('USD 2388.00')).toBeInTheDocument()
+    expect(screen.queryByText('USD 2000.00')).not.toBeInTheDocument()
+  })
+
+  it('full-year charge stays in USD for a non-USD merchant (add-on bills in USD globally)', () => {
+    mockUseCurrentPlan.mockReturnValue({
+      data: makePlan({ billingCurrency: 'INR' }),
+      isLoading: false,
+      isError: false,
+    })
+    renderComponent()
+
+    // Spec 4.1.2: the add-on is billed in USD everywhere, so the USD amount
+    // must not be relabelled with the merchant's billing currency.
+    expect(screen.getByText('USD 2388.00')).toBeInTheDocument()
+    expect(screen.queryByText(/^INR /)).not.toBeInTheDocument()
   })
 
   it('acknowledgement checkbox controls submit button state', async () => {

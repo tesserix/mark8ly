@@ -15,13 +15,18 @@ name: base digest auto-merge
 #
 # Scope is intentionally narrow — every one of these must hold or the PR is
 # left alone:
-#   - authored by dependabot[bot] (enforced twice: the PR listing below only
-#     considers that author, and fetch-metadata independently verifies the
-#     PR's user and commit signature)
+#   - authored by dependabot[bot] — this is the real provenance boundary: the
+#     PR listing below only ever considers that author, so a human PR is
+#     never even enumerated. fetch-metadata performs its own secondary check
+#     of the PR author and Dependabot's commit metadata format, but that is
+#     a defense-in-depth parse, not the primary guarantee.
 #   - a `docker` ecosystem update, per dependabot/fetch-metadata
 #   - every changed file in the PR is a Dockerfile (checked against the PR's
 #     actual file list, not inferred from its title)
-#   - every check run on the PR's head commit has completed, and none failed
+#   - every check run on the PR's head commit has completed, none failed,
+#     and there is at least one check run — zero check runs means CI has
+#     not started yet, not that nothing needs to run (ci.yml triggers
+#     unconditionally on `pull_request`, no path filter)
 #
 # Anything else — a gomod/npm/github-actions Dependabot PR, or any
 # human-authored PR — is never touched. Runs daily (the upstream rebuild is
@@ -80,8 +85,9 @@ jobs:
       # fetch-metadata reads the pull_request event payload, not a live API
       # call — this repo only triggers it on `pull_request`. A schedule run
       # has no such payload, so we hand it one built from the PR we just
-      # fetched. It still independently verifies the PR author and the
-      # commit signature, so this is not a way to spoof provenance.
+      # fetched. It performs its own author/metadata check on top of this,
+      # but the `discover` job's author filter above is what actually keeps
+      # a human PR out of this matrix in the first place.
       - name: Fetch Dependabot metadata
         id: meta
         continue-on-error: true
@@ -123,19 +129,43 @@ jobs:
             skip "reported no changed files — nothing to verify."
           fi
 
+          # --paginate emits one JSON array PER PAGE, not one merged array —
+          # a bare `--jq '.check_runs'` over multiple pages produces several
+          # separate arrays back to back, which silently breaks any `length`
+          # / arithmetic done on the result. --slurp collects every page
+          # into a single outer array first, so the --jq filter here runs
+          # once over the whole set and flattens it into one true list.
           sha=$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')
-          checks=$(gh api "repos/$REPO/commits/$sha/check-runs" --paginate --jq '.check_runs')
+          checks=$(gh api "repos/$REPO/commits/$sha/check-runs" --paginate --slurp --jq '[.[].check_runs] | flatten')
           others=$(echo "$checks" | jq '[.[] | select(.name | test("auto-merge"; "i") | not)]')
           total=$(echo "$others" | jq 'length')
           pending=$(echo "$others" | jq '[.[] | select(.status != "completed")] | length')
           failed=$(echo "$others" | jq '[.[] | select(.conclusion != null and (.conclusion | IN("success","skipped","neutral") | not))] | length')
           echo "PR #$PR check runs: total=$total pending=$pending failed=$failed"
 
+          # A gate that can't parse its own inputs must stop hard, never
+          # fall through to a merge. jq's `length` always yields a plain
+          # non-negative integer for a well-formed array, so anything else
+          # here means the aggregation above is broken — treat that as a
+          # hard failure of the whole job, not a reason to proceed.
+          for name in total pending failed; do
+            value="${!name}"
+            case "$value" in
+              ''|*[!0-9]*)
+                echo "::error::PR #$PR check-run aggregation produced a non-integer $name value: '$value' — refusing to merge."
+                exit 1
+                ;;
+            esac
+          done
+
           if [ "$failed" -gt 0 ]; then
             skip "at least one check run failed on the PR head commit."
           fi
           if [ "$pending" -gt 0 ]; then
             skip "check runs are still in progress — will re-check on tomorrow's run."
+          fi
+          if [ "$total" -eq 0 ]; then
+            skip "no check runs found yet — CI has not started (ci.yml triggers on every pull_request with no path filter, so this means 'not yet', never 'none will run'); will re-check on tomorrow's run."
           fi
 
           echo "::notice::PR #$PR is a docker digest bump touching only Dockerfile(s), all checks green — merging."

@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/mark8ly/platform-api/internal/auth"
 	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/invitation"
 	"github.com/mark8ly/platform-api/internal/zitadeladmin"
 	"github.com/mark8ly/platform-api/pkg/config"
 )
@@ -78,4 +79,38 @@ func selectAccountProviders(cfg *config.Config, gipAdmin *gipadmin.AdminClient) 
 		del = gipAdmin
 	}
 	return reset, del, nil
+}
+
+// newTenantClaimSetter builds the invitation.TenantClaimSetter that
+// invitation/service.go calls on invite-accept to stamp the tenant_id
+// custom claim onto the invited user.
+//
+// Deliberately takes ONLY gipAdmin — no *config.Config, no
+// cfg.ZitadelEnabled anywhere in reach — so this is structurally, not
+// just conventionally, independent of the Zitadel flag: there is no
+// config value in scope for a future edit to branch on. EnsureTenantClaim
+// must keep running against GIP regardless of which provider
+// selectAccountProviders chose for password-reset/delete, because
+// marketplace-api's flag-off path still reads the tenant_id claim and
+// invitation/service.go writes it on accept. See selectAccountProviders'
+// doc above for the full two-concerns-two-lifetimes reasoning this
+// mirrors — this function IS the "EnsureTenantClaim" lifetime; that
+// function's return values are the other one.
+//
+// cmd/server/main_test.go's TestMainCallsNewTenantClaimSetterUnconditionally
+// pins the ONE thing this function's own signature cannot prove by
+// itself: that main.go actually calls it as a top-level, unconditional
+// statement rather than nesting it inside an `if` that could be
+// flag-gated later.
+//
+// Guards the typed-nil trap the same way selectAccountProviders does:
+// gipAdmin is a CONCRETE *gipadmin.AdminClient, so the interface-typed
+// local is assigned only inside the `gipAdmin != nil` guard — never a
+// possibly-nil pointer straight into the interface return.
+func newTenantClaimSetter(gipAdmin *gipadmin.AdminClient) invitation.TenantClaimSetter {
+	var claims invitation.TenantClaimSetter
+	if gipAdmin != nil {
+		claims = gipAdmin
+	}
+	return claims
 }

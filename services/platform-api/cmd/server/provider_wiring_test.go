@@ -9,6 +9,37 @@ import (
 	"github.com/mark8ly/platform-api/pkg/config"
 )
 
+// --- newTenantClaimSetter: EnsureTenantClaim always runs against GIP ----
+
+// TestNewTenantClaimSetter_UsesGIPAdmin pins that a real gipAdmin client
+// is returned as-is — this is the client invitation/service.go calls
+// EnsureTenantClaim through on invite-accept, and it must be GIP
+// regardless of ZITADEL_ENABLED (marketplace-api's flag-off path still
+// reads the tenant_id claim written this way).
+func TestNewTenantClaimSetter_UsesGIPAdmin(t *testing.T) {
+	admin := &gipadmin.AdminClient{}
+
+	claims := newTenantClaimSetter(admin)
+
+	if claims != admin {
+		t.Fatalf("claims = %v, want the gipAdmin client %v", claims, admin)
+	}
+}
+
+// TestNewTenantClaimSetter_NilGIPStaysGenuinelyNil is the typed-nil
+// regression test for this function, mirroring
+// TestSelectAccountProviders_FlagUnset_NilGIPStaysGenuinelyNil.
+func TestNewTenantClaimSetter_NilGIPStaysGenuinelyNil(t *testing.T) {
+	var admin *gipadmin.AdminClient // nil concrete pointer
+
+	claims := newTenantClaimSetter(admin)
+
+	if claims != nil {
+		t.Fatal("claims must be a genuinely nil interface when gipAdmin is nil, " +
+			"not a non-nil interface wrapping a nil *gipadmin.AdminClient")
+	}
+}
+
 // TestSelectAccountProviders_FlagUnset_SelectsGIP pins that with
 // ZITADEL_ENABLED unset (production today), the reset-provider and
 // deleter handed to auth.Service and the account teardown service are

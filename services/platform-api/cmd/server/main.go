@@ -306,12 +306,14 @@ func main() {
 		log.Warn("auth: password reset disabled — missing GIP_PROJECT_ID/GIP_TENANT_ID and GIP_SERVER_API_KEY or GIP_WEB_API_KEY")
 	}
 
-	// Assign through a typed interface variable only when non-nil, so the
-	// invitation service's nil check isn't defeated by a typed-nil pointer.
-	var inviteClaims invitation.TenantClaimSetter
-	if gipAdmin != nil {
-		inviteClaims = gipAdmin
-	}
+	// newTenantClaimSetter is called UNCONDITIONALLY, with gipAdmin as its
+	// only argument — see that function's doc (provider_wiring.go) for why
+	// its signature has no access to cfg.ZitadelEnabled at all. Do not
+	// wrap this call in an `if`, and do not change its argument: doing
+	// either would (re)break EnsureTenantClaim under Zitadel, which is the
+	// exact regression cmd/server/main_test.go's
+	// TestMainCallsNewTenantClaimSetterUnconditionally exists to catch.
+	inviteClaims := newTenantClaimSetter(gipAdmin)
 
 	invitationSvc := invitation.NewService(invitation.Config{
 		Repo:       invitation.NewRepository(conn),

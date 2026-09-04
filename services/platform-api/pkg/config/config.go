@@ -117,6 +117,15 @@ type Config struct {
 	// flag — it always runs against GIP via the gipAdmin client built
 	// from GIPProjectID/GIPTenantID/GIPKey() above, independent of
 	// ZitadelEnabled. See cmd/server/provider_wiring.go.
+	//
+	// Deployment ordering: ZitadelIssuer, ZitadelLoginClientToken, and
+	// ZitadelOrgID must all be set — and land whitespace-clean, per the
+	// TrimSpace-on-assignment note in Load() below — BEFORE ZitadelEnabled
+	// is flipped to true. ValidateZitadel enforces this at startup (it
+	// panics rather than falling back to GIP silently), but the flag
+	// itself defaults to false, so merging this config change alone
+	// changes nothing; only a deliberate, later flip of ZITADEL_ENABLED
+	// activates the Zitadel path.
 	ZitadelEnabled          bool   `envconfig:"ZITADEL_ENABLED" default:"false"`
 	ZitadelIssuer           string `envconfig:"ZITADEL_ISSUER"`
 	ZitadelLoginClientToken string `envconfig:"ZITADEL_LOGIN_CLIENT_TOKEN"`

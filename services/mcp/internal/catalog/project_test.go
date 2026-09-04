@@ -339,3 +339,18 @@ func TestProjectBranding_AnnouncementOnlyWhenActive(t *testing.T) {
 		})
 	}
 }
+
+// Upstream can hand back two images sharing a position. sort.Slice is not
+// stable, so their order would be whatever the sort happened to do — a
+// product's images could come back in a different order on identical input.
+func TestExtractImageURLs_DuplicatePositionsKeepUpstreamOrder(t *testing.T) {
+	media := []storefrontMedia{
+		{URL: "c.png", MediaType: "image", Position: 2},
+		{URL: "a.png", MediaType: "image", Position: 1},
+		{URL: "b.png", MediaType: "image", Position: 1},
+	}
+
+	for i := 0; i < 32; i++ {
+		assert.Equal(t, []string{"a.png", "b.png", "c.png"}, extractImageURLs(media))
+	}
+}

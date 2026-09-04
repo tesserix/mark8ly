@@ -53,8 +53,10 @@ func extractImageURLs(media []storefrontMedia) []string {
 	if len(images) == 0 {
 		return []string{}
 	}
-	// Sort by position
-	sort.Slice(images, func(i, j int) bool {
+	// Stable: upstream can give two images the same position, and an unstable
+	// sort would order them arbitrarily — the same product could come back
+	// with its images in a different order on identical input.
+	sort.SliceStable(images, func(i, j int) bool {
 		return images[i].Position < images[j].Position
 	})
 	// Extract URLs

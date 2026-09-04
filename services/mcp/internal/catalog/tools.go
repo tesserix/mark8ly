@@ -129,16 +129,16 @@ func listStoreProducts(c *Client) func(context.Context, ListStoreProductsInput) 
 	}
 }
 
-func getStoreProduct(c *Client) func(context.Context, GetStoreProductInput) (Product, error) {
-	return func(ctx context.Context, in GetStoreProductInput) (Product, error) {
+func getStoreProduct(c *Client) func(context.Context, GetStoreProductInput) (ProductResult, error) {
+	return func(ctx context.Context, in GetStoreProductInput) (ProductResult, error) {
 		p, err := c.GetProduct(ctx, in.StoreSlug, in.Handle)
 		if err != nil {
 			if errors.Is(err, upstream.ErrNotFound) {
-				return Product{Found: false}, nil
+				return ProductResult{Found: false}, nil
 			}
-			return Product{}, err
+			return ProductResult{}, err
 		}
-		return projectProduct(p), nil
+		return ProductResult{Found: true, Product: projectProduct(p)}, nil
 	}
 }
 
@@ -184,15 +184,15 @@ func projectProducts(items []storefrontProduct) []Product {
 	return out
 }
 
-func getStoreBranding(c *Client) func(context.Context, GetStoreBrandingInput) (Branding, error) {
-	return func(ctx context.Context, in GetStoreBrandingInput) (Branding, error) {
+func getStoreBranding(c *Client) func(context.Context, GetStoreBrandingInput) (BrandingResult, error) {
+	return func(ctx context.Context, in GetStoreBrandingInput) (BrandingResult, error) {
 		b, err := c.GetBranding(ctx, in.StoreSlug)
 		if err != nil {
 			if errors.Is(err, upstream.ErrNotFound) {
-				return Branding{Found: false}, nil
+				return BrandingResult{Found: false}, nil
 			}
-			return Branding{}, err
+			return BrandingResult{}, err
 		}
-		return projectBranding(b), nil
+		return BrandingResult{Found: true, Branding: projectBranding(b)}, nil
 	}
 }

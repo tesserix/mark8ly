@@ -9,7 +9,6 @@ import (
 // the result struct.
 func projectProduct(in storefrontProduct) Product {
 	p := Product{
-		Found:      true,
 		Handle:     in.Handle,
 		Title:      in.Title,
 		PriceMin:   in.PriceRange.Min,
@@ -99,7 +98,6 @@ func projectBranding(in storefrontBranding) Branding {
 		announcement = *in.AnnouncementText
 	}
 	return Branding{
-		Found:        true,
 		LogoURL:      logoURL,
 		Tagline:      tagline,
 		AccentColor:  in.ColorAccent,

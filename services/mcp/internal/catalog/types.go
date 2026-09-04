@@ -2,14 +2,16 @@ package catalog
 
 import "encoding/json"
 
-// Product is the agent-facing result type for a single product.
-// Found indicates whether the product was found in the storefront.
+// Product is the agent-facing result type for a single product. It is also
+// the element type of ProductList, so it carries no Found field — that
+// would be true, and meaningless, on every element of every list result.
+// Found only matters for the single-resource lookup, where it is carried by
+// the wrapper ProductResult instead.
 // Prices are strings to preserve decimal precision without rounding.
 // All fields are non-nullable: empty slices for collections, empty strings for
 // optional text. This ensures the JSON wire format never contains null values,
 // matching the derived schema.
 type Product struct {
-	Found       bool     `json:"found"`
 	Handle      string   `json:"handle"`
 	Title       string   `json:"title"`
 	Description string   `json:"description"`
@@ -20,6 +22,16 @@ type Product struct {
 	ImageURLs   []string `json:"image_urls"`
 }
 
+// ProductResult is the output of get_store_product. Found is meaningful only
+// here, not on Product itself. Product is NESTED under the "product" field
+// rather than embedded: Product has a value-receiver MarshalJSON (below),
+// and embedding it would promote that method onto ProductResult, making
+// ProductResult marshal as a bare Product and silently drop Found.
+type ProductResult struct {
+	Found   bool    `json:"found"`
+	Product Product `json:"product"`
+}
+
 // Category is the agent-facing result type for a category.
 type Category struct {
 	Name     string `json:"name"`
@@ -27,17 +39,26 @@ type Category struct {
 	Featured bool   `json:"featured"`
 }
 
-// Branding is the agent-facing result type for store branding.
-// Found indicates whether branding data was found for the store.
+// Branding is the agent-facing result type for store branding. It carries no
+// Found field for the same reason Product does not — Found is meaningful only
+// on the single-resource wrapper BrandingResult.
 // All fields are non-nullable: empty strings for optional text, empty slice
 // for promotions. This ensures the JSON wire format never contains null values.
 type Branding struct {
-	Found        bool        `json:"found"`
 	LogoURL      string      `json:"logo_url"`
 	Tagline      string      `json:"tagline"`
 	AccentColor  string      `json:"accent_color"`
 	Announcement string      `json:"announcement"`
 	Promotions   []Promotion `json:"promotions"`
+}
+
+// BrandingResult is the output of get_store_branding. Branding is NESTED
+// under the "branding" field rather than embedded, for the same reason as
+// ProductResult: Branding has a value-receiver MarshalJSON, and embedding it
+// would promote that method onto BrandingResult.
+type BrandingResult struct {
+	Found    bool     `json:"found"`
+	Branding Branding `json:"branding"`
 }
 
 // Promotion is the agent-facing result type for an active storefront promotion.

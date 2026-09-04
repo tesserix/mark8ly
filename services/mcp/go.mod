@@ -6,7 +6,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/stretchr/testify v1.12.1
-	github.com/tesserix/go-shared v1.10.0
+	github.com/tesserix/go-shared v1.11.0
 )
 
 require (

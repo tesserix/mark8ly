@@ -1,17 +1,32 @@
 package admin
 
 import (
+	"log/slog"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
 )
 
-// MobileDeps extends Deps with the mobile-specific GIP token verifier.
+// MobileDeps extends Deps with the mobile-specific bearer token verifier.
 type MobileDeps struct {
 	Deps
-	TokenVerifier    auth.TokenVerifier
-	PushTokenHandler *PushTokenHandler
+	// TokenVerifier is GIP or Zitadel, selected by main.go's config-driven
+	// wiring; RegisterAdminMobile treats either the same way.
+	TokenVerifier auth.TokenVerifier
+	// TenantMembershipChecker backs auth.TenantFromRequest (#524 phase 4):
+	// it resolves the caller's X-Acting-Tenant-Id header via an FGA
+	// membership check, for tokens (Zitadel) that carry no tenant_id
+	// claim at all. Nil-safe like TenantGate below — TenantFromRequest
+	// only touches it when the header is present, so a test or a GIP-only
+	// deployment that never sets the header is unaffected by leaving this
+	// nil.
+	TenantMembershipChecker auth.TenantMembershipChecker
+	// TenantMembershipLogger is passed to auth.TenantFromRequest for its
+	// (fail-closed, never-abort) FGA-error logging. May be nil.
+	TenantMembershipLogger *slog.Logger
+	PushTokenHandler       *PushTokenHandler
 	// PlatformSupportHandler bridges merchant→platform support chat to
 	// otto's platform tenant. Nil when otto isn't wired.
 	PlatformSupportHandler *PlatformSupportHandler
@@ -42,13 +57,30 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 	// explicit RequireTenantRelation are still protected.
 	requireTenant := auth.RequireTenantClaim()
 
-	// tenantMW mirrors routes.go's tenantMW: auth, tenant-claim guard, then
-	// TenantGate (#287, F1) so a suspended tenant is refused on every
+	// tenantMW mirrors routes.go's tenantMW: auth, then the FGA-backed
+	// acting-tenant resolver (#524 phase 4), then the tenant-claim guard,
+	// then TenantGate (#287, F1) so a suspended tenant is refused on every
 	// non-store-scoped mobile group too — this is the fifth admin route
 	// group the design's four-group count missed. TenantGate is a nil-safe
 	// method value (see Deps.TenantGate's doc), so appending it
 	// unconditionally is safe whether or not the gate is wired.
-	tenantMW := []gin.HandlerFunc{bearerAuth, requireTenant}
+	//
+	// auth.TenantFromRequest MUST sit here, between bearerAuth and
+	// requireTenant, and nowhere else:
+	//   - before bearerAuth there is no user_id yet for its FGA
+	//     membership check to use;
+	//   - after requireTenant, requireTenant has already 404'd any
+	//     request TenantFromRequest would otherwise have rescued by
+	//     resolving tenant_id from X-Acting-Tenant-Id.
+	// It is safe to mount unconditionally (even with a nil
+	// TenantMembershipChecker/logger): it never aborts, and it only ever
+	// touches the checker when the header is present — see its doc
+	// comment in internal/auth/tenant_from_request.go.
+	tenantMW := []gin.HandlerFunc{
+		bearerAuth,
+		auth.TenantFromRequest(deps.TenantMembershipChecker, deps.TenantMembershipLogger),
+		requireTenant,
+	}
 	if deps.TenantGate != nil {
 		tenantMW = append(tenantMW, deps.TenantGate)
 	}

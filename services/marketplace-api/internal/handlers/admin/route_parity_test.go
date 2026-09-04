@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
@@ -291,6 +292,12 @@ func buildParityRouters(t *testing.T) (web, mobile map[string]bool) {
 	// Interface field — reflection cannot invent an implementation, and a nil
 	// verifier makes RegisterAdminMobile return without registering anything.
 	mobileDeps.TokenVerifier = &auth.FakeVerifier{}
+	// TenantMembershipChecker/-Logger back auth.TenantFromRequest (#524
+	// phase 4) — an interface and a pointer, so reflection cannot invent
+	// them either. Registration only takes method values here (nothing is
+	// invoked), so authz.NewFakeClient with no grants is enough.
+	mobileDeps.TenantMembershipChecker = authz.NewFakeClient()
+	mobileDeps.TenantMembershipLogger = slog.Default()
 	assertNoNilDeps(t, reflect.ValueOf(mobileDeps), "MobileDeps")
 
 	mobileEngine := gin.New()

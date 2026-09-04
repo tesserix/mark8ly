@@ -310,6 +310,75 @@ func TestConfig_ShippingSecretStoreExplicitlyEmptyDefaultsToInline(t *testing.T)
 	}
 }
 
+// ZITADEL_ENABLED defaults to false, so an env that never mentions Zitadel
+// at all must load exactly as before — no issuer/audience required.
+func TestConfig_ZitadelDisabledByDefault(t *testing.T) {
+	baseEnv(t)
+	os.Unsetenv("ZITADEL_ENABLED")
+	os.Unsetenv("ZITADEL_ISSUER")
+	os.Unsetenv("ZITADEL_ADMIN_PROJECT_ID")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with Zitadel env unset = %v, want success", err)
+	}
+	if cfg.ZitadelEnabled {
+		t.Error("ZitadelEnabled = true, want false (must default off)")
+	}
+}
+
+// ZITADEL_ENABLED=true without an issuer must fail boot, not silently
+// leave mobile admin routes on GIP or half-mounted.
+func TestConfig_ZitadelEnabledRequiresIssuer(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ZITADEL_ENABLED", "true")
+	t.Setenv("ZITADEL_ISSUER", "")
+	t.Setenv("ZITADEL_ADMIN_PROJECT_ID", "389070376568619523")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with ZITADEL_ENABLED=true and no ZITADEL_ISSUER = nil, want error")
+	}
+}
+
+// ZITADEL_ENABLED=true without the audience (project id) must also fail
+// boot — NewZitadelVerifier treats the audience as required, and an
+// unpinned audience would let a storefront-shopper token pass as an
+// admin credential.
+func TestConfig_ZitadelEnabledRequiresAdminProjectID(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ZITADEL_ENABLED", "true")
+	t.Setenv("ZITADEL_ISSUER", "https://auth.tesserix.app")
+	t.Setenv("ZITADEL_ADMIN_PROJECT_ID", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with ZITADEL_ENABLED=true and no ZITADEL_ADMIN_PROJECT_ID = nil, want error")
+	}
+}
+
+// Fully configured Zitadel must load cleanly, in dev or otherwise —
+// ValidateZitadel is checked unconditionally, unlike the prod-only
+// secrets gate.
+func TestConfig_ZitadelEnabledSucceedsWhenFullyConfigured(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ZITADEL_ENABLED", "true")
+	t.Setenv("ZITADEL_ISSUER", "https://auth.tesserix.app")
+	t.Setenv("ZITADEL_ADMIN_PROJECT_ID", "389070376568619523")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with Zitadel fully configured = %v, want success", err)
+	}
+	if !cfg.ZitadelEnabled {
+		t.Error("ZitadelEnabled = false, want true")
+	}
+	if cfg.ZitadelIssuer != "https://auth.tesserix.app" {
+		t.Errorf("ZitadelIssuer = %q, want https://auth.tesserix.app", cfg.ZitadelIssuer)
+	}
+	if cfg.ZitadelAdminProjectID != "389070376568619523" {
+		t.Errorf("ZitadelAdminProjectID = %q, want 389070376568619523", cfg.ZitadelAdminProjectID)
+	}
+}
+
 // LoadCarrierSecretJob is the narrow loader for background jobs (e.g.
 // cmd/refund-sweep-cron) that only need to construct a carrier secret
 // Store — it must accept a minimal env with none of Config's unrelated

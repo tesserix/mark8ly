@@ -1,12 +1,16 @@
 package zitadellogin
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // fakeZitadelCustomer wires the same routes fakeZitadelHandler does
@@ -819,5 +823,229 @@ func TestCustomerEndpointsIgnoreAuthRequestID(t *testing.T) {
 	data, _ := body["data"].(map[string]any)
 	if data == nil || data["uid"] != "u1" {
 		t.Fatalf("body = %v, want data.uid = u1", body)
+	}
+}
+
+// recordingMailer is a CustomerVerificationMailer test double that counts
+// calls and captures what it was asked to send, so register tests can
+// assert "exactly one email, to this address, with this code" without a
+// real notify.Client or platform-api.
+type recordingMailer struct {
+	calls int
+	email string
+	code  string
+	ttl   time.Duration
+	err   error
+}
+
+func (m *recordingMailer) SendLoginCode(ctx context.Context, email, code string, ttl time.Duration) error {
+	m.calls++
+	m.email, m.code, m.ttl = email, code, ttl
+	return m.err
+}
+
+// captureLogs redirects the default slog logger to a buffer for the
+// duration of the test and restores the previous logger on cleanup. Used to
+// assert the verification code appears in NO log line — see
+// TestCustomerRegisterNeverLeaksTheEmailCode.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+// TestCustomerRegisterCreatesAndSendsExactlyOneEmail is the happy path: a
+// brand-new email creates a Zitadel user with a password and returnCode,
+// and the emailCode Zitadel hands back is delivered through exactly one
+// call to the verification mailer — never returned in the response.
+func TestCustomerRegisterCreatesAndSendsExactlyOneEmail(t *testing.T) {
+	var createCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			// FindUserByVerifiedEmail: no existing account.
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			createCalled.Store(true)
+			w.Write([]byte(`{"userId":"new-1","emailCode":"837291"}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"new.shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !createCalled.Load() {
+		t.Fatal("CreateHumanUserWithPassword (POST /v2/users/human) was never called")
+	}
+	if mailer.calls != 1 {
+		t.Fatalf("mailer.calls = %d, want exactly 1", mailer.calls)
+	}
+	if mailer.email != "new.shopper@example.com" {
+		t.Fatalf("mailer.email = %q", mailer.email)
+	}
+	if mailer.code != "837291" {
+		t.Fatalf("mailer.code = %q, want the emailCode Zitadel returned", mailer.code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data == nil || data["uid"] != "new-1" || data["email"] != "new.shopper@example.com" {
+		t.Fatalf("body = %v, want data.{uid: new-1, email: new.shopper@example.com}", body)
+	}
+	if strings.Contains(rec.Body.String(), "837291") {
+		t.Fatalf("response body leaks the verification code: %s", rec.Body.String())
+	}
+}
+
+// TestCustomerRegisterRefusesAnExistingVerifiedEmailAndCreatesNothing pins
+// the pre-create refusal: FindUserByVerifiedEmail finding a match must stop
+// this endpoint before it ever reaches CreateHumanUserWithPassword or the
+// mailer.
+func TestCustomerRegisterRefusesAnExistingVerifiedEmailAndCreatesNothing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"shopper@example.com","isVerified":true}}}]}`))
+		default:
+			t.Errorf("must not create or send anything for an already-verified email: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "email_taken" {
+		t.Fatalf("body = %v, want error: email_taken", body)
+	}
+	if mailer.calls != 0 {
+		t.Fatalf("mailer.calls = %d, want 0 — no account was created", mailer.calls)
+	}
+}
+
+// TestCustomerRegisterSurfacesAWeakPasswordDistinctly pins that a
+// too-short/weak password answers its own outcome, not a generic failure —
+// verified live in phase 5, details[0].id == DOMAIN-HuJf6.
+func TestCustomerRegisterSurfacesAWeakPasswordDistinctly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":3,"message":"Password is too short (DOMAIN-HuJf6)","details":[{"id":"DOMAIN-HuJf6"}]}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"x"}`)))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "weak_password" {
+		t.Fatalf("body = %v, want error: weak_password — distinct from a generic failure", body)
+	}
+	if mailer.calls != 0 {
+		t.Fatalf("mailer.calls = %d, want 0 — no account was created", mailer.calls)
+	}
+}
+
+// TestCustomerRegisterRejectsAnUnauthenticatedCallerBeforeReachingZitadel
+// pins the absolute constraint on this endpoint: a caller with no (or the
+// wrong) internal secret must never cause a Zitadel call, exactly like
+// login/totp/idp — see unreachableZitadel's doc.
+func TestCustomerRegisterRejectsAnUnauthenticatedCallerBeforeReachingZitadel(t *testing.T) {
+	c := unreachableZitadel(t)
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(c).WithInternalAuth(testInternalSecret).WithOrgID("org-1").WithNotify(mailer)
+
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+	if mailer.calls != 0 {
+		t.Fatalf("mailer.calls = %d, want 0 — an unauthenticated caller must never trigger an email send", mailer.calls)
+	}
+}
+
+// TestCustomerRegisterNeverLeaksTheEmailCode is the single most important
+// property of this endpoint: the emailCode Zitadel returns must appear in
+// no response body reaching the browser, and in no log line, across every
+// outcome this handler can reach it through.
+func TestCustomerRegisterNeverLeaksTheEmailCode(t *testing.T) {
+	const secretCode = "947261"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			w.Write([]byte(`{"userId":"new-1","emailCode":"` + secretCode + `"}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	logs := captureLogs(t)
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"new.shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if mailer.code != secretCode {
+		t.Fatalf("mailer never received the code — test setup is broken")
+	}
+	if strings.Contains(rec.Body.String(), secretCode) {
+		t.Fatalf("response body leaks the verification code: %s", rec.Body.String())
+	}
+	if strings.Contains(logs.String(), secretCode) {
+		t.Fatalf("log output leaks the verification code: %s", logs.String())
 	}
 }

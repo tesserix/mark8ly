@@ -477,3 +477,113 @@ func TestLinkIDPToUserRefusesAnUnverifiedEmailWithoutCallingZitadel(t *testing.T
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
 }
+
+func TestCreateHumanUserWithPasswordSendsReturnCodeDirectlyUnderEmail(t *testing.T) {
+	var gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v2/users/human" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.Write([]byte(`{"userId":"new-user-1","emailCode":"123456"}`))
+	})
+	userID, emailCode, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if userID != "new-user-1" {
+		t.Fatalf("userID = %q", userID)
+	}
+	if emailCode != "123456" {
+		t.Fatalf("emailCode = %q", emailCode)
+	}
+	// returnCode must sit DIRECTLY under email, never wrapped in a "medium"
+	// key — the phase 5 defect this package's doc warns about returns 200
+	// for the wrapped shape too, so only inspecting the request body proves
+	// this test would have caught it.
+	if !strings.Contains(gotBody, `"email":{"email":"shopper@example.com","returnCode":{}}`) {
+		t.Fatalf("request body = %q, want returnCode directly under email, unwrapped", gotBody)
+	}
+	if strings.Contains(gotBody, `"medium"`) {
+		t.Fatalf("request body = %q, must not wrap returnCode in a medium key", gotBody)
+	}
+	if !strings.Contains(gotBody, `"password":{"password":"test-password-not-real"}`) {
+		t.Fatalf("request body = %q, missing password", gotBody)
+	}
+}
+
+func TestCreateHumanUserWithPasswordFailsClosedWhenZitadelOmitsTheEmailCode(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		// A 200 with no emailCode: the wrapped-oneof defect shape (Zitadel
+		// mailed the account itself and gave this caller nothing to send).
+		w.Write([]byte(`{"userId":"new-user-1"}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable when emailCode is missing from a 200", err)
+	}
+}
+
+func TestCreateHumanUserWithPasswordMapsAWeakPasswordDistinctlyFromDuplicateEmail(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"code":3,"message":"Password is too short (DOMAIN-HuJf6)","details":[{"id":"DOMAIN-HuJf6"}]}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "x", "", "")
+	if !errors.Is(err, ErrWeakPassword) {
+		t.Fatalf("err = %v, want ErrWeakPassword", err)
+	}
+	if errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatal("must not also read as ErrEmailAlreadyExists")
+	}
+}
+
+func TestCreateHumanUserWithPasswordMapsADuplicateEmailDistinctlyFromWeakPassword(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"code":6,"message":"user already exists (COMMAND-oR9nS)","details":[{"id":"COMMAND-oR9nS"}]}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if !errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("err = %v, want ErrEmailAlreadyExists", err)
+	}
+	if errors.Is(err, ErrWeakPassword) {
+		t.Fatal("must not also read as ErrWeakPassword")
+	}
+}
+
+func TestCreateHumanUserWithPasswordDoesNotMapAnUnrelated400ToEitherSentinel(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"code":3,"message":"invalid profile (COMMAND-9zK2p)","details":[{"id":"COMMAND-9zK2p"}]}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if errors.Is(err, ErrWeakPassword) || errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("err = %v, must not mislabel an unrelated 400 (code 3, unrecognized id)", err)
+	}
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable as the generic fallback", err)
+	}
+}
+
+func TestCreateHumanUserWithPasswordFallsBackToNeutralNamesWhenAbsent(t *testing.T) {
+	var gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.Write([]byte(`{"userId":"new-user-1","emailCode":"123456"}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(gotBody, `"givenName":"shopper"`) {
+		t.Fatalf("request body = %q, want the email local part as the given name fallback", gotBody)
+	}
+	if strings.Contains(gotBody, "Member") {
+		t.Fatalf("request body = %q, must not use the merchant-flavoured \"Member\" placeholder", gotBody)
+	}
+}

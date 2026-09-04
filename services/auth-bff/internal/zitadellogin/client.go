@@ -55,7 +55,26 @@ var (
 	// outcome instead of a generic ErrBadCredentials/ErrUnavailable that
 	// reads as "wrong password" or "try again later" for what is neither.
 	ErrEmailAlreadyExists = errors.New("zitadellogin: email already exists")
+
+	// ErrWeakPassword is CreateHumanUserWithPassword's distinguished mapping
+	// for Zitadel's password-complexity rejection: details[0].id ==
+	// "DOMAIN-HuJf6" ("Password is too short"), verified live against the
+	// TESSERIX instance in phase 5 (see
+	// services/platform-api/internal/zitadeladmin/client.go's package doc).
+	// Kept separate from ErrEmailAlreadyExists because AddHumanUser can
+	// answer 400 for either reason on the SAME call, and a weak password
+	// must never read to a caller as "that email is taken" or as a generic
+	// failure — both are false, and false-negative password copy is
+	// exactly the defect this sentinel exists to prevent.
+	ErrWeakPassword = errors.New("zitadellogin: password does not meet policy")
 )
+
+// weakPasswordErrorID is the stable details[0].id Zitadel returns for a
+// too-short/too-weak password on AddHumanUser. See ErrWeakPassword's doc:
+// this id does NOT share a prefix with the "DOMAIN-"/"COMMAND-" ids seen
+// elsewhere in this package, so it must be matched exactly, never by
+// prefix.
+const weakPasswordErrorID = "DOMAIN-HuJf6"
 
 type Client struct {
 	baseURL string
@@ -125,6 +144,18 @@ type requestOptions struct {
 	// preserving the unconditional behaviour every other caller of
 	// withBadRequestError still wants.
 	badRequestCode int
+	// badRequestClassifier, when set, TAKES OVER the entire 400 mapping
+	// from badRequestErr/badRequestCode: it is called with the response
+	// body's grpc-style code and details[0].id and must return the error
+	// to use, defaulting unmatched cases to ErrUnavailable itself. This
+	// exists because a single call can need to distinguish more than one
+	// specific 400 case that do NOT share a grpc code — e.g.
+	// CreateHumanUserWithPassword's AddHumanUser 400s on both a
+	// too-short password (code 3, id DOMAIN-HuJf6) and a duplicate email
+	// (code 6, id COMMAND-oR9nS) — which withBadRequestErrorForCode's
+	// single (code, err) pair cannot express without conflating a weak
+	// password with any other unrelated code-3 rejection.
+	badRequestClassifier func(code int, id string) error
 	// logPath replaces path in every error string do() builds, WITHOUT
 	// affecting the actual HTTP request (which always uses the real path).
 	// Defaults to path itself. Use withLogPath when path carries a
@@ -160,6 +191,13 @@ func withBadRequestErrorForCode(code int, err error) requestOption {
 
 func withLogPath(label string) requestOption {
 	return func(ro *requestOptions) { ro.logPath = label }
+}
+
+// withBadRequestClassifier installs a full (code, id) -> error mapping for a
+// 400 response, overriding withBadRequestError/withBadRequestErrorForCode
+// for this call. See badRequestClassifier's field doc for why this exists.
+func withBadRequestClassifier(classify func(code int, id string) error) requestOption {
+	return func(ro *requestOptions) { ro.badRequestClassifier = classify }
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any, notFound error, opts ...requestOption) error {
@@ -199,7 +237,10 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any, not
 		switch {
 		case resp.StatusCode == http.StatusBadRequest:
 			badReqErr := ro.badRequestErr
-			if ro.badRequestCode != 0 && code != ro.badRequestCode {
+			switch {
+			case ro.badRequestClassifier != nil:
+				badReqErr = ro.badRequestClassifier(code, id)
+			case ro.badRequestCode != 0 && code != ro.badRequestCode:
 				// Narrowed mapping configured (withBadRequestErrorForCode)
 				// but this 400 is not the specific case it targets — refuse
 				// to guess, fall back to a generic failure rather than
@@ -483,6 +524,108 @@ func boundedProfileName(raw, fallback string) string {
 		return raw[:maxProfileNameLength]
 	}
 	return raw
+}
+
+// CreateHumanUserWithPassword registers a brand-new Zitadel human user with
+// a password credential, for the storefront customer sign-up path (spec
+// D-sign-up-verifies-email in
+// .superpowers/sdd/2026-09-04-zitadel-phase6a-customer-signup/progress.md).
+// Modelled on CreateHumanUserWithIDPLink: same guard-and-build shape, same
+// error-mapping convention, same withLogPath discipline — but there is no
+// identity to pin here (this is a first-party credential, not a federated
+// one), and the email is NOT marked verified up front. Instead the call
+// asks Zitadel for a return code (email.returnCode) that Zitadel hands back
+// as emailCode rather than mailing itself, exactly like the password-reset
+// flow in zitadeladmin's SendPasswordResetOobCode: this package's own mail
+// path (auth-bff's internal/notify) sends the code, which is how the
+// account's OWN branded verification email gets sent instead of Zitadel's
+// unbranded default.
+//
+// Callers MUST have already checked FindUserByVerifiedEmail before calling
+// this — see idpFinish's identical discipline for CreateHumanUserWithIDPLink
+// — and MUST NEVER log or return emailCode to the browser: it is a live
+// verification credential for the account just created.
+//
+// VERIFIED 2026-09-04 against the live TESSERIX Zitadel instance (see this
+// package's README and the sdd progress ledger above):
+//
+//	POST /v2/users/human
+//	{"profile":{...},"email":{"email":"...","returnCode":{}},"password":{"password":"..."}}
+//	  -> 200 {"userId":..., "details":..., "emailCode":"<6 chars>"}
+//
+// returnCode sits DIRECTLY under email — protojson flattens oneofs, there is
+// no wrapper key named after the oneof itself. Phase 5 shipped a critical
+// defect wrapping exactly this shape on password_reset (see
+// zitadeladmin's package doc): the wrapped form still returns 200 but
+// Zitadel treats it as "no return medium requested", mails the user itself,
+// and hands the caller nothing to send. Do not reintroduce that shape here.
+func (c *Client) CreateHumanUserWithPassword(ctx context.Context, email, password, givenName, familyName string) (userID, emailCode string, err error) {
+	if email == "" {
+		return "", "", fmt.Errorf("zitadellogin: refusing to create a user with no email: %w", ErrUnavailable)
+	}
+	if password == "" {
+		return "", "", fmt.Errorf("zitadellogin: refusing to create a user with no password: %w", ErrUnavailable)
+	}
+
+	// Same fallback shape as CreateHumanUserWithIDPLink: Zitadel requires
+	// non-empty given/family names on a human profile, and a real
+	// caller-supplied name reads better than a placeholder — see that
+	// function's doc for why the fallback is the email's local part /
+	// "User", never a merchant-flavoured word like "Member".
+	localPart := email
+	if i := strings.IndexByte(localPart, '@'); i > 0 {
+		localPart = localPart[:i]
+	}
+	givenName = boundedProfileName(givenName, localPart)
+	familyName = boundedProfileName(familyName, "User")
+
+	body := map[string]any{
+		"profile": map[string]any{
+			"givenName":  givenName,
+			"familyName": familyName,
+		},
+		"email": map[string]any{
+			"email":      email,
+			"returnCode": map[string]any{},
+		},
+		"password": map[string]any{
+			"password": password,
+		},
+	}
+	var wire struct {
+		UserID    string `json:"userId"`
+		EmailCode string `json:"emailCode"`
+	}
+	// classify distinguishes the two 400 cases AddHumanUser can answer here,
+	// which do NOT share a grpc code: a too-short password (code 3, id
+	// weakPasswordErrorID) and a duplicate email (code 6, ALREADY_EXISTS).
+	// Anything else falls back to ErrUnavailable rather than guessing — see
+	// badRequestClassifier's doc.
+	classify := func(code int, id string) error {
+		switch {
+		case id == weakPasswordErrorID:
+			return ErrWeakPassword
+		case code == 6:
+			return ErrEmailAlreadyExists
+		default:
+			return ErrUnavailable
+		}
+	}
+	if err := c.do(ctx, http.MethodPost, "/v2/users/human", body, &wire, ErrUnavailable, withBadRequestClassifier(classify)); err != nil {
+		return "", "", err
+	}
+	if wire.UserID == "" {
+		return "", "", fmt.Errorf("zitadellogin: create human user with password: 200 without a userId: %w", ErrUnavailable)
+	}
+	if wire.EmailCode == "" {
+		// A 200 with no emailCode means returnCode was not honoured as a
+		// return medium (see the wrapped-oneof defect this doc warns
+		// about) — Zitadel has already mailed the account itself with a
+		// code this package can never deliver through its own branded
+		// path. Refuse rather than report success with nothing to send.
+		return "", "", fmt.Errorf("zitadellogin: create human user with password: 200 without an emailCode: %w", ErrUnavailable)
+	}
+	return wire.UserID, wire.EmailCode, nil
 }
 
 // LinkIDPToUser attaches the given federated identity to an EXISTING

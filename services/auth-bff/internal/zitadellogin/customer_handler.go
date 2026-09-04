@@ -44,9 +44,31 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// CustomerVerificationMailer is the minimal notify surface register needs:
+// deliver a code to an email address, stating an expiry. notify.Client
+// satisfies this via its existing SendLoginCode — register reuses that
+// method rather than adding a second send path to internal/notify, per the
+// phase 6a task-1 brief ("reuse whatever it already does for transactional
+// mail; do not invent a delivery path"). The subject line SendLoginCode
+// renders is generic enough ("<code> is your Mark8ly sign-in code") to
+// carry a sign-up verification code too; refining copy per-purpose is a
+// notify/platform-api concern, not this package's.
+type CustomerVerificationMailer interface {
+	SendLoginCode(ctx context.Context, email, code string, ttl time.Duration) error
+}
+
+// customerVerificationCodeTTL is the expiry register's confirmation email
+// states for the emailCode CreateHumanUserWithPassword returns. Zitadel's
+// v2 API does not expose this call's own code lifetime, so this is a
+// conservative, documented assumption, not a value read from Zitadel: long
+// enough that a shopper who steps away mid-signup can still return and
+// finish without the code having gone stale.
+const customerVerificationCodeTTL = 1 * time.Hour
 
 // CustomerHandler is the HTTP layer over Client for storefront customers. It
 // shares Client and the sufficiency decision with Handler, but never touches
@@ -54,6 +76,14 @@ import (
 // comment above.
 type CustomerHandler struct {
 	c *Client
+
+	// verificationMailer delivers the emailCode CreateHumanUserWithPassword
+	// captures to the shopper as auth-bff's own branded email — NEVER
+	// through Zitadel's own default mail path. nil means register cannot
+	// complete a sign-up (see register's nil check): a created-but-
+	// unreachable account is worse than refusing the request outright. Set
+	// via WithNotify.
+	verificationMailer CustomerVerificationMailer
 
 	// hostedLoginBaseURL mirrors Handler.hostedLoginBaseURL: the Zitadel
 	// instance's own login UI, used ONLY as the OutcomeHandoff target for
@@ -133,6 +163,14 @@ func (h *CustomerHandler) WithOrgID(id string) *CustomerHandler {
 	return h
 }
 
+// WithNotify sets the mailer register uses to deliver the verification
+// code CreateHumanUserWithPassword returns. See verificationMailer's field
+// doc and CustomerVerificationMailer's doc.
+func (h *CustomerHandler) WithNotify(m CustomerVerificationMailer) *CustomerHandler {
+	h.verificationMailer = m
+	return h
+}
+
 // Register mounts the customer login routes onto the given gin.RouterGroup.
 // Like Handler.Register, the handlers are plain net/http funcs; gin is only
 // used to route, matching this package's existing style.
@@ -148,6 +186,9 @@ func (h *CustomerHandler) Register(r *gin.RouterGroup) {
 	})
 	r.POST("/customer/idp/finish", func(c *gin.Context) {
 		h.idpFinish(c.Writer, c.Request)
+	})
+	r.POST("/customer/register", func(c *gin.Context) {
+		h.register(c.Writer, c.Request)
 	})
 }
 
@@ -188,6 +229,18 @@ type customerIDPFinishRequest struct {
 	// browser followed, and the authoritative identity comes only from
 	// RetrieveIDPIntent(IntentID, IntentToken).
 	User string `json:"user"`
+}
+
+// customerRegisterRequest is the storefront's email/password sign-up
+// request. GivenName/FamilyName are optional — CreateHumanUserWithPassword
+// falls back to the email's local part / "User" when absent, exactly like
+// CreateHumanUserWithIDPLink does for a federated identity with no claimed
+// name.
+type customerRegisterRequest struct {
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	GivenName  string `json:"given_name"`
+	FamilyName string `json:"family_name"`
 }
 
 // login reads {login_name, password}, creates a Zitadel password session,
@@ -470,6 +523,130 @@ func (h *CustomerHandler) idpFinish(w http.ResponseWriter, r *http.Request) {
 			"email": email,
 		},
 	})
+}
+
+// register creates a brand-new storefront customer account with a password
+// credential and emails the shopper a verification code. Unlike idpFinish's
+// self-registration, this account starts UNVERIFIED — Zitadel's
+// email.returnCode asks it to hand the code back to us instead of mailing
+// its own unbranded notice, and this endpoint sends that code through
+// auth-bff's own notify path (see CustomerVerificationMailer's doc) so
+// branding and delivery stay on our infrastructure the same way password
+// reset already does. Task 2 (a sibling endpoint, not implemented here)
+// takes the code back and calls Zitadel's email/verify to flip the account
+// verified — see the sdd progress ledger's "sign-up VERIFIES the email"
+// ruling for why an unverified password account must never be treated as
+// though it were.
+//
+// This endpoint NEVER returns emailCode in any response and NEVER logs it —
+// see CreateHumanUserWithPassword's doc: it is a live credential for the
+// account this call just created.
+func (h *CustomerHandler) register(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// First, before the body is even read: an unauthenticated caller must
+	// never reach FindUserByVerifiedEmail or CreateHumanUserWithPassword —
+	// same discipline as every other endpoint in this file.
+	if !internalAuthorized(r, h.internalAuthSecret) {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req customerRegisterRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+	if req.Email == "" || req.Password == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+
+	// Refuse up front if a VERIFIED account already holds this email — see
+	// FindUserByVerifiedEmail's doc: org-scoped, refuses ambiguity rather
+	// than picking one. Same email_taken outcome idpFinish's unlinked-create
+	// branch uses, so the storefront renders one "you already have an
+	// account" copy for both sign-up paths. Nothing is created below when
+	// this branch answers.
+	existingUserID, err := h.c.FindUserByVerifiedEmail(ctx, h.orgID, req.Email)
+	if err != nil {
+		if errors.Is(err, ErrAmbiguousEmailMatch) {
+			slog.WarnContext(ctx, "zitadellogin(customer): register rejected: more than one existing account matched the email")
+			writeJSON(w, http.StatusConflict, map[string]any{"error": "email_ambiguous"})
+			return
+		}
+		slog.ErrorContext(ctx, "zitadellogin(customer): register: could not check for an existing account by email", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+		return
+	}
+	if existingUserID != "" {
+		slog.WarnContext(ctx, "zitadellogin(customer): register rejected: email already verified on an existing account")
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "email_taken"})
+		return
+	}
+
+	userID, emailCode, err := h.c.CreateHumanUserWithPassword(ctx, req.Email, req.Password, req.GivenName, req.FamilyName)
+	if err != nil {
+		h.respondRegisterCreateError(ctx, w, err)
+		return
+	}
+
+	// Deliver the code through auth-bff's own transactional mail path. A
+	// nil mailer or a send failure both leave the shopper holding a fresh
+	// account with no way to receive their code — refuse rather than
+	// report success, mirroring notify's own "a failed OTP send must fail
+	// the request" rule (see notify's package doc).
+	if h.verificationMailer == nil {
+		slog.ErrorContext(ctx, "zitadellogin(customer): register: no verification mailer configured (see WithNotify)", "user_id", userID)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "verification_email_failed"})
+		return
+	}
+	if err := h.verificationMailer.SendLoginCode(ctx, req.Email, emailCode, customerVerificationCodeTTL); err != nil {
+		// Deliberately not formatting err (or anything else) alongside the
+		// code here — notify's own errors never embed it, but this line
+		// must stay that way even if that ever changed.
+		slog.ErrorContext(ctx, "zitadellogin(customer): register: could not send the verification email", "user_id", userID)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "verification_email_failed"})
+		return
+	}
+
+	slog.InfoContext(ctx, "zitadellogin(customer): register created a new customer account and sent a verification email", "user_id", userID)
+	// uid is the handle the storefront holds onto for the follow-up verify
+	// call (task 2) — emailCode never appears here.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"uid":   userID,
+			"email": req.Email,
+		},
+	})
+}
+
+// respondRegisterCreateError maps CreateHumanUserWithPassword's errors to
+// distinct, truthful outcomes — never a generic failure that reads as
+// "something went wrong" for a case that has a specific, actionable cause.
+func (h *CustomerHandler) respondRegisterCreateError(ctx context.Context, w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrWeakPassword):
+		slog.WarnContext(ctx, "zitadellogin(customer): register rejected: password does not meet policy")
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "weak_password"})
+	case errors.Is(err, ErrEmailAlreadyExists):
+		// The pre-create FindUserByVerifiedEmail search found no VERIFIED
+		// match (that is why this create was attempted) yet Zitadel still
+		// 400s here — a genuine race against a concurrent request, or an
+		// unverified account already sitting on this email (an abandoned
+		// signup, an unverified invite, or an attacker who typed this
+		// address). Either way this MUST read as the same email_taken
+		// outcome the pre-create check above answers, not a new one — see
+		// idpFinish's identical case for the full reasoning.
+		slog.WarnContext(ctx, "zitadellogin(customer): register rejected: email already claimed by another account (verified-match search found none)")
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "email_taken"})
+	case errors.Is(err, ErrUnavailable):
+		slog.ErrorContext(ctx, "zitadellogin(customer): zitadel unavailable creating customer account", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+	default:
+		slog.ErrorContext(ctx, "zitadellogin(customer): unexpected error creating customer account", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+	}
 }
 
 // respondOutcome is shared by login and totp: both end at DecideSufficiency

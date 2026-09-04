@@ -180,6 +180,18 @@ func (c *Config) ValidateZitadel() error {
 	if c.ZitadelOrgID == "" {
 		missing = append(missing, "ZITADEL_ORG_ID")
 	}
+	// PLATFORM_API_URL is what internal/notify posts to, and notify is the
+	// only path that can deliver the sign-up verification code Zitadel
+	// hands back from CreateHumanUserWithPassword. cmd/server/main.go
+	// builds no notify client at all when it is empty, so CustomerHandler
+	// is wired with a nil mailer — and register then creates a user,
+	// immediately rolls it back, and answers 503 for EVERY sign-up
+	// attempt. That is customer sign-up 100% broken on a process that
+	// otherwise boots and reports healthy, which is strictly worse than
+	// refusing to start.
+	if c.PlatformAPIURL == "" {
+		missing = append(missing, "PLATFORM_API_URL (customer sign-up cannot deliver its verification email without it)")
+	}
 	if len(missing) == 0 {
 		return nil
 	}

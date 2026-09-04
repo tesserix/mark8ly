@@ -1225,6 +1225,10 @@ func TestCustomerRegisterDeletesAnUnverifiedAccountAndCreatesAFreshOne(t *testin
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
 			w.Write([]byte(`{"result":[{"userId":"stale-unverified-1","human":{"email":{"email":"shopper@example.com","isVerified":false}}}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/users/stale-unverified-1":
+			// The authoritative pre-delete re-check (review Finding 2):
+			// still unverified, so the delete below is allowed to run.
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"shopper@example.com","isVerified":false}}}}`))
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v2/users/"):
 			deleteCalledPath = r.URL.Path
 			w.WriteHeader(http.StatusOK)
@@ -1355,6 +1359,8 @@ func TestCustomerRegisterSurfacesUnavailableWhenClearingAnUnverifiedAccountFails
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
 			w.Write([]byte(`{"result":[{"userId":"stale-unverified-1","human":{"email":{"email":"shopper@example.com","isVerified":false}}}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/users/stale-unverified-1":
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"shopper@example.com","isVerified":false}}}}`))
 		case r.Method == http.MethodDelete && r.URL.Path == "/v2/users/stale-unverified-1":
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(`{"code":13,"message":"internal"}`))
@@ -1653,4 +1659,241 @@ func TestCustomerVerifyEmailNeverLogsTheCode(t *testing.T) {
 			t.Fatalf("log output leaks the verification code: %s", logs.String())
 		}
 	})
+}
+
+// ── Review Finding 2: the delete must not trust the list decode ──────────
+//
+// FindUserByEmail and FindUserByVerifiedEmail decode the same
+// list-endpoint wire struct, but their failure modes are opposite: a wrong
+// or renamed human.email.isVerified path degrades FindUserByVerifiedEmail
+// to "no match" (harmless) and FindUserByEmail to verified=false — which
+// used to mean "delete a real account". The three tests below pin the
+// authoritative UserEmailVerified re-check that now stands between the
+// lookup and DeleteUser, including the race it closes and its fail-closed
+// behaviour on an error.
+
+// TestCustomerRegisterRefusesToDeleteWhenTheAuthoritativeReadErrors is the
+// fail-closed case, and the one worth writing carefully: an error from the
+// re-check must produce NO delete at all. The fake itself is the tripwire —
+// a DELETE reaching it fails the test on the spot, rather than the test
+// inferring "no delete happened" from a status code the handler could have
+// produced for some other reason.
+func TestCustomerRegisterRefusesToDeleteWhenTheAuthoritativeReadErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			// The list decode says "unverified" — the exact signal that,
+			// unchecked, authorises the destructive branch.
+			w.Write([]byte(`{"result":[{"userId":"maybe-real-1","human":{"email":{"email":"shopper@example.com","isVerified":false}}}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/users/maybe-real-1":
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"code":13,"message":"internal"}`))
+		case r.Method == http.MethodDelete:
+			t.Errorf("DELETE %s: an error from the authoritative verified-check must NEVER fall through to a delete", r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			t.Errorf("created an account after failing to confirm the existing one's state")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "zitadel_unavailable" {
+		t.Fatalf("body = %v, want error: zitadel_unavailable", body)
+	}
+	if mailer.calls != 0 {
+		t.Fatalf("mailer.calls = %d, want 0", mailer.calls)
+	}
+}
+
+// TestCustomerRegisterRefusesToDeleteWhenTheAuthoritativeReadDisagrees is
+// the decode-drift case: the list says unverified, the single-user read
+// (whose shape IS live-verified) says verified. The authoritative read
+// wins, nothing is deleted, and the shopper gets the ordinary email_taken
+// answer.
+func TestCustomerRegisterRefusesToDeleteWhenTheAuthoritativeReadDisagrees(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"real-customer-1","human":{"email":{"email":"shopper@example.com","isVerified":false}}}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/users/real-customer-1":
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"shopper@example.com","isVerified":true}}}}`))
+		case r.Method == http.MethodDelete:
+			t.Errorf("DELETE %s: deleted an account the authoritative read reports as VERIFIED — this is the real-account-destruction case", r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			t.Errorf("created an account over a verified one")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "email_taken" {
+		t.Fatalf("body = %v, want error: email_taken", body)
+	}
+	if mailer.calls != 0 {
+		t.Fatalf("mailer.calls = %d, want 0", mailer.calls)
+	}
+}
+
+// TestCustomerRegisterLosesTheLookupToDeleteRaceSafely walks the concrete
+// race: A registers and holds a code; B registers the same address; between
+// B's lookup and B's delete, A submits their code and the account becomes
+// verified. The re-check is the only thing that can see that, so this fake
+// changes its answer between the two reads exactly as Zitadel would.
+func TestCustomerRegisterLosesTheLookupToDeleteRaceSafely(t *testing.T) {
+	var verifiedInTheGap atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			// B's lookup: still unverified at this instant.
+			w.Write([]byte(`{"result":[{"userId":"a-account-1","human":{"email":{"email":"shopper@example.com","isVerified":false}}}]}`))
+			// ...and now A submits their code.
+			verifiedInTheGap.Store(true)
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/users/a-account-1":
+			if verifiedInTheGap.Load() {
+				w.Write([]byte(`{"user":{"human":{"email":{"email":"shopper@example.com","isVerified":true}}}}`))
+				return
+			}
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"shopper@example.com","isVerified":false}}}}`))
+		case r.Method == http.MethodDelete:
+			t.Errorf("DELETE %s: deleted A's account, which verified between B's lookup and B's delete", r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+	}
+	if mailer.calls != 0 {
+		t.Fatalf("mailer.calls = %d, want 0", mailer.calls)
+	}
+}
+
+// ── Review Finding 3: a rejectable password must not cost the pending account ──
+
+// TestCustomerRegisterRejectsAnImpossiblePasswordBeforeTouchingAnyAccount
+// pins the ordering fix. ErrWeakPassword comes from
+// CreateHumanUserWithPassword, which runs AFTER the unverified-account
+// delete — so a retry with a password Zitadel will refuse used to destroy
+// the first attempt's pending account and create nothing: address freed,
+// first code dead, request 400s. The storefront's client-side check
+// (length < 6) is weaker than Zitadel's policy, so that retry is ordinary.
+// The fake fails the test if register reaches Zitadel at all.
+func TestCustomerRegisterRejectsAnImpossiblePasswordBeforeTouchingAnyAccount(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("register reached Zitadel (%s %s) with a password that cannot pass policy — the pre-check must refuse before the lookup and the delete", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	// 7 characters: accepted by the storefront's own length < 6 check,
+	// below the documented minimum here.
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"short7!"}`)))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// Same error code CreateHumanUserWithPassword's ErrWeakPassword maps
+	// to: the storefront must not have to distinguish the pre-check from
+	// the authoritative answer.
+	if body["error"] != "weak_password" {
+		t.Fatalf("body = %v, want error: weak_password", body)
+	}
+	if mailer.calls != 0 {
+		t.Fatalf("mailer.calls = %d, want 0", mailer.calls)
+	}
+}
+
+// TestCustomerRegisterPreCheckDoesNotReplaceZitadelsPolicyCheck: the
+// pre-check is a floor, not the policy. A password long enough to clear it
+// but still refused by Zitadel must reach Zitadel and come back as the same
+// weak_password answer — the existing ErrWeakPassword handling stays
+// authoritative.
+func TestCustomerRegisterPreCheckDoesNotReplaceZitadelsPolicyCheck(t *testing.T) {
+	var createCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			createCalled.Store(true)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":3,"message":"invalid","details":[{"id":"DOMAIN-HuJf6"}]}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"test-password-long-but-refused"}`)))
+
+	if !createCalled.Load() {
+		t.Fatal("the pre-check swallowed a password Zitadel should have judged; it must not become the policy")
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "weak_password" {
+		t.Fatalf("body = %v, want error: weak_password", body)
+	}
 }

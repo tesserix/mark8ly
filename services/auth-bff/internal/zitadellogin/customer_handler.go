@@ -70,6 +70,25 @@ type CustomerVerificationMailer interface {
 // finish without the code having gone stale.
 const customerVerificationCodeTTL = 1 * time.Hour
 
+// minRegisterPasswordLength is register's server-side password pre-check.
+//
+// It is NOT the policy. Zitadel's password complexity policy is the
+// authoritative check and CreateHumanUserWithPassword's ErrWeakPassword is
+// its answer; this bound only exists so a password that CANNOT pass is
+// refused before register touches any account (see register's use of it for
+// why the ordering is load-bearing).
+//
+// 8 is Zitadel's own default minimum length. Nothing in this repository
+// reads or configures the org's complexity policy — there is no terraform,
+// no admin call, no fixture setting it — so this is a documented
+// assumption, not a value read from Zitadel. It is deliberately the
+// weakest safe bound: a stricter one here would reject passwords Zitadel
+// would have accepted, which this pre-check has no business doing. If the
+// org policy is ever raised, Zitadel still catches the difference and
+// answers weak_password exactly as it does today; only the free retry is
+// lost, never correctness.
+const minRegisterPasswordLength = 8
+
 // CustomerHandler is the HTTP layer over Client for storefront customers. It
 // shares Client and the sufficiency decision with Handler, but never touches
 // CompleteFunc, session cookies, or internal/autologin — see the file
@@ -670,6 +689,30 @@ func (h *CustomerHandler) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject a password that cannot possibly succeed BEFORE the lookup,
+	// and therefore before the delete below. Ordering is the whole point:
+	// CreateHumanUserWithPassword is what answers ErrWeakPassword, and it
+	// runs AFTER the unverified-account delete — so without this check a
+	// shopper who retries with a Zitadel-rejected password loses the
+	// pending account their first attempt created (its code goes dead, the
+	// address is freed) and gets nothing back but a 400. That retry is
+	// ordinary, not exotic: the storefront's own client-side check is
+	// weaker than Zitadel's policy, so a password it accepts can still be
+	// refused here.
+	//
+	// This is a PRE-CHECK, not a replacement for Zitadel's authoritative
+	// policy check — respondRegisterCreateError's ErrWeakPassword case
+	// below stays exactly as it was and remains the real answer. Nothing
+	// in this repo reads the org's configured complexity policy, so the
+	// bound is deliberately the weakest one that is safe to assume
+	// (Zitadel's own default minimum length); anything stricter risks
+	// refusing a password Zitadel would have accepted.
+	if len(req.Password) < minRegisterPasswordLength {
+		slog.WarnContext(ctx, "zitadellogin(customer): register rejected: password shorter than the minimum, refused before touching any account")
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "weak_password"})
+		return
+	}
+
 	// Look up any existing account for this email, verified or not — see
 	// FindUserByEmail's doc: org-scoped, refuses ambiguity rather than
 	// picking one, exactly like FindUserByVerifiedEmail. What differs from
@@ -706,6 +749,53 @@ func (h *CustomerHandler) register(w http.ResponseWriter, r *http.Request) {
 		// account had existed. A delete failure must surface as
 		// unavailable, never fall through to create on top of an account
 		// that may or may not actually be gone.
+		//
+		// But NOT on the strength of the lookup's verified flag alone.
+		// FindUserByEmail and FindUserByVerifiedEmail decode the same
+		// list-endpoint wire struct, and their failure modes are opposite:
+		// if the human.email.isVerified path is ever wrong or renamed,
+		// FindUserByVerifiedEmail degrades to "no match" (harmless — the
+		// create below then answers email_taken), while FindUserByEmail
+		// degrades to verified=false and this branch DELETES A REAL
+		// ACCOUNT. FindUserByEmail's own doc concedes the org-scoped,
+		// IGNORE_CASE search shape has never been independently
+		// re-verified live. The list decode must not be the only thing
+		// standing between a shopper and someone else's account.
+		//
+		// The re-check also closes a genuine race the lookup cannot see:
+		// A registers and holds a code, B registers the same address, and
+		// between B's lookup and B's delete A submits their code. Without
+		// this read, B deletes an account that became verified in the gap.
+		//
+		// So confirm against the authoritative single-user read — the same
+		// UserEmailVerified the login gate above uses, whose shape IS
+		// live-verified — and fail CLOSED: verified means refuse, and an
+		// ERROR means refuse too. An error must never fall through to a
+		// delete.
+		//
+		// Invariant this branch is the first in the estate to break:
+		// services/platform-api/internal/zitadeladmin/client.go (see
+		// resolveUserIDByEmail's doc, ~line 409) records D7's rule that
+		// every user this system creates has email.isVerified set
+		// deliberately — signup and admin-invite alike. register is the
+		// first creator of PERSISTENTLY unverified users in this org, so
+		// today the only unverified accounts here are our own abandoned
+		// signups and this delete can only ever hit one of those. If
+		// platform-api's invite path ever starts creating unverified
+		// invited merchants in the same org, a shopper registering that
+		// address would silently delete a pending invite. Whoever makes
+		// that change must revisit this branch.
+		stillVerified, err := h.c.UserEmailVerified(ctx, existingUserID)
+		if err != nil {
+			slog.ErrorContext(ctx, "zitadellogin(customer): register: could not confirm the blocking account is still unverified; refusing to delete", "err", err, "user_id", existingUserID)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+			return
+		}
+		if stillVerified {
+			slog.WarnContext(ctx, "zitadellogin(customer): register rejected: the blocking account is verified per the authoritative read; nothing deleted", "user_id", existingUserID)
+			writeJSON(w, http.StatusConflict, map[string]any{"error": "email_taken"})
+			return
+		}
 		if err := h.c.DeleteUser(ctx, existingUserID); err != nil {
 			slog.ErrorContext(ctx, "zitadellogin(customer): register: could not clear an unverified account blocking this email", "err", err)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})

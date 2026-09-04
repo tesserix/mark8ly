@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/mark8ly/marketplace-api/internal/billing/consolecatalog"
 	"github.com/mark8ly/marketplace-api/pkg/config"
 )
@@ -76,6 +78,18 @@ func startCatalogParityRun(cfg *config.Config, log *slog.Logger) {
 	if interval <= 0 {
 		interval = 15 * time.Minute
 	}
+
+	// Registered here rather than beside campaignbudget.MustRegisterMetrics in
+	// main.go, and specifically AFTER the credentials gate above. A registered
+	// gauge publishes zero at once, and a "last successful comparison" of zero
+	// reads as 1970 — so registering on a pod where the parallel run is
+	// switched off would keep the staleness alert firing against a deployment
+	// doing exactly what it is configured to do. Absent series say "not
+	// enabled here"; present-and-stale says "enabled and not working".
+	//
+	// Safe to call once: this function has a single call site, in main.go's
+	// admin-mode block.
+	consolecatalog.MustRegisterMetrics(prometheus.DefaultRegisterer)
 
 	monitor := consolecatalog.NewMonitor(consolecatalog.NewClient(cc, log), interval, log)
 	log.Info("consolecatalog: parallel run enabled",

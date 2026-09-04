@@ -79,6 +79,11 @@ func (m *Monitor) Check(ctx context.Context) Result {
 	res := Result{}
 	if err != nil {
 		res.Err = err
+		// Counted, but ParityDifferences and LastSuccessTimestamp are left
+		// untouched: Result.Compared's whole reason for existing is that a
+		// failed read must not look like agreement, and the metrics have to
+		// carry that same distinction or they re-create the defect.
+		CheckFailuresTotal.Inc()
 		m.warn("consolecatalog: could not read the console catalog; comparison skipped", "error", err)
 	} else {
 		diffs := Diff(catalog, pricing.AllDescriptors())
@@ -90,6 +95,11 @@ func (m *Monitor) Check(ctx context.Context) Result {
 		} else {
 			res.Sample = diffs
 		}
+		// Set the count first and stamp the time second, so a scrape landing
+		// between the two reads a stale timestamp beside a fresh count rather
+		// than a fresh timestamp vouching for a count not yet written.
+		ParityDifferences.Set(float64(res.Differences))
+		LastSuccessTimestamp.SetToCurrentTime()
 		m.report(res)
 	}
 

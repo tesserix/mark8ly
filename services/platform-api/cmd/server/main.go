@@ -230,16 +230,20 @@ func main() {
 	// secret disables it (dev convenience).
 	auditClient := audit.New(cfg.MarketplaceAPIURL, cfg.AuditIngestSecret, log)
 
-	// ─── Password reset (Phase: GIP-aware branded flow) ────────────────
-	// Wires the /internal/auth/password-reset/* endpoints used by the
-	// admin BFF. Requires GIP_PROJECT_ID, GIP_TENANT_ID, and
-	// GIP_WEB_API_KEY. If any are missing the handler is skipped —
-	// dev machines without real GIP credentials fall through to GIP's
-	// default behaviour via auth-bff.
-	var authHandler *auth.Handler
+	// ─── GIP admin client (EnsureTenantClaim) ───────────────────────────
 	// Hoisted: the outbox drainer needs this client to stamp the owner's
 	// tenant_id GIP custom claim after onboarding completes, and the
 	// invitation service needs it to stamp the same claim on accept.
+	//
+	// Its lifetime is governed ENTIRELY by GIP_PROJECT_ID/GIP_TENANT_ID/a
+	// GIP API key being present — NEVER by cfg.ZitadelEnabled. D7 drops
+	// this claim only once ZITADEL_ENABLED is true on marketplace-api too
+	// (a separate service, a separate cutover); until then a Zitadel
+	// deployment of platform-api still needs this client alive for
+	// EnsureTenantClaim, or newly-invited merchants get a permanent "No
+	// store yet" on mobile. See selectAccountProviders' doc below for the
+	// two-concerns-two-lifetimes split this implies — do NOT gate this
+	// construction on the Zitadel flag.
 	var gipAdmin *gipadmin.AdminClient
 	// GIPKey prefers the unrestricted server key and falls back to the
 	// public web key. The web key is referrer-restricted, so admin calls
@@ -253,20 +257,56 @@ func main() {
 		})
 		if adminErr != nil {
 			log.Error("gipadmin: init", "err", adminErr)
-			log.Warn("auth: password reset disabled — gipadmin init failed")
+			log.Warn("gip: tenant-claim client disabled — gipadmin init failed")
 		} else {
 			gipAdmin = admin
-			authSvc := auth.NewService(auth.Config{
-				Admin:             admin,
-				Sender:            sender,
-				Loader:            templateLoader,
-				EmailFrom:         cfg.EmailFrom,
-				SupportEmail:      cfg.EmailFrom,
-				AdminResetBaseURL: cfg.AdminResetBaseURL,
-				Logger:            log,
-			})
-			authHandler = auth.NewHandler(authSvc, log)
-			log.Info("auth: password reset enabled",
+		}
+	} else {
+		log.Warn("gip: tenant-claim client disabled — missing GIP_PROJECT_ID/GIP_TENANT_ID and GIP_SERVER_API_KEY or GIP_WEB_API_KEY")
+	}
+	// A Zitadel cutover must not silently drop EnsureTenantClaim's GIP
+	// dependency — see requireGIPForTenantClaim's doc (provider_wiring.go)
+	// for why "we enabled Zitadel, so GIP_* is dead weight" is exactly the
+	// deploy-time mistake this guards against. Panics, matching every
+	// other startup failure in this file.
+	if err := requireGIPForTenantClaim(cfg, gipAdmin); err != nil {
+		log.Error("startup: gip required for tenant claim", "err", err)
+		panic(err)
+	}
+
+	// ─── Password-reset / account-delete provider (#524 phase 5) ───────
+	// Wires the /internal/auth/password-reset/* endpoints used by the
+	// admin BFF, and the deleter behind account.Service. Selected by
+	// ZITADEL_ENABLED, defaulting to GIP — see selectAccountProviders'
+	// doc (provider_wiring.go) for the full reasoning, including why
+	// gipAdmin above is a SEPARATE concern from what this selects.
+	//
+	// A misconfigured-but-enabled Zitadel must fail startup loudly rather
+	// than silently keep serving merchants against GIP; panic here mirrors
+	// every other startup failure in this file.
+	resetProvider, accountDeleter, providerErr := selectAccountProviders(cfg, gipAdmin)
+	if providerErr != nil {
+		log.Error("account provider selection", "err", providerErr)
+		panic(providerErr)
+	}
+
+	var authHandler *auth.Handler
+	if resetProvider != nil {
+		authSvc := auth.NewService(auth.Config{
+			Admin:             resetProvider,
+			Sender:            sender,
+			Loader:            templateLoader,
+			EmailFrom:         cfg.EmailFrom,
+			SupportEmail:      cfg.EmailFrom,
+			AdminResetBaseURL: cfg.AdminResetBaseURL,
+			Logger:            log,
+		})
+		authHandler = auth.NewHandler(authSvc, log)
+		if cfg.ZitadelEnabled {
+			log.Info("auth: password reset enabled (zitadel)",
+				"reset_url", cfg.AdminResetBaseURL)
+		} else {
+			log.Info("auth: password reset enabled (gip)",
 				"project_id", cfg.GIPProjectID,
 				"tenant_id", cfg.GIPTenantID,
 				"reset_url", cfg.AdminResetBaseURL)
@@ -275,12 +315,14 @@ func main() {
 		log.Warn("auth: password reset disabled — missing GIP_PROJECT_ID/GIP_TENANT_ID and GIP_SERVER_API_KEY or GIP_WEB_API_KEY")
 	}
 
-	// Assign through a typed interface variable only when non-nil, so the
-	// invitation service's nil check isn't defeated by a typed-nil pointer.
-	var inviteClaims invitation.TenantClaimSetter
-	if gipAdmin != nil {
-		inviteClaims = gipAdmin
-	}
+	// newTenantClaimSetter is called UNCONDITIONALLY, with gipAdmin as its
+	// only argument — see that function's doc (provider_wiring.go) for why
+	// its signature has no access to cfg.ZitadelEnabled at all. Do not
+	// wrap this call in an `if`, and do not change its argument: doing
+	// either would (re)break EnsureTenantClaim under Zitadel, which is the
+	// exact regression cmd/server/main_test.go's
+	// TestMainCallsNewTenantClaimSetterUnconditionally exists to catch.
+	inviteClaims := newTenantClaimSetter(gipAdmin)
 
 	invitationSvc := invitation.NewService(invitation.Config{
 		Repo:       invitation.NewRepository(conn),
@@ -298,23 +340,23 @@ func main() {
 	invitationHandler := invitation.NewHandler(invitationSvc)
 
 	// ─── Account teardown (Task 5) / operator tenant purge (#288) ───────
-	// The operator teardown path (#288) needs neither FGA nor GIP to
-	// function — its cleanup of both is best-effort post-commit — so the
-	// service is constructed unconditionally and its route is mounted
-	// unconditionally below. Only the MERCHANT DeleteAccount route stays
-	// gated: it calls fga.GetRole and gip.DeleteAccount with no internal
-	// nil-check and would panic on first call.
+	// The operator teardown path (#288) needs neither FGA nor an
+	// account-deletion provider to function — its cleanup of both is
+	// best-effort post-commit — so the service is constructed
+	// unconditionally and its route is mounted unconditionally below.
+	// Only the MERCHANT DeleteAccount route stays gated: it calls
+	// fga.GetRole and gip.DeleteAccount with no internal nil-check and
+	// would panic on first call.
 	//
-	// gipAdmin is passed to newAccountService as the CONCRETE pointer on
-	// purpose: it converts a nil one into a true nil interface rather than
-	// a non-nil interface holding a nil pointer, which would defeat
-	// cleanupAfterTeardown's nil guard and panic AFTER the teardown
-	// transaction commits. See newAccountService.
-	accountSvc := newAccountService(conn, tenantRepo, fga, gipAdmin, outbox.EnqueueAfter, log)
+	// accountDeleter already comes from selectAccountProviders as a
+	// genuinely nil-or-real interface value (never a typed nil) — see
+	// that function's doc and newAccountService's doc for the trap this
+	// avoids.
+	accountSvc := newAccountService(conn, tenantRepo, fga, accountDeleter, outbox.EnqueueAfter, log)
 	accountHandler := account.NewHandler(accountSvc)
-	merchantAccountRoutes := fga != nil && gipAdmin != nil
+	merchantAccountRoutes := fga != nil && accountDeleter != nil
 	if !merchantAccountRoutes {
-		log.Warn("account: merchant teardown endpoint disabled — missing OpenFGA store or GIP_PROJECT_ID/GIP_TENANT_ID and a GIP API key; operator teardown (#288) stays mounted")
+		log.Warn("account: merchant teardown endpoint disabled — missing OpenFGA store or an account-deletion provider (GIP_PROJECT_ID/GIP_TENANT_ID/a GIP API key, or ZITADEL_ENABLED); operator teardown (#288) stays mounted")
 	}
 
 	// ─── Outbox drainer ────────────────────────────────────────────────

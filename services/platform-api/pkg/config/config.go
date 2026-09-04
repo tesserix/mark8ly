@@ -2,6 +2,8 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -103,6 +105,35 @@ type Config struct {
 	// GIPKey below. Relaxing the web key instead is not an option —
 	// it is public by construction.
 	GIPServerAPIKey string `envconfig:"GIP_SERVER_API_KEY"`
+
+	// Zitadel (#524 phase 5). All optional and unread unless
+	// ZitadelEnabled is set — mirrors services/auth-bff/pkg/config's
+	// ZITADEL_ENABLED shape. GIP remains the default provider for the
+	// three account operations (password-reset send/confirm, delete)
+	// until this flag flips.
+	//
+	// EnsureTenantClaim (the tenant_id custom claim written on invite
+	// accept and read by onboarding) is DELIBERATELY NOT gated by this
+	// flag — it always runs against GIP via the gipAdmin client built
+	// from GIPProjectID/GIPTenantID/GIPKey() above, independent of
+	// ZitadelEnabled. See cmd/server/provider_wiring.go.
+	//
+	// Deployment ordering: ZitadelIssuer, ZitadelLoginClientToken, and
+	// ZitadelOrgID must all be set — and land whitespace-clean, per the
+	// TrimSpace-on-assignment note in Load() below — BEFORE ZitadelEnabled
+	// is flipped to true. ValidateZitadel enforces this at startup (it
+	// panics rather than falling back to GIP silently), but the flag
+	// itself defaults to false, so merging this config change alone
+	// changes nothing; only a deliberate, later flip of ZITADEL_ENABLED
+	// activates the Zitadel path.
+	ZitadelEnabled          bool   `envconfig:"ZITADEL_ENABLED" default:"false"`
+	ZitadelIssuer           string `envconfig:"ZITADEL_ISSUER"`
+	ZitadelLoginClientToken string `envconfig:"ZITADEL_LOGIN_CLIENT_TOKEN"`
+	// ZitadelOrgID scopes the email->user-id search
+	// (zitadeladmin.Client.resolveUserIDByEmail) to the merchant org —
+	// required because the login-client token is instance-level and the
+	// shared Zitadel instance hosts other products' orgs too.
+	ZitadelOrgID string `envconfig:"ZITADEL_ORG_ID"`
 }
 
 // GIPKey returns the API key to use for server-side GIP calls: the
@@ -141,5 +172,51 @@ func Load() (*Config, error) {
 	// with "invalid header field value".
 	cfg.SendGridAPIKey = strings.TrimSpace(cfg.SendGridAPIKey)
 	cfg.ResendAPIKey = strings.TrimSpace(cfg.ResendAPIKey)
+	// ZitadelIssuer becomes an HTTP request base URL and ZitadelOrgID is
+	// sent as a header value verbatim — a trailing newline from a mounted
+	// secret broke exactly this shape elsewhere in this codebase for
+	// ~25 hours before TrimSpace-on-assignment became the standing rule.
+	// ZitadelLoginClientToken is a bearer credential; trim it for the same
+	// reason SendGridAPIKey/ResendAPIKey are trimmed above.
+	cfg.ZitadelIssuer = strings.TrimSpace(cfg.ZitadelIssuer)
+	cfg.ZitadelLoginClientToken = strings.TrimSpace(cfg.ZitadelLoginClientToken)
+	cfg.ZitadelOrgID = strings.TrimSpace(cfg.ZitadelOrgID)
 	return &cfg, nil
+}
+
+// ErrZitadelNotConfigured is returned by ValidateZitadel when ZITADEL_ENABLED
+// is set but a value the Zitadel account-operations path cannot run safely
+// without is missing. Wrapped errors carry the NAME of the missing variable
+// only — never its value.
+var ErrZitadelNotConfigured = errors.New("zitadel: enabled but not configured")
+
+// ValidateZitadel reports whether platform-api may select Zitadel for its
+// three account operations (password-reset send, password-reset confirm,
+// delete account).
+//
+// It returns nil when Zitadel is disabled: GIP stays the provider and
+// nothing new is required to boot. When it is enabled, every field below is
+// mandatory and a missing one must fail startup loudly (see
+// cmd/server/provider_wiring.go) rather than silently falling back to GIP —
+// a misconfigured Zitadel deployment must never look like a working one.
+//
+// Mirrors services/auth-bff/pkg/config's ValidateZitadel shape.
+func (c *Config) ValidateZitadel() error {
+	if !c.ZitadelEnabled {
+		return nil
+	}
+	var missing []string
+	if c.ZitadelIssuer == "" {
+		missing = append(missing, "ZITADEL_ISSUER")
+	}
+	if c.ZitadelLoginClientToken == "" {
+		missing = append(missing, "ZITADEL_LOGIN_CLIENT_TOKEN")
+	}
+	if c.ZitadelOrgID == "" {
+		missing = append(missing, "ZITADEL_ORG_ID")
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: missing %s", ErrZitadelNotConfigured, strings.Join(missing, ", "))
 }

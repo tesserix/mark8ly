@@ -30,9 +30,35 @@ import (
 	"github.com/mark8ly/platform-api/internal/notification"
 )
 
+// PasswordResetProvider is the subset of gipadmin.AdminClient the
+// password-reset flow needs: mint a reset code, then redeem one. Defined
+// as an interface — rather than depending on the concrete
+// *gipadmin.AdminClient type here — so a later provider (e.g. Zitadel,
+// #524 Phase 5) can satisfy the same contract without this package
+// changing.
+//
+// Construct the interface value ONLY when a real, non-nil client
+// exists — never assign a possibly-nil *gipadmin.AdminClient straight
+// into Config.Admin. Doing so would produce a non-nil interface value
+// wrapping a nil pointer (the "typed nil" trap documented in
+// cmd/server/account_wiring.go): every method below unconditionally
+// dereferences the client's config, so a caller's `!= nil` guard would
+// be defeated and the eventual call would panic. cmd/server/main.go
+// already follows the safe pattern: it only calls auth.NewService
+// inside the branch where gipadmin.New succeeded, so Admin here is
+// always a genuine, non-nil client.
+type PasswordResetProvider interface {
+	SendPasswordResetOobCode(ctx context.Context, email string) (string, error)
+	ResetPassword(ctx context.Context, oobCode, newPassword string) error
+}
+
+// Compile-time proof that *gipadmin.AdminClient satisfies
+// PasswordResetProvider unchanged — this task adds no behaviour to it.
+var _ PasswordResetProvider = (*gipadmin.AdminClient)(nil)
+
 // Config bundles the dependencies and tunables for Service.
 type Config struct {
-	Admin  *gipadmin.AdminClient
+	Admin  PasswordResetProvider
 	Sender notification.Sender
 	// Loader is the DB-backed template loader (embedded fallback). May
 	// be nil during boot races; nil falls through to embedded rendering.

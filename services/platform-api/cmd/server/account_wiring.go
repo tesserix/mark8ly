@@ -9,12 +9,13 @@ import (
 
 	"github.com/mark8ly/platform-api/internal/account"
 	"github.com/mark8ly/platform-api/internal/authz"
-	"github.com/mark8ly/platform-api/internal/gipadmin"
 )
 
 // gipAccountDeleter mirrors internal/account's unexported gipDeleter
 // interface. It exists so this package can hold a TRUE nil interface value
-// when GIP is unconfigured — see newAccountService.
+// when no delete-account provider is configured, and so it is satisfied
+// equally by *gipadmin.AdminClient and *zitadeladmin.Client (#524 phase 5).
+// See newAccountService and selectAccountProviders.
 type gipAccountDeleter interface {
 	DeleteAccount(ctx context.Context, uid string) error
 }
@@ -26,26 +27,29 @@ type gipAccountDeleter interface {
 // (see account_wiring_test.go). This is NOT the general main.go refactor —
 // that is #323.
 //
-// # Why gipAdmin is not passed straight through
+// # gip must already be a genuinely nil-or-real interface value
 //
-// gipAdmin is a CONCRETE *gipadmin.AdminClient; account.NewService's
-// parameter is an INTERFACE. Assigning a nil *AdminClient into an interface
-// produces a NON-NIL interface value holding a nil pointer, so
-// Service.cleanupAfterTeardown's `if s.gip != nil` guard PASSES and
-// DeleteAccount runs on a nil receiver, panicking as it dereferences the
-// client's config.
+// account.NewService's gip parameter is an INTERFACE
+// (gipAccountDeleter/the package-local mirror of internal/account's
+// unexported gipDeleter). Since #524 phase 5 task 3, the caller —
+// selectAccountProviders — is the place that performs the typed-nil guard:
+// it only ever assigns a concrete, non-nil client (gipAdmin OR a
+// *zitadeladmin.Client) into the interface it returns, or leaves it a true
+// nil interface when no provider is configured. newAccountService trusts
+// that and passes gip straight through.
 //
-// That panic lands AFTER the teardown transaction has committed. gin's
-// Recovery answers 500, marketplace-api's tenantlifecycle maps it to
-// ErrUnavailable, and the operator is told `503 upstream_unavailable` — for
-// a tenant that is already destroyed and whose purge was never audited.
-// platform-api deployed without GIP_PROJECT_ID/GIP_TENANT_ID/
-// GIP_WEB_API_KEY is a real configuration; the startup warning above the
-// call site exists because of it.
-//
-// So: declare the interface-typed variable, assign it ONLY inside the
-// non-nil guard, and pass that. Same shape marketplace-api already uses for
-// its TenantTeardown client (cmd/marketplace-api/main.go).
+// Do NOT reintroduce the trap here by accepting a concrete
+// *gipadmin.AdminClient again and assigning it unconditionally — see
+// selectAccountProviders' doc (provider_wiring.go) and
+// TestSelectAccountProviders_FlagUnset_NilGIPStaysGenuinelyNil for why: a
+// nil *AdminClient assigned straight into an interface is a NON-NIL
+// interface holding a nil pointer, so Service.cleanupAfterTeardown's
+// `if s.gip != nil` guard PASSES and DeleteAccount runs on a nil receiver,
+// panicking as it dereferences the client's config — AFTER the teardown
+// transaction has committed. gin's Recovery then answers 500,
+// marketplace-api's tenantlifecycle maps it to ErrUnavailable, and the
+// operator is told `503 upstream_unavailable` for a tenant that is already
+// destroyed and whose purge was never audited.
 //
 // fga needs no such treatment: it is declared in main as `var fga
 // authz.Client`, an interface all the way down, so it is a TRUE nil
@@ -55,7 +59,7 @@ func newAccountService(
 	conn *gorm.DB,
 	repo account.TenantRepo,
 	fga authz.Client,
-	gipAdmin *gipadmin.AdminClient,
+	gip gipAccountDeleter,
 	// enqueue is deliberately an UNNAMED func type: a named type here would
 	// not be assignable to internal/account's named outboxEnqueuer. The
 	// delay parameter is outbox.EnqueueAfter's — see account.outboxEnqueuer
@@ -63,9 +67,5 @@ func newAccountService(
 	enqueue func(tx *gorm.DB, kind string, payload any, delay time.Duration) error,
 	log *slog.Logger,
 ) *account.Service {
-	var gipCleanup gipAccountDeleter
-	if gipAdmin != nil {
-		gipCleanup = gipAdmin
-	}
-	return account.NewService(conn, repo, fga, gipCleanup, enqueue, log)
+	return account.NewService(conn, repo, fga, gip, enqueue, log)
 }

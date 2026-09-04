@@ -95,7 +95,7 @@ func TestProjectProduct_EmptyImageList(t *testing.T) {
 }
 
 func TestProjectCategory_TransformsFields(t *testing.T) {
-	in := storefrontCategory{Name: "Mugs", Slug: "mugs", Featured: true, Position: 0}
+	in := storefrontCategory{Name: "Mugs", Slug: "mugs", Featured: true}
 
 	got := projectCategory(in)
 

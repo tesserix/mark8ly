@@ -118,10 +118,12 @@ type storefrontCategoryRef struct {
 	Slug string `json:"slug"`
 }
 
+// Position is deliberately absent: upstream already returns categories in
+// position order, and a mirrored field nothing reads is a field a later reader
+// assumes is load-bearing.
 type storefrontCategory struct {
 	Name     string `json:"name"`
 	Slug     string `json:"slug"`
-	Position int    `json:"position"`
 	Featured bool   `json:"featured"`
 }
 
@@ -139,13 +141,19 @@ type storefrontPriceRange struct {
 	CurrencyCode string `json:"currency_code"`
 }
 
+// storefrontBranding is the branding mirror GetBranding HAND-BUILDS from
+// storefrontBrandingEnvelope; it is never decoded from, or encoded to, the
+// wire. It therefore carries no json tags — the ones it used to carry were
+// never read by any encoder, and one of them ("active_promotions") named a
+// field the API does not have, which is exactly the sort of thing a reader
+// would take for a description of the real response.
 type storefrontBranding struct {
-	LogoURL            *string               `json:"logo_url,omitempty"`
-	Tagline            *string               `json:"tagline,omitempty"`
-	ColorAccent        string                `json:"color_accent"`
-	AnnouncementText   *string               `json:"announcement_text,omitempty"`
-	AnnouncementActive bool                  `json:"announcement_active"`
-	Promotions         []storefrontPromotion `json:"active_promotions"`
+	LogoURL            *string
+	Tagline            *string
+	ColorAccent        string
+	AnnouncementText   *string
+	AnnouncementActive bool
+	Promotions         []storefrontPromotion
 }
 
 type storefrontPromotion struct {
@@ -311,9 +319,8 @@ func (c *Client) ListByCategory(ctx context.Context, slug, categorySlug string, 
 //
 // The response nests branding fields under a "branding" key and, when a
 // campaign has an active storefront promotion, adds it as a singular
-// "active_promotion" sibling key holding at most one promotion — not the
-// plural "active_promotions" array this client's storefrontBranding type
-// otherwise mirrors. That field folds a present ActivePromotion into a
+// "active_promotion" sibling key holding at most one promotion — never
+// plural, never an array. This method folds a present ActivePromotion into a
 // one-element Promotions slice, and an absent one into an empty slice.
 func (c *Client) GetBranding(ctx context.Context, slug string) (storefrontBranding, error) {
 	base, err := storePath(slug)

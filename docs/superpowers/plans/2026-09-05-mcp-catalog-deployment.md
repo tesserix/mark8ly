@@ -376,6 +376,17 @@ The log must show the catalog seed POSTed. **A Job that completes is not the sam
 
 Query the registry for the connector. The API requires credentials, so this may need an operator; if you cannot query it, say so plainly rather than assuming the POST landed.
 
+- [ ] **Step 4: Confirm the route appears — this is the real acceptance**
+
+**No manual AgentGateway configuration is needed anywhere.** `agentgateway-route-sync-controller` (running the `agentic-registry` image in `agentgateway-system`) polls `REGISTRY_URL=.../v0/export/...` every **30 seconds** and reconciles routes into `TARGET_NAMESPACE=agentgateway-system` with `FIELD_MANAGER=agentgateway-registry-sync`. Its static ConfigMap carries only logging config; routes arrive by xDS. So publishing the seed and bumping the nonce genuinely IS the whole registration path.
+
+Wait ~30s after Step 2 and confirm the connector's route exists in `agentgateway-system`. If it does not appear within a couple of poll intervals, the seed did not register — go back to Step 2 rather than adding gateway config by hand, because hand-added config is exactly what the next reconcile will remove.
+
+**Two operational facts worth knowing before you touch this:**
+
+- **`PRUNE=true`.** The registry is authoritative: a route not present in the export is DELETED. Never hand-create a route to "help" — it will vanish at the next poll, and the disappearance will look like a different bug.
+- **`MIN_RESOURCES=27`** is a safety floor on the export. Adding this connector moves the estate's count up, not down, so it is not a concern here — but be aware the controller has a guard against acting on a short or failed fetch, and do not treat a quiet controller as a successful sync. Read its logs.
+
 ---
 
 ## Out of scope

@@ -48,6 +48,20 @@ type MobileDeps struct {
 // RegisterMobileStorefront mounts the mobile storefront routes on the given
 // router group. Chain: StoreContext → handler. Auth via GIP Bearer token
 // instead of X-Storefront-Key.
+//
+// Caution for whoever wires this in: it is defined but never called from
+// main.go today. Only RegisterMobileStorefrontSupport (see
+// gip_customer_verifier.go) is mounted, and that function chains the real
+// verifier-backed MobileCustomerAuth. This function's "Authenticated
+// routes" group below instead chains requireAuth := GIPBearerAuth(deps.
+// DevMode) — the scaffold guard in mobile_auth.go that never sets
+// CustomerGipUIDKey itself — with no MobileCustomerAuth in the chain to
+// set it. mobileCustomerProfileMW then finds no identity and treats the
+// caller as a guest, so RequireCustomerAuth has nothing to authorize and
+// 401s every request in the authed group. Wiring this as-is, without
+// inserting a verifier-backed auth middleware ahead of requireAuth, would
+// break every authenticated mobile storefront endpoint (checkout, orders,
+// account, wishlist, reviews, loyalty, push tokens, notify-me, support).
 func RegisterMobileStorefront(router *gin.RouterGroup, deps MobileDeps) {
 	storeMW := StoreContext(deps.SlugCache)
 

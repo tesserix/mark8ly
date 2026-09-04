@@ -6,15 +6,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RequireTenantClaim aborts with 404 unless the authenticated caller has a
-// tenant bound to their identity.
+// RequireBoundTenant aborts with 404 unless the authenticated caller has a
+// tenant bound to their identity — i.e. TenantFromRequest's FGA membership
+// check has already run and set tenant_id on the context. It does not read
+// or care about any token claim; it only checks that a tenant was bound and
+// validated.
 //
 // This is the companion to GIPBearerAuth's deliberate decision to NOT reject
-// a token that lacks a tenant_id claim. That change fixed a login bounce
-// loop (a 401 made the mobile client tear down a perfectly valid session and
-// redirect to /login), but on its own it would fail OPEN: routes that read
-// tenant_id without an authorization guard would suddenly be reachable by an
-// authenticated user with no tenant at all, carrying an empty tenant scope.
+// a token whose caller has no bound tenant yet. That change fixed a login
+// bounce loop (a 401 made the mobile client tear down a perfectly valid
+// session and redirect to /login), but on its own it would fail OPEN:
+// routes that read tenant_id without an authorization guard would suddenly
+// be reachable by an authenticated user with no tenant at all, carrying an
+// empty tenant scope.
 //
 // Most mobile admin routes are already covered by
 // authz.RequireTenantRelation, which performs the real FGA check. This guard
@@ -27,7 +31,7 @@ import (
 // convention of not leaking existence, and critically it is NOT 401 — the
 // mobile client only signs the user out on 401, which is the behaviour this
 // whole change set is removing.
-func RequireTenantClaim() gin.HandlerFunc {
+func RequireBoundTenant() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.GetString("tenant_id") == "" {
 			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{

@@ -39,6 +39,12 @@ func (v *GIPVerifier) Verify(ctx context.Context, idToken string) (*TokenClaims,
 	// explanation, in a loop. Instead, pass through with an empty
 	// TenantID and let authz.RequireTenantRelation answer 404, which
 	// the app already renders as its "No store yet" screen.
+	//
+	// This reasoning is unconditional in Verify itself, but it only ever
+	// reaches the gin context when GIPBearerAuth is run with
+	// setTenantFromClaim=true — i.e. ZITADEL_ENABLED=false, the only mode
+	// this verifier is wired into (see cmd/marketplace-api's
+	// selectMobileTokenVerifier and internal/handlers/admin/mobile_routes.go).
 	tenantID := tenantIDFromClaims(token.Claims)
 
 	return &TokenClaims{

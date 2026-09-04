@@ -108,13 +108,15 @@ func (s stubVerifier) Verify(_ context.Context, _ string) (*TokenClaims, error) 
 // tenant_id custom claim.
 //
 // Correct behaviour: authenticate fine with an empty tenant_id, and let
-// authz.RequireTenantRelation answer 404, which the app renders as its
-// existing "No store yet" screen.
+// authz.RequireTenantRelation (or auth.RequireBoundTenant) answer 404,
+// which the app already renders as its "No store yet" screen. This test
+// runs GIPBearerAuth with setTenantFromClaim=true, the GIP/ZITADEL_ENABLED
+// =false configuration this verifier is actually wired into.
 func TestGIPBearerAuth_NoTenantClaimIsNot401(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	r.Use(GIPBearerAuth(stubVerifier{claims: &TokenClaims{UserID: "uid-no-store", TenantID: ""}}))
+	r.Use(GIPBearerAuth(stubVerifier{claims: &TokenClaims{UserID: "uid-no-store", TenantID: ""}}, true))
 	r.GET("/probe", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"user_id":   c.GetString("user_id"),
@@ -138,12 +140,12 @@ func TestGIPBearerAuth_NoTenantClaimIsNot401(t *testing.T) {
 	}
 }
 
-// A genuinely bad token must still be 401.
+// A genuinely bad token must still be 401, regardless of setTenantFromClaim.
 func TestGIPBearerAuth_InvalidTokenIsStill401(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	r.Use(GIPBearerAuth(stubVerifier{err: ErrInvalidToken}))
+	r.Use(GIPBearerAuth(stubVerifier{err: ErrInvalidToken}, true))
 	r.GET("/probe", func(c *gin.Context) { c.Status(http.StatusOK) })
 
 	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
@@ -153,5 +155,63 @@ func TestGIPBearerAuth_InvalidTokenIsStill401(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401 for an invalid token", w.Code)
+	}
+}
+
+// TestGIPBearerAuth_SetTenantFromClaimFalse_NeverSetsTenantID is the core
+// regression test for the two-writers bug (#524 phase 4, blocking-fix
+// round): with setTenantFromClaim=false (the Zitadel/ZITADEL_ENABLED=true
+// configuration), a claim carrying a real tenant value must still never
+// reach the context — only TenantFromRequest's FGA-validated result may.
+func TestGIPBearerAuth_SetTenantFromClaimFalse_NeverSetsTenantID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.Use(GIPBearerAuth(stubVerifier{claims: &TokenClaims{UserID: "uid-1", TenantID: "attacker-chosen-tenant"}}, false))
+	r.GET("/probe", func(c *gin.Context) {
+		_, exists := c.Get("tenant_id")
+		c.JSON(http.StatusOK, gin.H{
+			"user_id":          c.GetString("user_id"),
+			"tenant_id_exists": exists,
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
+	req.Header.Set("Authorization", "Bearer any-validly-signed-token")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if strings.Contains(w.Body.String(), "attacker-chosen-tenant") {
+		t.Fatalf("a claim tenant value leaked onto the context with setTenantFromClaim=false: %s", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), `"tenant_id_exists":true`) {
+		t.Errorf("tenant_id key was set at all with setTenantFromClaim=false: %s", w.Body.String())
+	}
+}
+
+// TestGIPBearerAuth_SetTenantFromClaimTrue_UsesClaimValue is the
+// complementary positive case: with setTenantFromClaim=true (the GIP
+// configuration), the claim IS the source of tenancy, exactly as it was
+// before #524 phase 4 — this is the byte-identical-to-origin/main
+// guarantee for the flag-off path.
+func TestGIPBearerAuth_SetTenantFromClaimTrue_UsesClaimValue(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.Use(GIPBearerAuth(stubVerifier{claims: &TokenClaims{UserID: "uid-1", TenantID: "tenant-from-claim"}}, true))
+	r.GET("/probe", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"user_id":   c.GetString("user_id"),
+			"tenant_id": c.GetString("tenant_id"),
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
+	req.Header.Set("Authorization", "Bearer any-validly-signed-token")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if !strings.Contains(w.Body.String(), "tenant-from-claim") {
+		t.Errorf("claim tenant value did not reach the context with setTenantFromClaim=true: %s", w.Body.String())
 	}
 }

@@ -298,6 +298,25 @@ type Config struct {
 	// on the first merchant credential save. Unused otherwise.
 	OpenBaoKVMount string `envconfig:"OPENBAO_KV_MOUNT" default:"kv"`
 
+	// Zitadel bearer verifier for mobile admin routes (#524 phase 4).
+	// Mirrors auth-bff's ZITADEL_ENABLED shape: an explicit boolean,
+	// defaulting to false so an unconfigured deployment keeps using the
+	// incumbent GIP verifier byte-for-byte. When enabled, ValidateZitadel
+	// requires both ZitadelIssuer and ZitadelAdminProjectID — see that
+	// method's doc comment for why both are mandatory rather than
+	// defaulted.
+	ZitadelEnabled bool `envconfig:"ZITADEL_ENABLED" default:"false"`
+	// ZitadelIssuer is the Zitadel instance's OIDC issuer, used to
+	// discover its JWKS for bearer-token verification. All mark8ly
+	// projects share one instance (https://auth.tesserix.app).
+	ZitadelIssuer string `envconfig:"ZITADEL_ISSUER" default:""`
+	// ZitadelAdminProjectID is the mark8ly-admin Zitadel project id, used
+	// as the required audience so a mark8ly-storefront token (same
+	// issuer, same signer, same human) cannot be replayed as an admin
+	// credential. Already deployed on other services as
+	// "389070376568619523".
+	ZitadelAdminProjectID string `envconfig:"ZITADEL_ADMIN_PROJECT_ID" default:""`
+
 	// --- Merchant device push (mobile-admin) ---
 	// PushEventsTopic is the Pub/Sub topic merchant notifications are
 	// published to; a push subscription delivers them to the OIDC-gated
@@ -360,6 +379,17 @@ var (
 	// error on the first merchant credential save instead of at boot.
 	ErrOpenBaoKVMountUnsupported = errors.New(
 		"marketplace config: OPENBAO_KV_MOUNT must be \"kv\" when SHIPPING_SECRET_STORE=bao (carriersecrets.BaoPath currently assumes the \"kv\" mount)")
+
+	// ErrZitadelIssuerRequired and ErrZitadelAdminProjectIDRequired fire
+	// when ZITADEL_ENABLED=true but either value needed to construct
+	// auth.NewZitadelVerifier is missing. Checked unconditionally
+	// (including ENV=dev) so a misconfigured flag fails loudly at boot
+	// rather than reaching main's verifier-selection code disabled or,
+	// worse, half-mounted.
+	ErrZitadelIssuerRequired = errors.New(
+		"marketplace config: ZITADEL_ISSUER must be set when ZITADEL_ENABLED=true")
+	ErrZitadelAdminProjectIDRequired = errors.New(
+		"marketplace config: ZITADEL_ADMIN_PROJECT_ID must be set when ZITADEL_ENABLED=true (required as the token audience — see auth.NewZitadelVerifier)")
 )
 
 // Load reads .env (if present) and binds environment variables into Config.
@@ -394,6 +424,17 @@ func Load() (*Config, error) {
 	cfg.CustomerSessionSecret = strings.TrimSpace(cfg.CustomerSessionSecret)
 	cfg.EncryptionKey = strings.TrimSpace(cfg.EncryptionKey)
 	cfg.EncryptionMode = strings.ToLower(strings.TrimSpace(cfg.EncryptionMode))
+	// Same trailing-LF risk as the secrets above, for the same GCP Secret
+	// Manager reason: ZitadelIssuer feeds OIDC discovery (a padded issuer
+	// URL fails discovery, disabling mobile admin routes with only a log
+	// line) and ZitadelAdminProjectID is compared against the token's
+	// "aud" claim (a padded value 401s every otherwise-valid token).
+	// ValidateZitadel used to TrimSpace only to test emptiness and then
+	// store the raw, untrimmed value — trim here instead so every reader
+	// of these fields, not just the emptiness check, sees the same
+	// cleaned value.
+	cfg.ZitadelIssuer = strings.TrimSpace(cfg.ZitadelIssuer)
+	cfg.ZitadelAdminProjectID = strings.TrimSpace(cfg.ZitadelAdminProjectID)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -411,6 +452,14 @@ func (c *Config) Validate() error {
 	// typo (or selecting bao without the settings it needs) is a
 	// misconfiguration, not a security posture that dev gets to relax.
 	if err := c.validateShippingSecretStore(); err != nil {
+		return err
+	}
+	// Checked in every environment, including dev, for the same reason
+	// as validateShippingSecretStore: a ZITADEL_ENABLED flag with a
+	// missing issuer or audience is a misconfiguration, not a security
+	// posture dev gets to relax, and must fail the boot rather than
+	// leave main() to silently disable or half-mount mobile admin routes.
+	if err := c.ValidateZitadel(); err != nil {
 		return err
 	}
 	if c.Env == "dev" {
@@ -474,6 +523,36 @@ func (c *Config) validateShippingSecretStore() error {
 	}
 	if c.OpenBaoKVMount != "kv" {
 		return fmt.Errorf("%w (got OPENBAO_KV_MOUNT=%q)", ErrOpenBaoKVMountUnsupported, c.OpenBaoKVMount)
+	}
+	return nil
+}
+
+// ValidateZitadel rejects a ZITADEL_ENABLED=true configuration that is
+// missing either value auth.NewZitadelVerifier requires. It is a no-op
+// when the flag is unset (Zitadel opt-in leaves everything else
+// untouched), mirroring auth-bff's ZITADEL_ENABLED/ValidateZitadel shape
+// so the two services fail the same way on the same mistake.
+//
+// Both fields are mandatory, not defaulted: the issuer is needed to
+// discover the JWKS at all, and the audience is the one field that
+// distinguishes a mark8ly-admin token from a mark8ly-storefront token
+// minted by the same shared Zitadel instance for the same human — see
+// internal/auth/zitadel_verifier.go's doc comment for the escalation this
+// prevents. Defaulting either would make an opt-in feature quietly a
+// security hole instead of a startup failure.
+func (c *Config) ValidateZitadel() error {
+	if !c.ZitadelEnabled {
+		return nil
+	}
+	// Both fields are already trimmed in Load — this checks the same
+	// value every other reader of c.ZitadelIssuer / c.ZitadelAdminProjectID
+	// sees, not a separately-trimmed copy that then lets the untrimmed
+	// (possibly newline-padded) original through.
+	if c.ZitadelIssuer == "" {
+		return ErrZitadelIssuerRequired
+	}
+	if c.ZitadelAdminProjectID == "" {
+		return ErrZitadelAdminProjectIDRequired
 	}
 	return nil
 }

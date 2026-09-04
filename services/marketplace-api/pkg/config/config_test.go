@@ -310,6 +310,116 @@ func TestConfig_ShippingSecretStoreExplicitlyEmptyDefaultsToInline(t *testing.T)
 	}
 }
 
+// ZITADEL_ENABLED defaults to false, so an env that never mentions Zitadel
+// at all must load exactly as before — no issuer/audience required.
+func TestConfig_ZitadelDisabledByDefault(t *testing.T) {
+	baseEnv(t)
+	os.Unsetenv("ZITADEL_ENABLED")
+	os.Unsetenv("ZITADEL_ISSUER")
+	os.Unsetenv("ZITADEL_ADMIN_PROJECT_ID")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with Zitadel env unset = %v, want success", err)
+	}
+	if cfg.ZitadelEnabled {
+		t.Error("ZitadelEnabled = true, want false (must default off)")
+	}
+}
+
+// ZITADEL_ENABLED=true without an issuer must fail boot, not silently
+// leave mobile admin routes on GIP or half-mounted.
+func TestConfig_ZitadelEnabledRequiresIssuer(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ZITADEL_ENABLED", "true")
+	t.Setenv("ZITADEL_ISSUER", "")
+	t.Setenv("ZITADEL_ADMIN_PROJECT_ID", "389070376568619523")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with ZITADEL_ENABLED=true and no ZITADEL_ISSUER = nil, want error")
+	}
+}
+
+// ZITADEL_ENABLED=true without the audience (project id) must also fail
+// boot — NewZitadelVerifier treats the audience as required, and an
+// unpinned audience would let a storefront-shopper token pass as an
+// admin credential.
+func TestConfig_ZitadelEnabledRequiresAdminProjectID(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ZITADEL_ENABLED", "true")
+	t.Setenv("ZITADEL_ISSUER", "https://auth.tesserix.app")
+	t.Setenv("ZITADEL_ADMIN_PROJECT_ID", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with ZITADEL_ENABLED=true and no ZITADEL_ADMIN_PROJECT_ID = nil, want error")
+	}
+}
+
+// Fully configured Zitadel must load cleanly, in dev or otherwise —
+// ValidateZitadel is checked unconditionally, unlike the prod-only
+// secrets gate.
+func TestConfig_ZitadelEnabledSucceedsWhenFullyConfigured(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ZITADEL_ENABLED", "true")
+	t.Setenv("ZITADEL_ISSUER", "https://auth.tesserix.app")
+	t.Setenv("ZITADEL_ADMIN_PROJECT_ID", "389070376568619523")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with Zitadel fully configured = %v, want success", err)
+	}
+	if !cfg.ZitadelEnabled {
+		t.Error("ZitadelEnabled = false, want true")
+	}
+	if cfg.ZitadelIssuer != "https://auth.tesserix.app" {
+		t.Errorf("ZitadelIssuer = %q, want https://auth.tesserix.app", cfg.ZitadelIssuer)
+	}
+	if cfg.ZitadelAdminProjectID != "389070376568619523" {
+		t.Errorf("ZitadelAdminProjectID = %q, want 389070376568619523", cfg.ZitadelAdminProjectID)
+	}
+}
+
+// A GCP Secret Manager value pushed via `echo "..." | gcloud secrets ...`
+// carries a trailing LF (the 2026-05-05 bondi storefront incident was
+// exactly this, on a different field). ZitadelIssuer feeds OIDC discovery
+// and ZitadelAdminProjectID is compared against the token's "aud" claim,
+// so an untrimmed value here either breaks discovery (mobile admin routes
+// silently unmounted) or 401s every token — both worse than the other 11
+// secret-sourced fields Load already trims. Load must strip the padding
+// before anything downstream — including ValidateZitadel's own emptiness
+// check — ever sees these fields.
+func TestConfig_ZitadelFieldsAreTrimmed(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ZITADEL_ENABLED", "true")
+	t.Setenv("ZITADEL_ISSUER", "https://auth.tesserix.app\n")
+	t.Setenv("ZITADEL_ADMIN_PROJECT_ID", " 389070376568619523\n")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with padded Zitadel values = %v, want success", err)
+	}
+	if cfg.ZitadelIssuer != "https://auth.tesserix.app" {
+		t.Errorf("ZitadelIssuer = %q, want trimmed https://auth.tesserix.app", cfg.ZitadelIssuer)
+	}
+	if cfg.ZitadelAdminProjectID != "389070376568619523" {
+		t.Errorf("ZitadelAdminProjectID = %q, want trimmed 389070376568619523", cfg.ZitadelAdminProjectID)
+	}
+}
+
+// A value that is ONLY whitespace must still be treated as unset by
+// ValidateZitadel — trimming happens before the emptiness check, not as a
+// separate copy the check inspects and discards.
+func TestConfig_ZitadelWhitespaceOnlyIssuerFailsValidation(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ZITADEL_ENABLED", "true")
+	t.Setenv("ZITADEL_ISSUER", "   \n")
+	t.Setenv("ZITADEL_ADMIN_PROJECT_ID", "389070376568619523")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with whitespace-only ZITADEL_ISSUER = nil, want error")
+	}
+}
+
 // LoadCarrierSecretJob is the narrow loader for background jobs (e.g.
 // cmd/refund-sweep-cron) that only need to construct a carrier secret
 // Store — it must accept a minimal env with none of Config's unrelated

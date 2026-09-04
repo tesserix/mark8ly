@@ -37,11 +37,11 @@ function lastCall(m: ReturnType<typeof vi.fn>) {
 }
 
 beforeEach(() => {
-  process.env.PLATFORM_API_URL = "http://platform-api.tesserix.svc.cluster.local";
+  process.env.TESSERIX_PLATFORM_API_URL = "http://platform-api.tesserix.svc.cluster.local";
 });
 afterEach(() => {
   vi.unstubAllGlobals();
-  delete process.env.PLATFORM_API_URL;
+  delete process.env.TESSERIX_PLATFORM_API_URL;
 });
 
 describe("every ticket call", () => {

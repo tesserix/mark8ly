@@ -86,10 +86,10 @@ export async function getPlatformToken(): Promise<string> {
 }
 
 async function mint(): Promise<CachedToken> {
-  const issuer = required("PLATFORM_OIDC_ISSUER").replace(/\/+$/, "");
-  const projectId = required("PLATFORM_OIDC_PROJECT_ID");
-  const clientId = required("PLATFORM_OIDC_CLIENT_ID");
-  const clientSecret = required("PLATFORM_OIDC_CLIENT_SECRET");
+  const issuer = required("TESSERIX_PLATFORM_OIDC_ISSUER").replace(/\/+$/, "");
+  const projectId = required("TESSERIX_PLATFORM_OIDC_PROJECT_ID");
+  const clientId = required("TESSERIX_PLATFORM_OIDC_CLIENT_ID");
+  const clientSecret = required("TESSERIX_PLATFORM_OIDC_CLIENT_SECRET");
 
   const body = new URLSearchParams({
     grant_type: "client_credentials",

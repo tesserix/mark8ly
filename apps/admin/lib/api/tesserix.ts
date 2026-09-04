@@ -35,7 +35,7 @@ const PRODUCT_ID = "mark8ly";
 // Its address is a Service in another namespace, which this pod can reach —
 // verified from this namespace during the #152 rollout.
 const PLATFORM_API_URL =
-  process.env.PLATFORM_API_URL ?? "http://platform-api.tesserix.svc.cluster.local";
+  process.env.TESSERIX_PLATFORM_API_URL ?? "http://platform-api.tesserix.svc.cluster.local";
 
 function authHeaders(): Record<string, string> {
   // ANNOUNCEMENTS ONLY. X-Internal-Token rather than Authorization Bearer —

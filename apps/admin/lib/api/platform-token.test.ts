@@ -9,10 +9,10 @@ import { __resetPlatformTokenCache, getPlatformToken } from "./platform-token";
 // expiry works perfectly until the hour it does not.
 
 const ENV = {
-  PLATFORM_OIDC_ISSUER: "https://auth.tesserix.app",
-  PLATFORM_OIDC_PROJECT_ID: "386377618200461939",
-  PLATFORM_OIDC_CLIENT_ID: "mark8ly-catalog-reader",
-  PLATFORM_OIDC_CLIENT_SECRET: "s3cret",
+  TESSERIX_PLATFORM_OIDC_ISSUER: "https://auth.tesserix.app",
+  TESSERIX_PLATFORM_OIDC_PROJECT_ID: "386377618200461939",
+  TESSERIX_PLATFORM_OIDC_CLIENT_ID: "mark8ly-catalog-reader",
+  TESSERIX_PLATFORM_OIDC_CLIENT_SECRET: "s3cret",
 };
 
 function tokenResponse(expiresIn = 3600, token = "tok-1") {
@@ -123,9 +123,9 @@ describe("caching", () => {
 
 describe("configuration", () => {
   it("refuses with a message naming what is missing", async () => {
-    delete process.env.PLATFORM_OIDC_CLIENT_SECRET;
+    delete process.env.TESSERIX_PLATFORM_OIDC_CLIENT_SECRET;
     vi.stubGlobal("fetch", vi.fn());
 
-    await expect(getPlatformToken()).rejects.toThrow(/PLATFORM_OIDC_CLIENT_SECRET/);
+    await expect(getPlatformToken()).rejects.toThrow(/TESSERIX_PLATFORM_OIDC_CLIENT_SECRET/);
   });
 });

@@ -7,7 +7,7 @@
 # apps/admin and apps/onboarding — only workspace name + port differ.
 
 # ─── deps ──────────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-node-builder-22@sha256:a86cc6019a5c1fd8601c68fe076a178aef575bc40f38ade51862efb48017a855 AS deps
+FROM ghcr.io/tesserix/base-node-builder-24@sha256:c5b173e90d748e60496f7b7be877e767226867c974cf322bec634f04beb45819 AS deps
 USER 0:0
 WORKDIR /src
 
@@ -28,7 +28,7 @@ COPY packages/ui/package.json ./packages/ui/
 RUN npm ci --no-audit --no-fund --legacy-peer-deps
 
 # ─── builder ───────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-node-builder-22@sha256:a86cc6019a5c1fd8601c68fe076a178aef575bc40f38ade51862efb48017a855 AS builder
+FROM ghcr.io/tesserix/base-node-builder-24@sha256:c5b173e90d748e60496f7b7be877e767226867c974cf322bec634f04beb45819 AS builder
 USER 0:0
 WORKDIR /src
 COPY --from=deps /src/node_modules ./node_modules
@@ -83,8 +83,8 @@ RUN --mount=type=secret,id=APPLICATION_BUILD_SECRET \
     npm run build --workspace=@mark8ly/storefront
 
 # ─── runtime ───────────────────────────────────────────────────────────
-# base-node-runtime-22: libc6-compat, tini PID 1, USER 10001 (nextjs).
-FROM ghcr.io/tesserix/base-node-runtime-22@sha256:0e94a9fe76f2febb951f1deadece069edf82fbee66ac61e8f8384590862cfe43 AS runtime
+# base-node-runtime-24: libc6-compat, tini PID 1, USER 10001 (nextjs).
+FROM ghcr.io/tesserix/base-node-runtime-24@sha256:6e503bc4b951eeb065b9ff8c4a0d53bfd240b9e974709c79b56f163b9d70b683 AS runtime
 WORKDIR /app
 
 ENV PORT=4203
@@ -94,5 +94,5 @@ COPY --from=builder --chown=10001:10001 /src/apps/storefront/.next/static ./apps
 COPY --from=builder --chown=10001:10001 /src/apps/storefront/public ./apps/storefront/public
 
 EXPOSE 4203
-# base-node-runtime-22's ENTRYPOINT is already `tini --`.
+# base-node-runtime-24's ENTRYPOINT is already `tini --`.
 CMD ["node", "apps/storefront/server.js"]

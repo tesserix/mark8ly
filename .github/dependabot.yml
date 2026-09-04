@@ -78,6 +78,11 @@ updates:
       interval: weekly
     open-pull-requests-limit: 2
   - package-ecosystem: docker
+    directory: /services/mcp
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+  - package-ecosystem: docker
     directory: /services/otto
     schedule:
       interval: weekly

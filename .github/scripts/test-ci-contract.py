@@ -195,20 +195,40 @@ class ReusableCIContract(unittest.TestCase):
                 self.assertNotIn("ARG REUSABLE_BUILD_SECRET_FP", contents)
 
     def test_dependabot_tracks_every_pinned_dockerfile(self) -> None:
+        # Discover every Dockerfile on disk rather than hardcoding a
+        # directory list — a hardcoded list can never fail when a new
+        # Dockerfile is added, which is exactly how /services/mcp went
+        # untracked and its base pins silently rotted. node_modules and
+        # vendor trees are excluded because a Dockerfile shipped by a
+        # third-party dependency is not ours to add to dependabot.yml.
+        dockerfiles = [
+            path
+            for path in ROOT.rglob("Dockerfile")
+            if "node_modules" not in path.parts and "vendor" not in path.parts
+        ]
+        self.assertTrue(dockerfiles, "no Dockerfiles found — discovery is broken")
+
         config = (ROOT / ".github/dependabot.yml").read_text()
-        for directory in (
-            "/services/platform-api",
-            "/services/auth-bff",
-            "/services/marketplace-api",
-            "/services/otto",
-            "/apps/onboarding",
-            "/apps/admin",
-            "/apps/storefront",
-        ):
-            self.assertRegex(
-                config,
-                rf"package-ecosystem:\s*docker\s+directory:\s*{re.escape(directory)}\b",
-            )
+
+        # Only Dockerfiles that pin a company-owned ghcr.io/tesserix/base-*
+        # image are in scope: that pin is the exact thing that goes stale
+        # when GHCR prunes old digests, and it is the property this test
+        # protects. A Dockerfile with no such pin has nothing for
+        # Dependabot's docker ecosystem to refresh.
+        for path in dockerfiles:
+            contents = path.read_text()
+            if not re.search(r"^FROM\s+ghcr\.io/tesserix/base-", contents, re.MULTILINE):
+                continue
+            directory = "/" + str(path.parent.relative_to(ROOT))
+            with self.subTest(directory=directory):
+                self.assertRegex(
+                    config,
+                    rf"package-ecosystem:\s*docker\s+directory:\s*{re.escape(directory)}\b",
+                    f"{directory} pins a ghcr.io/tesserix/base- image but has no "
+                    f"`package-ecosystem: docker` entry for it in "
+                    f".github/dependabot.yml — add one so its base image pin "
+                    f"gets refreshed automatically.",
+                )
 
     def test_secret_baseline_is_redacted_and_fingerprint_specific(self) -> None:
         findings = json.loads((ROOT / ".gitleaks-baseline.json").read_text())

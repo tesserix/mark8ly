@@ -164,11 +164,20 @@ func pageParams(page, pageSize int) (url.Values, error) {
 // "." and ".." here, before any path is built, closes that regardless of
 // what the shared client's guard does or doesn't catch.
 //
+// An empty segment collapses the same way: "stores//products" cleans to
+// "stores/products", again a different, unscoped route, with no error.
+// There is a live path to this reaching an empty slug from upstream: the
+// MCP SDK treats a literal `arguments: null` as bypassing empty-arguments
+// normalisation, and encoding/json then silently no-ops it against the
+// input struct, leaving every field — including a store slug — at its
+// zero value. Rejecting "" here closes that from the client end
+// regardless of what the tool layer above it does or doesn't enforce.
+//
 // unescaping the segment and checking for "/" additionally rejects an
 // encoded slash (e.g. "a%2Fb"), which — combined with a "." — could
 // otherwise reconstruct a traversal after decoding.
 func segment(paramName, value string) (string, error) {
-	if value == "." || value == ".." {
+	if value == "" || value == "." || value == ".." {
 		return "", fmt.Errorf("catalog: %s %q is not a valid path segment", paramName, value)
 	}
 	if decoded, err := url.PathUnescape(value); err == nil && strings.Contains(decoded, "/") {

@@ -249,6 +249,55 @@ func TestGetProduct_RejectsDotSlug(t *testing.T) {
 	assert.Contains(t, err.Error(), "slug")
 }
 
+// An empty segment collapses the same way ".." did: "/stores//products"
+// path.Cleans to "/stores/products", a different, unscoped route, with no
+// error. There is a live path to this from upstream — the MCP SDK treats a
+// literal `arguments: null` as bypassing empty-arguments normalisation,
+// and encoding/json then silently no-ops it against the input struct,
+// leaving every field (including a store slug) at its zero value — so this
+// must be rejected here regardless of what the tool layer does.
+func TestListProducts_RejectsEmptySlug(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("no request should have been sent for an empty slug; got %s", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "sfkey", time.Second)
+	require.NoError(t, err)
+
+	_, err = c.ListProducts(context.Background(), "", 1, 20)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "slug")
+}
+
+func TestGetProduct_RejectsEmptyHandle(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("no request should have been sent for an empty handle; got %s", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "sfkey", time.Second)
+	require.NoError(t, err)
+
+	_, err = c.GetProduct(context.Background(), "bondi", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "handle")
+}
+
+func TestListByCategory_RejectsEmptyCategorySlug(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("no request should have been sent for an empty category slug; got %s", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "sfkey", time.Second)
+	require.NoError(t, err)
+
+	_, err = c.ListByCategory(context.Background(), "bondi", "", 1, 20)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "categorySlug")
+}
+
 func TestGetBranding_NoActivePromotionYieldsEmptySlice(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{

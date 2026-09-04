@@ -862,6 +862,26 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 // CreateHumanUserWithPassword, and must NEVER be logged. withLogPath keeps
 // the caller-supplied user id out of do()'s own error/log formatting too —
 // the same discipline DeleteUser already follows for the identical reason.
+//
+// PROBED live 2026-09-04 against the TESSERIX instance: 8 consecutive wrong
+// codes against the same user id all returned the identical
+// COMMAND-eis9R 400, then the correct code succeeded immediately after —
+// no lockout, no backoff, no observable throttling on this call. Do NOT
+// assume Zitadel rate-limits this endpoint; the failedAttempts field
+// readZitadelError deliberately never surfaces (see its doc) exists
+// elsewhere in Zitadel's API surface but was not observed to gate this
+// call. Re-probe rather than re-assume if this matters again.
+//
+// The only thing standing between a caller and brute-forcing this code is
+// the keyspace itself: 6 characters observed from an uppercase-alphanumeric
+// alphabet (e.g. "RN7W6C") is roughly 36^6 ≈ 2.2 billion combinations, and
+// the call sits behind X-Internal-Auth (only the storefront backend, not a
+// public browser, can reach it directly) — but the storefront itself
+// exposes this endpoint to the public internet, and auth-bff has NO rate
+// limiting anywhere (a known open item since phase 3b). This endpoint adds
+// one more consumer of that gap rather than a defense of its own; see the
+// phase 6a task-2 report for why no per-endpoint attempt cap was added
+// here instead of waiting on the service-wide fix.
 func (c *Client) VerifyEmail(ctx context.Context, userID, code string) error {
 	if userID == "" {
 		return fmt.Errorf("zitadellogin: VerifyEmail with an empty user id: %w", ErrUnavailable)

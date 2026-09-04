@@ -345,6 +345,130 @@ export async function finishCustomerIDPIntent(
   return { kind: "failed", code: "unrecognised_response_shape" };
 }
 
+// ---------------------------------------------------------------------------
+// Customer sign-up (phase 6a task 3): POST /auth/customer/register and
+// POST /auth/customer/verify-email.
+//
+// Same discipline as idp/start + idp/finish above: outcomes are NOT
+// collapsed to one value the way the 401 password path is. There is no
+// account-enumeration concern here — a sign-up caller chooses the email
+// being registered, so a distinct code tells them nothing they did not
+// already control — and each of register's failure codes (email_taken,
+// email_ambiguous, weak_password, verification_email_failed,
+// zitadel_unavailable) needs its own truthful, distinct copy. See
+// lib/auth/customer-signup-messages.ts and the phase brief's constraint
+// that email_taken (a permanent state for that address) must never read
+// like verification_email_failed (the account was rolled back, so
+// retrying genuinely works).
+//
+// A genuinely unreadable failure (malformed body, transport error) still
+// throws AuthBffCustomerError, exactly like every other client in this
+// file, so a caller can tell "auth-bff told us no" from "we couldn't find
+// out".
+
+interface RegisterCustomerAccountArgs {
+  email: string;
+  password: string;
+  givenName?: string;
+  familyName?: string;
+}
+
+/** Outcome of POST /auth/customer/register. */
+export type CustomerRegisterOutcome =
+  | { kind: "created"; uid: string; email: string }
+  /**
+   * `code` is one of auth-bff's documented register outcomes (email_taken,
+   * email_ambiguous, weak_password, verification_email_failed,
+   * zitadel_unavailable, invalid_request, ...) or an `http_<status>`/
+   * `*_response_*` fallback for anything unrecognised. Never rendered to
+   * the shopper verbatim — see customer-signup-messages.ts.
+   */
+  | { kind: "failed"; code: string };
+
+/** Wire shape for POST /auth/customer/register's 2xx body. */
+type CustomerRegisterBody = { data: { uid: string; email: string } };
+
+/**
+ * registerCustomerAccount submits {email, password[, given_name,
+ * family_name]} to POST /auth/customer/register and returns the resulting
+ * outcome. The account it creates is UNVERIFIED until a follow-up
+ * verifyCustomerEmailCode call succeeds — see that function's doc.
+ *
+ * Never call this from a client component — see the file header.
+ */
+export async function registerCustomerAccount(
+  args: RegisterCustomerAccountArgs,
+): Promise<CustomerRegisterOutcome> {
+  const body: Record<string, string> = {
+    email: args.email,
+    password: args.password,
+  };
+  if (args.givenName) body.given_name = args.givenName;
+  if (args.familyName) body.family_name = args.familyName;
+
+  const res = await postToCustomerEndpoint("/auth/customer/register", body);
+
+  if (!res.ok) {
+    return { kind: "failed", code: await readErrorCode(res) };
+  }
+
+  let parsed: CustomerRegisterBody;
+  try {
+    parsed = (await res.json()) as CustomerRegisterBody;
+  } catch {
+    return { kind: "failed", code: "invalid_response_body" };
+  }
+  if (parsed.data && typeof parsed.data.uid === "string") {
+    return { kind: "created", uid: parsed.data.uid, email: parsed.data.email };
+  }
+  return { kind: "failed", code: "unrecognised_response_shape" };
+}
+
+interface VerifyCustomerEmailCodeArgs {
+  uid: string;
+  /** The 6-character code the shopper read out of their verification
+   *  email. A live credential for the account — never logged, never
+   *  echoed back in any outcome value, and never embedded in a thrown
+   *  error (see AuthBffCustomerError's doc). */
+  code: string;
+}
+
+/** Outcome of POST /auth/customer/verify-email. */
+export type CustomerVerifyEmailOutcome =
+  | { kind: "verified" }
+  /**
+   * `code` is one of auth-bff's documented verify-email outcomes
+   * (invalid_verification_code, zitadel_unavailable, ...) or an
+   * `http_<status>`/`*_response_*` fallback for anything unrecognised.
+   * Never rendered to the shopper verbatim — see
+   * customer-signup-messages.ts.
+   */
+  | { kind: "failed"; code: string };
+
+/**
+ * verifyCustomerEmailCode submits {uid, code} to
+ * POST /auth/customer/verify-email and returns the resulting outcome.
+ *
+ * The 2xx body ({"data":{"verified":true}}) carries no field the caller
+ * needs beyond "it worked" — deliberately not parsed for anything past the
+ * status check, so there is nothing in it to mishandle.
+ *
+ * Never call this from a client component — see the file header.
+ */
+export async function verifyCustomerEmailCode(
+  args: VerifyCustomerEmailCodeArgs,
+): Promise<CustomerVerifyEmailOutcome> {
+  const res = await postToCustomerEndpoint("/auth/customer/verify-email", {
+    uid: args.uid,
+    code: args.code,
+  });
+
+  if (!res.ok) {
+    return { kind: "failed", code: await readErrorCode(res) };
+  }
+  return { kind: "verified" };
+}
+
 /** Shared best-effort `{error}` field extraction for a non-2xx response. */
 async function readErrorCode(res: Response): Promise<string> {
   let code = `http_${res.status}`;

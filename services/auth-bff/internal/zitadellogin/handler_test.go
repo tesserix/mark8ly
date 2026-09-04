@@ -75,9 +75,13 @@ func fakeZitadelHandler(t *testing.T, policyJSON, methodsJSON, factorsJSON strin
 		case strings.HasSuffix(r.URL.Path, "/authentication_methods"):
 			w.Write([]byte(`{"authMethodTypes":` + methodsJSON + `}`))
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
-			// UserEmail: the fixed handler resolves email from Zitadel, not
-			// from the request body, so every handler test needs this.
-			w.Write([]byte(`{"user":{"human":{"email":{"email":"a@b.test"}}}}`))
+			// UserEmail / UserEmailVerified: the fixed handler resolves
+			// email (and its verified flag, for the customer password
+			// login gate) from Zitadel, not from the request body, so
+			// every handler test needs this. isVerified:true so existing
+			// login/totp tests built on this fixture keep passing the new
+			// gate — tests of the gate itself use their own fixture.
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"a@b.test","isVerified":true}}}}`))
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/oidc/auth_requests/"):
 			finalized.Store(true)
 			w.Write([]byte(`{"callbackUrl":"https://admin.mark8ly.com/auth/callback?code=c&state=s"}`))

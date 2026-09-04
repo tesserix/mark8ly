@@ -277,6 +277,39 @@ func (h *CustomerHandler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// register (customer_handler.go) creates the first UNVERIFIED password
+	// accounts this system has ever had. Refuse to mint a session for one
+	// here, or the whole point of that verification step is decorative: an
+	// attacker who registers victim@example.com with a password of their
+	// own choosing would otherwise sign in normally, permanently burning
+	// that address (see ErrEmailAlreadyExists's doc — a future genuine
+	// owner's own sign-up, and their Google sign-in, both dead-end on it).
+	//
+	// This check cannot become a NEW account-enumeration oracle: reaching
+	// it already required CreatePasswordSession to succeed, which (per the
+	// comment above) already requires the caller to hold this account's
+	// correct password. Anyone able to trigger email_not_verified below
+	// already had everything ErrBadCredentials above would have told them
+	// "yes, this credential is valid" — the unverified check adds no new
+	// signal for a caller who does NOT already hold a valid credential.
+	factors, err := h.c.SessionFactors(ctx, sess.ID)
+	if err != nil || factors.UserID == "" {
+		slog.ErrorContext(ctx, "zitadellogin(customer): login: could not resolve session subject to check email verification", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+		return
+	}
+	verified, err := h.c.UserEmailVerified(ctx, factors.UserID)
+	if err != nil {
+		slog.ErrorContext(ctx, "zitadellogin(customer): login: could not check email verification", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+		return
+	}
+	if !verified {
+		slog.WarnContext(ctx, "zitadellogin(customer): login rejected: email not verified", "user_id", factors.UserID)
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "email_not_verified"})
+		return
+	}
+
 	// Password login through this endpoint is never a federated
 	// (Google/Apple) identity — those never present a password to us at all.
 	res, err := h.c.DecideSufficiency(ctx, sess, false)
@@ -592,12 +625,22 @@ func (h *CustomerHandler) register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Deliver the code through auth-bff's own transactional mail path. A
-	// nil mailer or a send failure both leave the shopper holding a fresh
-	// account with no way to receive their code — refuse rather than
-	// report success, mirroring notify's own "a failed OTP send must fail
-	// the request" rule (see notify's package doc).
+	// nil mailer or a send failure both leave the shopper holding a fresh,
+	// UNVERIFIED account with no way to ever receive a code for it — and
+	// unlike a merely-failed request, that account is not nothing: the
+	// very next registration attempt for this address would find
+	// FindUserByVerifiedEmail return "" (this account isn't verified) and
+	// then 400 with ErrEmailAlreadyExists, forever. That is a PERMANENT
+	// lockout on this address for every sign-up path, including Google —
+	// exactly what email verification exists to prevent — so both
+	// branches below delete the account this request just created rather
+	// than leave it stranded. It is safe to delete: nothing outside this
+	// request has ever seen its uid (the response has not been written
+	// yet) and it cannot pass the login gate above unverified, so nobody
+	// has been able to use it in the time it has existed.
 	if h.verificationMailer == nil {
 		slog.ErrorContext(ctx, "zitadellogin(customer): register: no verification mailer configured (see WithNotify)", "user_id", userID)
+		h.rollbackUnsentRegistration(ctx, userID)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "verification_email_failed"})
 		return
 	}
@@ -606,6 +649,7 @@ func (h *CustomerHandler) register(w http.ResponseWriter, r *http.Request) {
 		// code here — notify's own errors never embed it, but this line
 		// must stay that way even if that ever changed.
 		slog.ErrorContext(ctx, "zitadellogin(customer): register: could not send the verification email", "user_id", userID)
+		h.rollbackUnsentRegistration(ctx, userID)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "verification_email_failed"})
 		return
 	}
@@ -619,6 +663,18 @@ func (h *CustomerHandler) register(w http.ResponseWriter, r *http.Request) {
 			"email": req.Email,
 		},
 	})
+}
+
+// rollbackUnsentRegistration deletes the Zitadel user register just created
+// when the verification email could not be sent (nil mailer or a send
+// error) — see register's doc for why leaving it in place is a permanent
+// lockout. Best-effort: a delete failure is logged loudly and swallowed,
+// because the caller has already decided to answer 503 either way and a
+// failed rollback is no worse than the pre-rollback behaviour this fixes.
+func (h *CustomerHandler) rollbackUnsentRegistration(ctx context.Context, userID string) {
+	if err := h.c.DeleteUser(ctx, userID); err != nil {
+		slog.ErrorContext(ctx, "zitadellogin(customer): register: could not roll back an account whose verification email failed to send; this address may now be stranded", "err", err, "user_id", userID)
+	}
 }
 
 // respondRegisterCreateError maps CreateHumanUserWithPassword's errors to

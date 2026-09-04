@@ -76,6 +76,16 @@ var (
 // prefix.
 const weakPasswordErrorID = "DOMAIN-HuJf6"
 
+// duplicateEmailErrorID is the stable details[0].id observed for
+// AddHumanUser's duplicate-email (ALREADY_EXISTS) rejection — the same id
+// CreateHumanUserWithIDPLink's tests pin. CreateHumanUserWithPassword keys
+// off this id FIRST and grpc code 6 only as a fallback (see its classify
+// closure) so an unrecognized future ALREADY_EXISTS id still maps
+// correctly, and so this narrowing cannot accidentally also catch the
+// weak-password case, which also uses a low grpc code but a completely
+// different id.
+const duplicateEmailErrorID = "COMMAND-oR9nS"
+
 type Client struct {
 	baseURL string
 	token   string
@@ -598,13 +608,18 @@ func (c *Client) CreateHumanUserWithPassword(ctx context.Context, email, passwor
 	}
 	// classify distinguishes the two 400 cases AddHumanUser can answer here,
 	// which do NOT share a grpc code: a too-short password (code 3, id
-	// weakPasswordErrorID) and a duplicate email (code 6, ALREADY_EXISTS).
-	// Anything else falls back to ErrUnavailable rather than guessing — see
+	// weakPasswordErrorID) and a duplicate email (code 6, id
+	// duplicateEmailErrorID). id is checked FIRST for both — it is the
+	// stable, specific signal — with code 6 kept only as a fallback for an
+	// ALREADY_EXISTS this package has not seen an id for yet. Anything else
+	// falls back to ErrUnavailable rather than guessing — see
 	// badRequestClassifier's doc.
 	classify := func(code int, id string) error {
 		switch {
 		case id == weakPasswordErrorID:
 			return ErrWeakPassword
+		case id == duplicateEmailErrorID:
+			return ErrEmailAlreadyExists
 		case code == 6:
 			return ErrEmailAlreadyExists
 		default:
@@ -746,6 +761,60 @@ func (c *Client) UserEmail(ctx context.Context, userID string) (string, error) {
 		return "", fmt.Errorf("zitadellogin: user has no human profile, cannot resolve email: %w", ErrUnavailable)
 	}
 	return wire.User.Human.Email.Email, nil
+}
+
+// UserEmailVerified reports whether Zitadel currently marks userID's own
+// email verified. Used by the storefront customer password login gate
+// (customer_handler.go's login) to refuse a sign-up account that has never
+// completed the returnCode flow CreateHumanUserWithPassword started — see
+// that function's doc and the sdd progress ledger's
+// "sign-up VERIFIES the email" ruling. Without this gate, an attacker could
+// register a victim's address with a password of their own choosing and
+// sign straight in, which is the exact lockout self-registration with email
+// verification exists to prevent.
+func (c *Client) UserEmailVerified(ctx context.Context, userID string) (bool, error) {
+	var wire struct {
+		User struct {
+			Human *struct {
+				Email struct {
+					IsVerified bool `json:"isVerified"`
+				} `json:"email"`
+			} `json:"human"`
+		} `json:"user"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/v2/users/"+url.PathEscape(userID), nil, &wire, ErrUserNotFound); err != nil {
+		return false, err
+	}
+	if wire.User.Human == nil {
+		return false, fmt.Errorf("zitadellogin: user has no human profile, cannot resolve email verification: %w", ErrUnavailable)
+	}
+	return wire.User.Human.Email.IsVerified, nil
+}
+
+// DeleteUser permanently removes the Zitadel user identified by userID.
+//
+// This exists for exactly one caller today: register's rollback when the
+// verification email cannot be sent (see customer_handler.go). An account
+// CreateHumanUserWithPassword just created, that this same request has
+// never reported success for, is not reachable by anyone else yet — an
+// unverified email means no sign-in gate above will admit it (see
+// UserEmailVerified's doc), and the storefront never saw a response
+// carrying its uid. Deleting it turns a permanent stranded-account lockout
+// (see ErrEmailAlreadyExists's doc: a future registration attempt for the
+// same address would otherwise 400 forever) into a clean retry.
+//
+// Idempotent: ErrUserNotFound (a 404) is treated as success, mirroring
+// zitadeladmin.Client.DeleteAccount's identical reasoning — a caller
+// retrying its own rollback may find the user already gone.
+func (c *Client) DeleteUser(ctx context.Context, userID string) error {
+	if userID == "" {
+		return fmt.Errorf("zitadellogin: DeleteUser with an empty user id: %w", ErrUnavailable)
+	}
+	err := c.do(ctx, http.MethodDelete, "/v2/users/"+url.PathEscape(userID), nil, nil, ErrUserNotFound, withLogPath("/v2/users/{id}"))
+	if errors.Is(err, ErrUserNotFound) {
+		return nil
+	}
+	return err
 }
 
 var mfaPolicyKeys = []string{"forceMfa", "forceMfaLocalOnly"}

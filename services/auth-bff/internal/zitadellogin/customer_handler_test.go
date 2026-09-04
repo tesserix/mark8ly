@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -1047,5 +1048,226 @@ func TestCustomerRegisterNeverLeaksTheEmailCode(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), secretCode) {
 		t.Fatalf("log output leaks the verification code: %s", logs.String())
+	}
+}
+
+// TestCustomerRegisterRollsBackTheAccountWhenTheEmailFailsToSend is the fix
+// for review Finding 1: a send failure must not strand an unverified,
+// undeliverable account — the very next registration attempt for the same
+// address would otherwise 400 forever (FindUserByVerifiedEmail finds no
+// VERIFIED match, since the account can never be verified, so it always
+// reaches CreateHumanUserWithPassword again, which always 400s on the
+// duplicate email). register must delete the account it just created
+// before answering, turning that into a clean retry instead.
+func TestCustomerRegisterRollsBackTheAccountWhenTheEmailFailsToSend(t *testing.T) {
+	var deleteCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			w.Write([]byte(`{"userId":"new-1","emailCode":"111222"}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/v2/users/new-1":
+			deleteCalled.Store(true)
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{err: errors.New("smtp unavailable")}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"new.shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", rec.Code, rec.Body.String())
+	}
+	if !deleteCalled.Load() {
+		t.Fatal("DeleteUser (DELETE /v2/users/new-1) was never called — the account is stranded, permanently burning this email")
+	}
+}
+
+// TestCustomerRegisterRollsBackTheAccountWhenNoMailerConfigured mirrors the
+// send-failure rollback for the other branch that can strand an account: no
+// mailer configured at all.
+func TestCustomerRegisterRollsBackTheAccountWhenNoMailerConfigured(t *testing.T) {
+	var deleteCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			w.Write([]byte(`{"userId":"new-1","emailCode":"111222"}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/v2/users/new-1":
+			deleteCalled.Store(true)
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"new.shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", rec.Code, rec.Body.String())
+	}
+	if !deleteCalled.Load() {
+		t.Fatal("DeleteUser (DELETE /v2/users/new-1) was never called — the account is stranded with no mailer configured")
+	}
+}
+
+// TestCustomerRegisterNeverLeaksTheEmailCodeWhenSendFails extends the leak
+// property to the send-failure branch: a send error must not put the code
+// into the response or into any log line, including whatever DeleteUser's
+// rollback path logs.
+func TestCustomerRegisterNeverLeaksTheEmailCodeWhenSendFails(t *testing.T) {
+	const secretCode = "662551"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			w.Write([]byte(`{"userId":"new-1","emailCode":"` + secretCode + `"}`))
+		case r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	logs := captureLogs(t)
+	mailer := &recordingMailer{err: errors.New("smtp unavailable")}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"new.shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if mailer.code != secretCode {
+		t.Fatalf("mailer never received the code — test setup is broken")
+	}
+	if strings.Contains(rec.Body.String(), secretCode) {
+		t.Fatalf("response body leaks the verification code: %s", rec.Body.String())
+	}
+	if strings.Contains(logs.String(), secretCode) {
+		t.Fatalf("log output leaks the verification code: %s", logs.String())
+	}
+}
+
+// TestCustomerRegisterNeverLeaksAnythingOnWeakPassword extends the leak
+// property to the weak-password branch: CreateHumanUserWithPassword fails
+// before Zitadel ever returns an emailCode here (there is nothing to leak
+// on that front), so this pins the adjacent property the same test shape
+// should cover — the submitted password itself must not appear in the
+// response or in any log line either.
+func TestCustomerRegisterNeverLeaksAnythingOnWeakPassword(t *testing.T) {
+	const weakPassword = "x"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":3,"message":"Password is too short (DOMAIN-HuJf6)","details":[{"id":"DOMAIN-HuJf6"}]}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	logs := captureLogs(t)
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"`+weakPassword+`"}`)))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), weakPassword) {
+		t.Fatalf("response body leaks the submitted password: %s", rec.Body.String())
+	}
+	if strings.Contains(logs.String(), weakPassword) {
+		t.Fatalf("log output leaks the submitted password: %s", logs.String())
+	}
+	if mailer.calls != 0 {
+		t.Fatalf("mailer.calls = %d, want 0 — no account was created", mailer.calls)
+	}
+}
+
+// TestCustomerLoginRejectsAnUnverifiedAccount is the fix for review Finding
+// 2: register (above) creates the first UNVERIFIED password accounts this
+// system has ever had, and nothing gated sign-in on that flag. Without this,
+// an attacker registers victim@example.com with a password of their own
+// choosing and signs in normally — permanently burning that address for
+// every future sign-up path, including Google, which is exactly the
+// lockout email verification exists to prevent.
+func TestCustomerLoginRejectsAnUnverifiedAccount(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/sessions/"):
+			w.Write([]byte(factorsPasswordOnly))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"victim@example.com","isVerified":false}}}}`))
+		default:
+			t.Errorf("must not reach sufficiency/finalize for an unverified account: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client()))
+	rec := httptest.NewRecorder()
+	h.login(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/login",
+		strings.NewReader(`{"login_name":"victim@example.com","password":"attacker-chosen-pw"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "email_not_verified" {
+		t.Fatalf("body = %v, want error: email_not_verified", body)
+	}
+	if len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("cookies = %v, want none for an unverified account", rec.Result().Cookies())
+	}
+}
+
+// TestCustomerLoginAcceptsAVerifiedAccount is the control for the test
+// above: fakeZitadelCustomer's fixture answers isVerified:true, and every
+// other login test in this file builds on it — this pins that the gate does
+// not also block the ordinary case.
+func TestCustomerLoginAcceptsAVerifiedAccount(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelCustomer(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+	h := NewCustomerHandler(c)
+
+	rec := httptest.NewRecorder()
+	h.login(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/login",
+		strings.NewReader(`{"login_name":"a@b.test","password":"x"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 }

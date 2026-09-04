@@ -3,6 +3,7 @@ package zitadellogin
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -484,9 +485,8 @@ func TestCreateHumanUserWithPasswordSendsReturnCodeDirectlyUnderEmail(t *testing
 		if r.Method != http.MethodPost || r.URL.Path != "/v2/users/human" {
 			t.Errorf("got %s %s", r.Method, r.URL.Path)
 		}
-		buf := make([]byte, 4096)
-		n, _ := r.Body.Read(buf)
-		gotBody = string(buf[:n])
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
 		w.Write([]byte(`{"userId":"new-user-1","emailCode":"123456"}`))
 	})
 	userID, emailCode, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
@@ -571,9 +571,8 @@ func TestCreateHumanUserWithPasswordDoesNotMapAnUnrelated400ToEitherSentinel(t *
 func TestCreateHumanUserWithPasswordFallsBackToNeutralNamesWhenAbsent(t *testing.T) {
 	var gotBody string
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		buf := make([]byte, 4096)
-		n, _ := r.Body.Read(buf)
-		gotBody = string(buf[:n])
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
 		w.Write([]byte(`{"userId":"new-user-1","emailCode":"123456"}`))
 	})
 	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
@@ -583,7 +582,67 @@ func TestCreateHumanUserWithPasswordFallsBackToNeutralNamesWhenAbsent(t *testing
 	if !strings.Contains(gotBody, `"givenName":"shopper"`) {
 		t.Fatalf("request body = %q, want the email local part as the given name fallback", gotBody)
 	}
-	if strings.Contains(gotBody, "Member") {
-		t.Fatalf("request body = %q, must not use the merchant-flavoured \"Member\" placeholder", gotBody)
+	// "User" is the actual documented fallback for this path (see
+	// boundedProfileName's callers above) — asserting its presence, not
+	// merely the absence of the merchant-flavoured "Member" placeholder
+	// (which never appears anywhere in this call), is what would actually
+	// catch a regressed fallback value.
+	if !strings.Contains(gotBody, `"familyName":"User"`) {
+		t.Fatalf("request body = %q, want the neutral \"User\" family name fallback", gotBody)
+	}
+}
+
+// TestCreateHumanUserWithPasswordMatchesDuplicateEmailByIDEvenWithAnUnexpectedCode
+// is the fix for review Finding 3: the brief asked for id-keying, not
+// code-only narrowing. Zitadel's grpc code for a given error id is not
+// something this package controls; keying primarily off details[0].id (with
+// code 6 kept only as a fallback) means a duplicate-email 400 that, for
+// whatever reason, arrives with a code other than 6 still maps correctly,
+// as long as the id matches.
+func TestCreateHumanUserWithPasswordMatchesDuplicateEmailByIDEvenWithAnUnexpectedCode(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"code":9,"message":"user already exists (COMMAND-oR9nS)","details":[{"id":"COMMAND-oR9nS"}]}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if !errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("err = %v, want ErrEmailAlreadyExists — the id must be matched even when the code is unexpected", err)
+	}
+}
+
+func TestDeleteUserSendsDelete(t *testing.T) {
+	var gotMethod, gotPath string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	})
+	if err := c.DeleteUser(context.Background(), "user-1"); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if gotMethod != http.MethodDelete || gotPath != "/v2/users/user-1" {
+		t.Fatalf("got %s %s, want DELETE /v2/users/user-1", gotMethod, gotPath)
+	}
+}
+
+func TestDeleteUserTreatsNotFoundAsSuccess(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"code":5,"message":"User could not be found (QUERY-Dfbg2)","details":[{"id":"QUERY-Dfbg2"}]}`))
+	})
+	if err := c.DeleteUser(context.Background(), "user-1"); err != nil {
+		t.Fatalf("err = %v, want nil — a 404 on delete is idempotent success", err)
+	}
+}
+
+func TestUserEmailVerifiedReadsIsVerified(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"user":{"human":{"email":{"email":"a@b.test","isVerified":false}}}}`))
+	})
+	verified, err := c.UserEmailVerified(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if verified {
+		t.Fatal("verified = true, want false")
 	}
 }

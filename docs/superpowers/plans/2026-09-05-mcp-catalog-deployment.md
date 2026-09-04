@@ -54,17 +54,19 @@ Read `.github/ci/container-images.json`. The Go services (`mark8ly-platform-api`
   "name": "mark8ly-mcp-catalog",
   "context": "services/mcp",
   "dockerfile": "services/mcp/Dockerfile",
-  "target": "runtime",
+  "target": "server",
   "source_root": "services/mcp",
   "build_args": "",
   "requires_application_build_secret": false,
   "trivy_ignore_file": ".trivyignore",
-  "smoke_port": 8765,
+  "smoke_port": 0,
   "smoke_path": "/healthz"
 }
 ```
 
-**Confirm `target` against the Dockerfile before committing** — the plan asserts `runtime`, but read the file's stage names rather than trusting this. Confirm `smoke_port` matches the config default (8765) and that `/healthz` is the path `main.go` actually serves.
+**`smoke_port` MUST be 0, and this plan originally got it wrong.** Every Go service in this file uses `0` — `platform-api`, `auth-bff`, `marketplace-api`, `otto` — because each hard-fails at boot without secrets CI does not supply, so a live smoke check can never connect. `mcp-catalog` is in exactly that category: `config.Load()` refuses to start without `STOREFRONT_BASE_URL`, `STOREFRONT_KEY` and `MCP_AUTH_KEY`, and CI passes only registry tokens and `NEXT_PUBLIC_*` build args. Only the Next.js apps, whose config arrives as build-time args, carry a live smoke port. `smoke_path` stays `/healthz` because that is the endpoint this service genuinely serves; the siblings' `/health` would be untrue here, and with the port at 0 the path is unused anyway.
+
+**`target` is `server`, not `runtime`** — `services/mcp/Dockerfile:17` reads `AS server`. An earlier draft of this plan said `runtime`; it was wrong, and reading the file is what caught it. Confirm `smoke_port` matches the config default (8765) and that `/healthz` is the path `main.go` actually serves.
 
 - [ ] **Step 3: Run the contract test**
 
@@ -105,6 +107,14 @@ gh api "orgs/tesserix/packages/container/mark8ly-mcp-catalog/versions" \
 - [ ] **Step 1: Create the GSM secret**
 
 Create a new secret in GCP project `tesseracthub-480811` named **`prod-mark8ly-mcp-catalog-key`**, containing a freshly generated high-entropy key. It must be a NEW value — do not reuse `prod-support-platform-mark8ly-mcp-key`, which belongs to the shared gateway. Per australis invariant 8, this connector owns its own credential so it can be revoked without touching another product.
+
+- [ ] **Step 1b: Know that this key has TWO readers, not one**
+
+The connector reads it to verify inbound calls. **AgentGateway also reads it, to inject on the way out.** Kora's architecture doc (`kora/docs/architecture/agentic-ai-end-to-end.md`, verified 2026-09-04) establishes the sanctioned path: the agent never holds the MCP key at all. AgentGateway verifies a short-lived Zitadel JWT in strict mode — signature, issuer, audience, expiry and an `agentgateway.mcp` role — then injects `X-MCP-Key` itself after selecting a reviewed route.
+
+That injection reads from the Secret `product-mcp-upstream-keys` in namespace `agentgateway-system`, built by `external-secrets/prod/agentgateway-system/externalsecret.yaml`, which already carries `HOMECHEF_MCP_KEY`, `MARK8LY_MCP_KEY`, `PLATFORM_MCP_KEY` and `STOCKPILOT_MCP_KEY`. It is also exactly the `credentialRef.secretName` devai's registry seeds point at.
+
+So the new GSM secret must be wired into **both** places (Task 3 for the connector, Task 3b for the gateway), or the connector will reject everything the gateway sends.
 
 - [ ] **Step 2: Record who holds it**
 
@@ -230,6 +240,42 @@ Then call one tool for real against a live store slug and confirm a projected re
 
 ---
 
+### Task 3b (tesserix-k8s): let AgentGateway hold the key
+
+**Files:**
+- Modify: `external-secrets/prod/agentgateway-system/externalsecret.yaml`
+
+- [ ] **Step 1: Add the connector's key to `product-mcp-upstream-keys`**
+
+Add a `secretKey` for the catalog connector alongside the existing four, sourced from the GSM secret minted in Task 2. Match the naming of its siblings — they read `<PRODUCT>_MCP_KEY` — and pick a name that distinguishes this connector from the existing `MARK8LY_MCP_KEY`, which belongs to the shared gateway that is NOT being retired here.
+
+- [ ] **Step 2: Verify it syncs**
+
+```bash
+kubectl get externalsecret -n agentgateway-system product-mcp-upstream-keys   # SecretSynced
+kubectl get secret -n agentgateway-system product-mcp-upstream-keys -o jsonpath='{.data}' | python3 -c "import json,sys; print(sorted(json.load(sys.stdin).keys()))"
+```
+Expect the new key name in that list. **Print the key NAMES only, never the values.**
+
+---
+
+### Task 3c (tesserix-k8s): admit the gateway at the mesh boundary
+
+**Files:**
+- Create/modify: the connector chart's `authorization-policy.yaml`, and whatever enrols it in the ambient mesh
+
+- [ ] **Step 1: Copy how kora-mcp is admitted**
+
+Kora's doc describes two boundaries: the waypoint authorizes the original `agentgateway-mcp` or `support-platform-slm-router` caller at the Service boundary, and the workload boundary admits only those direct callers or the waypoint's forwarding identity. Istio ambient mTLS authenticates every hop by ServiceAccount SPIFFE identity.
+
+**Read how `kora-mcp` actually does this before writing anything** — `charts/apps/kora-mcp/` if it exists, plus `charts/thirdparty/istio-config/templates/network-policies.yaml`, which references `kora-mcp`. Note also that tesserix-k8s recently landed "fix(mcp): enroll AgentGateway in ambient mesh (#956)", so the enrolment mechanism is current and worth reading rather than inferring.
+
+- [ ] **Step 2: Admit only what must be admitted**
+
+The connector should accept calls from the AgentGateway identity, and nothing else. It must NOT be open to the namespace at large. Confirm by reading the rendered policy, not by trusting the values file.
+
+---
+
 ### Task 4 (tesserix-k8s): add it to the Kargo warehouse — LAST, and only on evidence
 
 **Do not start this task until Task 1 step 6 has confirmed a published `main-<sha7>` tag, and Task 3 step 9 has confirmed the connector answers a `tools/list`.**
@@ -303,7 +349,43 @@ The tool list in the seed and the tool list the server returns must match. mark8
 git commit -m "feat(registry): register the mark8ly catalog connector"
 ```
 
-Note the seeds are a source of record; **zero `MCPServer` CRs exist in the cluster** and devai's catalog seeds declare a different apiVersion group than the installed CRD. Applying seeds is a separate, pre-existing piece of work — do not take it on here.
+**A correction to an earlier draft of this plan.** It claimed the seeds were a dormant source of record because zero `MCPServer` CRs exist in the cluster. That inference was wrong. The seeds are never meant to become CRs — `devai-registry-bootstrap` POSTs them to the registry's HTTP API. The absence of CRs is expected, not evidence of anything.
+
+---
+
+### Task 5b (tesserix-k8s): make the bootstrap re-read the seeds
+
+**Files:**
+- Modify: `charts/apps/devai-registry-bootstrap/values.yaml`
+
+Adding the seed file to devai is not enough on its own. The bootstrap Job re-POSTs seeds only when it re-runs, and it re-runs when `reseedNonce` changes.
+
+- [ ] **Step 1: Bump the nonce**
+
+`reseedNonce` currently reads `"2026-09-03-kora-mcp-v5"`. Follow that convention — a date plus what changed — so the value says why it moved. Upserts are safe on re-run, so re-POSTing every existing seed alongside the new one is expected and harmless.
+
+- [ ] **Step 2: Verify the Job actually ran and succeeded**
+
+```bash
+kubectl get jobs -n <the bootstrap's namespace> | grep registry-bootstrap
+kubectl logs -n <ns> job/<the new job> | tail -20
+```
+The log must show the catalog seed POSTed. **A Job that completes is not the same as a seed that registered** — read the output rather than the exit code.
+
+- [ ] **Step 3: Confirm the record is in the registry**
+
+Query the registry for the connector. The API requires credentials, so this may need an operator; if you cannot query it, say so plainly rather than assuming the POST landed.
+
+- [ ] **Step 4: Confirm the route appears — this is the real acceptance**
+
+**No manual AgentGateway configuration is needed anywhere.** `agentgateway-route-sync-controller` (running the `agentic-registry` image in `agentgateway-system`) polls `REGISTRY_URL=.../v0/export/...` every **30 seconds** and reconciles routes into `TARGET_NAMESPACE=agentgateway-system` with `FIELD_MANAGER=agentgateway-registry-sync`. Its static ConfigMap carries only logging config; routes arrive by xDS. So publishing the seed and bumping the nonce genuinely IS the whole registration path.
+
+Wait ~30s after Step 2 and confirm the connector's route exists in `agentgateway-system`. If it does not appear within a couple of poll intervals, the seed did not register — go back to Step 2 rather than adding gateway config by hand, because hand-added config is exactly what the next reconcile will remove.
+
+**Two operational facts worth knowing before you touch this:**
+
+- **`PRUNE=true`.** The registry is authoritative: a route not present in the export is DELETED. Never hand-create a route to "help" — it will vanish at the next poll, and the disappearance will look like a different bug.
+- **`MIN_RESOURCES=27`** is a safety floor on the export. Adding this connector moves the estate's count up, not down, so it is not a concern here — but be aware the controller has a guard against acting on a short or failed fetch, and do not treat a quiet controller as a successful sync. Read its logs.
 
 ---
 
@@ -311,11 +393,12 @@ Note the seeds are a source of record; **zero `MCPServer` CRs exist in the clust
 
 - **Retiring the old `mark8ly-mcp` gateway.** Spec step 4, after the support tools migrate. Both run side by side until then; that is the temporary two-pod cost the spec already accounted for.
 - **The Degraded `mark8ly-marketplace-api-admin` Application.** Pre-existing, unrelated, and the reason the Kargo prod stage reads Unhealthy today.
-- **Applying registry seeds as cluster CRs**, and the `registry.solo.io` vs `kagent.dev` apiVersion mismatch.
+- **Reconciling devai's `registry.solo.io` CATALOG seeds against the installed `kagent.dev` CRD group.** That mismatch is real and pre-existing, but it concerns the third-party catalog seeds, not the product `MCPServer` records this plan adds — those go to the registry API, not to CRs.
 - **AgentGateway routing.** The registry record names the in-cluster Service URL. Whether callers go through AgentGateway (ADR-0001 D4) is open question 1 in the spec and is not settled by deploying this.
 - **A `/readyz` that probes the upstream.** It returns a static 200, matching otto. Worth revisiting when something gates on it.
 
 ## Open questions
 
 1. **Who calls this first?** Deploying it proves it runs; it does not prove anything consumes it. Identify the first caller before Task 4, because a connector nothing calls is not obviously worth adding to the promotion chain.
-2. **Does the engine reach it directly or via AgentGateway?** Affects whether an AuthorizationPolicy needs to admit a second caller identity.
+2. ~~Does the engine reach it directly or via AgentGateway?~~ **ANSWERED — via AgentGateway.** Kora's architecture doc settles it: the agent presents a Zitadel JWT to AgentGateway, which authenticates it and injects `X-MCP-Key` from `product-mcp-upstream-keys`. That drove Tasks 3b and 3c into this plan; they were missing from the first draft.
+3. ~~How is an MCP server registered as an AgentGateway route?~~ **ANSWERED — via the registry, and it is a publish, not a config change.** `charts/apps/devai-registry-bootstrap` runs a Job that clones devai, reads `architecture/registry-seeds/`, and POSTs each YAML to the agentic registry's v0 API at `agentregistry.agentregistry-system.svc.cluster.local:12121`, upserting on `(kind, name, namespace)`. Discovery is registry-driven, exactly as devai's hub documents it. That turned Task 5 from "add a file" into "add a file AND make the bootstrap re-read it" — see Task 5b.

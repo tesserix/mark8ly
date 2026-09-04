@@ -95,7 +95,7 @@ class ReusableCIContract(unittest.TestCase):
             "mark8ly-auth-bff": ("server", 0, "/health"),
             "mark8ly-marketplace-api": ("runtime", 0, "/health"),
             "mark8ly-otto": ("server", 0, "/health"),
-            "mark8ly-mcp-catalog": ("server", 8765, "/healthz"),
+            "mark8ly-mcp-catalog": ("server", 0, "/healthz"),
             "mark8ly-onboarding": ("runtime", 4201, "/api/health"),
             "mark8ly-admin": ("runtime", 4202, "/api/health"),
             "mark8ly-storefront": ("runtime", 4203, "/api/health"),

@@ -57,7 +57,7 @@
       "build_args": "",
       "requires_application_build_secret": false,
       "trivy_ignore_file": ".trivyignore",
-      "smoke_port": 8765,
+      "smoke_port": 0,
       "smoke_path": "/healthz"
     },
     {

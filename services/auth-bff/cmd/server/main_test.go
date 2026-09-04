@@ -43,7 +43,7 @@ func TestZitadelHandlersUseTheCorrectReturnURLAllowlist(t *testing.T) {
 	}
 	client := zitadellogin.New(fakeZitadel.URL, "pat", fakeZitadel.Client())
 
-	zh, err := newZitadelHandlers(cfg, client, nil)
+	zh, err := newZitadelHandlers(cfg, client, nil, nil)
 	if err != nil {
 		t.Fatalf("newZitadelHandlers: %v", err)
 	}

@@ -280,6 +280,29 @@ describe("customerSignIn — truthful messages for outcomes other than a wrong c
     });
   });
 
+  it('an "email_not_verified" outcome does NOT say the password is incorrect, and points the shopper at create-account for a new code', async () => {
+    // The password here was CORRECT — auth-bff only returns this outcome
+    // after CreatePasswordSession already succeeded — so telling this
+    // shopper "Email or password is incorrect" would be false, and no
+    // amount of retrying the password fixes an unverified email.
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    verifyCustomerCredentialMock.mockResolvedValue({ kind: "email_not_verified" });
+    const { customerSignIn } = await loadActions();
+
+    const result = await customerSignIn({
+      loginName: "e@x.com",
+      password: SUBMITTED_PASSWORD,
+      storeSlug: "shop",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: "email_not_verified",
+      message:
+        "This email address hasn't been verified yet. Go to Create account to get a new verification code.",
+    });
+  });
+
   it('a "totp_required" outcome does NOT say the password is incorrect, and has its own message', async () => {
     process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({

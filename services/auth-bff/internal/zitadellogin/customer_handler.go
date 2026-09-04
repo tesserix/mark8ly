@@ -44,9 +44,50 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// CustomerVerificationMailer is the minimal notify surface register needs:
+// deliver a code to an email address, stating an expiry. notify.Client
+// satisfies this via its existing SendLoginCode — register reuses that
+// method rather than adding a second send path to internal/notify, per the
+// phase 6a task-1 brief ("reuse whatever it already does for transactional
+// mail; do not invent a delivery path"). The subject line SendLoginCode
+// renders is generic enough ("<code> is your Mark8ly sign-in code") to
+// carry a sign-up verification code too; refining copy per-purpose is a
+// notify/platform-api concern, not this package's.
+type CustomerVerificationMailer interface {
+	SendLoginCode(ctx context.Context, email, code string, ttl time.Duration) error
+}
+
+// customerVerificationCodeTTL is the expiry register's confirmation email
+// states for the emailCode CreateHumanUserWithPassword returns. Zitadel's
+// v2 API does not expose this call's own code lifetime, so this is a
+// conservative, documented assumption, not a value read from Zitadel: long
+// enough that a shopper who steps away mid-signup can still return and
+// finish without the code having gone stale.
+const customerVerificationCodeTTL = 1 * time.Hour
+
+// minRegisterPasswordLength is register's server-side password pre-check.
+//
+// It is NOT the policy. Zitadel's password complexity policy is the
+// authoritative check and CreateHumanUserWithPassword's ErrWeakPassword is
+// its answer; this bound only exists so a password that CANNOT pass is
+// refused before register touches any account (see register's use of it for
+// why the ordering is load-bearing).
+//
+// 8 is Zitadel's own default minimum length. Nothing in this repository
+// reads or configures the org's complexity policy — there is no terraform,
+// no admin call, no fixture setting it — so this is a documented
+// assumption, not a value read from Zitadel. It is deliberately the
+// weakest safe bound: a stricter one here would reject passwords Zitadel
+// would have accepted, which this pre-check has no business doing. If the
+// org policy is ever raised, Zitadel still catches the difference and
+// answers weak_password exactly as it does today; only the free retry is
+// lost, never correctness.
+const minRegisterPasswordLength = 8
 
 // CustomerHandler is the HTTP layer over Client for storefront customers. It
 // shares Client and the sufficiency decision with Handler, but never touches
@@ -54,6 +95,14 @@ import (
 // comment above.
 type CustomerHandler struct {
 	c *Client
+
+	// verificationMailer delivers the emailCode CreateHumanUserWithPassword
+	// captures to the shopper as auth-bff's own branded email — NEVER
+	// through Zitadel's own default mail path. nil means register cannot
+	// complete a sign-up (see register's nil check): a created-but-
+	// unreachable account is worse than refusing the request outright. Set
+	// via WithNotify.
+	verificationMailer CustomerVerificationMailer
 
 	// hostedLoginBaseURL mirrors Handler.hostedLoginBaseURL: the Zitadel
 	// instance's own login UI, used ONLY as the OutcomeHandoff target for
@@ -133,6 +182,14 @@ func (h *CustomerHandler) WithOrgID(id string) *CustomerHandler {
 	return h
 }
 
+// WithNotify sets the mailer register uses to deliver the verification
+// code CreateHumanUserWithPassword returns. See verificationMailer's field
+// doc and CustomerVerificationMailer's doc.
+func (h *CustomerHandler) WithNotify(m CustomerVerificationMailer) *CustomerHandler {
+	h.verificationMailer = m
+	return h
+}
+
 // Register mounts the customer login routes onto the given gin.RouterGroup.
 // Like Handler.Register, the handlers are plain net/http funcs; gin is only
 // used to route, matching this package's existing style.
@@ -148,6 +205,12 @@ func (h *CustomerHandler) Register(r *gin.RouterGroup) {
 	})
 	r.POST("/customer/idp/finish", func(c *gin.Context) {
 		h.idpFinish(c.Writer, c.Request)
+	})
+	r.POST("/customer/register", func(c *gin.Context) {
+		h.register(c.Writer, c.Request)
+	})
+	r.POST("/customer/verify-email", func(c *gin.Context) {
+		h.verifyEmail(c.Writer, c.Request)
 	})
 }
 
@@ -190,6 +253,90 @@ type customerIDPFinishRequest struct {
 	User string `json:"user"`
 }
 
+// customerRegisterRequest is the storefront's email/password sign-up
+// request. GivenName/FamilyName are optional — CreateHumanUserWithPassword
+// falls back to the email's local part / "User" when absent, exactly like
+// CreateHumanUserWithIDPLink does for a federated identity with no claimed
+// name.
+type customerRegisterRequest struct {
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	GivenName  string `json:"given_name"`
+	FamilyName string `json:"family_name"`
+}
+
+// customerVerifyEmailRequest is the storefront's follow-up to register: the
+// uid it was handed back plus the code the shopper read out of their
+// verification email. Neither field is optional — see verifyEmail's guard.
+type customerVerifyEmailRequest struct {
+	UID  string `json:"uid"`
+	Code string `json:"code"`
+}
+
+// verifyEmail reads {uid, code} and asks Zitadel to flip that account's
+// email verified — the sibling of register (task 1) that closes out the
+// sign-up flow: an account created by register stays UNVERIFIED, and
+// nothing else in this package or in login's gate treats it as though it
+// were, until this call succeeds. See VerifyEmail's doc on Client for the
+// wire shape and the error-id mapping this handler translates.
+//
+// code is a live credential for the account, exactly like register's
+// emailCode, and must never be logged. It is also never echoed back in any
+// response.
+func (h *CustomerHandler) verifyEmail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// First, before the body is even read: an unauthenticated caller must
+	// never reach VerifyEmail, or this endpoint becomes a code-guessing
+	// oracle against a caller-supplied user id — same discipline as every
+	// other endpoint in this file.
+	if !internalAuthorized(r, h.internalAuthSecret) {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req customerVerifyEmailRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+	if req.UID == "" || req.Code == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+
+	if err := h.c.VerifyEmail(ctx, req.UID, req.Code); err != nil {
+		h.respondVerifyEmailError(ctx, w, err)
+		return
+	}
+
+	slog.InfoContext(ctx, "zitadellogin(customer): verify-email verified the account's email", "user_id", req.UID)
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": true}})
+}
+
+// respondVerifyEmailError maps VerifyEmail's errors to distinct, truthful
+// outcomes. ErrEmailVerificationCodeInvalid gets its OWN code — never
+// invalid_credentials (that would read as "your password was wrong", which
+// is false) and never a generic failure (a shopper who mistyped a digit
+// needs to know to retype the code, not that something is broken). Anything
+// this package does not specifically recognise — including Zitadel's
+// "bogus user" 400 (a DIFFERENT details[0].id than the wrong-code case, see
+// VerifyEmail's doc) — falls through ErrUnavailable's branch rather than
+// being guessed at as a wrong code.
+func (h *CustomerHandler) respondVerifyEmailError(ctx context.Context, w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrEmailVerificationCodeInvalid):
+		slog.WarnContext(ctx, "zitadellogin(customer): verify-email rejected: code invalid or expired")
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_verification_code"})
+	case errors.Is(err, ErrUnavailable):
+		slog.ErrorContext(ctx, "zitadellogin(customer): zitadel unavailable verifying email", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+	default:
+		slog.ErrorContext(ctx, "zitadellogin(customer): unexpected error verifying email", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+	}
+}
+
 // login reads {login_name, password}, creates a Zitadel password session,
 // and asks sufficiency.go whether that session is sufficient. It never
 // mints a session, sets a cookie, or finalizes — see the file comment.
@@ -221,6 +368,39 @@ func (h *CustomerHandler) login(w http.ResponseWriter, r *http.Request) {
 	sess, err := h.c.CreatePasswordSession(ctx, req.LoginName, req.Password)
 	if err != nil {
 		h.respondSessionCreateError(ctx, w, err)
+		return
+	}
+
+	// register (customer_handler.go) creates the first UNVERIFIED password
+	// accounts this system has ever had. Refuse to mint a session for one
+	// here, or the whole point of that verification step is decorative: an
+	// attacker who registers victim@example.com with a password of their
+	// own choosing would otherwise sign in normally, permanently burning
+	// that address (see ErrEmailAlreadyExists's doc — a future genuine
+	// owner's own sign-up, and their Google sign-in, both dead-end on it).
+	//
+	// This check cannot become a NEW account-enumeration oracle: reaching
+	// it already required CreatePasswordSession to succeed, which (per the
+	// comment above) already requires the caller to hold this account's
+	// correct password. Anyone able to trigger email_not_verified below
+	// already had everything ErrBadCredentials above would have told them
+	// "yes, this credential is valid" — the unverified check adds no new
+	// signal for a caller who does NOT already hold a valid credential.
+	factors, err := h.c.SessionFactors(ctx, sess.ID)
+	if err != nil || factors.UserID == "" {
+		slog.ErrorContext(ctx, "zitadellogin(customer): login: could not resolve session subject to check email verification", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+		return
+	}
+	verified, err := h.c.UserEmailVerified(ctx, factors.UserID)
+	if err != nil {
+		slog.ErrorContext(ctx, "zitadellogin(customer): login: could not check email verification", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+		return
+	}
+	if !verified {
+		slog.WarnContext(ctx, "zitadellogin(customer): login rejected: email not verified", "user_id", factors.UserID)
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "email_not_verified"})
 		return
 	}
 
@@ -470,6 +650,245 @@ func (h *CustomerHandler) idpFinish(w http.ResponseWriter, r *http.Request) {
 			"email": email,
 		},
 	})
+}
+
+// register creates a brand-new storefront customer account with a password
+// credential and emails the shopper a verification code. Unlike idpFinish's
+// self-registration, this account starts UNVERIFIED — Zitadel's
+// email.returnCode asks it to hand the code back to us instead of mailing
+// its own unbranded notice, and this endpoint sends that code through
+// auth-bff's own notify path (see CustomerVerificationMailer's doc) so
+// branding and delivery stay on our infrastructure the same way password
+// reset already does. Task 2 (a sibling endpoint, not implemented here)
+// takes the code back and calls Zitadel's email/verify to flip the account
+// verified — see the sdd progress ledger's "sign-up VERIFIES the email"
+// ruling for why an unverified password account must never be treated as
+// though it were.
+//
+// This endpoint NEVER returns emailCode in any response and NEVER logs it —
+// see CreateHumanUserWithPassword's doc: it is a live credential for the
+// account this call just created.
+func (h *CustomerHandler) register(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// First, before the body is even read: an unauthenticated caller must
+	// never reach FindUserByVerifiedEmail or CreateHumanUserWithPassword —
+	// same discipline as every other endpoint in this file.
+	if !internalAuthorized(r, h.internalAuthSecret) {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req customerRegisterRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+	if req.Email == "" || req.Password == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+
+	// Reject a password that cannot possibly succeed BEFORE the lookup,
+	// and therefore before the delete below. Ordering is the whole point:
+	// CreateHumanUserWithPassword is what answers ErrWeakPassword, and it
+	// runs AFTER the unverified-account delete — so without this check a
+	// shopper who retries with a Zitadel-rejected password loses the
+	// pending account their first attempt created (its code goes dead, the
+	// address is freed) and gets nothing back but a 400. That retry is
+	// ordinary, not exotic: the storefront's own client-side check is
+	// weaker than Zitadel's policy, so a password it accepts can still be
+	// refused here.
+	//
+	// This is a PRE-CHECK, not a replacement for Zitadel's authoritative
+	// policy check — respondRegisterCreateError's ErrWeakPassword case
+	// below stays exactly as it was and remains the real answer. Nothing
+	// in this repo reads the org's configured complexity policy, so the
+	// bound is deliberately the weakest one that is safe to assume
+	// (Zitadel's own default minimum length); anything stricter risks
+	// refusing a password Zitadel would have accepted.
+	if len(req.Password) < minRegisterPasswordLength {
+		slog.WarnContext(ctx, "zitadellogin(customer): register rejected: password shorter than the minimum, refused before touching any account")
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "weak_password"})
+		return
+	}
+
+	// Look up any existing account for this email, verified or not — see
+	// FindUserByEmail's doc: org-scoped, refuses ambiguity rather than
+	// picking one, exactly like FindUserByVerifiedEmail. What differs from
+	// the pre-Task-2b behaviour is what happens with an UNVERIFIED match
+	// below: a VERIFIED match still answers the same email_taken outcome
+	// idpFinish's unlinked-create branch uses, so the storefront renders
+	// one "you already have an account" copy for both sign-up paths, and
+	// nothing is created or deleted when that branch answers.
+	existingUserID, existingVerified, err := h.c.FindUserByEmail(ctx, h.orgID, req.Email)
+	if err != nil {
+		if errors.Is(err, ErrAmbiguousEmailMatch) {
+			slog.WarnContext(ctx, "zitadellogin(customer): register rejected: more than one existing account matched the email")
+			writeJSON(w, http.StatusConflict, map[string]any{"error": "email_ambiguous"})
+			return
+		}
+		slog.ErrorContext(ctx, "zitadellogin(customer): register: could not check for an existing account by email", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+		return
+	}
+	if existingUserID != "" && existingVerified {
+		slog.WarnContext(ctx, "zitadellogin(customer): register rejected: email already verified on an existing account")
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "email_taken"})
+		return
+	}
+	if existingUserID != "" {
+		// UNVERIFIED: this account has no proven owner (that is what
+		// unverified means), cannot hold a Google link from our path
+		// (idpFinish only links accounts FindUserByVerifiedEmail returns —
+		// this one never would), and has no storefront profile
+		// (ensureCustomerProfile only runs inside completeCustomerSignIn,
+		// after a session mints, which never happened for this account).
+		// It is squatting on the address the shopper in front of us right
+		// now is trying to use, so clear it and continue as though no
+		// account had existed. A delete failure must surface as
+		// unavailable, never fall through to create on top of an account
+		// that may or may not actually be gone.
+		//
+		// But NOT on the strength of the lookup's verified flag alone.
+		// FindUserByEmail and FindUserByVerifiedEmail decode the same
+		// list-endpoint wire struct, and their failure modes are opposite:
+		// if the human.email.isVerified path is ever wrong or renamed,
+		// FindUserByVerifiedEmail degrades to "no match" (harmless — the
+		// create below then answers email_taken), while FindUserByEmail
+		// degrades to verified=false and this branch DELETES A REAL
+		// ACCOUNT. FindUserByEmail's own doc concedes the org-scoped,
+		// IGNORE_CASE search shape has never been independently
+		// re-verified live. The list decode must not be the only thing
+		// standing between a shopper and someone else's account.
+		//
+		// The re-check also closes a genuine race the lookup cannot see:
+		// A registers and holds a code, B registers the same address, and
+		// between B's lookup and B's delete A submits their code. Without
+		// this read, B deletes an account that became verified in the gap.
+		//
+		// So confirm against the authoritative single-user read — the same
+		// UserEmailVerified the login gate above uses, whose shape IS
+		// live-verified — and fail CLOSED: verified means refuse, and an
+		// ERROR means refuse too. An error must never fall through to a
+		// delete.
+		//
+		// Invariant this branch is the first in the estate to break:
+		// services/platform-api/internal/zitadeladmin/client.go (see
+		// resolveUserIDByEmail's doc, ~line 409) records D7's rule that
+		// every user this system creates has email.isVerified set
+		// deliberately — signup and admin-invite alike. register is the
+		// first creator of PERSISTENTLY unverified users in this org, so
+		// today the only unverified accounts here are our own abandoned
+		// signups and this delete can only ever hit one of those. If
+		// platform-api's invite path ever starts creating unverified
+		// invited merchants in the same org, a shopper registering that
+		// address would silently delete a pending invite. Whoever makes
+		// that change must revisit this branch.
+		stillVerified, err := h.c.UserEmailVerified(ctx, existingUserID)
+		if err != nil {
+			slog.ErrorContext(ctx, "zitadellogin(customer): register: could not confirm the blocking account is still unverified; refusing to delete", "err", err, "user_id", existingUserID)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+			return
+		}
+		if stillVerified {
+			slog.WarnContext(ctx, "zitadellogin(customer): register rejected: the blocking account is verified per the authoritative read; nothing deleted", "user_id", existingUserID)
+			writeJSON(w, http.StatusConflict, map[string]any{"error": "email_taken"})
+			return
+		}
+		if err := h.c.DeleteUser(ctx, existingUserID); err != nil {
+			slog.ErrorContext(ctx, "zitadellogin(customer): register: could not clear an unverified account blocking this email", "err", err)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+			return
+		}
+		slog.InfoContext(ctx, "zitadellogin(customer): register cleared an unverified account that was blocking this email")
+	}
+
+	userID, emailCode, err := h.c.CreateHumanUserWithPassword(ctx, req.Email, req.Password, req.GivenName, req.FamilyName)
+	if err != nil {
+		h.respondRegisterCreateError(ctx, w, err)
+		return
+	}
+
+	// Deliver the code through auth-bff's own transactional mail path. A
+	// nil mailer or a send failure both leave the shopper holding a fresh,
+	// UNVERIFIED account with no way to ever receive a code for it — and
+	// unlike a merely-failed request, that account is not nothing: the
+	// very next registration attempt for this address would find
+	// FindUserByVerifiedEmail return "" (this account isn't verified) and
+	// then 400 with ErrEmailAlreadyExists, forever. That is a PERMANENT
+	// lockout on this address for every sign-up path, including Google —
+	// exactly what email verification exists to prevent — so both
+	// branches below delete the account this request just created rather
+	// than leave it stranded. It is safe to delete: nothing outside this
+	// request has ever seen its uid (the response has not been written
+	// yet) and it cannot pass the login gate above unverified, so nobody
+	// has been able to use it in the time it has existed.
+	if h.verificationMailer == nil {
+		slog.ErrorContext(ctx, "zitadellogin(customer): register: no verification mailer configured (see WithNotify)", "user_id", userID)
+		h.rollbackUnsentRegistration(ctx, userID)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "verification_email_failed"})
+		return
+	}
+	if err := h.verificationMailer.SendLoginCode(ctx, req.Email, emailCode, customerVerificationCodeTTL); err != nil {
+		// Deliberately not formatting err (or anything else) alongside the
+		// code here — notify's own errors never embed it, but this line
+		// must stay that way even if that ever changed.
+		slog.ErrorContext(ctx, "zitadellogin(customer): register: could not send the verification email", "user_id", userID)
+		h.rollbackUnsentRegistration(ctx, userID)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "verification_email_failed"})
+		return
+	}
+
+	slog.InfoContext(ctx, "zitadellogin(customer): register created a new customer account and sent a verification email", "user_id", userID)
+	// uid is the handle the storefront holds onto for the follow-up verify
+	// call (task 2) — emailCode never appears here.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"uid":   userID,
+			"email": req.Email,
+		},
+	})
+}
+
+// rollbackUnsentRegistration deletes the Zitadel user register just created
+// when the verification email could not be sent (nil mailer or a send
+// error) — see register's doc for why leaving it in place is a permanent
+// lockout. Best-effort: a delete failure is logged loudly and swallowed,
+// because the caller has already decided to answer 503 either way and a
+// failed rollback is no worse than the pre-rollback behaviour this fixes.
+func (h *CustomerHandler) rollbackUnsentRegistration(ctx context.Context, userID string) {
+	if err := h.c.DeleteUser(ctx, userID); err != nil {
+		slog.ErrorContext(ctx, "zitadellogin(customer): register: could not roll back an account whose verification email failed to send; this address may now be stranded", "err", err, "user_id", userID)
+	}
+}
+
+// respondRegisterCreateError maps CreateHumanUserWithPassword's errors to
+// distinct, truthful outcomes — never a generic failure that reads as
+// "something went wrong" for a case that has a specific, actionable cause.
+func (h *CustomerHandler) respondRegisterCreateError(ctx context.Context, w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrWeakPassword):
+		slog.WarnContext(ctx, "zitadellogin(customer): register rejected: password does not meet policy")
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "weak_password"})
+	case errors.Is(err, ErrEmailAlreadyExists):
+		// The pre-create FindUserByVerifiedEmail search found no VERIFIED
+		// match (that is why this create was attempted) yet Zitadel still
+		// 400s here — a genuine race against a concurrent request, or an
+		// unverified account already sitting on this email (an abandoned
+		// signup, an unverified invite, or an attacker who typed this
+		// address). Either way this MUST read as the same email_taken
+		// outcome the pre-create check above answers, not a new one — see
+		// idpFinish's identical case for the full reasoning.
+		slog.WarnContext(ctx, "zitadellogin(customer): register rejected: email already claimed by another account (verified-match search found none)")
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "email_taken"})
+	case errors.Is(err, ErrUnavailable):
+		slog.ErrorContext(ctx, "zitadellogin(customer): zitadel unavailable creating customer account", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+	default:
+		slog.ErrorContext(ctx, "zitadellogin(customer): unexpected error creating customer account", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+	}
 }
 
 // respondOutcome is shared by login and totp: both end at DecideSufficiency

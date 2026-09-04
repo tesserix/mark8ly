@@ -3,6 +3,7 @@ package zitadellogin
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -297,6 +298,114 @@ func TestFindUserByVerifiedEmailIgnoresAnUnverifiedMatch(t *testing.T) {
 	}
 }
 
+// TestFindUserByEmailSendsTheOrgIDHeader mirrors
+// TestFindUserByVerifiedEmailSendsTheOrgIDHeader: FindUserByEmail must be
+// just as org-scoped as its verified-only sibling, for the identical
+// cross-org leak reason.
+func TestFindUserByEmailSendsTheOrgIDHeader(t *testing.T) {
+	var gotOrgHeader, gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotOrgHeader = r.Header.Get("x-zitadel-orgid")
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.Write([]byte(`{"result":[]}`))
+	})
+	if _, _, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com"); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if gotOrgHeader != "org-1" {
+		t.Fatalf("x-zitadel-orgid = %q, want org-1", gotOrgHeader)
+	}
+	if !strings.Contains(gotBody, "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE") {
+		t.Fatalf("request body %q missing the case-insensitive query method", gotBody)
+	}
+}
+
+func TestFindUserByEmailRefusesAnEmptyOrgID(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("must not search instance-wide with an empty org id")
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	_, _, err := c.FindUserByEmail(context.Background(), "", "person@gmail.com")
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+}
+
+// TestFindUserByEmailReportsAnUnverifiedMatch is the property
+// FindUserByVerifiedEmail cannot provide: register needs to know an
+// unverified account exists, not just that no verified one does.
+func TestFindUserByEmailReportsAnUnverifiedMatch(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":false}}}]}`))
+	})
+	got, verified, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "existing-1" || verified {
+		t.Fatalf("userID = %q, verified = %v, want existing-1/false", got, verified)
+	}
+}
+
+func TestFindUserByEmailReportsAVerifiedMatch(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}}]}`))
+	})
+	got, verified, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "existing-1" || !verified {
+		t.Fatalf("userID = %q, verified = %v, want existing-1/true", got, verified)
+	}
+}
+
+func TestFindUserByEmailMatchesCaseInsensitively(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"Person@Gmail.com","isVerified":false}}}]}`))
+	})
+	got, _, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "existing-1" {
+		t.Fatalf("userID = %q, want existing-1 to match despite the case difference", got)
+	}
+}
+
+// TestFindUserByEmailRefusesAmbiguousMatchesRegardlessOfVerification pins
+// the same refusal FindUserByVerifiedEmail follows, but here it must fire
+// even when the two matches disagree on verification state — there is no
+// safe way to guess which of two accounts holding the same address is the
+// "right" one to treat as existing.
+func TestFindUserByEmailRefusesAmbiguousMatchesRegardlessOfVerification(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"result":[
+			{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":false}}},
+			{"userId":"existing-2","human":{"email":{"email":"person@gmail.com","isVerified":true}}}
+		]}`))
+	})
+	_, _, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com")
+	if !errors.Is(err, ErrAmbiguousEmailMatch) {
+		t.Fatalf("err = %v, want ErrAmbiguousEmailMatch", err)
+	}
+}
+
+func TestFindUserByEmailNoMatchReturnsEmpty(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{}`))
+	})
+	got, verified, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "" || verified {
+		t.Fatalf("userID = %q, verified = %v, want empty/false for a response that omits result entirely", got, verified)
+	}
+}
+
 func TestCreateHumanUserWithIDPLinkSendsProfileEmailAndIDPLinks(t *testing.T) {
 	var gotBody string
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -475,5 +584,173 @@ func TestLinkIDPToUserRefusesAnUnverifiedEmailWithoutCallingZitadel(t *testing.T
 	err := c.LinkIDPToUser(context.Background(), "existing-1", IDPIdentity{Email: "person@gmail.com", EmailVerified: false})
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+}
+
+func TestCreateHumanUserWithPasswordSendsReturnCodeDirectlyUnderEmail(t *testing.T) {
+	var gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v2/users/human" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
+		w.Write([]byte(`{"userId":"new-user-1","emailCode":"123456"}`))
+	})
+	userID, emailCode, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if userID != "new-user-1" {
+		t.Fatalf("userID = %q", userID)
+	}
+	if emailCode != "123456" {
+		t.Fatalf("emailCode = %q", emailCode)
+	}
+	// returnCode must sit DIRECTLY under email, never wrapped in a "medium"
+	// key — the phase 5 defect this package's doc warns about returns 200
+	// for the wrapped shape too, so only inspecting the request body proves
+	// this test would have caught it.
+	if !strings.Contains(gotBody, `"email":{"email":"shopper@example.com","returnCode":{}}`) {
+		t.Fatalf("request body = %q, want returnCode directly under email, unwrapped", gotBody)
+	}
+	if strings.Contains(gotBody, `"medium"`) {
+		t.Fatalf("request body = %q, must not wrap returnCode in a medium key", gotBody)
+	}
+	if !strings.Contains(gotBody, `"password":{"password":"test-password-not-real"}`) {
+		t.Fatalf("request body = %q, missing password", gotBody)
+	}
+}
+
+func TestCreateHumanUserWithPasswordFailsClosedWhenZitadelOmitsTheEmailCode(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		// A 200 with no emailCode: the wrapped-oneof defect shape (Zitadel
+		// mailed the account itself and gave this caller nothing to send).
+		w.Write([]byte(`{"userId":"new-user-1"}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable when emailCode is missing from a 200", err)
+	}
+}
+
+func TestCreateHumanUserWithPasswordMapsAWeakPasswordDistinctlyFromDuplicateEmail(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"code":3,"message":"Password is too short (DOMAIN-HuJf6)","details":[{"id":"DOMAIN-HuJf6"}]}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "x", "", "")
+	if !errors.Is(err, ErrWeakPassword) {
+		t.Fatalf("err = %v, want ErrWeakPassword", err)
+	}
+	if errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatal("must not also read as ErrEmailAlreadyExists")
+	}
+}
+
+func TestCreateHumanUserWithPasswordMapsADuplicateEmailDistinctlyFromWeakPassword(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"code":6,"message":"user already exists (COMMAND-oR9nS)","details":[{"id":"COMMAND-oR9nS"}]}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if !errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("err = %v, want ErrEmailAlreadyExists", err)
+	}
+	if errors.Is(err, ErrWeakPassword) {
+		t.Fatal("must not also read as ErrWeakPassword")
+	}
+}
+
+func TestCreateHumanUserWithPasswordDoesNotMapAnUnrelated400ToEitherSentinel(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"code":3,"message":"invalid profile (COMMAND-9zK2p)","details":[{"id":"COMMAND-9zK2p"}]}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if errors.Is(err, ErrWeakPassword) || errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("err = %v, must not mislabel an unrelated 400 (code 3, unrecognized id)", err)
+	}
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable as the generic fallback", err)
+	}
+}
+
+func TestCreateHumanUserWithPasswordFallsBackToNeutralNamesWhenAbsent(t *testing.T) {
+	var gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
+		w.Write([]byte(`{"userId":"new-user-1","emailCode":"123456"}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(gotBody, `"givenName":"shopper"`) {
+		t.Fatalf("request body = %q, want the email local part as the given name fallback", gotBody)
+	}
+	// "User" is the actual documented fallback for this path (see
+	// boundedProfileName's callers above) — asserting its presence, not
+	// merely the absence of the merchant-flavoured "Member" placeholder
+	// (which never appears anywhere in this call), is what would actually
+	// catch a regressed fallback value.
+	if !strings.Contains(gotBody, `"familyName":"User"`) {
+		t.Fatalf("request body = %q, want the neutral \"User\" family name fallback", gotBody)
+	}
+}
+
+// TestCreateHumanUserWithPasswordMatchesDuplicateEmailByIDEvenWithAnUnexpectedCode
+// is the fix for review Finding 3: the brief asked for id-keying, not
+// code-only narrowing. Zitadel's grpc code for a given error id is not
+// something this package controls; keying primarily off details[0].id (with
+// code 6 kept only as a fallback) means a duplicate-email 400 that, for
+// whatever reason, arrives with a code other than 6 still maps correctly,
+// as long as the id matches.
+func TestCreateHumanUserWithPasswordMatchesDuplicateEmailByIDEvenWithAnUnexpectedCode(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"code":9,"message":"user already exists (COMMAND-oR9nS)","details":[{"id":"COMMAND-oR9nS"}]}`))
+	})
+	_, _, err := c.CreateHumanUserWithPassword(context.Background(), "shopper@example.com", "test-password-not-real", "", "")
+	if !errors.Is(err, ErrEmailAlreadyExists) {
+		t.Fatalf("err = %v, want ErrEmailAlreadyExists — the id must be matched even when the code is unexpected", err)
+	}
+}
+
+func TestDeleteUserSendsDelete(t *testing.T) {
+	var gotMethod, gotPath string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	})
+	if err := c.DeleteUser(context.Background(), "user-1"); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if gotMethod != http.MethodDelete || gotPath != "/v2/users/user-1" {
+		t.Fatalf("got %s %s, want DELETE /v2/users/user-1", gotMethod, gotPath)
+	}
+}
+
+func TestDeleteUserTreatsNotFoundAsSuccess(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"code":5,"message":"User could not be found (QUERY-Dfbg2)","details":[{"id":"QUERY-Dfbg2"}]}`))
+	})
+	if err := c.DeleteUser(context.Background(), "user-1"); err != nil {
+		t.Fatalf("err = %v, want nil — a 404 on delete is idempotent success", err)
+	}
+}
+
+func TestUserEmailVerifiedReadsIsVerified(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"user":{"human":{"email":{"email":"a@b.test","isVerified":false}}}}`))
+	})
+	verified, err := c.UserEmailVerified(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if verified {
+		t.Fatal("verified = true, want false")
 	}
 }

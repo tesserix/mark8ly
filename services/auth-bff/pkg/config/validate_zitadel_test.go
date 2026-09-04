@@ -16,6 +16,7 @@ func zitadelReadyConfig() Config {
 		ZitadelReturnURLAllowedSuffixesStorefront: []string{"mark8ly.com"},
 		ZitadelGoogleIDPID:                        "386381087862948767",
 		ZitadelOrgID:                              "339070697432875523",
+		PlatformAPIURL:                            "http://mark8ly-platform-api.mark8ly.svc.cluster.local:8086",
 	}
 }
 
@@ -60,6 +61,7 @@ func TestValidateZitadelRefusesOnEachMissingValue(t *testing.T) {
 		}, "ZITADEL_RETURN_URL_ALLOWED_HOSTS_STOREFRONT"},
 		{"google idp id", func(c *Config) { c.ZitadelGoogleIDPID = "" }, "ZITADEL_GOOGLE_IDP_ID"},
 		{"org id", func(c *Config) { c.ZitadelOrgID = "" }, "ZITADEL_ORG_ID"},
+		{"platform api url", func(c *Config) { c.PlatformAPIURL = "" }, "PLATFORM_API_URL"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -139,5 +141,33 @@ func TestValidateZitadelIgnoresEverythingWhenDisabled(t *testing.T) {
 	cfg := Config{ZitadelEnabled: false}
 	if err := cfg.ValidateZitadel(); err != nil {
 		t.Fatalf("ValidateZitadel = %v, want nil when Zitadel is disabled", err)
+	}
+}
+
+// TestValidateZitadelRefusesWithoutThePlatformAPIURL is review Finding 4:
+// PLATFORM_API_URL is what internal/notify posts to, and notify is the only
+// way the sign-up verification code ever reaches a shopper. main.go builds
+// no notify client when it is empty, so CustomerHandler gets a nil mailer
+// and register creates-then-rolls-back-then-503s on every single attempt —
+// customer sign-up 100% broken on a process reporting healthy. A log.Warn
+// was the only signal; refusing to boot is the correct one.
+func TestValidateZitadelRefusesWithoutThePlatformAPIURL(t *testing.T) {
+	cfg := zitadelReadyConfig()
+	cfg.PlatformAPIURL = ""
+
+	err := cfg.ValidateZitadel()
+	if err == nil {
+		t.Fatal("ValidateZitadel = nil; a Zitadel-enabled auth-bff with no PLATFORM_API_URL must refuse to start rather than serve a sign-up that can never succeed")
+	}
+	if !errors.Is(err, ErrZitadelNotConfigured) {
+		t.Fatalf("err = %v, want it to wrap ErrZitadelNotConfigured", err)
+	}
+	if !strings.Contains(err.Error(), "PLATFORM_API_URL") {
+		t.Fatalf("err = %v, want it to name the missing variable", err)
+	}
+	// The operator reading this at boot must be told what breaks, not just
+	// which key is absent.
+	if !strings.Contains(err.Error(), "sign-up") {
+		t.Fatalf("err = %v, want it to say what stops working without the variable", err)
 	}
 }

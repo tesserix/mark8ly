@@ -3,12 +3,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AuthBffCustomerError,
   finishCustomerIDPIntent,
+  registerCustomerAccount,
   startCustomerIDPIntent,
   verifyCustomerCredential,
+  verifyCustomerEmailCode,
   verifyCustomerTotp,
 } from "./auth-bff-customer";
 
 const SECRET_PASSWORD = "correct-horse-battery-staple";
+const SECRET_TEST_CODE = "A1B2C3"; // low-entropy, test-only — never a live credential
 
 function stubFetch(status: number, body: unknown) {
   const res = new Response(JSON.stringify(body), {
@@ -100,6 +103,34 @@ describe("verifyCustomerCredential", () => {
     // Same status, arbitrary/different error body — must still collapse
     // to the identical outcome as the canonical invalid_credentials case.
     stubFetch(401, { error: "user_not_found_but_should_never_say_so" });
+
+    const outcome = await verifyCustomerCredential(loginArgs);
+
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("surfaces a 401 email_not_verified as its own outcome instead of collapsing it", async () => {
+    // Unlike invalid_credentials/invalid_totp above, this ONE 401 code is
+    // safe to distinguish — reaching it already required
+    // CreatePasswordSession to succeed (see customer_handler.go:363-369),
+    // so the caller already holds the correct password.
+    stubFetch(401, { error: "email_not_verified" });
+
+    const outcome = await verifyCustomerCredential(loginArgs);
+
+    expect(outcome).toEqual({ kind: "email_not_verified" });
+  });
+
+  it("still collapses a 401 with an unrecognised error code to rejected", async () => {
+    stubFetch(401, { error: "some_future_code_this_client_does_not_know" });
+
+    const outcome = await verifyCustomerCredential(loginArgs);
+
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("still collapses a 401 with no error field at all to rejected", async () => {
+    stubFetch(401, {});
 
     const outcome = await verifyCustomerCredential(loginArgs);
 
@@ -396,5 +427,176 @@ describe("internal auth header", () => {
     const headers = init.headers as Record<string, string>;
     expect(headers["X-Internal-Auth"]).toBeUndefined();
     expect(JSON.stringify(init)).not.toContain("leaked");
+  });
+});
+
+describe("registerCustomerAccount", () => {
+  const registerArgs = {
+    email: "newcustomer@example.com",
+    password: SECRET_PASSWORD,
+  };
+
+  it("sends the exact snake_case wire fields for /auth/customer/register", async () => {
+    const fetchMock = stubFetch(200, {
+      data: { uid: "u-new", email: registerArgs.email },
+    });
+
+    await registerCustomerAccount(registerArgs);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("http://localhost:8087/auth/customer/register");
+    const parsedBody = JSON.parse(init.body as string);
+    expect(parsedBody).toEqual({
+      email: registerArgs.email,
+      password: SECRET_PASSWORD,
+    });
+  });
+
+  it("maps a 2xx identity response to the created outcome", async () => {
+    stubFetch(200, { data: { uid: "u-new", email: registerArgs.email } });
+
+    const outcome = await registerCustomerAccount(registerArgs);
+
+    expect(outcome).toEqual({
+      kind: "created",
+      uid: "u-new",
+      email: registerArgs.email,
+    });
+  });
+
+  it.each([
+    ["email_taken", 409],
+    ["email_ambiguous", 409],
+    ["weak_password", 400],
+    ["verification_email_failed", 503],
+    ["zitadel_unavailable", 503],
+  ])(
+    "maps %s (%i) to a distinct failed outcome, not a thrown error",
+    async (code, status) => {
+      stubFetch(status, { error: code });
+
+      const outcome = await registerCustomerAccount(registerArgs);
+
+      expect(outcome).toEqual({ kind: "failed", code });
+    },
+  );
+
+  it("email_taken and weak_password stay distinguishable from each other", async () => {
+    stubFetch(409, { error: "email_taken" });
+    const taken = await registerCustomerAccount(registerArgs);
+
+    stubFetch(400, { error: "weak_password" });
+    const weak = await registerCustomerAccount(registerArgs);
+
+    expect(taken).toEqual({ kind: "failed", code: "email_taken" });
+    expect(weak).toEqual({ kind: "failed", code: "weak_password" });
+    expect(taken).not.toEqual(weak);
+  });
+
+  it("throws (not a failed outcome) on a transport failure", async () => {
+    const fn = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+    vi.stubGlobal("fetch", fn);
+
+    await expect(registerCustomerAccount(registerArgs)).rejects.toBeInstanceOf(
+      AuthBffCustomerError,
+    );
+  });
+
+  it("rejects a 2xx body missing/mistyped email as unrecognised, rather than passing `undefined` through as if it were a real address", async () => {
+    // If auth-bff ever stopped sending `email`, the untyped field would
+    // otherwise flow straight into a `email: string`-typed outcome — and
+    // from there into signPendingSignup, which would happily sign the
+    // literal string "undefined" (see app/create-account/actions.ts).
+    stubFetch(200, { data: { uid: "u-new" } });
+
+    const outcome = await registerCustomerAccount(registerArgs);
+
+    expect(outcome).toEqual({ kind: "failed", code: "unrecognised_response_shape" });
+  });
+
+  it("sends X-Internal-Auth", async () => {
+    vi.stubEnv("MARKETPLACE_INTERNAL_AUTH_SECRET", "s3cret-internal");
+    const fetchMock = stubFetch(200, {
+      data: { uid: "u-new", email: registerArgs.email },
+    });
+
+    await registerCustomerAccount(registerArgs);
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Internal-Auth"]).toBe("s3cret-internal");
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("verifyCustomerEmailCode", () => {
+  const verifyArgs = { uid: "u-new", code: SECRET_TEST_CODE };
+
+  it("sends the exact snake_case wire fields for /auth/customer/verify-email", async () => {
+    const fetchMock = stubFetch(200, { data: { verified: true } });
+
+    await verifyCustomerEmailCode(verifyArgs);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("http://localhost:8087/auth/customer/verify-email");
+    const parsedBody = JSON.parse(init.body as string);
+    expect(parsedBody).toEqual({ uid: "u-new", code: SECRET_TEST_CODE });
+  });
+
+  it("maps a 2xx response to the verified outcome", async () => {
+    stubFetch(200, { data: { verified: true } });
+
+    const outcome = await verifyCustomerEmailCode(verifyArgs);
+
+    expect(outcome).toEqual({ kind: "verified" });
+  });
+
+  it.each([
+    ["invalid_verification_code", 400],
+    ["zitadel_unavailable", 503],
+  ])("maps %s (%i) to a distinct failed outcome, not a thrown error", async (code, status) => {
+    stubFetch(status, { error: code });
+
+    const outcome = await verifyCustomerEmailCode(verifyArgs);
+
+    expect(outcome).toEqual({ kind: "failed", code });
+  });
+
+  it("throws (not a failed outcome) on a transport failure", async () => {
+    const fn = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+    vi.stubGlobal("fetch", fn);
+
+    await expect(verifyCustomerEmailCode(verifyArgs)).rejects.toBeInstanceOf(
+      AuthBffCustomerError,
+    );
+  });
+
+  it("never logs or otherwise surfaces the verification code", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    stubFetch(400, { error: "invalid_verification_code" });
+
+    const outcome = await verifyCustomerEmailCode(verifyArgs);
+
+    expect(JSON.stringify(outcome)).not.toContain(SECRET_TEST_CODE);
+    for (const call of [...consoleErrorSpy.mock.calls, ...consoleLogSpy.mock.calls]) {
+      expect(JSON.stringify(call)).not.toContain(SECRET_TEST_CODE);
+    }
+    consoleErrorSpy.mockRestore();
+    consoleLogSpy.mockRestore();
+  });
+
+  it("sends X-Internal-Auth", async () => {
+    vi.stubEnv("MARKETPLACE_INTERNAL_AUTH_SECRET", "s3cret-internal");
+    const fetchMock = stubFetch(200, { data: { verified: true } });
+
+    await verifyCustomerEmailCode(verifyArgs);
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Internal-Auth"]).toBe("s3cret-internal");
+    vi.unstubAllEnvs();
   });
 });

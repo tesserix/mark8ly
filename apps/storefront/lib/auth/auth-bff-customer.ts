@@ -17,6 +17,7 @@
 //   200 factor-req -> {"totp_required": true, "session_id": string, "session_token": string}
 //   200 handoff    -> {"handoff_url": string}
 //   401 rejected   -> {"error": "invalid_credentials"} or {"error": "invalid_totp"}
+//   401 unverified -> {"error": "email_not_verified"} (login only — see below)
 //   503/5xx        -> {"error": "zitadel_unavailable" | "internal_error" | ...}
 //
 // Neither endpoint takes an auth_request_id: the customer path makes a
@@ -30,10 +31,16 @@
 // {"error":"invalid_credentials"} whether the password was wrong or the
 // account doesn't exist, because a different answer would be an
 // account-enumeration oracle on a public storefront. This client must not
-// reintroduce that distinction: every 401 maps to the same `rejected`
-// outcome below, with no further detail. A 5xx or a transport failure is a
-// DIFFERENT, distinguishable case (AuthBffCustomerError, thrown rather than
-// returned) so the UI can tell "wrong credentials" from "auth is down".
+// reintroduce that distinction: every 401 from that error path maps to the
+// same `rejected` outcome below, with no further detail. A 5xx or a
+// transport failure is a DIFFERENT, distinguishable case
+// (AuthBffCustomerError, thrown rather than returned) so the UI can tell
+// "wrong credentials" from "auth is down".
+//
+// One 401 code is the deliberate exception: {"error":"email_not_verified"}
+// on the login endpoint is surfaced as its own `email_not_verified`
+// outcome, not collapsed. See parseCustomerOutcome's handling of it below
+// for why this does not reopen the enumeration oracle.
 
 const AUTH_BFF_URL = process.env.AUTH_BFF_URL ?? "http://localhost:8087";
 
@@ -73,7 +80,8 @@ export type CustomerAuthOutcome =
   | { kind: "complete"; uid: string; email: string }
   | { kind: "totp_required"; sessionId: string; sessionToken: string }
   | { kind: "handoff"; handoffUrl: string }
-  | { kind: "rejected" };
+  | { kind: "rejected" }
+  | { kind: "email_not_verified" };
 
 /**
  * Thrown for anything that is NOT one of the endpoint's normal outcomes:
@@ -172,8 +180,9 @@ async function postToCustomerEndpoint(
 }
 
 /** Shared response parsing for both endpoints: 401 -> the single
- *  `rejected` outcome, other non-2xx -> AuthBffCustomerError, 2xx ->
- *  the matching outcome by shape. */
+ *  `rejected` outcome (with one explicit exception, see below),
+ *  other non-2xx -> AuthBffCustomerError, 2xx -> the matching outcome
+ *  by shape. */
 async function parseCustomerOutcome(
   res: Response,
 ): Promise<CustomerAuthOutcome> {
@@ -181,8 +190,40 @@ async function parseCustomerOutcome(
     // Both ErrBadCredentials and ErrUserNotFound (login) and both a wrong
     // TOTP code and a vanished session (totp) arrive here as the identical
     // {"error": "invalid_credentials"} / {"error": "invalid_totp"} body.
-    // Collapse to one outcome with no further detail — do not read the
-    // `error` field and do not distinguish by it.
+    // Collapse those to one outcome with no further detail — do not read
+    // the `error` field for anything but the one allowlisted exception
+    // below, and do not distinguish by any other value it carries.
+    //
+    // The ONE exception: {"error": "email_not_verified"}. This is safe to
+    // surface distinctly, unlike every other 401, because of WHERE it sits
+    // in auth-bff's login handler (services/auth-bff/internal/
+    // zitadellogin/customer_handler.go:363-369): it is only ever returned
+    // AFTER CreatePasswordSession has already SUCCEEDED, i.e. the caller
+    // already holds this account's correct password. Revealing
+    // "email_not_verified" instead of the generic rejection tells such a
+    // caller nothing they didn't already prove they knew — it is not a new
+    // account-enumeration oracle for someone who does NOT hold a valid
+    // credential, because they can never reach this branch in the first
+    // place (they get collapsed `rejected`, like everyone else without the
+    // password). Do not "helpfully" fold this back into `rejected` — that
+    // would silently reintroduce the storefront bug where a customer with
+    // the CORRECT password is told their password is wrong, with no path
+    // to recovery (see the phase brief / customer-signup-messages.ts's
+    // already-written, previously-unreachable copy for this exact case).
+    //
+    // Read the body defensively: anything other than exactly
+    // {"error":"email_not_verified"} — an unknown code, a missing field, a
+    // malformed body — falls through to the collapsed `rejected` outcome
+    // below. This must stay an explicit allowlist of one literal string,
+    // never a passthrough of whatever the body says.
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error === "email_not_verified") {
+        return { kind: "email_not_verified" };
+      }
+    } catch {
+      // Non-JSON or unreadable body — fall through to `rejected`.
+    }
     return { kind: "rejected" };
   }
 
@@ -343,6 +384,134 @@ export async function finishCustomerIDPIntent(
     return { kind: "complete", uid: body.data.uid, email: body.data.email };
   }
   return { kind: "failed", code: "unrecognised_response_shape" };
+}
+
+// ---------------------------------------------------------------------------
+// Customer sign-up (phase 6a task 3): POST /auth/customer/register and
+// POST /auth/customer/verify-email.
+//
+// Same discipline as idp/start + idp/finish above: outcomes are NOT
+// collapsed to one value the way the 401 password path is. There is no
+// account-enumeration concern here — a sign-up caller chooses the email
+// being registered, so a distinct code tells them nothing they did not
+// already control — and each of register's failure codes (email_taken,
+// email_ambiguous, weak_password, verification_email_failed,
+// zitadel_unavailable) needs its own truthful, distinct copy. See
+// lib/auth/customer-signup-messages.ts and the phase brief's constraint
+// that email_taken (a permanent state for that address) must never read
+// like verification_email_failed (the account was rolled back, so
+// retrying genuinely works).
+//
+// A genuinely unreadable failure (malformed body, transport error) still
+// throws AuthBffCustomerError, exactly like every other client in this
+// file, so a caller can tell "auth-bff told us no" from "we couldn't find
+// out".
+
+interface RegisterCustomerAccountArgs {
+  email: string;
+  password: string;
+  givenName?: string;
+  familyName?: string;
+}
+
+/** Outcome of POST /auth/customer/register. */
+export type CustomerRegisterOutcome =
+  | { kind: "created"; uid: string; email: string }
+  /**
+   * `code` is one of auth-bff's documented register outcomes (email_taken,
+   * email_ambiguous, weak_password, verification_email_failed,
+   * zitadel_unavailable, invalid_request, ...) or an `http_<status>`/
+   * `*_response_*` fallback for anything unrecognised. Never rendered to
+   * the shopper verbatim — see customer-signup-messages.ts.
+   */
+  | { kind: "failed"; code: string };
+
+/** Wire shape for POST /auth/customer/register's 2xx body. */
+type CustomerRegisterBody = { data: { uid: string; email: string } };
+
+/**
+ * registerCustomerAccount submits {email, password[, given_name,
+ * family_name]} to POST /auth/customer/register and returns the resulting
+ * outcome. The account it creates is UNVERIFIED until a follow-up
+ * verifyCustomerEmailCode call succeeds — see that function's doc.
+ *
+ * Never call this from a client component — see the file header.
+ */
+export async function registerCustomerAccount(
+  args: RegisterCustomerAccountArgs,
+): Promise<CustomerRegisterOutcome> {
+  const body: Record<string, string> = {
+    email: args.email,
+    password: args.password,
+  };
+  if (args.givenName) body.given_name = args.givenName;
+  if (args.familyName) body.family_name = args.familyName;
+
+  const res = await postToCustomerEndpoint("/auth/customer/register", body);
+
+  if (!res.ok) {
+    return { kind: "failed", code: await readErrorCode(res) };
+  }
+
+  let parsed: CustomerRegisterBody;
+  try {
+    parsed = (await res.json()) as CustomerRegisterBody;
+  } catch {
+    return { kind: "failed", code: "invalid_response_body" };
+  }
+  if (
+    parsed.data &&
+    typeof parsed.data.uid === "string" &&
+    typeof parsed.data.email === "string"
+  ) {
+    return { kind: "created", uid: parsed.data.uid, email: parsed.data.email };
+  }
+  return { kind: "failed", code: "unrecognised_response_shape" };
+}
+
+interface VerifyCustomerEmailCodeArgs {
+  uid: string;
+  /** The 6-character code the shopper read out of their verification
+   *  email. A live credential for the account — never logged, never
+   *  echoed back in any outcome value, and never embedded in a thrown
+   *  error (see AuthBffCustomerError's doc). */
+  code: string;
+}
+
+/** Outcome of POST /auth/customer/verify-email. */
+export type CustomerVerifyEmailOutcome =
+  | { kind: "verified" }
+  /**
+   * `code` is one of auth-bff's documented verify-email outcomes
+   * (invalid_verification_code, zitadel_unavailable, ...) or an
+   * `http_<status>`/`*_response_*` fallback for anything unrecognised.
+   * Never rendered to the shopper verbatim — see
+   * customer-signup-messages.ts.
+   */
+  | { kind: "failed"; code: string };
+
+/**
+ * verifyCustomerEmailCode submits {uid, code} to
+ * POST /auth/customer/verify-email and returns the resulting outcome.
+ *
+ * The 2xx body ({"data":{"verified":true}}) carries no field the caller
+ * needs beyond "it worked" — deliberately not parsed for anything past the
+ * status check, so there is nothing in it to mishandle.
+ *
+ * Never call this from a client component — see the file header.
+ */
+export async function verifyCustomerEmailCode(
+  args: VerifyCustomerEmailCodeArgs,
+): Promise<CustomerVerifyEmailOutcome> {
+  const res = await postToCustomerEndpoint("/auth/customer/verify-email", {
+    uid: args.uid,
+    code: args.code,
+  });
+
+  if (!res.ok) {
+    return { kind: "failed", code: await readErrorCode(res) };
+  }
+  return { kind: "verified" };
 }
 
 /** Shared best-effort `{error}` field extraction for a non-2xx response. */

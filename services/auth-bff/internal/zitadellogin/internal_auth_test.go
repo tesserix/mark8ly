@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mark8ly/auth-bff/internal/internalauth"
 )
@@ -136,7 +137,37 @@ func guardedEndpoints() []endpoint {
 					idpFinish(rec, r)
 			},
 		},
+		{
+			name: "customer/register",
+			path: "/auth/customer/register",
+			body: `{"email":"a@b.test","password":"test-password-not-real"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewCustomerHandler(c).WithInternalAuth(testInternalSecret).
+					WithOrgID("org-1").WithNotify(fakeVerificationMailer{}).
+					register(rec, r)
+			},
+		},
+		{
+			name: "customer/verify-email",
+			path: "/auth/customer/verify-email",
+			body: `{"uid":"u1","code":"837291"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewCustomerHandler(c).WithInternalAuth(testInternalSecret).
+					verifyEmail(rec, r)
+			},
+		},
 	}
+}
+
+// fakeVerificationMailer is a no-op CustomerVerificationMailer used by
+// guardedEndpoints' "correct secret" case, which must reach Zitadel and
+// succeed all the way through — including the send step — for
+// TestGuardedEndpointsAcceptTheCorrectSecret's assertion that this is not
+// simply a closed route.
+type fakeVerificationMailer struct{}
+
+func (fakeVerificationMailer) SendLoginCode(ctx context.Context, email, code string, ttl time.Duration) error {
+	return nil
 }
 
 // TestGuardedEndpointsRejectMissingAndWrongSecretIdentically is the core of

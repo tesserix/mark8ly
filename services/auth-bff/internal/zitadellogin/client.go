@@ -55,7 +55,58 @@ var (
 	// outcome instead of a generic ErrBadCredentials/ErrUnavailable that
 	// reads as "wrong password" or "try again later" for what is neither.
 	ErrEmailAlreadyExists = errors.New("zitadellogin: email already exists")
+
+	// ErrEmailVerificationCodeInvalid is VerifyEmail's distinguished mapping
+	// for Zitadel's wrong-or-expired verification code rejection
+	// (details[0].id == emailVerifyCodeInvalidErrorID). Deliberately NOT
+	// ErrBadCredentials: nothing about a mistyped six-digit code means the
+	// account's PASSWORD was wrong, and customer_handler.go's verifyEmail
+	// must never tell a shopper otherwise. Also deliberately NOT
+	// ErrUnavailable: a shopper who mistyped a digit needs to know to
+	// retype the code, not that something is broken.
+	ErrEmailVerificationCodeInvalid = errors.New("zitadellogin: email verification code is invalid or expired")
+
+	// ErrWeakPassword is CreateHumanUserWithPassword's distinguished mapping
+	// for Zitadel's password-complexity rejection: details[0].id ==
+	// "DOMAIN-HuJf6" ("Password is too short"), verified live against the
+	// TESSERIX instance in phase 5 (see
+	// services/platform-api/internal/zitadeladmin/client.go's package doc).
+	// Kept separate from ErrEmailAlreadyExists because AddHumanUser can
+	// answer 400 for either reason on the SAME call, and a weak password
+	// must never read to a caller as "that email is taken" or as a generic
+	// failure — both are false, and false-negative password copy is
+	// exactly the defect this sentinel exists to prevent.
+	ErrWeakPassword = errors.New("zitadellogin: password does not meet policy")
 )
+
+// weakPasswordErrorID is the stable details[0].id Zitadel returns for a
+// too-short/too-weak password on AddHumanUser. See ErrWeakPassword's doc:
+// this id does NOT share a prefix with the "DOMAIN-"/"COMMAND-" ids seen
+// elsewhere in this package, so it must be matched exactly, never by
+// prefix.
+const weakPasswordErrorID = "DOMAIN-HuJf6"
+
+// duplicateEmailErrorID is the stable details[0].id observed for
+// AddHumanUser's duplicate-email (ALREADY_EXISTS) rejection — the same id
+// CreateHumanUserWithIDPLink's tests pin. CreateHumanUserWithPassword keys
+// off this id FIRST and grpc code 6 only as a fallback (see its classify
+// closure) so an unrecognized future ALREADY_EXISTS id still maps
+// correctly, and so this narrowing cannot accidentally also catch the
+// weak-password case, which also uses a low grpc code but a completely
+// different id.
+const duplicateEmailErrorID = "COMMAND-oR9nS"
+
+// emailVerifyCodeInvalidErrorID is the stable details[0].id Zitadel returns
+// for POST /v2/users/{id}/email/verify given a wrong or expired
+// verificationCode. VERIFIED live 2026-09-04 against the TESSERIX instance
+// (see .superpowers/sdd/2026-09-04-zitadel-phase6a-customer-signup/
+// task-2-brief.md): a 400 with details[0].id == "COMMAND-eis9R"
+// ("Code is invalid"). A separate "bogus user" 400 was also observed with a
+// DIFFERENT id ("COMMAND-ieJ2e") sharing no prefix with this one — see
+// VerifyEmail's classify closure, which keys off this exact id, never a
+// prefix and never message text (phase 5 found two different failures whose
+// messages differed by one word).
+const emailVerifyCodeInvalidErrorID = "COMMAND-eis9R"
 
 type Client struct {
 	baseURL string
@@ -125,6 +176,18 @@ type requestOptions struct {
 	// preserving the unconditional behaviour every other caller of
 	// withBadRequestError still wants.
 	badRequestCode int
+	// badRequestClassifier, when set, TAKES OVER the entire 400 mapping
+	// from badRequestErr/badRequestCode: it is called with the response
+	// body's grpc-style code and details[0].id and must return the error
+	// to use, defaulting unmatched cases to ErrUnavailable itself. This
+	// exists because a single call can need to distinguish more than one
+	// specific 400 case that do NOT share a grpc code — e.g.
+	// CreateHumanUserWithPassword's AddHumanUser 400s on both a
+	// too-short password (code 3, id DOMAIN-HuJf6) and a duplicate email
+	// (code 6, id COMMAND-oR9nS) — which withBadRequestErrorForCode's
+	// single (code, err) pair cannot express without conflating a weak
+	// password with any other unrelated code-3 rejection.
+	badRequestClassifier func(code int, id string) error
 	// logPath replaces path in every error string do() builds, WITHOUT
 	// affecting the actual HTTP request (which always uses the real path).
 	// Defaults to path itself. Use withLogPath when path carries a
@@ -160,6 +223,13 @@ func withBadRequestErrorForCode(code int, err error) requestOption {
 
 func withLogPath(label string) requestOption {
 	return func(ro *requestOptions) { ro.logPath = label }
+}
+
+// withBadRequestClassifier installs a full (code, id) -> error mapping for a
+// 400 response, overriding withBadRequestError/withBadRequestErrorForCode
+// for this call. See badRequestClassifier's field doc for why this exists.
+func withBadRequestClassifier(classify func(code int, id string) error) requestOption {
+	return func(ro *requestOptions) { ro.badRequestClassifier = classify }
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any, notFound error, opts ...requestOption) error {
@@ -199,7 +269,10 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any, not
 		switch {
 		case resp.StatusCode == http.StatusBadRequest:
 			badReqErr := ro.badRequestErr
-			if ro.badRequestCode != 0 && code != ro.badRequestCode {
+			switch {
+			case ro.badRequestClassifier != nil:
+				badReqErr = ro.badRequestClassifier(code, id)
+			case ro.badRequestCode != 0 && code != ro.badRequestCode:
 				// Narrowed mapping configured (withBadRequestErrorForCode)
 				// but this 400 is not the specific case it targets — refuse
 				// to guess, fall back to a generic failure rather than
@@ -385,6 +458,75 @@ func (c *Client) FindUserByVerifiedEmail(ctx context.Context, orgID, email strin
 	}
 }
 
+// FindUserByEmail searches for an EXISTING Zitadel user, WITHIN orgID,
+// whose email matches case-insensitively, REGARDLESS of Zitadel's
+// verification flag — reporting that flag back to the caller instead of
+// filtering on it the way FindUserByVerifiedEmail does.
+//
+// This exists for exactly one caller: register's Task 2b decision. register
+// needs to know whether an existing account blocking a sign-up is verified
+// (a real owner it must never touch) or unverified (an abandoned or
+// squatted account it is safe to clear) — a distinction
+// FindUserByVerifiedEmail cannot make because it discards unverified
+// matches as "no match".
+//
+// Same org-scoping and ambiguity refusal as FindUserByVerifiedEmail, for
+// the identical reasons — see that function's doc. Ambiguity is refused
+// even when the matches disagree on verification state: which of two
+// accounts holding the same address is the "real" one is not a decision
+// this code is willing to make.
+//
+// Returns ("", false, nil) when no match exists — an empty `result` array
+// and a response that omits the key entirely both decode to a nil slice in
+// Go, so this relies on that, never on the key's presence.
+func (c *Client) FindUserByEmail(ctx context.Context, orgID, email string) (userID string, verified bool, err error) {
+	if orgID == "" {
+		return "", false, fmt.Errorf("zitadellogin: FindUserByEmail with an empty org id, refusing rather than searching instance-wide: %w", ErrUnavailable)
+	}
+	body := map[string]any{
+		"queries": []any{
+			map[string]any{
+				"emailQuery": map[string]any{
+					"emailAddress": email,
+					"method":       "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE",
+				},
+			},
+		},
+	}
+	var wire struct {
+		Result []struct {
+			UserID string `json:"userId"`
+			Human  *struct {
+				Email struct {
+					Email      string `json:"email"`
+					IsVerified bool   `json:"isVerified"`
+				} `json:"email"`
+			} `json:"human"`
+		} `json:"result"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v2/users", body, &wire, ErrUnavailable, withOrgID(orgID)); err != nil {
+		return "", false, err
+	}
+	type match struct {
+		userID   string
+		verified bool
+	}
+	var matches []match
+	for _, u := range wire.Result {
+		if u.Human != nil && strings.EqualFold(u.Human.Email.Email, email) {
+			matches = append(matches, match{userID: u.UserID, verified: u.Human.Email.IsVerified})
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", false, nil
+	case 1:
+		return matches[0].userID, matches[0].verified, nil
+	default:
+		return "", false, fmt.Errorf("zitadellogin: %d users matched the email: %w", len(matches), ErrAmbiguousEmailMatch)
+	}
+}
+
 // CreateHumanUserWithIDPLink registers a brand-new Zitadel human user
 // pre-linked to the given federated identity, so the VERY NEXT retrieve of
 // the same provider identity resolves IDPIdentity.ZitadelUserID immediately
@@ -483,6 +625,113 @@ func boundedProfileName(raw, fallback string) string {
 		return raw[:maxProfileNameLength]
 	}
 	return raw
+}
+
+// CreateHumanUserWithPassword registers a brand-new Zitadel human user with
+// a password credential, for the storefront customer sign-up path (spec
+// D-sign-up-verifies-email in
+// .superpowers/sdd/2026-09-04-zitadel-phase6a-customer-signup/progress.md).
+// Modelled on CreateHumanUserWithIDPLink: same guard-and-build shape, same
+// error-mapping convention, same withLogPath discipline — but there is no
+// identity to pin here (this is a first-party credential, not a federated
+// one), and the email is NOT marked verified up front. Instead the call
+// asks Zitadel for a return code (email.returnCode) that Zitadel hands back
+// as emailCode rather than mailing itself, exactly like the password-reset
+// flow in zitadeladmin's SendPasswordResetOobCode: this package's own mail
+// path (auth-bff's internal/notify) sends the code, which is how the
+// account's OWN branded verification email gets sent instead of Zitadel's
+// unbranded default.
+//
+// Callers MUST have already checked FindUserByVerifiedEmail before calling
+// this — see idpFinish's identical discipline for CreateHumanUserWithIDPLink
+// — and MUST NEVER log or return emailCode to the browser: it is a live
+// verification credential for the account just created.
+//
+// VERIFIED 2026-09-04 against the live TESSERIX Zitadel instance (see this
+// package's README and the sdd progress ledger above):
+//
+//	POST /v2/users/human
+//	{"profile":{...},"email":{"email":"...","returnCode":{}},"password":{"password":"..."}}
+//	  -> 200 {"userId":..., "details":..., "emailCode":"<6 chars>"}
+//
+// returnCode sits DIRECTLY under email — protojson flattens oneofs, there is
+// no wrapper key named after the oneof itself. Phase 5 shipped a critical
+// defect wrapping exactly this shape on password_reset (see
+// zitadeladmin's package doc): the wrapped form still returns 200 but
+// Zitadel treats it as "no return medium requested", mails the user itself,
+// and hands the caller nothing to send. Do not reintroduce that shape here.
+func (c *Client) CreateHumanUserWithPassword(ctx context.Context, email, password, givenName, familyName string) (userID, emailCode string, err error) {
+	if email == "" {
+		return "", "", fmt.Errorf("zitadellogin: refusing to create a user with no email: %w", ErrUnavailable)
+	}
+	if password == "" {
+		return "", "", fmt.Errorf("zitadellogin: refusing to create a user with no password: %w", ErrUnavailable)
+	}
+
+	// Same fallback shape as CreateHumanUserWithIDPLink: Zitadel requires
+	// non-empty given/family names on a human profile, and a real
+	// caller-supplied name reads better than a placeholder — see that
+	// function's doc for why the fallback is the email's local part /
+	// "User", never a merchant-flavoured word like "Member".
+	localPart := email
+	if i := strings.IndexByte(localPart, '@'); i > 0 {
+		localPart = localPart[:i]
+	}
+	givenName = boundedProfileName(givenName, localPart)
+	familyName = boundedProfileName(familyName, "User")
+
+	body := map[string]any{
+		"profile": map[string]any{
+			"givenName":  givenName,
+			"familyName": familyName,
+		},
+		"email": map[string]any{
+			"email":      email,
+			"returnCode": map[string]any{},
+		},
+		"password": map[string]any{
+			"password": password,
+		},
+	}
+	var wire struct {
+		UserID    string `json:"userId"`
+		EmailCode string `json:"emailCode"`
+	}
+	// classify distinguishes the two 400 cases AddHumanUser can answer here,
+	// which do NOT share a grpc code: a too-short password (code 3, id
+	// weakPasswordErrorID) and a duplicate email (code 6, id
+	// duplicateEmailErrorID). id is checked FIRST for both — it is the
+	// stable, specific signal — with code 6 kept only as a fallback for an
+	// ALREADY_EXISTS this package has not seen an id for yet. Anything else
+	// falls back to ErrUnavailable rather than guessing — see
+	// badRequestClassifier's doc.
+	classify := func(code int, id string) error {
+		switch {
+		case id == weakPasswordErrorID:
+			return ErrWeakPassword
+		case id == duplicateEmailErrorID:
+			return ErrEmailAlreadyExists
+		case code == 6:
+			return ErrEmailAlreadyExists
+		default:
+			return ErrUnavailable
+		}
+	}
+	if err := c.do(ctx, http.MethodPost, "/v2/users/human", body, &wire, ErrUnavailable, withBadRequestClassifier(classify)); err != nil {
+		return "", "", err
+	}
+	if wire.UserID == "" {
+		return "", "", fmt.Errorf("zitadellogin: create human user with password: 200 without a userId: %w", ErrUnavailable)
+	}
+	if wire.EmailCode == "" {
+		// A 200 with no emailCode means returnCode was not honoured as a
+		// return medium (see the wrapped-oneof defect this doc warns
+		// about) — Zitadel has already mailed the account itself with a
+		// code this package can never deliver through its own branded
+		// path. Refuse rather than report success with nothing to send.
+		return "", "", fmt.Errorf("zitadellogin: create human user with password: 200 without an emailCode: %w", ErrUnavailable)
+	}
+	return wire.UserID, wire.EmailCode, nil
 }
 
 // LinkIDPToUser attaches the given federated identity to an EXISTING
@@ -603,6 +852,148 @@ func (c *Client) UserEmail(ctx context.Context, userID string) (string, error) {
 		return "", fmt.Errorf("zitadellogin: user has no human profile, cannot resolve email: %w", ErrUnavailable)
 	}
 	return wire.User.Human.Email.Email, nil
+}
+
+// UserEmailVerified reports whether Zitadel currently marks userID's own
+// email verified. Used by the storefront customer password login gate
+// (customer_handler.go's login) to refuse a sign-up account that has never
+// completed the returnCode flow CreateHumanUserWithPassword started — see
+// that function's doc and the sdd progress ledger's
+// "sign-up VERIFIES the email" ruling. Without this gate, an attacker could
+// register a victim's address with a password of their own choosing and
+// sign straight in, which is the exact lockout self-registration with email
+// verification exists to prevent.
+func (c *Client) UserEmailVerified(ctx context.Context, userID string) (bool, error) {
+	var wire struct {
+		User struct {
+			Human *struct {
+				Email struct {
+					IsVerified bool `json:"isVerified"`
+				} `json:"email"`
+			} `json:"human"`
+		} `json:"user"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/v2/users/"+url.PathEscape(userID), nil, &wire, ErrUserNotFound); err != nil {
+		return false, err
+	}
+	if wire.User.Human == nil {
+		return false, fmt.Errorf("zitadellogin: user has no human profile, cannot resolve email verification: %w", ErrUnavailable)
+	}
+	return wire.User.Human.Email.IsVerified, nil
+}
+
+// DeleteUser permanently removes the Zitadel user identified by userID.
+//
+// This exists for exactly one caller today: register's rollback when the
+// verification email cannot be sent (see customer_handler.go). An account
+// CreateHumanUserWithPassword just created, that this same request has
+// never reported success for, is not reachable by anyone else yet — an
+// unverified email means no sign-in gate above will admit it (see
+// UserEmailVerified's doc), and the storefront never saw a response
+// carrying its uid. Deleting it turns a permanent stranded-account lockout
+// (see ErrEmailAlreadyExists's doc: a future registration attempt for the
+// same address would otherwise 400 forever) into a clean retry.
+//
+// Idempotent: ErrUserNotFound (a 404) is treated as success, mirroring
+// zitadeladmin.Client.DeleteAccount's identical reasoning — a caller
+// retrying its own rollback may find the user already gone.
+func (c *Client) DeleteUser(ctx context.Context, userID string) error {
+	if userID == "" {
+		return fmt.Errorf("zitadellogin: DeleteUser with an empty user id: %w", ErrUnavailable)
+	}
+	err := c.do(ctx, http.MethodDelete, "/v2/users/"+url.PathEscape(userID), nil, nil, ErrUserNotFound, withLogPath("/v2/users/{id}"))
+	if errors.Is(err, ErrUserNotFound) {
+		return nil
+	}
+	return err
+}
+
+// VerifyEmail submits the shopper's emailed code and asks Zitadel to flip
+// the user's email verified — the second half of the sign-up flow
+// CreateHumanUserWithPassword starts (see that function's doc and
+// customer_handler.go's verifyEmail).
+//
+// VERIFIED live 2026-09-04 against the TESSERIX Zitadel instance (see
+// task-2-brief.md in
+// .superpowers/sdd/2026-09-04-zitadel-phase6a-customer-signup/):
+//
+//	POST /v2/users/{id}/email/verify   {"verificationCode":"<6 chars>"}   -> 200
+//	  wrong code  -> 400, details[0].id = "COMMAND-eis9R" ("Code is invalid")
+//	  bogus user  -> 400, details[0].id = "COMMAND-ieJ2e"
+//
+// The path has no underscore: email/_verify is a ROUTING 404 — a plain
+// {"code":5,"message":"Not Found"} carrying no details[0].id at all. That
+// absence is how a wrong path is told apart from a genuine domain error;
+// this function's classify closure never has to consider it because the
+// path above is pinned correctly.
+//
+// code is a live credential for the account, exactly like emailCode in
+// CreateHumanUserWithPassword, and must NEVER be logged. withLogPath keeps
+// the caller-supplied user id out of do()'s own error/log formatting too —
+// the same discipline DeleteUser already follows for the identical reason.
+//
+// PROBED live 2026-09-04 against the TESSERIX instance: 8 consecutive wrong
+// codes against the same user id all returned the identical
+// COMMAND-eis9R 400, then the correct code succeeded immediately after —
+// no lockout, no backoff, no observable throttling on this call. Do NOT
+// assume Zitadel rate-limits this endpoint; the failedAttempts field
+// readZitadelError deliberately never surfaces (see its doc) exists
+// elsewhere in Zitadel's API surface but was not observed to gate this
+// call. Re-probe rather than re-assume if this matters again.
+//
+// The only thing standing between a caller and brute-forcing this code is
+// the keyspace itself: 6 characters observed from an uppercase-alphanumeric
+// alphabet (e.g. "RN7W6C") is roughly 36^6 ≈ 2.2 billion combinations, and
+// the call sits behind X-Internal-Auth (only the storefront backend, not a
+// public browser, can reach it directly) — but the storefront itself
+// exposes this endpoint to the public internet, and auth-bff has NO rate
+// limiting anywhere (a known open item since phase 3b). This endpoint adds
+// one more consumer of that gap rather than a defense of its own.
+//
+// A successful guess is NOT a cosmetic flag flip. Anyone can register
+// victim@example.com with a password of their own choosing (registration
+// is open; the code goes to the victim's inbox, not the registrant's), so
+// this call is the ONE thing standing between that unverified, attacker-
+// controlled account and two real consequences once it flips verified:
+// (1) login's gate keys on exactly this flag, so the attacker can now sign
+// in with the password they chose; (2) idpFinish's FindUserByVerifiedEmail
+// will resolve victim@example.com to this account, so the real victim's
+// later "Continue with Google" gets LinkIDPToUser'd onto the attacker's
+// account instead of a fresh one. That is account takeover of the victim's
+// email identity, not a flag flip — see the phase 6a task-2 report for why
+// this is still assessed as low-probability (given the keyspace and the
+// absence of any observed lockout) rather than a reason to add a
+// per-endpoint attempt cap ahead of the service-wide rate-limiting work.
+//
+// COROLLARY — the keyspace above is load-bearing, not incidental: if
+// Zitadel's verification code length or alphabet were ever shortened (a
+// config change, a version bump), this endpoint degrades from
+// impractical-to-guess to feasible with NOTHING else changing here and no
+// test in this package catching it. Nobody re-checks a dependency like
+// this on its own; re-probe the live keyspace if that's ever in question.
+func (c *Client) VerifyEmail(ctx context.Context, userID, code string) error {
+	if userID == "" {
+		return fmt.Errorf("zitadellogin: VerifyEmail with an empty user id: %w", ErrUnavailable)
+	}
+	if code == "" {
+		return fmt.Errorf("zitadellogin: VerifyEmail with an empty code: %w", ErrUnavailable)
+	}
+	body := map[string]any{"verificationCode": code}
+	// classify keys off details[0].id FIRST and ONLY — never a grpc code
+	// (both the wrong-code and bogus-user cases observed live share the
+	// same low code, so a code-based narrowing would conflate them) and
+	// never message text (see emailVerifyCodeInvalidErrorID's doc). An id
+	// this package has not seen before — including the bogus-user id
+	// COMMAND-ieJ2e — falls back to ErrUnavailable rather than being
+	// guessed at as a wrong code.
+	classify := func(_ int, id string) error {
+		if id == emailVerifyCodeInvalidErrorID {
+			return ErrEmailVerificationCodeInvalid
+		}
+		return ErrUnavailable
+	}
+	return c.do(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/email/verify", body, nil, ErrUnavailable,
+		withBadRequestClassifier(classify), withLogPath("/v2/users/{id}/email/verify"))
 }
 
 var mfaPolicyKeys = []string{"forceMfa", "forceMfaLocalOnly"}

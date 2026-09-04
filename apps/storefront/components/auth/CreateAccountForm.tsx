@@ -3,9 +3,14 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { customerSignUp } from "@/app/create-account/actions";
-import { isGoogleSignInOffered } from "@/lib/auth/provider";
+import { customerSignUp, registerCustomer, verifyCustomerEmail } from "@/app/create-account/actions";
+import { getAuthProvider, isGoogleSignInOffered } from "@/lib/auth/provider";
 import { resolveGoogleSignInUrl } from "@/lib/auth/google-sign-in";
+import {
+  applyRegisterResult,
+  applyVerifyResult,
+  INITIAL_CREATE_ACCOUNT_STATE,
+} from "@/lib/auth/create-account-flow";
 
 interface GipConfig {
   apiKey: string;
@@ -87,8 +92,18 @@ export function CreateAccountForm({
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  // Zitadel-only: which step of register -> "check your email" -> verify
+  // the form is on, plus the current error. Unused (stays at its initial
+  // "form" value) on the GIP path — see handleSubmit's provider branch.
+  const [flow, setFlow] = useState(INITIAL_CREATE_ACCOUNT_STATE);
   const [pending, startTransition] = useTransition();
+  const error = flow.error;
+  const isZitadel = getAuthProvider() === "zitadel";
+
+  function setError(message: string | null) {
+    setFlow((prev) => ({ ...prev, error: message }));
+  }
 
   function handleGoogle() {
     if (typeof window === "undefined") return;
@@ -117,6 +132,18 @@ export function CreateAccountForm({
     }
     if (!password || password.length < 6) {
       setError("Password must be at least 6 characters.");
+      return;
+    }
+
+    // Zitadel path: step 1 of register -> "check your email" -> verify.
+    // The GIP branch below (signUpWithPassword + customerSignUp) is
+    // untouched — see the file header's byte-identical requirement — this
+    // branch is the ONLY thing gated on the flag.
+    if (isZitadel) {
+      startTransition(async () => {
+        const result = await registerCustomer({ email: email.trim(), password });
+        setFlow(applyRegisterResult(result));
+      });
       return;
     }
 
@@ -149,6 +176,82 @@ export function CreateAccountForm({
         }
       }
     });
+  }
+
+  function handleVerifySubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (flow.step.kind !== "verify") return;
+    const verifyStep = flow.step;
+
+    if (!code.trim()) {
+      setError("Enter the code from your verification email.");
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await verifyCustomerEmail({
+        uid: verifyStep.uid,
+        email: verifyStep.email,
+        token: verifyStep.token,
+        code: code.trim(),
+        storeSlug,
+      });
+
+      if (!result.ok) {
+        // A wrong/expired code (or any other failure) keeps the shopper on
+        // this SAME verify step — applyVerifyResult never sends them back
+        // to the registration form.
+        setFlow(applyVerifyResult(verifyStep, result));
+        return;
+      }
+
+      router.push(returnUrl);
+      router.refresh();
+    });
+  }
+
+  if (isZitadel && flow.step.kind === "verify") {
+    return (
+      <form onSubmit={handleVerifySubmit} noValidate className="mt-8 space-y-5">
+        <p className="text-sm text-[color:var(--storefront-text,var(--ink-900))]/80">
+          We sent a verification code to <strong>{flow.step.email}</strong>.
+          Enter it below to finish creating your account — this also
+          confirms the address for Google sign-in later.
+        </p>
+
+        <div className="space-y-1.5">
+          <label
+            htmlFor="signup-verify-code"
+            className="block text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]"
+          >
+            Verification code
+          </label>
+          <input
+            id="signup-verify-code"
+            type="text"
+            inputMode="text"
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            className="w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-surface)] px-3 py-2.5 text-base text-[color:var(--storefront-text,var(--ink-900))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+          />
+        </div>
+
+        {error && (
+          <p role="alert" className="text-sm text-[color:var(--storefront-danger)]">
+            {error}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={pending}
+          className="w-full rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+        >
+          {pending ? "Verifying..." : "Verify email"}
+        </button>
+      </form>
+    );
   }
 
   return (

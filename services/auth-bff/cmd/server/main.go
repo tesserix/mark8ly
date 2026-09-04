@@ -96,7 +96,7 @@ type zitadelHandlers struct {
 // lists are kept separate. Every other test in this package stays green if
 // that one line is swapped; TestZitadelHandlersUseTheCorrectReturnURLAllowlist
 // is the one that would not.
-func newZitadelHandlers(cfg *config.Config, zitadelClient *zitadellogin.Client, complete zitadellogin.CompleteFunc) (*zitadelHandlers, error) {
+func newZitadelHandlers(cfg *config.Config, zitadelClient *zitadellogin.Client, complete zitadellogin.CompleteFunc, notifier *notify.Client) (*zitadelHandlers, error) {
 	adminReturnURLs, err := zitadellogin.NewReturnURLAllowlist(
 		cfg.ZitadelReturnURLAllowedHostsAdmin, cfg.ZitadelReturnURLAllowedSuffixesAdmin)
 	if err != nil {
@@ -114,12 +114,22 @@ func newZitadelHandlers(cfg *config.Config, zitadelClient *zitadellogin.Client, 
 	if err != nil {
 		return nil, err
 	}
+	// customerVerificationMailerOrNil mirrors notifierOrNil: a nil
+	// *notify.Client passed straight into WithNotify's interface parameter
+	// would become a non-nil interface wrapping a nil pointer, defeating
+	// register's own `h.verificationMailer == nil` guard. This keeps that
+	// guard meaning what it reads as.
+	var customerNotifier zitadellogin.CustomerVerificationMailer
+	if notifier != nil {
+		customerNotifier = notifier
+	}
 	customer := zitadellogin.NewCustomerHandler(zitadelClient).
 		WithHostedLoginBaseURL(cfg.ZitadelIssuer).
 		WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
 		WithReturnURLAllowlist(storefrontReturnURLs).
 		WithGoogleIDPID(cfg.ZitadelGoogleIDPID).
-		WithOrgID(cfg.ZitadelOrgID)
+		WithOrgID(cfg.ZitadelOrgID).
+		WithNotify(customerNotifier)
 
 	return &zitadelHandlers{merchant: merchant, customer: customer}, nil
 }
@@ -326,7 +336,7 @@ func main() {
 	}
 	var zh *zitadelHandlers
 	if zitadelClient != nil {
-		zh, err = newZitadelHandlers(cfg, zitadelClient, autologinSvc.CompleteForProvider)
+		zh, err = newZitadelHandlers(cfg, zitadelClient, autologinSvc.CompleteForProvider, notifier)
 		if err != nil {
 			log.Error("zitadel: refusing to start", "err", err)
 			panic(err)

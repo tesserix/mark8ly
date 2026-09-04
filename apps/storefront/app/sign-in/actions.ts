@@ -159,6 +159,25 @@ export async function customerSignIn(
             code: "invalid_credentials",
             message: "Email or password is incorrect.",
           };
+        case "email_not_verified":
+          // The password was CORRECT — auth-bff only returns this after
+          // CreatePasswordSession already succeeded (see
+          // auth-bff-customer.ts's parseCustomerOutcome and
+          // customer_handler.go:363-369) — but the account was registered
+          // and never had its email confirmed. Telling this shopper
+          // "Email or password is incorrect" would be false and send them
+          // into a retry loop that can never succeed: no amount of
+          // password resets fixes an unverified email, and this endpoint
+          // never sends a new code on its own. Their only real recovery is
+          // re-running create-account, which deletes and recreates the
+          // unverified registration with a fresh code — so point them
+          // there explicitly instead of leaving them stuck.
+          return {
+            ok: false,
+            code: "email_not_verified",
+            message:
+              "This email address hasn't been verified yet. Go to Create account to get a new verification code.",
+          };
         case "totp_required":
           // The account has an authenticator app enrolled. No cookie is
           // set yet — the client must collect the 6-digit code and call
@@ -296,6 +315,22 @@ export async function confirmCustomerTotp(input: {
           code: "signin_method_unsupported",
           message:
             "This account uses a sign-in method this storefront can't complete yet. Please contact support for help signing in.",
+        };
+      case "email_not_verified":
+        // POST /auth/customer/totp never emits this — the check that
+        // produces it (customer_handler.go:363-369) runs on the login
+        // path before a session/factor challenge exists at all, and this
+        // function only ever runs after customerSignIn already returned
+        // totp_required for a session that passed that check. Handled
+        // here only so this switch stays exhaustive against the shared
+        // CustomerAuthOutcome union; reuse customerSignIn's copy and
+        // pointer to create-account rather than inventing a second
+        // wording for a branch that can't be reached.
+        return {
+          ok: false,
+          code: "email_not_verified",
+          message:
+            "This email address hasn't been verified yet. Go to Create account to get a new verification code.",
         };
     }
 

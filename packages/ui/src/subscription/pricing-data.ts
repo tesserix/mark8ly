@@ -10,10 +10,16 @@
  *
  * The Money primitive consumes this data and formats via Intl.
  *
- * The single source of truth for headline pricing is
- * services/marketplace-api/internal/billing/pricing/catalog.go. To
- * change a price, edit the catalog and regenerate this file with:
+ * Prices are NOT authored here, and no longer in catalog.go either.
+ * The platform console owns the catalog (tesserix-home#328); the Go
+ * tables in catalog_data.go are regenerated from it with
+ *   cd services/marketplace-api && go run ./internal/billing/pricing/cmd/gencatalog -o internal/billing/pricing/catalog_data.go -source=console
+ * and this file is then regenerated from those tables with:
  *   cd services/marketplace-api && go run ./internal/billing/pricing/cmd/genpricing > ../../packages/ui/src/subscription/pricing-data.ts
+ *
+ * The Pro+App add-on is the exception: it has no Stripe Price and
+ * is not in the catalog at all, so its figures come from the
+ * hand-maintained constants in display_extras.go.
  *
  * USD is guaranteed to exist for every plan + add-on. All other
  * currencies are optional fallbacks — any missing entry falls back

@@ -17,7 +17,14 @@ func NewGIPVerifier(client *firebaseAuth.Client) *GIPVerifier {
 	return &GIPVerifier{client: client}
 }
 
-// Verify checks the token signature and extracts user_id and tenant_id claims.
+// Verify checks the token signature and extracts the user_id claim.
+//
+// It no longer extracts tenant_id. That custom claim used to be the only
+// source of tenancy for GIP tokens, but it competed — unvalidated — with
+// auth.TenantFromRequest's FGA-checked value for the same gin context key
+// (#524 phase 4). Tenancy is now decided exclusively by TenantFromRequest,
+// so nothing here needs to read the claim at all, regardless of whether a
+// given token happens to carry one.
 func (v *GIPVerifier) Verify(ctx context.Context, idToken string) (*TokenClaims, error) {
 	token, err := v.client.VerifyIDToken(ctx, idToken)
 	if err != nil {
@@ -29,50 +36,7 @@ func (v *GIPVerifier) Verify(ctx context.Context, idToken string) (*TokenClaims,
 		return nil, ErrInvalidToken
 	}
 
-	// A missing tenant_id claim is NOT an authentication failure — the
-	// token is validly signed and the user is who they say they are.
-	// They simply have no store bound to this identity yet.
-	//
-	// Returning an error here made GIPBearerAuth abort with 401, which
-	// the mobile client reads as "session is dead" and responds to by
-	// calling signOut() — bouncing the user back to /login with no
-	// explanation, in a loop. Instead, pass through with an empty
-	// TenantID and let authz.RequireTenantRelation answer 404, which
-	// the app already renders as its "No store yet" screen.
-	tenantID := tenantIDFromClaims(token.Claims)
-
 	return &TokenClaims{
-		UserID:   userID,
-		TenantID: tenantID,
+		UserID: userID,
 	}, nil
-}
-
-// tenantIDFromClaims reads the tenant_id custom claim set on the GIP user
-// record during onboarding.
-//
-// tenant-service writes it as a multi-value array (its UpdateUserAttributes
-// appends into an []interface{} so a user can be added to further tenants), so
-// the array form is what production tokens carry. The scalar form is accepted
-// too, so a token from any other writer still verifies.
-//
-// A user may belong to several tenants. Mobile has no tenant switcher, so the
-// first usable entry wins; revisit if per-tenant selection is ever added.
-func tenantIDFromClaims(claims map[string]interface{}) string {
-	switch v := claims["tenant_id"].(type) {
-	case string:
-		return v
-	case []interface{}:
-		for _, item := range v {
-			if s, ok := item.(string); ok && s != "" {
-				return s
-			}
-		}
-	case []string:
-		for _, s := range v {
-			if s != "" {
-				return s
-			}
-		}
-	}
-	return ""
 }

@@ -41,11 +41,11 @@ func TestRegisterAdminMobile_TenantFromRequestRunsBetweenBearerAuthAndRequireTen
 				c.Next()
 			},
 		},
-		TokenVerifier: &auth.FakeVerifier{UserID: "user-1", TenantID: ""},
-		// No tenant claim on the token (as a real Zitadel token would
-		// carry), so reaching the handler at all proves TenantFromRequest
-		// resolved tenant_id from the X-Acting-Tenant-Id header + FGA
-		// membership check, in the right slot in the chain.
+		TokenVerifier: &auth.FakeVerifier{UserID: "user-1"},
+		// GIPBearerAuth never sets tenant_id from the token at all, so
+		// reaching the handler at all proves TenantFromRequest resolved
+		// tenant_id from the X-Acting-Tenant-Id header + FGA membership
+		// check, in the right slot in the chain.
 		TenantMembershipChecker: fga,
 	})
 
@@ -61,7 +61,7 @@ func TestRegisterAdminMobile_TenantFromRequestRunsBetweenBearerAuthAndRequireTen
 // TestRegisterAdminMobile_NonMemberActingTenantGets404NotUnauthorized is
 // the negative half of the same wiring: a caller who states a tenant they
 // do NOT belong to must be refused as 404 (no store linked), never 401 —
-// see require_tenant_claim.go's doc comment on why a 401 here is a real
+// see require_bound_tenant.go's doc comment on why a 401 here is a real
 // incident (mobile client signOut()+redirect loop). This also confirms
 // TenantFromRequest's fail-closed default: an unresolved header must NOT
 // leak through as a usable tenant_id.
@@ -79,7 +79,7 @@ func TestRegisterAdminMobile_NonMemberActingTenantGets404NotUnauthorized(t *test
 				c.Next()
 			},
 		},
-		TokenVerifier:           &auth.FakeVerifier{UserID: "user-1", TenantID: ""},
+		TokenVerifier:           &auth.FakeVerifier{UserID: "user-1"},
 		TenantMembershipChecker: fga,
 	})
 
@@ -93,13 +93,21 @@ func TestRegisterAdminMobile_NonMemberActingTenantGets404NotUnauthorized(t *test
 		"a non-member's stated tenant must be refused as 404 (no store), never 401 (which signs the mobile client out)")
 }
 
-// TestRegisterAdminMobile_NoActingTenantHeaderUnaffectedByTenantFromRequest
-// is the "byte-identical when unused" guarantee: a caller that never
-// sends X-Acting-Tenant-Id (every pre-existing test, and every GIP token
-// that already carries its own tenant_id claim) must behave exactly as
-// before — TenantFromRequest is a no-op when the header is absent, even
-// with a real TenantMembershipChecker wired.
-func TestRegisterAdminMobile_NoActingTenantHeaderUnaffectedByTenantFromRequest(t *testing.T) {
+// TestRegisterAdminMobile_NoActingTenantHeaderMeans404EvenIfVerifierKnowsATenant
+// is the task-4 regression test: a bearer token's own opinion about the
+// caller's tenant must never reach "tenant_id" on the context, no matter
+// what value it carries or how it got there. Before task 4, GIPBearerAuth
+// copied TokenClaims.TenantID straight onto the context; a token whose
+// claim happened to name a tenant the caller legitimately belongs to (as
+// this test's FakeVerifier would have, pre-task-4) reached the handler
+// with NO X-Acting-Tenant-Id header and NO FGA check at all — the exact
+// unvalidated-claim-wins-the-race bug this task removes. TokenClaims no
+// longer has a field to carry that value, so with no acting-tenant header
+// there is now no possible source for tenant_id and the caller is refused
+// as 404, even though the same user IS a genuine FGA member of tenant-1
+// (proving this is the claim path being closed, not a membership
+// failure).
+func TestRegisterAdminMobile_NoActingTenantHeaderMeans404EvenIfVerifierKnowsATenant(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 
@@ -114,17 +122,17 @@ func TestRegisterAdminMobile_NoActingTenantHeaderUnaffectedByTenantFromRequest(t
 				c.Next()
 			},
 		},
-		// The token itself already carries tenant-1 (the GIP shape),
-		// same as every existing mobile_routes test.
-		TokenVerifier:           &auth.FakeVerifier{UserID: "user-1", TenantID: "tenant-1"},
+		TokenVerifier:           &auth.FakeVerifier{UserID: "user-1"},
 		TenantMembershipChecker: fga,
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/mobile/admin/stores", nil)
 	req.Header.Set("Authorization", "Bearer fake")
-	// Deliberately no X-Acting-Tenant-Id header.
+	// Deliberately no X-Acting-Tenant-Id header — the only remaining
+	// source of tenancy is absent, so even a genuine FGA member must be
+	// refused rather than let some other signal (a token claim) fill in.
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
 }

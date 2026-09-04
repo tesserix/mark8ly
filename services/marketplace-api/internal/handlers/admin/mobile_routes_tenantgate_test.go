@@ -112,11 +112,16 @@ func TestRegisterAdminMobile_SuspendedTenantRefusedOnNonStoreRoute(t *testing.T)
 				c.Next()
 			},
 		},
-		TokenVerifier: &auth.FakeVerifier{UserID: "user-1", TenantID: "tenant-1"},
+		TokenVerifier: &auth.FakeVerifier{UserID: "user-1"},
+		// tenant_id no longer comes from the token — it must be resolved
+		// via TenantFromRequest's FGA membership check against the
+		// caller-stated X-Acting-Tenant-Id header below.
+		TenantMembershipChecker: fga,
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/mobile/admin/stores", nil)
 	req.Header.Set("Authorization", "Bearer fake")
+	req.Header.Set(auth.ActingTenantHeader, "tenant-1")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 

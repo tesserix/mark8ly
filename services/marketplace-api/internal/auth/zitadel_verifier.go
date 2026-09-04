@@ -22,10 +22,10 @@ import (
 //
 // Zitadel mints no tenant claim on access tokens (see decision D7 in the
 // #524 migration design — adding one would require a Zitadel Actions v2
-// script and a new runtime dependency on a shared instance). Tenancy is
-// instead supplied by a separate FGA-backed middleware
-// (TenantFromRequest). So Verify always returns an empty TenantID — this
-// is deliberate, not a gap to fill in later.
+// script and a new runtime dependency on a shared instance), and
+// TokenClaims carries no tenant field for Verify to populate even if it
+// did. Tenancy is supplied exclusively by a separate FGA-backed
+// middleware (TenantFromRequest).
 type ZitadelVerifier struct {
 	verifier *gooidc.IDTokenVerifier
 }
@@ -71,7 +71,7 @@ func NewZitadelVerifier(ctx context.Context, issuer, audience string) (*ZitadelV
 
 // Verify checks the token's signature against the issuer's JWKS, and that
 // its issuer matches and it is unexpired, then returns the subject as
-// UserID. TenantID is always empty — see the ZitadelVerifier doc comment.
+// UserID. See the ZitadelVerifier doc comment on tenancy.
 func (v *ZitadelVerifier) Verify(ctx context.Context, idToken string) (*TokenClaims, error) {
 	token, err := v.verifier.Verify(ctx, idToken)
 	if err != nil {
@@ -86,7 +86,6 @@ func (v *ZitadelVerifier) Verify(ctx context.Context, idToken string) (*TokenCla
 	}
 
 	return &TokenClaims{
-		UserID:   token.Subject,
-		TenantID: "",
+		UserID: token.Subject,
 	}, nil
 }

@@ -33,8 +33,7 @@ func TestGIPBearerAuth_NoAuthHeader_Returns401(t *testing.T) {
 
 func TestGIPBearerAuth_ValidToken_SetsContext(t *testing.T) {
 	r := gipRouter(&auth.FakeVerifier{
-		UserID:   "user-123",
-		TenantID: "tenant-456",
+		UserID: "user-123",
 	})
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/test", nil)
@@ -42,7 +41,10 @@ func TestGIPBearerAuth_ValidToken_SetsContext(t *testing.T) {
 	r.ServeHTTP(w, req)
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "user-123")
-	assert.Contains(t, w.Body.String(), "tenant-456")
+	// GIPBearerAuth is no longer a source of tenancy at all — TokenClaims
+	// carries no tenant field for it to set "tenant_id" from. Only
+	// TenantFromRequest's FGA-validated value may ever populate that key.
+	assert.Contains(t, w.Body.String(), `"tenant_id":""`)
 }
 
 func TestGIPBearerAuth_InvalidToken_Returns401(t *testing.T) {

@@ -50,15 +50,16 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 	bearerAuth := auth.GIPBearerAuth(deps.TokenVerifier)
 	rateLimiter := auth.NewPerUserRateLimiter(60, 10) // 60 req/min, burst 10
 	// Fails closed for callers with no tenant bound to their identity.
-	// GIPBearerAuth intentionally lets a claimless-but-validly-signed token
-	// through (a 401 there made the mobile client sign the user out and
-	// bounce to /login), so this guard supplies the authorization half —
-	// as 404, never 401. Mounted at group level so routes without an
-	// explicit RequireTenantRelation are still protected.
-	requireTenant := auth.RequireTenantClaim()
+	// GIPBearerAuth intentionally lets a validly-signed token through even
+	// when the caller has no tenant bound yet (a 401 there made the mobile
+	// client sign the user out and bounce to /login), so this guard
+	// supplies the authorization half — as 404, never 401. Mounted at
+	// group level so routes without an explicit RequireTenantRelation are
+	// still protected.
+	requireTenant := auth.RequireBoundTenant()
 
 	// tenantMW mirrors routes.go's tenantMW: auth, then the FGA-backed
-	// acting-tenant resolver (#524 phase 4), then the tenant-claim guard,
+	// acting-tenant resolver (#524 phase 4), then the bound-tenant guard,
 	// then TenantGate (#287, F1) so a suspended tenant is refused on every
 	// non-store-scoped mobile group too — this is the fifth admin route
 	// group the design's four-group count missed. TenantGate is a nil-safe

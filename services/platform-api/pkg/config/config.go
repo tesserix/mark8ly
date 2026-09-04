@@ -134,6 +134,27 @@ type Config struct {
 	// required because the login-client token is instance-level and the
 	// shared Zitadel instance hosts other products' orgs too.
 	ZitadelOrgID string `envconfig:"ZITADEL_ORG_ID"`
+
+	// ZitadelAdminProjectID is the Zitadel project id of the merchant
+	// admin app (mark8ly-admin). Invitation accept must create a project
+	// grant on it for every invited teammate: that project has
+	// projectRoleCheck: true, so a user holding no role on it cannot
+	// complete the OIDC flow at all (finalize returns
+	// 403 OIDC-foSyH49RvL) no matter how correct their FGA tuples are.
+	//
+	// REQUIRED whenever ZitadelEnabled is true (see ValidateZitadel).
+	// There is deliberately no default: the id is instance-specific, and
+	// baking the production one into the binary would make a
+	// staging/replacement instance silently grant roles on a project
+	// that isn't the one it is serving.
+	ZitadelAdminProjectID string `envconfig:"ZITADEL_ADMIN_PROJECT_ID"`
+
+	// ZitadelStaffRoleKey is the role key granted on
+	// ZitadelAdminProjectID. It defaults to the one role the
+	// mark8ly-admin project declares in the zitadel-bootstrap chart, so
+	// no deployment has to set it; it is configurable only so a future
+	// role split does not require a code change to roll out.
+	ZitadelStaffRoleKey string `envconfig:"ZITADEL_STAFF_ROLE_KEY" default:"mark8ly.staff"`
 }
 
 // GIPKey returns the API key to use for server-side GIP calls: the
@@ -181,6 +202,12 @@ func Load() (*Config, error) {
 	cfg.ZitadelIssuer = strings.TrimSpace(cfg.ZitadelIssuer)
 	cfg.ZitadelLoginClientToken = strings.TrimSpace(cfg.ZitadelLoginClientToken)
 	cfg.ZitadelOrgID = strings.TrimSpace(cfg.ZitadelOrgID)
+	// Both go into JSON request bodies Zitadel matches EXACTLY (a project
+	// id and a role key); a trailing newline from a mounted secret or a
+	// heredoc-written ConfigMap would produce a 404 on the project or a
+	// grant carrying a role nobody holds.
+	cfg.ZitadelAdminProjectID = strings.TrimSpace(cfg.ZitadelAdminProjectID)
+	cfg.ZitadelStaffRoleKey = strings.TrimSpace(cfg.ZitadelStaffRoleKey)
 	return &cfg, nil
 }
 
@@ -214,6 +241,23 @@ func (c *Config) ValidateZitadel() error {
 	}
 	if c.ZitadelOrgID == "" {
 		missing = append(missing, "ZITADEL_ORG_ID")
+	}
+	// DEPLOY ORDER: this is a NEW required variable. The chart must set
+	// ZITADEL_ADMIN_PROJECT_ID before a build carrying it reaches a
+	// deployment that already has ZITADEL_ENABLED=true, or platform-api
+	// refuses to boot. It is required rather than optional because the
+	// alternative — accepting an invitation and skipping the project
+	// grant — produces exactly the failure this variable exists to
+	// prevent: a teammate who looks provisioned and cannot sign in.
+	// Refusing at startup surfaces that in the rollout; skipping the
+	// grant surfaces it days later as a support ticket.
+	if c.ZitadelAdminProjectID == "" {
+		missing = append(missing, "ZITADEL_ADMIN_PROJECT_ID")
+	}
+	// ZitadelStaffRoleKey is NOT listed: it carries a default, so it can
+	// only be empty if an operator explicitly set it to the empty string.
+	if c.ZitadelStaffRoleKey == "" {
+		missing = append(missing, "ZITADEL_STAFF_ROLE_KEY")
 	}
 	if len(missing) == 0 {
 		return nil

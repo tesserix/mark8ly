@@ -324,18 +324,29 @@ func main() {
 	// TestMainCallsNewTenantClaimSetterUnconditionally exists to catch.
 	inviteClaims := newTenantClaimSetter(gipAdmin)
 
+	// Zitadel-path staff provisioning for invite-accept. Nil (and every
+	// downstream behaviour byte-identical to before) unless
+	// ZITADEL_ENABLED is true; a misconfiguration panics rather than
+	// quietly provisioning nobody — see newStaffProvisioner's doc.
+	staffProvisioner, provisionerErr := newStaffProvisioner(cfg)
+	if provisionerErr != nil {
+		log.Error("staff provisioner wiring", "err", provisionerErr)
+		panic(provisionerErr)
+	}
+
 	invitationSvc := invitation.NewService(invitation.Config{
-		Repo:       invitation.NewRepository(conn),
-		TenantRepo: tenantRepo,
-		StoreRepo:  storeRepo,
-		FGA:        fga,
-		Sender:     sender,
-		Loader:     templateLoader,
-		EmailFrom:  cfg.EmailFrom,
-		AcceptURL:  acceptURL,
-		Recorder:   invitationRec,
-		Audit:      auditClient,
-		Claims:     inviteClaims,
+		Repo:        invitation.NewRepository(conn),
+		TenantRepo:  tenantRepo,
+		StoreRepo:   storeRepo,
+		FGA:         fga,
+		Sender:      sender,
+		Loader:      templateLoader,
+		EmailFrom:   cfg.EmailFrom,
+		AcceptURL:   acceptURL,
+		Recorder:    invitationRec,
+		Audit:       auditClient,
+		Claims:      inviteClaims,
+		Provisioner: staffProvisioner,
 	})
 	invitationHandler := invitation.NewHandler(invitationSvc)
 

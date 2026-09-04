@@ -59,6 +59,21 @@ func (s *Service) ListMemberTenants(ctx context.Context, uid string) ([]Membersh
 	if uid == "" {
 		return nil, apperrors.BadRequest("invalid_uid", "uid is required")
 	}
+	// The identity key is an EMAIL on the Zitadel sign-in path (see
+	// resolveWorkspaceTenant in apps/admin/app/login/actions.ts: tenant
+	// resolution runs before authentication, when no uid exists yet) and
+	// a provider uid otherwise. FGA tuple subjects are exact strings, and
+	// every email-keyed tuple we write is lowercased — invitation.Create
+	// lowercases the address before it is ever stored. A merchant who
+	// types "Sam@Example.com" into the login form would otherwise miss
+	// their own membership and be told no store exists for the account.
+	//
+	// Only the email form is folded: provider uids ARE case-sensitive
+	// (a GIP uid looks like "6GrzK9LDKHV4Ix2BgtaMnrzunih2"), and none of
+	// them contain "@".
+	if strings.Contains(uid, "@") {
+		uid = strings.ToLower(uid)
+	}
 
 	if s.fga == nil {
 		t, err := s.repo.GetByOwnerUserID(ctx, uid)

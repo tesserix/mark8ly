@@ -3,6 +3,7 @@ import { BrandBar } from "@repo/ui/brand-bar";
 
 import { verifyInvitationToken, PlatformApiError } from "@/lib/api/platform-api";
 import { AcceptInviteForm } from "@/components/auth/AcceptInviteForm";
+import { publicConfig } from "@/lib/config";
 
 export const metadata: Metadata = { title: "Accept invite" };
 
@@ -15,10 +16,15 @@ interface PageProps {
  *
  * Verifies the invitation token server-side and renders either an
  * error message or the AcceptInviteForm with the verified context.
- * The form handles new-account (sign-up) and existing-account
+ * Under GIP the form handles new-account (sign-up) and existing-account
  * (sign-in OR Google) flows then calls the accept server action which
  * writes the FGA role tuple via platform-api and switches the session
  * onto the new tenant.
+ *
+ * Under Zitadel (`publicConfig.authProvider === "zitadel"`) the form
+ * collects a password and hands it to platform-api, which provisions
+ * the Zitadel user, the admin project grant and the FGA tuples, then
+ * sends the invitee into the normal Zitadel login flow. See issue #679.
  */
 export default async function AcceptInvitePage({ searchParams }: PageProps) {
   const { token = "" } = await searchParams;
@@ -54,7 +60,11 @@ export default async function AcceptInvitePage({ searchParams }: PageProps) {
               Accept your {invitation.role} invite with {invitation.email}.
             </p>
           </header>
-          <AcceptInviteForm token={token} invitation={invitation} />
+          <AcceptInviteForm
+            token={token}
+            invitation={invitation}
+            provider={publicConfig.authProvider}
+          />
         </div>
       </main>
     </>

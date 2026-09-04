@@ -492,15 +492,33 @@ export async function verifyInvitationToken(
 }
 
 /**
- * Accepts an invitation by writing the role tuple to FGA. The
- * caller must pass the verified GIP uid + email from the client
- * sign-in flow; platform-api re-checks the email against the
+ * Accepts an invitation by writing the role tuple to FGA.
+ *
+ * GIP path: the caller passes the verified GIP uid + email from the
+ * client sign-in flow; platform-api re-checks the email against the
  * invitation row and rejects on mismatch.
+ *
+ * Zitadel path: there is no `uid` to send — the invitee has no provider
+ * account yet, and creating it is what accept now does (see
+ * services/platform-api/internal/invitation/service.go's AcceptInput).
+ * The caller sends `password` instead, and platform-api provisions the
+ * Zitadel user, the admin project grant, and BOTH FGA tuples
+ * (email-keyed and Zitadel-uid-keyed) before marking the invitation
+ * accepted. `verified_email` is required on both paths and is still
+ * strictly matched against the invitation.
+ *
+ * `uid` stays required-shaped for the GIP caller by convention rather
+ * than by types: JSON.stringify drops undefined keys, so a GIP caller
+ * passing exactly {token, uid, verified_email} still emits a
+ * byte-identical body to the one this function has always sent.
  */
 export async function acceptInvitation(payload: {
   token: string;
-  uid: string;
+  uid?: string;
   verified_email: string;
+  password?: string;
+  first_name?: string;
+  last_name?: string;
 }): Promise<{ tenant_id: string; role: TenantRole }> {
   const res = await fetch(`${PLATFORM_API_URL}/api/v1/invitations/accept`, {
     method: "POST",

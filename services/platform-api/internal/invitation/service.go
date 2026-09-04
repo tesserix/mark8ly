@@ -25,18 +25,19 @@ import (
 // is small enough that the handler/service/repo split is the only
 // layering that matters.
 type Service struct {
-	repo       Repository
-	tenantRepo tenant.Repository
-	storeRepo  store.Repository
-	fga        authz.Client
-	sender     notification.Sender
-	loader     *notification.Loader
-	emailFrom  string
-	acceptURL  func(slug, token string) string
-	expiry     time.Duration
-	recorder   TokenRecorder
-	audit      *audit.Client // optional — emits staff lifecycle events
-	claims     TenantClaimSetter
+	repo        Repository
+	tenantRepo  tenant.Repository
+	storeRepo   store.Repository
+	fga         authz.Client
+	sender      notification.Sender
+	loader      *notification.Loader
+	emailFrom   string
+	acceptURL   func(slug, token string) string
+	expiry      time.Duration
+	recorder    TokenRecorder
+	audit       *audit.Client // optional — emits staff lifecycle events
+	claims      TenantClaimSetter
+	provisioner StaffProvisioner
 }
 
 // TenantClaimSetter writes the tenant_id custom claim onto a GIP user.
@@ -47,6 +48,26 @@ type Service struct {
 // failure here degrades mobile only.
 type TenantClaimSetter interface {
 	EnsureTenantClaim(ctx context.Context, uid, tenantID string) error
+}
+
+// StaffProvisioner makes an invited teammate a usable sign-in identity
+// in the identity provider and returns their provider user id.
+//
+// Non-nil ONLY on the Zitadel path (see cmd/server/provider_wiring.go's
+// newStaffProvisioner). Nil selects the GIP path, whose behaviour is
+// unchanged: GIP accounts are created client-side by the accept form
+// before it ever calls platform-api, so there is nothing to provision
+// server-side and the caller-supplied uid is already a real identity.
+//
+// Satisfied by *zitadeladmin.StaffProvisioner, which creates-or-
+// resolves the Zitadel user AND ensures the mark8ly-admin project
+// grant. Both halves are inside one call deliberately: a teammate with
+// an account but no grant cannot complete the OIDC flow (the project
+// sets projectRoleCheck: true and finalize returns
+// 403 OIDC-foSyH49RvL), so "provisioned" is not a state either half
+// can reach on its own.
+type StaffProvisioner interface {
+	ProvisionStaff(ctx context.Context, email, firstName, lastName, password string) (string, error)
 }
 
 // TokenRecorder is the narrow interface the service calls to publish
@@ -84,6 +105,10 @@ type Config struct {
 	Audit *audit.Client
 	// Claims writes the GIP tenant_id custom claim on accept. Optional.
 	Claims TenantClaimSetter
+	// Provisioner creates the invitee's identity-provider account and
+	// project grant on accept. Nil on the GIP path — see
+	// StaffProvisioner's doc.
+	Provisioner StaffProvisioner
 }
 
 // NewService constructs a Service.
@@ -92,18 +117,19 @@ func NewService(cfg Config) *Service {
 		cfg.Expiry = 72 * time.Hour
 	}
 	return &Service{
-		repo:       cfg.Repo,
-		tenantRepo: cfg.TenantRepo,
-		storeRepo:  cfg.StoreRepo,
-		fga:        cfg.FGA,
-		sender:     cfg.Sender,
-		loader:     cfg.Loader,
-		emailFrom:  cfg.EmailFrom,
-		acceptURL:  cfg.AcceptURL,
-		expiry:     cfg.Expiry,
-		recorder:   cfg.Recorder,
-		audit:      cfg.Audit,
-		claims:     cfg.Claims,
+		repo:        cfg.Repo,
+		tenantRepo:  cfg.TenantRepo,
+		storeRepo:   cfg.StoreRepo,
+		fga:         cfg.FGA,
+		sender:      cfg.Sender,
+		loader:      cfg.Loader,
+		emailFrom:   cfg.EmailFrom,
+		acceptURL:   cfg.AcceptURL,
+		expiry:      cfg.Expiry,
+		recorder:    cfg.Recorder,
+		audit:       cfg.Audit,
+		claims:      cfg.Claims,
+		provisioner: cfg.Provisioner,
 	}
 }
 
@@ -338,10 +364,29 @@ type AcceptInput struct {
 	// UID is the GIP UID of the accepting user. The caller
 	// (admin BFF) has verified the GIP id_token and extracted
 	// the uid + verified email.
+	//
+	// Required on the GIP path. On the Zitadel path it is optional and
+	// unused: the invitee has no provider account yet at this point —
+	// creating one is what Accept does — so there is no id for the
+	// caller to send.
 	UID string
 	// VerifiedEmail is the GIP token's verified email claim.
 	// Must match the invitation's email (case-insensitive).
+	//
+	// On the Zitadel path the caller sends the address the accept form
+	// was opened for; the invitation token itself, single-use and
+	// emailed to that address, is what attests to it.
 	VerifiedEmail string
+	// Password is the password to create the invitee's Zitadel account
+	// with. Zitadel path only, and only consulted when no account
+	// exists for the address yet. Ignored entirely on the GIP path,
+	// where the account already exists before Accept is called.
+	Password string
+	// FirstName / LastName populate the Zitadel profile. Optional —
+	// derived from the email local part when absent (Zitadel rejects
+	// an empty givenName/familyName).
+	FirstName string
+	LastName  string
 }
 
 // AcceptResult is returned on successful accept so the admin BFF
@@ -358,7 +403,14 @@ func (s *Service) Accept(ctx context.Context, in AcceptInput) (*AcceptResult, er
 	token := strings.TrimSpace(in.Token)
 	uid := strings.TrimSpace(in.UID)
 	verifiedEmail := strings.ToLower(strings.TrimSpace(in.VerifiedEmail))
-	if token == "" || uid == "" || verifiedEmail == "" {
+	if token == "" || verifiedEmail == "" {
+		return nil, apperrors.BadRequest("invalid_input", "token, uid, and verified_email are required")
+	}
+	// uid is required on the GIP path only. With a provisioner wired
+	// (Zitadel) the invitee has no provider account yet, so there is no
+	// uid to send — this call is what creates one. The message and code
+	// are unchanged so the GIP path's response is byte-identical.
+	if s.provisioner == nil && uid == "" {
 		return nil, apperrors.BadRequest("invalid_input", "token, uid, and verified_email are required")
 	}
 
@@ -383,6 +435,55 @@ func (s *Service) Accept(ctx context.Context, in AcceptInput) (*AcceptResult, er
 		)
 	}
 
+	// Provision the invitee in the identity provider (Zitadel path
+	// only; s.provisioner is nil under GIP). This runs BEFORE any FGA
+	// write and BEFORE MarkAccepted, and a failure aborts the whole
+	// accept with nothing written.
+	//
+	// That ordering is the point. The failure this exists to prevent is
+	// a HALF-provisioned teammate — tuples but no project grant, or a
+	// grant but no tuples — which is indistinguishable from a working
+	// account until they try to sign in and get "we couldn't find a
+	// store for this account" or a bare 403 from Zitadel's finalize.
+	// Diagnosing one of those took an hour of production archaeology.
+	// An invitation that stays pending and returns an error the accept
+	// form can show is recoverable by clicking the link again; an
+	// account that looks created and cannot sign in is not recoverable
+	// by the merchant at all.
+	subjects := []string{uid}
+	if s.provisioner != nil {
+		first, last := profileNames(in.FirstName, in.LastName, inv.Email)
+		zitadelUID, err := s.provisioner.ProvisionStaff(ctx, inv.Email, first, last, in.Password)
+		if err != nil {
+			return nil, apperrors.Wrap(err, 500, "provisioning_failed",
+				"we couldn't finish setting up your account — please try the invitation link again")
+		}
+		// Both identity keys, deliberately. Three readers disagree on
+		// what a member is keyed by:
+		//
+		//   - admin sign-in (apps/admin/app/login/actions.ts,
+		//     resolveWorkspaceTenant) looks membership up by EMAIL on
+		//     the Zitadel path — it has no uid at tenant-resolution
+		//     time, which runs BEFORE authentication;
+		//   - the bearer-token API path resolves by the Zitadel uid
+		//     (the token's `sub`);
+		//   - this code used to write only the caller-supplied GIP uid,
+		//     which after the Zitadel cutover matches neither.
+		//
+		// Writing one key breaks the other reader: email-only 403s
+		// every API call, uid-only puts the teammate back on "we
+		// couldn't find a store for this account" at the login screen.
+		// Writing both is what the one working owner account
+		// (demo@mark8ly.com) already has, and it needs no change to the
+		// login path — which is why it wins over the tidier
+		// alternative of teaching every reader one canonical key.
+		subjects = []string{inv.Email, zitadelUID}
+		// The Zitadel uid, not the caller's, is what gets recorded as
+		// the accepting user: it is the id the API path sees and the
+		// one UpdateMemberRole later writes tuples for.
+		uid = zitadelUID
+	}
+
 	// Write the FGA role tuple. Phase R branches on scope:
 	// store-scoped invitations write to the store object; tenant-
 	// scoped invitations keep the Phase P tenant-level WriteRole.
@@ -399,18 +500,20 @@ func (s *Service) Accept(ctx context.Context, in AcceptInput) (*AcceptResult, er
 	//
 	// Degraded mode (fga nil) skips — dev-only, never prod.
 	if s.fga != nil {
-		if inv.StoreID != nil && *inv.StoreID != "" {
-			if err := s.fga.WriteRoleObject(ctx, uid, inv.Role, "store", *inv.StoreID); err != nil {
-				return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to grant store role")
-			}
-			// Back-fill a tenant viewer so session mint works.
-			if err := s.fga.WriteRole(ctx, uid, authz.RoleViewer, inv.TenantID); err != nil {
-				return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to grant tenant viewer")
-			}
-		} else {
-			role := authz.Role(inv.Role)
-			if err := s.fga.WriteRole(ctx, uid, role, inv.TenantID); err != nil {
-				return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to grant role")
+		for _, subject := range subjects {
+			if inv.StoreID != nil && *inv.StoreID != "" {
+				if err := s.fga.WriteRoleObject(ctx, subject, inv.Role, "store", *inv.StoreID); err != nil {
+					return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to grant store role")
+				}
+				// Back-fill a tenant viewer so session mint works.
+				if err := s.fga.WriteRole(ctx, subject, authz.RoleViewer, inv.TenantID); err != nil {
+					return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to grant tenant viewer")
+				}
+			} else {
+				role := authz.Role(inv.Role)
+				if err := s.fga.WriteRole(ctx, subject, role, inv.TenantID); err != nil {
+					return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to grant role")
+				}
 			}
 		}
 	}
@@ -425,7 +528,12 @@ func (s *Service) Accept(ctx context.Context, in AcceptInput) (*AcceptResult, er
 	// so a failure here logs (mobile shows its "No store yet" empty
 	// state until the claim lands — e.g. via the backfill CLI) rather
 	// than failing the accept.
-	if s.claims != nil {
+	//
+	// Skipped on the Zitadel path: uid is a Zitadel user id there, and
+	// EnsureTenantClaim writes a GIP custom claim keyed by GIP uid. The
+	// call would resolve nothing, fail, and log a misleading line every
+	// time. The GIP path is untouched.
+	if s.claims != nil && s.provisioner == nil {
 		if err := s.claims.EnsureTenantClaim(ctx, uid, inv.TenantID); err != nil {
 			log.Printf("invitation.Accept: ensure tenant claim for uid %s tenant %s: %v", uid, inv.TenantID, err)
 		}
@@ -556,6 +664,19 @@ func (s *Service) UpdateMemberRole(ctx context.Context, in UpdateMemberRoleInput
 	if s.fga != nil {
 		if err := s.fga.WriteRole(ctx, targetUID, authz.Role(newRole), tenantID); err != nil {
 			return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to write new role")
+		}
+		// Zitadel path: Accept wrote BOTH a uid-keyed and an
+		// email-keyed tuple because the login path resolves membership
+		// by email (see Accept's subjects comment). A role change that
+		// updated only the uid-keyed tuple would leave the login path
+		// still reading the OLD role — the change would appear to work
+		// in the team list and do nothing at sign-in. Kept behind the
+		// provisioner nil-check so the GIP path writes exactly the one
+		// tuple it always has.
+		if s.provisioner != nil {
+			if err := s.fga.WriteRole(ctx, targetEmail, authz.Role(newRole), tenantID); err != nil {
+				return nil, apperrors.Wrap(err, 500, "authz_write_failed", "failed to write new role")
+			}
 		}
 	}
 
@@ -751,6 +872,53 @@ func newToken() (string, string, error) {
 	}
 	plain := hex.EncodeToString(buf)
 	return plain, hashToken(plain), nil
+}
+
+// profileNames returns the givenName/familyName to create a Zitadel
+// profile with. Zitadel rejects an empty value for either, so when the
+// accept form did not collect a name we derive one from the email local
+// part rather than failing the accept over a cosmetic field: the user
+// can correct it in their profile, but they cannot un-fail an accept.
+//
+// "jane.doe@x.com" -> ("Jane", "Doe"); "jane@x.com" -> ("Jane", "Jane").
+func profileNames(first, last, email string) (string, string) {
+	first = strings.TrimSpace(first)
+	last = strings.TrimSpace(last)
+	if first != "" && last != "" {
+		return first, last
+	}
+	local := email
+	if at := strings.Index(local, "@"); at > 0 {
+		local = local[:at]
+	}
+	parts := strings.FieldsFunc(local, func(r rune) bool {
+		return r == '.' || r == '_' || r == '-' || r == '+'
+	})
+	derivedFirst, derivedLast := local, local
+	if len(parts) > 0 {
+		derivedFirst = titleCase(parts[0])
+		derivedLast = derivedFirst
+		if len(parts) > 1 {
+			derivedLast = titleCase(strings.Join(parts[1:], " "))
+		}
+	}
+	if first == "" {
+		first = derivedFirst
+	}
+	if last == "" {
+		last = derivedLast
+	}
+	return first, last
+}
+
+// titleCase upper-cases the first rune only. strings.Title is
+// deprecated and golang.org/x/text/cases would be a new dependency for
+// a display-name fallback.
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func hashToken(plain string) string {

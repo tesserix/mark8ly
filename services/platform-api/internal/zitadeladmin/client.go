@@ -31,6 +31,23 @@
 // throwaway user was created, driven through the full password_reset ->
 // password round trip, and deleted.
 //
+//   - Zitadel v2's protojson wire format flattens a oneof to its chosen
+//     variant's field name directly, UN-NESTED — there is no wrapper key
+//     named after the oneof itself. resolveUserIDByEmail's "emailQuery"
+//     and the confirm call's "verificationCode" (both below) get this
+//     right by construction. POST /v2/users/{id}/password_reset's "medium"
+//     oneof is the same rule: the body is {"returnCode":{}} AT THE TOP
+//     LEVEL, never {"medium":{"returnCode":{}}}. The wrapped form was
+//     tried and VERIFIED WRONG: it returns 200 with NO verificationCode
+//     (response keys == ["details"] only), and worse, Zitadel silently
+//     falls back to sending ITS OWN unbranded reset email in that case —
+//     the merchant gets an email nobody wrote AND this call still fails
+//     with nothing to return. An earlier revision of this file sent the
+//     wrapped form while this very doc comment already recorded the
+//     correct one; the fixture in password_reset_test.go asserted the
+//     wrapped shape too, so nothing caught it. If a future oneof field is
+//     added to this package, send it un-nested and prove it with a test
+//     that asserts the TOP-LEVEL key, not a wrapper.
 //   - POST /v2/users/{id}/password_reset with {"returnCode":{}} returns 200
 //     with {"details":…, "verificationCode":"<6 chars>"} — Zitadel hands
 //     back the code and sends no notification of its own, exactly matching
@@ -39,13 +56,19 @@
 //     {"newPassword":{"password":…},"verificationCode":…} returns 200 on a
 //     real, correct code.
 //   - Error bodies carry a STABLE id at details[0].id, distinct from the
-//     grpc code and from the message text: user-not-found is
-//     COMMAND-SAF4f (404, code 5); a wrong/expired verification code is
-//     COMMAND-2M9fs (400, code 9, message "Code not found"); a request
-//     missing the password field is COMMAND-G8dh3 (400, code 9, message
-//     "Password not found"). The last two share both HTTP status and grpc
-//     code and differ in message by one word — classifyError keys off
-//     details[0].id first for exactly this reason; see its doc.
+//     grpc code and from the message text, and NOT under one consistent
+//     prefix — do not assume "COMMAND-" is the only shape:
+//     user-not-found is COMMAND-SAF4f (404, code 5); a wrong/expired
+//     verification code is COMMAND-2M9fs (400, code 9, message "Code not
+//     found"); a request missing the password field is COMMAND-G8dh3
+//     (400, code 9, message "Password not found") — these two share both
+//     HTTP status and grpc code and differ in message by one word; a
+//     too-short password is DOMAIN-HuJf6 (400, code 3, message "Password
+//     is too short") — a message that hits none of classifyError's
+//     substring fallbacks, so relying on message text alone for this case
+//     would have surfaced as ErrUnavailable ("identity service
+//     unreachable") instead of ErrWeakPassword. classifyError keys off
+//     details[0].id first for exactly these reasons; see its doc.
 //
 // DELETE /v2/users/{id} was separately marked VERIFIED in the D7 spec
 // table, and re-confirmed in the same round trip.
@@ -245,6 +268,9 @@ func readZitadelErrorID(body []byte) string {
 // the PRIMARY mapping — classifyError only falls back to HTTP status +
 // message-substring matching when the id is absent or not in this table.
 //
+// Ids do NOT share a single prefix ("COMMAND-" and "DOMAIN-" both occur
+// live) — never assume one when adding a new entry.
+//
 // COMMAND-2M9fs and COMMAND-G8dh3 are both 400s with grpc code 9 and
 // messages that differ by a single word ("Code not found" vs "Password
 // not found") — text matching alone cannot reliably tell a wrong/expired
@@ -258,6 +284,7 @@ var zitadelErrorIDSentinels = map[string]error{
 	"COMMAND-SAF4f": gipadmin.ErrUserNotFound,   // "User could not be found" (404, code 5)
 	"COMMAND-2M9fs": gipadmin.ErrInvalidOobCode, // "Code not found" (400, code 9)
 	"COMMAND-G8dh3": gipadmin.ErrUnavailable,    // "Password not found" (400, code 9) -- malformed request, NOT an invalid code
+	"DOMAIN-HuJf6":  gipadmin.ErrWeakPassword,   // "Password is too short" (400, code 3)
 }
 
 // classifyError maps an HTTP status + Zitadel error body to one of
@@ -434,6 +461,18 @@ func (c *Client) resolveUserIDByEmail(ctx context.Context, email string) (string
 // platform-api's own notify path). The returned string packs the user id
 // and code together; see compositeCode's doc. It is opaque to every other
 // caller and must be passed back to ResetPassword unmodified.
+//
+// The request body's "returnCode" key is sent at the TOP LEVEL, not
+// wrapped under a "medium" key. medium is a protojson oneof, and Zitadel
+// v2's protojson wire format flattens oneofs to their chosen variant's
+// field name directly — resolveUserIDByEmail's un-nested "emailQuery" and
+// this function's own un-nested "verificationCode" on the confirm call
+// already get this right. A body wrapping it in "medium" was tried and
+// VERIFIED WRONG live: it returns 200 with no verificationCode (body keys
+// == ["details"] only) — worse than an error, because Zitadel silently
+// falls back to sending ITS OWN unbranded reset notification and hands
+// this package nothing, so the merchant gets an email nobody wrote AND
+// this call then fails upstream with no code to return.
 func (c *Client) SendPasswordResetOobCode(ctx context.Context, email string) (string, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
@@ -450,9 +489,7 @@ func (c *Client) SendPasswordResetOobCode(ctx context.Context, email string) (st
 	}
 	path := fmt.Sprintf("/v2/users/%s/password_reset", url.PathEscape(userID))
 	body := map[string]any{
-		"medium": map[string]any{
-			"returnCode": map[string]any{},
-		},
+		"returnCode": map[string]any{},
 	}
 	if err := c.do(ctx, http.MethodPost, path, body, &wire, false, withLogPath("/v2/users/{id}/password_reset")); err != nil {
 		return "", err

@@ -14,9 +14,18 @@ import (
 
 // TestSendPasswordResetOobCode_HappyPath drives the full email->id->code
 // flow: the search hit resolves an id, the password_reset call is made
-// against that id's path with the "returnCode" medium (so Zitadel does not
-// send its own notification — see D7), and the returned code is opaque but
-// decodes back to the same id and code.
+// against that id's path with a TOP-LEVEL "returnCode" key (so Zitadel
+// does not send its own notification — see D7), and the returned code is
+// opaque but decodes back to the same id and code.
+//
+// The assertion on the request body is the load-bearing part of this
+// test: an earlier revision sent {"medium":{"returnCode":{}}} (medium is a
+// protojson oneof, and Zitadel v2 flattens oneofs to their variant's field
+// name UN-NESTED) and this test's fixture asserted that same wrapped shape
+// back, so it passed against a body that was verified WRONG live — Zitadel
+// answers 200 with no verificationCode for the wrapped form and silently
+// sends its own unbranded email instead. Asserting the top-level key here
+// is what would have caught it.
 func TestSendPasswordResetOobCode_HappyPath(t *testing.T) {
 	var resetPath string
 	var resetBody map[string]any
@@ -46,12 +55,11 @@ func TestSendPasswordResetOobCode_HappyPath(t *testing.T) {
 	if resetPath != "/v2/users/user-42/password_reset" {
 		t.Errorf("resetPath = %q", resetPath)
 	}
-	medium, ok := resetBody["medium"].(map[string]any)
-	if !ok {
-		t.Fatalf("medium = %v", resetBody["medium"])
+	if _, ok := resetBody["returnCode"]; !ok {
+		t.Errorf("expected top-level returnCode key, got %v", resetBody)
 	}
-	if _, ok := medium["returnCode"]; !ok {
-		t.Errorf("expected medium.returnCode, got %v", medium)
+	if _, wrapped := resetBody["medium"]; wrapped {
+		t.Errorf("returnCode must NOT be wrapped under a %q key: %v", "medium", resetBody)
 	}
 
 	userID, code, err := decodeCompositeCode(oobCode)

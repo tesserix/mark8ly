@@ -3,6 +3,7 @@ package zitadeladmin
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -25,17 +26,24 @@ type gipDeleterShape interface {
 }
 
 func TestClient_SatisfiesPasswordResetProviderShape(t *testing.T) {
+	// sendHit and resetHit are each set from their OWN request path, not
+	// from a shared branch: a shared "any POST" branch would leave both
+	// true even if only one of the two calls under test actually ran,
+	// silently weakening the two separate assertions below to one.
 	var sendHit, resetHit bool
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/v2/users":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(searchResponse(humanEntry("user-1", "merchant@example.com", true)))
-		case r.Method == http.MethodPost:
-			sendHit = sendHit || true
-			resetHit = resetHit || true
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/password_reset"):
+			sendHit = true
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"verificationCode":"code-1"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/password"):
+			resetHit = true
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}

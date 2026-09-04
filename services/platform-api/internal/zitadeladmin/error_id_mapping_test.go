@@ -40,6 +40,17 @@ func TestErrorIDMapping_VerifiedLiveIDs(t *testing.T) {
 			body:   `{"code":9,"message":"Password not found","details":[{"@type":"...","id":"COMMAND-G8dh3"}]}`,
 			want:   gipadmin.ErrUnavailable,
 		},
+		{
+			// Different id prefix ("DOMAIN-" not "COMMAND-") and a message
+			// ("Password is too short") that hits none of classifyError's
+			// substring fallbacks (no "weak"/"polic"/"complexity") — this
+			// case only works via the id table, proving the fallback text
+			// match alone would have missed it.
+			name:   "DOMAIN-HuJf6 too-short password maps to ErrWeakPassword",
+			status: http.StatusBadRequest,
+			body:   `{"code":3,"message":"Password is too short","details":[{"@type":"...","id":"DOMAIN-HuJf6"}]}`,
+			want:   gipadmin.ErrWeakPassword,
+		},
 	}
 
 	for _, tc := range cases {
@@ -96,6 +107,17 @@ func TestErrorIDMapping_EndToEndThroughResetPassword(t *testing.T) {
 		}
 		if !errors.Is(err, gipadmin.ErrUnavailable) {
 			t.Fatalf("err = %v, want ErrUnavailable", err)
+		}
+	})
+
+	t.Run("too-short password maps to ErrWeakPassword via id, not message text", func(t *testing.T) {
+		c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"code":3,"message":"Password is too short","details":[{"id":"DOMAIN-HuJf6"}]}`))
+		})
+		err := c.ResetPassword(context.Background(), encodeCompositeCode("user-1", "code"), "a")
+		if !errors.Is(err, gipadmin.ErrWeakPassword) {
+			t.Fatalf("err = %v, want ErrWeakPassword", err)
 		}
 	})
 }

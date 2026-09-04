@@ -74,6 +74,12 @@ type storefrontBrandingEnvelope struct {
 		Tagline          *string `json:"tagline,omitempty"`
 		ColorAccent      string  `json:"color_accent"`
 		AnnouncementText *string `json:"announcement_text,omitempty"`
+		// AnnouncementActive is the merchant's on/off switch for the
+		// announcement bar. It is a non-pointer bool on the wire — always
+		// present — and marketplace-api's own storefront gates the bar on it
+		// (PromotionBar.tsx). Mirroring it is what keeps a switched-off
+		// announcement out of an agent's answer.
+		AnnouncementActive bool `json:"announcement_active"`
 	} `json:"branding"`
 	ActivePromotion *storefrontPromotion `json:"active_promotion,omitempty"`
 }
@@ -120,11 +126,12 @@ type storefrontPriceRange struct {
 }
 
 type storefrontBranding struct {
-	LogoURL          *string               `json:"logo_url,omitempty"`
-	Tagline          *string               `json:"tagline,omitempty"`
-	ColorAccent      string                `json:"color_accent"`
-	AnnouncementText *string               `json:"announcement_text,omitempty"`
-	Promotions       []storefrontPromotion `json:"active_promotions"`
+	LogoURL            *string               `json:"logo_url,omitempty"`
+	Tagline            *string               `json:"tagline,omitempty"`
+	ColorAccent        string                `json:"color_accent"`
+	AnnouncementText   *string               `json:"announcement_text,omitempty"`
+	AnnouncementActive bool                  `json:"announcement_active"`
+	Promotions         []storefrontPromotion `json:"active_promotions"`
 }
 
 type storefrontPromotion struct {
@@ -286,10 +293,11 @@ func (c *Client) GetBranding(ctx context.Context, slug string) (storefrontBrandi
 		return storefrontBranding{}, err
 	}
 	b := storefrontBranding{
-		LogoURL:          env.Branding.LogoURL,
-		Tagline:          env.Branding.Tagline,
-		ColorAccent:      env.Branding.ColorAccent,
-		AnnouncementText: env.Branding.AnnouncementText,
+		LogoURL:            env.Branding.LogoURL,
+		Tagline:            env.Branding.Tagline,
+		ColorAccent:        env.Branding.ColorAccent,
+		AnnouncementText:   env.Branding.AnnouncementText,
+		AnnouncementActive: env.Branding.AnnouncementActive,
 	}
 	if env.ActivePromotion != nil {
 		b.Promotions = []storefrontPromotion{*env.ActivePromotion}

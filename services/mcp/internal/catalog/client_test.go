@@ -314,3 +314,28 @@ func TestGetBranding_NoActivePromotionYieldsEmptySlice(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, got.Promotions)
 }
+
+// announcement_active is a non-pointer bool nested under "branding" (see
+// PublicBrandingResponse in marketplace-api's storefront/branding.go). Not
+// mirroring it is how a switched-off announcement reached an agent.
+func TestGetBranding_MirrorsAnnouncementActive(t *testing.T) {
+	for _, active := range []bool{true, false} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			body := `{"branding":{"color_accent":"#2D4A2B","announcement_text":"Sale!",` +
+				`"announcement_active":false}}`
+			if active {
+				body = `{"branding":{"color_accent":"#2D4A2B","announcement_text":"Sale!",` +
+					`"announcement_active":true}}`
+			}
+			_, _ = w.Write([]byte(body))
+		}))
+
+		c, err := NewClient(srv.URL, "sfkey", time.Second)
+		require.NoError(t, err)
+
+		got, err := c.GetBranding(context.Background(), "bondi")
+		require.NoError(t, err)
+		assert.Equal(t, active, got.AnnouncementActive)
+		srv.Close()
+	}
+}

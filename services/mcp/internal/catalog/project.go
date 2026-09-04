@@ -77,7 +77,8 @@ func projectCategory(in storefrontCategory) Category {
 
 // projectBranding transforms a storefront branding mirror into the agent-facing
 // Branding type. The ColorAccent field becomes AccentColor. Pointer types are
-// flattened to their zero values.
+// flattened to their zero values, and the announcement text is carried through
+// only when AnnouncementActive is set.
 func projectBranding(in storefrontBranding) Branding {
 	logoURL := ""
 	if in.LogoURL != nil {
@@ -87,8 +88,12 @@ func projectBranding(in storefrontBranding) Branding {
 	if in.Tagline != nil {
 		tagline = *in.Tagline
 	}
+	// The announcement is projected only when the merchant has it switched
+	// ON. Text left behind a disabled switch is stale copy the storefront
+	// itself does not render (PromotionBar.tsx requires both), and reporting
+	// it to an agent is a wrong answer that reads like a right one.
 	announcement := ""
-	if in.AnnouncementText != nil {
+	if in.AnnouncementActive && in.AnnouncementText != nil {
 		announcement = *in.AnnouncementText
 	}
 	return Branding{

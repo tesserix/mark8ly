@@ -125,10 +125,11 @@ func TestProjectBranding_TransformsFields(t *testing.T) {
 	logo := "https://cdn/logo.png"
 	tagline := "Great mugs"
 	in := storefrontBranding{
-		LogoURL:          &logo,
-		Tagline:          &tagline,
-		ColorAccent:      "#2D4A2B",
-		AnnouncementText: strptr("Holiday sale"),
+		LogoURL:            &logo,
+		Tagline:            &tagline,
+		ColorAccent:        "#2D4A2B",
+		AnnouncementText:   strptr("Holiday sale"),
+		AnnouncementActive: true,
 		Promotions: []storefrontPromotion{
 			{Label: "20% off", CouponCode: strptr("HOLIDAY20")},
 		},
@@ -300,3 +301,41 @@ func TestProjectPromotion_CouponCodeFlattensToEmptyString(t *testing.T) {
 }
 
 func strptr(s string) *string { return &s }
+
+// The merchant's announcement bar has an on/off switch, and marketplace-api's
+// own storefront honours it (PromotionBar.tsx requires both the flag and the
+// text). An agent told about a switched-off announcement is given a wrong
+// answer that looks like a right one.
+func TestProjectBranding_AnnouncementOnlyWhenActive(t *testing.T) {
+	cases := []struct {
+		name string
+		in   storefrontBranding
+		want string
+	}{
+		{
+			name: "active with text yields the text",
+			in:   storefrontBranding{AnnouncementActive: true, AnnouncementText: strptr("Sale!")},
+			want: "Sale!",
+		},
+		{
+			name: "inactive with text yields nothing",
+			in:   storefrontBranding{AnnouncementActive: false, AnnouncementText: strptr("Sale!")},
+			want: "",
+		},
+		{
+			name: "active with empty text yields nothing",
+			in:   storefrontBranding{AnnouncementActive: true, AnnouncementText: strptr("")},
+			want: "",
+		},
+		{
+			name: "active with absent text yields nothing",
+			in:   storefrontBranding{AnnouncementActive: true},
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, projectBranding(tc.in).Announcement)
+		})
+	}
+}

@@ -51,6 +51,7 @@ import { customerSignupErrorMessage } from "@/lib/auth/customer-signup-messages"
 import type { RegisterCustomerResult } from "@/lib/auth/create-account-flow";
 import { completeCustomerSignIn, resolveStore } from "@/lib/auth/customer-session";
 import type { CustomerSignInResult as Result } from "@/lib/auth/customer-sign-in-result";
+import { signPendingSignup, verifyPendingSignup } from "@/lib/auth/pending-signup-token";
 import { headers } from "next/headers";
 import { sanitizeHost } from "@/lib/host";
 
@@ -59,6 +60,24 @@ import { sanitizeHost } from "@/lib/host";
 // result shape registerCustomer returns. `type` exports are erased at
 // compile time and are exempt from the async-only rule above.
 export type { RegisterCustomerResult };
+
+// Matches apps/storefront/app/sign-in/actions.ts's AUTH_PROVIDER rule
+// exactly — see that file's comment. registerCustomer/verifyCustomerEmail
+// below refuse to do anything under any other value, mirroring
+// app/auth/idp/finish/route.ts's flag guard (that route 404s outright;
+// these are server actions rather than a route, so they return a plain
+// failure result instead). This is defense in depth, not the fix for the
+// email-trust issue below — Next.js still registers both actions as
+// callable server actions regardless of this flag, and today the ONLY
+// thing standing between an unflagged storefront and a live register/
+// verify-email call is auth-bff's own ZITADEL_ENABLED gate. The guard
+// just means a storefront left on GIP never forwards a call it has no
+// business making, independent of what the backend happens to have
+// mounted.
+const AUTH_PROVIDER: "gip" | "zitadel" =
+  process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel" ? "zitadel" : "gip";
+
+const NOT_AVAILABLE_MESSAGE = "Account creation is not available right now. Please try again later.";
 
 interface CustomerSignUpInput {
   idToken: string;
@@ -91,13 +110,23 @@ interface RegisterCustomerInput {
 export async function registerCustomer(
   input: RegisterCustomerInput,
 ): Promise<RegisterCustomerResult> {
+  if (AUTH_PROVIDER !== "zitadel") {
+    return { ok: false, code: "not_available", message: NOT_AVAILABLE_MESSAGE };
+  }
   try {
     const outcome = await registerCustomerAccount({
       email: input.email,
       password: input.password,
     });
     if (outcome.kind === "created") {
-      return { ok: true, uid: outcome.uid, email: outcome.email };
+      // Sign {uid, email} together NOW, from the values THIS server just
+      // got back from Zitadel — never from anything the client sends.
+      // verifyCustomerEmail below refuses to proceed unless this exact
+      // token comes back with an exactly matching {uid, email}. See
+      // @/lib/auth/pending-signup-token's file header for the
+      // account-takeover this closes.
+      const token = signPendingSignup(outcome.uid, outcome.email);
+      return { ok: true, uid: outcome.uid, email: outcome.email, token };
     }
     return {
       ok: false,
@@ -122,16 +151,26 @@ interface VerifyCustomerEmailInput {
   uid: string;
   /**
    * The email registerCustomer's own response returned for this uid.
-   * Not independently re-verified against Zitadel here: the account
-   * behind `uid` was created moments earlier by THIS SAME client's
-   * registerCustomer call using exactly this address, so trusting it back
-   * grants no capability the client didn't already have at register time
-   * — it is used only to attach an email to the session cookie and to
-   * key the best-effort loyalty enrollment inside completeCustomerSignIn,
-   * never to decide whether verification succeeded (that is `code`'s
-   * job, checked against `uid` by Zitadel itself).
+   *
+   * SECURITY: this value is client-supplied and, on its own, UNTRUSTED —
+   * POST /auth/customer/verify-email's 2xx body carries no email for this
+   * function to check it against, so without `token` below an attacker
+   * could register their own address (a genuine uid + code, delivered to
+   * their own inbox — Zitadel's verify checks only {uid, code}, never
+   * email) and then replay this call with a victim's email instead,
+   * minting a session — and upserting a marketplace-api customer profile
+   * — under the victim's identity with no interaction from the victim at
+   * all. `token` is what stops that: see the check below and
+   * @/lib/auth/pending-signup-token's file header.
    */
   email: string;
+  /**
+   * The HMAC token registerCustomer returned alongside {uid, email}
+   * (@/lib/auth/pending-signup-token). Proves `email` above is exactly
+   * what THIS server generated it for at register time, not a value the
+   * client substituted afterwards.
+   */
+  token: string;
   /** The 6-character code the shopper read out of their verification
    *  email. Never logged — see verifyCustomerEmailCode's doc. */
   code: string;
@@ -142,12 +181,16 @@ interface VerifyCustomerEmailInput {
  * verifyCustomerEmail is step 2: it submits the code, and ONLY on a
  * verified outcome mints the session via completeCustomerSignIn — the
  * same tail every other sign-in path in this app shares. No cookie is
- * set on any failure branch below, including a wrong/expired code, an
- * unresolvable host/store, or an upstream failure.
+ * set on any failure branch below, including a wrong/expired code, a
+ * tampered {uid, email, token} triple, an unresolvable host/store, or an
+ * upstream failure.
  */
 export async function verifyCustomerEmail(
   input: VerifyCustomerEmailInput,
 ): Promise<Result> {
+  if (AUTH_PROVIDER !== "zitadel") {
+    return { ok: false, code: "not_available", message: NOT_AVAILABLE_MESSAGE };
+  }
   try {
     const h = await headers();
     const rawHost = h.get("x-forwarded-host") ?? h.get("host");
@@ -166,6 +209,23 @@ export async function verifyCustomerEmail(
         ok: false,
         code: "store_not_found",
         message: "Could not resolve this store. Please try again.",
+      };
+    }
+
+    // Refuse BEFORE spending a Zitadel call or looking at the code at all:
+    // if {uid, email} doesn't match what registerCustomer actually signed,
+    // `email` cannot be trusted for anything downstream — completeCustomerSignIn
+    // would otherwise mint a session under whatever address the caller
+    // put here. Logged as a tamper signal, never with the code or token
+    // value itself.
+    if (!verifyPendingSignup(input.uid, input.email, input.token)) {
+      console.error(
+        "verifyCustomerEmail: rejected — {uid, email} did not match the signed pending-signup token",
+      );
+      return {
+        ok: false,
+        code: "invalid_request",
+        message: customerSignupErrorMessage("invalid_request"),
       };
     }
 

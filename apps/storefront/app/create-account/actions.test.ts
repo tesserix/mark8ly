@@ -64,6 +64,11 @@ import {
   verifyCustomerEmailCode,
 } from "@/lib/auth/auth-bff-customer";
 import { platformInternalFetch } from "@/lib/api/server/platformInternal";
+// Real (unmocked) signing so tests can construct a token that will
+// actually pass verifyCustomerEmail's tamper check, and so the
+// deliberately-tampered tests below are pinned against the real function,
+// not a stub of it.
+import { signPendingSignup } from "@/lib/auth/pending-signup-token";
 
 const verifyGIPIdTokenMock = vi.mocked(verifyGIPIdToken);
 const verifyCustomerCredentialMock = vi.mocked(verifyCustomerCredential);
@@ -108,7 +113,18 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("customerSignUp — flag unset stays byte-identical to the GIP delegation", () => {
+describe("customerSignUp — unconditional delegation to customerSignIn", () => {
+  // customerSignUp itself never inspects NEXT_PUBLIC_AUTH_PROVIDER — it is
+  // a pure `return customerSignIn(input)` (see actions.ts). The flag
+  // branch a GIP-vs-Zitadel input shape needs lives entirely inside
+  // customerSignIn and is already covered end to end by
+  // app/sign-in/actions.zitadel.test.ts's "provider branch" describe
+  // block; duplicating that here (by flipping the flag against a
+  // GIP-shaped input) would just prove customerSignIn's branching, mis-
+  // titled as this file's. What IS this file's to prove: that phase 6a
+  // task 3 (adding registerCustomer/verifyCustomerEmail alongside this
+  // function) left the GIP call path — accounts:signUp -> customerSignUp
+  // -> customerSignIn -> cookie — completely untouched.
   it("delegates to customerSignIn exactly as before, minting a cookie on success", async () => {
     verifyGIPIdTokenMock.mockResolvedValue({
       uid: "u-gip",
@@ -146,8 +162,24 @@ describe("customerSignUp — flag unset stays byte-identical to the GIP delegati
   });
 });
 
+describe("registerCustomer — provider guard", () => {
+  it("flag unset: refuses without calling auth-bff at all", async () => {
+    const { registerCustomer } = await loadActions();
+
+    const result = await registerCustomer({
+      email: "shopper@example.com",
+      password: SECRET_PASSWORD,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("not_available");
+    expect(registerCustomerAccountMock).not.toHaveBeenCalled();
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("registerCustomer — flag set", () => {
-  it("returns the trusted uid/email on success", async () => {
+  it("returns the trusted uid/email plus a signed pending-signup token on success", async () => {
     process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     registerCustomerAccountMock.mockResolvedValue({
       kind: "created",
@@ -161,7 +193,12 @@ describe("registerCustomer — flag set", () => {
       password: SECRET_PASSWORD,
     });
 
-    expect(result).toEqual({ ok: true, uid: "u-new", email: "shopper@example.com" });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.uid).toBe("u-new");
+      expect(result.email).toBe("shopper@example.com");
+      expect(result.token).toBe(signPendingSignup("u-new", "shopper@example.com"));
+    }
     expect(cookiesSetSpy).not.toHaveBeenCalled();
   });
 
@@ -227,10 +264,33 @@ describe("registerCustomer — flag set", () => {
   });
 });
 
+describe("verifyCustomerEmail — provider guard", () => {
+  it("flag unset: refuses without calling auth-bff at all", async () => {
+    const { verifyCustomerEmail } = await loadActions();
+
+    const result = await verifyCustomerEmail({
+      uid: "u-new",
+      email: "shopper@example.com",
+      token: signPendingSignup("u-new", "shopper@example.com"),
+      code: SECRET_TEST_CODE,
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("not_available");
+    expect(verifyCustomerEmailCodeMock).not.toHaveBeenCalled();
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("verifyCustomerEmail — flag set", () => {
+  // A valid token for exactly this {uid, email} pair — as if it had come
+  // straight out of a prior registerCustomer call for the same address.
+  const validToken = signPendingSignup("u-new", "shopper@example.com");
   const verifyInput = {
     uid: "u-new",
     email: "shopper@example.com",
+    token: validToken,
     code: SECRET_TEST_CODE,
     storeSlug: "shop",
   };
@@ -250,13 +310,85 @@ describe("verifyCustomerEmail — flag set", () => {
       password: SECRET_PASSWORD,
     });
     expect(registered.ok).toBe(true);
+    if (!registered.ok) throw new Error("unreachable");
 
-    const result = await verifyCustomerEmail(verifyInput);
+    // Uses the REAL token registerCustomer just returned — not the
+    // module-level `validToken` fixture — so this test exercises the
+    // actual end-to-end token handoff, not a value the test computed
+    // independently.
+    const result = await verifyCustomerEmail({
+      uid: registered.uid,
+      email: registered.email,
+      token: registered.token,
+      code: SECRET_TEST_CODE,
+      storeSlug: "shop",
+    });
 
     expect(result.ok).toBe(true);
     expect(cookiesSetSpy).toHaveBeenCalledWith(
       expect.objectContaining({ name: "mp_customer_session", domain: HOST }),
     );
+  });
+
+  it("REJECTS a client-swapped email even with a genuinely correct code — the account-takeover this token exists to close", async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    // Attacker registered attacker@example.com themselves and holds a
+    // real uid + token for THAT address...
+    const attackerToken = signPendingSignup("u-attacker", "attacker@example.com");
+    // Zitadel would happily accept the code — it checks only {uid, code}.
+    verifyCustomerEmailCodeMock.mockResolvedValue({ kind: "verified" });
+    const { verifyCustomerEmail } = await loadActions();
+
+    // ...then replays verify with a victim's email swapped in.
+    const result = await verifyCustomerEmail({
+      uid: "u-attacker",
+      email: "victim@example.com",
+      token: attackerToken,
+      code: SECRET_TEST_CODE,
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(false);
+    // Must never even reach Zitadel's verify-email call, let alone mint a
+    // session under the victim's address.
+    expect(verifyCustomerEmailCodeMock).not.toHaveBeenCalled();
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects a client-swapped uid the same way", async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    const tokenForOtherUid = signPendingSignup("u-other", "shopper@example.com");
+    verifyCustomerEmailCodeMock.mockResolvedValue({ kind: "verified" });
+    const { verifyCustomerEmail } = await loadActions();
+
+    const result = await verifyCustomerEmail({
+      uid: "u-new",
+      email: "shopper@example.com",
+      token: tokenForOtherUid,
+      code: SECRET_TEST_CODE,
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(verifyCustomerEmailCodeMock).not.toHaveBeenCalled();
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing/garbage token outright", async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    const { verifyCustomerEmail } = await loadActions();
+
+    const result = await verifyCustomerEmail({
+      uid: "u-new",
+      email: "shopper@example.com",
+      token: "not-a-real-token",
+      code: SECRET_TEST_CODE,
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(verifyCustomerEmailCodeMock).not.toHaveBeenCalled();
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
   });
 
   it("a wrong/expired code sets no cookie and returns invalid_verification_code with its own message", async () => {
@@ -312,19 +444,24 @@ describe("verifyCustomerEmail — flag set", () => {
     expect(cookiesSetSpy).not.toHaveBeenCalled();
   });
 
-  it("never logs the verification code, on success or failure", async () => {
+  it("never logs the verification code — exercises a path that actually logs (an AuthBffCustomerError), not just one that returns a value", async () => {
     process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    verifyCustomerEmailCodeMock.mockResolvedValue({
-      kind: "failed",
-      code: "invalid_verification_code",
-    });
+    // This is the branch that actually calls console.error(..., err.code)
+    // — a `mockResolvedValue({kind:"failed", ...})` outcome, by contrast,
+    // logs nothing at all, so asserting against it proves nothing about
+    // whether the code could leak through a log call.
+    verifyCustomerEmailCodeMock.mockRejectedValue(
+      new AuthBffCustomerError(503, "zitadel_unavailable"),
+    );
     const { verifyCustomerEmail } = await loadActions();
     const result = await verifyCustomerEmail(verifyInput);
 
+    expect(consoleErrorSpy).toHaveBeenCalled();
     const allCalls = [...consoleErrorSpy.mock.calls, ...consoleLogSpy.mock.calls];
+    expect(allCalls.length).toBeGreaterThan(0);
     for (const call of allCalls) {
       expect(JSON.stringify(call)).not.toContain(SECRET_TEST_CODE);
     }
@@ -332,5 +469,25 @@ describe("verifyCustomerEmail — flag set", () => {
 
     consoleErrorSpy.mockRestore();
     consoleLogSpy.mockRestore();
+  });
+
+  it("never logs the code (or the token) on a tamper rejection either — that branch logs too", async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { verifyCustomerEmail } = await loadActions();
+
+    await verifyCustomerEmail({
+      uid: "u-new",
+      email: "victim@example.com", // swapped — deliberately invalid token/email pair
+      token: signPendingSignup("u-new", "shopper@example.com"),
+      code: SECRET_TEST_CODE,
+      storeSlug: "shop",
+    });
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    for (const call of consoleErrorSpy.mock.calls) {
+      expect(JSON.stringify(call)).not.toContain(SECRET_TEST_CODE);
+    }
+    consoleErrorSpy.mockRestore();
   });
 });

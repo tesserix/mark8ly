@@ -192,6 +192,7 @@ export function CreateAccountForm({
       const result = await verifyCustomerEmail({
         uid: verifyStep.uid,
         email: verifyStep.email,
+        token: verifyStep.token,
         code: code.trim(),
         storeSlug,
       });

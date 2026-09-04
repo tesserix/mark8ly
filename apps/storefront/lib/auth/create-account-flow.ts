@@ -23,7 +23,7 @@ import type { CustomerSignInResult } from "./customer-sign-in-result";
  *  this type instead, the same split customer-sign-in-result.ts already
  *  uses for CustomerSignInResult. */
 export type RegisterCustomerResult =
-  | { ok: true; uid: string; email: string }
+  | { ok: true; uid: string; email: string; token: string }
   | { ok: false; code: string; message: string };
 
 export type CreateAccountStep =
@@ -33,10 +33,18 @@ export type CreateAccountStep =
       /** The trusted uid/email register's own response returned — never
        *  user-editable, carried through only so verifyCustomerEmail (and,
        *  on success, the session cookie) has an email to attach without a
-       *  second round trip. See app/create-account/actions.ts's
-       *  verifyCustomerEmail doc for the trust boundary this relies on. */
+       *  second round trip. */
       uid: string;
       email: string;
+      /**
+       * The HMAC token registerCustomer signed over exactly this
+       * {uid, email} pair (see @/lib/auth/pending-signup-token).
+       * verifyCustomerEmail refuses to mint a session unless this token
+       * verifies against the {uid, email} it receives — see that
+       * action's doc for the account-takeover this closes. Carried
+       * through unmodified; the form never edits it.
+       */
+      token: string;
     };
 
 export interface CreateAccountFormState {
@@ -62,7 +70,7 @@ export function applyRegisterResult(
 ): CreateAccountFormState {
   if (result.ok) {
     return {
-      step: { kind: "verify", uid: result.uid, email: result.email },
+      step: { kind: "verify", uid: result.uid, email: result.email, token: result.token },
       error: null,
     };
   }

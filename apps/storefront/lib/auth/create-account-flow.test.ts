@@ -7,15 +7,16 @@ import {
 } from "./create-account-flow";
 
 describe("applyRegisterResult", () => {
-  it("a successful register moves to the verify step, carrying the trusted uid/email", () => {
+  it("a successful register moves to the verify step, carrying the trusted uid/email/token", () => {
     const state = applyRegisterResult({
       ok: true,
       uid: "u-1",
       email: "shopper@example.com",
+      token: "sig-1",
     });
 
     expect(state).toEqual({
-      step: { kind: "verify", uid: "u-1", email: "shopper@example.com" },
+      step: { kind: "verify", uid: "u-1", email: "shopper@example.com", token: "sig-1" },
       error: null,
     });
   });
@@ -33,7 +34,12 @@ describe("applyRegisterResult", () => {
 });
 
 describe("applyVerifyResult", () => {
-  const verifyStep = { kind: "verify" as const, uid: "u-1", email: "shopper@example.com" };
+  const verifyStep = {
+    kind: "verify" as const,
+    uid: "u-1",
+    email: "shopper@example.com",
+    token: "sig-1",
+  };
 
   it("a successful verify clears the error and leaves the verify step (caller redirects away)", () => {
     const state = applyVerifyResult(verifyStep, { ok: true });

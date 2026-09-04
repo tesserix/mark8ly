@@ -48,9 +48,17 @@
 //     details[0].id first for exactly this reason; see its doc.
 //
 // DELETE /v2/users/{id} was separately marked VERIFIED in the D7 spec
-// table. Everything else in this file (the /v2/users search shape, and any
-// error id not in the table above) remains best-effort against the
-// documented Zitadel v2 UserService shape, not independently re-verified.
+// table, and re-confirmed in the same round trip.
+//
+// The /v2/users search shape was also probed live on 2026-09-04: POST
+// /v2/users with {"queries":[{"emailQuery":{"emailAddress":...,
+// "method":"TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE"}}]} returns matches under
+// "result". A ZERO-match search omits "result" entirely rather than
+// returning an empty array — protojson elides empty values — which decodes
+// to a nil slice here, so the len()==0 path below is the correct one to
+// rely on. Do not rewrite it to test for the key's presence.
+//
+// What remains best-effort: any error id not in the table above.
 package zitadeladmin
 
 import (

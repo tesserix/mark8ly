@@ -18,13 +18,24 @@ import {
   signInWithPassword,
   signUp,
 } from "@/lib/gip/signup";
-import { acceptInvite } from "@/app/accept-invite/actions";
+import {
+  acceptInvite,
+  acceptInviteWithZitadel,
+} from "@/app/accept-invite/actions";
 
 type Mode = "signin" | "create";
 
 interface AcceptInviteFormProps {
   token: string;
   invitation: InvitationVerifyResult;
+  /**
+   * Which identity provider backs this invite. Read defensively, the
+   * same way SignInForm reads it: only the exact literal `"zitadel"`
+   * switches this form onto the Zitadel path — anything else, including
+   * undefined, keeps the GIP flow byte-for-byte. Wired from
+   * `publicConfig.authProvider` by app/accept-invite/page.tsx.
+   */
+  provider?: string;
 }
 
 const baseSchema = z.object({
@@ -37,8 +48,10 @@ type FormValues = z.infer<typeof baseSchema>;
 export function AcceptInviteForm({
   token,
   invitation,
+  provider,
 }: AcceptInviteFormProps) {
   const router = useRouter();
+  const isZitadel = provider === "zitadel";
   const [mode, setMode] = useState<Mode>("signin");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -78,6 +91,36 @@ export function AcceptInviteForm({
     });
   }
 
+  /**
+   * The Zitadel submit path. platform-api's accept endpoint provisions
+   * the Zitadel user (from this password, when the address has no
+   * account yet), the admin project grant, and both FGA tuples — so
+   * there is nothing for the browser to create first, and no GIP call
+   * of any kind on this path.
+   *
+   * On success the browser is handed to /login/authorize with a
+   * full-page navigation, not router.push: that route is a Route
+   * Handler that writes the PKCE/state cookies and 302s to Zitadel, and
+   * a client-side navigation would never reach it.
+   */
+  function acceptWithZitadel(password: string) {
+    startTransition(async () => {
+      const result = await acceptInviteWithZitadel({
+        token,
+        email: invitation.email,
+        password,
+      });
+      if (!result.ok) {
+        setSubmitError(result.message);
+        return;
+      }
+      setSuccess("Invite accepted. Taking you to sign in…");
+      if (typeof window !== "undefined") {
+        window.location.assign(result.signInUrl);
+      }
+    });
+  }
+
   function onValid(values: FormValues) {
     setSubmitError(null);
     setSuccess(null);
@@ -87,6 +130,11 @@ export function AcceptInviteForm({
         type: "validate",
         message: "Passwords do not match",
       });
+      return;
+    }
+
+    if (isZitadel) {
+      acceptWithZitadel(values.password);
       return;
     }
 
@@ -269,38 +317,56 @@ export function AcceptInviteForm({
             disabled={disabled}
             className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-ink-600"
           >
-            {pending
-              ? mode === "create"
-                ? "Creating account…"
-                : "Signing in…"
-              : mode === "create"
-                ? "Create account and join store"
-                : "Sign in and accept invite"}
+            {submitLabel({ pending, mode, isZitadel })}
           </button>
 
-          <div className="relative py-1">
-            <div
-              className="absolute inset-0 flex items-center"
-              aria-hidden="true"
-            >
-              <div className="w-full border-t border-border-subtle" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-background px-3 text-xs uppercase tracking-wider text-foreground-tertiary">
-                or
-              </span>
-            </div>
-          </div>
+          {/* Google is deliberately absent on the Zitadel path.
 
-          <button
-            type="button"
-            onClick={handleGoogle}
-            disabled={disabled}
-            className="inline-flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <GoogleMark />
-            {googlePending ? "Opening Google…" : "Continue with Google"}
-          </button>
+              The button below authenticates through GIP's GSI helper
+              end to end, so leaving it visible after the cutover would
+              silently create a GIP account for the invitee — the exact
+              defect #679 exists to fix, in miniature. Routing it through
+              the Zitadel IDP flow instead is not available here: that
+              flow needs a Zitadel `auth_request_id`, which only
+              /login/authorize can obtain (Zitadel redirects to a fixed
+              login URI), and accept provisions the account from a
+              password rather than from an IDP intent. An invitee who
+              wants Google can use it at /login once this accept has
+              provisioned their account. */}
+          {!isZitadel && (
+            <>
+              <div className="relative py-1">
+                <div
+                  className="absolute inset-0 flex items-center"
+                  aria-hidden="true"
+                >
+                  <div className="w-full border-t border-border-subtle" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="bg-background px-3 text-xs uppercase tracking-wider text-foreground-tertiary">
+                    or
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleGoogle}
+                disabled={disabled}
+                className="inline-flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <GoogleMark />
+                {googlePending ? "Opening Google…" : "Continue with Google"}
+              </button>
+            </>
+          )}
+
+          {isZitadel && (
+            <p className="text-xs leading-5 text-foreground-tertiary">
+              We&apos;ll take you to the sign-in screen once your account is
+              ready.
+            </p>
+          )}
         </div>
       </form>
     </div>
@@ -319,6 +385,33 @@ const modeOptions: Array<{ value: Mode; title: string; body: string }> = [
     body: "First time joining Mark8ly.",
   },
 ];
+
+/**
+ * Submit-button copy. The Zitadel path never signs the invitee in from
+ * this form — it provisions the account and hands the browser to
+ * /login/authorize — so "Sign in and accept invite" would promise
+ * something this button does not do.
+ */
+function submitLabel({
+  pending,
+  mode,
+  isZitadel,
+}: {
+  pending: boolean;
+  mode: Mode;
+  isZitadel: boolean;
+}): string {
+  if (isZitadel) {
+    if (pending) return "Setting up your account…";
+    return mode === "create"
+      ? "Create account and join store"
+      : "Accept invite and continue";
+  }
+  if (pending) return mode === "create" ? "Creating account…" : "Signing in…";
+  return mode === "create"
+    ? "Create account and join store"
+    : "Sign in and accept invite";
+}
 
 function describeAuthError(err: unknown, mode: Mode): string {
   if (err instanceof GIPError) {

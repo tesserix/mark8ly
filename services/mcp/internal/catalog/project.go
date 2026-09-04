@@ -25,9 +25,10 @@ func projectProduct(in storefrontProduct) Product {
 }
 
 // extractCategorySlugs projects category refs to their slugs only.
+// Returns an empty non-nil slice when there are no categories, never nil.
 func extractCategorySlugs(refs []storefrontCategoryRef) []string {
 	if len(refs) == 0 {
-		return nil
+		return []string{}
 	}
 	slugs := make([]string, len(refs))
 	for i, ref := range refs {
@@ -37,10 +38,10 @@ func extractCategorySlugs(refs []storefrontCategoryRef) []string {
 }
 
 // extractImageURLs filters media by type "image", sorts by position, and
-// extracts URLs.
+// extracts URLs. Returns an empty non-nil slice when there are no images, never nil.
 func extractImageURLs(media []storefrontMedia) []string {
 	if len(media) == 0 {
-		return nil
+		return []string{}
 	}
 	// Filter images only
 	var images []storefrontMedia
@@ -50,7 +51,7 @@ func extractImageURLs(media []storefrontMedia) []string {
 		}
 	}
 	if len(images) == 0 {
-		return nil
+		return []string{}
 	}
 	// Sort by position
 	sort.Slice(images, func(i, j int) bool {
@@ -75,25 +76,36 @@ func projectCategory(in storefrontCategory) Category {
 }
 
 // projectBranding transforms a storefront branding mirror into the agent-facing
-// Branding type. The ColorAccent field becomes AccentColor.
+// Branding type. The ColorAccent field becomes AccentColor. Pointer types are
+// flattened to their zero values.
 func projectBranding(in storefrontBranding) Branding {
-	b := Branding{
-		Found:       true,
-		LogoURL:     in.LogoURL,
-		Tagline:     in.Tagline,
-		AccentColor: in.ColorAccent,
-		Promotions:  projectPromotions(in.Promotions),
+	logoURL := ""
+	if in.LogoURL != nil {
+		logoURL = *in.LogoURL
 	}
+	tagline := ""
+	if in.Tagline != nil {
+		tagline = *in.Tagline
+	}
+	announcement := ""
 	if in.AnnouncementText != nil {
-		b.Announcement = *in.AnnouncementText
+		announcement = *in.AnnouncementText
 	}
-	return b
+	return Branding{
+		Found:        true,
+		LogoURL:      logoURL,
+		Tagline:      tagline,
+		AccentColor:  in.ColorAccent,
+		Announcement: announcement,
+		Promotions:   projectPromotions(in.Promotions),
+	}
 }
 
 // projectPromotions transforms storefront promotions into agent-facing Promotions.
+// Returns an empty non-nil slice when there are no promotions, never nil.
 func projectPromotions(in []storefrontPromotion) []Promotion {
 	if len(in) == 0 {
-		return nil
+		return []Promotion{}
 	}
 	out := make([]Promotion, len(in))
 	for i, p := range in {
@@ -103,10 +115,14 @@ func projectPromotions(in []storefrontPromotion) []Promotion {
 }
 
 // projectPromotion transforms a single storefront promotion into an agent-facing
-// Promotion.
+// Promotion. Pointer types are flattened to their zero values.
 func projectPromotion(in storefrontPromotion) Promotion {
+	code := ""
+	if in.CouponCode != nil {
+		code = *in.CouponCode
+	}
 	return Promotion{
 		Label:      in.Label,
-		CouponCode: in.CouponCode,
+		CouponCode: code,
 	}
 }

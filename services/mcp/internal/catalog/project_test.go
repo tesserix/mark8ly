@@ -136,13 +136,13 @@ func TestProjectBranding_TransformsFields(t *testing.T) {
 
 	got := projectBranding(in)
 
-	assert.Equal(t, &logo, got.LogoURL)
-	assert.Equal(t, &tagline, got.Tagline)
+	assert.Equal(t, "https://cdn/logo.png", got.LogoURL)
+	assert.Equal(t, "Great mugs", got.Tagline)
 	assert.Equal(t, "#2D4A2B", got.AccentColor)
 	assert.Equal(t, "Holiday sale", got.Announcement)
 	assert.Len(t, got.Promotions, 1)
 	assert.Equal(t, "20% off", got.Promotions[0].Label)
-	assert.Equal(t, strptr("HOLIDAY20"), got.Promotions[0].CouponCode)
+	assert.Equal(t, "HOLIDAY20", got.Promotions[0].CouponCode)
 }
 
 func TestProjectBranding_HasFoundField(t *testing.T) {
@@ -171,7 +171,7 @@ func TestProjectPromotion_TransformsFields(t *testing.T) {
 	got := projectPromotion(in)
 
 	assert.Equal(t, "Summer sale", got.Label)
-	assert.Equal(t, &code, got.CouponCode)
+	assert.Equal(t, "PROMO123", got.CouponCode)
 }
 
 func TestProjectPromotion_OptionalCouponCode(t *testing.T) {
@@ -180,7 +180,123 @@ func TestProjectPromotion_OptionalCouponCode(t *testing.T) {
 	got := projectPromotion(in)
 
 	assert.Equal(t, "Free shipping", got.Label)
-	assert.Nil(t, got.CouponCode)
+	assert.Equal(t, "", got.CouponCode)
+}
+
+func TestProjectProduct_EmptyCollectionsMarshalAsArraysNotNull(t *testing.T) {
+	in := storefrontProduct{Handle: "mug", Title: "Mug"}
+	// No categories, no media
+
+	got := projectProduct(in)
+
+	raw, err := json.Marshal(got)
+	require.NoError(t, err)
+	jsonStr := string(raw)
+
+	// Schema says categories and image_urls are non-nullable arrays.
+	// They must marshal as [] never null.
+	assert.Contains(t, jsonStr, `"categories":[]`)
+	assert.Contains(t, jsonStr, `"image_urls":[]`)
+	assert.NotContains(t, jsonStr, `"categories":null`)
+	assert.NotContains(t, jsonStr, `"image_urls":null`)
+	// No null anywhere in the wire
+	assert.NotContains(t, jsonStr, "null")
+}
+
+func TestProjectProduct_SnakeCaseJsonKeys(t *testing.T) {
+	in := storefrontProduct{
+		Handle: "mug",
+		Title:  "Mug",
+	}
+	in.PriceRange.Min = "9.50"
+	in.PriceRange.Max = "12.00"
+	in.PriceRange.CurrencyCode = "AUD"
+
+	got := projectProduct(in)
+
+	raw, err := json.Marshal(got)
+	require.NoError(t, err)
+	jsonStr := string(raw)
+
+	// Snake_case keys required
+	assert.Contains(t, jsonStr, `"handle"`)
+	assert.Contains(t, jsonStr, `"title"`)
+	assert.Contains(t, jsonStr, `"price_min"`)
+	assert.Contains(t, jsonStr, `"price_max"`)
+	assert.Contains(t, jsonStr, `"currency"`)
+	assert.Contains(t, jsonStr, `"found"`)
+	// No PascalCase keys
+	assert.NotContains(t, jsonStr, `"Handle"`)
+	assert.NotContains(t, jsonStr, `"Title"`)
+	assert.NotContains(t, jsonStr, `"PriceMin"`)
+	assert.NotContains(t, jsonStr, `"PriceMax"`)
+	assert.NotContains(t, jsonStr, `"Found"`)
+}
+
+func TestProjectProduct_ZeroValueNoNull(t *testing.T) {
+	// Zero-value Product is the Task 5 not-found shape
+	got := Product{}
+
+	raw, err := json.Marshal(got)
+	require.NoError(t, err)
+	jsonStr := string(raw)
+
+	// No null anywhere, all zero values
+	assert.NotContains(t, jsonStr, "null")
+	// Empty collections, not null
+	assert.Contains(t, jsonStr, `"categories":[]`)
+	assert.Contains(t, jsonStr, `"image_urls":[]`)
+}
+
+func TestProjectBranding_PointerFieldsFlattenToEmptyStrings(t *testing.T) {
+	// No logo, no tagline, no announcement
+	in := storefrontBranding{ColorAccent: "#2D4A2B"}
+
+	got := projectBranding(in)
+
+	raw, err := json.Marshal(got)
+	require.NoError(t, err)
+	jsonStr := string(raw)
+
+	// Must have empty strings, not null
+	assert.Contains(t, jsonStr, `"logo_url":""`)
+	assert.Contains(t, jsonStr, `"tagline":""`)
+	assert.Contains(t, jsonStr, `"announcement":""`)
+	// No null anywhere
+	assert.NotContains(t, jsonStr, "null")
+}
+
+func TestProjectBranding_EmptyPromotionsMarshalAsArrayNotNull(t *testing.T) {
+	in := storefrontBranding{ColorAccent: "#2D4A2B"}
+	// No promotions
+
+	got := projectBranding(in)
+
+	raw, err := json.Marshal(got)
+	require.NoError(t, err)
+	jsonStr := string(raw)
+
+	// Schema says promotions is non-nullable array
+	assert.Contains(t, jsonStr, `"promotions":[]`)
+	assert.NotContains(t, jsonStr, `"promotions":null`)
+	// No null anywhere
+	assert.NotContains(t, jsonStr, "null")
+}
+
+func TestProjectPromotion_CouponCodeFlattensToEmptyString(t *testing.T) {
+	// No coupon code
+	in := storefrontPromotion{Label: "Free shipping"}
+
+	got := projectPromotion(in)
+
+	raw, err := json.Marshal(got)
+	require.NoError(t, err)
+	jsonStr := string(raw)
+
+	// Must flatten to empty string, not null
+	assert.Contains(t, jsonStr, `"coupon_code":""`)
+	// No null anywhere
+	assert.NotContains(t, jsonStr, "null")
 }
 
 func strptr(s string) *string { return &s }

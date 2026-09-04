@@ -68,13 +68,14 @@ of the *process* is already mark8ly's. Only the *source* is misplaced.
 | # | Decision |
 |---|---|
 | D1 | mark8ly's MCP servers live in `mark8ly`, not in australis. ADR-0001 D1 is amended, not ignored. |
-| D2 | A reusable `services/mcp/internal/mcp` foundation; each server is a thin domain package over it. |
+| D2 | The reusable foundation is `go-shared/mcp`, from day one. Each server is a thin domain package over it. |
 | D3 | `catalog` is the first server. Support and platform-read follow, in that order. |
 | D4 | Tools read through marketplace-api's storefront HTTP surface, never the database directly. |
 | D5 | Every tool declares closed input **and** output schemas. No pass-through of upstream JSON. |
 | D6 | Read-only in v1, enforced structurally: the foundation cannot express a non-GET upstream call. |
 | D7 | One server per bounded domain, one Deployment, one ServiceAccount, one key. |
 | D8 | Registration is a reviewed registry record with a pinned image digest. No `latest`, ever. |
+| D9 | `go-shared/mcp` carries no MCP SDK dependency. The protocol binding stays in the consuming service. |
 
 ### D1 — the servers live here, and the ADR is amended
 
@@ -101,37 +102,51 @@ here, and this design satisfies all of them.
 reader will find D1, see mark8ly, and "fix" it back. That amendment is a
 deliverable of this work, not an afterthought.
 
-### D2 — a foundation, because three servers are coming
+### D2 — the foundation is `go-shared/mcp`, from day one
 
 The point of this design is not one catalog server. It is that the second and
-third servers cost days rather than weeks. So the split is:
+third servers — and tesserix-home's — cost days rather than weeks.
+
+**VERIFIED: tesserix-home has the identical problem.** Its `platform-mcp` record
+points at `platform-mcp.support-platform.svc.cluster.local`, i.e. it runs in the
+`support-platform` namespace on the same shared `slm-support-platform` image. It
+does not own its tools either, and it has no MCP code of its own. A second
+consumer is not hypothetical; it already exists and is already broken.
+
+So the foundation goes straight into `go-shared` rather than being built in
+mark8ly and extracted later. **VERIFIED: go-shared is at v1.9.1 and already
+holds 25 packages of exactly this character** — `httpclient`, `serviceclient`,
+`middleware`, `metrics`, `signature`, `authz`. An `mcp` package is not a foreign
+body there.
 
 ```
-services/mcp/
-├─ internal/mcp/          the foundation — transport, auth, schema registry,
-│                         upstream client, observability. Domain-free.
-├─ internal/catalog/      server #1 — 5 tools over the storefront read surface
-├─ cmd/mcp-catalog/       one binary, one image, one Deployment
+go-shared/mcp/                   the foundation — domain-free AND SDK-free
+├─ schema/                       Go type -> JSON Schema; a tool cannot register
+│                                without BOTH an input and an output type
+├─ upstream/                     GET-only HTTP client, per-call deadline (D6)
+├─ auth/                         X-MCP-Key verification, fail-closed
+└─ observe/                      per-tool latency, outcome, upstream-failure metrics
+
+mark8ly services/mcp/
+├─ internal/server/              binds go-shared/mcp to the MCP SDK + transport
+├─ internal/catalog/             server #1 — 5 tools over the storefront reads
+├─ cmd/mcp-catalog/              one binary, one image, one Deployment
 └─ (later) internal/support/, internal/platformread/ + their own cmd/ + images
 ```
 
-One Go module, many binaries — the same "monorepo of source, polyrepo of
-artifacts" rule australis states, applied at the directory level rather than the
-repository level. A change under `internal/catalog/` builds and ships only
-`mcp-catalog`.
+`go-shared/mcp` may not import any product package, and this is asserted by a
+test in go-shared rather than left to convention — the same shape as australis's
+invariant 2.
 
-The foundation owns exactly five things, and nothing domain-specific:
+**The cost of choosing day one over extract-later, stated plainly.** The
+foundation's API will churn most in its first weeks, and every churn is now a
+go-shared release plus a bump in mark8ly — a two-repo loop before the first
+server works, inside a library every Go service in the estate imports. That was
+weighed and accepted: the counter-argument is that an extraction deferred until
+a second consumer appears is an extraction that frequently never happens, and
+here the second consumer demonstrably already exists.
 
-1. **Transport** — streamable HTTP on `:8765/mcp`, matching the port and path
-   every product server in the registry already uses.
-2. **Inbound auth** — `X-MCP-Key` against a per-server secret, fail-closed.
-3. **Schema registry** — a tool is registered with its input *and* output Go
-   types; JSON Schema is derived from them, so a tool cannot exist without both.
-4. **Upstream client** — a GET-only HTTP client (D6) with a per-call deadline.
-5. **Observability** — per-tool latency, outcome and upstream-failure metrics.
-
-`internal/mcp` may not import any `internal/<domain>` package. Enforced by a
-test, not convention — the same shape as australis's invariant 2.
+D9 exists to keep that cost bounded.
 
 ### D3 — catalog first, because nothing there can regress
 
@@ -233,6 +248,31 @@ That test is the direct answer to #412's real ask ("assert the tools actually
 register"), generalised: the failure there was not a typo, it was that **nothing
 compared what was declared against what was served.**
 
+### D9 — the SDK dependency stays out of go-shared
+
+`go-shared/mcp` contains no MCP SDK import, and no protocol types. It carries the
+schema registry, the GET-only upstream client, key verification and metrics —
+all of which are plain Go over the standard library and go-shared's existing
+dependencies. The binding to a specific MCP SDK and protocol version lives in
+the consuming service, at `services/mcp/internal/server`.
+
+Two reasons, and the second is the load-bearing one.
+
+**Supply chain.** Every Go service in the estate imports go-shared. An SDK
+dependency there enters ~30 services' module graphs whether they serve MCP or
+not, and each becomes a surface for the CVE bumps this repo already deals with
+routinely.
+
+**Churn lands in the wrong place.** The protocol is where the movement is — the
+estate's registry records pin `protocolVersion: '2026-07-28'`, and a protocol
+revision would otherwise force a go-shared release affecting every service, to
+change something only MCP servers care about. Keeping the binding in the service
+means a protocol bump is a mark8ly change; only genuine foundation improvements
+become go-shared releases. That is what keeps D2's accepted two-repo cost from
+compounding.
+
+A test in go-shared asserts the `mcp` package's import graph contains no MCP SDK.
+
 ## Architecture
 
 ```
@@ -240,7 +280,7 @@ agent ──► AgentGateway ──► mcp-catalog :8765/mcp        (X-MCP-Key, 
                                 │
                                 │  tool call: input struct ─► validated
                                 ▼
-                     internal/catalog  ──► internal/mcp upstream client (GET-only)
+                     internal/catalog  ──► go-shared/mcp upstream (GET-only)
                                                     │  X-Storefront-Key, 400ms deadline
                                                     ▼
                        marketplace-api-storefront :8080/api/v1/storefront/...
@@ -293,8 +333,8 @@ completed is a failure, not a degraded success.
   the suite; it cannot reach production.
 - **Read-only, structurally** — a test asserts the upstream client's exported
   method set contains no write verb.
-- **Foundation isolation** — a test asserts `internal/mcp` imports no
-  `internal/<domain>` package.
+- **Foundation isolation** — two tests, both in go-shared: `mcp` imports no
+  product package, and its import graph contains no MCP SDK (D9).
 - **Declared-vs-served** — CI compares the server's tool list against the
   registry record. This is #412's lesson, made permanent.
 - **Upstream contract** — the projection is tested against recorded real
@@ -309,16 +349,21 @@ completed is a failure, not a degraded success.
 
 ## Sequencing
 
-1. Foundation + `mcp-catalog`, deployed alongside the existing shared gateway.
-   Prove the pattern end to end: a real agent lists a real store's products.
-2. Amend australis ADR-0001 with D1's reasoning.
-3. Migrate the eight support tools to `internal/support` + `cmd/mcp-support`,
+1. `go-shared/mcp` — schema registry, GET-only upstream client, key auth,
+   metrics — released as a go-shared minor version. No mark8ly change yet.
+2. `mcp-catalog` in mark8ly against it, deployed alongside the existing shared
+   gateway. Prove the pattern end to end: a real agent lists a real store's
+   products.
+3. Amend australis ADR-0001 with D1's reasoning.
+4. Migrate the eight support tools to `internal/support` + `cmd/mcp-support`,
    behaviour-identical. Delete the shared `mark8ly-mcp` deployment. Cost returns
    to where it started.
-4. Only then take up platform-read (#408, #409, #411), with AgentGateway
+5. Only then take up platform-read (#408, #409, #411), with AgentGateway
    invocation as the starting assumption for the auth question.
 
-Steps 1–3 are independently shippable and each leaves the system working.
+Steps 1–4 are independently shippable and each leaves the system working.
+tesserix-home's `platform-mcp` is a separate consumer of step 1's output and is
+not sequenced here — it is that repo's decision, informed by a filed issue.
 
 ## Non-goals
 
@@ -341,8 +386,9 @@ Steps 1–3 are independently shippable and each leaves the system working.
    it is most of #409's answer.
 2. **Which Go MCP SDK.** mark8ly has none today (VERIFIED: no MCP dependency in
    any `go.mod`). The official `modelcontextprotocol/go-sdk` is the default
-   assumption; the protocol version the estate speaks is `2026-07-28` per the
-   registry records, and the SDK must support it.
+   assumption, and it must support `2026-07-28` — the protocol version every
+   product record in the registry pins. Under D9 this is a mark8ly decision
+   rather than a go-shared one, so it blocks step 2, not step 1.
 3. **Is `search_knowledge_base` mark8ly's at all?** It appears in both the
    mark8ly and homechef records with the same name. If it is genuinely shared
    infrastructure it should not migrate in step 3 — it is not a mark8ly bounded

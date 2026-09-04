@@ -1237,3 +1237,70 @@ connector plan: the **declared-vs-served** CI check (needs a registry record and
 a running server) and the **projection tests against recorded marketplace-api
 responses** (needs the catalog domain package). `Registry.Names()` is built here
 so the first of those has something to compare against.
+
+---
+
+## Executed 2026-09-04 — what actually shipped
+
+This plan was executed and is complete. `go-shared` **v1.10.0** carries `mcp/`
+(PR tesserix/go-shared#6, merged as `cf68da3`). Verified consumable:
+`go get github.com/tesserix/go-shared@v1.10.0` resolves from a clean module.
+
+**The released package contains materially more than the seven tasks above**,
+because reviews found real defects and because API additions were free before
+the tag and permanently expensive after it. Read this section, not just the
+tasks, to know what v1.10.0 actually is.
+
+### Two Criticals the plan did not anticipate, both found by executing the code
+
+- **A redirect leaked the credential.** `http.Client` follows redirects and Go's
+  stdlib only strips `Authorization`/`Cookie` cross-host, so headers added via
+  `WithHeader` — the documented credential path — reached whatever host
+  `Location` named, that host's JSON was decoded into the tool result, and `Get`
+  returned `nil`. It also bypassed the path-traversal guard entirely. Fixed with
+  `CheckRedirect` returning `http.ErrUseLastResponse`, applied *after* the option
+  loop so a caller-supplied client cannot reopen it.
+- **Embedded structs made the derived schema disagree with the wire in both
+  directions.** For `struct{ Page; Slug string }`, the schema declared a required
+  object property `Page` while `encoding/json` marshals `{"limit":…,"slug":…}` —
+  so every result violated its own `additionalProperties:false`, and the decoder
+  accepted what the schema forbade while rejecting what it required. Fixed by
+  flattening as `encoding/json` promotes, and erroring at registration on
+  embedded pointers, embedded interfaces and name collisions.
+
+### API additions made before tagging
+
+Not in the task list; added because nothing consumed the package yet.
+
+- `observe.OutcomeFor(err) Outcome` — the missing seam. `upstream`'s three
+  sentinels and `observe`'s outcome labels were a 1:1 mapping that existed
+  nowhere, so every connector would have written its own `switch` and the
+  estate's dashboards would have stopped being comparable.
+- `mcp.ErrInvalidArguments` — so a bad-arguments call is distinguishable from a
+  failed handler without string-matching. `Invoke` also now rejects trailing
+  JSON garbage.
+- `observe.OutcomeError` — a catch-all, because an open `Outcome` type with an
+  incomplete closed set invites five connectors to invent `"error"`,
+  `"internal"` and `"failed"`.
+- `Registry.Get(name)` — serving `tools/call` via `Tools()` would have
+  deep-copied every other tool's schemas on every request.
+- `NewToolMetrics(reg, service, opts ...Option)` with a bucket override.
+
+### Behaviour worth knowing before you build on it
+
+- **`WithHTTPClient` now always overrides the supplied client's `Timeout`** with
+  the connector's budget, so option order cannot change the effective deadline.
+  `WithHTTPClient(clientWith30s)` alone yields 400ms. The caller's client is
+  never mutated.
+- **The input schema's `required` is NOT enforced at decode time.** Go cannot
+  distinguish an absent field from a zero value without decoding to a map first;
+  handlers must treat zero values as possibly-absent. Documented on `Register`.
+- **The import gate covers test files** (`go list -deps -test ./...`), and
+  enforces only the import half of D9 — the absence of protocol *types* is a
+  design rule held by review, since no import check can see a hand-written
+  struct that mirrors a protocol shape.
+
+### Known follow-up
+
+One schema collision error message names the field's type where it means the
+parent type. Right diagnosis, wrong noun.

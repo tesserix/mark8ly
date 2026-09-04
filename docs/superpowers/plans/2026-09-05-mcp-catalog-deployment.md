@@ -349,7 +349,32 @@ The tool list in the seed and the tool list the server returns must match. mark8
 git commit -m "feat(registry): register the mark8ly catalog connector"
 ```
 
-Note the seeds are a source of record; **zero `MCPServer` CRs exist in the cluster** and devai's catalog seeds declare a different apiVersion group than the installed CRD. Applying seeds is a separate, pre-existing piece of work — do not take it on here.
+**A correction to an earlier draft of this plan.** It claimed the seeds were a dormant source of record because zero `MCPServer` CRs exist in the cluster. That inference was wrong. The seeds are never meant to become CRs — `devai-registry-bootstrap` POSTs them to the registry's HTTP API. The absence of CRs is expected, not evidence of anything.
+
+---
+
+### Task 5b (tesserix-k8s): make the bootstrap re-read the seeds
+
+**Files:**
+- Modify: `charts/apps/devai-registry-bootstrap/values.yaml`
+
+Adding the seed file to devai is not enough on its own. The bootstrap Job re-POSTs seeds only when it re-runs, and it re-runs when `reseedNonce` changes.
+
+- [ ] **Step 1: Bump the nonce**
+
+`reseedNonce` currently reads `"2026-09-03-kora-mcp-v5"`. Follow that convention — a date plus what changed — so the value says why it moved. Upserts are safe on re-run, so re-POSTing every existing seed alongside the new one is expected and harmless.
+
+- [ ] **Step 2: Verify the Job actually ran and succeeded**
+
+```bash
+kubectl get jobs -n <the bootstrap's namespace> | grep registry-bootstrap
+kubectl logs -n <ns> job/<the new job> | tail -20
+```
+The log must show the catalog seed POSTed. **A Job that completes is not the same as a seed that registered** — read the output rather than the exit code.
+
+- [ ] **Step 3: Confirm the record is in the registry**
+
+Query the registry for the connector. The API requires credentials, so this may need an operator; if you cannot query it, say so plainly rather than assuming the POST landed.
 
 ---
 
@@ -357,7 +382,7 @@ Note the seeds are a source of record; **zero `MCPServer` CRs exist in the clust
 
 - **Retiring the old `mark8ly-mcp` gateway.** Spec step 4, after the support tools migrate. Both run side by side until then; that is the temporary two-pod cost the spec already accounted for.
 - **The Degraded `mark8ly-marketplace-api-admin` Application.** Pre-existing, unrelated, and the reason the Kargo prod stage reads Unhealthy today.
-- **Applying registry seeds as cluster CRs**, and the `registry.solo.io` vs `kagent.dev` apiVersion mismatch.
+- **Reconciling devai's `registry.solo.io` CATALOG seeds against the installed `kagent.dev` CRD group.** That mismatch is real and pre-existing, but it concerns the third-party catalog seeds, not the product `MCPServer` records this plan adds — those go to the registry API, not to CRs.
 - **AgentGateway routing.** The registry record names the in-cluster Service URL. Whether callers go through AgentGateway (ADR-0001 D4) is open question 1 in the spec and is not settled by deploying this.
 - **A `/readyz` that probes the upstream.** It returns a static 200, matching otto. Worth revisiting when something gates on it.
 
@@ -365,4 +390,4 @@ Note the seeds are a source of record; **zero `MCPServer` CRs exist in the clust
 
 1. **Who calls this first?** Deploying it proves it runs; it does not prove anything consumes it. Identify the first caller before Task 4, because a connector nothing calls is not obviously worth adding to the promotion chain.
 2. ~~Does the engine reach it directly or via AgentGateway?~~ **ANSWERED — via AgentGateway.** Kora's architecture doc settles it: the agent presents a Zitadel JWT to AgentGateway, which authenticates it and injects `X-MCP-Key` from `product-mcp-upstream-keys`. That drove Tasks 3b and 3c into this plan; they were missing from the first draft.
-3. **How is an MCP server registered as an AgentGateway ROUTE?** Still open, and the one piece of the path not yet established. `charts/thirdparty/agentgateway/values.yaml`'s `backends` block is for LLM providers (anthropic/openai/groq), not MCP servers, so routing lives somewhere else. Find how `kora-mcp` is reached before assuming a deployed Service is callable — a connector the gateway has no route to is running but unreachable, which is #412's shape again.
+3. ~~How is an MCP server registered as an AgentGateway route?~~ **ANSWERED — via the registry, and it is a publish, not a config change.** `charts/apps/devai-registry-bootstrap` runs a Job that clones devai, reads `architecture/registry-seeds/`, and POSTs each YAML to the agentic registry's v0 API at `agentregistry.agentregistry-system.svc.cluster.local:12121`, upserting on `(kind, name, namespace)`. Discovery is registry-driven, exactly as devai's hub documents it. That turned Task 5 from "add a file" into "add a file AND make the bootstrap re-read it" — see Task 5b.

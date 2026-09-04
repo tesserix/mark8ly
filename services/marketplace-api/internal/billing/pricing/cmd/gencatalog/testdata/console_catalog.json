@@ -1,0 +1,709 @@
+{
+  "mode": "test",
+  "revision_id": "rev_fixture_0001",
+  "published_at": "2026-09-04T00:00:00Z",
+  "prices": [
+    {
+      "lookup_key": "mark8ly_pro_annual_developed_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "usd",
+      "unit_amount_minor": 118800,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_developed_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "cad",
+      "unit_amount_minor": 161900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_developed_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "gbp",
+      "unit_amount_minor": 94800,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_developed_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "eur",
+      "unit_amount_minor": 106800,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_developed_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "aud",
+      "unit_amount_minor": 178800,
+      "tax_behavior": "exclusive"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_developed_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "nzd",
+      "unit_amount_minor": 178800,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_developed_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "sgd",
+      "unit_amount_minor": 154800,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_ppp_idr_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "idr",
+      "unit_amount_minor": 1198800000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_ppp_inr_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "inr",
+      "unit_amount_minor": 6599900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_ppp_myr_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "myr",
+      "unit_amount_minor": 358800,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_ppp_php_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "php",
+      "unit_amount_minor": 4558800,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_ppp_thb_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "thb",
+      "unit_amount_minor": 2878800,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_annual_ppp_vnd_v1",
+      "plan": "pro",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "vnd",
+      "unit_amount_minor": 1978800000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_developed_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "usd",
+      "unit_amount_minor": 11900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_developed_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "cad",
+      "unit_amount_minor": 16200,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_developed_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "gbp",
+      "unit_amount_minor": 9500,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_developed_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "eur",
+      "unit_amount_minor": 10700,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_developed_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "aud",
+      "unit_amount_minor": 17900,
+      "tax_behavior": "exclusive"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_developed_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "nzd",
+      "unit_amount_minor": 17900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_developed_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "sgd",
+      "unit_amount_minor": 15500,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_ppp_idr_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "idr",
+      "unit_amount_minor": 119880000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_ppp_inr_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "inr",
+      "unit_amount_minor": 659900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_ppp_myr_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "myr",
+      "unit_amount_minor": 35900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_ppp_php_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "php",
+      "unit_amount_minor": 455900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_ppp_thb_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "thb",
+      "unit_amount_minor": 287900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_pro_monthly_ppp_vnd_v1",
+      "plan": "pro",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "vnd",
+      "unit_amount_minor": 197880000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_developed_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "usd",
+      "unit_amount_minor": 18200,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_developed_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "cad",
+      "unit_amount_minor": 23900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_developed_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "gbp",
+      "unit_amount_minor": 14400,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_developed_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "eur",
+      "unit_amount_minor": 16300,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_developed_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "aud",
+      "unit_amount_minor": 27800,
+      "tax_behavior": "exclusive"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_developed_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "nzd",
+      "unit_amount_minor": 27800,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_developed_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "sgd",
+      "unit_amount_minor": 23900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_ppp_idr_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "idr",
+      "unit_amount_minor": 191900000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_ppp_inr_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "inr",
+      "unit_amount_minor": 959900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_ppp_myr_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "myr",
+      "unit_amount_minor": 56900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_ppp_php_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "php",
+      "unit_amount_minor": 719900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_ppp_thb_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "thb",
+      "unit_amount_minor": 479900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_annual_ppp_vnd_v1",
+      "plan": "starter",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "vnd",
+      "unit_amount_minor": 316900000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_developed_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "usd",
+      "unit_amount_minor": 1900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_developed_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "cad",
+      "unit_amount_minor": 2500,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_developed_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "gbp",
+      "unit_amount_minor": 1500,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_developed_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "eur",
+      "unit_amount_minor": 1700,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_developed_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "aud",
+      "unit_amount_minor": 2900,
+      "tax_behavior": "exclusive"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_developed_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "nzd",
+      "unit_amount_minor": 2900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_developed_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "sgd",
+      "unit_amount_minor": 2500,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_ppp_idr_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "idr",
+      "unit_amount_minor": 19900000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_ppp_inr_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "inr",
+      "unit_amount_minor": 99900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_ppp_myr_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "myr",
+      "unit_amount_minor": 5900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_ppp_php_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "php",
+      "unit_amount_minor": 74900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_ppp_thb_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "thb",
+      "unit_amount_minor": 49900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_starter_monthly_ppp_vnd_v1",
+      "plan": "starter",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "vnd",
+      "unit_amount_minor": 32900000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_developed_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "usd",
+      "unit_amount_minor": 47000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_developed_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "cad",
+      "unit_amount_minor": 62500,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_developed_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "gbp",
+      "unit_amount_minor": 37500,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_developed_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "eur",
+      "unit_amount_minor": 43200,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_developed_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "aud",
+      "unit_amount_minor": 71900,
+      "tax_behavior": "exclusive"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_developed_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "nzd",
+      "unit_amount_minor": 71900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_developed_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "developed",
+      "currency": "sgd",
+      "unit_amount_minor": 62300,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_ppp_idr_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "idr",
+      "unit_amount_minor": 479900000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_ppp_inr_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "inr",
+      "unit_amount_minor": 2399900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_ppp_myr_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "myr",
+      "unit_amount_minor": 142900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_ppp_php_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "php",
+      "unit_amount_minor": 1823900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_ppp_thb_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "thb",
+      "unit_amount_minor": 1151900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_annual_ppp_vnd_v1",
+      "plan": "studio",
+      "period": "annual",
+      "tier": "ppp",
+      "currency": "vnd",
+      "unit_amount_minor": 769900000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_developed_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "usd",
+      "unit_amount_minor": 4900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_developed_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "cad",
+      "unit_amount_minor": 6500,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_developed_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "gbp",
+      "unit_amount_minor": 3900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_developed_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "eur",
+      "unit_amount_minor": 4500,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_developed_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "aud",
+      "unit_amount_minor": 7500,
+      "tax_behavior": "exclusive"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_developed_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "nzd",
+      "unit_amount_minor": 7500,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_developed_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "developed",
+      "currency": "sgd",
+      "unit_amount_minor": 6500,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_ppp_idr_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "idr",
+      "unit_amount_minor": 49900000,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_ppp_inr_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "inr",
+      "unit_amount_minor": 249900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_ppp_myr_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "myr",
+      "unit_amount_minor": 14900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_ppp_php_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "php",
+      "unit_amount_minor": 189900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_ppp_thb_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "thb",
+      "unit_amount_minor": 119900,
+      "tax_behavior": "unspecified"
+    },
+    {
+      "lookup_key": "mark8ly_studio_monthly_ppp_vnd_v1",
+      "plan": "studio",
+      "period": "monthly",
+      "tier": "ppp",
+      "currency": "vnd",
+      "unit_amount_minor": 79900000,
+      "tax_behavior": "unspecified"
+    }
+  ]
+}

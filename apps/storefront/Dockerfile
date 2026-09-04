@@ -56,7 +56,7 @@ ARG REUSABLE_PUBLIC_BUILD_ARG_8=""
 # Selects the auth backend. NEXT_PUBLIC_* is inlined into the bundle at
 # BUILD time (server actions included), so this cannot be flipped by a
 # chart env var — it must be passed here. See .github/ci/container-images.json.
-ARG NEXT_PUBLIC_AUTH_PROVIDER="gip"
+ARG NEXT_PUBLIC_AUTH_PROVIDER="zitadel"
 ENV NEXT_PUBLIC_GIP_PROJECT_ID=$REUSABLE_PUBLIC_BUILD_ARG_1 \
     NEXT_PUBLIC_GIP_TENANT_ID=$REUSABLE_PUBLIC_BUILD_ARG_2 \
     NEXT_PUBLIC_GIP_API_KEY=$REUSABLE_PUBLIC_BUILD_ARG_3 \

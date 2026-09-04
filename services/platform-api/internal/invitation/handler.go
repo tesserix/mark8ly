@@ -155,6 +155,13 @@ type acceptRequest struct {
 	Token         string `json:"token"`
 	UID           string `json:"uid"`
 	VerifiedEmail string `json:"verified_email"`
+	// Zitadel path only — the password to create the invitee's account
+	// with, and the name to put on its profile. All three are ignored
+	// under GIP, where the account exists before this call. See
+	// AcceptInput's doc.
+	Password  string `json:"password,omitempty"`
+	FirstName string `json:"first_name,omitempty"`
+	LastName  string `json:"last_name,omitempty"`
 }
 
 func (h *Handler) accept(c *gin.Context) {
@@ -170,6 +177,9 @@ func (h *Handler) accept(c *gin.Context) {
 		Token:         req.Token,
 		UID:           req.UID,
 		VerifiedEmail: req.VerifiedEmail,
+		Password:      req.Password,
+		FirstName:     req.FirstName,
+		LastName:      req.LastName,
 	})
 	if err != nil {
 		respondError(c, err)

@@ -8,6 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/platform-api/internal/authz"
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
 
@@ -295,5 +296,49 @@ func TestService_GetByOwnerUserID_NotFound(t *testing.T) {
 	ae, ok := apperrors.As(err)
 	if !ok || ae.Code != "tenant_not_found" {
 		t.Errorf("expected tenant_not_found, got %v", err)
+	}
+}
+
+// TestListMemberTenants_EmailIdentityKeyIsCaseFolded pins the #679
+// casing footgun: on the Zitadel sign-in path the identity key is the
+// EMAIL the merchant typed, resolved BEFORE authentication, while every
+// email-keyed FGA tuple we write is lowercased. Without folding, typing
+// "Staff@Example.com" reads as a different subject and the merchant is
+// told no store exists for their account.
+func TestListMemberTenants_EmailIdentityKeyIsCaseFolded(t *testing.T) {
+	repo := newFakeRepo()
+	repo.seed(&Tenant{ID: "tid-1", Name: "Bondi"})
+	fga := authz.NewFake()
+	if err := fga.WriteRole(context.Background(), "staff@example.com", authz.RoleStaff, "tid-1"); err != nil {
+		t.Fatalf("seed tuple: %v", err)
+	}
+	svc := NewService(repo, fga)
+
+	got, err := svc.ListMemberTenants(context.Background(), "Staff@Example.COM")
+	if err != nil {
+		t.Fatalf("ListMemberTenants: %v", err)
+	}
+	if len(got) != 1 || got[0].TenantID != "tid-1" {
+		t.Fatalf("memberships = %+v, want the tid-1 membership", got)
+	}
+}
+
+// TestListMemberTenants_UIDIsNotCaseFolded pins the other half: provider
+// uids are case-sensitive and must pass through untouched.
+func TestListMemberTenants_UIDIsNotCaseFolded(t *testing.T) {
+	repo := newFakeRepo()
+	repo.seed(&Tenant{ID: "tid-1", Name: "Bondi"})
+	fga := authz.NewFake()
+	if err := fga.WriteRole(context.Background(), "6GrzK9LDKHV4Ix2BgtaMnrzunih2", authz.RoleStaff, "tid-1"); err != nil {
+		t.Fatalf("seed tuple: %v", err)
+	}
+	svc := NewService(repo, fga)
+
+	got, err := svc.ListMemberTenants(context.Background(), "6GrzK9LDKHV4Ix2BgtaMnrzunih2")
+	if err != nil {
+		t.Fatalf("ListMemberTenants: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("memberships = %+v, want the uid membership preserved verbatim", got)
 	}
 }

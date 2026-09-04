@@ -222,7 +222,17 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any, sco
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
 		id := readZitadelErrorID(respBody)
-		return fmt.Errorf("zitadeladmin: %s %s: status %d: %s: %w", method, logPath, resp.StatusCode, id, classifyError(resp.StatusCode, respBody, id))
+		var parsed zitadelErrorBody
+		_ = json.Unmarshal(respBody, &parsed) // best-effort; a malformed body just leaves the zero value
+		return &apiError{
+			method:   method,
+			logPath:  logPath,
+			status:   resp.StatusCode,
+			id:       id,
+			grpcCode: parsed.Code,
+			message:  parsed.Message,
+			sentinel: classifyError(resp.StatusCode, respBody, id),
+		}
 	}
 	if out == nil {
 		return nil
@@ -231,6 +241,47 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any, sco
 		return fmt.Errorf("zitadeladmin: decode %s %s: %v: %w", method, logPath, err, gipadmin.ErrUnavailable)
 	}
 	return nil
+}
+
+// apiError is the error do() returns for every non-2xx Zitadel response.
+//
+// It exists so a caller can branch on Zitadel's STABLE details[0].id
+// (see readZitadelErrorID and zitadelErrorIDSentinels) without parsing
+// an error string. EnsureHumanUser needs exactly that: "this email is
+// already a Zitadel user" (id V3-DKcYh) is a resolvable condition, not a
+// failure, and it arrives as a 409 that classifyError deliberately maps
+// to the coarse ErrUnavailable — indistinguishable from a real outage if
+// all you have is the sentinel.
+//
+// Error() reproduces byte-for-byte the string do() used to build with
+// fmt.Errorf, and Unwrap returns the same gipadmin sentinel, so every
+// existing errors.Is check downstream (internal/auth/handler.go and
+// service.go branch on six of them) keeps behaving identically.
+type apiError struct {
+	method   string
+	logPath  string
+	status   int
+	id       string
+	grpcCode int
+	message  string
+	sentinel error
+}
+
+func (e *apiError) Error() string {
+	return fmt.Sprintf("zitadeladmin: %s %s: status %d: %s: %v", e.method, e.logPath, e.status, e.id, e.sentinel)
+}
+
+func (e *apiError) Unwrap() error { return e.sentinel }
+
+// errorID returns Zitadel's stable details[0].id for err, or "" when err
+// did not come from a Zitadel response (or carried no id). "" must never
+// be compared against a real id — treat it only as "no id available".
+func errorID(err error) string {
+	var ae *apiError
+	if errors.As(err, &ae) {
+		return ae.id
+	}
+	return ""
 }
 
 // zitadelErrorBody is the Zitadel v2 grpc-gateway error envelope:

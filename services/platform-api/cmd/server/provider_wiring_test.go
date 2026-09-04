@@ -143,6 +143,8 @@ func TestSelectAccountProviders_FlagSet_SelectsZitadel(t *testing.T) {
 		ZitadelIssuer:           "https://login.mark8ly.zitadel.cloud",
 		ZitadelLoginClientToken: "pat",
 		ZitadelOrgID:            "339070697432875523",
+		ZitadelAdminProjectID:   "389070376568619523",
+		ZitadelStaffRoleKey:     "mark8ly.staff",
 	}
 
 	reset, del, err := selectAccountProviders(cfg, admin)
@@ -181,5 +183,67 @@ func TestSelectAccountProviders_FlagSet_Misconfigured_FailsClearly(t *testing.T)
 	}
 	if del != nil {
 		t.Fatal("deleter must be nil on misconfiguration, never a silent GIP fallback")
+	}
+}
+
+// --- newStaffProvisioner: invite-accept provisioning selection --------
+
+// zitadelStaffConfig is a fully configured, Zitadel-enabled config.
+func zitadelStaffConfig() *config.Config {
+	return &config.Config{
+		ZitadelEnabled:          true,
+		ZitadelIssuer:           "https://login.mark8ly.zitadel.cloud",
+		ZitadelLoginClientToken: "pat",
+		ZitadelOrgID:            "339070697432875523",
+		ZitadelAdminProjectID:   "389070376568619523",
+		ZitadelStaffRoleKey:     "mark8ly.staff",
+	}
+}
+
+// TestNewStaffProvisioner_FlagUnset_StaysGenuinelyNil pins the GIP path:
+// with ZITADEL_ENABLED unset, invitation.Service must receive a truly nil
+// StaffProvisioner. A non-nil interface wrapping a nil pointer would flip
+// invitation.Accept onto the Zitadel branch and panic on first accept.
+func TestNewStaffProvisioner_FlagUnset_StaysGenuinelyNil(t *testing.T) {
+	p, err := newStaffProvisioner(&config.Config{ZitadelEnabled: false})
+	if err != nil {
+		t.Fatalf("newStaffProvisioner() error = %v, want nil", err)
+	}
+	if p != nil {
+		t.Fatal("provisioner must be a genuinely nil interface when Zitadel is disabled")
+	}
+}
+
+// TestNewStaffProvisioner_FlagSet_BuildsZitadelProvisioner pins that an
+// enabled, fully configured deployment gets the Zitadel provisioner.
+func TestNewStaffProvisioner_FlagSet_BuildsZitadelProvisioner(t *testing.T) {
+	p, err := newStaffProvisioner(zitadelStaffConfig())
+	if err != nil {
+		t.Fatalf("newStaffProvisioner() error = %v, want nil", err)
+	}
+	if _, ok := p.(*zitadeladmin.StaffProvisioner); !ok {
+		t.Fatalf("provisioner = %T, want *zitadeladmin.StaffProvisioner", p)
+	}
+}
+
+// TestNewStaffProvisioner_MissingProjectID_FailsClearly pins that the new
+// REQUIRED variable fails startup rather than provisioning teammates who
+// hold no grant on the admin project and therefore cannot sign in.
+func TestNewStaffProvisioner_MissingProjectID_FailsClearly(t *testing.T) {
+	cfg := zitadelStaffConfig()
+	cfg.ZitadelAdminProjectID = ""
+
+	p, err := newStaffProvisioner(cfg)
+	if err == nil {
+		t.Fatal("newStaffProvisioner() = nil error, want a misconfiguration error")
+	}
+	if !errors.Is(err, config.ErrZitadelNotConfigured) {
+		t.Fatalf("err = %v, want it to wrap config.ErrZitadelNotConfigured", err)
+	}
+	if !strings.Contains(err.Error(), "ZITADEL_ADMIN_PROJECT_ID") {
+		t.Errorf("err = %q, want it to name ZITADEL_ADMIN_PROJECT_ID", err.Error())
+	}
+	if p != nil {
+		t.Fatal("provisioner must be nil on misconfiguration")
 	}
 }

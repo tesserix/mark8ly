@@ -83,6 +83,41 @@ func selectAccountProviders(cfg *config.Config, gipAdmin *gipadmin.AdminClient) 
 	return reset, del, nil
 }
 
+// newStaffProvisioner builds the invitation.StaffProvisioner that
+// invitation.Accept calls to create an invited teammate's Zitadel
+// account and grant them the mark8ly-admin project role.
+//
+// Returns a true nil (never a typed nil — same trap selectAccountProviders
+// documents) when cfg.ZitadelEnabled is false. That nil is what selects
+// the GIP path inside invitation.Service: under GIP the accept form
+// creates the account client-side before calling platform-api, so there
+// is nothing for the server to provision and the behaviour must stay
+// exactly as it was.
+//
+// When Zitadel IS enabled, a configuration problem is a startup failure,
+// not a degraded mode: the caller panics on the returned error, matching
+// selectAccountProviders. Silently wiring nil here would leave invite-
+// accept writing a GIP-shaped tuple into a Zitadel world and produce the
+// precise bug this function exists to fix — an invited teammate who is
+// told "we couldn't find a store for this account" at every sign-in.
+func newStaffProvisioner(cfg *config.Config) (invitation.StaffProvisioner, error) {
+	if !cfg.ZitadelEnabled {
+		return nil, nil
+	}
+	if err := cfg.ValidateZitadel(); err != nil {
+		return nil, err
+	}
+	client, err := zitadeladmin.New(zitadeladmin.Config{
+		BaseURL: cfg.ZitadelIssuer,
+		Token:   cfg.ZitadelLoginClientToken,
+		OrgID:   cfg.ZitadelOrgID,
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	return zitadeladmin.NewStaffProvisioner(client, cfg.ZitadelAdminProjectID, []string{cfg.ZitadelStaffRoleKey})
+}
+
 // newTenantClaimSetter builds the invitation.TenantClaimSetter that
 // invitation/service.go calls on invite-accept to stamp the tenant_id
 // custom claim onto the invited user.

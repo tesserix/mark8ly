@@ -32,6 +32,16 @@ import (
 // an error — for the pre-existing "no GIP config" case (empty
 // GIP_PROJECT_ID), so that silent, log-free disablement is preserved
 // byte-for-byte when ZITADEL_ENABLED is unset (the default).
+//
+// Caution: both error branches below only log.Error and return nil — there
+// is no alert wired on either line. If Zitadel discovery (or Firebase
+// init) starts failing after a clean boot, mobile admin auth silently goes
+// dark: RegisterAdminMobile sees a nil TokenVerifier and returns without
+// mounting any routes, with nothing surfacing beyond this log line. This
+// matches the incumbent GIP/Firebase behaviour on purpose (see the doc
+// comment above), but it means an operator only finds out from a support
+// ticket, not a page. Alerting on this log line is worth doing; it has not
+// been done here.
 func selectMobileTokenVerifier(
 	ctx context.Context,
 	cfg *config.Config,

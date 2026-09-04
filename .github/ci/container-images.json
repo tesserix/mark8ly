@@ -49,6 +49,18 @@
       "smoke_path": "/health"
     },
     {
+      "name": "mark8ly-mcp-catalog",
+      "context": "services/mcp",
+      "dockerfile": "services/mcp/Dockerfile",
+      "target": "server",
+      "source_root": "services/mcp",
+      "build_args": "",
+      "requires_application_build_secret": false,
+      "trivy_ignore_file": ".trivyignore",
+      "smoke_port": 8765,
+      "smoke_path": "/healthz"
+    },
+    {
       "name": "mark8ly-onboarding",
       "context": ".",
       "dockerfile": "apps/onboarding/Dockerfile",

@@ -35,6 +35,8 @@ vi.mock("@/lib/auth/auth-bff", async () => {
     ...actual,
     zitadelLogin: vi.fn(),
     zitadelTotp: vi.fn(),
+    zitadelIdpFinish: vi.fn(),
+    zitadelIdpComplete: vi.fn(),
   };
 });
 
@@ -48,13 +50,15 @@ vi.mock("@/lib/api/platform-api", async () => {
   };
 });
 
-import { zitadelLogin, zitadelTotp, AuthBffError } from "@/lib/auth/auth-bff";
+import { zitadelLogin, zitadelTotp, zitadelIdpFinish, zitadelIdpComplete, AuthBffError } from "@/lib/auth/auth-bff";
 import { listMemberTenants } from "@/lib/api/platform-api";
 import { mintZitadelTotpCode, verifyZitadelTotpCode } from "@repo/ui/auth/zitadel-totp-code";
-import { signInWithZitadel, confirmZitadelTotp } from "./actions";
+import { signInWithZitadel, confirmZitadelTotp, finishZitadelGoogleSignIn } from "./actions";
 
 const zitadelLoginMock = vi.mocked(zitadelLogin);
 const zitadelTotpMock = vi.mocked(zitadelTotp);
+const zitadelIdpFinishMock = vi.mocked(zitadelIdpFinish);
+const zitadelIdpCompleteMock = vi.mocked(zitadelIdpComplete);
 const listMemberTenantsMock = vi.mocked(listMemberTenants);
 
 const SUBMITTED_PASSWORD = "correct-horse-battery-staple";
@@ -456,5 +460,199 @@ describe("confirmZitadelTotp", () => {
     const call = zitadelTotpMock.mock.calls[0]![0];
     expect(call.userAgent).toBe("Mozilla/5.0 test-client");
     expect(call.forwardedFor).toBe("198.51.100.7");
+  });
+});
+
+describe("finishZitadelGoogleSignIn", () => {
+  const input = {
+    authRequestId: "ar-1",
+    intentId: "intent-1",
+    intentToken: "intent-token-1",
+  };
+
+  it("calls idp/finish WITHOUT a workspace tenant, resolves one from login_name, then calls idp/complete", async () => {
+    zitadelIdpFinishMock.mockResolvedValue({
+      sessionId: "sess-1",
+      sessionToken: "sess-token-1",
+      loginName: "merchant@example.com",
+    });
+    zitadelIdpCompleteMock.mockResolvedValue({
+      kind: "complete",
+      uid: "u1",
+      email: "merchant@example.com",
+      tenantId: "tenant-1",
+      setCookies: ["m8_session=abc; Path=/; HttpOnly"],
+    });
+
+    const result = await finishZitadelGoogleSignIn(input);
+
+    expect(zitadelIdpFinishMock).toHaveBeenCalledTimes(1);
+    const finishCall = zitadelIdpFinishMock.mock.calls[0]![0];
+    expect(finishCall).toEqual({
+      authRequestId: "ar-1",
+      intentId: "intent-1",
+      intentToken: "intent-token-1",
+      userAgent: "Mozilla/5.0 test-client",
+      forwardedFor: "198.51.100.7",
+    });
+
+    expect(listMemberTenantsMock).toHaveBeenCalledWith("merchant@example.com");
+
+    expect(zitadelIdpCompleteMock).toHaveBeenCalledTimes(1);
+    expect(zitadelIdpCompleteMock).toHaveBeenCalledWith({
+      authRequestId: "ar-1",
+      loginName: "merchant@example.com",
+      sessionId: "sess-1",
+      sessionToken: "sess-token-1",
+      workspaceTenant: "tenant-1",
+      userAgent: "Mozilla/5.0 test-client",
+      forwardedFor: "198.51.100.7",
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        tenantId: "tenant-1",
+        multipleTenants: false,
+        mfaRequired: false,
+        emailOtpRequired: false,
+      },
+    });
+    expect(cookiesSetSpy).toHaveBeenCalledTimes(1);
+    expect(cookiesSetSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "m8_session", value: "abc" }),
+    );
+  });
+
+  it("a tampered `user` value never enters this path at all — there is no parameter for it", async () => {
+    zitadelIdpFinishMock.mockResolvedValue({
+      sessionId: "sess-1",
+      sessionToken: "sess-token-1",
+      loginName: "merchant@example.com",
+    });
+    zitadelIdpCompleteMock.mockResolvedValue({
+      kind: "complete",
+      setCookies: [],
+    });
+
+    await finishZitadelGoogleSignIn(input);
+
+    const finishCall = zitadelIdpFinishMock.mock.calls[0]![0];
+    const completeCall = zitadelIdpCompleteMock.mock.calls[0]![0];
+    expect(finishCall).not.toHaveProperty("user");
+    expect(completeCall).not.toHaveProperty("user");
+  });
+
+  it("returns tenant_not_found and never calls idp/complete when the identity has no store membership", async () => {
+    zitadelIdpFinishMock.mockResolvedValue({
+      sessionId: "sess-1",
+      sessionToken: "sess-token-1",
+      loginName: "merchant@example.com",
+    });
+    listMemberTenantsMock.mockResolvedValue([]);
+
+    const result = await finishZitadelGoogleSignIn(input);
+
+    expect(result).toEqual({
+      ok: false,
+      code: "tenant_not_found",
+      message: "no store found for this account",
+    });
+    expect(zitadelIdpCompleteMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to tenants[0] and flags multipleTenants on a multi-store account — this flow never has a slug to subdomain-match against", async () => {
+    // headerMap's host is already the canonical admin.mark8ly.com (see the
+    // top-level beforeEach) — the ONLY host this flow ever runs on, since
+    // /login (and so this whole Google path) is unreachable anywhere else.
+    // resolveWorkspaceTenant's subdomain refinement can never fire here
+    // (there is no `{slug}-admin.mark8ly.com` to match), so a multi-store
+    // account always falls through to tenants[0] with multipleTenants
+    // flagged, exactly like the password path's equivalent test on that
+    // same canonical host.
+    listMemberTenantsMock.mockResolvedValue([
+      { tenant_id: "tenant-1", name: "Store One", role: "owner" },
+      { tenant_id: "tenant-2", name: "Store Two", role: "staff" },
+    ]);
+    zitadelIdpFinishMock.mockResolvedValue({
+      sessionId: "sess-1",
+      sessionToken: "sess-token-1",
+      loginName: "merchant@example.com",
+    });
+    zitadelIdpCompleteMock.mockResolvedValue({ kind: "complete", setCookies: [] });
+
+    const result = await finishZitadelGoogleSignIn(input);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.tenantId).toBe("tenant-1");
+      expect(result.data.multipleTenants).toBe(true);
+    }
+    expect(zitadelIdpCompleteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceTenant: "tenant-1" }),
+    );
+  });
+
+  it("propagates an AuthBffError from idp/finish (e.g. no_admin_account) without calling idp/complete", async () => {
+    zitadelIdpFinishMock.mockRejectedValue(
+      new AuthBffError(403, "no_admin_account", "no admin account for this identity"),
+    );
+
+    const result = await finishZitadelGoogleSignIn(input);
+
+    expect(result).toEqual({
+      ok: false,
+      code: "no_admin_account",
+      message: "no admin account for this identity",
+    });
+    expect(listMemberTenantsMock).not.toHaveBeenCalled();
+    expect(zitadelIdpCompleteMock).not.toHaveBeenCalled();
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+  });
+
+  it("sets no cookie when the identity has no store membership either", async () => {
+    zitadelIdpFinishMock.mockResolvedValue({
+      sessionId: "sess-1",
+      sessionToken: "sess-token-1",
+      loginName: "merchant@example.com",
+    });
+    listMemberTenantsMock.mockResolvedValue([]);
+
+    await finishZitadelGoogleSignIn(input);
+
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a step-up outcome from idp/complete with no session cookie minted", async () => {
+    zitadelIdpFinishMock.mockResolvedValue({
+      sessionId: "sess-1",
+      sessionToken: "sess-token-1",
+      loginName: "merchant@example.com",
+    });
+    zitadelIdpCompleteMock.mockResolvedValue({ kind: "mfa_required", setCookies: [] });
+
+    const result = await finishZitadelGoogleSignIn(input);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.mfaRequired).toBe(true);
+    }
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+  });
+
+  it("passes the User-Agent and X-Forwarded-For from the incoming request to both idp calls", async () => {
+    zitadelIdpFinishMock.mockResolvedValue({
+      sessionId: "sess-1",
+      sessionToken: "sess-token-1",
+      loginName: "merchant@example.com",
+    });
+    zitadelIdpCompleteMock.mockResolvedValue({ kind: "complete", setCookies: [] });
+
+    await finishZitadelGoogleSignIn(input);
+
+    expect(zitadelIdpFinishMock.mock.calls[0]![0].userAgent).toBe("Mozilla/5.0 test-client");
+    expect(zitadelIdpFinishMock.mock.calls[0]![0].forwardedFor).toBe("198.51.100.7");
+    expect(zitadelIdpCompleteMock.mock.calls[0]![0].userAgent).toBe("Mozilla/5.0 test-client");
+    expect(zitadelIdpCompleteMock.mock.calls[0]![0].forwardedFor).toBe("198.51.100.7");
   });
 });

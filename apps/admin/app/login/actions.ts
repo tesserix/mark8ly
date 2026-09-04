@@ -16,6 +16,8 @@ import {
   completeMFAChallenge,
   zitadelLogin,
   zitadelTotp,
+  zitadelIdpFinish,
+  zitadelIdpComplete,
   AuthBffError,
 } from "@/lib/auth/auth-bff";
 import type { LoginOutcome } from "@/lib/auth/login-response";
@@ -340,10 +342,82 @@ export async function confirmZitadelTotp(
 }
 
 /**
+ * finishZitadelGoogleSignIn is the Google-through-Zitadel counterpart of
+ * `signInWithZitadel`: instead of a login-name/password pair, the caller
+ * (app/auth/idp/finish/route.ts) hands over the intent id/token Zitadel
+ * appended to its redirect back to the browser. Two auth-bff calls, not
+ * one:
+ *
+ *   1. `zitadelIdpFinish` exchanges the intent for a Zitadel session and
+ *      the verified login name (email) — it NEVER completes the login,
+ *      because the merchant's tenant is unknowable until this call has
+ *      told the caller who signed in.
+ *   2. The exact same `resolveWorkspaceTenant` the password path uses
+ *      resolves a tenant from that login name — subdomain refinement and
+ *      the multi-tenant picker fall out of it identically, so this path
+ *      can never disagree with the password path about which tenant a
+ *      given account lands in.
+ *   3. `zitadelIdpComplete` finishes the login with that tenant, from the
+ *      SAME session `zitadelIdpFinish` created — never a fresh one.
+ *
+ * Reuses `mapZitadelOutcome`, the exact same session-minting path
+ * `signInWithZitadel`/`confirmZitadelTotp` use — a completed sign-in here
+ * mints `m8_session` (or a callback_url to auth-bff's own OIDC finalize)
+ * exactly the way a password sign-in does, never a second cookie-minting
+ * path.
+ *
+ * `intentId`/`intentToken` are the ONLY inputs identity is derived from —
+ * see zitadelIdpFinish's doc and idpFinishRequest.User's doc on
+ * auth-bff's side for why the `user` query param Zitadel's redirect can
+ * carry is never read, here or anywhere upstream of this call.
+ */
+export interface FinishZitadelGoogleSignInInput {
+  authRequestId: string;
+  intentId: string;
+  intentToken: string;
+}
+
+export async function finishZitadelGoogleSignIn(
+  input: FinishZitadelGoogleSignInInput,
+): Promise<Result<SignInSuccess>> {
+  try {
+    const h = await headers();
+    const userAgent = h.get("user-agent") ?? undefined;
+    const forwardedFor = h.get("x-forwarded-for") ?? undefined;
+
+    const { sessionId, sessionToken, loginName } = await zitadelIdpFinish({
+      authRequestId: input.authRequestId,
+      intentId: input.intentId,
+      intentToken: input.intentToken,
+      userAgent,
+      forwardedFor,
+    });
+
+    const resolution = await resolveWorkspaceTenant(loginName);
+    if (!resolution.ok) return resolution;
+    const { primary, multipleTenants } = resolution;
+
+    const outcome = await zitadelIdpComplete({
+      authRequestId: input.authRequestId,
+      loginName,
+      sessionId,
+      sessionToken,
+      workspaceTenant: primary.tenant_id,
+      userAgent,
+      forwardedFor,
+    });
+
+    return await mapZitadelOutcome(outcome, primary.tenant_id, multipleTenants);
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/**
  * mapZitadelOutcome forwards whatever cookies auth-bff minted (none, for
  * a step-up outcome) and maps a `LoginOutcome` onto the existing
- * `Result<SignInSuccess>` shape, shared by `signInWithZitadel` and
- * `confirmZitadelTotp`.
+ * `Result<SignInSuccess>` shape, shared by `signInWithZitadel`,
+ * `confirmZitadelTotp`, and `finishZitadelGoogleSignIn`.
  */
 async function mapZitadelOutcome(
   outcome: LoginOutcome & { setCookies: string[] },

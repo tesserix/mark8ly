@@ -492,3 +492,230 @@ export async function zitadelTotp(
   const outcome = parseLoginResponse(body);
   return { ...outcome, setCookies: readAllSetCookies(res) };
 }
+
+// ---------------------------------------------------------------------------
+// Google sign-in through Zitadel's IDP-intent flow (#524 phase 3c-2b), the
+// merchant/admin pair of the endpoints apps/storefront/lib/auth/
+// auth-bff-customer.ts drives for shoppers. Grouped separately from
+// zitadelLogin/zitadelTotp above so a later provider (Apple) has an
+// obvious place to land alongside these.
+//
+// The merchant Google identity is not known until auth-bff has retrieved
+// the Zitadel IDP intent, so unlike zitadelLogin/zitadelTotp this is a
+// TWO-STEP exchange: zitadelIdpFinish never carries a workspace_tenant and
+// always answers `tenant_required` on success (a session, never a
+// completed login); zitadelIdpComplete carries the tenant the caller
+// resolved from the returned `login_name` and completes the login exactly
+// the way zitadelLogin/zitadelTotp do. See app/login/actions.ts's
+// finishZitadelGoogleSignIn, which drives both calls in sequence.
+
+/**
+ * startZitadelIDPIntent submits {return_url} to
+ * POST /auth/zitadel/idp/start and returns the authUrl the browser must be
+ * redirected to. returnUrl must already be this app's own /auth/idp/finish
+ * route, pre-validated server-side against auth-bff's ADMIN return-url
+ * allowlist (a separate, narrower list than the storefront one — see
+ * idpintent.go's StartIDPIntent doc and newZitadelHandlers in auth-bff's
+ * cmd/server/main.go for why the two must never be swapped) — Zitadel does
+ * not validate successUrl at all, so a bad value here is an open redirect
+ * waiting to happen.
+ */
+export async function startZitadelIDPIntent(returnUrl: string): Promise<string> {
+  const res = await fetch(`${base}/auth/zitadel/idp/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...internalAuthHeader() },
+    body: JSON.stringify({ return_url: returnUrl }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new AuthBffError(
+      res.status,
+      body.error ?? "auth_bff_error",
+      body.message ?? `HTTP ${res.status}`,
+    );
+  }
+
+  const body = (await res.json()) as { auth_url?: string };
+  if (!body.auth_url) {
+    throw new AuthBffError(res.status, "unrecognised_response_shape", "start idp intent: no auth_url");
+  }
+  return body.auth_url;
+}
+
+interface ZitadelIDPFinishRequest {
+  authRequestId: string;
+  intentId: string;
+  intentToken: string;
+  /** See ZitadelLoginRequest.userAgent above — the same fingerprinting and
+   *  email-OTP rate-limiting reasons apply identically to a Google
+   *  sign-in as to a password one. */
+  userAgent?: string;
+  forwardedFor?: string;
+}
+
+/** What auth-bff's POST /auth/zitadel/idp/finish sends back on success —
+ *  ALWAYS `tenant_required`, never a completed login: workspace_tenant is
+ *  deliberately never sent on this call (see zitadelIdpFinish's doc), and
+ *  auth-bff's handler checks for that before it would ever attempt
+ *  CompleteIfSufficient. `loginName` is the verified email off the
+ *  RETRIEVED Zitadel identity, never anything the caller supplied. */
+export interface ZitadelIDPFinishResult {
+  sessionId: string;
+  sessionToken: string;
+  loginName: string;
+}
+
+/**
+ * zitadelIdpFinish submits {auth_request_id, intent_id, intent_token} —
+ * deliberately WITHOUT workspace_tenant — to POST /auth/zitadel/idp/finish.
+ * The merchant's tenant is unknowable until this call has told the caller
+ * who signed in, so this step only exchanges the intent for a Zitadel
+ * session and the verified login name; it never completes the login. The
+ * caller (finishZitadelGoogleSignIn in app/login/actions.ts) resolves a
+ * tenant from `loginName` via the existing `resolveWorkspaceTenant`, then
+ * calls `zitadelIdpComplete` below to finish.
+ *
+ * Deliberately takes ONLY intentId/intentToken for identity — never a
+ * `user` value. Zitadel's redirect back to the browser can carry a `user`
+ * query param, but it rides in a URL the browser followed and is
+ * attacker-controlled; the caller (app/auth/idp/finish/route.ts) must
+ * never read it for anything, and this function has no parameter for it
+ * at all so there is nothing to accidentally forward. auth-bff's own
+ * idpFinishRequest.User field doc makes the same point server-side.
+ *
+ * A non-2xx response's `error` code is preserved on the thrown
+ * AuthBffError exactly as-is (no_admin_account, unexpected_idp,
+ * email_not_verified, email_ambiguous, invalid_intent,
+ * zitadel_unavailable, ...) so the caller can render a truthful, distinct
+ * message for each rather than a single collapsed failure — there is no
+ * account-enumeration concern here the way there is on the password path
+ * (an intent id/token pair is not a guessable credential).
+ */
+export async function zitadelIdpFinish(
+  req: ZitadelIDPFinishRequest,
+): Promise<ZitadelIDPFinishResult> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...internalAuthHeader(),
+  };
+  if (req.userAgent) headers["User-Agent"] = req.userAgent;
+  if (req.forwardedFor) headers["X-Forwarded-For"] = req.forwardedFor;
+
+  const res = await fetch(`${base}/auth/zitadel/idp/finish`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      auth_request_id: req.authRequestId,
+      intent_id: req.intentId,
+      intent_token: req.intentToken,
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new AuthBffError(
+      res.status,
+      body.error ?? "auth_bff_error",
+      body.message ?? `HTTP ${res.status}`,
+    );
+  }
+
+  const body = (await res.json()) as {
+    tenant_required?: boolean;
+    session_id?: string;
+    session_token?: string;
+    login_name?: string;
+  };
+  if (!body.tenant_required || !body.session_id || !body.session_token || !body.login_name) {
+    throw new AuthBffError(
+      res.status,
+      "unrecognised_response_shape",
+      "idp finish: expected a tenant_required response",
+    );
+  }
+  return {
+    sessionId: body.session_id,
+    sessionToken: body.session_token,
+    loginName: body.login_name,
+  };
+}
+
+interface ZitadelIDPCompleteRequest {
+  authRequestId: string;
+  loginName: string;
+  sessionId: string;
+  sessionToken: string;
+  workspaceTenant: string;
+  /** See ZitadelLoginRequest.userAgent above. */
+  userAgent?: string;
+  forwardedFor?: string;
+}
+
+/**
+ * zitadelIdpComplete submits {auth_request_id, login_name, session_id,
+ * session_token, workspace_tenant} to POST /auth/zitadel/idp/complete —
+ * the second half of the two-step Google sign-in, called once the caller
+ * has resolved a tenant from zitadelIdpFinish's `loginName`. Its response
+ * shape is IDENTICAL to zitadelLogin/zitadelTotp's (a completed login,
+ * a step-up, or a handoff), so the 2xx body is handed to
+ * parseLoginResponse rather than parsed here — this function's outcome
+ * union and cookie-forwarding behaviour are identical to zitadelLogin's.
+ *
+ * `sessionId`/`sessionToken` are the exact pair zitadelIdpFinish returned;
+ * `loginName` travels along for auth-bff's own required-field validation
+ * but is never re-resolved from it — see auth-bff's idpCompleteRequest doc.
+ */
+export async function zitadelIdpComplete(
+  req: ZitadelIDPCompleteRequest,
+): Promise<LoginOutcome & { setCookies: string[] }> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...internalAuthHeader(),
+  };
+  if (req.userAgent) headers["User-Agent"] = req.userAgent;
+  if (req.forwardedFor) headers["X-Forwarded-For"] = req.forwardedFor;
+
+  const res = await fetch(`${base}/auth/zitadel/idp/complete`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      auth_request_id: req.authRequestId,
+      login_name: req.loginName,
+      session_id: req.sessionId,
+      session_token: req.sessionToken,
+      workspace_tenant: req.workspaceTenant,
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    let body: { error?: string; message?: string } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new AuthBffError(
+      res.status,
+      body.error ?? "auth_bff_error",
+      body.message ?? `HTTP ${res.status}`,
+    );
+  }
+
+  const body = await res.json();
+  const outcome = parseLoginResponse(body);
+  return { ...outcome, setCookies: readAllSetCookies(res) };
+}

@@ -9,7 +9,7 @@ import { publicConfig } from "@/lib/config";
 export const metadata: Metadata = { title: "Sign in" };
 
 interface PageProps {
-  searchParams: Promise<{ returnUrl?: string; authRequest?: string }>;
+  searchParams: Promise<{ returnUrl?: string; authRequest?: string; error?: string }>;
 }
 
 /**
@@ -29,7 +29,7 @@ interface PageProps {
  * .mark8ly.com so it carries across the bounce.
  */
 export default async function LoginPage({ searchParams }: PageProps) {
-  const { returnUrl, authRequest } = await searchParams;
+  const { returnUrl, authRequest, error } = await searchParams;
   const safeReturnUrl = sanitizeReturnUrl(returnUrl);
 
   const isZitadel = publicConfig.authProvider === "zitadel";
@@ -57,6 +57,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
             returnUrl={safeReturnUrl}
             authRequestId={authRequest}
             provider={publicConfig.authProvider}
+            googleErrorCode={error}
           />
           {/* Operator disclosure on the sign-in screen: this is where a
               merchant decides to trust the platform, and the entity on their

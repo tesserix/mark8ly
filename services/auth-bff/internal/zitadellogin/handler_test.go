@@ -940,3 +940,213 @@ func TestIDPFinishIsExemptFromForceMFALocalOnly(t *testing.T) {
 		t.Fatal("finalize was not called — forceMfaLocalOnly must not apply to a federated Google sign-in")
 	}
 }
+
+// TestIDPFinishWithoutTenantReturnsTenantRequiredAndDoesNotComplete is Task
+// 1's core case: the admin app cannot know which tenant a Google identity
+// belongs to until AFTER this retrieve/link/session-create sequence runs, so
+// when workspace_tenant is absent, idpFinish must still do everything up to
+// and including creating the Zitadel session — retrieve, pin the idp, verify
+// the email, link to the existing account — and then hand back a
+// tenant_required response instead of completing. finalize() and complete()
+// must never run: CompleteIfSufficient's oidc/auth_requests call would mean
+// this login front-ran a tenant it doesn't have yet, and complete() would
+// mint an m8_session for one of possibly several tenants the user belongs
+// to.
+func TestIDPFinishWithoutTenantReturnsTenantRequiredAndDoesNotComplete(t *testing.T) {
+	var fin, linkCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/existing-1/links":
+			linkCalled.Store(true)
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/oidc/auth_requests/"):
+			fin.Store(true)
+			t.Error("finalize must not run when workspace_tenant is absent")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			t.Errorf("must not be called when deferring tenant selection: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	completeCalled := false
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), func(ctx context.Context, w http.ResponseWriter, lc LoginContext) (CompleteResult, error) {
+		completeCalled = true
+		t.Error("complete() must not run when workspace_tenant is absent")
+		return CompleteResult{}, nil
+	}).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !linkCalled.Load() {
+		t.Fatal("LinkIDPToUser was never called — linking must still happen before deferring")
+	}
+	if completeCalled || fin.Load() {
+		t.Fatal("complete()/finalize must not run when workspace_tenant is absent")
+	}
+
+	var respBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &respBody); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if respBody["tenant_required"] != true {
+		t.Fatalf("body = %v, want tenant_required=true", respBody)
+	}
+	if respBody["session_id"] != "s1" {
+		t.Fatalf("body = %v, want session_id=s1", respBody)
+	}
+	if respBody["session_token"] != "tok-1" {
+		t.Fatalf("body = %v, want session_token=tok-1", respBody)
+	}
+	if respBody["login_name"] != "person@gmail.com" {
+		t.Fatalf("body = %v, want login_name=person@gmail.com (from the retrieved identity)", respBody)
+	}
+	if respBody["callback_url"] != nil {
+		t.Fatalf("body = %v, must not carry a callback_url", respBody)
+	}
+}
+
+// TestIDPFinishWithoutTenantIgnoresACallerSuppliedLoginName proves login_name
+// in the tenant_required response comes from the retrieved identity, never
+// from anything the caller could pass in the request body — the same
+// discipline idpFinishRequest.User's doc comment already requires for the
+// `user` field.
+func TestIDPFinishWithoutTenantIgnoresACallerSuppliedLoginName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/existing-1/links":
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
+		default:
+			t.Errorf("must not be called: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","user":"attacker@evil.test"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var respBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &respBody); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if respBody["login_name"] != "person@gmail.com" {
+		t.Fatalf("body = %v, login_name must come from the retrieved identity, not the caller-supplied user field", respBody)
+	}
+}
+
+// TestIDPFinishWithoutTenantStillRefusesUnverifiedEmail proves the deferred-
+// tenant branch does not create a new bypass around the absolute
+// verified-email gate: an unlinked identity with an unverified email must
+// still refuse before any lookup, link, or session creation — exactly as it
+// does when workspace_tenant is present.
+func TestIDPFinishWithoutTenantStillRefusesUnverifiedEmail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"new.person@gmail.com","rawInformation":{"email":"new.person@gmail.com","email_verified":false}}}`))
+		default:
+			t.Errorf("must not be called for an unverified email: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID)
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIDPFinishWithoutTenantStillRejectsAnIntentFromAnUnexpectedIDP proves
+// the idp-pinning gate runs before the deferred-tenant branch too.
+func TestIDPFinishWithoutTenantStillRejectsAnIntentFromAnUnexpectedIDP(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"some-other-idp","userId":"ext-1","userName":"victim@merchant.com","rawInformation":{"email":"victim@merchant.com","email_verified":true}}}`))
+		default:
+			t.Errorf("must not look up, link, or create anything for an intent from an unexpected idp: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestIDPFinishWithoutTenantStillRefusesNoAdminAccountAndReturnsNoSession is
+// the most important negative case for this task: the merchant path stays
+// link-only regardless of whether workspace_tenant was supplied, and that
+// refusal must happen BEFORE the new deferred-tenant branch — a merchant
+// with no admin account must never receive a session, tenant_required or
+// otherwise.
+func TestIDPFinishWithoutTenantStillRefusesNoAdminAccountAndReturnsNoSession(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"108234...google-sub","userName":"new.person@gmail.com","rawInformation":{"email":"new.person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			t.Error("must not create a session when no admin account matches")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			t.Errorf("the merchant path must never create a user or session: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %s", rec.Code, rec.Body.String())
+	}
+	var respBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &respBody); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if respBody["session_id"] != nil || respBody["session_token"] != nil || respBody["tenant_required"] != nil {
+		t.Fatalf("body = %v, must not carry any session/tenant_required fields", respBody)
+	}
+}

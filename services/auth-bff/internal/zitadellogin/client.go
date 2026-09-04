@@ -879,9 +879,29 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 // public browser, can reach it directly) — but the storefront itself
 // exposes this endpoint to the public internet, and auth-bff has NO rate
 // limiting anywhere (a known open item since phase 3b). This endpoint adds
-// one more consumer of that gap rather than a defense of its own; see the
-// phase 6a task-2 report for why no per-endpoint attempt cap was added
-// here instead of waiting on the service-wide fix.
+// one more consumer of that gap rather than a defense of its own.
+//
+// A successful guess is NOT a cosmetic flag flip. Anyone can register
+// victim@example.com with a password of their own choosing (registration
+// is open; the code goes to the victim's inbox, not the registrant's), so
+// this call is the ONE thing standing between that unverified, attacker-
+// controlled account and two real consequences once it flips verified:
+// (1) login's gate keys on exactly this flag, so the attacker can now sign
+// in with the password they chose; (2) idpFinish's FindUserByVerifiedEmail
+// will resolve victim@example.com to this account, so the real victim's
+// later "Continue with Google" gets LinkIDPToUser'd onto the attacker's
+// account instead of a fresh one. That is account takeover of the victim's
+// email identity, not a flag flip — see the phase 6a task-2 report for why
+// this is still assessed as low-probability (given the keyspace and the
+// absence of any observed lockout) rather than a reason to add a
+// per-endpoint attempt cap ahead of the service-wide rate-limiting work.
+//
+// COROLLARY — the keyspace above is load-bearing, not incidental: if
+// Zitadel's verification code length or alphabet were ever shortened (a
+// config change, a version bump), this endpoint degrades from
+// impractical-to-guess to feasible with NOTHING else changing here and no
+// test in this package catching it. Nobody re-checks a dependency like
+// this on its own; re-probe the live keyspace if that's ever in question.
 func (c *Client) VerifyEmail(ctx context.Context, userID, code string) error {
 	if userID == "" {
 		return fmt.Errorf("zitadellogin: VerifyEmail with an empty user id: %w", ErrUnavailable)

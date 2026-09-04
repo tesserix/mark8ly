@@ -71,6 +71,34 @@ Map `COMMAND-eis9R` to a distinct, truthful "that code is wrong or expired" outc
 
 ---
 
+### Task 2b: Clear a squatted or abandoned unverified account
+
+**Added mid-plan, and it closes a lockout this phase would otherwise create.**
+
+An unverified account permanently burns its email address: sign-up returns `email_taken` (the pre-check matches only *verified* emails, so Zitadel's create rejects the duplicate), the Google path refuses to link to unverified accounts on purpose, and **storefront customers have no password-reset flow at all** — verified: there is no reset route in `apps/storefront/app` and no customer-facing reset endpoint.
+
+The common trigger is not an attacker. It is a shopper who abandons sign-up before entering the code, or mistypes their address. They return later and can never use their own email again.
+
+**Recovery by emailing a verify-and-set-password link does not work** — probed live 2026-09-04: `POST /v2/users/{id}/email` with the same address returns 400 `COMMAND-Uch5e` "Email not changed", both for `isVerified` and for a `returnCode` resend. Zitadel will not apply verification without an actual address change, and there is no resend.
+
+**So: when register finds an existing account whose email is UNVERIFIED, delete it and continue with a fresh registration.** This is safe, and each reason was checked:
+
+- An unverified account has no proven owner — that is what unverified means.
+- It cannot hold a Google link from our path: `idpFinish` only links to accounts returned by `FindUserByVerifiedEmail` (`customer_handler.go:535`).
+- It has no storefront profile: `ensureCustomerProfile` runs inside `completeCustomerSignIn`, only after a session mints.
+- The new account's password is the one the real shopper just chose, so nobody inherits a password someone else set — the objection that ruled out plain resend.
+
+**Files:**
+- Modify: `services/auth-bff/internal/zitadellogin/customer_handler.go`, `client.go` if a verified-state lookup is needed, and tests
+
+- [ ] **Step 1: Write the failing tests** — register against an existing UNVERIFIED account deletes it and creates a new one, and the caller gets a normal success; register against an existing **VERIFIED** account still returns `email_taken` and **deletes nothing** (this is the test that matters — deleting a real account would be far worse than the lockout); a delete failure surfaces as unavailable rather than proceeding to create; the delete targets only the id returned by the lookup.
+- [ ] **Step 2: Run, confirm failure**
+- [ ] **Step 3: Implement**
+- [ ] **Step 4: build, vet, `go test -race ./...`**
+- [ ] **Step 5: Commit** — `feat(auth-bff): clear an unverified account blocking a sign-up`
+
+---
+
 ### Task 3: The storefront sign-up flow
 
 **Files:**

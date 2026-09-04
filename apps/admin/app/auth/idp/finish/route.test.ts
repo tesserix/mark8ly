@@ -12,6 +12,7 @@ vi.mock("@/app/login/actions", () => ({
 }));
 
 import { GET } from "./route";
+import { isValidSlugReturnUrl } from "@/lib/auth/host-policy";
 
 // The REAL canonical host — the admin /login page (and so this route) is
 // reachable ONLY here, never on a per-tenant `{slug}-admin.mark8ly.com`
@@ -24,6 +25,20 @@ function makeRequest(search: string, host = CANONICAL_HOST): Request {
   return new Request(`https://${host}/auth/idp/finish${search}`, {
     headers: { host, "x-forwarded-proto": "https" },
   });
+}
+
+// Mirrors middleware.ts's EXACT canonical-/login 404 gate (see its own
+// comment above that check): a request to canonical /login 404s unless it
+// carries either a valid slug returnUrl or a non-empty authRequest. This
+// route's error redirects always land on canonical /login (see
+// errorRedirect), so any redirect Location this route produces must never
+// satisfy this predicate — a blank 404 would swallow the truthful error
+// message this route worked to produce.
+function wouldMiddleware404(location: string): boolean {
+  const url = new URL(location);
+  const returnUrl = url.searchParams.get("returnUrl");
+  const authRequest = url.searchParams.get("authRequest");
+  return !isValidSlugReturnUrl(returnUrl) && !authRequest;
 }
 
 beforeEach(() => {
@@ -55,7 +70,6 @@ describe("GET /auth/idp/finish", () => {
     expect(location).toContain("error=google_sign_in_unavailable");
     expect(location).toContain("authRequest=ar-1");
     expect(finishZitadelGoogleSignInMock).not.toHaveBeenCalled();
-    expect(res.headers.get("set-cookie")).toBeNull();
   });
 
   it("redirects with invalid_request when id/token/auth_request_id is missing", async () => {
@@ -64,7 +78,37 @@ describe("GET /auth/idp/finish", () => {
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toContain("error=invalid_request");
     expect(finishZitadelGoogleSignInMock).not.toHaveBeenCalled();
-    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("includes a sentinel authRequest when auth_request_id itself is missing, so canonical /login does not 404 through middleware", async () => {
+    // `?id=i1` alone: no token, no auth_request_id at all — the exact
+    // scenario where the old code omitted `authRequest` entirely and left
+    // the merchant looking at a blank 404 instead of the truthful message.
+    const res = await GET(makeRequest("?id=i1"));
+
+    const location = res.headers.get("location") ?? "";
+    const authRequest = new URL(location).searchParams.get("authRequest");
+    expect(authRequest).toBeTruthy();
+    expect(wouldMiddleware404(location)).toBe(false);
+  });
+
+  it("never 404s through middleware on ANY error redirect this route can produce", async () => {
+    finishZitadelGoogleSignInMock.mockResolvedValue({
+      ok: false,
+      code: "no_admin_account",
+      message: "no admin account",
+    });
+
+    const scenarios = [
+      makeRequest("?id=i1&error=access_denied&auth_request_id=ar-1"),
+      makeRequest("?id=i1"),
+      makeRequest("?id=i1&token=t1&auth_request_id=ar-1"),
+    ];
+    for (const req of scenarios) {
+      const res = await GET(req);
+      const location = res.headers.get("location") ?? "";
+      expect(wouldMiddleware404(location)).toBe(false);
+    }
   });
 
   it("calls finishZitadelGoogleSignIn with ONLY id/token/auth_request_id — never a host-derived tenant, never `user`", async () => {
@@ -216,16 +260,14 @@ describe("GET /auth/idp/finish", () => {
     ["unexpected_idp"],
     ["email_not_verified"],
     ["email_ambiguous"],
-    ["invalid_return_url"],
     ["zitadel_unavailable"],
-  ])("redirects with the %s outcome code on a rejected finish, without setting a cookie", async (code) => {
+  ])("redirects with the %s outcome code on a rejected finish", async (code) => {
     finishZitadelGoogleSignInMock.mockResolvedValue({ ok: false, code, message: `http_${code}` });
 
     const res = await GET(makeRequest("?id=i1&token=t1&auth_request_id=ar-1"));
 
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toContain(`error=${code}`);
-    expect(res.headers.get("set-cookie")).toBeNull();
   });
 
   it("maps tenant_not_found (no store membership for a verified identity) onto no_admin_account", async () => {
@@ -254,7 +296,7 @@ describe("GET /auth/idp/finish", () => {
     expect(location).toContain("error=internal_error");
   });
 
-  it("redirects with step_up_unsupported when a step-up is outstanding, and sets no cookie on this response", async () => {
+  it("redirects with step_up_unsupported when a step-up is outstanding", async () => {
     finishZitadelGoogleSignInMock.mockResolvedValue({
       ok: true,
       data: { tenantId: "tenant-1", multipleTenants: false, mfaRequired: true, emailOtpRequired: false },
@@ -264,6 +306,5 @@ describe("GET /auth/idp/finish", () => {
 
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toContain("error=step_up_unsupported");
-    expect(res.headers.get("set-cookie")).toBeNull();
   });
 });

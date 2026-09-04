@@ -561,8 +561,15 @@ describe("finishZitadelGoogleSignIn", () => {
     expect(zitadelIdpCompleteMock).not.toHaveBeenCalled();
   });
 
-  it("honors the same subdomain-match tenant resolution signIn/signInWithZitadel use", async () => {
-    headerMap.set("host", "demo-store-admin.mark8ly.com");
+  it("falls back to tenants[0] and flags multipleTenants on a multi-store account — this flow never has a slug to subdomain-match against", async () => {
+    // headerMap's host is already the canonical admin.mark8ly.com (see the
+    // top-level beforeEach) — the ONLY host this flow ever runs on, since
+    // /login (and so this whole Google path) is unreachable anywhere else.
+    // resolveWorkspaceTenant's subdomain refinement can never fire here
+    // (there is no `{slug}-admin.mark8ly.com` to match), so a multi-store
+    // account always falls through to tenants[0] with multipleTenants
+    // flagged, exactly like the password path's equivalent test on that
+    // same canonical host.
     listMemberTenantsMock.mockResolvedValue([
       { tenant_id: "tenant-1", name: "Store One", role: "owner" },
       { tenant_id: "tenant-2", name: "Store Two", role: "staff" },
@@ -576,13 +583,14 @@ describe("finishZitadelGoogleSignIn", () => {
 
     const result = await finishZitadelGoogleSignIn(input);
 
-    // No fetch mock for platform-api's by-slug lookup — tenantIdForHostSlug
-    // is best-effort and swallows the failure, falling back to tenants[0]
-    // exactly like the password path's equivalent test does.
     expect(result.ok).toBe(true);
     if (result.ok) {
+      expect(result.data.tenantId).toBe("tenant-1");
       expect(result.data.multipleTenants).toBe(true);
     }
+    expect(zitadelIdpCompleteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceTenant: "tenant-1" }),
+    );
   });
 
   it("propagates an AuthBffError from idp/finish (e.g. no_admin_account) without calling idp/complete", async () => {
@@ -599,6 +607,20 @@ describe("finishZitadelGoogleSignIn", () => {
     });
     expect(listMemberTenantsMock).not.toHaveBeenCalled();
     expect(zitadelIdpCompleteMock).not.toHaveBeenCalled();
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
+  });
+
+  it("sets no cookie when the identity has no store membership either", async () => {
+    zitadelIdpFinishMock.mockResolvedValue({
+      sessionId: "sess-1",
+      sessionToken: "sess-token-1",
+      loginName: "merchant@example.com",
+    });
+    listMemberTenantsMock.mockResolvedValue([]);
+
+    await finishZitadelGoogleSignIn(input);
+
+    expect(cookiesSetSpy).not.toHaveBeenCalled();
   });
 
   it("surfaces a step-up outcome from idp/complete with no session cookie minted", async () => {

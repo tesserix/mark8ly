@@ -42,6 +42,19 @@ export const dynamic = "force-dynamic";
 const DEFAULT_DESTINATION = "/dashboard";
 const MULTI_TENANT_DESTINATION = "/pick-tenant";
 
+// middleware.ts 404s canonical `/login` unless the request carries either
+// a valid slug returnUrl or a (merely non-empty — see its own check)
+// `authRequest` param. This flow has no slug to build a returnUrl from
+// (resolving one is the whole point of finishZitadelGoogleSignIn), so a
+// sentinel authRequest is the only way to guarantee the error page stays
+// reachable if Zitadel's callback ever omits the real auth_request_id.
+// /login/page.tsx only redirects to /login/authorize (minting a fresh
+// one) when authRequest is completely ABSENT, so this sentinel renders
+// the form normally with the truthful error message; a merchant who then
+// retries with this stale id gets a clean auth-bff rejection rather than
+// a blank 404 here.
+const RECOVERY_AUTH_REQUEST_SENTINEL = "recovery";
+
 export async function GET(req: Request): Promise<Response> {
   // This route only applies under the Zitadel provider — under GIP there
   // is no flow that could ever land a browser here.
@@ -73,7 +86,7 @@ export async function GET(req: Request): Promise<Response> {
   // restarted underneath them.
   function errorRedirect(code: AdminGoogleErrorCode): Response {
     const params = new URLSearchParams({ error: code });
-    if (authRequestId) params.set("authRequest", authRequestId);
+    params.set("authRequest", authRequestId || RECOVERY_AUTH_REQUEST_SENTINEL);
     const dest = forwardedHost
       ? `${proto}://${forwardedHost}/login?${params.toString()}`
       : `/login?${params.toString()}`;
@@ -126,7 +139,6 @@ export async function GET(req: Request): Promise<Response> {
         : result.code === "unexpected_idp" ||
           result.code === "email_not_verified" ||
           result.code === "email_ambiguous" ||
-          result.code === "invalid_return_url" ||
           result.code === "invalid_intent" ||
           result.code === "zitadel_unavailable"
         ? result.code

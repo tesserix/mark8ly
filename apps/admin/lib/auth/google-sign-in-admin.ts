@@ -44,22 +44,25 @@ export function buildAdminGoogleReturnUrl(
  * new code added to the finish route without a matching message here is a
  * compile error, not a silently generic one.
  *
- * `store_not_found` no longer originates from the current flow — tenant
- * resolution runs off the verified Google identity's email via the same
- * `resolveWorkspaceTenant` the password path uses, never off the request
- * host — but the code stays in the union: it is still a legitimate outcome
- * shape callers may need to render (e.g. a future host-scoped variant of
- * this flow), and removing it would just be churn.
+ * Deliberately does NOT include `store_not_found` or `invalid_return_url`:
+ * neither is reachable from this route any more. `store_not_found` was the
+ * host-derived-tenant failure from the earlier, broken version of this
+ * flow — its copy ("sign in from your store's own admin address") is
+ * exactly the per-tenant-host advice that made Google sign-in unusable on
+ * the canonical host, so it must not linger even as dead code.
+ * `invalid_return_url` is `idpStart`'s own rejection, handled entirely
+ * inside `startAdminGoogleSignIn` (app/auth/idp/actions.ts) before the
+ * browser ever leaves this page — the finish route (and so this type)
+ * never sees it. If either becomes reachable again, add it back
+ * deliberately, with wording that matches the real cause.
  */
 export type AdminGoogleErrorCode =
   | "google_sign_in_unavailable"
   | "invalid_request"
-  | "store_not_found"
   | "no_admin_account"
   | "unexpected_idp"
   | "email_not_verified"
   | "email_ambiguous"
-  | "invalid_return_url"
   | "invalid_intent"
   | "zitadel_unavailable"
   | "step_up_unsupported"
@@ -68,12 +71,10 @@ export type AdminGoogleErrorCode =
 const KNOWN_CODES: ReadonlySet<string> = new Set<AdminGoogleErrorCode>([
   "google_sign_in_unavailable",
   "invalid_request",
-  "store_not_found",
   "no_admin_account",
   "unexpected_idp",
   "email_not_verified",
   "email_ambiguous",
-  "invalid_return_url",
   "invalid_intent",
   "zitadel_unavailable",
   "step_up_unsupported",
@@ -118,9 +119,6 @@ export function messageForAdminGoogleError(code: string): string {
       return "That sign-in didn't come from Google. Please try again.";
     case "invalid_intent":
       return "That sign-in link expired. Please try Continue with Google again.";
-    case "store_not_found":
-      return "We couldn't tell which store this is for Google sign-in. Sign in from your store's own admin address, or use your email and password.";
-    case "invalid_return_url":
     case "invalid_request":
       return "Something went wrong starting Google sign-in. Please try again.";
     case "step_up_unsupported":

@@ -5,6 +5,19 @@ import {
   messageForAdminGoogleError,
 } from "./google-sign-in-admin";
 
+const KNOWN_CODES = [
+  "google_sign_in_unavailable",
+  "invalid_request",
+  "no_admin_account",
+  "unexpected_idp",
+  "email_not_verified",
+  "email_ambiguous",
+  "invalid_intent",
+  "zitadel_unavailable",
+  "step_up_unsupported",
+  "internal_error",
+];
+
 describe("buildAdminGoogleReturnUrl", () => {
   it("builds an https URL on the canonical admin host at /auth/idp/finish", () => {
     const url = buildAdminGoogleReturnUrl("admin.mark8ly.com", "V2_abc");
@@ -25,20 +38,7 @@ describe("buildAdminGoogleReturnUrl", () => {
 
 describe("isAdminGoogleErrorCode", () => {
   it("recognises every documented code", () => {
-    for (const code of [
-      "google_sign_in_unavailable",
-      "invalid_request",
-      "store_not_found",
-      "no_admin_account",
-      "unexpected_idp",
-      "email_not_verified",
-      "email_ambiguous",
-      "invalid_return_url",
-      "invalid_intent",
-      "zitadel_unavailable",
-      "step_up_unsupported",
-      "internal_error",
-    ]) {
+    for (const code of KNOWN_CODES) {
       expect(isAdminGoogleErrorCode(code)).toBe(true);
     }
   });
@@ -46,29 +46,27 @@ describe("isAdminGoogleErrorCode", () => {
   it("rejects an unrecognised code", () => {
     expect(isAdminGoogleErrorCode("something_else")).toBe(false);
   });
+
+  it("no longer recognises store_not_found or invalid_return_url — neither is reachable from this flow", () => {
+    // store_not_found was the host-derived-tenant failure from the
+    // earlier, broken version of this flow; invalid_return_url is
+    // idpStart's own rejection, handled entirely inside
+    // startAdminGoogleSignIn before the browser ever leaves this page.
+    // Neither code can reach messageForAdminGoogleError any more, so
+    // neither should still be "known" — keeping them recognised would
+    // let their (now-deleted) copy silently come back the moment
+    // someone re-adds either string anywhere.
+    expect(isAdminGoogleErrorCode("store_not_found")).toBe(false);
+    expect(isAdminGoogleErrorCode("invalid_return_url")).toBe(false);
+  });
 });
 
 describe("messageForAdminGoogleError", () => {
   it("gives every documented code a non-empty, distinct message", () => {
-    const codes = [
-      "google_sign_in_unavailable",
-      "invalid_request",
-      "store_not_found",
-      "no_admin_account",
-      "unexpected_idp",
-      "email_not_verified",
-      "email_ambiguous",
-      "invalid_return_url",
-      "invalid_intent",
-      "zitadel_unavailable",
-      "step_up_unsupported",
-      "internal_error",
-    ];
-    const messages = codes.map(messageForAdminGoogleError);
-    // invalid_return_url/invalid_request share copy, as do
-    // google_sign_in_unavailable/zitadel_unavailable — both pairs are
-    // genuinely the same situation from the merchant's point of view.
-    expect(new Set(messages).size).toBeGreaterThanOrEqual(codes.length - 2);
+    const messages = KNOWN_CODES.map(messageForAdminGoogleError);
+    // google_sign_in_unavailable/zitadel_unavailable share copy — both
+    // are genuinely the same situation from the merchant's point of view.
+    expect(new Set(messages).size).toBeGreaterThanOrEqual(KNOWN_CODES.length - 1);
     for (const m of messages) {
       expect(m.length).toBeGreaterThan(0);
     }
@@ -87,21 +85,18 @@ describe("messageForAdminGoogleError", () => {
     expect(message.length).toBeGreaterThan(0);
   });
 
+  it("falls back to the generic message for store_not_found and invalid_return_url — neither is a known code any more", () => {
+    for (const dead of ["store_not_found", "invalid_return_url"]) {
+      const message = messageForAdminGoogleError(dead);
+      expect(message).toBe(messageForAdminGoogleError("some_unrecognised_code"));
+      // The whole point: this must never again tell a merchant to sign
+      // in from their store's own admin address.
+      expect(message.toLowerCase()).not.toContain("store's own admin address");
+    }
+  });
+
   it("never implies wrong credentials for any known code", () => {
-    for (const code of [
-      "google_sign_in_unavailable",
-      "invalid_request",
-      "store_not_found",
-      "no_admin_account",
-      "unexpected_idp",
-      "email_not_verified",
-      "email_ambiguous",
-      "invalid_return_url",
-      "invalid_intent",
-      "zitadel_unavailable",
-      "step_up_unsupported",
-      "internal_error",
-    ]) {
+    for (const code of KNOWN_CODES) {
       const message = messageForAdminGoogleError(code).toLowerCase();
       expect(message).not.toMatch(/wrong password|incorrect password|bad credentials/);
     }

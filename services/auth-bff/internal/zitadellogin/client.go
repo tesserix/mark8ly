@@ -458,6 +458,75 @@ func (c *Client) FindUserByVerifiedEmail(ctx context.Context, orgID, email strin
 	}
 }
 
+// FindUserByEmail searches for an EXISTING Zitadel user, WITHIN orgID,
+// whose email matches case-insensitively, REGARDLESS of Zitadel's
+// verification flag — reporting that flag back to the caller instead of
+// filtering on it the way FindUserByVerifiedEmail does.
+//
+// This exists for exactly one caller: register's Task 2b decision. register
+// needs to know whether an existing account blocking a sign-up is verified
+// (a real owner it must never touch) or unverified (an abandoned or
+// squatted account it is safe to clear) — a distinction
+// FindUserByVerifiedEmail cannot make because it discards unverified
+// matches as "no match".
+//
+// Same org-scoping and ambiguity refusal as FindUserByVerifiedEmail, for
+// the identical reasons — see that function's doc. Ambiguity is refused
+// even when the matches disagree on verification state: which of two
+// accounts holding the same address is the "real" one is not a decision
+// this code is willing to make.
+//
+// Returns ("", false, nil) when no match exists — an empty `result` array
+// and a response that omits the key entirely both decode to a nil slice in
+// Go, so this relies on that, never on the key's presence.
+func (c *Client) FindUserByEmail(ctx context.Context, orgID, email string) (userID string, verified bool, err error) {
+	if orgID == "" {
+		return "", false, fmt.Errorf("zitadellogin: FindUserByEmail with an empty org id, refusing rather than searching instance-wide: %w", ErrUnavailable)
+	}
+	body := map[string]any{
+		"queries": []any{
+			map[string]any{
+				"emailQuery": map[string]any{
+					"emailAddress": email,
+					"method":       "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE",
+				},
+			},
+		},
+	}
+	var wire struct {
+		Result []struct {
+			UserID string `json:"userId"`
+			Human  *struct {
+				Email struct {
+					Email      string `json:"email"`
+					IsVerified bool   `json:"isVerified"`
+				} `json:"email"`
+			} `json:"human"`
+		} `json:"result"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v2/users", body, &wire, ErrUnavailable, withOrgID(orgID)); err != nil {
+		return "", false, err
+	}
+	type match struct {
+		userID   string
+		verified bool
+	}
+	var matches []match
+	for _, u := range wire.Result {
+		if u.Human != nil && strings.EqualFold(u.Human.Email.Email, email) {
+			matches = append(matches, match{userID: u.UserID, verified: u.Human.Email.IsVerified})
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", false, nil
+	case 1:
+		return matches[0].userID, matches[0].verified, nil
+	default:
+		return "", false, fmt.Errorf("zitadellogin: %d users matched the email: %w", len(matches), ErrAmbiguousEmailMatch)
+	}
+}
+
 // CreateHumanUserWithIDPLink registers a brand-new Zitadel human user
 // pre-linked to the given federated identity, so the VERY NEXT retrieve of
 // the same provider identity resolves IDPIdentity.ZitadelUserID immediately

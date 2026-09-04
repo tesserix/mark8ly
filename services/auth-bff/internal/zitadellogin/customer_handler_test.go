@@ -1210,6 +1210,188 @@ func TestCustomerRegisterNeverLeaksAnythingOnWeakPassword(t *testing.T) {
 	}
 }
 
+// TestCustomerRegisterDeletesAnUnverifiedAccountAndCreatesAFreshOne is Task
+// 2b: an unverified account has no proven owner, cannot hold a Google link
+// (idpFinish only links accounts FindUserByVerifiedEmail returns), and has
+// no storefront profile (ensureCustomerProfile only runs after a session
+// mints) — so it is safe to clear rather than let it permanently burn the
+// address. register must delete exactly that account, by the id the lookup
+// returned, and then proceed to create a fresh one as if no account had
+// existed.
+func TestCustomerRegisterDeletesAnUnverifiedAccountAndCreatesAFreshOne(t *testing.T) {
+	var deleteCalledPath string
+	var createCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"stale-unverified-1","human":{"email":{"email":"shopper@example.com","isVerified":false}}}]}`))
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+			deleteCalledPath = r.URL.Path
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			createCalled.Store(true)
+			w.Write([]byte(`{"userId":"new-1","emailCode":"837291"}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if deleteCalledPath != "/v2/users/stale-unverified-1" {
+		t.Fatalf("delete path = %q, want /v2/users/stale-unverified-1 — must target only the id the lookup returned", deleteCalledPath)
+	}
+	if !createCalled.Load() {
+		t.Fatal("CreateHumanUserWithPassword was never called after clearing the unverified account")
+	}
+	if mailer.calls != 1 {
+		t.Fatalf("mailer.calls = %d, want exactly 1", mailer.calls)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data == nil || data["uid"] != "new-1" {
+		t.Fatalf("body = %v, want data.uid = new-1", body)
+	}
+}
+
+// TestCustomerRegisterNeverDeletesAVerifiedAccount is the test that matters
+// most in this task: deleting a real customer's account would be far worse
+// than the lockout Task 2b fixes. A verified match must still answer
+// email_taken exactly as before, and DeleteUser must never be reached —
+// asserted on the delete call itself, not merely on the response code.
+func TestCustomerRegisterNeverDeletesAVerifiedAccount(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"shopper@example.com","isVerified":true}}}]}`))
+		default:
+			t.Errorf("must not delete or create anything for an already-verified email: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "email_taken" {
+		t.Fatalf("body = %v, want error: email_taken", body)
+	}
+	if mailer.calls != 0 {
+		t.Fatalf("mailer.calls = %d, want 0 — no account was created", mailer.calls)
+	}
+}
+
+// TestCustomerRegisterRefusesAnAmbiguousMatchAndDeletesNothing pins the
+// same refusal FindUserByEmail's own tests cover, at the handler level:
+// more than one match must stop register cold, with no delete and no
+// create, exactly like the pre-existing ambiguous-verified-match case.
+func TestCustomerRegisterRefusesAnAmbiguousMatchAndDeletesNothing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[
+				{"userId":"existing-1","human":{"email":{"email":"shopper@example.com","isVerified":false}}},
+				{"userId":"existing-2","human":{"email":{"email":"shopper@example.com","isVerified":true}}}
+			]}`))
+		default:
+			t.Errorf("must not delete or create anything on an ambiguous match: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "email_ambiguous" {
+		t.Fatalf("body = %v, want error: email_ambiguous", body)
+	}
+	if mailer.calls != 0 {
+		t.Fatalf("mailer.calls = %d, want 0", mailer.calls)
+	}
+}
+
+// TestCustomerRegisterSurfacesUnavailableWhenClearingAnUnverifiedAccountFails
+// is the constraint that matters second-most: a delete failure must surface
+// as unavailable, never silently fall through to create — creating on top
+// of a delete that may or may not have actually removed the account would
+// risk exactly the ambiguous-state mess Task 2b exists to avoid.
+func TestCustomerRegisterSurfacesUnavailableWhenClearingAnUnverifiedAccountFails(t *testing.T) {
+	var createCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"stale-unverified-1","human":{"email":{"email":"shopper@example.com","isVerified":false}}}]}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/v2/users/stale-unverified-1":
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"code":13,"message":"internal"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/human":
+			createCalled.Store(true)
+			w.Write([]byte(`{"userId":"new-1","emailCode":"837291"}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	mailer := &recordingMailer{}
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client())).WithOrgID("org-1").WithNotify(mailer)
+	rec := httptest.NewRecorder()
+	h.register(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/register",
+		strings.NewReader(`{"email":"shopper@example.com","password":"test-password-not-real"}`)))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "zitadel_unavailable" {
+		t.Fatalf("body = %v, want error: zitadel_unavailable", body)
+	}
+	if createCalled.Load() {
+		t.Fatal("CreateHumanUserWithPassword was called after a failed delete — must not proceed to create")
+	}
+	if mailer.calls != 0 {
+		t.Fatalf("mailer.calls = %d, want 0", mailer.calls)
+	}
+}
+
 // TestCustomerLoginRejectsAnUnverifiedAccount is the fix for review Finding
 // 2: register (above) creates the first UNVERIFIED password accounts this
 // system has ever had, and nothing gated sign-in on that flag. Without this,

@@ -298,6 +298,114 @@ func TestFindUserByVerifiedEmailIgnoresAnUnverifiedMatch(t *testing.T) {
 	}
 }
 
+// TestFindUserByEmailSendsTheOrgIDHeader mirrors
+// TestFindUserByVerifiedEmailSendsTheOrgIDHeader: FindUserByEmail must be
+// just as org-scoped as its verified-only sibling, for the identical
+// cross-org leak reason.
+func TestFindUserByEmailSendsTheOrgIDHeader(t *testing.T) {
+	var gotOrgHeader, gotBody string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotOrgHeader = r.Header.Get("x-zitadel-orgid")
+		buf := make([]byte, 4096)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.Write([]byte(`{"result":[]}`))
+	})
+	if _, _, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com"); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if gotOrgHeader != "org-1" {
+		t.Fatalf("x-zitadel-orgid = %q, want org-1", gotOrgHeader)
+	}
+	if !strings.Contains(gotBody, "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE") {
+		t.Fatalf("request body %q missing the case-insensitive query method", gotBody)
+	}
+}
+
+func TestFindUserByEmailRefusesAnEmptyOrgID(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("must not search instance-wide with an empty org id")
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	_, _, err := c.FindUserByEmail(context.Background(), "", "person@gmail.com")
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+}
+
+// TestFindUserByEmailReportsAnUnverifiedMatch is the property
+// FindUserByVerifiedEmail cannot provide: register needs to know an
+// unverified account exists, not just that no verified one does.
+func TestFindUserByEmailReportsAnUnverifiedMatch(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":false}}}]}`))
+	})
+	got, verified, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "existing-1" || verified {
+		t.Fatalf("userID = %q, verified = %v, want existing-1/false", got, verified)
+	}
+}
+
+func TestFindUserByEmailReportsAVerifiedMatch(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}}]}`))
+	})
+	got, verified, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "existing-1" || !verified {
+		t.Fatalf("userID = %q, verified = %v, want existing-1/true", got, verified)
+	}
+}
+
+func TestFindUserByEmailMatchesCaseInsensitively(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"Person@Gmail.com","isVerified":false}}}]}`))
+	})
+	got, _, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "existing-1" {
+		t.Fatalf("userID = %q, want existing-1 to match despite the case difference", got)
+	}
+}
+
+// TestFindUserByEmailRefusesAmbiguousMatchesRegardlessOfVerification pins
+// the same refusal FindUserByVerifiedEmail follows, but here it must fire
+// even when the two matches disagree on verification state — there is no
+// safe way to guess which of two accounts holding the same address is the
+// "right" one to treat as existing.
+func TestFindUserByEmailRefusesAmbiguousMatchesRegardlessOfVerification(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"result":[
+			{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":false}}},
+			{"userId":"existing-2","human":{"email":{"email":"person@gmail.com","isVerified":true}}}
+		]}`))
+	})
+	_, _, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com")
+	if !errors.Is(err, ErrAmbiguousEmailMatch) {
+		t.Fatalf("err = %v, want ErrAmbiguousEmailMatch", err)
+	}
+}
+
+func TestFindUserByEmailNoMatchReturnsEmpty(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{}`))
+	})
+	got, verified, err := c.FindUserByEmail(context.Background(), "org-1", "person@gmail.com")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "" || verified {
+		t.Fatalf("userID = %q, verified = %v, want empty/false for a response that omits result entirely", got, verified)
+	}
+}
+
 func TestCreateHumanUserWithIDPLinkSendsProfileEmailAndIDPLinks(t *testing.T) {
 	var gotBody string
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {

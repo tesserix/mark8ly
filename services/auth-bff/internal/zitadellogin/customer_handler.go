@@ -670,13 +670,15 @@ func (h *CustomerHandler) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Refuse up front if a VERIFIED account already holds this email — see
-	// FindUserByVerifiedEmail's doc: org-scoped, refuses ambiguity rather
-	// than picking one. Same email_taken outcome idpFinish's unlinked-create
-	// branch uses, so the storefront renders one "you already have an
-	// account" copy for both sign-up paths. Nothing is created below when
-	// this branch answers.
-	existingUserID, err := h.c.FindUserByVerifiedEmail(ctx, h.orgID, req.Email)
+	// Look up any existing account for this email, verified or not — see
+	// FindUserByEmail's doc: org-scoped, refuses ambiguity rather than
+	// picking one, exactly like FindUserByVerifiedEmail. What differs from
+	// the pre-Task-2b behaviour is what happens with an UNVERIFIED match
+	// below: a VERIFIED match still answers the same email_taken outcome
+	// idpFinish's unlinked-create branch uses, so the storefront renders
+	// one "you already have an account" copy for both sign-up paths, and
+	// nothing is created or deleted when that branch answers.
+	existingUserID, existingVerified, err := h.c.FindUserByEmail(ctx, h.orgID, req.Email)
 	if err != nil {
 		if errors.Is(err, ErrAmbiguousEmailMatch) {
 			slog.WarnContext(ctx, "zitadellogin(customer): register rejected: more than one existing account matched the email")
@@ -687,10 +689,29 @@ func (h *CustomerHandler) register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
 		return
 	}
-	if existingUserID != "" {
+	if existingUserID != "" && existingVerified {
 		slog.WarnContext(ctx, "zitadellogin(customer): register rejected: email already verified on an existing account")
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "email_taken"})
 		return
+	}
+	if existingUserID != "" {
+		// UNVERIFIED: this account has no proven owner (that is what
+		// unverified means), cannot hold a Google link from our path
+		// (idpFinish only links accounts FindUserByVerifiedEmail returns —
+		// this one never would), and has no storefront profile
+		// (ensureCustomerProfile only runs inside completeCustomerSignIn,
+		// after a session mints, which never happened for this account).
+		// It is squatting on the address the shopper in front of us right
+		// now is trying to use, so clear it and continue as though no
+		// account had existed. A delete failure must surface as
+		// unavailable, never fall through to create on top of an account
+		// that may or may not actually be gone.
+		if err := h.c.DeleteUser(ctx, existingUserID); err != nil {
+			slog.ErrorContext(ctx, "zitadellogin(customer): register: could not clear an unverified account blocking this email", "err", err)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+			return
+		}
+		slog.InfoContext(ctx, "zitadellogin(customer): register cleared an unverified account that was blocking this email")
 	}
 
 	userID, emailCode, err := h.c.CreateHumanUserWithPassword(ctx, req.Email, req.Password, req.GivenName, req.FamilyName)

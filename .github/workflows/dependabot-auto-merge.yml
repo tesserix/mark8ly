@@ -36,7 +36,7 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::DEPENDABOT_PAT not set — skipping auto-merge."
+            echo "::warning::DEPENDABOT_PAT not set — this workflow no-ops for every PR. Base-image digest bumps are instead auto-merged by base-digest-auto-merge.yml; anything else (gomod/npm/github-actions) needs a human to merge it."
           fi
 
       # Build gate: wait for every other check run on this PR's head commit to

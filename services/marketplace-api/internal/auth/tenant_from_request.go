@@ -36,7 +36,7 @@ type TenantMembershipChecker interface {
 //
 // It NEVER aborts. A missing header, a non-member, or an FGA error all
 // leave tenant_id untouched (empty) and fall through via c.Next() exactly
-// the same way. RequireTenantClaim (require_tenant_claim.go) is what
+// the same way. RequireBoundTenant (require_bound_tenant.go) is what
 // turns an empty tenant_id into a response — and it does so as 404, never
 // 401, because a 401 here would make the mobile client call signOut() and
 // bounce a validly authenticated user to /login. Authentication (who is

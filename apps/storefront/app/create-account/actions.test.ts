@@ -202,6 +202,32 @@ describe("registerCustomer — flag set", () => {
     expect(cookiesSetSpy).not.toHaveBeenCalled();
   });
 
+  it("normalizes (trim + lowercase) the email before sending it to auth-bff and before signing the token", async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    // auth-bff echoes back whatever it received — since registerCustomer
+    // must send the normalized form, the mock's echo is normalized too.
+    registerCustomerAccountMock.mockResolvedValue({
+      kind: "created",
+      uid: "u-new",
+      email: "shopper@example.com",
+    });
+    const { registerCustomer } = await loadActions();
+
+    const result = await registerCustomer({
+      email: "  Shopper@Example.COM  ",
+      password: SECRET_PASSWORD,
+    });
+
+    expect(registerCustomerAccountMock).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "shopper@example.com" }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.email).toBe("shopper@example.com");
+      expect(result.token).toBe(signPendingSignup("u-new", "shopper@example.com"));
+    }
+  });
+
   it.each([
     ["email_taken", /sign in|support/i],
     ["email_ambiguous", /support/i],
@@ -327,6 +353,27 @@ describe("verifyCustomerEmail — flag set", () => {
     expect(result.ok).toBe(true);
     expect(cookiesSetSpy).toHaveBeenCalledWith(
       expect.objectContaining({ name: "mp_customer_session", domain: HOST }),
+    );
+  });
+
+  it("verifies against the token even when the email carried through the form is differently cased/padded than what was signed", async () => {
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
+    // register normalized to "shopper@example.com" and signed THAT.
+    const token = signPendingSignup("u-new", "shopper@example.com");
+    verifyCustomerEmailCodeMock.mockResolvedValue({ kind: "verified" });
+    const { verifyCustomerEmail } = await loadActions();
+
+    const result = await verifyCustomerEmail({
+      uid: "u-new",
+      email: "  Shopper@Example.COM  ", // same address, different casing/whitespace
+      token,
+      code: SECRET_TEST_CODE,
+      storeSlug: "shop",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(cookiesSetSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "mp_customer_session" }),
     );
   });
 

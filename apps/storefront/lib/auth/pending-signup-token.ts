@@ -58,8 +58,17 @@ function sessionKey(): string {
   return DEV_SESSION_KEY;
 }
 
+/**
+ * JSON-encodes the tuple rather than joining with a delimiter (an earlier
+ * "|"-joined version made `("a|b", "c")` and `("a", "b|c")` collide on the
+ * identical payload/token — unreachable today only because a shifted uid
+ * fails Zitadel's own {uid, code} check, and Zitadel uids happen to be
+ * numeric). JSON.stringify escapes embedded quotes/backslashes and encodes
+ * each element's length implicitly via its own quoting, so no two distinct
+ * (uid, email) pairs can ever produce the same string.
+ */
 function payloadFor(uid: string, email: string): string {
-  return `${TOKEN_PURPOSE}|${uid}|${email}`;
+  return JSON.stringify([TOKEN_PURPOSE, uid, email]);
 }
 
 /**
@@ -82,7 +91,13 @@ export function signPendingSignup(uid: string, email: string): string {
  * practical exploitation bar here is already high.
  */
 export function verifyPendingSignup(uid: string, email: string, token: string): boolean {
-  if (!token) return false;
+  // Runtime guard, not just a TypeScript one: this is called from a
+  // server action, which a caller reaches over the network as JSON —
+  // `token`'s declared type does not stop a malformed/malicious request
+  // from sending a number, null, or an object here. Without this check, a
+  // same-length coincidence could otherwise reach Buffer.from() with a
+  // non-string and throw instead of failing closed.
+  if (typeof token !== "string" || !token) return false;
   const expected = signPendingSignup(uid, email);
   if (token.length !== expected.length) return false;
   return timingSafeEqual(Buffer.from(token), Buffer.from(expected));

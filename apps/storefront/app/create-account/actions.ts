@@ -50,6 +50,7 @@ import {
 import { customerSignupErrorMessage } from "@/lib/auth/customer-signup-messages";
 import type { RegisterCustomerResult } from "@/lib/auth/create-account-flow";
 import { completeCustomerSignIn, resolveStore } from "@/lib/auth/customer-session";
+import { normalizeCustomerEmail } from "@/lib/auth/normalize-customer-email";
 import type { CustomerSignInResult as Result } from "@/lib/auth/customer-sign-in-result";
 import { signPendingSignup, verifyPendingSignup } from "@/lib/auth/pending-signup-token";
 import { headers } from "next/headers";
@@ -114,19 +115,30 @@ export async function registerCustomer(
     return { ok: false, code: "not_available", message: NOT_AVAILABLE_MESSAGE };
   }
   try {
+    // Normalize ONCE, before this address goes anywhere — to auth-bff, into
+    // the signed token, or (later, via completeCustomerSignIn) into the
+    // session cookie and marketplace-api's customer upsert. auth-bff
+    // echoes req.Email back verbatim, so registerCustomerAccount's
+    // response is expected to already equal this normalized value; it is
+    // normalized again below anyway (idempotent — see
+    // normalizeCustomerEmail's doc) rather than trusted to have stayed
+    // that way, since the whole point is that this file, not auth-bff,
+    // is the one making that guarantee.
+    const email = normalizeCustomerEmail(input.email);
     const outcome = await registerCustomerAccount({
-      email: input.email,
+      email,
       password: input.password,
     });
     if (outcome.kind === "created") {
+      const normalizedEmail = normalizeCustomerEmail(outcome.email);
       // Sign {uid, email} together NOW, from the values THIS server just
       // got back from Zitadel — never from anything the client sends.
       // verifyCustomerEmail below refuses to proceed unless this exact
       // token comes back with an exactly matching {uid, email}. See
       // @/lib/auth/pending-signup-token's file header for the
       // account-takeover this closes.
-      const token = signPendingSignup(outcome.uid, outcome.email);
-      return { ok: true, uid: outcome.uid, email: outcome.email, token };
+      const token = signPendingSignup(outcome.uid, normalizedEmail);
+      return { ok: true, uid: outcome.uid, email: normalizedEmail, token };
     }
     return {
       ok: false,
@@ -212,13 +224,21 @@ export async function verifyCustomerEmail(
       };
     }
 
+    // Normalize the SAME way registerCustomer did before signing (see
+    // normalizeCustomerEmail's doc) — a shopper who typed
+    // "Shopper@Example.com" at register and has that exact string carried
+    // through the form must still verify, and the normalized form is what
+    // gets signed into the cookie / used as marketplace-api's upsert key
+    // either way.
+    const email = normalizeCustomerEmail(input.email);
+
     // Refuse BEFORE spending a Zitadel call or looking at the code at all:
     // if {uid, email} doesn't match what registerCustomer actually signed,
     // `email` cannot be trusted for anything downstream — completeCustomerSignIn
     // would otherwise mint a session under whatever address the caller
     // put here. Logged as a tamper signal, never with the code or token
     // value itself.
-    if (!verifyPendingSignup(input.uid, input.email, input.token)) {
+    if (!verifyPendingSignup(input.uid, email, input.token)) {
       console.error(
         "verifyCustomerEmail: rejected — {uid, email} did not match the signed pending-signup token",
       );
@@ -240,7 +260,7 @@ export async function verifyCustomerEmail(
 
     return await completeCustomerSignIn(store, cookieHost, input.storeSlug, {
       uid: input.uid,
-      email: input.email,
+      email,
     });
   } catch (err) {
     if (err instanceof AuthBffCustomerError) {

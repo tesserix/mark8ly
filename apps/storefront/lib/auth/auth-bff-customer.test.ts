@@ -475,6 +475,18 @@ describe("registerCustomerAccount", () => {
     );
   });
 
+  it("rejects a 2xx body missing/mistyped email as unrecognised, rather than passing `undefined` through as if it were a real address", async () => {
+    // If auth-bff ever stopped sending `email`, the untyped field would
+    // otherwise flow straight into a `email: string`-typed outcome — and
+    // from there into signPendingSignup, which would happily sign the
+    // literal string "undefined" (see app/create-account/actions.ts).
+    stubFetch(200, { data: { uid: "u-new" } });
+
+    const outcome = await registerCustomerAccount(registerArgs);
+
+    expect(outcome).toEqual({ kind: "failed", code: "unrecognised_response_shape" });
+  });
+
   it("sends X-Internal-Auth", async () => {
     vi.stubEnv("MARKETPLACE_INTERNAL_AUTH_SECRET", "s3cret-internal");
     const fetchMock = stubFetch(200, {

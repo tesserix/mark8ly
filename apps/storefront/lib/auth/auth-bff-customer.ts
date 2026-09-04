@@ -418,7 +418,11 @@ export async function registerCustomerAccount(
   } catch {
     return { kind: "failed", code: "invalid_response_body" };
   }
-  if (parsed.data && typeof parsed.data.uid === "string") {
+  if (
+    parsed.data &&
+    typeof parsed.data.uid === "string" &&
+    typeof parsed.data.email === "string"
+  ) {
     return { kind: "created", uid: parsed.data.uid, email: parsed.data.email };
   }
   return { kind: "failed", code: "unrecognised_response_shape" };

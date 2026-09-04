@@ -81,6 +81,13 @@ type CategoryList struct {
 // RegisterTools registers the five catalog tools against r, calling c to
 // fulfil them.
 func RegisterTools(r *gsmcp.Registry, c *Client) error {
+	// A nil *Client — and the zero &Client{}, which is the shape the next
+	// connector will copy from this one — nil-panics on the first tool call.
+	// Failing here names the misconfiguration at startup instead of taking
+	// down the first agent that calls a tool.
+	if c == nil || c.upstream == nil {
+		return errors.New("catalog: client is nil; NewClient must build it")
+	}
 	if err := gsmcp.Register(r, "list_store_products",
 		"List the products published in a store's storefront catalog, paginated.",
 		listStoreProducts(c)); err != nil {
@@ -141,11 +148,7 @@ func listStoreCategories(c *Client) func(context.Context, ListStoreCategoriesInp
 		if err != nil {
 			return CategoryList{}, err
 		}
-		out := make([]Category, len(items))
-		for i, it := range items {
-			out[i] = projectCategory(it)
-		}
-		return CategoryList{Categories: out}, nil
+		return CategoryList{Categories: projectCategories(items)}, nil
 	}
 }
 
@@ -163,6 +166,16 @@ func listProductsByCategory(c *Client) func(context.Context, ListProductsByCateg
 // a non-nil slice (make(...) is non-nil even at length 0) so ProductList's
 // "products" field marshals to [] rather than null when a real store has no
 // matches.
+// projectCategories is projectProducts' counterpart, non-nil for the same
+// reason: the closed output schema declares "categories" as an array.
+func projectCategories(items []storefrontCategory) []Category {
+	out := make([]Category, len(items))
+	for i, it := range items {
+		out[i] = projectCategory(it)
+	}
+	return out
+}
+
 func projectProducts(items []storefrontProduct) []Product {
 	out := make([]Product, len(items))
 	for i, it := range items {

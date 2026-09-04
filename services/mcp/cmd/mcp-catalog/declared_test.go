@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,9 @@ var declaredTools = []string{
 
 func TestServedToolsMatchTheRegistryRecord(t *testing.T) {
 	r := gsmcp.NewRegistry()
-	require.NoError(t, catalog.RegisterTools(r, &catalog.Client{}))
+	c, err := catalog.NewClient("http://storefront.invalid", "sfkey", time.Second)
+	require.NoError(t, err)
+	require.NoError(t, catalog.RegisterTools(r, c))
 
 	assert.Equal(t, declaredTools, r.Names(),
 		"the registry seed and the server disagree — update the seed in devai "+

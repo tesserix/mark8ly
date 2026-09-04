@@ -66,3 +66,25 @@ func (b Branding) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(aux(b))
 }
+
+// MarshalJSON ensures a nil Products slice marshals to [] not null. Product
+// and Branding already defend themselves this way; without the same guard here
+// the wrappers depend on every construction site remembering make(...), and
+// the closed output schema declares "products" as an array.
+func (l ProductList) MarshalJSON() ([]byte, error) {
+	type aux ProductList
+	if l.Products == nil {
+		l.Products = []Product{}
+	}
+	return json.Marshal(aux(l))
+}
+
+// MarshalJSON ensures a nil Categories slice marshals to [] not null, for the
+// same reason as ProductList.
+func (l CategoryList) MarshalJSON() ([]byte, error) {
+	type aux CategoryList
+	if l.Categories == nil {
+		l.Categories = []Category{}
+	}
+	return json.Marshal(aux(l))
+}

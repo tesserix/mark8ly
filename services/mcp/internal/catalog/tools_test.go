@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,7 +17,7 @@ import (
 
 func TestRegisterTools_RegistersExactlyTheFive(t *testing.T) {
 	r := gsmcp.NewRegistry()
-	require.NoError(t, RegisterTools(r, &Client{}))
+	require.NoError(t, RegisterTools(r, schemaOnlyClient(t)))
 
 	assert.Equal(t, []string{
 		"get_store_branding",
@@ -31,7 +32,7 @@ func TestRegisterTools_RegistersExactlyTheFive(t *testing.T) {
 // cross-store probing, and the id is not a public identifier.
 func TestRegisterTools_NoToolAcceptsAnInternalIdentifier(t *testing.T) {
 	r := gsmcp.NewRegistry()
-	require.NoError(t, RegisterTools(r, &Client{}))
+	require.NoError(t, RegisterTools(r, schemaOnlyClient(t)))
 
 	for _, tool := range r.Tools() {
 		props, _ := tool.InputSchema["properties"].(map[string]any)
@@ -49,7 +50,7 @@ func TestRegisterTools_NoToolAcceptsAnInternalIdentifier(t *testing.T) {
 // reads to know what a parameter means.
 func TestRegisterTools_EveryInputPropertyHasADescription(t *testing.T) {
 	r := gsmcp.NewRegistry()
-	require.NoError(t, RegisterTools(r, &Client{}))
+	require.NoError(t, RegisterTools(r, schemaOnlyClient(t)))
 
 	for _, tool := range r.Tools() {
 		props, _ := tool.InputSchema["properties"].(map[string]any)
@@ -271,4 +272,36 @@ func TestUpstreamFailure_StillClassifiesAsUnavailable(t *testing.T) {
 	require.Error(t, err)
 	require.NotErrorIs(t, err, ErrInvalidInput)
 	assert.Equal(t, observe.OutcomeUnavailable, observe.OutcomeFor(err))
+}
+
+// Product and Branding both defend their slices in MarshalJSON. The two list
+// wrappers relied instead on every construction site remembering make(...) —
+// one that forgets emits "products":null, which the closed output schema
+// declares as an array.
+func TestListWrappers_NilSlicesMarshalAsArraysNotNull(t *testing.T) {
+	raw, err := json.Marshal(ProductList{})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"products":[]}`, string(raw))
+
+	raw, err = json.Marshal(CategoryList{})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"categories":[]}`, string(raw))
+}
+
+// A zero *Client is the shape a second connector will copy from this one, and
+// every method on it nil-panics on the first call. Registration must refuse it
+// with a clear error instead.
+func TestRegisterTools_RejectsNilClient(t *testing.T) {
+	require.Error(t, RegisterTools(gsmcp.NewRegistry(), nil))
+	require.Error(t, RegisterTools(gsmcp.NewRegistry(), &Client{}))
+}
+
+// schemaOnlyClient is a real Client for tests that only read schemas and never
+// issue a request. RegisterTools refuses a zero &Client{} because every method
+// on one nil-panics.
+func schemaOnlyClient(t *testing.T) *Client {
+	t.Helper()
+	c, err := NewClient("http://storefront.invalid", "sfkey", time.Second)
+	require.NoError(t, err)
+	return c
 }

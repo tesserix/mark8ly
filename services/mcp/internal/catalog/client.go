@@ -216,12 +216,23 @@ func segment(paramName, value string) (string, error) {
 	return url.PathEscape(value), nil
 }
 
-func storeProductsPath(slug string) (string, error) {
+// storePath is the only place the store-scoped prefix is built. Every
+// endpoint hangs off it, so a method added later cannot reach upstream with a
+// slug that never went through segment().
+func storePath(slug string) (string, error) {
 	seg, err := segment("slug", slug)
 	if err != nil {
 		return "", err
 	}
-	return "/api/v1/storefront/stores/" + seg + "/products", nil
+	return "/api/v1/storefront/stores/" + seg, nil
+}
+
+func storeProductsPath(slug string) (string, error) {
+	base, err := storePath(slug)
+	if err != nil {
+		return "", err
+	}
+	return base + "/products", nil
 }
 
 // ListProducts calls GET /api/v1/storefront/stores/{slug}/products.
@@ -261,11 +272,11 @@ func (c *Client) GetProduct(ctx context.Context, slug, handle string) (storefron
 
 // ListCategories calls GET /api/v1/storefront/stores/{slug}/categories.
 func (c *Client) ListCategories(ctx context.Context, slug string) ([]storefrontCategory, error) {
-	slugSeg, err := segment("slug", slug)
+	base, err := storePath(slug)
 	if err != nil {
 		return nil, err
 	}
-	path := "/api/v1/storefront/stores/" + slugSeg + "/categories"
+	path := base + "/categories"
 	var env storefrontCategoriesEnvelope
 	if err := c.upstream.Get(ctx, path, nil, &env); err != nil {
 		return nil, err
@@ -280,7 +291,7 @@ func (c *Client) ListByCategory(ctx context.Context, slug, categorySlug string, 
 	if err != nil {
 		return nil, err
 	}
-	slugSeg, err := segment("slug", slug)
+	base, err := storePath(slug)
 	if err != nil {
 		return nil, err
 	}
@@ -288,8 +299,7 @@ func (c *Client) ListByCategory(ctx context.Context, slug, categorySlug string, 
 	if err != nil {
 		return nil, err
 	}
-	path := "/api/v1/storefront/stores/" + slugSeg +
-		"/categories/" + categorySeg + "/products"
+	path := base + "/categories/" + categorySeg + "/products"
 	var env storefrontProductsEnvelope
 	if err := c.upstream.Get(ctx, path, params, &env); err != nil {
 		return nil, err
@@ -306,11 +316,11 @@ func (c *Client) ListByCategory(ctx context.Context, slug, categorySlug string, 
 // otherwise mirrors. That field folds a present ActivePromotion into a
 // one-element Promotions slice, and an absent one into an empty slice.
 func (c *Client) GetBranding(ctx context.Context, slug string) (storefrontBranding, error) {
-	slugSeg, err := segment("slug", slug)
+	base, err := storePath(slug)
 	if err != nil {
 		return storefrontBranding{}, err
 	}
-	path := "/api/v1/storefront/stores/" + slugSeg + "/branding"
+	path := base + "/branding"
 	var env storefrontBrandingEnvelope
 	if err := c.upstream.Get(ctx, path, nil, &env); err != nil {
 		return storefrontBranding{}, err

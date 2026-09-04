@@ -190,6 +190,9 @@ func (h *CustomerHandler) Register(r *gin.RouterGroup) {
 	r.POST("/customer/register", func(c *gin.Context) {
 		h.register(c.Writer, c.Request)
 	})
+	r.POST("/customer/verify-email", func(c *gin.Context) {
+		h.verifyEmail(c.Writer, c.Request)
+	})
 }
 
 // Neither request shape carries an auth_request_id: the customer path makes
@@ -241,6 +244,78 @@ type customerRegisterRequest struct {
 	Password   string `json:"password"`
 	GivenName  string `json:"given_name"`
 	FamilyName string `json:"family_name"`
+}
+
+// customerVerifyEmailRequest is the storefront's follow-up to register: the
+// uid it was handed back plus the code the shopper read out of their
+// verification email. Neither field is optional — see verifyEmail's guard.
+type customerVerifyEmailRequest struct {
+	UID  string `json:"uid"`
+	Code string `json:"code"`
+}
+
+// verifyEmail reads {uid, code} and asks Zitadel to flip that account's
+// email verified — the sibling of register (task 1) that closes out the
+// sign-up flow: an account created by register stays UNVERIFIED, and
+// nothing else in this package or in login's gate treats it as though it
+// were, until this call succeeds. See VerifyEmail's doc on Client for the
+// wire shape and the error-id mapping this handler translates.
+//
+// code is a live credential for the account, exactly like register's
+// emailCode, and must never be logged. It is also never echoed back in any
+// response.
+func (h *CustomerHandler) verifyEmail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// First, before the body is even read: an unauthenticated caller must
+	// never reach VerifyEmail, or this endpoint becomes a code-guessing
+	// oracle against a caller-supplied user id — same discipline as every
+	// other endpoint in this file.
+	if !internalAuthorized(r, h.internalAuthSecret) {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req customerVerifyEmailRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+	if req.UID == "" || req.Code == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+
+	if err := h.c.VerifyEmail(ctx, req.UID, req.Code); err != nil {
+		h.respondVerifyEmailError(ctx, w, err)
+		return
+	}
+
+	slog.InfoContext(ctx, "zitadellogin(customer): verify-email verified the account's email", "user_id", req.UID)
+	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": true}})
+}
+
+// respondVerifyEmailError maps VerifyEmail's errors to distinct, truthful
+// outcomes. ErrEmailVerificationCodeInvalid gets its OWN code — never
+// invalid_credentials (that would read as "your password was wrong", which
+// is false) and never a generic failure (a shopper who mistyped a digit
+// needs to know to retype the code, not that something is broken). Anything
+// this package does not specifically recognise — including Zitadel's
+// "bogus user" 400 (a DIFFERENT details[0].id than the wrong-code case, see
+// VerifyEmail's doc) — falls through ErrUnavailable's branch rather than
+// being guessed at as a wrong code.
+func (h *CustomerHandler) respondVerifyEmailError(ctx context.Context, w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrEmailVerificationCodeInvalid):
+		slog.WarnContext(ctx, "zitadellogin(customer): verify-email rejected: code invalid or expired")
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_verification_code"})
+	case errors.Is(err, ErrUnavailable):
+		slog.ErrorContext(ctx, "zitadellogin(customer): zitadel unavailable verifying email", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+	default:
+		slog.ErrorContext(ctx, "zitadellogin(customer): unexpected error verifying email", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+	}
 }
 
 // login reads {login_name, password}, creates a Zitadel password session,

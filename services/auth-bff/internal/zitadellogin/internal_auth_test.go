@@ -147,6 +147,15 @@ func guardedEndpoints() []endpoint {
 					register(rec, r)
 			},
 		},
+		{
+			name: "customer/verify-email",
+			path: "/auth/customer/verify-email",
+			body: `{"uid":"u1","code":"837291"}`,
+			call: func(t *testing.T, c *Client, rec *httptest.ResponseRecorder, r *http.Request) {
+				NewCustomerHandler(c).WithInternalAuth(testInternalSecret).
+					verifyEmail(rec, r)
+			},
+		},
 	}
 }
 

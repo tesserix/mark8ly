@@ -1271,3 +1271,204 @@ func TestCustomerLoginAcceptsAVerifiedAccount(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 }
+
+// TestCustomerVerifyEmailAcceptsACorrectCode is the happy path: a correct
+// code flips the account verified, and the response says so without
+// echoing anything Zitadel doesn't itself vouch for.
+func TestCustomerVerifyEmailAcceptsACorrectCode(t *testing.T) {
+	var verifyCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/email/verify"):
+			verifyCalled.Store(true)
+			w.Write([]byte(`{}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client()))
+	rec := httptest.NewRecorder()
+	h.verifyEmail(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/verify-email",
+		strings.NewReader(`{"uid":"new-1","code":"837291"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if !verifyCalled.Load() {
+		t.Fatalf("Zitadel's email/verify was never called")
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data == nil || data["verified"] != true {
+		t.Fatalf("body = %v, want data.verified = true", body)
+	}
+}
+
+// TestCustomerVerifyEmailRejectsAWrongCodeDistinctly pins the core mapping
+// this endpoint exists for: Zitadel's details[0].id == "COMMAND-eis9R" for a
+// wrong/expired code must produce a distinct, truthful outcome — never a
+// generic failure, and never anything that could read as "your password was
+// wrong". Keyed off the id, not message text: phase 5 found two different
+// failures whose messages differed by one word.
+func TestCustomerVerifyEmailRejectsAWrongCodeDistinctly(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/email/verify"):
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":3,"message":"Code is invalid (COMMAND-eis9R)","details":[{"id":"COMMAND-eis9R"}]}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client()))
+	rec := httptest.NewRecorder()
+	h.verifyEmail(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/verify-email",
+		strings.NewReader(`{"uid":"new-1","code":"000000"}`)))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	got, _ := body["error"].(string)
+	if got == "" || got == "invalid_credentials" || got == "internal_error" || got == "zitadel_unavailable" {
+		t.Fatalf("error = %q, want a distinct, truthful wrong-code outcome — not a generic failure and not anything implying a bad password", got)
+	}
+	if got != "invalid_verification_code" {
+		t.Fatalf("error = %q, want invalid_verification_code", got)
+	}
+}
+
+// TestCustomerVerifyEmailUnrecognisedErrorIDFallsThroughToGenericUnavailable
+// pins the other half of the classifier: an error id this package has never
+// seen (e.g. Zitadel's "bogus user" case, observed as details[0].id ==
+// "COMMAND-ieJ2e" — a DIFFERENT id than the wrong-code one, sharing no
+// prefix) must never be mistaken for a wrong code. Refuse to guess.
+func TestCustomerVerifyEmailUnrecognisedErrorIDFallsThroughToGenericUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/email/verify"):
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":5,"message":"User not found (COMMAND-ieJ2e)","details":[{"id":"COMMAND-ieJ2e"}]}`))
+		default:
+			t.Errorf("unexpected call: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewCustomerHandler(New(srv.URL, "pat", srv.Client()))
+	rec := httptest.NewRecorder()
+	h.verifyEmail(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/verify-email",
+		strings.NewReader(`{"uid":"bogus","code":"000000"}`)))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["error"] != "zitadel_unavailable" {
+		t.Fatalf("body = %v, want error: zitadel_unavailable — an unrecognised id must not be read as a wrong code", body)
+	}
+}
+
+// TestCustomerVerifyEmailRejectsAnUnauthenticatedCallerBeforeReachingZitadel
+// pins the same absolute constraint every endpoint in this file carries: a
+// caller with no (or the wrong) internal secret must never cause a Zitadel
+// call — proven the unreachableZitadel way, not merely by asserting the
+// response.
+func TestCustomerVerifyEmailRejectsAnUnauthenticatedCallerBeforeReachingZitadel(t *testing.T) {
+	c := unreachableZitadel(t)
+	h := NewCustomerHandler(c).WithInternalAuth(testInternalSecret)
+
+	rec := httptest.NewRecorder()
+	h.verifyEmail(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/verify-email",
+		strings.NewReader(`{"uid":"new-1","code":"837291"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCustomerVerifyEmailNeverLogsTheCode pins the credential-handling
+// discipline this endpoint must follow: the verification code the shopper
+// submits is a live credential, exactly like emailCode in register, and
+// must appear in no log line — on success, on a wrong code, and on an
+// unavailable Zitadel.
+func TestCustomerVerifyEmailNeverLogsTheCode(t *testing.T) {
+	const secretCode = "552013"
+
+	t.Run("success", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(`{}`))
+		}))
+		defer srv.Close()
+
+		logs := captureLogs(t)
+		h := NewCustomerHandler(New(srv.URL, "pat", srv.Client()))
+		rec := httptest.NewRecorder()
+		h.verifyEmail(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/verify-email",
+			strings.NewReader(`{"uid":"new-1","code":"`+secretCode+`"}`)))
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		if strings.Contains(logs.String(), secretCode) {
+			t.Fatalf("log output leaks the verification code: %s", logs.String())
+		}
+	})
+
+	t.Run("wrong code", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":3,"message":"Code is invalid (COMMAND-eis9R)","details":[{"id":"COMMAND-eis9R"}]}`))
+		}))
+		defer srv.Close()
+
+		logs := captureLogs(t)
+		h := NewCustomerHandler(New(srv.URL, "pat", srv.Client()))
+		rec := httptest.NewRecorder()
+		h.verifyEmail(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/verify-email",
+			strings.NewReader(`{"uid":"new-1","code":"`+secretCode+`"}`)))
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		if strings.Contains(logs.String(), secretCode) {
+			t.Fatalf("log output leaks the verification code: %s", logs.String())
+		}
+	})
+
+	t.Run("zitadel unavailable", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer srv.Close()
+
+		logs := captureLogs(t)
+		h := NewCustomerHandler(New(srv.URL, "pat", srv.Client()))
+		rec := httptest.NewRecorder()
+		h.verifyEmail(rec, httptest.NewRequest(http.MethodPost, "/auth/customer/verify-email",
+			strings.NewReader(`{"uid":"new-1","code":"`+secretCode+`"}`)))
+
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		if strings.Contains(logs.String(), secretCode) {
+			t.Fatalf("log output leaks the verification code: %s", logs.String())
+		}
+	})
+}

@@ -56,6 +56,16 @@ var (
 	// reads as "wrong password" or "try again later" for what is neither.
 	ErrEmailAlreadyExists = errors.New("zitadellogin: email already exists")
 
+	// ErrEmailVerificationCodeInvalid is VerifyEmail's distinguished mapping
+	// for Zitadel's wrong-or-expired verification code rejection
+	// (details[0].id == emailVerifyCodeInvalidErrorID). Deliberately NOT
+	// ErrBadCredentials: nothing about a mistyped six-digit code means the
+	// account's PASSWORD was wrong, and customer_handler.go's verifyEmail
+	// must never tell a shopper otherwise. Also deliberately NOT
+	// ErrUnavailable: a shopper who mistyped a digit needs to know to
+	// retype the code, not that something is broken.
+	ErrEmailVerificationCodeInvalid = errors.New("zitadellogin: email verification code is invalid or expired")
+
 	// ErrWeakPassword is CreateHumanUserWithPassword's distinguished mapping
 	// for Zitadel's password-complexity rejection: details[0].id ==
 	// "DOMAIN-HuJf6" ("Password is too short"), verified live against the
@@ -85,6 +95,18 @@ const weakPasswordErrorID = "DOMAIN-HuJf6"
 // weak-password case, which also uses a low grpc code but a completely
 // different id.
 const duplicateEmailErrorID = "COMMAND-oR9nS"
+
+// emailVerifyCodeInvalidErrorID is the stable details[0].id Zitadel returns
+// for POST /v2/users/{id}/email/verify given a wrong or expired
+// verificationCode. VERIFIED live 2026-09-04 against the TESSERIX instance
+// (see .superpowers/sdd/2026-09-04-zitadel-phase6a-customer-signup/
+// task-2-brief.md): a 400 with details[0].id == "COMMAND-eis9R"
+// ("Code is invalid"). A separate "bogus user" 400 was also observed with a
+// DIFFERENT id ("COMMAND-ieJ2e") sharing no prefix with this one — see
+// VerifyEmail's classify closure, which keys off this exact id, never a
+// prefix and never message text (phase 5 found two different failures whose
+// messages differed by one word).
+const emailVerifyCodeInvalidErrorID = "COMMAND-eis9R"
 
 type Client struct {
 	baseURL string
@@ -815,6 +837,54 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 		return nil
 	}
 	return err
+}
+
+// VerifyEmail submits the shopper's emailed code and asks Zitadel to flip
+// the user's email verified — the second half of the sign-up flow
+// CreateHumanUserWithPassword starts (see that function's doc and
+// customer_handler.go's verifyEmail).
+//
+// VERIFIED live 2026-09-04 against the TESSERIX Zitadel instance (see
+// task-2-brief.md in
+// .superpowers/sdd/2026-09-04-zitadel-phase6a-customer-signup/):
+//
+//	POST /v2/users/{id}/email/verify   {"verificationCode":"<6 chars>"}   -> 200
+//	  wrong code  -> 400, details[0].id = "COMMAND-eis9R" ("Code is invalid")
+//	  bogus user  -> 400, details[0].id = "COMMAND-ieJ2e"
+//
+// The path has no underscore: email/_verify is a ROUTING 404 — a plain
+// {"code":5,"message":"Not Found"} carrying no details[0].id at all. That
+// absence is how a wrong path is told apart from a genuine domain error;
+// this function's classify closure never has to consider it because the
+// path above is pinned correctly.
+//
+// code is a live credential for the account, exactly like emailCode in
+// CreateHumanUserWithPassword, and must NEVER be logged. withLogPath keeps
+// the caller-supplied user id out of do()'s own error/log formatting too —
+// the same discipline DeleteUser already follows for the identical reason.
+func (c *Client) VerifyEmail(ctx context.Context, userID, code string) error {
+	if userID == "" {
+		return fmt.Errorf("zitadellogin: VerifyEmail with an empty user id: %w", ErrUnavailable)
+	}
+	if code == "" {
+		return fmt.Errorf("zitadellogin: VerifyEmail with an empty code: %w", ErrUnavailable)
+	}
+	body := map[string]any{"verificationCode": code}
+	// classify keys off details[0].id FIRST and ONLY — never a grpc code
+	// (both the wrong-code and bogus-user cases observed live share the
+	// same low code, so a code-based narrowing would conflate them) and
+	// never message text (see emailVerifyCodeInvalidErrorID's doc). An id
+	// this package has not seen before — including the bogus-user id
+	// COMMAND-ieJ2e — falls back to ErrUnavailable rather than being
+	// guessed at as a wrong code.
+	classify := func(_ int, id string) error {
+		if id == emailVerifyCodeInvalidErrorID {
+			return ErrEmailVerificationCodeInvalid
+		}
+		return ErrUnavailable
+	}
+	return c.do(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/email/verify", body, nil, ErrUnavailable,
+		withBadRequestClassifier(classify), withLogPath("/v2/users/{id}/email/verify"))
 }
 
 var mfaPolicyKeys = []string{"forceMfa", "forceMfaLocalOnly"}

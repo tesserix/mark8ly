@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gsmcp "github.com/tesserix/go-shared/mcp"
+	"github.com/tesserix/go-shared/mcp/observe"
 	"github.com/tesserix/go-shared/mcp/upstream"
 )
 
@@ -213,4 +214,61 @@ func TestListProductsByCategory_SendsPageParams(t *testing.T) {
 
 	_, err := tool.Invoke(context.Background(), []byte(`{"store_slug":"bondi","category_slug":"mugs","page":2,"page_size":10}`))
 	require.NoError(t, err)
+}
+
+// A caller mistake this client catches for itself — an over-cap page_size, a
+// traversal-shaped slug, an encoded slash — must be classified as
+// invalid_input, not as the connector failing. An alert on outcome="error"
+// that fires on an agent's typo is an alert nobody can act on.
+func TestClientInputErrors_ClassifyAsInvalidInput(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("no request should reach upstream for a caller-input failure")
+		w.WriteHeader(http.StatusOK)
+	})
+	r := gsmcp.NewRegistry()
+	require.NoError(t, RegisterTools(r, c))
+
+	cases := []struct {
+		name string
+		tool string
+		args string
+	}{
+		{"page size above the cap", "list_store_products", `{"store_slug":"bondi","page_size":101}`},
+		{"negative page", "list_store_products", `{"store_slug":"bondi","page":-5}`},
+		{"negative page size", "list_store_products", `{"store_slug":"bondi","page_size":-1}`},
+		{"traversal slug", "list_store_products", `{"store_slug":".."}`},
+		{"empty slug", "list_store_products", `{"store_slug":""}`},
+		{"encoded slash in handle", "get_store_product", `{"store_slug":"bondi","handle":"a%2Fb"}`},
+		{"traversal category slug", "list_products_by_category", `{"store_slug":"bondi","category_slug":".."}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tool, ok := r.Get(tc.tool)
+			require.True(t, ok)
+
+			_, err := tool.Invoke(context.Background(), []byte(tc.args))
+			require.Error(t, err)
+			require.ErrorIs(t, err, ErrInvalidInput)
+			assert.Equal(t, observe.OutcomeInvalidInput, observe.OutcomeFor(err),
+				"a caller mistake must not be recorded as the connector erroring")
+		})
+	}
+}
+
+// The other half of the same guarantee: a real upstream failure must keep its
+// own outcome and must NOT be swept into invalid_input.
+func TestUpstreamFailure_StillClassifiesAsUnavailable(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	})
+	r := gsmcp.NewRegistry()
+	require.NoError(t, RegisterTools(r, c))
+
+	tool, ok := r.Get("list_store_products")
+	require.True(t, ok)
+
+	_, err := tool.Invoke(context.Background(), []byte(`{"store_slug":"bondi"}`))
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrInvalidInput)
+	assert.Equal(t, observe.OutcomeUnavailable, observe.OutcomeFor(err))
 }

@@ -17,8 +17,22 @@ import (
 	"strings"
 	"time"
 
+	gsmcp "github.com/tesserix/go-shared/mcp"
 	"github.com/tesserix/go-shared/mcp/upstream"
 )
+
+// ErrInvalidInput marks a failure this client detected in the CALLER's own
+// arguments — a page_size above the cap, a negative page, a slug or handle
+// that is empty, "."/".." or carries a path separator. It is not a failure of
+// the connector or of the upstream API.
+//
+// It chains to go-shared's mcp.ErrInvalidArguments deliberately. That sentinel
+// is the one observe.OutcomeFor already recognises, so wrapping it means these
+// errors classify as observe.OutcomeInvalidInput without a mapping table at
+// the server boundary and without touching go-shared. Before this, every one
+// of them landed in outcome="error" alongside genuine connector faults, so any
+// "this connector is failing" alert fired on agent typos.
+var ErrInvalidInput = fmt.Errorf("catalog: invalid input: %w", gsmcp.ErrInvalidArguments)
 
 // maxPageSize mirrors listPublishedQuery's `binding:"max=100"` in
 // marketplace-api. The handler rejects a page_size above this with a
@@ -145,7 +159,16 @@ type storefrontPromotion struct {
 // apply, matching listPublishedQuery.defaults().
 func pageParams(page, pageSize int) (url.Values, error) {
 	if pageSize > maxPageSize {
-		return nil, fmt.Errorf("catalog: page_size %d exceeds the storefront API's cap of %d", pageSize, maxPageSize)
+		return nil, fmt.Errorf("%w: page_size %d exceeds the storefront API's cap of %d", ErrInvalidInput, pageSize, maxPageSize)
+	}
+	// Negative values are a caller mistake, not "unset". Dropping them
+	// silently returns page 1 with no signal that the request was not the one
+	// the agent asked for.
+	if page < 0 {
+		return nil, fmt.Errorf("%w: page %d must not be negative", ErrInvalidInput, page)
+	}
+	if pageSize < 0 {
+		return nil, fmt.Errorf("%w: page_size %d must not be negative", ErrInvalidInput, pageSize)
 	}
 	params := url.Values{}
 	if page > 0 {
@@ -185,10 +208,10 @@ func pageParams(page, pageSize int) (url.Values, error) {
 // otherwise reconstruct a traversal after decoding.
 func segment(paramName, value string) (string, error) {
 	if value == "" || value == "." || value == ".." {
-		return "", fmt.Errorf("catalog: %s %q is not a valid path segment", paramName, value)
+		return "", fmt.Errorf("%w: %s %q is not a valid path segment", ErrInvalidInput, paramName, value)
 	}
 	if decoded, err := url.PathUnescape(value); err == nil && strings.Contains(decoded, "/") {
-		return "", fmt.Errorf("catalog: %s %q contains a path separator", paramName, value)
+		return "", fmt.Errorf("%w: %s %q contains a path separator", ErrInvalidInput, paramName, value)
 	}
 	return url.PathEscape(value), nil
 }

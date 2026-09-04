@@ -60,6 +60,10 @@ import (
 // that serve MCP and not a go-shared release affecting ~30 services.
 const protocolVersion = "2026-07-28"
 
+// methodCallTool is the JSON-RPC method name for a tool invocation. The SDK
+// keeps its own copy unexported, so the middleware carries this one.
+const methodCallTool = "tools/call"
+
 const (
 	// serverName is the implementation name reported in the MCP initialize
 	// handshake. It matches the estate registry's record for this connector.
@@ -108,13 +112,23 @@ func New(reg *gsmcp.Registry, key string, m *observe.ToolMetrics) (http.Handler,
 		return nil, errors.New("server: registry has no tools")
 	}
 
+	// Registered names, captured once. The name in a tools/call request is
+	// caller-supplied; recording a metric under it without checking it against
+	// this set would let a caller mint unbounded label cardinality.
+	registered := make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		registered[tool.Name] = struct{}{}
+	}
+
 	srv := mcpsdk.NewServer(&mcpsdk.Implementation{
 		Name:    serverName,
 		Version: serverVersion,
 	}, nil)
 
+	srv.AddReceivingMiddleware(observeCalls(registered, m))
+
 	for _, tool := range tools {
-		if err := addTool(srv, tool, m); err != nil {
+		if err := addTool(srv, tool); err != nil {
 			return nil, err
 		}
 	}
@@ -130,6 +144,63 @@ func New(reg *gsmcp.Registry, key string, m *observe.ToolMetrics) (http.Handler,
 	return auth.RequireKey(key, handler), nil
 }
 
+// outcomeCell carries the outcome the registry handler observed back up to
+// observeCalls. It exists because the two halves of a tools/call live on
+// opposite sides of the SDK: the middleware is the only place that sees a call
+// the SDK rejected before any handler ran, and the handler is the only place
+// that knows WHY a call that did run failed.
+type outcomeCell struct {
+	set     bool
+	outcome observe.Outcome
+}
+
+// outcomeCellKey keys the cell in the request context.
+type outcomeCellKey struct{}
+
+// observeCalls records exactly one metric per tools/call, including the calls
+// that never reach a handler.
+//
+// The SDK validates `arguments` against the input schema and unmarshals them
+// BEFORE invoking the tool handler (see toolForErr in the SDK's server.go);
+// both failures are returned as a CallToolResult with IsError set and no error
+// to the middleware. Observing only inside the handler therefore counted
+// nothing for `{}`, `{"page":1}`, `arguments:null`, or an undeclared field —
+// so a connector being hammered with malformed calls was indistinguishable
+// from one nobody was calling.
+//
+// Every one of those pre-handler rejections is a caller-input failure, so a
+// tools/call for a REGISTERED tool that left the cell unset is recorded as
+// OutcomeInvalidInput. A call that did reach the handler carries the outcome
+// the handler classified. A call naming a tool that is not registered records
+// nothing at all.
+func observeCalls(registered map[string]struct{}, m *observe.ToolMetrics) mcpsdk.Middleware {
+	return func(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
+		return func(ctx context.Context, method string, req mcpsdk.Request) (mcpsdk.Result, error) {
+			// CallToolParamsRaw, not CallToolParams: at the method-handler
+			// seam the arguments are still raw — unmarshalling them is what
+			// the tool handler does next, and what can fail.
+			params, ok := req.GetParams().(*mcpsdk.CallToolParamsRaw)
+			if method != methodCallTool || !ok {
+				return next(ctx, method, req)
+			}
+			name := params.Name
+			if _, known := registered[name]; !known {
+				return next(ctx, method, req)
+			}
+
+			cell := &outcomeCell{}
+			start := time.Now()
+			res, err := next(context.WithValue(ctx, outcomeCellKey{}, cell), method, req)
+			outcome := observe.OutcomeInvalidInput
+			if cell.set {
+				outcome = cell.outcome
+			}
+			m.Observe(name, outcome, time.Since(start))
+			return res, err
+		}
+	}
+}
+
 // addTool registers one registry tool with the SDK server.
 //
 // The SDK's AddTool panics on a tool it will not accept — an invalid name, a
@@ -137,17 +208,13 @@ func New(reg *gsmcp.Registry, key string, m *observe.ToolMetrics) (http.Handler,
 // not a useful failure mode for a service that has a config error to report,
 // so it is recovered into an error here. Nothing else in this package recovers
 // a panic.
-func addTool(srv *mcpsdk.Server, tool gsmcp.Tool, m *observe.ToolMetrics) (err error) {
+func addTool(srv *mcpsdk.Server, tool gsmcp.Tool) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("server: registering tool %q: %v", tool.Name, r)
 		}
 	}()
 
-	// name is captured for metrics from the REGISTRY, never from the wire: the
-	// name in a tools/call request is caller-supplied, and feeding it into a
-	// label would let a caller mint unbounded metric cardinality.
-	name := tool.Name
 	invoke := tool.Invoke
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
@@ -160,9 +227,15 @@ func addTool(srv *mcpsdk.Server, tool gsmcp.Tool, m *observe.ToolMetrics) (err e
 			args = json.RawMessage(emptyArguments)
 		}
 
-		start := time.Now()
 		out, err := invoke(ctx, args)
-		m.Observe(name, observe.OutcomeFor(err), time.Since(start))
+		// Hand the classification up to observeCalls, which owns the single
+		// Observe per call and is also what covers the calls that never get
+		// this far. A missing cell means this handler was reached some other
+		// way than through the middleware, which cannot happen in New.
+		if cell, ok := ctx.Value(outcomeCellKey{}).(*outcomeCell); ok {
+			cell.set = true
+			cell.outcome = observe.OutcomeFor(err)
+		}
 		if err != nil {
 			// Returned as a tool error, not a protocol error: the SDK packs it
 			// into CallToolResult with IsError set, which is what an agent can

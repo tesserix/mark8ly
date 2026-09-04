@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gsmcp "github.com/tesserix/go-shared/mcp"
 	"github.com/tesserix/go-shared/mcp/auth"
@@ -184,4 +185,103 @@ func firstTool(t *testing.T, raw string) map[string]any {
 	require.True(t, ok, "no tools in body: %s", raw)
 	require.Len(t, tools, 1)
 	return tools[0].(map[string]any)
+}
+
+// The SDK validates `arguments` against the input schema BEFORE the registry
+// handler runs, so a malformed call used to return isError:true and increment
+// nothing at all. A connector being hammered with bad calls looked exactly
+// like a dead one — precisely the distinction the metric exists to make.
+func TestServer_SchemaRejectedCallIsCounted(t *testing.T) {
+	cases := []struct {
+		name string
+		args string
+	}{
+		{"empty arguments object", `{}`},
+		{"undeclared field", `{"echo":"bondi","sneaky":"x"}`},
+		{"wrong type", `{"echo":1}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			m, err := observe.NewToolMetrics(reg, "mcp-catalog")
+			require.NoError(t, err)
+			h, err := New(testRegistry(t), "s3cret", m)
+			require.NoError(t, err)
+
+			rec := post(t, h, "tools/call", "ping", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{`+
+				`"name":"ping","arguments":`+tc.args+`,"_meta":{`+
+				`"io.modelcontextprotocol/protocolVersion":"`+protocolVersion+`",`+
+				`"io.modelcontextprotocol/clientCapabilities":{}}}}`)
+			require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+			assert.Equal(t, 1.0, callCount(t, reg, "ping", "invalid_input"),
+				"a schema-rejected call must increment something")
+		})
+	}
+}
+
+// A call that reaches the handler and succeeds still records ok, so the fix
+// above did not relabel the happy path.
+func TestServer_SuccessfulCallRecordsOK(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := observe.NewToolMetrics(reg, "mcp-catalog")
+	require.NoError(t, err)
+	h, err := New(testRegistry(t), "s3cret", m)
+	require.NoError(t, err)
+
+	rec := post(t, h, "tools/call", "ping", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{`+
+		`"name":"ping","arguments":{"echo":"bondi"},"_meta":{`+
+		`"io.modelcontextprotocol/protocolVersion":"`+protocolVersion+`",`+
+		`"io.modelcontextprotocol/clientCapabilities":{}}}}`)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	assert.Equal(t, 1.0, callCount(t, reg, "ping", "ok"))
+	assert.Equal(t, 0.0, callCount(t, reg, "ping", "invalid_input"))
+}
+
+// A tool name that is not in the registry must record nothing: the name comes
+// off the wire, and a caller that can mint label values can inflate metric
+// cardinality at will.
+func TestServer_UnknownToolNameRecordsNothing(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m, err := observe.NewToolMetrics(reg, "mcp-catalog")
+	require.NoError(t, err)
+	h, err := New(testRegistry(t), "s3cret", m)
+	require.NoError(t, err)
+
+	post(t, h, "tools/call", "nope", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{`+
+		`"name":"nope","arguments":{},"_meta":{`+
+		`"io.modelcontextprotocol/protocolVersion":"`+protocolVersion+`",`+
+		`"io.modelcontextprotocol/clientCapabilities":{}}}}`)
+
+	assert.Equal(t, 0.0, callCount(t, reg, "nope", "invalid_input"))
+	assert.Equal(t, 0.0, callCount(t, reg, "nope", "error"))
+}
+
+// callCount reads tesserix_mcp_tool_calls_total for one tool/outcome pair,
+// returning 0 when the series does not exist.
+func callCount(t *testing.T, g prometheus.Gatherer, tool, outcome string) float64 {
+	t.Helper()
+	families, err := g.Gather()
+	require.NoError(t, err)
+	for _, mf := range families {
+		if mf.GetName() != "tesserix_mcp_tool_calls_total" {
+			continue
+		}
+		for _, metric := range mf.GetMetric() {
+			var gotTool, gotOutcome string
+			for _, l := range metric.GetLabel() {
+				switch l.GetName() {
+				case "tool":
+					gotTool = l.GetValue()
+				case "outcome":
+					gotOutcome = l.GetValue()
+				}
+			}
+			if gotTool == tool && gotOutcome == outcome {
+				return metric.GetCounter().GetValue()
+			}
+		}
+	}
+	return 0
 }

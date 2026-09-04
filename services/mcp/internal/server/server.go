@@ -66,7 +66,12 @@ const (
 	serverName = "mark8ly-catalog"
 
 	// serverVersion is the implementation version reported in the handshake.
-	// Task 6 replaces this with the build version stamped at link time.
+	// It is a hardcoded placeholder, not the build version: link-time
+	// stamping needs a Dockerfile build-arg plus either a signature change to
+	// New or a settable package var, and that is deployment work deferred
+	// alongside the chart, the ExternalSecret, and the CI image build. Until
+	// that follow-up lands, every deployed build reports "0.1.0" in the MCP
+	// handshake regardless of what is actually running.
 	serverVersion = "0.1.0"
 
 	// maxRequestBodyBytes caps a single MCP request. The tools are read-only

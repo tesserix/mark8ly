@@ -125,9 +125,15 @@ func signZitadelTokenWithWrongKey(t *testing.T, issuer, subject string) string {
 	return raw
 }
 
+// testAudience is the fixed "ZITADEL_ADMIN_PROJECT_ID"-shaped audience used
+// across this file's happy-path tests. It's passed to NewZitadelVerifier as
+// configuration, exactly as the real project ID would be, never hardcoded
+// inside the verifier itself.
+const testAudience = "zitadel-project-id"
+
 func TestZitadelVerifier_ValidToken_ReturnsSubjectAsUserID(t *testing.T) {
 	srv := stubZitadelServer(t)
-	v, err := NewZitadelVerifier(context.Background(), srv.URL)
+	v, err := NewZitadelVerifier(context.Background(), srv.URL, testAudience)
 	require.NoError(t, err)
 
 	token := signZitadelToken(t, srv.URL, "zitadel-user-123", time.Now().Add(time.Hour), nil)
@@ -139,7 +145,7 @@ func TestZitadelVerifier_ValidToken_ReturnsSubjectAsUserID(t *testing.T) {
 
 func TestZitadelVerifier_TenantIDAlwaysEmpty_EvenWithTenantClaims(t *testing.T) {
 	srv := stubZitadelServer(t)
-	v, err := NewZitadelVerifier(context.Background(), srv.URL)
+	v, err := NewZitadelVerifier(context.Background(), srv.URL, testAudience)
 	require.NoError(t, err)
 
 	// A token that DOES carry a tenant-ish claim — proves the verifier
@@ -158,7 +164,7 @@ func TestZitadelVerifier_TenantIDAlwaysEmpty_EvenWithTenantClaims(t *testing.T) 
 
 func TestZitadelVerifier_BadSignature_Fails(t *testing.T) {
 	srv := stubZitadelServer(t)
-	v, err := NewZitadelVerifier(context.Background(), srv.URL)
+	v, err := NewZitadelVerifier(context.Background(), srv.URL, testAudience)
 	require.NoError(t, err)
 
 	token := signZitadelTokenWithWrongKey(t, srv.URL, "zitadel-user-789")
@@ -170,7 +176,7 @@ func TestZitadelVerifier_BadSignature_Fails(t *testing.T) {
 
 func TestZitadelVerifier_WrongIssuer_Fails(t *testing.T) {
 	srv := stubZitadelServer(t)
-	v, err := NewZitadelVerifier(context.Background(), srv.URL)
+	v, err := NewZitadelVerifier(context.Background(), srv.URL, testAudience)
 	require.NoError(t, err)
 
 	token := signZitadelToken(t, "https://not-the-configured-issuer.example.com", "zitadel-user-999", time.Now().Add(time.Hour), nil)
@@ -182,7 +188,7 @@ func TestZitadelVerifier_WrongIssuer_Fails(t *testing.T) {
 
 func TestZitadelVerifier_ExpiredToken_Fails(t *testing.T) {
 	srv := stubZitadelServer(t)
-	v, err := NewZitadelVerifier(context.Background(), srv.URL)
+	v, err := NewZitadelVerifier(context.Background(), srv.URL, testAudience)
 	require.NoError(t, err)
 
 	token := signZitadelToken(t, srv.URL, "zitadel-user-expired", time.Now().Add(-time.Hour), nil)
@@ -190,4 +196,43 @@ func TestZitadelVerifier_ExpiredToken_Fails(t *testing.T) {
 	_, err = v.Verify(context.Background(), token)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrInvalidToken)
+}
+
+// TestZitadelVerifier_WrongAudience_Fails is the regression test for the
+// shopper-token→admin-credential escalation: a validly-signed, unexpired,
+// correct-issuer token minted for a different Zitadel project (e.g.
+// mark8ly-storefront, sharing this same instance and issuer) must NOT be
+// accepted as a mark8ly-admin credential. Signature + issuer alone are not
+// enough to distinguish "this project's token" from "any project's token
+// belonging to the same signed-in human" — aud is the only field that does.
+func TestZitadelVerifier_WrongAudience_Fails(t *testing.T) {
+	srv := stubZitadelServer(t)
+	v, err := NewZitadelVerifier(context.Background(), srv.URL, testAudience)
+	require.NoError(t, err)
+
+	// Minted for "mark8ly-storefront-project-id", not testAudience.
+	token := signZitadelToken(t, srv.URL, "zitadel-user-shopper", time.Now().Add(time.Hour), map[string]any{
+		"aud": []string{"mark8ly-storefront-project-id"},
+	})
+
+	_, err = v.Verify(context.Background(), token)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidToken)
+}
+
+// TestZitadelVerifier_CorrectAudience_Passes proves the audience pin isn't
+// simply rejecting everything: a token minted for the configured admin
+// project, alongside another audience entry, still verifies.
+func TestZitadelVerifier_CorrectAudience_Passes(t *testing.T) {
+	srv := stubZitadelServer(t)
+	v, err := NewZitadelVerifier(context.Background(), srv.URL, testAudience)
+	require.NoError(t, err)
+
+	token := signZitadelToken(t, srv.URL, "zitadel-user-admin", time.Now().Add(time.Hour), map[string]any{
+		"aud": []string{testAudience, "some-other-audience"},
+	})
+
+	claims, err := v.Verify(context.Background(), token)
+	require.NoError(t, err)
+	require.Equal(t, "zitadel-user-admin", claims.UserID)
 }

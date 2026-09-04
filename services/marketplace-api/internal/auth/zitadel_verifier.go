@@ -18,7 +18,7 @@ import (
 )
 
 // ZitadelVerifier verifies Zitadel access tokens against a configured
-// issuer's JWKS.
+// issuer's JWKS and a required audience.
 //
 // Zitadel mints no tenant claim on access tokens (see decision D7 in the
 // #524 migration design — adding one would require a Zitadel Actions v2
@@ -32,15 +32,31 @@ type ZitadelVerifier struct {
 
 // NewZitadelVerifier discovers the Zitadel issuer's OIDC configuration
 // (and therefore its JWKS endpoint) and returns a ZitadelVerifier ready to
-// verify bearer tokens issued by it.
+// verify bearer tokens issued by it for the given audience.
 //
-// SkipClientIDCheck is set because this verifies API bearer tokens from
-// any authorized client, not a single OIDC relying party's ID token — there
-// is no single expected audience to pin here. Signature, issuer, and
-// expiry are still fully checked.
-func NewZitadelVerifier(ctx context.Context, issuer string) (*ZitadelVerifier, error) {
+// audience MUST be the mark8ly-admin Zitadel project ID (deployed as
+// ZITADEL_ADMIN_PROJECT_ID — pass it in as configuration, never hardcode
+// it here). All mark8ly projects — mark8ly-admin, mark8ly-storefront, and
+// others — share one Zitadel instance (auth.tesserix.app), so they share
+// both signer and issuer. Per decision D1, identity is also shared one
+// human, one account across products — so a shopper's browser-held
+// mark8ly-storefront token (a public PKCE client, reachable by XSS) is
+// signed by the same key and carries the same issuer as a legitimate
+// mark8ly-admin credential for that same human. Without an audience check,
+// that shopper token would verify here and grant admin access (orders,
+// refunds, team invites, account deletion) — FGA membership answers "is
+// this human a member of the tenant", never "was this token issued for
+// this API", so it cannot substitute for pinning aud. Setting ClientID here
+// makes go-oidc require the token's "aud" claim to contain audience
+// (go-oidc does a contains-check, not strict equality, so azp-style tokens
+// with multiple audiences still verify) — the one field that actually
+// discriminates between mark8ly-admin and mark8ly-storefront tokens.
+func NewZitadelVerifier(ctx context.Context, issuer, audience string) (*ZitadelVerifier, error) {
 	if issuer == "" {
 		return nil, fmt.Errorf("zitadel: issuer is required")
+	}
+	if audience == "" {
+		return nil, fmt.Errorf("zitadel: audience is required")
 	}
 
 	provider, err := gooidc.NewProvider(ctx, issuer)
@@ -48,7 +64,7 @@ func NewZitadelVerifier(ctx context.Context, issuer string) (*ZitadelVerifier, e
 		return nil, fmt.Errorf("zitadel: discover %s: %w", issuer, err)
 	}
 
-	verifier := provider.Verifier(&gooidc.Config{SkipClientIDCheck: true})
+	verifier := provider.Verifier(&gooidc.Config{ClientID: audience})
 
 	return &ZitadelVerifier{verifier: verifier}, nil
 }

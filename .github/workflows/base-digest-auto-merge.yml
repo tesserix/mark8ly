@@ -1,0 +1,143 @@
+name: base digest auto-merge
+
+# Auto-merges ONLY the Dependabot docker-ecosystem PRs that bump a pinned
+# ghcr.io/tesserix/base-* digest in a Dockerfile. This is the fix for a real
+# outage path: GHCR keeps just the latest weekly build of each base image, so
+# a pinned digest survives at most one rebuild before it 404s on pull. The
+# intended updater is Dependabot, and dependabot-auto-merge.yml exists to
+# land those PRs automatically — but it requires a DEPENDABOT_PAT secret that
+# does not exist in this repo, so it has never merged anything. A PR
+# triggered BY Dependabot gets a read-only GITHUB_TOKEN with no secret
+# access, which is exactly why that workflow needs a PAT at all. A
+# `schedule`-triggered run is an ordinary run: it gets a full-permission
+# GITHUB_TOKEN with no human credential required, so it can do the merge
+# itself.
+#
+# Scope is intentionally narrow — every one of these must hold or the PR is
+# left alone:
+#   - authored by dependabot[bot] (enforced twice: the PR listing below only
+#     considers that author, and fetch-metadata independently verifies the
+#     PR's user and commit signature)
+#   - a `docker` ecosystem update, per dependabot/fetch-metadata
+#   - every changed file in the PR is a Dockerfile (checked against the PR's
+#     actual file list, not inferred from its title)
+#   - every check run on the PR's head commit has completed, and none failed
+#
+# Anything else — a gomod/npm/github-actions Dependabot PR, or any
+# human-authored PR — is never touched. Runs daily (the upstream rebuild is
+# weekly, so this gives six chances to land a PR before the next prune) and
+# exits quietly when there is nothing to do.
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  discover:
+    name: Find open Dependabot PRs
+    runs-on: ubuntu-latest
+    outputs:
+      prs: ${{ steps.list.outputs.prs }}
+    steps:
+      - name: List open PRs authored by dependabot[bot]
+        id: list
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          prs=$(gh pr list --repo "$REPO" --state open --author "dependabot[bot]" --json number --jq '[.[].number]')
+          echo "Open Dependabot PRs: $prs"
+          echo "prs=$prs" >> "$GITHUB_OUTPUT"
+
+  evaluate:
+    name: "PR #${{ matrix.pr }}"
+    needs: discover
+    if: ${{ needs.discover.outputs.prs != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pr: ${{ fromJson(needs.discover.outputs.prs) }}
+    steps:
+      - name: Fetch PR as a synthetic pull_request event
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/pulls/${{ matrix.pr }}" > pr.json
+          jq -n --slurpfile pr pr.json '{pull_request: $pr[0]}' > event.json
+          echo "path=$PWD/event.json" >> "$GITHUB_OUTPUT"
+
+      # fetch-metadata reads the pull_request event payload, not a live API
+      # call — this repo only triggers it on `pull_request`. A schedule run
+      # has no such payload, so we hand it one built from the PR we just
+      # fetched. It still independently verifies the PR author and the
+      # commit signature, so this is not a way to spoof provenance.
+      - name: Fetch Dependabot metadata
+        id: meta
+        continue-on-error: true
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3
+        env:
+          GITHUB_EVENT_PATH: ${{ steps.pr.outputs.path }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Evaluate eligibility and merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ matrix.pr }}
+          META_OK: ${{ steps.meta.outcome }}
+          ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
+        run: |
+          set -euo pipefail
+
+          skip() {
+            echo "::notice::PR #$PR skipped — $1"
+            exit 0
+          }
+
+          if [ "$META_OK" != "success" ]; then
+            skip "Dependabot metadata could not be verified (not from dependabot[bot], or an unsigned commit)."
+          fi
+
+          if [ "$ECOSYSTEM" != "docker" ]; then
+            skip "not a docker-ecosystem update (ecosystem: '${ECOSYSTEM:-unknown}') — left for a human or the existing PR-triggered workflow."
+          fi
+
+          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename')
+          non_dockerfile=$(echo "$files" | grep -v -E '(^|/)Dockerfile$' || true)
+          if [ -n "$non_dockerfile" ]; then
+            skip "touches file(s) beyond a Dockerfile: $(echo "$non_dockerfile" | tr '\n' ' ')"
+          fi
+          if [ -z "$files" ]; then
+            skip "reported no changed files — nothing to verify."
+          fi
+
+          sha=$(gh api "repos/$REPO/pulls/$PR" --jq '.head.sha')
+          checks=$(gh api "repos/$REPO/commits/$sha/check-runs" --paginate --jq '.check_runs')
+          others=$(echo "$checks" | jq '[.[] | select(.name | test("auto-merge"; "i") | not)]')
+          total=$(echo "$others" | jq 'length')
+          pending=$(echo "$others" | jq '[.[] | select(.status != "completed")] | length')
+          failed=$(echo "$others" | jq '[.[] | select(.conclusion != null and (.conclusion | IN("success","skipped","neutral") | not))] | length')
+          echo "PR #$PR check runs: total=$total pending=$pending failed=$failed"
+
+          if [ "$failed" -gt 0 ]; then
+            skip "at least one check run failed on the PR head commit."
+          fi
+          if [ "$pending" -gt 0 ]; then
+            skip "check runs are still in progress — will re-check on tomorrow's run."
+          fi
+
+          echo "::notice::PR #$PR is a docker digest bump touching only Dockerfile(s), all checks green — merging."
+          gh pr merge --squash --delete-branch "$PR" --repo "$REPO"
+          echo "::notice::PR #$PR merged."

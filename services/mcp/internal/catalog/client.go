@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tesserix/go-shared/mcp/upstream"
@@ -149,8 +150,39 @@ func pageParams(page, pageSize int) (url.Values, error) {
 	return params, nil
 }
 
-func storeProductsPath(slug string) string {
-	return "/api/v1/storefront/stores/" + url.PathEscape(slug) + "/products"
+// segment validates and escapes one caller-supplied path segment (a store
+// slug, product handle, or category slug — all of which arrive from an
+// agent). Every path builder in this file routes through it so a future
+// method can't forget the check.
+//
+// Escaping alone (url.PathEscape) is not enough: it leaves "." and ".."
+// untouched, and go-shared's upstream.Get runs path.Clean on the joined
+// path. With a base URL that has no path component — as this client's
+// does — upstream.Get's own traversal guard is inert (it only fires when
+// the base path is non-empty), so "stores/../products/mug" collapses to
+// "/products/mug", a different, unscoped route, with no error. Rejecting
+// "." and ".." here, before any path is built, closes that regardless of
+// what the shared client's guard does or doesn't catch.
+//
+// unescaping the segment and checking for "/" additionally rejects an
+// encoded slash (e.g. "a%2Fb"), which — combined with a "." — could
+// otherwise reconstruct a traversal after decoding.
+func segment(paramName, value string) (string, error) {
+	if value == "." || value == ".." {
+		return "", fmt.Errorf("catalog: %s %q is not a valid path segment", paramName, value)
+	}
+	if decoded, err := url.PathUnescape(value); err == nil && strings.Contains(decoded, "/") {
+		return "", fmt.Errorf("catalog: %s %q contains a path separator", paramName, value)
+	}
+	return url.PathEscape(value), nil
+}
+
+func storeProductsPath(slug string) (string, error) {
+	seg, err := segment("slug", slug)
+	if err != nil {
+		return "", err
+	}
+	return "/api/v1/storefront/stores/" + seg + "/products", nil
 }
 
 // ListProducts calls GET /api/v1/storefront/stores/{slug}/products.
@@ -159,8 +191,12 @@ func (c *Client) ListProducts(ctx context.Context, slug string, page, pageSize i
 	if err != nil {
 		return nil, err
 	}
+	path, err := storeProductsPath(slug)
+	if err != nil {
+		return nil, err
+	}
 	var env storefrontProductsEnvelope
-	if err := c.upstream.Get(ctx, storeProductsPath(slug), params, &env); err != nil {
+	if err := c.upstream.Get(ctx, path, params, &env); err != nil {
 		return nil, err
 	}
 	return env.Data, nil
@@ -169,9 +205,16 @@ func (c *Client) ListProducts(ctx context.Context, slug string, page, pageSize i
 // GetProduct calls GET /api/v1/storefront/stores/{slug}/products/{handle}.
 // This is a single-resource fetch: no page/page_size and no envelope.
 func (c *Client) GetProduct(ctx context.Context, slug, handle string) (storefrontProduct, error) {
-	path := storeProductsPath(slug) + "/" + url.PathEscape(handle)
+	base, err := storeProductsPath(slug)
+	if err != nil {
+		return storefrontProduct{}, err
+	}
+	handleSeg, err := segment("handle", handle)
+	if err != nil {
+		return storefrontProduct{}, err
+	}
 	var p storefrontProduct
-	if err := c.upstream.Get(ctx, path, nil, &p); err != nil {
+	if err := c.upstream.Get(ctx, base+"/"+handleSeg, nil, &p); err != nil {
 		return storefrontProduct{}, err
 	}
 	return p, nil
@@ -179,7 +222,11 @@ func (c *Client) GetProduct(ctx context.Context, slug, handle string) (storefron
 
 // ListCategories calls GET /api/v1/storefront/stores/{slug}/categories.
 func (c *Client) ListCategories(ctx context.Context, slug string) ([]storefrontCategory, error) {
-	path := "/api/v1/storefront/stores/" + url.PathEscape(slug) + "/categories"
+	slugSeg, err := segment("slug", slug)
+	if err != nil {
+		return nil, err
+	}
+	path := "/api/v1/storefront/stores/" + slugSeg + "/categories"
 	var env storefrontCategoriesEnvelope
 	if err := c.upstream.Get(ctx, path, nil, &env); err != nil {
 		return nil, err
@@ -194,8 +241,16 @@ func (c *Client) ListByCategory(ctx context.Context, slug, categorySlug string, 
 	if err != nil {
 		return nil, err
 	}
-	path := "/api/v1/storefront/stores/" + url.PathEscape(slug) +
-		"/categories/" + url.PathEscape(categorySlug) + "/products"
+	slugSeg, err := segment("slug", slug)
+	if err != nil {
+		return nil, err
+	}
+	categorySeg, err := segment("categorySlug", categorySlug)
+	if err != nil {
+		return nil, err
+	}
+	path := "/api/v1/storefront/stores/" + slugSeg +
+		"/categories/" + categorySeg + "/products"
 	var env storefrontProductsEnvelope
 	if err := c.upstream.Get(ctx, path, params, &env); err != nil {
 		return nil, err
@@ -212,7 +267,11 @@ func (c *Client) ListByCategory(ctx context.Context, slug, categorySlug string, 
 // otherwise mirrors. That field folds a present ActivePromotion into a
 // one-element Promotions slice, and an absent one into an empty slice.
 func (c *Client) GetBranding(ctx context.Context, slug string) (storefrontBranding, error) {
-	path := "/api/v1/storefront/stores/" + url.PathEscape(slug) + "/branding"
+	slugSeg, err := segment("slug", slug)
+	if err != nil {
+		return storefrontBranding{}, err
+	}
+	path := "/api/v1/storefront/stores/" + slugSeg + "/branding"
 	var env storefrontBrandingEnvelope
 	if err := c.upstream.Get(ctx, path, nil, &env); err != nil {
 		return storefrontBranding{}, err

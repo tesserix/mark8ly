@@ -107,12 +107,34 @@ func TestGetProduct_HitsHandlePathAndDecodesBareObject(t *testing.T) {
 	assert.Equal(t, "9.5", got.PriceRange.Min)
 }
 
-// Store slug and product handle come from an agent and must be escaped —
-// a slash or other reserved character must not restructure the request path.
-func TestGetProduct_EscapesPathSegments(t *testing.T) {
+// Store slug and product handle come from an agent. A raw path separator
+// inside either must be rejected outright, not escaped-and-forwarded — a
+// slug/handle legitimately never contains "/", and rejecting keeps the
+// segment validator's contract simple: nothing containing "/" survives it,
+// escaped or not.
+func TestGetProduct_RejectsSlashInSegments(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/v1/storefront/stores/bon%2Fdi/products/mu%2Fg", r.URL.Path)
-		assert.NotContains(t, r.URL.Path, "/di/", "an escaped slash inside a segment must never split into an extra path segment")
+		t.Errorf("no request should have been sent for a slug/handle containing a path separator; got %s", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "sfkey", time.Second)
+	require.NoError(t, err)
+
+	_, err = c.GetProduct(context.Background(), "bon/di", "mug")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "slug")
+
+	_, err = c.GetProduct(context.Background(), "bondi", "mu/g")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "handle")
+}
+
+// A normal slug and handle still produce the correct escaped path once they
+// contain no separator or dot-segment to reject.
+func TestGetProduct_NormalSlugAndHandleProduceCorrectPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/storefront/stores/bondi/products/mug", r.URL.Path)
 		_, _ = w.Write([]byte(`{"handle":"mug","price_range":{"min":"1","max":"1","currency_code":"AUD"}}`))
 	}))
 	defer srv.Close()
@@ -120,7 +142,7 @@ func TestGetProduct_EscapesPathSegments(t *testing.T) {
 	c, err := NewClient(srv.URL, "sfkey", time.Second)
 	require.NoError(t, err)
 
-	_, err = c.GetProduct(context.Background(), "bon/di", "mu/g")
+	_, err = c.GetProduct(context.Background(), "bondi", "mug")
 	require.NoError(t, err)
 }
 
@@ -180,6 +202,53 @@ func TestGetBranding_UnwrapsRealResponseShape(t *testing.T) {
 
 // No active promotion: the sibling key is absent from the response
 // entirely. Promotions must decode as empty, not error or panic.
+// A store slug of ".." must never reach path.Clean inside upstream.Get,
+// which would otherwise collapse "/stores/../products/mug" into
+// "/products/mug" — a different, unscoped route. The base URL here has no
+// path component, so upstream.Get's own traversal guard is inert; this
+// client must reject the segment itself before a request is built.
+func TestListProducts_RejectsDotDotSlug(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("no request should have been sent for a %q slug; got %s", "..", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "sfkey", time.Second)
+	require.NoError(t, err)
+
+	_, err = c.ListProducts(context.Background(), "..", 1, 20)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "slug")
+}
+
+func TestGetProduct_RejectsDotDotHandle(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("no request should have been sent for a %q handle; got %s", "..", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "sfkey", time.Second)
+	require.NoError(t, err)
+
+	_, err = c.GetProduct(context.Background(), "bondi", "..")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "handle")
+}
+
+func TestGetProduct_RejectsDotSlug(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("no request should have been sent for a %q slug; got %s", ".", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "sfkey", time.Second)
+	require.NoError(t, err)
+
+	_, err = c.GetProduct(context.Background(), ".", "mug")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "slug")
+}
+
 func TestGetBranding_NoActivePromotionYieldsEmptySlice(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{

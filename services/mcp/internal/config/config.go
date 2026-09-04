@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -26,6 +27,10 @@ func Load() (Config, error) {
 	storefrontBaseURL := strings.TrimSpace(os.Getenv("STOREFRONT_BASE_URL"))
 	if storefrontBaseURL == "" {
 		return Config{}, fmt.Errorf("STOREFRONT_BASE_URL is required")
+	}
+	u, err := url.ParseRequestURI(storefrontBaseURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return Config{}, fmt.Errorf("STOREFRONT_BASE_URL must be a valid absolute URL")
 	}
 	cfg.StorefrontBaseURL = storefrontBaseURL
 

@@ -37,3 +37,35 @@ func TestLoad_MissingRequiredFailsClosed(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_StorefrontBaseURLValidation_NoScheme(t *testing.T) {
+	t.Setenv("STOREFRONT_BASE_URL", "mark8ly-marketplace-api-storefront.mark8ly.svc.cluster.local:8080")
+	t.Setenv("STOREFRONT_KEY", "k")
+	t.Setenv("MCP_AUTH_KEY", "m")
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "STOREFRONT_BASE_URL")
+}
+
+func TestLoad_StorefrontBaseURLValidation_NotAURL(t *testing.T) {
+	t.Setenv("STOREFRONT_BASE_URL", "not a url")
+	t.Setenv("STOREFRONT_KEY", "k")
+	t.Setenv("MCP_AUTH_KEY", "m")
+
+	_, err := Load()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "STOREFRONT_BASE_URL")
+}
+
+func TestLoad_StorefrontBaseURLValidation_ValidURL(t *testing.T) {
+	t.Setenv("STOREFRONT_BASE_URL", "http://mark8ly-marketplace-api-storefront.mark8ly.svc.cluster.local:8080\n")
+	t.Setenv("STOREFRONT_KEY", "  sfkey\n")
+	t.Setenv("MCP_AUTH_KEY", "mcpkey\n")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	// Verify the trimmed value is still correctly stored
+	require.Equal(t, "http://mark8ly-marketplace-api-storefront.mark8ly.svc.cluster.local:8080", cfg.StorefrontBaseURL)
+}

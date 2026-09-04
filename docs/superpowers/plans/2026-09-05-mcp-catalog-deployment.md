@@ -54,17 +54,19 @@ Read `.github/ci/container-images.json`. The Go services (`mark8ly-platform-api`
   "name": "mark8ly-mcp-catalog",
   "context": "services/mcp",
   "dockerfile": "services/mcp/Dockerfile",
-  "target": "runtime",
+  "target": "server",
   "source_root": "services/mcp",
   "build_args": "",
   "requires_application_build_secret": false,
   "trivy_ignore_file": ".trivyignore",
-  "smoke_port": 8765,
+  "smoke_port": 0,
   "smoke_path": "/healthz"
 }
 ```
 
-**Confirm `target` against the Dockerfile before committing** — the plan asserts `runtime`, but read the file's stage names rather than trusting this. Confirm `smoke_port` matches the config default (8765) and that `/healthz` is the path `main.go` actually serves.
+**`smoke_port` MUST be 0, and this plan originally got it wrong.** Every Go service in this file uses `0` — `platform-api`, `auth-bff`, `marketplace-api`, `otto` — because each hard-fails at boot without secrets CI does not supply, so a live smoke check can never connect. `mcp-catalog` is in exactly that category: `config.Load()` refuses to start without `STOREFRONT_BASE_URL`, `STOREFRONT_KEY` and `MCP_AUTH_KEY`, and CI passes only registry tokens and `NEXT_PUBLIC_*` build args. Only the Next.js apps, whose config arrives as build-time args, carry a live smoke port. `smoke_path` stays `/healthz` because that is the endpoint this service genuinely serves; the siblings' `/health` would be untrue here, and with the port at 0 the path is unused anyway.
+
+**`target` is `server`, not `runtime`** — `services/mcp/Dockerfile:17` reads `AS server`. An earlier draft of this plan said `runtime`; it was wrong, and reading the file is what caught it. Confirm `smoke_port` matches the config default (8765) and that `/healthz` is the path `main.go` actually serves.
 
 - [ ] **Step 3: Run the contract test**
 
@@ -105,6 +107,14 @@ gh api "orgs/tesserix/packages/container/mark8ly-mcp-catalog/versions" \
 - [ ] **Step 1: Create the GSM secret**
 
 Create a new secret in GCP project `tesseracthub-480811` named **`prod-mark8ly-mcp-catalog-key`**, containing a freshly generated high-entropy key. It must be a NEW value — do not reuse `prod-support-platform-mark8ly-mcp-key`, which belongs to the shared gateway. Per australis invariant 8, this connector owns its own credential so it can be revoked without touching another product.
+
+- [ ] **Step 1b: Know that this key has TWO readers, not one**
+
+The connector reads it to verify inbound calls. **AgentGateway also reads it, to inject on the way out.** Kora's architecture doc (`kora/docs/architecture/agentic-ai-end-to-end.md`, verified 2026-09-04) establishes the sanctioned path: the agent never holds the MCP key at all. AgentGateway verifies a short-lived Zitadel JWT in strict mode — signature, issuer, audience, expiry and an `agentgateway.mcp` role — then injects `X-MCP-Key` itself after selecting a reviewed route.
+
+That injection reads from the Secret `product-mcp-upstream-keys` in namespace `agentgateway-system`, built by `external-secrets/prod/agentgateway-system/externalsecret.yaml`, which already carries `HOMECHEF_MCP_KEY`, `MARK8LY_MCP_KEY`, `PLATFORM_MCP_KEY` and `STOCKPILOT_MCP_KEY`. It is also exactly the `credentialRef.secretName` devai's registry seeds point at.
+
+So the new GSM secret must be wired into **both** places (Task 3 for the connector, Task 3b for the gateway), or the connector will reject everything the gateway sends.
 
 - [ ] **Step 2: Record who holds it**
 
@@ -230,6 +240,42 @@ Then call one tool for real against a live store slug and confirm a projected re
 
 ---
 
+### Task 3b (tesserix-k8s): let AgentGateway hold the key
+
+**Files:**
+- Modify: `external-secrets/prod/agentgateway-system/externalsecret.yaml`
+
+- [ ] **Step 1: Add the connector's key to `product-mcp-upstream-keys`**
+
+Add a `secretKey` for the catalog connector alongside the existing four, sourced from the GSM secret minted in Task 2. Match the naming of its siblings — they read `<PRODUCT>_MCP_KEY` — and pick a name that distinguishes this connector from the existing `MARK8LY_MCP_KEY`, which belongs to the shared gateway that is NOT being retired here.
+
+- [ ] **Step 2: Verify it syncs**
+
+```bash
+kubectl get externalsecret -n agentgateway-system product-mcp-upstream-keys   # SecretSynced
+kubectl get secret -n agentgateway-system product-mcp-upstream-keys -o jsonpath='{.data}' | python3 -c "import json,sys; print(sorted(json.load(sys.stdin).keys()))"
+```
+Expect the new key name in that list. **Print the key NAMES only, never the values.**
+
+---
+
+### Task 3c (tesserix-k8s): admit the gateway at the mesh boundary
+
+**Files:**
+- Create/modify: the connector chart's `authorization-policy.yaml`, and whatever enrols it in the ambient mesh
+
+- [ ] **Step 1: Copy how kora-mcp is admitted**
+
+Kora's doc describes two boundaries: the waypoint authorizes the original `agentgateway-mcp` or `support-platform-slm-router` caller at the Service boundary, and the workload boundary admits only those direct callers or the waypoint's forwarding identity. Istio ambient mTLS authenticates every hop by ServiceAccount SPIFFE identity.
+
+**Read how `kora-mcp` actually does this before writing anything** — `charts/apps/kora-mcp/` if it exists, plus `charts/thirdparty/istio-config/templates/network-policies.yaml`, which references `kora-mcp`. Note also that tesserix-k8s recently landed "fix(mcp): enroll AgentGateway in ambient mesh (#956)", so the enrolment mechanism is current and worth reading rather than inferring.
+
+- [ ] **Step 2: Admit only what must be admitted**
+
+The connector should accept calls from the AgentGateway identity, and nothing else. It must NOT be open to the namespace at large. Confirm by reading the rendered policy, not by trusting the values file.
+
+---
+
 ### Task 4 (tesserix-k8s): add it to the Kargo warehouse — LAST, and only on evidence
 
 **Do not start this task until Task 1 step 6 has confirmed a published `main-<sha7>` tag, and Task 3 step 9 has confirmed the connector answers a `tools/list`.**
@@ -318,4 +364,5 @@ Note the seeds are a source of record; **zero `MCPServer` CRs exist in the clust
 ## Open questions
 
 1. **Who calls this first?** Deploying it proves it runs; it does not prove anything consumes it. Identify the first caller before Task 4, because a connector nothing calls is not obviously worth adding to the promotion chain.
-2. **Does the engine reach it directly or via AgentGateway?** Affects whether an AuthorizationPolicy needs to admit a second caller identity.
+2. ~~Does the engine reach it directly or via AgentGateway?~~ **ANSWERED — via AgentGateway.** Kora's architecture doc settles it: the agent presents a Zitadel JWT to AgentGateway, which authenticates it and injects `X-MCP-Key` from `product-mcp-upstream-keys`. That drove Tasks 3b and 3c into this plan; they were missing from the first draft.
+3. **How is an MCP server registered as an AgentGateway ROUTE?** Still open, and the one piece of the path not yet established. `charts/thirdparty/agentgateway/values.yaml`'s `backends` block is for LLM providers (anthropic/openai/groq), not MCP servers, so routing lives somewhere else. Find how `kora-mcp` is reached before assuming a deployed Service is callable — a connector the gateway has no route to is running but unreachable, which is #412's shape again.

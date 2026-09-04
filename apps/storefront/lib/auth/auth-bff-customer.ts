@@ -17,6 +17,7 @@
 //   200 factor-req -> {"totp_required": true, "session_id": string, "session_token": string}
 //   200 handoff    -> {"handoff_url": string}
 //   401 rejected   -> {"error": "invalid_credentials"} or {"error": "invalid_totp"}
+//   401 unverified -> {"error": "email_not_verified"} (login only — see below)
 //   503/5xx        -> {"error": "zitadel_unavailable" | "internal_error" | ...}
 //
 // Neither endpoint takes an auth_request_id: the customer path makes a
@@ -30,10 +31,16 @@
 // {"error":"invalid_credentials"} whether the password was wrong or the
 // account doesn't exist, because a different answer would be an
 // account-enumeration oracle on a public storefront. This client must not
-// reintroduce that distinction: every 401 maps to the same `rejected`
-// outcome below, with no further detail. A 5xx or a transport failure is a
-// DIFFERENT, distinguishable case (AuthBffCustomerError, thrown rather than
-// returned) so the UI can tell "wrong credentials" from "auth is down".
+// reintroduce that distinction: every 401 from that error path maps to the
+// same `rejected` outcome below, with no further detail. A 5xx or a
+// transport failure is a DIFFERENT, distinguishable case
+// (AuthBffCustomerError, thrown rather than returned) so the UI can tell
+// "wrong credentials" from "auth is down".
+//
+// One 401 code is the deliberate exception: {"error":"email_not_verified"}
+// on the login endpoint is surfaced as its own `email_not_verified`
+// outcome, not collapsed. See parseCustomerOutcome's handling of it below
+// for why this does not reopen the enumeration oracle.
 
 const AUTH_BFF_URL = process.env.AUTH_BFF_URL ?? "http://localhost:8087";
 
@@ -73,7 +80,8 @@ export type CustomerAuthOutcome =
   | { kind: "complete"; uid: string; email: string }
   | { kind: "totp_required"; sessionId: string; sessionToken: string }
   | { kind: "handoff"; handoffUrl: string }
-  | { kind: "rejected" };
+  | { kind: "rejected" }
+  | { kind: "email_not_verified" };
 
 /**
  * Thrown for anything that is NOT one of the endpoint's normal outcomes:
@@ -172,8 +180,9 @@ async function postToCustomerEndpoint(
 }
 
 /** Shared response parsing for both endpoints: 401 -> the single
- *  `rejected` outcome, other non-2xx -> AuthBffCustomerError, 2xx ->
- *  the matching outcome by shape. */
+ *  `rejected` outcome (with one explicit exception, see below),
+ *  other non-2xx -> AuthBffCustomerError, 2xx -> the matching outcome
+ *  by shape. */
 async function parseCustomerOutcome(
   res: Response,
 ): Promise<CustomerAuthOutcome> {
@@ -181,8 +190,40 @@ async function parseCustomerOutcome(
     // Both ErrBadCredentials and ErrUserNotFound (login) and both a wrong
     // TOTP code and a vanished session (totp) arrive here as the identical
     // {"error": "invalid_credentials"} / {"error": "invalid_totp"} body.
-    // Collapse to one outcome with no further detail — do not read the
-    // `error` field and do not distinguish by it.
+    // Collapse those to one outcome with no further detail — do not read
+    // the `error` field for anything but the one allowlisted exception
+    // below, and do not distinguish by any other value it carries.
+    //
+    // The ONE exception: {"error": "email_not_verified"}. This is safe to
+    // surface distinctly, unlike every other 401, because of WHERE it sits
+    // in auth-bff's login handler (services/auth-bff/internal/
+    // zitadellogin/customer_handler.go:363-369): it is only ever returned
+    // AFTER CreatePasswordSession has already SUCCEEDED, i.e. the caller
+    // already holds this account's correct password. Revealing
+    // "email_not_verified" instead of the generic rejection tells such a
+    // caller nothing they didn't already prove they knew — it is not a new
+    // account-enumeration oracle for someone who does NOT hold a valid
+    // credential, because they can never reach this branch in the first
+    // place (they get collapsed `rejected`, like everyone else without the
+    // password). Do not "helpfully" fold this back into `rejected` — that
+    // would silently reintroduce the storefront bug where a customer with
+    // the CORRECT password is told their password is wrong, with no path
+    // to recovery (see the phase brief / customer-signup-messages.ts's
+    // already-written, previously-unreachable copy for this exact case).
+    //
+    // Read the body defensively: anything other than exactly
+    // {"error":"email_not_verified"} — an unknown code, a missing field, a
+    // malformed body — falls through to the collapsed `rejected` outcome
+    // below. This must stay an explicit allowlist of one literal string,
+    // never a passthrough of whatever the body says.
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error === "email_not_verified") {
+        return { kind: "email_not_verified" };
+      }
+    } catch {
+      // Non-JSON or unreadable body — fall through to `rejected`.
+    }
     return { kind: "rejected" };
   }
 

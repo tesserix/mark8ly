@@ -109,6 +109,34 @@ describe("verifyCustomerCredential", () => {
     expect(outcome).toEqual({ kind: "rejected" });
   });
 
+  it("surfaces a 401 email_not_verified as its own outcome instead of collapsing it", async () => {
+    // Unlike invalid_credentials/invalid_totp above, this ONE 401 code is
+    // safe to distinguish — reaching it already required
+    // CreatePasswordSession to succeed (see customer_handler.go:363-369),
+    // so the caller already holds the correct password.
+    stubFetch(401, { error: "email_not_verified" });
+
+    const outcome = await verifyCustomerCredential(loginArgs);
+
+    expect(outcome).toEqual({ kind: "email_not_verified" });
+  });
+
+  it("still collapses a 401 with an unrecognised error code to rejected", async () => {
+    stubFetch(401, { error: "some_future_code_this_client_does_not_know" });
+
+    const outcome = await verifyCustomerCredential(loginArgs);
+
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
+  it("still collapses a 401 with no error field at all to rejected", async () => {
+    stubFetch(401, {});
+
+    const outcome = await verifyCustomerCredential(loginArgs);
+
+    expect(outcome).toEqual({ kind: "rejected" });
+  });
+
   it("throws a distinguishable error on a 5xx, not the credential-rejection outcome", async () => {
     stubFetch(503, { error: "zitadel_unavailable" });
 

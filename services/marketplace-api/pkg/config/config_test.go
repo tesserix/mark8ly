@@ -379,6 +379,47 @@ func TestConfig_ZitadelEnabledSucceedsWhenFullyConfigured(t *testing.T) {
 	}
 }
 
+// A GCP Secret Manager value pushed via `echo "..." | gcloud secrets ...`
+// carries a trailing LF (the 2026-05-05 bondi storefront incident was
+// exactly this, on a different field). ZitadelIssuer feeds OIDC discovery
+// and ZitadelAdminProjectID is compared against the token's "aud" claim,
+// so an untrimmed value here either breaks discovery (mobile admin routes
+// silently unmounted) or 401s every token — both worse than the other 11
+// secret-sourced fields Load already trims. Load must strip the padding
+// before anything downstream — including ValidateZitadel's own emptiness
+// check — ever sees these fields.
+func TestConfig_ZitadelFieldsAreTrimmed(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ZITADEL_ENABLED", "true")
+	t.Setenv("ZITADEL_ISSUER", "https://auth.tesserix.app\n")
+	t.Setenv("ZITADEL_ADMIN_PROJECT_ID", " 389070376568619523\n")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with padded Zitadel values = %v, want success", err)
+	}
+	if cfg.ZitadelIssuer != "https://auth.tesserix.app" {
+		t.Errorf("ZitadelIssuer = %q, want trimmed https://auth.tesserix.app", cfg.ZitadelIssuer)
+	}
+	if cfg.ZitadelAdminProjectID != "389070376568619523" {
+		t.Errorf("ZitadelAdminProjectID = %q, want trimmed 389070376568619523", cfg.ZitadelAdminProjectID)
+	}
+}
+
+// A value that is ONLY whitespace must still be treated as unset by
+// ValidateZitadel — trimming happens before the emptiness check, not as a
+// separate copy the check inspects and discards.
+func TestConfig_ZitadelWhitespaceOnlyIssuerFailsValidation(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ZITADEL_ENABLED", "true")
+	t.Setenv("ZITADEL_ISSUER", "   \n")
+	t.Setenv("ZITADEL_ADMIN_PROJECT_ID", "389070376568619523")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with whitespace-only ZITADEL_ISSUER = nil, want error")
+	}
+}
+
 // LoadCarrierSecretJob is the narrow loader for background jobs (e.g.
 // cmd/refund-sweep-cron) that only need to construct a carrier secret
 // Store — it must accept a minimal env with none of Config's unrelated

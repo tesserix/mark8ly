@@ -13,15 +13,32 @@ import (
 type MobileDeps struct {
 	Deps
 	// TokenVerifier is GIP or Zitadel, selected by main.go's config-driven
-	// wiring; RegisterAdminMobile treats either the same way.
+	// wiring; RegisterAdminMobile treats either the same way for
+	// signature verification, but NOT for tenancy — see ZitadelEnabled.
 	TokenVerifier auth.TokenVerifier
+	// ZitadelEnabled MUST match the same flag that selected TokenVerifier
+	// (cfg.ZitadelEnabled) — it decides which single middleware is the
+	// source of "tenant_id" on the gin context:
+	//
+	//   - true:  GIPBearerAuth writes no tenant; auth.TenantFromRequest is
+	//     mounted and is the only writer (FGA-validated X-Acting-Tenant-Id).
+	//   - false (today's production default): auth.TenantFromRequest is
+	//     NOT mounted at all — there is no X-Acting-Tenant-Id support
+	//     anywhere outside this service, so mounting it would 404 every
+	//     mobile-admin request — and GIPBearerAuth writes tenant_id from
+	//     the GIP custom claim, exactly as before #524 phase 4.
+	//
+	// Exactly one of these two writers is ever active. Getting this wrong
+	// either bricks the flag-off mobile app (mounting TenantFromRequest
+	// with no header support anywhere) or reopens the unvalidated-claim-
+	// wins-the-race bug (flag-on with the claim write still live).
+	ZitadelEnabled bool
 	// TenantMembershipChecker backs auth.TenantFromRequest (#524 phase 4):
 	// it resolves the caller's X-Acting-Tenant-Id header via an FGA
 	// membership check, for tokens (Zitadel) that carry no tenant_id
-	// claim at all. Nil-safe like TenantGate below — TenantFromRequest
-	// only touches it when the header is present, so a test or a GIP-only
-	// deployment that never sets the header is unaffected by leaving this
-	// nil.
+	// claim at all. Only read when ZitadelEnabled is true; TenantFromRequest
+	// itself also tolerates a nil checker (guards before calling it), so
+	// leaving this nil is safe either way.
 	TenantMembershipChecker auth.TenantMembershipChecker
 	// TenantMembershipLogger is passed to auth.TenantFromRequest for its
 	// (fail-closed, never-abort) FGA-error logging. May be nil.
@@ -47,7 +64,12 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 		return // mobile routes disabled when no GIP config
 	}
 
-	bearerAuth := auth.GIPBearerAuth(deps.TokenVerifier)
+	// bearerAuth's setTenantFromClaim is the exact complement of
+	// ZitadelEnabled: whichever of {this claim write, TenantFromRequest
+	// below} is active, the other MUST NOT be — see ZitadelEnabled's doc
+	// comment on MobileDeps for why both-active or both-inactive are each
+	// a real incident, not just untidy.
+	bearerAuth := auth.GIPBearerAuth(deps.TokenVerifier, !deps.ZitadelEnabled)
 	rateLimiter := auth.NewPerUserRateLimiter(60, 10) // 60 req/min, burst 10
 	// Fails closed for callers with no tenant bound to their identity.
 	// GIPBearerAuth intentionally lets a validly-signed token through even
@@ -58,30 +80,35 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 	// still protected.
 	requireTenant := auth.RequireBoundTenant()
 
-	// tenantMW mirrors routes.go's tenantMW: auth, then the FGA-backed
-	// acting-tenant resolver (#524 phase 4), then the bound-tenant guard,
+	// tenantMW mirrors routes.go's tenantMW: auth, [FGA acting-tenant
+	// resolver when Zitadel is selected], then the bound-tenant guard,
 	// then TenantGate (#287, F1) so a suspended tenant is refused on every
 	// non-store-scoped mobile group too — this is the fifth admin route
 	// group the design's four-group count missed. TenantGate is a nil-safe
 	// method value (see Deps.TenantGate's doc), so appending it
 	// unconditionally is safe whether or not the gate is wired.
 	//
-	// auth.TenantFromRequest MUST sit here, between bearerAuth and
-	// requireTenant, and nowhere else:
+	// auth.TenantFromRequest is mounted ONLY when deps.ZitadelEnabled —
+	// mounting it unconditionally would make it the mobile app's sole
+	// path to a tenant on GIP deployments too, and packages/mobile-shared
+	// (the one client that calls this API) never sends
+	// X-Acting-Tenant-Id, so every request would resolve no tenant and
+	// requireTenant would 404 all of them. When it IS mounted, it MUST
+	// sit here, between bearerAuth and requireTenant, and nowhere else:
 	//   - before bearerAuth there is no user_id yet for its FGA
 	//     membership check to use;
 	//   - after requireTenant, requireTenant has already 404'd any
 	//     request TenantFromRequest would otherwise have rescued by
 	//     resolving tenant_id from X-Acting-Tenant-Id.
-	// It is safe to mount unconditionally (even with a nil
-	// TenantMembershipChecker/logger): it never aborts, and it only ever
-	// touches the checker when the header is present — see its doc
-	// comment in internal/auth/tenant_from_request.go.
-	tenantMW := []gin.HandlerFunc{
-		bearerAuth,
-		auth.TenantFromRequest(deps.TenantMembershipChecker, deps.TenantMembershipLogger),
-		requireTenant,
+	// It is safe to mount with a nil TenantMembershipChecker/logger: it
+	// never aborts, and it only ever touches the checker when the header
+	// is present — see its doc comment in
+	// internal/auth/tenant_from_request.go.
+	tenantMW := []gin.HandlerFunc{bearerAuth}
+	if deps.ZitadelEnabled {
+		tenantMW = append(tenantMW, auth.TenantFromRequest(deps.TenantMembershipChecker, deps.TenantMembershipLogger))
 	}
+	tenantMW = append(tenantMW, requireTenant)
 	if deps.TenantGate != nil {
 		tenantMW = append(tenantMW, deps.TenantGate)
 	}

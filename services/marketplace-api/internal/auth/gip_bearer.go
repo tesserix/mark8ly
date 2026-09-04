@@ -16,15 +16,20 @@ var (
 
 // TokenClaims holds the verified claims extracted from a bearer token.
 //
-// It carries no tenant information. Tenancy used to travel here as a
-// GIP custom claim, but that let an unvalidated, caller-controlled value
-// compete with auth.TenantFromRequest's FGA-validated tenant_id for the
-// same gin context key — whichever middleware ran last silently won. The
-// claim path is gone: the only way tenant_id reaches the context now is
-// TenantFromRequest, after an FGA membership check. See
-// internal/auth/tenant_from_request.go.
+// TenantID is populated only by GIPVerifier — ZitadelVerifier always
+// returns it empty by design (see zitadel_verifier.go), because Zitadel
+// tokens carry no tenant claim at all. Whether GIPBearerAuth actually
+// copies TenantID onto the gin context's "tenant_id" key is controlled by
+// its setTenantFromClaim parameter, NOT by this type: exactly one of
+// {GIPBearerAuth's claim write, TenantFromRequest's FGA-validated write}
+// may be active for a given deployment, selected by ZITADEL_ENABLED. Never
+// let both run — an unvalidated claim racing a validated FGA result for
+// the same context key is the bug #524 phase 4 exists to remove. See
+// internal/handlers/admin/mobile_routes.go for how the two are kept
+// mutually exclusive.
 type TokenClaims struct {
-	UserID string
+	UserID   string
+	TenantID string
 }
 
 // TokenVerifier verifies a GIP ID token and returns its claims.
@@ -35,26 +40,40 @@ type TokenVerifier interface {
 
 // FakeVerifier is a test double for TokenVerifier.
 type FakeVerifier struct {
-	UserID string
-	Err    error
+	UserID   string
+	TenantID string
+	Err      error
 }
 
 func (f *FakeVerifier) Verify(_ context.Context, _ string) (*TokenClaims, error) {
 	if f.Err != nil {
 		return nil, f.Err
 	}
-	return &TokenClaims{UserID: f.UserID}, nil
+	return &TokenClaims{UserID: f.UserID, TenantID: f.TenantID}, nil
 }
 
 // GIPBearerAuth returns a gin middleware that validates a GIP Bearer token.
-// On success it sets "user_id" on the gin context — same contract as
-// HeaderTrustAuth so downstream handlers work unchanged. It deliberately
-// does NOT set "tenant_id": tenancy comes only from TenantFromRequest's
-// FGA-validated result, mounted later in the chain. Setting it here too
-// would give an unvalidated claim value a chance to win a race against the
-// validated one, depending on middleware order — exactly the bug this
-// change removes.
-func GIPBearerAuth(verifier TokenVerifier) gin.HandlerFunc {
+// On success it always sets "user_id" on the gin context — same contract
+// as HeaderTrustAuth so downstream handlers work unchanged.
+//
+// setTenantFromClaim controls whether it ALSO sets "tenant_id" from the
+// verified claims:
+//
+//   - false (Zitadel deployments): tenancy comes exclusively from
+//     TenantFromRequest's FGA-validated result, mounted later in the
+//     chain. Since ZitadelVerifier always returns an empty TenantID
+//     anyway, this is belt-and-braces, not load-bearing on its own.
+//   - true (GIP deployments — today's production, ZITADEL_ENABLED=false):
+//     TenantFromRequest is never mounted (there is no X-Acting-Tenant-Id
+//     support anywhere outside this service, so mounting it would 404
+//     every mobile-admin request), so the GIP custom claim is the only
+//     source of tenancy, exactly as before #524 phase 4.
+//
+// The caller (RegisterAdminMobile) MUST pass setTenantFromClaim as the
+// exact complement of whether it also mounts TenantFromRequest — never
+// both active, never both inactive — so exactly one writer of "tenant_id"
+// is ever active.
+func GIPBearerAuth(verifier TokenVerifier, setTenantFromClaim bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if !strings.HasPrefix(header, "Bearer ") {
@@ -76,6 +95,9 @@ func GIPBearerAuth(verifier TokenVerifier) gin.HandlerFunc {
 		}
 
 		c.Set("user_id", claims.UserID)
+		if setTenantFromClaim {
+			c.Set("tenant_id", claims.TenantID)
+		}
 		c.Next()
 	}
 }

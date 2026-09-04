@@ -150,9 +150,6 @@ func TestZitadelVerifier_TenantIDAlwaysEmpty_EvenWithTenantClaims(t *testing.T) 
 
 	// A token that DOES carry a tenant-ish claim — proves the verifier
 	// ignores it rather than never having been tested against one.
-	// TokenClaims no longer even has a field to carry a tenant value, so
-	// asserting UserID is the only field the verifier returns is itself
-	// the "no leakage" proof.
 	token := signZitadelToken(t, srv.URL, "zitadel-user-456", time.Now().Add(time.Hour), map[string]any{
 		"tenant_id":                             "should-be-ignored",
 		"urn:zitadel:iam:org:id":                "org-should-be-ignored",
@@ -161,7 +158,8 @@ func TestZitadelVerifier_TenantIDAlwaysEmpty_EvenWithTenantClaims(t *testing.T) 
 
 	claims, err := v.Verify(context.Background(), token)
 	require.NoError(t, err)
-	require.Equal(t, &TokenClaims{UserID: "zitadel-user-456"}, claims)
+	require.Equal(t, "zitadel-user-456", claims.UserID)
+	require.Empty(t, claims.TenantID)
 }
 
 func TestZitadelVerifier_BadSignature_Fails(t *testing.T) {

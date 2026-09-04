@@ -424,6 +424,17 @@ func Load() (*Config, error) {
 	cfg.CustomerSessionSecret = strings.TrimSpace(cfg.CustomerSessionSecret)
 	cfg.EncryptionKey = strings.TrimSpace(cfg.EncryptionKey)
 	cfg.EncryptionMode = strings.ToLower(strings.TrimSpace(cfg.EncryptionMode))
+	// Same trailing-LF risk as the secrets above, for the same GCP Secret
+	// Manager reason: ZitadelIssuer feeds OIDC discovery (a padded issuer
+	// URL fails discovery, disabling mobile admin routes with only a log
+	// line) and ZitadelAdminProjectID is compared against the token's
+	// "aud" claim (a padded value 401s every otherwise-valid token).
+	// ValidateZitadel used to TrimSpace only to test emptiness and then
+	// store the raw, untrimmed value — trim here instead so every reader
+	// of these fields, not just the emptiness check, sees the same
+	// cleaned value.
+	cfg.ZitadelIssuer = strings.TrimSpace(cfg.ZitadelIssuer)
+	cfg.ZitadelAdminProjectID = strings.TrimSpace(cfg.ZitadelAdminProjectID)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -533,10 +544,14 @@ func (c *Config) ValidateZitadel() error {
 	if !c.ZitadelEnabled {
 		return nil
 	}
-	if strings.TrimSpace(c.ZitadelIssuer) == "" {
+	// Both fields are already trimmed in Load — this checks the same
+	// value every other reader of c.ZitadelIssuer / c.ZitadelAdminProjectID
+	// sees, not a separately-trimmed copy that then lets the untrimmed
+	// (possibly newline-padded) original through.
+	if c.ZitadelIssuer == "" {
 		return ErrZitadelIssuerRequired
 	}
-	if strings.TrimSpace(c.ZitadelAdminProjectID) == "" {
+	if c.ZitadelAdminProjectID == "" {
 		return ErrZitadelAdminProjectIDRequired
 	}
 	return nil

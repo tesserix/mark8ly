@@ -1342,6 +1342,17 @@ func main() {
 		// Config.ValidateZitadel is checked unconditionally, so a
 		// missing value already panicked main() at boot, before this
 		// code could ever run misconfigured.
+		// Known gap: AccountHandler.SetGIPNames (the merchant display-name
+		// first-seed lookup, below) is wired only inside the GIP closure.
+		// A ZITADEL_ENABLED=true deployment never calls it, so
+		// /admin/account rows created under Zitadel seed with a blank
+		// display_name instead of the merchant's real Google name —
+		// exactly the "before it was wired at all" behaviour, not a
+		// regression, but Zitadel-mode merchants get it while GIP-mode
+		// merchants don't. There is no Zitadel-side equivalent of the
+		// Firebase Admin SDK lookup wired here today; closing this gap
+		// needs its own lookup (Zitadel's user API keyed by `sub`) rather
+		// than reusing gipuser.NewAdminSDKLookup.
 		tokenVerifier := selectMobileTokenVerifier(context.Background(), cfg, log,
 			func(ctx context.Context, issuer, audience string) (auth.TokenVerifier, error) {
 				return auth.NewZitadelVerifier(ctx, issuer, audience)
@@ -1412,10 +1423,20 @@ func main() {
 			PlatformSupportHandler: admin.NewPlatformSupportHandler(ottoChatClient, cfg.OttoWSPublicBase, log),
 			TeamHandler:            teamHandler,
 			MobileAccountHandler:   mobileAccountHandler,
-			// #524 phase 4 — resolves X-Acting-Tenant-Id via the same FGA
-			// client the rest of the admin surface already checks
-			// permissions against, for bearer tokens (Zitadel) that carry
-			// no tenant_id claim at all.
+			// #524 phase 4 (blocking-fix round) — MUST be the exact same
+			// flag that selected tokenVerifier above. RegisterAdminMobile
+			// uses it to decide the single source of tenancy: FGA-validated
+			// X-Acting-Tenant-Id when true, the GIP custom claim when
+			// false. Passing anything other than cfg.ZitadelEnabled here
+			// would let a claim-based and an FGA-based tenant write
+			// compete (if both true) or would 404 every mobile-admin
+			// request on GIP (if TenantFromRequest ran with no client-side
+			// header support to feed it).
+			ZitadelEnabled: cfg.ZitadelEnabled,
+			// Resolves X-Acting-Tenant-Id via the same FGA client the rest
+			// of the admin surface already checks permissions against, for
+			// bearer tokens (Zitadel) that carry no tenant_id claim at
+			// all. Only consulted when ZitadelEnabled is true.
 			TenantMembershipChecker: fgaClient,
 			TenantMembershipLogger:  log,
 		}

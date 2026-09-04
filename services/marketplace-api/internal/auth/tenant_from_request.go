@@ -73,6 +73,17 @@ func TenantFromRequest(checker TenantMembershipChecker, logger *slog.Logger) gin
 			return
 		}
 
+		// A nil checker must behave exactly like the "no header" and "no
+		// user_id" cases above — fall through without touching tenant_id
+		// — rather than panic. mobile_routes.go's doc comment already
+		// promises this is nil-safe; without this guard that promise was
+		// false for any caller that reaches this line with a header
+		// present but no TenantMembershipChecker configured.
+		if checker == nil {
+			c.Next()
+			return
+		}
+
 		isMember, err := checker.CheckMembership(c.Request.Context(), userID, tenantID)
 		if err != nil {
 			if logger != nil {

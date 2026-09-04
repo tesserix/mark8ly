@@ -12,7 +12,16 @@ import (
 )
 
 func searchResponse(entries ...map[string]any) []byte {
-	body := map[string]any{"result": entries}
+	// A zero-match search on the real instance OMITS "result" entirely
+	// rather than returning an empty array — protojson elides empty
+	// values (verified live 2026-09-04, see the package doc). Reproducing
+	// that exactly matters: a regression that started keying off the
+	// key's presence instead of len() would pass against a `{"result":[]}`
+	// fixture and fail in production.
+	body := map[string]any{"details": map[string]any{}}
+	if len(entries) > 0 {
+		body["result"] = entries
+	}
 	raw, _ := json.Marshal(body)
 	return raw
 }

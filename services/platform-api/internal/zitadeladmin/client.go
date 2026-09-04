@@ -25,14 +25,32 @@
 // Modelled directly on services/auth-bff/internal/zitadellogin/client.go:
 // same requestOptions/do() shape, same withLogPath convention to keep
 // caller-supplied ids out of error strings, same error-body extraction
-// approach. Every JSON shape below is the DOCUMENTED Zitadel v2
-// UserService shape; none of the password-reset or delete request/response
-// bodies were independently re-verified against a live instance while
-// writing this package (unlike zitadellogin's FindUserByVerifiedEmail and
-// LinkIDPToUser, which carry their own "Verified 2026-09-04" notes). Only
-// D7's own table entry for DELETE /v2/users/{id} is marked VERIFIED in the
-// spec. Treat the exact error-body field names below as best-effort until
-// exercised against the real instance.
+// approach (readZitadelErrorID mirrors that package's readZitadelError).
+//
+// VERIFIED 2026-09-04 against the live TESSERIX Zitadel instance: a
+// throwaway user was created, driven through the full password_reset ->
+// password round trip, and deleted.
+//
+//   - POST /v2/users/{id}/password_reset with {"returnCode":{}} returns 200
+//     with {"details":…, "verificationCode":"<6 chars>"} — Zitadel hands
+//     back the code and sends no notification of its own, exactly matching
+//     D7's "return the code so we send the mail".
+//   - POST /v2/users/{id}/password with
+//     {"newPassword":{"password":…},"verificationCode":…} returns 200 on a
+//     real, correct code.
+//   - Error bodies carry a STABLE id at details[0].id, distinct from the
+//     grpc code and from the message text: user-not-found is
+//     COMMAND-SAF4f (404, code 5); a wrong/expired verification code is
+//     COMMAND-2M9fs (400, code 9, message "Code not found"); a request
+//     missing the password field is COMMAND-G8dh3 (400, code 9, message
+//     "Password not found"). The last two share both HTTP status and grpc
+//     code and differ in message by one word — classifyError keys off
+//     details[0].id first for exactly this reason; see its doc.
+//
+// DELETE /v2/users/{id} was separately marked VERIFIED in the D7 spec
+// table. Everything else in this file (the /v2/users search shape, and any
+// error id not in the table above) remains best-effort against the
+// documented Zitadel v2 UserService shape, not independently re-verified.
 package zitadeladmin
 
 import (
@@ -172,7 +190,8 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any, sco
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
-		return fmt.Errorf("zitadeladmin: %s %s: status %d: %w", method, logPath, resp.StatusCode, classifyError(resp.StatusCode, respBody))
+		id := readZitadelErrorID(respBody)
+		return fmt.Errorf("zitadeladmin: %s %s: status %d: %s: %w", method, logPath, resp.StatusCode, id, classifyError(resp.StatusCode, respBody, id))
 	}
 	if out == nil {
 		return nil
@@ -183,25 +202,74 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any, sco
 	return nil
 }
 
-// zitadelErrorBody is the documented Zitadel v2 grpc-gateway error
-// envelope: {"code": <grpc status code>, "message": "..."}.
+// zitadelErrorBody is the Zitadel v2 grpc-gateway error envelope:
+// {"code": <grpc status code>, "message": "...", "details": [{"id": "..."}]}.
 type zitadelErrorBody struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Details []struct {
+		ID string `json:"id"`
+	} `json:"details"`
+}
+
+// readZitadelErrorID extracts ONLY details[0].id from a Zitadel error
+// body, mirroring services/auth-bff/internal/zitadellogin/client.go's
+// readZitadelError (that function also returns the grpc code; this
+// package doesn't currently need it separately, so classifyError re-parses
+// the body itself for code+message). Returns "" when absent or
+// undecodable — the caller must never treat "" as if it were a real,
+// unrecognized id, only as "no id available, fall back to the coarser
+// mapping".
+func readZitadelErrorID(body []byte) string {
+	var e zitadelErrorBody
+	if err := json.Unmarshal(body, &e); err != nil {
+		return ""
+	}
+	if len(e.Details) > 0 {
+		return e.Details[0].ID
+	}
+	return ""
+}
+
+// zitadelErrorIDSentinels maps a Zitadel error's stable details[0].id to
+// the gipadmin sentinel it means, for ids VERIFIED live on 2026-09-04
+// against the TESSERIX instance (see this file's package doc). This is
+// the PRIMARY mapping — classifyError only falls back to HTTP status +
+// message-substring matching when the id is absent or not in this table.
+//
+// COMMAND-2M9fs and COMMAND-G8dh3 are both 400s with grpc code 9 and
+// messages that differ by a single word ("Code not found" vs "Password
+// not found") — text matching alone cannot reliably tell a wrong/expired
+// verification code apart from a malformed request missing the password
+// field, and getting that distinction wrong is exactly the silent
+// degradation this package exists to avoid: a malformed request must never
+// read as "your reset code is invalid" to the merchant. COMMAND-G8dh3
+// therefore maps to ErrUnavailable (a server-side request-shape bug on our
+// end, not a bad code), never to ErrInvalidOobCode.
+var zitadelErrorIDSentinels = map[string]error{
+	"COMMAND-SAF4f": gipadmin.ErrUserNotFound,   // "User could not be found" (404, code 5)
+	"COMMAND-2M9fs": gipadmin.ErrInvalidOobCode, // "Code not found" (400, code 9)
+	"COMMAND-G8dh3": gipadmin.ErrUnavailable,    // "Password not found" (400, code 9) -- malformed request, NOT an invalid code
 }
 
 // classifyError maps an HTTP status + Zitadel error body to one of
-// gipadmin's sentinels. Status code drives the coarse mapping (404 -> not
-// found, 401/403 -> unauthenticated, 429 -> too many attempts); within a
-// 400 the message is inspected because Zitadel's password endpoint can
-// 400 for two very different reasons (an invalid/expired verification code
-// vs. a policy-rejected password) that must NOT collapse into one sentinel
-// — see the CONTRACT note in this file's package doc. A 400 that matches
-// neither known shape maps to ErrUnavailable rather than guessing: a wrong
-// guess here reads as "wrong code" or "weak password" to the merchant when
-// it is neither, which is exactly the silent-degradation failure mode this
-// package exists to avoid.
-func classifyError(status int, body []byte) error {
+// gipadmin's sentinels. id (from readZitadelErrorID) is checked first
+// against zitadelErrorIDSentinels; it is the reliable signal because it is
+// stable and distinguishes cases the message text alone cannot (see that
+// map's doc). When id is absent or not one seen live, this falls back to
+// the coarser HTTP-status mapping (404 -> not found, 401/403 ->
+// unauthenticated, 429 -> too many attempts) and, within an unrecognized
+// 400, a message-substring safety net. A 400 that matches neither the id
+// table nor a known substring maps to ErrUnavailable rather than guessing:
+// a wrong guess here reads as "wrong code" or "weak password" to the
+// merchant when it is neither.
+func classifyError(status int, body []byte, id string) error {
+	if id != "" {
+		if sentinel, ok := zitadelErrorIDSentinels[id]; ok {
+			return sentinel
+		}
+	}
+
 	var e zitadelErrorBody
 	_ = json.Unmarshal(body, &e) // best-effort; a malformed body just yields Message == ""
 	msg := strings.ToLower(e.Message)
@@ -218,8 +286,13 @@ func classifyError(status int, body []byte) error {
 		case strings.Contains(msg, "password") &&
 			(strings.Contains(msg, "weak") || strings.Contains(msg, "polic") || strings.Contains(msg, "complexity")):
 			return gipadmin.ErrWeakPassword
-		case strings.Contains(msg, "code") &&
+		case strings.Contains(msg, "code") && !strings.Contains(msg, "password") &&
 			(strings.Contains(msg, "invalid") || strings.Contains(msg, "expired") || strings.Contains(msg, "not found")):
+			// "not found" is included for the real observed message ("Code
+			// not found"), but only when "password" is absent — the
+			// COMMAND-G8dh3 case ("Password not found") must never match
+			// here. This is now a SAFETY NET behind the id table above,
+			// not the primary signal.
 			return gipadmin.ErrInvalidOobCode
 		default:
 			return gipadmin.ErrUnavailable

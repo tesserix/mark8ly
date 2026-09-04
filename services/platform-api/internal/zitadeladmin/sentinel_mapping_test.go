@@ -16,6 +16,11 @@ import (
 // is reachable through this package's own error paths, asserted against
 // the SAME gipadmin.Err* values handler.go checks — not a locally
 // redeclared lookalike.
+//
+// These bodies deliberately carry NO details[0].id, exercising
+// classifyError's status+message FALLBACK path (see error_id_mapping_test.go
+// for the primary, id-keyed path using the ids verified live on
+// 2026-09-04). Both paths must reach the right sentinel independently.
 func TestSentinelMapping_MatchesHandlerContract(t *testing.T) {
 	cases := []struct {
 		name   string

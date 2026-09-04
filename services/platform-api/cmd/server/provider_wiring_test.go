@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/mark8ly/platform-api/internal/gipadmin"
@@ -37,6 +38,48 @@ func TestNewTenantClaimSetter_NilGIPStaysGenuinelyNil(t *testing.T) {
 	if claims != nil {
 		t.Fatal("claims must be a genuinely nil interface when gipAdmin is nil, " +
 			"not a non-nil interface wrapping a nil *gipadmin.AdminClient")
+	}
+}
+
+// --- requireGIPForTenantClaim: the deploy-time half of the same guard ---
+
+// TestRequireGIPForTenantClaim_FlagOff_NeverRequired pins flag-off
+// byte-identical behaviour: today's production (ZITADEL_ENABLED unset)
+// runs fine with GIP unconfigured (dev without real GIP credentials), and
+// this new check must not turn that into a startup failure.
+func TestRequireGIPForTenantClaim_FlagOff_NeverRequired(t *testing.T) {
+	cfg := &config.Config{ZitadelEnabled: false}
+	if err := requireGIPForTenantClaim(cfg, nil); err != nil {
+		t.Fatalf("requireGIPForTenantClaim() with the flag off = %v, want nil", err)
+	}
+}
+
+// TestRequireGIPForTenantClaim_FlagOn_MissingGIP_FailsClearly is the
+// regression test for the deploy-time gap: enabling Zitadel while also
+// dropping GIP_PROJECT_ID/GIP_TENANT_ID/the GIP key (the "we've migrated"
+// operator action) must fail startup loudly, not leave EnsureTenantClaim
+// silently no-op-ing behind a log.Warn.
+func TestRequireGIPForTenantClaim_FlagOn_MissingGIP_FailsClearly(t *testing.T) {
+	cfg := &config.Config{ZitadelEnabled: true}
+	err := requireGIPForTenantClaim(cfg, nil)
+	if err == nil {
+		t.Fatal("requireGIPForTenantClaim() = nil, want an error when gipAdmin is nil and Zitadel is enabled")
+	}
+	for _, want := range []string{"EnsureTenantClaim", "marketplace-api"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %q, want it to mention %q so an operator understands why", err.Error(), want)
+		}
+	}
+}
+
+// TestRequireGIPForTenantClaim_FlagOn_GIPPresent_Boots pins that a
+// correctly configured Zitadel-enabled deployment (GIP client built
+// successfully) boots without this new check getting in the way.
+func TestRequireGIPForTenantClaim_FlagOn_GIPPresent_Boots(t *testing.T) {
+	cfg := &config.Config{ZitadelEnabled: true}
+	admin := &gipadmin.AdminClient{}
+	if err := requireGIPForTenantClaim(cfg, admin); err != nil {
+		t.Fatalf("requireGIPForTenantClaim() with gipAdmin present = %v, want nil", err)
 	}
 }
 

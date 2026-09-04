@@ -264,6 +264,15 @@ func main() {
 	} else {
 		log.Warn("gip: tenant-claim client disabled — missing GIP_PROJECT_ID/GIP_TENANT_ID and GIP_SERVER_API_KEY or GIP_WEB_API_KEY")
 	}
+	// A Zitadel cutover must not silently drop EnsureTenantClaim's GIP
+	// dependency — see requireGIPForTenantClaim's doc (provider_wiring.go)
+	// for why "we enabled Zitadel, so GIP_* is dead weight" is exactly the
+	// deploy-time mistake this guards against. Panics, matching every
+	// other startup failure in this file.
+	if err := requireGIPForTenantClaim(cfg, gipAdmin); err != nil {
+		log.Error("startup: gip required for tenant claim", "err", err)
+		panic(err)
+	}
 
 	// ─── Password-reset / account-delete provider (#524 phase 5) ───────
 	// Wires the /internal/auth/password-reset/* endpoints used by the

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/mark8ly/platform-api/internal/auth"
 	"github.com/mark8ly/platform-api/internal/gipadmin"
 	"github.com/mark8ly/platform-api/internal/invitation"
@@ -113,4 +115,50 @@ func newTenantClaimSetter(gipAdmin *gipadmin.AdminClient) invitation.TenantClaim
 		claims = gipAdmin
 	}
 	return claims
+}
+
+// requireGIPForTenantClaim is the DEPLOY-time half of the guard
+// newTenantClaimSetter enforces in code. A code review (and
+// TestMainCallsNewTenantClaimSetterUnconditionally) can prove main.go
+// still WIRES gipAdmin into EnsureTenantClaim unconditionally, but neither
+// can stop an operator's config change from pulling the rug out from
+// under it: enabling Zitadel and, as the natural "we've migrated" action,
+// also removing GIP_PROJECT_ID/GIP_TENANT_ID/the GIP key.
+//
+// Without this check, that combination leaves gipAdmin nil,
+// newTenantClaimSetter correctly (per its own guard) returns a true nil
+// invitation.TenantClaimSetter, and EnsureTenantClaim silently no-ops
+// behind cmd/server/main.go's one log.Warn line — invite-accept
+// (internal/invitation/service.go) stops writing the tenant_id custom
+// claim, and every newly-invited merchant gets a permanent "No store yet"
+// on mobile. Nothing fails at startup; it surfaces days later as a
+// support ticket.
+//
+// So: when cfg.ZitadelEnabled is true, gipAdmin must be non-nil — for ANY
+// reason it might not be (missing config, or gipadmin.New itself failing,
+// e.g. ADC unavailable) — or this returns an error the caller is expected
+// to panic on, exactly like config.ValidateZitadel's own missing-value
+// errors and every other startup failure in cmd/server/main.go. A
+// crashloop on a bad rollout is the correct outcome here; a quiet no-op
+// that surfaces as "merchants can't see their store" is not.
+//
+// When cfg.ZitadelEnabled is false this is always nil — flag-off behaviour
+// must stay byte-identical to before this check existed, including dev
+// machines that run with no GIP credentials at all.
+func requireGIPForTenantClaim(cfg *config.Config, gipAdmin *gipadmin.AdminClient) error {
+	if !cfg.ZitadelEnabled {
+		return nil
+	}
+	if gipAdmin != nil {
+		return nil
+	}
+	return fmt.Errorf("gip: ZITADEL_ENABLED=true but the GIP client EnsureTenantClaim " +
+		"depends on is not available (see the preceding log line for whether " +
+		"GIP_PROJECT_ID/GIP_TENANT_ID/a GIP API key are missing, or gipadmin init " +
+		"itself failed). This client is still REQUIRED after a Zitadel cutover here: " +
+		"invite-accept (internal/invitation/service.go) writes the tenant_id custom " +
+		"claim through it, and marketplace-api's flag-off path still reads that claim " +
+		"— dropping GIP_PROJECT_ID/GIP_TENANT_ID/the GIP key is only safe once " +
+		"ZITADEL_ENABLED is ALSO true on marketplace-api, a separate service and a " +
+		"separate cutover. Restore the GIP_* variables, or do not enable Zitadel here yet")
 }

@@ -64,14 +64,6 @@ func TestProjectProduct_ExtractsImagesByMediaType(t *testing.T) {
 	assert.Equal(t, []string{"https://cdn/image2.jpg", "https://cdn/image1.jpg"}, got.ImageURLs)
 }
 
-func TestProjectProduct_HasFoundField(t *testing.T) {
-	in := storefrontProduct{Handle: "mug", Title: "Mug"}
-	got := projectProduct(in)
-
-	// Found should be true for a real product
-	assert.True(t, got.Found)
-}
-
 func TestProjectProduct_IncludesOptionalDescription(t *testing.T) {
 	desc := "A ceramic mug"
 	in := storefrontProduct{
@@ -146,14 +138,6 @@ func TestProjectBranding_TransformsFields(t *testing.T) {
 	assert.Equal(t, "HOLIDAY20", got.Promotions[0].CouponCode)
 }
 
-func TestProjectBranding_HasFoundField(t *testing.T) {
-	in := storefrontBranding{ColorAccent: "#2D4A2B"}
-	got := projectBranding(in)
-
-	// Found should be true for real branding data
-	assert.True(t, got.Found)
-}
-
 func TestProjectBranding_EmptyPromotions(t *testing.T) {
 	in := storefrontBranding{ColorAccent: "#2D4A2B"}
 
@@ -225,7 +209,8 @@ func TestProjectProduct_SnakeCaseJsonKeys(t *testing.T) {
 	assert.Contains(t, jsonStr, `"price_min"`)
 	assert.Contains(t, jsonStr, `"price_max"`)
 	assert.Contains(t, jsonStr, `"currency"`)
-	assert.Contains(t, jsonStr, `"found"`)
+	// Product itself carries no found key — that only lives on ProductResult.
+	assert.NotContains(t, jsonStr, `"found"`)
 	// No PascalCase keys
 	assert.NotContains(t, jsonStr, `"Handle"`)
 	assert.NotContains(t, jsonStr, `"Title"`)

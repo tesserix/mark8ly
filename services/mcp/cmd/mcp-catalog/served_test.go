@@ -50,6 +50,11 @@ func TestServedSchemas_OfTheFiveRealTools(t *testing.T) {
 			require.True(t, ok, "served tool %q has no %s", name, field)
 			assert.Equal(t, false, sch["additionalProperties"],
 				"the SERVED %s of %q must be closed", field, name)
+			// get_store_product and get_store_branding nest their payload
+			// (ProductResult.Product, BrandingResult.Branding) rather than
+			// embedding it — a closed top level says nothing about whether
+			// the nested object is closed too.
+			assertSchemaClosedAtEveryLevel(t, sch, name+"."+field)
 		}
 
 		// Every input property is something a model has to fill in from a
@@ -118,4 +123,30 @@ func servedTools(t *testing.T) map[string]map[string]any {
 		out[name] = tool
 	}
 	return out
+}
+
+// assertSchemaClosedAtEveryLevel walks a JSON Schema object recursively —
+// through "properties" and array "items" — and asserts additionalProperties
+// is false on every nested object schema it finds, not just the top level.
+func assertSchemaClosedAtEveryLevel(t *testing.T, sch map[string]any, path string) {
+	t.Helper()
+
+	if sch["type"] == "object" {
+		assert.Equal(t, false, sch["additionalProperties"],
+			"%s must be closed at every level, including nested objects", path)
+	}
+
+	if props, ok := sch["properties"].(map[string]any); ok {
+		for name, raw := range props {
+			sub, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			assertSchemaClosedAtEveryLevel(t, sub, path+"."+name)
+		}
+	}
+
+	if items, ok := sch["items"].(map[string]any); ok {
+		assertSchemaClosedAtEveryLevel(t, items, path+"[]")
+	}
 }

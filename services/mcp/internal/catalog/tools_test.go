@@ -85,10 +85,10 @@ func TestGetStoreProduct_UnknownHandleReturnsFoundFalseNotError(t *testing.T) {
 	out, err := tool.Invoke(context.Background(), []byte(`{"store_slug":"bondi","handle":"nope"}`))
 	require.NoError(t, err)
 
-	p, ok := out.(Product)
+	p, ok := out.(ProductResult)
 	require.True(t, ok)
 	assert.False(t, p.Found)
-	assert.Empty(t, p.Handle)
+	assert.Empty(t, p.Product.Handle)
 }
 
 func TestGetStoreProduct_FoundProjectsTheProduct(t *testing.T) {
@@ -104,10 +104,10 @@ func TestGetStoreProduct_FoundProjectsTheProduct(t *testing.T) {
 	out, err := tool.Invoke(context.Background(), []byte(`{"store_slug":"bondi","handle":"mug"}`))
 	require.NoError(t, err)
 
-	p, ok := out.(Product)
+	p, ok := out.(ProductResult)
 	require.True(t, ok)
 	assert.True(t, p.Found)
-	assert.Equal(t, "mug", p.Handle)
+	assert.Equal(t, "mug", p.Product.Handle)
 }
 
 func TestGetStoreBranding_UnknownStoreReturnsFoundFalseNotError(t *testing.T) {
@@ -123,7 +123,7 @@ func TestGetStoreBranding_UnknownStoreReturnsFoundFalseNotError(t *testing.T) {
 	out, err := tool.Invoke(context.Background(), []byte(`{"store_slug":"nope"}`))
 	require.NoError(t, err)
 
-	b, ok := out.(Branding)
+	b, ok := out.(BrandingResult)
 	require.True(t, ok)
 	assert.False(t, b.Found)
 }

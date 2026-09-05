@@ -22,6 +22,25 @@ type ProAppCancelledEvent struct {
 	MerchantInitiatedImmediate bool
 }
 
+// ErrNoAppIdentifiers is returned when an event names neither an Apple
+// app, a Google package, nor a Firebase project.
+//
+// Seeding such a row would be actively harmful rather than merely
+// useless. The advancer skips pullApps when AppleAppID is empty and
+// archiveFirebase when FirebaseProjectID is empty (advancer.go), so a
+// row with all three blank walks the whole state machine to
+// credentials_purged without touching a single store listing. The
+// merchant's app stays live and downloadable while the platform records
+// a completed teardown — a silent false success nobody goes looking for.
+// A teardown that fails loudly at seed time is strictly better: it
+// leaves the honest no-op we have today and surfaces the missing
+// identifiers to whoever emitted the event.
+//
+// Only an event with none of the three is refused. A store may
+// legitimately ship on Apple with no Firebase project (or any other
+// partial combination), and those must still seed.
+var ErrNoAppIdentifiers = errors.New("lifecycle/consumer: event carries no AppleAppID, GooglePackage or FirebaseProjectID")
+
 // ProAppCancelledConsumer seeds a white_label_app_state row when the
 // subscription package emits the pro_app_cancelled event.
 //
@@ -46,13 +65,28 @@ func NewProAppCancelledConsumer(db *gorm.DB, clock Clock) *ProAppCancelledConsum
 	return &ProAppCancelledConsumer{db: db, clock: clock}
 }
 
+// validateEvent rejects events that cannot produce a meaningful
+// teardown. See ErrNoAppIdentifiers for why a blank-identifier event is
+// worse than no event at all.
+func validateEvent(ev ProAppCancelledEvent) error {
+	if ev.TenantID == uuid.Nil || ev.StoreID == uuid.Nil {
+		return errors.New("lifecycle/consumer: TenantID and StoreID are required")
+	}
+	if ev.AppleAppID == "" && ev.GooglePackage == "" && ev.FirebaseProjectID == "" {
+		return ErrNoAppIdentifiers
+	}
+	return nil
+}
+
 // Handle inserts (or updates, if one already exists) a state row for
 // the store. Idempotent under replay: a second Handle call for the
 // same storeID is a no-op (ON CONFLICT DO NOTHING via unique index on
 // store_id).
 func (c *ProAppCancelledConsumer) Handle(ctx context.Context, ev ProAppCancelledEvent) error {
-	if ev.TenantID == uuid.Nil || ev.StoreID == uuid.Nil {
-		return errors.New("lifecycle/consumer: TenantID and StoreID are required")
+	// Validation runs before any SQL: a refused event must leave no row
+	// behind for the advancer to pick up.
+	if err := validateEvent(ev); err != nil {
+		return err
 	}
 
 	now := c.clock().UTC()

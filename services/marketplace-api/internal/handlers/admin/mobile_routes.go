@@ -7,6 +7,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/ratelimit"
 )
 
 // MobileDeps extends Deps with the mobile-specific bearer token verifier.
@@ -59,6 +60,10 @@ type MobileDeps struct {
 	// rather than an oversight. Nil leaves the route unmounted, which
 	// disables Zitadel tenant discovery on mobile.
 	MyTenantsHandler *MobileMyTenantsHandler
+	// LoginHandler serves the app's public sign-in route — the only mobile
+	// route mounted with NO bearer auth at all, because it is how a client
+	// obtains one. Nil leaves it unmounted.
+	LoginHandler *MobileLoginHandler
 	// TenantMembershipChecker backs auth.TenantFromRequest (#524 phase 4):
 	// it resolves the caller's X-Acting-Tenant-Id header via an FGA
 	// membership check, for tokens (Zitadel) that carry no tenant_id
@@ -159,6 +164,16 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 	if deps.MobileAccountHandler != nil {
 		acct := router.Group("/mobile/admin/account", tenantMW...)
 		acct.DELETE("", deps.MobileAccountHandler.Delete)
+	}
+
+	// Sign-in — mounted with NO bearer auth, because it is what produces a
+	// bearer token. IP rate limiting stands in for the per-user limiter
+	// used everywhere else: there is no user yet, and this is the one
+	// mobile route an unauthenticated caller can reach, so it is the only
+	// credential-stuffing surface in this group.
+	if deps.LoginHandler != nil {
+		a := router.Group("/mobile/admin/auth", ratelimit.PerIP(0.5, 10))
+		a.POST("/login", deps.LoginHandler.Login)
 	}
 
 	// Tenant discovery — the ONLY mobile admin route mounted WITHOUT

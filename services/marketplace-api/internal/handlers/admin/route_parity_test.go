@@ -116,7 +116,8 @@ var mobileOnlySubtrees = map[string]string{
 }
 
 var mobileOnlyRoutes = map[string]string{
-	"GET /me/tenants": "Zitadel tenant discovery (#686): mobile is the only surface that must ask the API which tenants it belongs to, because a Zitadel token carries no tenant claim and every other mobile route is tenant-gated. The web admin resolves the same thing server-side in its own BFF (resolveWorkspaceTenant) by calling platform-api directly, so mirroring it here would add an unused route. It is also the one mobile route deliberately mounted OUTSIDE requireTenant — see MobileMyTenantsHandler",
+	"POST /auth/login": "mobile sign-in (#686): the app posts to marketplace-api because auth-bff is internet-reachable and its login route's only protection is the X-Internal-Auth secret, which a device cannot hold. The web admin has no equivalent — its Next.js server holds that secret and calls auth-bff directly. This is also the only mobile route mounted with NO bearer auth, since it is what produces a bearer token",
+	"GET /me/tenants":  "Zitadel tenant discovery (#686): mobile is the only surface that must ask the API which tenants it belongs to, because a Zitadel token carries no tenant claim and every other mobile route is tenant-gated. The web admin resolves the same thing server-side in its own BFF (resolveWorkspaceTenant) by calling platform-api directly, so mirroring it here would add an unused route. It is also the one mobile route deliberately mounted OUTSIDE requireTenant — see MobileMyTenantsHandler",
 }
 
 // ---------------------------------------------------------------------------

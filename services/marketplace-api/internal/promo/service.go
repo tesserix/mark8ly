@@ -42,7 +42,10 @@ type ApplyInput struct {
 
 // ApplyOutput is returned by Service.ApplyPromo on success.
 type ApplyOutput struct {
-	PromoCodeID    uuid.UUID
+	PromoCodeID uuid.UUID
+	// StripeCouponID is the Stripe Coupon backing the code, or "" when the
+	// code has none (trial-extension-only, or not minted in this Stripe mode).
+	// "" is not a valid Stripe coupon id, so it is unambiguously "no coupon".
 	StripeCouponID string
 	EffectiveMinor int64
 	// RejectReason is empty on success; set when the code was rejected (for audit).
@@ -134,15 +137,29 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 		return ApplyOutput{}, fmt.Errorf("promo: apply: check store redemption: %w", storeRedErr)
 	}
 
-	// 5. Attach coupon in Stripe (if client available).
-	if s.stripe != nil && in.StripeSubscriptionID != "" {
-		if err := billingstripe.AttachCoupon(ctx, s.stripe, in.StripeSubscriptionID, pc.StripeCouponID); err != nil {
+	// 5. Attach coupon in Stripe (if client available and the code has one).
+	//
+	// A console-defined code need not have a Stripe Coupon: a
+	// trial-extension-only code never does, and the console omits the coupon
+	// id for a code not minted in the current Stripe mode (#726). There is
+	// nothing to attach in that case — attaching an empty coupon id would be
+	// a Stripe API error, and inventing one would be worse.
+	couponID := ""
+	if pc.StripeCouponID != nil {
+		couponID = *pc.StripeCouponID
+	}
+	if s.stripe != nil && in.StripeSubscriptionID != "" && couponID != "" {
+		if err := billingstripe.AttachCoupon(ctx, s.stripe, in.StripeSubscriptionID, couponID); err != nil {
 			return ApplyOutput{}, fmt.Errorf("promo: apply: stripe attach coupon: %w", err)
 		}
 		s.logger.Info("promo: coupon attached to stripe subscription",
 			"store_id", in.StoreID,
-			"coupon_id", pc.StripeCouponID,
+			"coupon_id", couponID,
 			"stripe_sub_id", in.StripeSubscriptionID)
+	} else if couponID == "" {
+		s.logger.Info("promo: code carries no stripe coupon — nothing to attach",
+			"store_id", in.StoreID,
+			"promo_code_id", pc.ID)
 	} else {
 		s.logger.Warn("promo: stripe client nil or no subscription id — skipping Stripe coupon attach",
 			"store_id", in.StoreID)
@@ -157,8 +174,11 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 		RedeemedAt:     time.Now().UTC(),
 	}
 	if err := s.repo.CreateRedemption(ctx, s.db, red); err != nil {
-		// Best-effort rollback: try to detach from Stripe.
-		if s.stripe != nil && in.StripeSubscriptionID != "" {
+		// Best-effort rollback: try to detach from Stripe. Only when we
+		// actually attached something — a code with no coupon attached
+		// nothing, and detaching here would strip an unrelated coupon the
+		// subscription already carried.
+		if s.stripe != nil && in.StripeSubscriptionID != "" && couponID != "" {
 			_ = billingstripe.DetachCoupon(ctx, s.stripe, in.StripeSubscriptionID)
 		}
 		return ApplyOutput{}, fmt.Errorf("promo: apply: record redemption: %w", err)
@@ -171,7 +191,7 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 
 	return ApplyOutput{
 		PromoCodeID:    pc.ID,
-		StripeCouponID: pc.StripeCouponID,
+		StripeCouponID: couponID,
 		EffectiveMinor: result.EffectiveMinor,
 	}, nil
 }
@@ -233,11 +253,14 @@ func (s *Service) ValidateForSaveOffer(ctx context.Context, in ApplyInput) (Appl
 		return ApplyOutput{RejectReason: result.RejectReason}, ErrInvalidOrExpired
 	}
 
-	return ApplyOutput{
+	out := ApplyOutput{
 		PromoCodeID:    pc.ID,
-		StripeCouponID: pc.StripeCouponID,
 		EffectiveMinor: result.EffectiveMinor,
-	}, nil
+	}
+	if pc.StripeCouponID != nil {
+		out.StripeCouponID = *pc.StripeCouponID
+	}
+	return out, nil
 }
 
 func normaliseEmail(email string) string {

@@ -19,15 +19,32 @@ const (
 )
 
 // PromoCode is the GORM model for the promo_codes table.
-// One row per Stripe Coupon we issue. The code field is the human-facing
-// code (≥12 chars, visually-safe charset per §7.3).
+//
+// Promo definitions originate in the tesserix-home console (#726); mark8ly
+// ingests them. A row therefore carries a discount, a trial extension, or
+// both — the DB constraint promo_codes_has_benefit enforces "at least one".
+//
+// Codes we generate ourselves are ≥12 chars from the visually-safe charset
+// (§7.3, promo.MinCodeLength). Console-defined codes are human campaign codes
+// such as "LAUNCH50" and are only floored at 4 chars by the schema, so nothing
+// here may assume a length beyond that.
 type PromoCode struct {
-	ID             uuid.UUID    `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	Code           string       `gorm:"column:code;type:varchar(64);not null;uniqueIndex"`
-	StripeCouponID string       `gorm:"column:stripe_coupon_id;type:varchar(100);not null"`
-	DiscountType   DiscountType `gorm:"column:discount_type;type:promo_discount_type;not null"`
+	ID   uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	Code string    `gorm:"column:code;type:varchar(64);not null;uniqueIndex"`
+	// StripeCouponID is nil when no Stripe Coupon backs this code — the
+	// console omits it for a code not minted in the current Stripe mode, and
+	// a trial-extension-only code never has one.
+	StripeCouponID *string `gorm:"column:stripe_coupon_id;type:varchar(100)"`
+	// DiscountType is nil when the code carries no discount. Nil must mean
+	// "no discount to apply" — never "0% off". It is set if and only if
+	// DiscountValue is set (DB constraint promo_codes_discount_pair).
+	DiscountType *DiscountType `gorm:"column:discount_type;type:promo_discount_type"`
 	// DiscountValue: basis points for percentage, minor units for amount.
-	DiscountValue                int            `gorm:"column:discount_value;not null"`
+	// Nil exactly when DiscountType is nil.
+	DiscountValue *int `gorm:"column:discount_value"`
+	// TrialExtensionDays is the number of days added to the store trial on
+	// redemption (#620). Nil when the code extends no trial.
+	TrialExtensionDays           *int           `gorm:"column:trial_extension_days"`
 	MaxDurationMonths            *int           `gorm:"column:max_duration_months"`
 	ValidFrom                    time.Time      `gorm:"column:valid_from;not null;default:now()"`
 	ValidUntil                   *time.Time     `gorm:"column:valid_until"`

@@ -60,6 +60,17 @@ ARG REUSABLE_PUBLIC_BUILD_ARG_6=""
 ARG REUSABLE_PUBLIC_BUILD_ARG_7=""
 ARG REUSABLE_PUBLIC_BUILD_ARG_8=""
 ARG NEXT_PUBLIC_GIP_CUSTOMER_TENANT_ID=""
+# Which identity provider onboarding creates merchant accounts in (#685).
+# Build-time only, like every NEXT_PUBLIC_* here — a chart env var cannot
+# flip it, because SetPasswordForm is a client component and the value is
+# frozen into the bundle.
+#
+# Defaults to "zitadel" to match apps/admin's own default. The two MUST
+# agree: onboarding creating a GIP account while admin authenticates
+# against Zitadel is exactly the defect #685 reports — the merchant
+# finishes the wizard and is then told "We couldn't find a store for this
+# account. Did you finish onboarding?"
+ARG NEXT_PUBLIC_AUTH_PROVIDER="zitadel"
 ENV NEXT_PUBLIC_GIP_PROJECT_ID=$REUSABLE_PUBLIC_BUILD_ARG_1 \
     NEXT_PUBLIC_GIP_TENANT_ID=$REUSABLE_PUBLIC_BUILD_ARG_2 \
     NEXT_PUBLIC_GIP_CUSTOMER_TENANT_ID=$NEXT_PUBLIC_GIP_CUSTOMER_TENANT_ID \
@@ -67,6 +78,7 @@ ENV NEXT_PUBLIC_GIP_PROJECT_ID=$REUSABLE_PUBLIC_BUILD_ARG_1 \
     NEXT_PUBLIC_GOOGLE_CLIENT_ID=$REUSABLE_PUBLIC_BUILD_ARG_4 \
     NEXT_PUBLIC_MARKETING_URL=$REUSABLE_PUBLIC_BUILD_ARG_6 \
     NEXT_PUBLIC_ADMIN_URL_TEMPLATE=$REUSABLE_PUBLIC_BUILD_ARG_7 \
+    NEXT_PUBLIC_AUTH_PROVIDER=$NEXT_PUBLIC_AUTH_PROVIDER \
     NEXT_TELEMETRY_DISABLED=1
 
 # Pins the Server Action ID hash salt so action IDs stay stable across

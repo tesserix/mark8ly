@@ -192,6 +192,17 @@ func main() {
 
 	vendorClient := marketplaceapi.NewVendorClient(cfg.MarketplaceAPIURL, cfg.MarketplaceInternalAuthSecret)
 
+	// Zitadel-path owner provisioning for onboarding completion (#685).
+	// Nil (and every downstream behaviour byte-identical to before)
+	// unless ZITADEL_ENABLED is true; a misconfiguration panics rather
+	// than quietly onboarding merchants who can never sign in — see
+	// newOwnerProvisioner's doc.
+	ownerProvisioner, ownerProvErr := newOwnerProvisioner(cfg)
+	if ownerProvErr != nil {
+		log.Error("owner provisioner wiring", "err", ownerProvErr)
+		panic(ownerProvErr)
+	}
+
 	onboardingSvc := onboarding.NewService(onboarding.Config{
 		DB:                    conn,
 		Repo:                  onboarding.NewRepository(conn),
@@ -204,6 +215,7 @@ func main() {
 		StorefrontURLTemplate: cfg.StorefrontBaseURLTemplate,
 		SupportEmail:          cfg.EmailFrom,
 		VendorClient:          vendorClient,
+		Provisioner:           ownerProvisioner,
 	})
 	onboardingHandler := onboarding.NewHandler(onboardingSvc, verifSvc)
 

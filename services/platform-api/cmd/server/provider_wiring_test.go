@@ -247,3 +247,53 @@ func TestNewStaffProvisioner_MissingProjectID_FailsClearly(t *testing.T) {
 		t.Fatal("provisioner must be nil on misconfiguration")
 	}
 }
+
+// --- newOwnerProvisioner: onboarding-completion provisioning (#685) ----
+
+// TestNewOwnerProvisioner_FlagUnset_StaysGenuinelyNil pins the GIP path
+// for onboarding, for the same reason its invite-accept twin above does:
+// a non-nil interface wrapping a nil pointer would flip
+// onboarding.Complete onto the Zitadel branch and panic on the first
+// merchant to finish the wizard.
+func TestNewOwnerProvisioner_FlagUnset_StaysGenuinelyNil(t *testing.T) {
+	p, err := newOwnerProvisioner(&config.Config{ZitadelEnabled: false})
+	if err != nil {
+		t.Fatalf("newOwnerProvisioner() error = %v, want nil", err)
+	}
+	if p != nil {
+		t.Fatal("provisioner must be a genuinely nil interface when Zitadel is disabled")
+	}
+}
+
+// TestNewOwnerProvisioner_FlagSet_BuildsZitadelProvisioner pins that the
+// merchant is provisioned by the SAME type an invited teammate is. The
+// mark8ly-admin project has exactly one role and the grant only gates
+// access to the project; the owner/staff distinction lives in FGA.
+func TestNewOwnerProvisioner_FlagSet_BuildsZitadelProvisioner(t *testing.T) {
+	p, err := newOwnerProvisioner(zitadelStaffConfig())
+	if err != nil {
+		t.Fatalf("newOwnerProvisioner() error = %v, want nil", err)
+	}
+	if _, ok := p.(*zitadeladmin.StaffProvisioner); !ok {
+		t.Fatalf("provisioner = %T, want *zitadeladmin.StaffProvisioner", p)
+	}
+}
+
+// TestNewOwnerProvisioner_MissingProjectID_FailsClearly pins that a
+// misconfigured deployment crashloops rather than onboarding merchants
+// who hold no grant on the admin project and therefore cannot sign in.
+func TestNewOwnerProvisioner_MissingProjectID_FailsClearly(t *testing.T) {
+	cfg := zitadelStaffConfig()
+	cfg.ZitadelAdminProjectID = ""
+
+	p, err := newOwnerProvisioner(cfg)
+	if err == nil {
+		t.Fatal("newOwnerProvisioner() = nil error, want a misconfiguration error")
+	}
+	if !errors.Is(err, config.ErrZitadelNotConfigured) {
+		t.Fatalf("err = %v, want it to wrap config.ErrZitadelNotConfigured", err)
+	}
+	if p != nil {
+		t.Fatal("provisioner must be nil on misconfiguration")
+	}
+}

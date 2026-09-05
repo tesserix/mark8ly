@@ -6,6 +6,7 @@ import (
 	"github.com/mark8ly/platform-api/internal/auth"
 	"github.com/mark8ly/platform-api/internal/gipadmin"
 	"github.com/mark8ly/platform-api/internal/invitation"
+	"github.com/mark8ly/platform-api/internal/onboarding"
 	"github.com/mark8ly/platform-api/internal/zitadeladmin"
 	"github.com/mark8ly/platform-api/pkg/config"
 )
@@ -101,6 +102,55 @@ func selectAccountProviders(cfg *config.Config, gipAdmin *gipadmin.AdminClient) 
 // precise bug this function exists to fix — an invited teammate who is
 // told "we couldn't find a store for this account" at every sign-in.
 func newStaffProvisioner(cfg *config.Config) (invitation.StaffProvisioner, error) {
+	p, err := buildZitadelProvisioner(cfg)
+	if err != nil || p == nil {
+		// Never `return p, err` — p is a CONCRETE pointer, and a nil one
+		// assigned into the interface return would produce a NON-NIL
+		// interface holding nil, which is exactly the GIP-path selector
+		// invitation.Service branches on. See selectAccountProviders'
+		// typed-nil section.
+		return nil, err
+	}
+	return p, nil
+}
+
+// newOwnerProvisioner builds the onboarding.OwnerProvisioner that
+// onboarding.Complete calls to create the MERCHANT's Zitadel account and
+// grant them the mark8ly-admin project role (#685).
+//
+// Same construction, same true-nil discipline, and deliberately the same
+// underlying *zitadeladmin.StaffProvisioner as newStaffProvisioner —
+// including the same role key. The mark8ly-admin project defines exactly
+// one role, mark8ly.staff, and a Zitadel project grant only decides
+// whether the OIDC flow may complete at all; it carries no authority.
+// Authority is the FGA `owner` tuple onboarding writes. Minting a second
+// Zitadel role to express "owner" would duplicate that decision in a
+// place nothing reads.
+//
+// Returns a true nil when cfg.ZitadelEnabled is false, which selects the
+// GIP path inside onboarding.Service: under GIP the set-password form
+// creates the account client-side before calling platform-api, so the
+// server has nothing to provision and the behaviour must stay exactly as
+// it was. A configuration problem when Zitadel IS enabled is a startup
+// failure, not a degraded mode — wiring nil here would leave onboarding
+// writing a GIP-shaped tuple into a Zitadel world and reproduce the
+// precise bug this exists to fix: a merchant told "We couldn't find a
+// store for this account. Did you finish onboarding?" seconds after
+// finishing onboarding.
+func newOwnerProvisioner(cfg *config.Config) (onboarding.OwnerProvisioner, error) {
+	p, err := buildZitadelProvisioner(cfg)
+	if err != nil || p == nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// buildZitadelProvisioner returns the shared Zitadel provisioner, or a
+// nil pointer (and nil error) when Zitadel is not enabled. Both callers
+// above convert that nil pointer into a true nil interface themselves —
+// this function must NOT return an interface, or the typed-nil trap
+// moves in here where it is harder to see.
+func buildZitadelProvisioner(cfg *config.Config) (*zitadeladmin.StaffProvisioner, error) {
 	if !cfg.ZitadelEnabled {
 		return nil, nil
 	}

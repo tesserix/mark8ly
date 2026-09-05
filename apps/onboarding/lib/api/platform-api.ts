@@ -101,11 +101,20 @@ export const onboarding = {
     body: {
       business_name: string;
       slug: string;
-      owner_user_id: string;
+      /** GIP path only. On the Zitadel path the merchant has no provider
+       *  account yet — platform-api's complete endpoint creates it — so
+       *  there is no id to send and the field is omitted entirely. */
+      owner_user_id?: string;
       owner_email: string;
       country_code: string;
       currency_code: string;
       timezone: string;
+      /** Zitadel path only: the password platform-api creates the
+       *  merchant's Zitadel account with. Never sent under GIP, where the
+       *  browser already created the account. */
+      password?: string;
+      first_name?: string;
+      last_name?: string;
     },
   ) =>
     request<CompleteResult>(

@@ -101,9 +101,12 @@ export default function TermsOfServicePage() {
           annually and co-terminated with the Pro renewal date.
         </p>
         <p>
-          <strong>Taxes:</strong> plan prices are stated exclusive of GST
-          and other applicable taxes, which we add at invoice where
-          required.
+          <strong>Taxes:</strong> Tesserix Pty Ltd is not currently
+          registered for GST, so no GST is charged on Australian
+          subscriptions and the plan price shown is the total amount
+          payable. Plan prices are otherwise stated exclusive of GST and any
+          other applicable taxes, which we add at invoice where we are
+          required to charge them.
         </p>
         <p>
           <strong>Payment methods:</strong> Mark8ly subscriptions are charged

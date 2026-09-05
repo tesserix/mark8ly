@@ -12,7 +12,8 @@
       "actor": "op_7f3a",
       "action": "tenant.suspended",
       "timestamp": "2026-08-22T09:00:00Z",
-      "target": "tenant"
+      "target": "tenant",
+      "metadata": "{\"reason_code\":\"abuse\"}"
     }
   ],
   "pagination": {

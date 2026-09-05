@@ -76,6 +76,9 @@ func TestAuditLogsMatchesPinnedContract(t *testing.T) {
 				Action:          "tenant.suspended",
 				ResourceType:    "tenant",
 				CreatedAt:       time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC),
+				// One row carries metadata and one does not, so the golden
+				// file pins both the string encoding and the omission (#313).
+				Metadata: audit.Metadata{"reason_code": "abuse"},
 			},
 		},
 	}}

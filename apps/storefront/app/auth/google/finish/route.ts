@@ -63,8 +63,10 @@ export async function GET(req: Request): Promise<Response> {
     return errorResponse(req, "return_to_host_mismatch");
   }
 
-  // customerSignIn re-verifies the GIP id_token, mints the per-host
-  // mp_customer_session cookie, and triggers EnsureProfile.
+  // customerSignIn re-verifies the GIP id_token and, if this identity is
+  // already a customer of this store, mints the per-host
+  // mp_customer_session cookie. If it is not, it mints nothing and
+  // returns membership_required with a short-lived join grant instead.
   // The `uid` field is documented as deprecated/ignored.
   const result = await customerSignIn({
     idToken: claims.idToken,
@@ -72,6 +74,18 @@ export async function GET(req: Request): Promise<Response> {
     storeSlug: claims.storeSlug,
   });
   if (!result.ok) {
+    if (result.code === "membership_required") {
+      // Google signed them in fine — they just have no account with this
+      // store. Redirecting to /sign-in?error=... would report a failure
+      // that did not happen; send them to the join screen instead.
+      const isLocalHost =
+        forwardedHost.startsWith("localhost") || forwardedHost.startsWith("127.");
+      const proto =
+        req.headers.get("x-forwarded-proto") ?? (isLocalHost ? "http" : "https");
+      return NextResponse.redirect(`${proto}://${forwardedHost}/join`, {
+        status: 303,
+      });
+    }
     return errorResponse(req, result.code ?? "signin_failed");
   }
 

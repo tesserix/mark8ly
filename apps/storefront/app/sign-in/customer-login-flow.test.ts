@@ -160,6 +160,17 @@ function installFetchRouter(handlers: {
       });
     }
 
+    // The membership probe completeCustomerSignIn runs BEFORE it hands a
+    // session cookie to the browser. These traces are about the
+    // credential seams, so the customer is a member throughout; the gate
+    // itself is covered in lib/auth/customer-session.membership.test.ts.
+    if (
+      url.startsWith(`${MARKETPLACE_API_URL}`) &&
+      url.includes("/account/membership")
+    ) {
+      return jsonResponse(200, { data: { member: true } });
+    }
+
     if (url.startsWith(`${MARKETPLACE_API_URL}`) && url.includes("/account")) {
       return jsonResponse(200, {});
     }

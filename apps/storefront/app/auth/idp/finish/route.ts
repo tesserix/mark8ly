@@ -122,12 +122,23 @@ export async function GET(req: Request): Promise<Response> {
     uid: outcome.uid,
     email: outcome.email,
   });
+  const protocol = req.headers.get("x-forwarded-proto") ?? "https";
   if (!result.ok) {
+    if (result.code === "membership_required") {
+      // Google verified them and so did Zitadel; they simply have no
+      // account with THIS store yet. completeCustomerSignIn set the
+      // short-lived join grant and minted no session, so send the browser
+      // to the join screen — bouncing to /sign-in?error=... would read as
+      // a failed sign-in for a sign-in that worked.
+      return NextResponse.redirect(
+        `${protocol}://${forwardedHost}/join`,
+        { status: 303 },
+      );
+    }
     console.error("google idp finish: completeCustomerSignIn failed", result.code);
     return errorRedirect(req, result.code ?? "google_sign_in_unavailable");
   }
 
-  const protocol = req.headers.get("x-forwarded-proto") ?? "https";
   return NextResponse.redirect(`${protocol}://${forwardedHost}${dest}`, {
     status: 303,
   });

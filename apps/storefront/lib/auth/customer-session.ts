@@ -15,16 +15,24 @@
 // them in apps/storefront's vitest-covered path (components/** is not
 // covered — see @/lib/auth/provider's file header).
 //
-// completeCustomerSignIn stays the ONLY place that mints
-// `mp_customer_session` — apps/storefront/app/sign-in/actions.ts's
-// customerSignIn and confirmCustomerTotp, and
-// apps/storefront/app/auth/idp/finish/route.ts (the Zitadel Google
-// finish route), all call this same function rather than each minting
-// their own cookie. A second cookie-minting path would drift from this
-// one the same way a second copy of this function's logic would.
+// issueCustomerSession stays the ONLY place that mints
+// `mp_customer_session`, and only completeCustomerSignIn and
+// completeCustomerStoreJoin (both below) call it —
+// apps/storefront/app/sign-in/actions.ts's customerSignIn and
+// confirmCustomerTotp, app/create-account/actions.ts's
+// verifyCustomerEmail, app/join/actions.ts's joinThisStore, and
+// app/auth/idp/finish/route.ts (the Zitadel Google finish route) all go
+// through those two rather than each minting their own cookie. A second
+// cookie-minting path would drift from this one the same way a second
+// copy of this function's logic would.
 
 import { cookies } from "next/headers";
-import { encodeSession } from "@/lib/session";
+import { encodeSession, SESSION_TTL_SECONDS } from "@/lib/session";
+import {
+  JOIN_GRANT_COOKIE,
+  JOIN_GRANT_TTL_SECONDS,
+  signJoinGrant,
+} from "@/lib/auth/join-grant";
 import { platformInternalFetch } from "@/lib/api/server/platformInternal";
 import type { CustomerSignInResult as Result } from "@/lib/auth/customer-sign-in-result";
 
@@ -57,15 +65,33 @@ export async function resolveStore(
   }
 }
 
-// Best-effort: register the customer profile in marketplace-api so
-// they show up in the merchant's customer list and can place orders.
-// We call the web storefront /account endpoint (GET) with the session
-// cookie — the OptionalCustomerAuth middleware automatically calls
-// EnsureProfile when it sees a valid session cookie.
-async function ensureCustomerProfile(
+// Asks marketplace-api whether this verified identity has already joined
+// this store. The freshly minted cookie value is sent as a header on a
+// server-to-server call — it is NOT handed to the browser unless this
+// comes back a member, which is the entire point: a session must never be
+// minted at a store the customer has not joined.
+//
+// This replaced a "best-effort" GET /account whose only purpose was the
+// side effect on the other end: marketplace-api's session middleware used
+// to CREATE the customer_profiles row when it saw a valid cookie. That is
+// exactly the bug in
+// docs/superpowers/specs/2026-09-05-customer-store-membership-design.md —
+// browsing store2 with a store1 password made you a customer of store2.
+// The middleware is read-only now, and creation lives behind the explicit
+// join below.
+//
+// Fails CLOSED: an unreachable or unparseable API means we cannot show
+// that the customer belongs here, so we do not mint a session. The caller
+// turns that into a plain "try again shortly", never a silent sign-in.
+type MembershipCheck =
+  | { kind: "member" }
+  | { kind: "not_member" }
+  | { kind: "unavailable" };
+
+async function checkStoreMembership(
   storeSlug: string,
   cookieValue: string,
-): Promise<void> {
+): Promise<MembershipCheck> {
   try {
     const headers: Record<string, string> = {
       Accept: "application/json",
@@ -73,20 +99,72 @@ async function ensureCustomerProfile(
     };
     if (STOREFRONT_KEY) headers["X-Storefront-Key"] = STOREFRONT_KEY;
 
-    await fetch(
-      `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}/account`,
-      {
-        method: "GET",
-        headers,
-        cache: "no-store",
-      },
+    const res = await fetch(
+      `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}/account/membership`,
+      { method: "GET", headers, cache: "no-store" },
     );
-    // The GET /account call triggers OptionalCustomerAuth middleware
-    // which calls EnsureProfile. We don't care about the response —
-    // the side effect (profile creation) is what matters.
+    if (!res.ok) return { kind: "unavailable" };
+    const body = (await res.json()) as { data?: { member?: boolean } };
+    if (typeof body.data?.member !== "boolean") return { kind: "unavailable" };
+    return body.data.member ? { kind: "member" } : { kind: "not_member" };
   } catch {
-    // silent — customer can still browse
+    return { kind: "unavailable" };
   }
+}
+
+/**
+ * joinStoreWithSession creates the customer_profiles membership row for
+ * an identity this server has verified. It is the ONLY thing in this app
+ * that asks marketplace-api to create a membership, and it runs only
+ * after the customer explicitly accepted the join.
+ *
+ * Authenticates with the same signed session value the join is about, so
+ * marketplace-api creates the membership for the identity IN that
+ * credential — never for an email a caller supplied.
+ */
+async function joinStoreWithSession(
+  storeSlug: string,
+  cookieValue: string,
+): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
+  let res: Response;
+  try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Cookie: `mp_customer_session=${cookieValue}`,
+    };
+    if (STOREFRONT_KEY) headers["X-Storefront-Key"] = STOREFRONT_KEY;
+
+    res = await fetch(
+      `${MARKETPLACE_API_URL}/api/v1/storefront/stores/${encodeURIComponent(storeSlug)}/account/join`,
+      { method: "POST", headers, body: "{}", cache: "no-store" },
+    );
+  } catch {
+    return {
+      ok: false,
+      code: "join_unavailable",
+      message: "We couldn't finish setting up your account here. Please try again shortly.",
+    };
+  }
+
+  if (res.ok) return { ok: true };
+
+  const body = (await res.json().catch(() => null)) as {
+    error?: string;
+  } | null;
+  if (body?.error === "account_blocked") {
+    return {
+      ok: false,
+      code: "account_blocked",
+      message:
+        "This store has suspended your account, so it can't be reopened here. Please contact the store if you think that's a mistake.",
+    };
+  }
+  return {
+    ok: false,
+    code: "join_failed",
+    message: "We couldn't finish setting up your account here. Please try again shortly.",
+  };
 }
 
 // Best-effort: auto-enroll the customer in the store's loyalty program.
@@ -126,16 +204,24 @@ async function ensureLoyaltyEnrollment(
 
 /**
  * completeCustomerSignIn is the tail shared by every path that ends in a
- * verified {uid, email}: minting the HMAC-signed session cookie scoped to
- * the resolved host, the best-effort profile and loyalty side effects, and
- * burning the referral cookie. apps/storefront/app/sign-in/actions.ts's
- * customerSignIn (password/id-token path) and confirmCustomerTotp
- * (authenticator-code path), and apps/storefront/app/auth/idp/finish/
- * route.ts (the Zitadel Google finish route, which resolves a
- * {uid, email} from auth-bff's idp/finish endpoint rather than from a
- * password/id-token) all call this instead of each carrying their own
- * copy — a second copy of this tail would drift the moment one path
- * changed and the other didn't.
+ * verified {uid, email}: apps/storefront/app/sign-in/actions.ts's
+ * customerSignIn (password/id-token) and confirmCustomerTotp
+ * (authenticator code), apps/storefront/app/create-account/actions.ts's
+ * verifyCustomerEmail, and apps/storefront/app/auth/idp/finish/route.ts
+ * (the Zitadel Google finish route) all call this instead of each
+ * carrying their own copy.
+ *
+ * A verified credential is NOT on its own permission to be here. One
+ * Mark8ly login works platform-wide; each store is a membership the
+ * customer joins deliberately. So this function checks membership BEFORE
+ * the cookie reaches the browser:
+ *
+ *   member      -> mint the session, run the loyalty/referral side effects
+ *   not a member-> mint NOTHING; issue a short-lived join grant cookie and
+ *                  return `membership_required` so the caller can offer
+ *                  the join. The copy must never imply a wrong password —
+ *                  the password was right.
+ *   unavailable -> mint NOTHING. Fail closed and say so.
  */
 export async function completeCustomerSignIn(
   store: { tenant_id: string; store_id: string },
@@ -143,9 +229,8 @@ export async function completeCustomerSignIn(
   storeSlug: string,
   verified: { uid: string; email: string },
 ): Promise<Result> {
-  // Set the HMAC-signed customer session cookie. The storefront
-  // layout decodes and verifies this on every request to hydrate
-  // the authenticated state.
+  // Minted, but deliberately not handed to the browser yet — it is first
+  // used as the server-to-server credential for the membership check.
   const cookieValue = encodeSession({
     uid: verified.uid,
     email: verified.email,
@@ -154,7 +239,98 @@ export async function completeCustomerSignIn(
     tenant_id: store.tenant_id,
   });
 
+  const membership = await checkStoreMembership(storeSlug, cookieValue);
   const c = await cookies();
+
+  if (membership.kind === "unavailable") {
+    return {
+      ok: false,
+      code: "membership_unavailable",
+      message: "Sign-in is temporarily unavailable. Please try again shortly.",
+    };
+  }
+
+  if (membership.kind === "not_member") {
+    // No session cookie. The grant below authorises the join and nothing
+    // else, and expires in minutes.
+    c.set({
+      name: JOIN_GRANT_COOKIE,
+      value: signJoinGrant({
+        uid: verified.uid,
+        email: verified.email,
+        store_slug: storeSlug,
+        store_id: store.store_id,
+        tenant_id: store.tenant_id,
+      }),
+      path: "/",
+      domain: cookieHost,
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: JOIN_GRANT_TTL_SECONDS,
+    });
+    return {
+      ok: false,
+      code: "membership_required",
+      message:
+        "Your Mark8ly login works here — you just don't have an account with this store yet.",
+    };
+  }
+
+  issueCustomerSession(c, cookieValue, cookieHost);
+  await runPostSignInSideEffects(c, storeSlug, verified.email);
+  return { ok: true };
+}
+
+/**
+ * completeCustomerStoreJoin creates the membership for an identity this
+ * server verified minutes ago (carried by a join grant), then completes
+ * sign-in exactly as completeCustomerSignIn's member branch does.
+ *
+ * The order matters and is the invariant this whole feature rests on: the
+ * membership row is created FIRST, by an explicit request the customer
+ * made, and only then does a session cookie exist.
+ */
+export async function completeCustomerStoreJoin(
+  grant: {
+    uid: string;
+    email: string;
+    store_slug: string;
+    store_id: string;
+    tenant_id: string;
+  },
+  cookieHost: string,
+): Promise<Result> {
+  const cookieValue = encodeSession({
+    uid: grant.uid,
+    email: grant.email,
+    store_slug: grant.store_slug,
+    store_id: grant.store_id,
+    tenant_id: grant.tenant_id,
+  });
+
+  const joined = await joinStoreWithSession(grant.store_slug, cookieValue);
+  if (!joined.ok) {
+    return { ok: false, code: joined.code, message: joined.message };
+  }
+
+  const c = await cookies();
+  issueCustomerSession(c, cookieValue, cookieHost);
+  // The grant has done its job; leaving it set would keep a second
+  // credential alive for no reason.
+  c.delete(JOIN_GRANT_COOKIE);
+  await runPostSignInSideEffects(c, grant.store_slug, grant.email);
+  return { ok: true };
+}
+
+type CookieJar = Awaited<ReturnType<typeof cookies>>;
+
+/** The single place `mp_customer_session` is handed to a browser. */
+function issueCustomerSession(
+  c: CookieJar,
+  cookieValue: string,
+  cookieHost: string,
+): void {
   c.set({
     name: "mp_customer_session",
     value: cookieValue,
@@ -163,24 +339,22 @@ export async function completeCustomerSignIn(
     httpOnly: true,
     secure: true,
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 30, // 30 days
+    maxAge: SESSION_TTL_SECONDS,
   });
+}
 
-  // Best-effort profile registration — pass the freshly minted cookie
-  // so marketplace-api's OptionalCustomerAuth can validate it and call
-  // EnsureProfile.
-  await ensureCustomerProfile(storeSlug, cookieValue);
-
-  // Auto-enroll in loyalty (idempotent — signup bonus awarded once).
-  // Reads the mp_referral cookie captured by middleware on a prior
-  // page hit, so referral attribution survives the GIP signup dance.
+/** Loyalty auto-enrolment and referral burn — run once a session exists
+ *  and the customer is a member of this store. */
+async function runPostSignInSideEffects(
+  c: CookieJar,
+  storeSlug: string,
+  email: string,
+): Promise<void> {
   const referralCode = c.get("mp_referral")?.value;
-  await ensureLoyaltyEnrollment(storeSlug, verified.email, referralCode);
+  await ensureLoyaltyEnrollment(storeSlug, email, referralCode);
   if (referralCode) {
     // Burn the cookie so the same invite link can't be replayed by
     // the same browser for another account.
     c.delete("mp_referral");
   }
-
-  return { ok: true };
 }

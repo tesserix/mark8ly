@@ -180,6 +180,15 @@ export function CustomerSignInForm({
             });
             return;
           }
+          if (result.code === "membership_required") {
+            // The password was RIGHT — what is missing is an account with
+            // this store. Rendering result.message as a form error next
+            // to the password field would read as a credential failure,
+            // which is the exact misleading-error trap this flow exists
+            // to avoid. Send them to the join screen instead.
+            router.push("/join");
+            return;
+          }
           setError(result.message);
           return;
         }
@@ -210,6 +219,11 @@ export function CustomerSignInForm({
       });
 
       if (!result.ok) {
+        if (result.code === "membership_required") {
+          // Correct password, correct code — no account with this store.
+          router.push("/join");
+          return;
+        }
         if (isTotpRequiredResult(result)) {
           // A FRESH challenge, not a wrong code — Zitadel handed back a
           // new sessionId/sessionToken pair. Update the held challenge

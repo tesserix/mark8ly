@@ -9,8 +9,15 @@
 //
 // Two codes carry the phase brief's sharpest constraint:
 //   - email_taken is PERMANENT for that address (a verified account
-//     already owns it) — the message must be actionable (sign in instead,
-//     or contact support) and must never suggest retrying registration.
+//     already owns it) — the message must be actionable and must never
+//     suggest retrying registration. What it must ALSO not do is imply
+//     the shopper already has an account with THIS store. A Mark8ly login
+//     is one platform identity across every storefront, so the ordinary
+//     way to reach this code is a real customer of store1 registering at
+//     store2. That shopper should be routed to sign-in, which detects the
+//     missing membership and offers the join
+//     (docs/superpowers/specs/2026-09-05-customer-store-membership-design.md),
+//     not told they are already set up here.
 //   - verification_email_failed is the OPPOSITE: register rolled the new
 //     account back, so the address is free again and retrying genuinely
 //     works — the message must say so, not read like a dead end.
@@ -22,7 +29,7 @@
 // string to the shopper.
 const MESSAGES: Record<string, string> = {
   email_taken:
-    "An account with this email address already exists. Sign in instead, or contact support if you believe this is a mistake.",
+    "You already have a Mark8ly login for this email. Sign in with it and we'll set up your account with this store.",
   email_ambiguous:
     "We found more than one account for this email and can't tell which one to use. Please contact support for help.",
   weak_password:

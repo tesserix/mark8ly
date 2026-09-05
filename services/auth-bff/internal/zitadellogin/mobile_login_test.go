@@ -70,7 +70,11 @@ func TestMobileLogin_EmailOTPRequiredReturnsNoTokens(t *testing.T) {
 
 	h := NewHandler(c, func(_ context.Context, _ http.ResponseWriter, _ LoginContext) (CompleteResult, error) {
 		return CompleteResult{EmailOTPRequired: true}, nil
-	}).WithTokenIssuer(tokenServer(t), "https://admin.mark8ly.com/auth/callback", "proj-1")
+	}).WithTokenIssuer(tokenServer(t), "https://admin.mark8ly.com/auth/callback", "proj-1").
+		// Step-up must be wired: without it the client would be handed a
+		// challenge it cannot complete, and login now refuses instead —
+		// see TestMobileLogin_EmailOTPWithoutStepUpConfiguredRefuses.
+		WithStepUp(&fakeCodeVerifier{}, &fakePendingStore{sealed: "sealed-value"})
 
 	rec := httptest.NewRecorder()
 	h.mobileLogin(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/mobile/login",
@@ -212,5 +216,24 @@ func TestWebLogin_StillRequiresAnAuthRequestID(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 for a web login with no auth_request_id", rec.Code)
+	}
+}
+
+// A step-up the client cannot finish is a dead end that reads as a working
+// login, so it fails loudly at the server instead.
+func TestMobileLogin_EmailOTPWithoutStepUpConfiguredRefuses(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelHandler(t, policyNoMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD"]`, factorsPasswordOnly, &fin)
+
+	h := NewHandler(c, func(_ context.Context, _ http.ResponseWriter, _ LoginContext) (CompleteResult, error) {
+		return CompleteResult{EmailOTPRequired: true}, nil
+	}).WithTokenIssuer(tokenServer(t), "https://admin.mark8ly.com/auth/callback", "proj-1")
+
+	rec := httptest.NewRecorder()
+	h.mobileLogin(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/mobile/login",
+		strings.NewReader(`{"auth_request_id":"V2_1","login_name":"a@b.test","password":"x","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 when the step-up cannot be completed", rec.Code)
 	}
 }

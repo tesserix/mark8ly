@@ -73,6 +73,9 @@ type Handler struct {
 	tokens           *TokenExchanger
 	tokenRedirectURI string
 	tokenProjectID   string
+	// Mobile email-OTP step-up (mark8ly#686). See WithStepUp.
+	codes   CodeVerifier
+	pending PendingStore
 
 	// hostedLoginBaseURL is the Zitadel instance's own login UI (the
 	// Aurora-branded hosted login), used ONLY as the OutcomeHandoff target
@@ -203,6 +206,9 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 	})
 	r.POST("/zitadel/mobile/totp", func(c *gin.Context) {
 		h.mobileTOTP(c.Writer, withClientIP(c.Request, c.ClientIP()))
+	})
+	r.POST("/zitadel/mobile/otp/verify", func(c *gin.Context) {
+		h.mobileOTPVerify(c.Writer, withClientIP(c.Request, c.ClientIP()))
 	})
 
 	// Google sign-in through Zitadel's IDP-intent flow (#524 phase 3c-2).
@@ -853,15 +859,33 @@ func (h *Handler) finishComplete(w http.ResponseWriter, r *http.Request, res Res
 	// autologin's own GIP handler uses for the same two cases so the two
 	// providers answer identically.
 	if cr.MFARequired || cr.EmailOTPRequired {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"data": map[string]any{
-				"uid":                factors.UserID,
-				"email":              email,
-				"tenant_id":          workspaceTenant,
-				"mfa_required":       cr.MFARequired,
-				"email_otp_required": cr.EmailOTPRequired,
-			},
-		})
+		out := map[string]any{
+			"uid":                factors.UserID,
+			"email":              email,
+			"tenant_id":          workspaceTenant,
+			"mfa_required":       cr.MFARequired,
+			"email_otp_required": cr.EmailOTPRequired,
+		}
+		// A native client cannot resume from the pending COOKIE the
+		// gauntlet just set, so it gets the same state sealed into a value
+		// it hands back to /mobile/otp/verify. The Zitadel session travels
+		// with it, because the challenge has to re-finalize this session to
+		// mint a token — the login's own authorization code is discarded on
+		// this branch.
+		//
+		// Refuse rather than answer with a challenge the client could never
+		// complete: a step-up the app cannot finish is a dead end that
+		// looks like a working login.
+		if issueTokens {
+			token, err := h.mintPendingLogin(factors.UserID, email, workspaceTenant, sess)
+			if err != nil {
+				slog.ErrorContext(ctx, "zitadellogin: could not mint the mobile step-up token", "err", err, "user_id", factors.UserID)
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+				return
+			}
+			out["pending_token"] = token
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": out})
 		return
 	}
 	if issueTokens {

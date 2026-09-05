@@ -336,6 +336,22 @@ var zitadelErrorIDSentinels = map[string]error{
 	"COMMAND-2M9fs": gipadmin.ErrInvalidOobCode, // "Code not found" (400, code 9)
 	"COMMAND-G8dh3": gipadmin.ErrUnavailable,    // "Password not found" (400, code 9) -- malformed request, NOT an invalid code
 	"DOMAIN-HuJf6":  gipadmin.ErrWeakPassword,   // "Password is too short" (400, code 3)
+
+	// The five password-complexity ids POST /v2/users/human returns, each
+	// PROBED live on 2026-09-05 (see password_policy.go, which additionally
+	// maps them to the individual RULE broken so the invitee can be told
+	// what to change). They are listed here too so the COARSE sentinel is
+	// right for every caller — including ResetPassword, which hits the same
+	// policy and would otherwise fall through to ErrUnavailable ("identity
+	// service unreachable") for a password the merchant simply mistyped.
+	//
+	// COMMA-HuJf6 is NOT DOMAIN-HuJf6 above. Same suffix, different Zitadel
+	// command, matched whole — never by suffix.
+	"COMMA-HuJf6": gipadmin.ErrWeakPassword, // too short
+	"COMMA-VoaRj": gipadmin.ErrWeakPassword, // no uppercase
+	"COMMA-co3Xw": gipadmin.ErrWeakPassword, // no lowercase
+	"COMMA-ZBv4H": gipadmin.ErrWeakPassword, // no number
+	"COMMA-ZDLwA": gipadmin.ErrWeakPassword, // no symbol
 }
 
 // classifyError maps an HTTP status + Zitadel error body to one of

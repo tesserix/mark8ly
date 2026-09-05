@@ -22,6 +22,11 @@ import {
   acceptInvite,
   acceptInviteWithZitadel,
 } from "@/app/accept-invite/actions";
+import {
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIREMENTS_TEXT,
+  validateNewPassword,
+} from "@/lib/auth/password-policy";
 
 type Mode = "signin" | "create";
 
@@ -38,6 +43,23 @@ interface AcceptInviteFormProps {
   provider?: string;
 }
 
+/**
+ * The shared floor, left exactly as it was: GIP's own minimum is 8, and
+ * the GIP path is not being changed here.
+ *
+ * The real Zitadel policy (12 characters, upper, lower, number, symbol —
+ * see lib/auth/password-policy.ts) is applied on top of this in onValid,
+ * and ONLY on the Zitadel path. Two reasons it lives there rather than
+ * in a second resolver schema:
+ *
+ *   - the rule is provider-specific, and swapping resolvers underneath
+ *     react-hook-form on a prop change is a subtlety this form does not
+ *     need;
+ *   - on the GIP path the password may be an EXISTING credential being
+ *     recalled, set when the minimum was 8. Holding it to the Zitadel
+ *     policy would lock a legitimate user out of their own invitation
+ *     over a password they cannot change from this form.
+ */
 const baseSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
   confirmPassword: z.string().optional(),
@@ -111,6 +133,15 @@ export function AcceptInviteForm({
         password,
       });
       if (!result.ok) {
+        // The server is authoritative on the password policy: client
+        // validation is a copy of it and the two can drift. When
+        // platform-api names the rule that was broken, put its message
+        // on the password field where the fix is, not in the generic
+        // form-level alert.
+        if (result.code === "password_policy") {
+          setError("password", { type: "server", message: result.message });
+          return;
+        }
         setSubmitError(result.message);
         return;
       }
@@ -124,6 +155,15 @@ export function AcceptInviteForm({
   function onValid(values: FormValues) {
     setSubmitError(null);
     setSuccess(null);
+
+    // Zitadel path only — see baseSchema's doc.
+    if (isZitadel) {
+      const policyError = validateNewPassword(values.password);
+      if (policyError) {
+        setError("password", { type: "validate", message: policyError });
+        return;
+      }
+    }
 
     if (mode === "create" && values.password !== values.confirmPassword) {
       setError("confirmPassword", {
@@ -257,20 +297,39 @@ export function AcceptInviteForm({
           />
         </Field>
 
+        {/* The requirements are shown as a hint BEFORE the first
+            submit, not only as an error after one. A merchant choosing a
+            password should not have to guess it and be corrected — that
+            guessing loop is what the eleven-character password ran into.
+            Field renders the error in the hint's place once there is
+            one, so the two never stack. */}
         <Field
           id="invite-password"
           label={mode === "create" ? "Create password" : "Password"}
           error={errors.password?.message}
+          hint={isZitadel ? PASSWORD_REQUIREMENTS_TEXT : undefined}
         >
           <Input
             id="invite-password"
             type="password"
-            placeholder="At least 8 characters"
+            placeholder={
+              isZitadel
+                ? `At least ${PASSWORD_MIN_LENGTH} characters`
+                : "At least 8 characters"
+            }
             disabled={disabled}
-            autoComplete={mode === "create" ? "new-password" : "current-password"}
+            autoComplete={
+              isZitadel || mode === "create"
+                ? "new-password"
+                : "current-password"
+            }
             aria-invalid={errors.password ? true : undefined}
             aria-describedby={
-              errors.password ? "invite-password-error" : undefined
+              errors.password
+                ? "invite-password-error"
+                : isZitadel
+                  ? "invite-password-hint"
+                  : undefined
             }
             {...register("password")}
           />

@@ -149,7 +149,13 @@ func (c *Client) EnsureHumanUser(ctx context.Context, in HumanUser) (string, err
 		return wire.UserID, nil
 	}
 	if errorID(err) != zitadelErrIDUserAlreadyExists {
-		return "", err
+		// A password-complexity rejection is the CALLER'S input being
+		// wrong, not a server fault, and is by far the most common way
+		// this call fails in practice. asPasswordPolicyError attaches
+		// which rule was broken (see password_policy.go) so the accept
+		// handler can answer 400 with text naming it; every other error
+		// passes through untouched.
+		return "", asPasswordPolicyError(err)
 	}
 	// The account is already there — look it up and carry on.
 	existing, resolveErr := c.resolveUserIDByEmail(ctx, email)

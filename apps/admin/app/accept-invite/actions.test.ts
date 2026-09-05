@@ -131,6 +131,31 @@ describe("acceptInviteWithZitadel", () => {
     expect(result.message).not.toMatch(/something went wrong/i);
   });
 
+  it("passes a 400 password_policy through with the rule-specific message", async () => {
+    // platform-api now distinguishes "the password broke rule X" (400,
+    // the caller's input) from "provisioning failed" (500, our fault).
+    // The message names the rule, so it must reach the invitee verbatim.
+    installFetch({
+      [ACCEPT_URL]: () =>
+        jsonResponse(400, {
+          error: "password_policy",
+          message:
+            "That password is too short — it needs at least 12 characters.",
+        }),
+    });
+
+    const result = await acceptInviteWithZitadel({
+      token: "invite-token",
+      email: "staff@example.com",
+      password: "not-a-real-password",
+    });
+
+    if (result.ok) throw new Error("unreachable");
+    expect(result.code).toBe("password_policy");
+    expect(result.message).toContain("12 characters");
+    expect(result.message).not.toMatch(/invitation link again/i);
+  });
+
   it("falls back to actionable copy when provisioning_failed carries no message", async () => {
     installFetch({
       [ACCEPT_URL]: () => jsonResponse(500, { error: "provisioning_failed" }),

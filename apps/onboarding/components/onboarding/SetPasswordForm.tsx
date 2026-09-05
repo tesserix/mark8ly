@@ -40,13 +40,28 @@ import {
   GIPSignupError,
 } from "@/lib/gip/signup";
 import { getGoogleCredential } from "@/lib/gip/google-gsi";
-import { completeOnboarding } from "@/app/onboarding/actions";
+import {
+  completeOnboarding,
+  completeOnboardingWithZitadel,
+} from "@/app/onboarding/actions";
+import {
+  PASSWORD_REQUIREMENTS_TEXT,
+  validateNewPassword,
+} from "@/lib/auth/password-policy";
 import { useOnboardingStore } from "@/lib/store/onboarding-store";
 
 interface Props {
   sessionId: string;
   email: string;
   businessName: string;
+  /**
+   * Which identity provider backs merchant accounts. Read defensively,
+   * exactly as apps/admin's AcceptInviteForm reads it: only the literal
+   * "zitadel" switches this form onto the Zitadel path — anything else,
+   * including undefined, keeps the GIP flow byte-for-byte. Wired from
+   * `publicConfig.authProvider` by app/onboarding/set-password/page.tsx.
+   */
+  provider?: string;
 }
 
 const schema = z.object({
@@ -59,6 +74,17 @@ const schema = z.object({
     .trim()
     .min(1, "Your name is required")
     .max(80, "Name is too long"),
+  // The shared floor, left exactly as it was: GIP's own minimum is 8 and
+  // the GIP path is not being changed here.
+  //
+  // The real Zitadel policy (12 characters, upper, lower, number,
+  // symbol — see lib/auth/password-policy.ts) is applied on top of this
+  // in onValid, and ONLY on the Zitadel path. Applying it through a
+  // second resolver schema would mean swapping resolvers underneath
+  // react-hook-form on a prop change, a subtlety this form does not need.
+  // A client rule LOOSER than the server's is worse than no rule at all —
+  // it promises an acceptance the server will refuse — which is exactly
+  // what min(8) was doing here (#685).
   password: z
     .string()
     .min(1, "Password is required")
@@ -67,8 +93,9 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-export function SetPasswordForm({ sessionId, email }: Props) {
+export function SetPasswordForm({ sessionId, email, provider }: Props) {
   const router = useRouter();
+  const isZitadel = provider === "zitadel";
   const setSubmitted = useOnboardingStore((s) => s.setSubmitted);
   const storedSlug = useOnboardingStore((s) => s.slug);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -88,8 +115,57 @@ export function SetPasswordForm({ sessionId, email }: Props) {
     defaultValues: { name: "", password: "" },
   });
 
+  /**
+   * Finish the wizard on the Zitadel path.
+   *
+   * platform-api's complete endpoint provisions the Zitadel user from
+   * this password, ensures the mark8ly-admin project grant, and writes
+   * both FGA owner tuples — so there is nothing for the browser to create
+   * first, and no GIP call of any kind on this path.
+   *
+   * No auto-login follows. See completeOnboardingWithZitadel's doc for
+   * why: the admin is on a different origin and Zitadel's login-client
+   * model has no session this page could mint. The merchant signs in
+   * once, on the admin, with the password they just chose.
+   */
+  function completeWithZitadel(values: FormValues) {
+    startTransition(async () => {
+      const r = await completeOnboardingWithZitadel({
+        sessionId,
+        password: values.password,
+        name: values.name,
+      });
+      if (!r.ok) {
+        // The server is authoritative on the password policy: the client
+        // copy above and it can drift. When platform-api names the rule
+        // that was broken, put its message on the password field where
+        // the fix is, not in the generic form-level alert.
+        if (r.code === "password_policy") {
+          setError("password", { type: "server", message: r.message });
+          return;
+        }
+        setSubmitError(r.message);
+        return;
+      }
+      if (r.data.slug) {
+        setSubmitted({ email, sessionId, businessName: "", slug: r.data.slug, countryCode: "", currencyCode: "", timezone: "", taxId: "", migrationType: "new", whoisUrl: "", screenshotUrl: "" });
+      }
+      router.push("/welcome");
+    });
+  }
+
   function onValid(values: FormValues) {
     setSubmitError(null);
+
+    if (isZitadel) {
+      const policyError = validateNewPassword(values.password);
+      if (policyError) {
+        setError("password", { type: "validate", message: policyError });
+        return;
+      }
+      completeWithZitadel(values);
+      return;
+    }
 
     startTransition(async () => {
       let uid = "";
@@ -251,13 +327,26 @@ export function SetPasswordForm({ sessionId, email }: Props) {
           <Input
             id="password"
             type="password"
-            placeholder="At least 8 characters"
+            placeholder={
+              isZitadel ? "At least 12 characters" : "At least 8 characters"
+            }
             autoComplete="new-password"
             disabled={disabled}
             aria-invalid={errors.password ? true : undefined}
-            aria-describedby={errors.password ? "password-error" : undefined}
+            aria-describedby={
+              errors.password
+                ? "password-error"
+                : isZitadel
+                  ? "password-requirements"
+                  : undefined
+            }
             {...register("password")}
           />
+          {/* The whole policy, shown BEFORE the first submit. A merchant
+              choosing a password should not have to guess and be
+              corrected one rule at a time — that drip-feed is what the
+              incident behind lib/auth/password-policy.ts was made of.
+              Zitadel path only: the GIP minimum really is 8. */}
           <div className="min-h-[1.125rem]">
             {errors.password ? (
               <p
@@ -267,6 +356,13 @@ export function SetPasswordForm({ sessionId, email }: Props) {
                 className="text-xs text-danger"
               >
                 {errors.password.message}
+              </p>
+            ) : isZitadel ? (
+              <p
+                id="password-requirements"
+                className="text-xs text-foreground-tertiary"
+              >
+                {PASSWORD_REQUIREMENTS_TEXT}
               </p>
             ) : null}
           </div>
@@ -290,7 +386,15 @@ export function SetPasswordForm({ sessionId, email }: Props) {
           {pending ? "Finishing up…" : "Create account"}
         </button>
 
-        <div className="relative py-2">
+        {/* Google is GIP-only here. On the Zitadel path the backend
+            provisions from a PASSWORD rather than an IDP intent, and
+            there is no auto-login to hand a Google credential to — a
+            merchant who wants Google can use it on the admin sign-in page
+            once their account exists. Mirrors what apps/admin's
+            accept-invite form does, for the same two reasons (#680). */}
+        {!isZitadel && (
+          <>
+            <div className="relative py-2">
           <div className="absolute inset-0 flex items-center" aria-hidden="true">
             <div className="w-full border-t border-border-subtle" />
           </div>
@@ -309,7 +413,9 @@ export function SetPasswordForm({ sessionId, email }: Props) {
         >
           <GoogleMark />
           {googlePending ? "Opening Google…" : "Continue with Google"}
-        </button>
+            </button>
+          </>
+        )}
       </form>
     </div>
   );

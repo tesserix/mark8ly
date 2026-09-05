@@ -24,6 +24,17 @@ export const config = {
 } as const;
 
 export const publicConfig = {
+  /** Which identity provider backs merchant accounts.
+   *
+   *  Read defensively, exactly as apps/admin reads it: only the literal
+   *  "zitadel" switches onboarding onto the Zitadel path — anything
+   *  else, including undefined, keeps the GIP flow byte-for-byte. Baked
+   *  into the client bundle at build time (see the Dockerfile), because
+   *  SetPasswordForm is a client component and has to branch before it
+   *  ever reaches a server action. */
+  authProvider: (process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel"
+    ? "zitadel"
+    : "gip") as "gip" | "zitadel",
   /** GIP / Firebase project ID. Browser-exposed by design. */
   gipProjectId: process.env.NEXT_PUBLIC_GIP_PROJECT_ID ?? "",
   /** GIP tenant pool for marketplace internal users (admin/onboarding). */

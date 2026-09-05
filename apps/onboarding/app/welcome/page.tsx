@@ -2,10 +2,19 @@ import { AppStoreBadges } from "@repo/ui/app-store-badges";
 
 import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
 import { WelcomeCta } from "@/components/onboarding/WelcomeCta";
+import { publicConfig } from "@/lib/config";
 
-// Welcome page shown after successful onboarding + auto-login.
-// The session cookie has already been minted by the time the
-// user lands here, so the primary CTA into admin works immediately.
+// Welcome page shown after successful onboarding.
+//
+// On the GIP path the session cookie has already been minted by the time
+// the user lands here, so the primary CTA into admin works immediately.
+// On the Zitadel path it has NOT: the admin is on a different origin and
+// Zitadel's login-client model has no session this app could mint for
+// it, so the merchant signs in there once with the password they just
+// chose (see completeOnboardingWithZitadel's doc). The copy below must
+// not claim otherwise — telling someone they are signed in and then
+// showing them a login screen is the same class of misleading message
+// #685 exists to remove.
 // The CTA itself is a client component so it can read the freshly
 // onboarded tenant slug from the zustand store and build a per-tenant
 // admin URL — see components/onboarding/WelcomeCta.tsx.
@@ -17,11 +26,16 @@ export const metadata = {
 };
 
 export default function WelcomePage() {
+  const signedIn = publicConfig.authProvider !== "zitadel";
   return (
     <PostSubmitShell
       eyebrow="Store ready"
       title="Your store is open."
-      description="You&rsquo;re signed in. Step into the admin dashboard to add your first product, shape your storefront, and confirm your settings."
+      description={
+        signedIn
+          ? "You\u2019re signed in. Step into the admin dashboard to add your first product, shape your storefront, and confirm your settings."
+          : "Sign in to the admin dashboard with the password you just chose to add your first product, shape your storefront, and confirm your settings."
+      }
     >
       <div className="border-t border-border-subtle pt-10">
         {/* Head start — same 20% the admin checklist opens with, so the
@@ -42,7 +56,7 @@ export default function WelcomePage() {
           </p>
         </div>
 
-        <WelcomeCta />
+        <WelcomeCta signedIn={signedIn} />
 
         <dl className="mt-16 grid gap-10 border-t border-border-subtle pt-10 sm:grid-cols-2">
           <div>
@@ -60,8 +74,8 @@ export default function WelcomePage() {
           </div>
         </dl>
 
-        {/* Highest-intent moment in the funnel: the store exists and they
-            are already signed in. Badges render per configured platform —
+        {/* Highest-intent moment in the funnel: the store exists.
+            Badges render per configured platform —
             see MOBILE_ADMIN_APP_LINKS. */}
         <section className="mt-16 border-t border-border-subtle pt-10">
           <p className="eyebrow mb-3">On your phone</p>

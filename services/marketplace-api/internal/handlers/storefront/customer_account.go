@@ -20,7 +20,7 @@ import (
 type CustomerAccountHandler struct {
 	db          *gorm.DB
 	repo        customer.Repository
-	customerSvc *customer.Service
+	customerSvc CustomerProfileService
 	logger      *slog.Logger
 }
 
@@ -28,7 +28,7 @@ type CustomerAccountHandler struct {
 func NewCustomerAccountHandler(
 	db *gorm.DB,
 	repo customer.Repository,
-	customerSvc *customer.Service,
+	customerSvc CustomerProfileService,
 	logger *slog.Logger,
 ) *CustomerAccountHandler {
 	return &CustomerAccountHandler{

@@ -8,7 +8,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/customerportal"
 	"github.com/mark8ly/marketplace-api/internal/ratelimit"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -33,7 +32,7 @@ type Deps struct {
 	CountryHandler         CountryLister // optional — set when country handler is wired
 	// C1 customer auth.
 	CustomerAccountHandler *CustomerAccountHandler
-	CustomerService        *customer.Service
+	CustomerService        CustomerProfileService
 	CustomerSessionSecret  string
 	// Customer notification bell.
 	CustomerNotificationsHandler *CustomerNotificationsHandler
@@ -237,6 +236,18 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 					deps.LoyaltyHandler.Redeem)
 			}
 		}
+	}
+
+	// Membership routes — authenticated identity required, membership
+	// NOT required. These are the two endpoints that exist precisely for
+	// a customer RequireCustomerAuth turns away: the join itself, and the
+	// probe the storefront runs BEFORE it hands a session cookie to the
+	// browser. Mounting either behind RequireCustomerAuth would make
+	// joining a store impossible for anyone who has not already joined.
+	if deps.CustomerAccountHandler != nil {
+		membership := group.Group("/account", RequireCustomerIdentity())
+		membership.GET("/membership", deps.CustomerAccountHandler.Membership)
+		membership.POST("/join", deps.CustomerAccountHandler.Join)
 	}
 
 	// C1 — Customer account routes (auth required).

@@ -4,6 +4,7 @@
 package storefront
 
 import (
+	"errors"
 	"log/slog"
 
 	"github.com/gin-gonic/gin"
@@ -125,6 +126,20 @@ func RegisterMobileStorefront(router *gin.RouterGroup, deps MobileDeps) {
 		customerMW := mobileCustomerProfileMW(deps.CustomerService, deps.Logger)
 		requireCustomer := RequireCustomerAuth()
 
+		// Identity-only group: authenticated, but membership NOT required.
+		// /account/register is this app's explicit join, so it must be
+		// reachable by exactly the customer RequireCustomerAuth turns
+		// away — mounting it behind requireCustomer would make joining a
+		// store impossible for anyone who hasn't already joined it.
+		identity := group.Group("", requireAuth, customerMW, RequireCustomerIdentity())
+		if deps.CustomerAccountHandler != nil {
+			identity.POST("/account/register", deps.CustomerAccountHandler.Register)
+			// Membership probe — lets the app tell "you have a Mark8ly
+			// login but no account with this store" apart from "your
+			// password is wrong" instead of guessing from a 403 body.
+			identity.GET("/account/membership", deps.CustomerAccountHandler.Membership)
+		}
+
 		authed := group.Group("", requireAuth, customerMW, requireCustomer)
 		{
 			// Checkout — authenticated.
@@ -144,7 +159,6 @@ func RegisterMobileStorefront(router *gin.RouterGroup, deps MobileDeps) {
 
 			// Customer account.
 			if deps.CustomerAccountHandler != nil {
-				authed.POST("/account/register", deps.CustomerAccountHandler.Register)
 				// check-email is POST (not GET) so the email PII doesn't land
 				// in query-string access logs. See mobile_stubs.go for body shape.
 				authed.POST("/account/check-email", deps.CustomerAccountHandler.CheckEmail)
@@ -219,11 +233,19 @@ func RegisterMobileStorefront(router *gin.RouterGroup, deps MobileDeps) {
 	}
 }
 
-// mobileCustomerProfileMW resolves the GIP UID from context (set by
-// GIPBearerAuth) into a customer profile via EnsureProfile. This bridges
-// the Bearer token auth to the same customer context keys used by the
-// cookie-based web storefront.
-func mobileCustomerProfileMW(customerSvc *customer.Service, logger *slog.Logger) gin.HandlerFunc {
+// mobileCustomerProfileMW resolves the verified Bearer identity (set by
+// MobileCustomerAuth / GIPBearerAuth) into this store's membership. It
+// bridges Bearer auth to the same customer context keys the cookie-based
+// web storefront uses — INCLUDING the read-only membership rule.
+//
+// It looks the membership up; it never creates one. A bearer token is a
+// platform-wide Mark8ly login, so a customer of store1 presenting it at
+// store2 is authenticated but not a member there, and gets identity keys
+// only. The mobile app's explicit join is POST /account/register
+// (CustomerAccountHandler.Register). Gating only the web storefront would
+// have left this path minting memberships silently — see
+// docs/superpowers/specs/2026-09-05-customer-store-membership-design.md.
+func mobileCustomerProfileMW(customerSvc CustomerProfileService, logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		gipUID := c.GetString(CustomerGipUIDKey)
 		email := c.GetString(CustomerEmailKey)
@@ -249,23 +271,16 @@ func mobileCustomerProfileMW(customerSvc *customer.Service, logger *slog.Logger)
 			c.Next()
 			return
 		}
-		tenantID, err := uuid.Parse(store.TenantID)
-		if err != nil {
-			c.Next()
-			return
-		}
 
-		profile, err := customerSvc.EnsureProfile(c.Request.Context(), customer.EnsureProfileInput{
-			StoreID:  storeID,
-			TenantID: tenantID,
-			GipUID:   gipUID,
-			Email:    email,
-		}, c)
+		c.Set(CustomerIdentityEmailKey, email)
+		c.Set(CustomerIdentityUIDKey, gipUID)
+
+		profile, err := customerSvc.LookupProfile(c.Request.Context(), storeID, email)
 		if err != nil {
-			if logger != nil {
-				logger.Error("mobile: failed to ensure customer profile",
+			if logger != nil && !errors.Is(err, customer.ErrNotFound) {
+				logger.Error("mobile: failed to look up customer membership",
 					"error", err,
-					"email", email,
+					"email_masked", maskEmailForLog(email),
 					"store_id", store.ID,
 				)
 			}

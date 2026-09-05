@@ -4,6 +4,7 @@
 package storefront
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -154,11 +155,15 @@ type registerRequest struct {
 }
 
 // Register handles POST /mobile/storefront/stores/:storeSlug/account/register.
-// Reads gip_uid + email from Bearer context, optional name from body, calls
-// EnsureProfile, returns profile.
+//
+// This is the mobile app's EXPLICIT JOIN: the one mobile path that
+// creates a customer_profiles row, and it runs only because the customer
+// asked for it. The identity comes from the verified Bearer credential on
+// the context, never from the body. See customer_join.go's header for why
+// nothing else on this surface may create a membership.
 func (h *CustomerAccountHandler) Register(c *gin.Context) {
-	gipUID := c.GetString(CustomerGipUIDKey)
-	email := c.GetString(CustomerEmailKey)
+	gipUID := c.GetString(CustomerIdentityUIDKey)
+	email := c.GetString(CustomerIdentityEmailKey)
 	if gipUID == "" || email == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":   "unauthorized",
@@ -199,7 +204,7 @@ func (h *CustomerAccountHandler) Register(c *gin.Context) {
 		lastName = strings.TrimSpace(*req.LastName)
 	}
 
-	profile, err := h.customerSvc.EnsureProfile(c.Request.Context(), customer.EnsureProfileInput{
+	profile, err := h.customerSvc.JoinStore(c.Request.Context(), customer.JoinStoreInput{
 		StoreID:   storeID,
 		TenantID:  tenantID,
 		GipUID:    gipUID,
@@ -208,6 +213,15 @@ func (h *CustomerAccountHandler) Register(c *gin.Context) {
 		LastName:  lastName,
 	}, c)
 	if err != nil {
+		if errors.Is(err, customer.ErrBlocked) {
+			// Blocked by the merchant. Re-registering must not reopen the
+			// account, and the copy must not read as a retryable glitch.
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "account_blocked",
+				"message": "This store has suspended your account, so it can't be reopened here. Please contact the store if you think that's a mistake.",
+			})
+			return
+		}
 		h.logger.Error("failed to register customer profile",
 			"error", err,
 			"email_masked", maskEmailForLog(email),
@@ -215,7 +229,7 @@ func (h *CustomerAccountHandler) Register(c *gin.Context) {
 		)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "internal",
-			"message": "Failed to register profile",
+			"message": "We couldn't set up your account with this store. Please try again in a moment.",
 		})
 		return
 	}

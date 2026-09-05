@@ -87,12 +87,44 @@ func respondNotFound(c *gin.Context) {
 }
 
 // customerContextKey values set by OptionalCustomerAuth.
+//
+// Two tiers, and the difference is the whole point of the membership
+// model. The IDENTITY keys mean "this request carries a credential this
+// storefront verified" — a Mark8ly login is platform-wide, so that says
+// nothing about whether the customer belongs to THIS store. The PROFILE
+// keys mean "this identity has joined this store", and they are set only
+// when a customer_profiles row already exists. No middleware may create
+// that row; see CustomerProfileService.
 const (
 	CustomerProfileIDKey = "customer_profile_id"
 	CustomerEmailKey     = "customer_email"
 	CustomerGipUIDKey    = "customer_gip_uid"
 	CustomerProfileKey   = "customer_profile"
+
+	// CustomerIdentityEmailKey / CustomerIdentityUIDKey carry the
+	// verified identity even when it has no membership here, so
+	// RequireCustomerAuth can tell "not signed in" apart from "signed in
+	// but not a member of this store" and the join endpoint has an
+	// authenticated subject to create the membership for.
+	CustomerIdentityEmailKey = "customer_identity_email"
+	CustomerIdentityUIDKey   = "customer_identity_uid"
 )
+
+// CustomerProfileService is the customer-profile surface the storefront
+// handlers depend on. It models the one *customer.Service main.go builds,
+// so both the read-only session middleware and the write-side join
+// handler take the same value.
+//
+// LookupProfile is read-only. JoinStore CREATES a membership.
+// OptionalCustomerAuth and mobileCustomerProfileMW must never call
+// JoinStore: a customer must not acquire a membership of a store by
+// browsing it, which is exactly the bug this interface's split exists to
+// prevent (docs/superpowers/specs/2026-09-05-customer-store-membership-design.md).
+// TestSessionPathNeverCreatesMembership fails loudly if that is undone.
+type CustomerProfileService interface {
+	LookupProfile(ctx context.Context, storeID uuid.UUID, email string) (*customer.CustomerProfile, error)
+	JoinStore(ctx context.Context, in customer.JoinStoreInput, c *gin.Context) (*customer.CustomerProfile, error)
+}
 
 // sessionClaims represents the decoded auth-bff session cookie payload.
 type sessionClaims struct {
@@ -108,12 +140,18 @@ type sessionClaims struct {
 }
 
 // OptionalCustomerAuth reads the auth-bff session cookie, validates its
-// HMAC signature, and if valid, upserts a customer_profiles row via
-// Service.EnsureProfile and sets customer context on gin.
+// HMAC signature and store scope, and sets customer context on gin.
+//
+// It is READ-ONLY with respect to membership. A valid cookie sets the
+// identity keys; the profile keys follow only if this identity has
+// already joined this store. An authenticated customer with no
+// membership here resolves to "not a member" — never to a freshly minted
+// row. Creation lives behind the explicit join
+// (CustomerAccountHandler.Join).
 //
 // If the cookie is missing, invalid, or expired, the request continues
 // as a guest (no customer context). This middleware never aborts.
-func OptionalCustomerAuth(secret string, customerSvc *customer.Service, logger *slog.Logger) gin.HandlerFunc {
+func OptionalCustomerAuth(secret string, customerSvc CustomerProfileService, logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if secret == "" {
 			c.Next()
@@ -169,26 +207,24 @@ func OptionalCustomerAuth(secret string, customerSvc *customer.Service, logger *
 			c.Next()
 			return
 		}
-		tenantID, err := uuid.Parse(store.TenantID)
-		if err != nil {
-			c.Next()
-			return
-		}
 
-		profile, err := customerSvc.EnsureProfile(c.Request.Context(), customer.EnsureProfileInput{
-			StoreID:   storeID,
-			TenantID:  tenantID,
-			GipUID:    claims.UIDOrGipUID(),
-			Email:     claims.Email,
-			FirstName: claims.FirstName,
-			LastName:  claims.LastName,
-		}, c)
+		// The credential is verified and scoped to this store, so the
+		// identity is trustworthy from here on — independently of whether
+		// it has a membership.
+		c.Set(CustomerIdentityEmailKey, claims.Email)
+		c.Set(CustomerIdentityUIDKey, claims.UIDOrGipUID())
+
+		profile, err := customerSvc.LookupProfile(c.Request.Context(), storeID, claims.Email)
 		if err != nil {
-			logger.Error("failed to ensure customer profile",
-				"error", err,
-				"email", claims.Email,
-				"store_id", store.ID,
-			)
+			if !errors.Is(err, customer.ErrNotFound) {
+				logger.Error("failed to look up customer membership",
+					"error", err,
+					"store_id", store.ID,
+				)
+			}
+			// Not a member of this store (or the lookup failed): continue
+			// with identity only. RequireCustomerAuth turns that into an
+			// actionable 403 on the routes that need a membership.
 			c.Next()
 			return
 		}
@@ -198,6 +234,23 @@ func OptionalCustomerAuth(secret string, customerSvc *customer.Service, logger *
 		c.Set(CustomerGipUIDKey, claims.GipUID)
 		c.Set(CustomerProfileKey, profile)
 
+		c.Next()
+	}
+}
+
+// RequireCustomerIdentity aborts with 401 unless the request carries a
+// verified customer identity. It deliberately does NOT require a
+// membership — it is the guard for the join endpoint, which exists
+// precisely for authenticated customers who have not joined yet.
+func RequireCustomerIdentity() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetString(CustomerIdentityEmailKey) == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, map[string]any{
+				"error":   "unauthorized",
+				"message": "Authentication required. Please sign in.",
+			})
+			return
+		}
 		c.Next()
 	}
 }
@@ -283,6 +336,18 @@ func RequireCustomerAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		profileID, exists := c.Get(CustomerProfileIDKey)
 		if !exists || profileID == "" {
+			// Signed in, but not a customer of THIS store. Say so
+			// truthfully and offer the fix: a generic 401 here would tell
+			// a customer with a perfectly good password to "sign in"
+			// again, which can never succeed.
+			if c.GetString(CustomerIdentityEmailKey) != "" {
+				c.AbortWithStatusJSON(http.StatusForbidden, map[string]any{
+					"error":         "membership_required",
+					"message":       "Your Mark8ly login works here, but you don't have an account with this store yet. Join the store to continue.",
+					"join_required": true,
+				})
+				return
+			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, map[string]any{
 				"error":   "unauthorized",
 				"message": "Authentication required. Please sign in.",

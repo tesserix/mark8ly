@@ -171,7 +171,13 @@ export default function LoginScreen() {
               ? "We couldn't find a store for this account. Did you finish onboarding?"
               : e.code === 'auth_unavailable' || e.code === 'network'
                 ? 'Sign-in is temporarily unavailable. Try again shortly.'
-                : GENERIC_AUTH_ERROR,
+                : e.code === 'challenge_unresumable'
+                  // The server asked for a verification step but sent
+                  // nothing to resume it with — in practice, an app newer
+                  // than the API it is talking to. Distinct copy because
+                  // "try again" is useless advice here: retrying repeats it.
+                  ? 'This app version needs an update to finish signing in.'
+                  : GENERIC_AUTH_ERROR,
         );
         return;
       }

@@ -16,6 +16,7 @@ import (
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/metrics"
+	"github.com/mark8ly/marketplace-api/internal/refund"
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 )
@@ -49,7 +50,12 @@ type Dispatcher struct {
 	// tx is long gone by then and this is the only usable handle. Nil
 	// disables the trial-billed email entirely — there is no way to make it
 	// at-most-once without a claim store.
-	db       *gorm.DB
+	db *gorm.DB
+	// refunds reads refund_audit to tell a refund we issued from one issued
+	// in the Stripe Dashboard (see handleChargeRefunded). Read-only — nothing
+	// here ever writes that fraud-control table. Nil-safe: a nil repo makes
+	// every refund look externally initiated.
+	refunds  refund.Repository
 	skip     SkipCounter // nil-safe: skipped-send counting is optional
 	sent     SentCounter // nil-safe: delivered-send counting is optional
 	handlers map[string]Handler
@@ -59,7 +65,7 @@ type Dispatcher struct {
 // tests that opt out of audit emission — Emitter.EmitStateTransition is a
 // no-op on a nil receiver.
 func New(em *audit.Emitter) *Dispatcher {
-	d := &Dispatcher{emitter: em, handlers: map[string]Handler{}}
+	d := &Dispatcher{emitter: em, refunds: refund.NewRepository(), handlers: map[string]Handler{}}
 	// Side-effect-only handlers that don't advance status. Most are free
 	// functions; customer.subscription.updated is a method because it emits
 	// a period/cancel-flag transition event through d.emitter (#705).
@@ -71,7 +77,7 @@ func New(em *audit.Emitter) *Dispatcher {
 	// when metadata.kind matches. Errors in either stage bail the chain.
 	d.handlers["invoice.paid"] = chain(d.handleInvoicePaid, appaddon.HandleInvoicePaidForAppAddOn)
 	d.handlers["customer.updated"] = handleCustomerUpdated
-	d.handlers["charge.refunded"] = handleChargeRefunded
+	d.handlers["charge.refunded"] = d.handleChargeRefunded
 	d.handlers["payment_method.attached"] = handlePaymentMethodAttached
 	d.handlers["payment_method.detached"] = handlePaymentMethodDetached
 	d.handlers["radar.early_fraud_warning"] = handleFraudWarning

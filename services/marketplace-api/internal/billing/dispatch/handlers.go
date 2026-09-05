@@ -836,9 +836,83 @@ func handleCustomerUpdated(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	return nil
 }
 
-// handleChargeRefunded is audit-only in P2.
-// TODO(P3): create refund record in billing ledger.
-func handleChargeRefunded(ctx context.Context, tx *gorm.DB, raw []byte) error { return nil }
+// handleChargeRefunded audits a refund that did NOT come through our admin
+// refund API (#705). It used to be `return nil`, so a refund issued from the
+// Stripe Dashboard left no trace anywhere.
+//
+// It writes nothing. In particular it does NOT create a refund_audit row:
+// that table is a fraud control with a unique index on card_fingerprint that
+// Service.IssueRefund reads before allowing a refund, so a webhook write
+// would silently consume a card's one allowed refund and cause the next
+// legitimate admin refund to be rejected. The issue asked for observability,
+// not a policy change.
+//
+// Discriminating our own refunds. refund.Service calls Stripe's
+// Refunds.Create, so Stripe sends charge.refunded back for refunds we issued
+// and already audited as subscription.refund_issued. Those refunds have their
+// Stripe id in refund_audit.stripe_refund_id; a Dashboard refund does not.
+// The READ below is the discriminator — without it every admin refund would
+// be audited twice.
+//
+// It is a method (not the free function it used to be) purely so it can reach
+// d.emitter, exactly as handleSubscriptionUpdated became one.
+//
+// Redelivery needs no guard here: internal/handlers/webhooks/stripe.go dedupes
+// on the Stripe event_id before the dispatcher is ever reached.
+func (d *Dispatcher) handleChargeRefunded(ctx context.Context, tx *gorm.DB, raw []byte) error {
+	p, err := parseChargeRefunded(raw)
+	if err != nil {
+		return err
+	}
+	if p.Customer == "" {
+		// Replays and non-subscription charges may carry no customer; there
+		// is nothing to attribute the refund to.
+		return nil
+	}
+
+	// Resolve the customer inside the same transaction, mirroring
+	// handleSubscriptionUpdated's pre-state read. A missing row is NOT an
+	// error: it is a customer we never provisioned (test-mode noise), and
+	// today's behaviour for one is to do nothing and return nil.
+	var sub subscription.StoreSubscription
+	switch err := tx.WithContext(ctx).Where("stripe_customer_id = ?", p.Customer).First(&sub).Error; {
+	case err == nil:
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return nil
+	default:
+		return fmt.Errorf("dispatch: charge.refunded lookup: %w", err)
+	}
+
+	ours, err := d.refundIsOurs(ctx, tx, p.RefundIDs)
+	if err != nil {
+		return err
+	}
+
+	d.emitExternalRefund(p, ours, externalRefundContext{
+		SubscriptionID: sub.ID,
+		TenantID:       sub.TenantID,
+		StoreID:        sub.StoreID,
+	})
+	return nil
+}
+
+// refundIsOurs reports whether any of the payload's refund ids is already
+// recorded in refund_audit — i.e. we issued this refund ourselves.
+func (d *Dispatcher) refundIsOurs(ctx context.Context, tx *gorm.DB, refundIDs []string) (bool, error) {
+	if d.refunds == nil {
+		return false, nil
+	}
+	for _, id := range refundIDs {
+		exists, err := d.refunds.ExistsByStripeRefundID(ctx, tx, id)
+		if err != nil {
+			return false, fmt.Errorf("dispatch: charge.refunded refund_audit lookup: %w", err)
+		}
+		if exists {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 
 // handlePaymentMethodAttached is intentionally a no-op. has_default_payment_method
 // is mirrored from customer.updated, which Stripe emits whenever

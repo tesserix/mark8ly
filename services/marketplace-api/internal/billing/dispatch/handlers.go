@@ -236,10 +236,22 @@ func HandleCheckoutSessionCompletedForTesting(ctx context.Context, tx *gorm.DB, 
 	return d.handleCheckoutSessionCompleted(ctx, tx, raw)
 }
 
-// handleSubscriptionUpdated refreshes period boundaries and cancel_at_period_end.
+// handleSubscriptionUpdated refreshes period boundaries and cancel_at_period_end,
+// and emits an audit event when one of those values actually TRANSITIONS.
 //
-// TODO(P3): emit audit event on period transition.
-func handleSubscriptionUpdated(ctx context.Context, tx *gorm.DB, raw []byte) error {
+// Why it reads the row first (#705). The UPDATE below is blind: it writes the
+// payload's values without looking at what was there. Stripe emits
+// customer.subscription.updated for many reasons, most of which change none of
+// the three columns we mirror, so emitting on every delivery would produce one
+// event per webhook rather than one per transition — noise that makes the
+// audit trail worse. The pre-state is therefore read inside the SAME
+// transaction, immediately before the UPDATE, and compared afterwards; see
+// decidePeriodTransitions for the rule.
+//
+// It is a method (not the free function it used to be) purely so it can reach
+// d.emitter — that structural fact is why the original TODO(P3) sat here
+// unimplemented.
+func (d *Dispatcher) handleSubscriptionUpdated(ctx context.Context, tx *gorm.DB, raw []byte) error {
 	var e struct {
 		Data struct {
 			Object struct {
@@ -267,6 +279,34 @@ func handleSubscriptionUpdated(ctx context.Context, tx *gorm.DB, raw []byte) err
 		ts := time.Unix(obj.CurrentPeriodEnd, 0).UTC()
 		periodEnd = &ts
 	}
+	// Pre-state, inside the same locked transaction as the UPDATE below. A
+	// missing row is NOT an error here: today's behaviour is that the UPDATE
+	// touches zero rows and the handler returns nil (test-mode noise, a
+	// customer we never provisioned), and that is preserved — we simply have
+	// no before-state to compare and emit nothing.
+	var before subscriptionPeriodState
+	var pc periodTransitionContext
+	haveBefore := false
+	var prior subscription.StoreSubscription
+	switch err := tx.WithContext(ctx).Where("stripe_customer_id = ?", obj.Customer).First(&prior).Error; {
+	case err == nil:
+		haveBefore = true
+		before = subscriptionPeriodState{
+			PeriodStart:       prior.CurrentPeriodStart,
+			CancelAtPeriodEnd: prior.CancelAtPeriodEnd,
+		}
+		pc = periodTransitionContext{
+			Customer:       obj.Customer,
+			SubscriptionID: prior.ID,
+			TenantID:       prior.TenantID,
+			StoreID:        prior.StoreID,
+		}
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		// Fall through to the UPDATE, which will affect zero rows.
+	default:
+		return fmt.Errorf("dispatch: subscription.updated lookup: %w", err)
+	}
+
 	res := tx.WithContext(ctx).Exec(
 		`UPDATE store_subscriptions
          SET current_period_start = ?,
@@ -278,6 +318,13 @@ func handleSubscriptionUpdated(ctx context.Context, tx *gorm.DB, raw []byte) err
 	)
 	if res.Error != nil {
 		return fmt.Errorf("dispatch: subscription update: %w", res.Error)
+	}
+
+	if haveBefore {
+		d.emitPeriodTransitions(pc, before, subscriptionPeriodState{
+			PeriodStart:       periodStart,
+			CancelAtPeriodEnd: obj.CancelAtPeriodEnd,
+		})
 	}
 	return nil
 }

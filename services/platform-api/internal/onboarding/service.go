@@ -45,6 +45,29 @@ type VendorEnsurer interface {
 //     the tuple is actually visible.
 //
 // Together these close the race window from both ends.
+// OwnerProvisioner makes the onboarding merchant a sign-in-capable
+// identity in the identity provider and returns their provider user id.
+//
+// Non-nil ONLY on the Zitadel path (see cmd/server/provider_wiring.go's
+// newOwnerProvisioner). Nil selects the GIP path, whose behaviour is
+// unchanged: under GIP the set-password form creates the account
+// client-side before it ever calls platform-api, so there is nothing to
+// provision server-side and the caller-supplied owner_user_id is already
+// a real identity.
+//
+// Satisfied by *zitadeladmin.StaffProvisioner — the SAME type
+// internal/invitation uses, and deliberately so. The merchant needs
+// exactly what an invited teammate needs: a Zitadel account and a grant
+// on the mark8ly-admin project, whose projectRoleCheck: true otherwise
+// makes OIDC finalize return 403 OIDC-foSyH49RvL. There is only one role
+// on that project (mark8ly.staff) and it gates PROJECT ACCESS, not
+// authority — the owner/staff distinction lives entirely in FGA, which
+// is why the owner reuses the staff role key here and still gets an FGA
+// `owner` tuple below.
+type OwnerProvisioner interface {
+	ProvisionStaff(ctx context.Context, email, firstName, lastName, password string) (string, error)
+}
+
 type Service struct {
 	db                    *gorm.DB
 	repo                  Repository
@@ -57,6 +80,7 @@ type Service struct {
 	adminURLTemplate      string
 	storefrontURLTemplate string
 	vendorClient          VendorEnsurer
+	provisioner           OwnerProvisioner
 }
 
 // Config holds Service dependencies.
@@ -81,6 +105,10 @@ type Config struct {
 	// A nil VendorClient disables the call (useful for tests that don't
 	// need the vendor path).
 	VendorClient VendorEnsurer
+	// Provisioner creates the owner's identity-provider account and admin
+	// project grant during Complete. Nil on the GIP path — see
+	// OwnerProvisioner's doc.
+	Provisioner OwnerProvisioner
 }
 
 // NewService constructs a Service.
@@ -97,6 +125,7 @@ func NewService(cfg Config) *Service {
 		adminURLTemplate:      cfg.AdminURLTemplate,
 		storefrontURLTemplate: cfg.StorefrontURLTemplate,
 		vendorClient:          cfg.VendorClient,
+		provisioner:           cfg.Provisioner,
 	}
 }
 
@@ -203,8 +232,22 @@ type CompleteRequest struct {
 	SessionID    string `json:"session_id"`
 	BusinessName string `json:"business_name"`
 	Slug         string `json:"slug"`
-	OwnerUserID  string `json:"owner_user_id"` // GIP UID
-	OwnerEmail   string `json:"owner_email"`
+	// OwnerUserID is the GIP UID of the account the set-password form
+	// already created. Required on the GIP path ONLY. On the Zitadel path
+	// the merchant has no provider account at this point — creating one is
+	// what Complete does — so there is no id for the caller to send and
+	// the field is ignored.
+	OwnerUserID string `json:"owner_user_id"`
+	OwnerEmail  string `json:"owner_email"`
+	// Password is the password to create the owner's Zitadel account
+	// with. Zitadel path only, and only consulted when no account exists
+	// for the address yet. Ignored entirely on the GIP path.
+	Password string `json:"password"`
+	// FirstName / LastName populate the Zitadel profile. Optional —
+	// derived from the email local part when absent (Zitadel rejects an
+	// empty givenName/familyName).
+	FirstName    string `json:"first_name"`
+	LastName     string `json:"last_name"`
 	CountryCode  string `json:"country_code"`
 	CurrencyCode string `json:"currency_code"`
 	Timezone     string `json:"timezone"`
@@ -225,9 +268,32 @@ type CompleteResult struct {
 // `from parent` inheritance works for the default store created
 // during onboarding.
 type fgaWritePayload struct {
-	UserID   string `json:"user_id"`
-	TenantID string `json:"tenant_id"`
-	StoreID  string `json:"store_id,omitempty"`
+	// UserID is the single subject the GIP path writes, and is what every
+	// outbox row enqueued before #685 carries. The handler still reads
+	// it, so rows left pending across the rollout drain unchanged.
+	UserID string `json:"user_id"`
+	// UserIDs is the Zitadel path's subject list: the owner's lowercased
+	// EMAIL and their Zitadel user id, both written as owner tuples.
+	//
+	// Two keys because three readers disagree on what a member is keyed
+	// by, exactly as #679/#680 found for invitation accept:
+	//
+	//   - admin sign-in (apps/admin/app/login/actions.ts,
+	//     resolveWorkspaceTenant) looks membership up by EMAIL on the
+	//     Zitadel path — tenant resolution runs BEFORE authentication, so
+	//     at that moment the typed address is the only identifier in
+	//     existence and there is no `sub` to key on;
+	//   - the bearer-token API path resolves by the Zitadel uid;
+	//   - this code used to write only the GIP uid, which after the
+	//     Zitadel cutover matches neither — the bug #685 reports.
+	//
+	// Writing one key breaks the other reader: email-only 403s every API
+	// call, uid-only puts the merchant back on "We couldn't find a store
+	// for this account. Did you finish onboarding?" — the message they
+	// are shown seconds after finishing onboarding.
+	UserIDs  []string `json:"user_ids,omitempty"`
+	TenantID string   `json:"tenant_id"`
+	StoreID  string   `json:"store_id,omitempty"`
 }
 
 // FGAOutboxKind is the dispatch key for FGA membership writes.
@@ -250,7 +316,12 @@ const FGAOutboxKind = "fga.write_membership"
 // After commit (NOT in the tx) we send the welcome email best-effort.
 // Failure to send is logged but does not fail completion.
 func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteResult, error) {
-	if err := validateCompleteRequest(req); err != nil {
+	// owner_user_id is required on the GIP path only. With a provisioner
+	// wired (Zitadel) the merchant has no provider account yet, so there
+	// is no uid to send — this call is what creates one. The error code
+	// and message are unchanged so the GIP path's response stays
+	// byte-identical.
+	if err := validateCompleteRequest(req, s.provisioner == nil); err != nil {
 		return nil, err
 	}
 
@@ -274,6 +345,41 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		return nil, err
 	}
 
+	// Provision the merchant in the identity provider (Zitadel path only;
+	// s.provisioner is nil under GIP). This runs BEFORE the transaction,
+	// and a failure aborts Complete with no tenant, no store and no
+	// outbox row written.
+	//
+	// That ordering is the point, and it is the same one
+	// invitation.Accept uses. The failure worth preventing is a
+	// HALF-provisioned merchant — a tenant whose owner has no Zitadel
+	// account or no project grant — which looks like a finished signup
+	// right up until the first sign-in fails, and which the merchant
+	// cannot repair themselves. The reverse leak, a Zitadel account
+	// created for a completion that then fails at the DB, IS possible and
+	// is deliberately the cheaper one: ProvisionStaff resolves an
+	// existing account instead of failing, so the retry the merchant is
+	// already going to make lands on the same user, and an account with a
+	// project grant but no tenant cannot sign in to anything.
+	ownerUserID := strings.TrimSpace(req.OwnerUserID)
+	ownerEmail := strings.ToLower(strings.TrimSpace(req.OwnerEmail))
+	// subjects are the FGA tuple keys: one under GIP (the uid the form
+	// already created), two under Zitadel — see fgaWritePayload.UserIDs.
+	subjects := []string{ownerUserID}
+	if s.provisioner != nil {
+		first, last := profileNames(req.FirstName, req.LastName, ownerEmail)
+		zitadelUID, provErr := s.provisioner.ProvisionStaff(ctx, ownerEmail, first, last, req.Password)
+		if provErr != nil {
+			return nil, provisioningError(provErr, req.SessionID, ownerEmail, req.Password)
+		}
+		ownerUserID = zitadelUID
+		// Email first, lowercased: the login path folds to lower
+		// server-side and every email-keyed tuple in the store is
+		// lowercase, so `Founder@Example.com` written verbatim would miss
+		// its own membership.
+		subjects = []string{ownerEmail, zitadelUID}
+	}
+
 	// Phase Q: onboarding creates BOTH a tenant (the company) and a
 	// default store (the first storefront) in the same transaction.
 	// The merchant's "business name" becomes both the tenant.name
@@ -282,11 +388,14 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 	// slug + currency + timezone + country — the user-facing
 	// storefront identity.
 	t := &tenant.Tenant{
-		Name:        req.BusinessName,
-		OwnerUserID: req.OwnerUserID,
+		Name: req.BusinessName,
+		// The Zitadel user id on the Zitadel path, not the caller's: it is
+		// the id the bearer API sees and the one every later membership
+		// write keys on.
+		OwnerUserID: ownerUserID,
 		// Store normalized so the row matches what the case-insensitive
 		// uniqueness check and the lower(owner_email) index compare on.
-		OwnerEmail: strings.ToLower(strings.TrimSpace(req.OwnerEmail)),
+		OwnerEmail: ownerEmail,
 		Status:     tenant.StatusActive,
 	}
 	st := &store.Store{
@@ -317,7 +426,8 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		// Phase D outbox event — owner tuple on the tenant. Store-
 		// level tuples come with Phase R (store-level invites).
 		if err := outbox.Enqueue(tx, FGAOutboxKind, fgaWritePayload{
-			UserID:   req.OwnerUserID,
+			UserID:   ownerUserID,
+			UserIDs:  subjects,
 			TenantID: t.ID,
 			StoreID:  st.ID,
 		}); err != nil {
@@ -329,11 +439,20 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		// is refused — which the app renders as a login bounce loop. Rides
 		// the same transaction/outbox as the FGA tuple so it is retried
 		// until it lands rather than silently locking the owner out.
-		if err := outbox.Enqueue(tx, GIPClaimOutboxKind, gipClaimPayload{
-			UserID:   req.OwnerUserID,
-			TenantID: t.ID,
-		}); err != nil {
-			return err
+		//
+		// Skipped on the Zitadel path: ownerUserID is a Zitadel user id
+		// there and EnsureTenantClaim writes a GIP custom claim keyed by
+		// GIP uid. The call would resolve nothing, fail, and be retried by
+		// the drainer forever. The GIP path is untouched. (Mobile admin is
+		// on the same GIP bearer path and is a separate cutover — see
+		// cmd/server/provider_wiring.go's requireGIPForTenantClaim.)
+		if s.provisioner == nil {
+			if err := outbox.Enqueue(tx, GIPClaimOutboxKind, gipClaimPayload{
+				UserID:   ownerUserID,
+				TenantID: t.ID,
+			}); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -415,8 +534,10 @@ func formatURLTemplate(template, slug string) string {
 	return template
 }
 
-// validateCompleteRequest enforces presence + shape of every required field.
-func validateCompleteRequest(req CompleteRequest) error {
+// validateCompleteRequest enforces presence + shape of every required
+// field. requireOwnerUserID is false on the Zitadel path, where the
+// provider account does not exist yet — see CompleteRequest.OwnerUserID.
+func validateCompleteRequest(req CompleteRequest, requireOwnerUserID bool) error {
 	if req.SessionID == "" {
 		return apperrors.BadRequest("invalid_session", "session_id is required")
 	}
@@ -426,7 +547,7 @@ func validateCompleteRequest(req CompleteRequest) error {
 	if req.Slug == "" {
 		return apperrors.BadRequest("invalid_slug", "slug is required")
 	}
-	if req.OwnerUserID == "" {
+	if requireOwnerUserID && req.OwnerUserID == "" {
 		return apperrors.BadRequest("invalid_owner", "owner_user_id is required")
 	}
 	if req.OwnerEmail == "" || !strings.Contains(req.OwnerEmail, "@") {
@@ -442,4 +563,52 @@ func validateCompleteRequest(req CompleteRequest) error {
 		return apperrors.BadRequest("invalid_timezone", "timezone is required")
 	}
 	return nil
+}
+
+// profileNames resolves the givenName/familyName Zitadel requires,
+// falling back to the email local part when the wizard sent nothing.
+// Zitadel rejects an empty name outright, so "no name" is not an option
+// and a derived one beats a failed signup.
+//
+// Deliberately a copy of internal/invitation's identical helper rather
+// than a shared import: the two packages are independent of each other
+// by design, and a naming heuristic is not worth a new shared package
+// that couples them.
+func profileNames(first, last, email string) (string, string) {
+	first = strings.TrimSpace(first)
+	last = strings.TrimSpace(last)
+	if first != "" && last != "" {
+		return first, last
+	}
+	local := email
+	if at := strings.Index(local, "@"); at > 0 {
+		local = local[:at]
+	}
+	parts := strings.FieldsFunc(local, func(r rune) bool {
+		return r == '.' || r == '_' || r == '-' || r == '+'
+	})
+	derivedFirst, derivedLast := local, local
+	if len(parts) > 0 {
+		derivedFirst = titleCase(parts[0])
+		derivedLast = derivedFirst
+		if len(parts) > 1 {
+			derivedLast = titleCase(strings.Join(parts[1:], " "))
+		}
+	}
+	if first == "" {
+		first = derivedFirst
+	}
+	if last == "" {
+		last = derivedLast
+	}
+	return first, last
+}
+
+// titleCase upper-cases the first rune only.
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	return strings.ToUpper(string(r[0])) + string(r[1:])
 }

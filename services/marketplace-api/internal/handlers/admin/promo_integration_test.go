@@ -19,6 +19,9 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
+// ptrOf is a local helper for the nullable promo_codes columns (#726).
+func ptrOf[T any](v T) *T { return &v }
+
 func promoApplyURL(storeID string) string {
 	return "/api/v1/admin/stores/" + storeID + "/subscription/apply-promo"
 }
@@ -28,9 +31,9 @@ func seedPromoCode(t *testing.T, env *testEnv, code string, discountBps int) uui
 	repo := promo.NewRepository()
 	pc := &promo.PromoCode{
 		Code:           code,
-		StripeCouponID: "co_test_" + code,
-		DiscountType:   promo.DiscountTypePercentage,
-		DiscountValue:  discountBps,
+		StripeCouponID: ptrOf("co_test_" + code),
+		DiscountType:   ptrOf(promo.DiscountTypePercentage),
+		DiscountValue:  ptrOf(discountBps),
 		MaxPerEmail:    3,
 		ValidFrom:      time.Now().UTC().Add(-24 * time.Hour),
 		CreatedBy:      "test",

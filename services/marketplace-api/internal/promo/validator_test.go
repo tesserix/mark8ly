@@ -7,10 +7,15 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
+// ptr is a local helper for the nullable promo_codes columns (#726): a
+// console-defined code may carry no discount at all, so DiscountType and
+// DiscountValue are pointers on the model.
+func ptr[T any](v T) *T { return &v }
+
 var baseCode = &PromoCode{
 	Code:          "ABCDEF123456",
-	DiscountType:  DiscountTypePercentage,
-	DiscountValue: 1000, // 10% off
+	DiscountType:  ptr(DiscountTypePercentage),
+	DiscountValue: ptr(1000), // 10% off
 	MaxPerEmail:   1,
 	ValidFrom:     time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 }
@@ -160,7 +165,7 @@ func TestValidate(t *testing.T) {
 				SubmittedCode: "ABCDEF123456",
 				PromoCode: func() *PromoCode {
 					pc := *baseCode
-					pc.DiscountValue = 5000 // 50% in basis points
+					pc.DiscountValue = ptr(5000) // 50% in basis points
 					return &pc
 				}(),
 				Now:              now,
@@ -201,5 +206,64 @@ func TestValidate(t *testing.T) {
 				t.Errorf("Validate().RejectReason = %q, want %q", result.RejectReason, tc.wantReason)
 			}
 		})
+	}
+}
+
+// TestValidate_TrialExtensionOnlyCodeLeavesPriceUntouched pins the rule that
+// a nil discount means "there is no discount to apply", NOT "0% off" (#726).
+// The two are numerically identical for a percentage, which is exactly why the
+// distinction has to be asserted deliberately: a nil deref or a silent
+// zero-value fallback would look correct here until an amount-typed code or an
+// unknown type arrived. What must hold is that the code is ACCEPTED (its
+// benefit is the trial extension, delivered elsewhere) and the price is the
+// base price, untouched.
+func TestValidate_TrialExtensionOnlyCodeLeavesPriceUntouched(t *testing.T) {
+	pc := *baseCode
+	pc.DiscountType = nil
+	pc.DiscountValue = nil
+	pc.TrialExtensionDays = ptr(14)
+
+	got := Validate(ValidationInput{
+		SubmittedCode:  "ABCDEF123456",
+		PromoCode:      &pc,
+		Now:            now,
+		Plan:           subscription.PlanStarter,
+		Period:         subscription.PeriodMonthly,
+		BasePriceMinor: 2900,
+		Currency:       "usd",
+	})
+
+	if !got.Accepted {
+		t.Fatalf("trial-extension-only code must be accepted, got reason %q", got.RejectReason)
+	}
+	if got.EffectiveMinor != 2900 {
+		t.Fatalf("EffectiveMinor = %d, want the untouched base price 2900", got.EffectiveMinor)
+	}
+}
+
+// TestValidate_UnknownDiscountTypeIsRejected covers the only way a discount
+// can be present but unusable: a row whose discount_type this build does not
+// understand, which can only arrive via a bad console ingest. Falling through
+// to the base price would report success while applying nothing.
+func TestValidate_UnknownDiscountTypeIsRejected(t *testing.T) {
+	pc := *baseCode
+	pc.DiscountType = ptr(DiscountType("bogus"))
+	pc.DiscountValue = ptr(1000)
+
+	got := Validate(ValidationInput{
+		SubmittedCode:  "ABCDEF123456",
+		PromoCode:      &pc,
+		Now:            now,
+		Plan:           subscription.PlanStarter,
+		Period:         subscription.PeriodMonthly,
+		BasePriceMinor: 2900,
+		Currency:       "usd",
+	})
+
+	if got.Accepted {
+		t.Fatal("an unrecognised discount_type must not be accepted as a no-op discount")
+	}
+	if got.RejectReason != RejectReasonUnknownDiscountType {
+		t.Fatalf("RejectReason = %q, want %q", got.RejectReason, RejectReasonUnknownDiscountType)
 	}
 }

@@ -126,6 +126,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/page/... \
 	    ./internal/payment/... \
 	    ./internal/product/... \
+	    ./internal/promo/... \
 	    ./internal/reconciliation/... \
 	    ./internal/shipping/... \
 	    ./internal/signup/... \

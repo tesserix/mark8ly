@@ -45,6 +45,11 @@ const (
 	RejectReasonAnnualOnly         ValidationRejectReason = "annual_only"
 	RejectReasonBelowFloor         ValidationRejectReason = "below_absolute_floor"
 	RejectReasonCurrencyNotCovered ValidationRejectReason = "currency_not_covered"
+	// RejectReasonUnknownDiscountType covers a row whose discount_type is set
+	// to a value this build does not understand — only reachable via a bad
+	// ingest from the console (#726). Rejecting is safer than applying no
+	// discount and calling it a success.
+	RejectReasonUnknownDiscountType ValidationRejectReason = "unknown_discount_type"
 )
 
 // ValidationResult is returned by Validate. On success Accepted is true and
@@ -114,14 +119,29 @@ func Validate(in ValidationInput) ValidationResult {
 	}
 
 	// Compute effective price and run floor check.
-	var effectiveMinor int64
-	switch in.PromoCode.DiscountType {
-	case DiscountTypePercentage:
-		effectiveMinor = ComputeEffective(in.BasePriceMinor, in.PromoCode.DiscountValue, 0)
-	case DiscountTypeAmount:
-		effectiveMinor = ComputeEffective(in.BasePriceMinor, 0, int64(in.PromoCode.DiscountValue))
-	default:
-		effectiveMinor = in.BasePriceMinor
+	//
+	// A console-defined code may carry NO discount at all — a
+	// trial-extension-only code (#620, #726). That is not a zero discount:
+	// the price is simply untouched, and the benefit is delivered elsewhere
+	// (the trial extension). Treating nil as 0 here would be wrong in both
+	// directions — for DiscountTypePercentage it reads as "0% off" and for
+	// DiscountTypeAmount as "0 minor units off"; both are silently correct
+	// arithmetic for the wrong code, and both would hide a failed ingest.
+	// The DB guarantees a discount is complete when present
+	// (promo_codes_discount_pair), so nil type and nil value travel together.
+	effectiveMinor := in.BasePriceMinor
+	if in.PromoCode.DiscountType != nil && in.PromoCode.DiscountValue != nil {
+		switch *in.PromoCode.DiscountType {
+		case DiscountTypePercentage:
+			effectiveMinor = ComputeEffective(in.BasePriceMinor, *in.PromoCode.DiscountValue, 0)
+		case DiscountTypeAmount:
+			effectiveMinor = ComputeEffective(in.BasePriceMinor, 0, int64(*in.PromoCode.DiscountValue))
+		default:
+			// An unrecognised discount type is a data fault, not a free pass.
+			// Leaving the price undiscounted here would apply nothing while
+			// reporting success, so reject instead.
+			return ValidationResult{Accepted: false, RejectReason: RejectReasonUnknownDiscountType}
+		}
 	}
 
 	if err := CheckFloor(in.Plan, in.Currency, effectiveMinor); err != nil {

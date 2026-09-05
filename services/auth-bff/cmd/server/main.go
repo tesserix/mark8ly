@@ -102,7 +102,20 @@ func newZitadelHandlers(cfg *config.Config, zitadelClient *zitadellogin.Client, 
 	if err != nil {
 		return nil, err
 	}
+	// Mobile token issuance (#686). Enabled only when all four values are
+	// present; any missing one leaves the mobile routes refusing with 500
+	// rather than half-configured, because a login that "succeeds" without
+	// a usable token is indistinguishable from a working one until the
+	// first API call 401s.
+	var mobileTokens *zitadellogin.TokenExchanger
+	if cfg.ZitadelAdminClientID != "" && cfg.ZitadelAdminClientSecret != "" &&
+		cfg.ZitadelAdminRedirectURI != "" && cfg.ZitadelAdminProjectID != "" {
+		mobileTokens = zitadellogin.NewTokenExchanger(
+			cfg.ZitadelIssuer, cfg.ZitadelAdminClientID, cfg.ZitadelAdminClientSecret, nil)
+	}
+
 	merchant := zitadellogin.NewHandler(zitadelClient, complete).
+		WithTokenIssuer(mobileTokens, cfg.ZitadelAdminRedirectURI, cfg.ZitadelAdminProjectID).
 		WithHostedLoginBaseURL(cfg.ZitadelIssuer).
 		WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
 		WithReturnURLAllowlist(adminReturnURLs).

@@ -79,7 +79,15 @@ var FallbackComment = map[Plan]map[string]string{}
 // ProAppMonthly and ProAppAnnual are the Pro+App add-on's single global
 // price, per spec §4.1.2: billed in USD only, everywhere. There is no
 // Stripe Price object for it — no PlanProApp constant exists in catalog.go —
-// so it cannot be derived from the catalog. The TS table nonetheless
+// so it cannot be derived from the catalog.
+//
+// That absence is INTENDED, not a gap (#650): the add-on is a one-time
+// purchase billed through a single invoice, and a one-off charge needs no
+// Price object. These two constants are display and proration inputs, not
+// a subscription's price. See internal/billing/appaddon for the decision
+// and what the proration is actually for.
+//
+// The TS table nonetheless
 // repeats this same figure across every display currency (DisplayCurrencyOrder)
 // for a consistent card layout; the display layer annotates "billed in USD"
 // for non-USD viewers. The $2,000 setup fee is a separate one-off charge,

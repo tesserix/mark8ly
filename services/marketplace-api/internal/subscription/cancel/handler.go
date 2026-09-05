@@ -26,7 +26,7 @@ type cancelRequest struct {
 	// SurveyReason is the optional exit-survey reason from the merchant.
 	SurveyReason string `json:"survey_reason"`
 	// AcceptSaveOffer true triggers the save-offer reversal branch:
-	// cancel_scheduled → active (prospective discount deferred to P10).
+	// cancel_scheduled → active, with a best-effort prospective discount.
 	AcceptSaveOffer bool `json:"accept_save_offer"`
 }
 

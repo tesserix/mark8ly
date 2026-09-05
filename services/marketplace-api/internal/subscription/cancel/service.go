@@ -47,6 +47,9 @@ type Service struct {
 	repo    subscription.Repository
 	emitter *audit.Emitter
 	logger  *slog.Logger
+	// promo is optional. When nil the save offer reverses the cancellation and
+	// claims no discount; see WithPromo in save_offer.go.
+	promo PromoApplier
 }
 
 // NewService constructs a cancel.Service.
@@ -58,9 +61,9 @@ func NewService(db *gorm.DB, repo subscription.Repository, emitter *audit.Emitte
 //
 // Save-offer branch (§15.1):
 //   - AcceptSaveOffer=true AND status=cancel_scheduled → transition back to active.
-//     The discount (20%-off-6-months) is prospective-only and is NOT applied here —
-//     P10's promo service owns that; P11 only drives the state transition and emits
-//     the audit event with a note so P10 can wire it later.
+//     The discount (20%-off-6-months) is prospective-only. It is attempted after
+//     the transition via the optional promo dependency, and the response claims a
+//     discount only when one was actually applied (#701).
 //   - AcceptSaveOffer=false (or no offer presented) → transition active → cancel_scheduled
 //     setting cancel_at_period_end=true. The subscription expires at Stripe's
 //     current_period_end; we do NOT call Stripe here because Stripe already has
@@ -122,7 +125,8 @@ func (s *Service) scheduleCancellation(ctx context.Context, in Input, sub *subsc
 }
 
 // acceptSaveOffer reverts cancel_scheduled → active (prospective save-offer path).
-// The actual promo/discount is NOT applied here; P10 owns that wiring.
+// The discount is best-effort: it is attempted only after the reversal has been
+// committed, and a failure downgrades the message rather than failing the call.
 func (s *Service) acceptSaveOffer(ctx context.Context, in Input, sub *subscription.StoreSubscription) (Output, error) {
 	if sub.Status != subscription.StatusCancelScheduled {
 		return Output{}, fmt.Errorf("%w: must be cancel_scheduled to accept save offer, got %s", ErrSaveOfferAlreadyAccepted, sub.Status)
@@ -142,17 +146,17 @@ func (s *Service) acceptSaveOffer(ctx context.Context, in Input, sub *subscripti
 		return Output{}, fmt.Errorf("cancel: save-offer transition: %w", err)
 	}
 
-	// NOTE: P10 promo service would be called here to attach a prospective-only
-	// discount (20%-off-6-months). Until P10 is wired, log intent.
-	s.logger.Info("cancel: save offer accepted — would apply prospective promo (P10 not yet wired)",
+	// The reversal is committed. Attempt the prospective-only discount; whether
+	// it lands only changes what we tell the merchant, never the reversal.
+	discountApplied := s.applySaveOfferDiscount(ctx, in, sub)
+
+	s.logger.Info("cancel: save offer accepted",
 		"store_id", in.StoreID,
 		"tenant_id", in.TenantID,
-		"actor", in.Actor)
+		"actor", in.Actor,
+		"discount_applied", discountApplied)
 
-	return Output{
-		Status:       string(subscription.StatusActive),
-		SaveOfferMsg: "Save offer accepted. A 20% discount applies to your next billing cycle.",
-	}, nil
+	return saveOfferOutput(discountApplied), nil
 }
 
 // IsCancellableStatus reports whether a subscription in the given status may be

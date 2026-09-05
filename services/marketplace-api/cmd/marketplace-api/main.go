@@ -1164,7 +1164,7 @@ func main() {
 		refundHandler := admin.NewRefundHandler(conn, refundSvc, log).WithAudit(auditEmitter)
 
 		// P11 — Cancel handler (merchant-initiated cancellation + save-offer §15).
-		cancelSvc := cancel.NewService(conn, subscriptionRepo, auditEmitter, log)
+		cancelSvc := cancel.NewService(conn, subscriptionRepo, auditEmitter, log).WithPromo(promoSvc)
 		cancelHandler := cancel.NewHandler(cancelSvc, log)
 
 		// P5 — Migration fast-path submit handler.

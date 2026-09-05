@@ -19,14 +19,22 @@ import (
 )
 
 type fakeLoginBackend struct {
-	gotEmail, gotTenant string
-	result              authbffclient.LoginResult
-	err                 error
+	gotEmail, gotTenant      string
+	result                   authbffclient.LoginResult
+	err                      error
+	gotPendingToken, gotCode string
+	otpResult                authbffclient.LoginResult
+	otpErr                   error
 }
 
 func (f *fakeLoginBackend) Login(_ context.Context, email, _, workspaceTenant string) (authbffclient.LoginResult, error) {
 	f.gotEmail, f.gotTenant = email, workspaceTenant
 	return f.result, f.err
+}
+
+func (f *fakeLoginBackend) VerifyOTP(_ context.Context, pendingToken, code string) (authbffclient.LoginResult, error) {
+	f.gotPendingToken, f.gotCode = pendingToken, code
+	return f.otpResult, f.otpErr
 }
 
 func loginRouter(t *testing.T, lister TenantLister, backend MobileLoginBackend) *gin.Engine {
@@ -167,4 +175,89 @@ func TestMobileLogin_MissingFieldsIs400(t *testing.T) {
 	r := loginRouter(t, &fakeTenantLister{}, &fakeLoginBackend{})
 	require.Equal(t, http.StatusBadRequest, post(t, r, `{"email":"a@b.test"}`).Code)
 	require.Equal(t, http.StatusBadRequest, post(t, r, `{"password":"pw"}`).Code)
+}
+
+// ---- email-OTP completion --------------------------------------------
+//
+// The COMMON first sign-in on mobile: a fresh install is always an
+// unrecognised device, so a new phone lands here rather than getting
+// tokens from the login call.
+
+func postOTP(t *testing.T, r *gin.Engine, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mobile/admin/auth/otp/verify", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestMobileOTP_CorrectCodeReturnsTokensWithoutABearer(t *testing.T) {
+	backend := &fakeLoginBackend{otpResult: authbffclient.LoginResult{
+		UID: "u1", Email: "a@b.test", TenantID: "t-1", AccessToken: "AT", RefreshToken: "RT", ExpiresIn: 3599,
+	}}
+	r := loginRouter(t, &fakeTenantLister{}, backend)
+
+	rec := postOTP(t, r, `{"pending_token":"sealed","code":"123456"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var body struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+			TenantID    string `json:"tenant_id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "AT", body.Data.AccessToken)
+	require.Equal(t, "t-1", body.Data.TenantID)
+
+	require.Equal(t, "sealed", backend.gotPendingToken)
+	require.Equal(t, "123456", backend.gotCode)
+	// No tenant lookup on this path: the login call already resolved it,
+	// and repeating it would be a second round-trip for a value the client
+	// already holds.
+	require.Empty(t, backend.gotEmail)
+}
+
+func TestMobileOTP_WrongCodeIs401(t *testing.T) {
+	backend := &fakeLoginBackend{otpErr: authbffclient.ErrInvalidCredentials}
+	rec := postOTP(t, loginRouter(t, &fakeTenantLister{}, backend), `{"pending_token":"sealed","code":"000000"}`)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+// After the code is accepted the user IS authenticated, so an upstream
+// failure must not be reported as a bad code — they would retype a correct
+// one forever.
+func TestMobileOTP_UpstreamFailureIs502Not401(t *testing.T) {
+	backend := &fakeLoginBackend{otpErr: errors.New("auth-bff down")}
+	rec := postOTP(t, loginRouter(t, &fakeTenantLister{}, backend), `{"pending_token":"sealed","code":"123456"}`)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+}
+
+func TestMobileOTP_MissingFieldsIs400(t *testing.T) {
+	r := loginRouter(t, &fakeTenantLister{}, &fakeLoginBackend{})
+	require.Equal(t, http.StatusBadRequest, postOTP(t, r, `{"code":"123456"}`).Code)
+	require.Equal(t, http.StatusBadRequest, postOTP(t, r, `{"pending_token":"sealed"}`).Code)
+}
+
+// The login response must carry the sealed state, or the OTP screen has
+// nothing to resume from.
+func TestMobileLogin_ReturnsThePendingToken(t *testing.T) {
+	lister := &fakeTenantLister{result: []teamproxy.TenantMembership{{TenantID: "t-1"}}}
+	backend := &fakeLoginBackend{result: authbffclient.LoginResult{
+		EmailOTPRequired: true, PendingToken: "sealed-value", TenantID: "t-1",
+	}}
+
+	rec := post(t, loginRouter(t, lister, backend), `{"email":"a@b.test","password":"pw"}`)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Data struct {
+			PendingToken     string `json:"pending_token"`
+			EmailOTPRequired bool   `json:"email_otp_required"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.True(t, body.Data.EmailOTPRequired)
+	require.Equal(t, "sealed-value", body.Data.PendingToken)
 }

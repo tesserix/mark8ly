@@ -95,7 +95,15 @@ func GIPBearerAuth(verifier TokenVerifier, setTenantFromClaim bool) gin.HandlerF
 		}
 
 		c.Set("user_id", claims.UserID)
-		if setTenantFromClaim {
+		// Only write a tenant the token actually carries. Writing an
+		// EMPTY claim was harmless when one verifier was mounted (an
+		// empty tenant_id and an absent one are both "unbound" to
+		// RequireBoundTenant), but in dual-issuer mode this middleware
+		// sees both kinds of token: a Zitadel token has no claim, and
+		// blanking tenant_id for it would clobber nothing yet — while
+		// making the ordering contract with TenantFromRequest depend on
+		// an empty-string coincidence rather than on intent.
+		if setTenantFromClaim && claims.TenantID != "" {
 			c.Set("tenant_id", claims.TenantID)
 		}
 		c.Next()

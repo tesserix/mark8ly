@@ -1447,6 +1447,12 @@ func main() {
 			// request on GIP (if TenantFromRequest ran with no client-side
 			// header support to feed it).
 			ZitadelEnabled: cfg.ZitadelEnabled,
+			// Dual-issuer relaxes the "exactly one tenancy writer" rule
+			// above into an ORDERING rule instead: both writers run, and
+			// the FGA-validated one runs second so it can only ever
+			// overwrite an unvalidated claim, never the reverse. See
+			// MobileDeps.DualIssuer.
+			DualIssuer: cfg.ZitadelEnabled && cfg.ZitadelDualIssuer,
 			// Resolves X-Acting-Tenant-Id via the same FGA client the rest
 			// of the admin surface already checks permissions against, for
 			// bearer tokens (Zitadel) that carry no tenant_id claim at

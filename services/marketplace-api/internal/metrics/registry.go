@@ -220,6 +220,30 @@ var (
 		},
 		[]string{"event"},
 	)
+
+	// MobileAdminTokenVerifiedTotal counts successful mobile-admin bearer
+	// verifications, labeled by the issuer that accepted the token
+	// (zitadel | gip).
+	//
+	// This exists to make GIP retirement (#708) a decision backed by
+	// evidence instead of a guess. During the #686 migration both issuers
+	// are accepted at once, so "has anything authenticated via GIP
+	// recently?" is the question that gates deleting the GIP path — and
+	// auth.CompositeVerifier is the only place that knows the answer.
+	// `gip` staying at zero across a window longer than the app's update
+	// tail is the signal to proceed.
+	//
+	// FAILED verifications are deliberately NOT counted here: attributing
+	// a rejected token to an issuer would inflate that issuer's apparent
+	// traffic with tokens it never minted, which is precisely the reading
+	// this counter must not corrupt.
+	MobileAdminTokenVerifiedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mobile_admin_token_verified_total",
+			Help: "Count of successful mobile-admin bearer token verifications, labeled by the issuer that accepted the token (zitadel | gip). Successes only — a rejected token is attributed to no issuer. Used to decide when GIP has drained and can be retired (#708).",
+		},
+		[]string{"issuer"},
+	)
 )
 
 func init() {
@@ -243,6 +267,7 @@ func init() {
 		APIKeyUsedTotal,
 		APIKeyAuthFailedTotal,
 		APIKeyRateLimitedTotal,
+		MobileAdminTokenVerifiedTotal,
 		CarrierSecretEventsTotal,
 	)
 

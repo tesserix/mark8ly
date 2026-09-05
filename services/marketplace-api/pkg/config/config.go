@@ -316,6 +316,24 @@ type Config struct {
 	// credential. Already deployed on other services as
 	// "389070376568619523".
 	ZitadelAdminProjectID string `envconfig:"ZITADEL_ADMIN_PROJECT_ID" default:""`
+	// ZitadelDualIssuer accepts mobile-admin bearer tokens from BOTH
+	// Zitadel and GIP for the duration of the migration (#686).
+	//
+	// ZitadelEnabled alone is an atomic switch: it changes the verifier
+	// AND the tenancy source together, so the moment it flips, every
+	// already-installed mobile app stops working. Store-distributed apps
+	// cannot be force-updated, so that is a flag day with no drain window.
+	// This flag turns the cutover into a rollout instead.
+	//
+	// Defaults to false, so an existing deployment behaves byte-for-byte
+	// as it does today and this can land k8s-first — the ordering that
+	// matters, because ADDING required config code-first fails pods at
+	// boot (only removal is code-first).
+	//
+	// Requires ZitadelEnabled; ignored on its own, because with Zitadel
+	// off there is only one issuer to accept and the composite would wrap
+	// a single verifier to no effect.
+	ZitadelDualIssuer bool `envconfig:"ZITADEL_DUAL_ISSUER" default:"false"`
 
 	// --- Merchant device push (mobile-admin) ---
 	// PushEventsTopic is the Pub/Sub topic merchant notifications are

@@ -49,7 +49,7 @@
       "smoke_path": "/health"
     },
     {
-      "name": "mark8ly-mcp-catalog",
+      "name": "mark8ly-catalog-mcp",
       "context": "services/mcp",
       "dockerfile": "services/mcp/Dockerfile",
       "target": "server",

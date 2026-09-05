@@ -210,6 +210,48 @@ func (s *Service) VerifyToken(ctx context.Context, token string) (*VerifyResult,
 	}, nil
 }
 
+// ErrCodeTokenConsumed is the AppError code VerifyToken returns for a link
+// that has already been used. Named so callers can recognise a replay
+// without string-matching at each call site.
+const ErrCodeTokenConsumed = "token_consumed"
+
+// ResolveReplay returns the (sessionID, email) behind a token that has
+// ALREADY been consumed but is still inside its lifetime.
+//
+// It exists so a caller can tell a *replayed* link apart from a dead one.
+// Opening a verification link twice is ordinary: mail clients and security
+// scanners prefetch URLs, and users double-click. The second open must not
+// be presented as a failure when the first one succeeded (#710).
+//
+// It deliberately still enforces expiry, which the issue did not ask for.
+// Without that, a consumed token would resolve to a session id and email
+// FOREVER — turning a spent, 10-minute credential into a permanent one that
+// answers questions about an onboarding session to anyone who later finds it
+// in a log, a browser history, or a mail scanner's cache. Honouring
+// ExpiresAt keeps the replay window the same window the token always had.
+//
+// Returns the same errors as VerifyToken, plus a NotFound-equivalent when the
+// token was never consumed (the caller should use VerifyToken for that case).
+// It NEVER consumes, marks, or mutates anything.
+func (s *Service) ResolveReplay(ctx context.Context, token string) (*VerifyResult, error) {
+	if token == "" {
+		return nil, apperrors.BadRequest("invalid_token", "token is required")
+	}
+
+	tok, err := s.repo.GetByHash(ctx, hashToken(token))
+	if err != nil {
+		return nil, err
+	}
+	if tok.ConsumedAt == nil {
+		return nil, apperrors.BadRequest("token_not_consumed", "this token has not been used")
+	}
+	if time.Now().After(tok.ExpiresAt) {
+		return nil, apperrors.BadRequest("token_expired", "this verification link has expired; please request a new one")
+	}
+
+	return &VerifyResult{SessionID: tok.SessionID, Email: tok.Email}, nil
+}
+
 // generateToken returns a (token, hash) pair where:
 //   - token is 32 random bytes base64url-encoded (URL-safe, ~43 chars)
 //   - hash is the SHA-256 of the token, hex-encoded for DB storage

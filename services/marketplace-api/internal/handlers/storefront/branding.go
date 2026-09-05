@@ -38,8 +38,21 @@ type ActivePromotionResponse struct {
 	Link       *string `json:"link,omitempty"`
 }
 
-// PublicBrandingResponse is the public wire DTO — excludes custom_css
-// and admin-only fields.
+// PublicBrandingResponse is the public wire DTO for the storefront.
+//
+// Relative to branding.StoreBranding it withholds the row's identifiers
+// and timestamps (ID, TenantID, StoreID, CreatedAt, UpdatedAt) and
+// ReturnPolicy, which only the admin DTO carries
+// (handlers/admin/branding.go).
+//
+// It DOES carry custom_css. That is deliberate: the field is
+// merchant-authored styling for the merchant's own storefront, so the
+// storefront cannot render the store without it (apps/storefront types it
+// and sanitises at render time). An earlier version of this comment
+// claimed custom_css was excluded while the struct below included it —
+// the comment was wrong, not the struct (#694). Keep this list in step
+// with the fields; a reader auditing what the public endpoint exposes
+// will trust it.
 type PublicBrandingResponse struct {
 	LogoURL            *string                  `json:"logo_url,omitempty"`
 	FaviconURL         *string                  `json:"favicon_url,omitempty"`

@@ -1,16 +1,18 @@
 // tesserix-home client. Used from the merchant admin to file platform support
 // tickets and read active platform announcements.
 //
-// TWO CHANNELS, and the split is temporary (tesserix-home#152):
+// ONE CHANNEL now (tesserix-home#152). Everything here goes to the PLATFORM
+// API over the in-cluster ClusterIP, authenticated with a Zitadel machine
+// token. That token identifies mark8ly, and the API scopes every read and
+// write to the product it resolves to — so this client cannot reach another
+// product's queue even if it asked.
 //
-//   TICKETS go to the PLATFORM API over the in-cluster ClusterIP, authenticated
-//   with a Zitadel machine token. That token identifies mark8ly, and the API
-//   scopes every read and write to the product it resolves to — so this client
-//   can no longer reach another product's queue even if it asked.
-//
-//   ANNOUNCEMENTS still go to apps/web's /api/internal/* with the shared
-//   INTERNAL_API_TOKEN, because the platform API has no announcements module
-//   yet. They move when it does; until then apps/web cannot be retired.
+// THE SHARED SECRET IS GONE from this file. `INTERNAL_API_TOKEN` and
+// `X-Internal-Token` are no longer used by the admin app at all: the tickets
+// calls moved first, and the announcements client that remained here had no
+// callers — the banner reaches announcements through its own proxy in
+// app/api/platform-announcements/route.ts, which also now speaks to the
+// platform API.
 //
 // The mark8ly admin server remains the trusted caller in both: it forwards the
 // merchant's identity (tenantId, name, email, userId) from its own
@@ -20,12 +22,7 @@
 
 import { getPlatformToken } from "./platform-token";
 
-const TESSERIX_INTERNAL_URL =
-  process.env.TESSERIX_INTERNAL_URL ?? "https://tesserix.app";
 
-// Still used by ANNOUNCEMENTS, which have no platform-api counterpart yet and
-// so remain on apps/web's shared-secret channel (tesserix-home#152 step 3).
-const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN ?? "";
 
 const PRODUCT_ID = "mark8ly";
 
@@ -37,16 +34,6 @@ const PRODUCT_ID = "mark8ly";
 const PLATFORM_API_URL =
   process.env.TESSERIX_PLATFORM_API_URL ?? "http://platform-api.tesserix.svc.cluster.local";
 
-function authHeaders(): Record<string, string> {
-  // ANNOUNCEMENTS ONLY. X-Internal-Token rather than Authorization Bearer —
-  // the istio-ingress at tesserix.app has a RequestAuthentication policy that
-  // parses Authorization Bearer as JWT and rejects our opaque shared-secret
-  // token. A custom header bypasses that path.
-  return {
-    "Content-Type": "application/json",
-    "X-Internal-Token": INTERNAL_API_TOKEN.trim(),
-  };
-}
 
 // Headers for the platform API: a Zitadel machine token.
 //
@@ -103,17 +90,20 @@ export interface PlatformTicket {
   updated_at: string;
 }
 
+// One announcement as the PLATFORM API returns it (tesserix-home#152).
+//
+// Narrower than the old apps/web row, and deliberately so on that side:
+// `audience_filter` names the other products a broadcast targets,
+// `created_by` identifies staff to a merchant, and `is_published` is always
+// true for anything this endpoint returns. Declaring them here would promise
+// fields every response omits.
 export interface PlatformAnnouncement {
   id: string;
   title: string;
   body: string;
   severity: string;
-  audience_filter: Record<string, unknown>;
   starts_at: string;
   ends_at: string | null;
-  is_published: boolean;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface FilePlatformTicketInput {
@@ -280,29 +270,6 @@ export async function replyToPlatformTicket(
   }
 }
 
-export async function listActivePlatformAnnouncements(
-  tenantStatus: string = "active",
-): Promise<PlatformAnnouncement[]> {
-  if (!INTERNAL_API_TOKEN) return [];
-
-  try {
-    const url = new URL(
-      `${TESSERIX_INTERNAL_URL}/api/internal/platform-announcements`,
-    );
-    url.searchParams.set("product", PRODUCT_ID);
-    url.searchParams.set("tenant_status", tenantStatus);
-
-    const res = await fetch(url.toString(), {
-      headers: authHeaders(),
-      cache: "no-store",
-    });
-    if (!res.ok) return [];
-    const body = (await res.json()) as { rows: PlatformAnnouncement[] };
-    return body.rows ?? [];
-  } catch {
-    return [];
-  }
-}
 
 function messageForCode(code: string, status: number): string {
   switch (code) {

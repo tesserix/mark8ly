@@ -17,7 +17,8 @@ func TestCA_BN_ValidFormatAccepted(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, res.Valid)
-	require.Equal(t, "Acme Canada Inc", res.RegistryName)
+	// No CRA registry is consulted — see the US equivalent (#707).
+	require.Empty(t, res.RegistryName)
 }
 
 func TestCA_BN_WithRTSuffixAccepted(t *testing.T) {

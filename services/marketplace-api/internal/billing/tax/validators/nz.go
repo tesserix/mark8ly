@@ -37,7 +37,12 @@ func NewNZ(client *http.Client, baseURL string) *NZValidator {
 // Country returns ISO-3166 alpha-2.
 func (v *NZValidator) Country() string { return "NZ" }
 
-// Validate currently format-checks only; mirrors BusinessName as RegistryName.
+// Validate currently format-checks only. No IRD lookup exists, so no registry
+// name is returned and the name match records as "not_checked" (#707).
+//
+// This path is unreachable in production today — NZDisabled is bound unless
+// NZTaxValidationEnabled — but it must not assert a match if it is ever
+// enabled.
 // TODO(counsel §20.3): wire IRD lookup once legal sign-off lands.
 func (v *NZValidator) Validate(_ context.Context, req tax.ValidationRequest) (tax.ValidationResult, error) {
 	if req.Country != "NZ" {
@@ -46,7 +51,8 @@ func (v *NZValidator) Validate(_ context.Context, req tax.ValidationRequest) (ta
 	if !nzIRDRegex.MatchString(req.TaxID) {
 		return tax.ValidationResult{}, tax.ErrInvalidFormat
 	}
-	return tax.ValidationResult{Valid: true, RegistryName: req.BusinessName}, nil
+	// RegistryName deliberately empty: no registry was consulted (#707).
+	return tax.ValidationResult{Valid: true, RegistryName: ""}, nil
 }
 
 // NZDisabled is wired by Registry when NZ_TAX_VALIDATION_ENABLED=false. The

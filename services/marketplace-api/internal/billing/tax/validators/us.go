@@ -27,9 +27,16 @@ func NewUS() *USValidator { return &USValidator{} }
 // Country returns ISO-3166 alpha-2.
 func (v *USValidator) Country() string { return "US" }
 
-// Validate checks EIN shape only. Mirrors BusinessName back so the orchestrator's
-// name-match step writes "matched" trivially; the attestation checkbox is the
-// real integrity gate.
+// Validate checks EIN shape only. There is no US registry lookup, so NO
+// registry name is returned and the orchestrator records the name match as
+// "not_checked" (#707).
+//
+// It previously echoed req.BusinessName back, which made CompareNames compare
+// a string with itself and write "matched" — recording that a registry had
+// confirmed the name when none was consulted. Passing format validation is
+// still correct; asserting a match that never happened was not.
+//
+// The attestation checkbox remains the real integrity gate for US merchants.
 func (v *USValidator) Validate(_ context.Context, req tax.ValidationRequest) (tax.ValidationResult, error) {
 	if req.Country != "US" {
 		return tax.ValidationResult{}, tax.ErrInvalidFormat
@@ -38,7 +45,9 @@ func (v *USValidator) Validate(_ context.Context, req tax.ValidationRequest) (ta
 		return tax.ValidationResult{}, tax.ErrInvalidFormat
 	}
 	return tax.ValidationResult{
-		Valid:        true,
-		RegistryName: req.BusinessName,
+		Valid: true,
+		// Deliberately empty: no registry was consulted. CompareNames maps an
+		// empty registry name to NameNotChecked (#707).
+		RegistryName: "",
 	}, nil
 }

@@ -17,7 +17,10 @@ func TestUS_EIN_ValidFormatAccepted(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, res.Valid)
-	require.Equal(t, "Acme Inc", res.RegistryName)
+	// No US registry is consulted, so no registry name may be returned. If this
+	// ever echoes the submitted name again, CompareNames compares a string with
+	// itself and records a "matched" that never happened (#707).
+	require.Empty(t, res.RegistryName)
 }
 
 func TestUS_EIN_NoDashAlsoAccepted(t *testing.T) {

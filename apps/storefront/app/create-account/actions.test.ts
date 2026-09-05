@@ -103,7 +103,14 @@ beforeEach(() => {
     json: async () => ({ data: { tenant_id: "tenant-1", id: "store-1" } }),
   } as Response);
 
-  fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+  // Default: marketplace-api reports this identity IS a customer of the
+  // store. completeCustomerSignIn now asks before it mints a session
+  // cookie (see @/lib/auth/customer-session), so every test below that
+  // expects a cookie needs a membership to exist. The gate itself is
+  // covered in lib/auth/customer-session.membership.test.ts.
+  fetchSpy = vi
+    .fn()
+    .mockResolvedValue({ ok: true, json: async () => ({ data: { member: true } }) });
   globalThis.fetch = fetchSpy as unknown as typeof fetch;
 });
 

@@ -1,6 +1,9 @@
 // Package customer provides the domain model, repository, and service
-// for customer profiles and addresses. Profiles are auto-created on
-// first authenticated storefront request (see Service.EnsureProfile).
+// for customer profiles and addresses. A profile IS the customer's
+// membership of one store: UNIQUE (store_id, email). It is created only
+// by an explicit join (Service.JoinStore) — never as a side effect of an
+// authenticated request, which is what session paths use
+// Service.LookupProfile for.
 package customer
 
 import (

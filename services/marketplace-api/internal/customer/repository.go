@@ -21,6 +21,12 @@ type Repository interface {
 	// UpsertProfile inserts a profile or updates gip_uid+updated_at on conflict(store_id, email).
 	UpsertProfile(ctx context.Context, p *CustomerProfile) (*CustomerProfile, error)
 
+	// GetProfileByEmail returns the membership row for (store_id, email),
+	// or ErrNotFound when this identity has not joined this store. This is
+	// the read half of the membership model: every session-path caller
+	// uses it, and none of them may fall back to creating a row.
+	GetProfileByEmail(ctx context.Context, storeID uuid.UUID, email string) (*CustomerProfile, error)
+
 	// GetProfileByGipUID returns the profile for (store_id, gip_uid). ErrNotFound on miss.
 	GetProfileByGipUID(ctx context.Context, storeID uuid.UUID, gipUID string) (*CustomerProfile, error)
 
@@ -112,6 +118,20 @@ func (r *gormRepo) UpsertProfile(ctx context.Context, p *CustomerProfile) (*Cust
 		return nil, fmt.Errorf("customer: reload after upsert: %w", err)
 	}
 	return &fresh, nil
+}
+
+func (r *gormRepo) GetProfileByEmail(ctx context.Context, storeID uuid.UUID, email string) (*CustomerProfile, error) {
+	var p CustomerProfile
+	err := r.db.WithContext(ctx).
+		Where("store_id = ? AND email = ?", storeID, strings.TrimSpace(strings.ToLower(email))).
+		First(&p).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("customer: get by email: %w", err)
+	}
+	return &p, nil
 }
 
 func (r *gormRepo) GetProfileByGipUID(ctx context.Context, storeID uuid.UUID, gipUID string) (*CustomerProfile, error) {

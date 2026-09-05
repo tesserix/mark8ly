@@ -63,7 +63,14 @@ async function signUpWithPassword(
     } | null;
     const code = body?.error?.message ?? "UNKNOWN";
     const friendly: Record<string, string> = {
-      EMAIL_EXISTS: "An account with this email already exists. Try signing in instead.",
+      // NOT a dead end, and not necessarily an account with THIS store.
+      // A Mark8ly login is one platform identity used across every store,
+      // so the usual reason for landing here is that the shopper already
+      // has a login and is now at a store they have not joined. Sign-in
+      // is the route to the join screen, so say so plainly rather than
+      // implying they already shop here.
+      EMAIL_EXISTS:
+        "You already have a Mark8ly login for this email. Sign in with it and we'll set up your account with this store.",
       WEAK_PASSWORD: "Password must be at least 6 characters.",
       INVALID_EMAIL: "Please enter a valid email address.",
       TOO_MANY_ATTEMPTS_TRY_LATER:

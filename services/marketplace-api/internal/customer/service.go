@@ -2,6 +2,7 @@ package customer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -14,8 +15,8 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/audit"
 )
 
-// EnsureProfileInput is the input for profile auto-creation.
-type EnsureProfileInput struct {
+// JoinStoreInput is the input for creating a store membership.
+type JoinStoreInput struct {
 	StoreID   uuid.UUID
 	TenantID  uuid.UUID
 	GipUID    string
@@ -44,23 +45,64 @@ func (s *Service) WithAudit(e *audit.Emitter) *Service {
 	return s
 }
 
+// ErrBlocked is returned by JoinStore when a membership row already
+// exists for (store_id, email) but the merchant has blocked it. Joining
+// must never resurrect or reset a blocked customer, so the join is
+// refused outright rather than upserted over.
+var ErrBlocked = errors.New("customer: membership is blocked")
+
 // signupFreshness is how recently a profile must have been created for
-// EnsureProfile to treat the upsert as a fresh signup. The repo reload
+// JoinStore to treat the upsert as a fresh signup. The repo reload
 // happens within milliseconds of the insert, so 2s comfortably covers
 // jitter without false-positive-ing on rapid re-logins.
 const signupFreshness = 2 * time.Second
 
-// EnsureProfile upserts a customer profile on first authenticated request.
+// LookupProfile returns the membership row for (store_id, email), or
+// ErrNotFound when this identity has not joined this store.
+//
+// This is the ONLY customer-profile call any session path may make. A
+// Mark8ly login is platform-wide, but access to a store is a distinct
+// membership the customer has to join deliberately; before this existed,
+// the session path called the creating upsert below and every
+// authenticated request at any store minted a membership as a side
+// effect (see docs/superpowers/specs/2026-09-05-customer-store-membership-design.md).
+func (s *Service) LookupProfile(ctx context.Context, storeID uuid.UUID, email string) (*CustomerProfile, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return nil, ErrNotFound
+	}
+	return s.repo.GetProfileByEmail(ctx, storeID, email)
+}
+
+// JoinStore creates the customer's membership of a store: the
+// customer_profiles row keyed on (store_id, email), and nothing else —
+// no new identity, no new credential. It is reached ONLY from an
+// explicit join (the storefront /account/join endpoint and the mobile
+// /account/register endpoint), never from a session or browsing path.
+//
 // Uses INSERT ON CONFLICT (store_id, email) DO UPDATE SET gip_uid = EXCLUDED.gip_uid
-// so concurrent first-logins are safe.
+// so a double-submitted join is safe. The conflict branch deliberately
+// touches only gip_uid/updated_at, so re-joining can never reset status,
+// block_reason, tags, or notes; a blocked membership is additionally
+// refused up front with ErrBlocked rather than relying on that.
 //
 // Returns the existing or newly created profile. When called from a
 // gin handler (c may be nil for non-HTTP callers) and the upsert
 // inserted a new row, emits a customer.signed_up audit event.
-func (s *Service) EnsureProfile(ctx context.Context, input EnsureProfileInput, c *gin.Context) (*CustomerProfile, error) {
+func (s *Service) JoinStore(ctx context.Context, input JoinStoreInput, c *gin.Context) (*CustomerProfile, error) {
 	email := strings.TrimSpace(strings.ToLower(input.Email))
 	if email == "" {
-		return nil, fmt.Errorf("customer: email is required for profile auto-creation")
+		return nil, fmt.Errorf("customer: email is required to join a store")
+	}
+
+	// Refuse before writing anything: a merchant who blocked this
+	// customer must not have that undone by the customer re-joining.
+	existing, err := s.repo.GetProfileByEmail(ctx, input.StoreID, email)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, fmt.Errorf("customer: join store: %w", err)
+	}
+	if existing != nil && existing.Status == StatusBlocked {
+		return nil, ErrBlocked
 	}
 
 	profile := &CustomerProfile{
@@ -77,10 +119,10 @@ func (s *Service) EnsureProfile(ctx context.Context, input EnsureProfileInput, c
 
 	result, err := s.repo.UpsertProfile(ctx, profile)
 	if err != nil {
-		return nil, fmt.Errorf("customer: ensure profile: %w", err)
+		return nil, fmt.Errorf("customer: join store: %w", err)
 	}
 
-	s.logger.Info("customer profile ensured",
+	s.logger.Info("customer joined store",
 		"store_id", input.StoreID,
 		"email", email,
 		"profile_id", result.ID,

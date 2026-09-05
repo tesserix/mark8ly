@@ -13,21 +13,40 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/auth"
 )
 
-// PriorPlatformValidator is the WHOIS-age check interface. P7 will ship a
-// concrete implementation backed by the tax-ID registry; until then
-// NoOpValidator passes every request.
+// PriorPlatformValidator is the domain-registration-age check interface. A
+// real implementation needs a WHOIS or RDAP lookup; RDAP is the better target,
+// being the IETF successor with structured JSON and more predictable rate
+// limits than scraping WHOIS text.
 //
-// TODO: wire P7's tax-ID package when it lands.
+// Whatever implements this must have THREE outcomes, not two: verified,
+// too-new, and undeterminable. Registrar privacy proxies obscure the
+// registration date for a large share of domains, and an undeterminable
+// result must route to human review rather than passing (#706).
+//
+// A previous comment here said "wire P7's tax-ID package when it lands". That
+// was misattributed: the tax-ID package now exists (internal/billing/tax) and
+// is unrelated — it validates tax identifiers, not domain age. Following it
+// leads nowhere.
 type PriorPlatformValidator interface {
 	ValidateWhoisAge(ctx context.Context, domain string, minAgeDays int) error
 }
 
-// NoOpValidator is the default implementation that passes every WHOIS check.
-// It is used until P7 ships the real validator.
-type NoOpValidator struct{}
+// UnenforcedDomainAge accepts every domain, whatever its registration date.
+//
+// Named for its CONSEQUENCE rather than its implementation. It was previously
+// called NoOpValidator, which reads as a harmless placeholder at the wiring
+// site; it is not. With this bound, the 90-day check in Submit cannot reject
+// anything, so a merchant may register a domain today, submit it as
+// whois_domain evidence, and reach a pending review.
+//
+// That is survivable ONLY because the CSM review is the real control. What it
+// must not do is look automated: a reviewer who assumes the age was checked is
+// spending attention on a guarantee nobody made. Callers wiring this are
+// expected to log the fact — see cmd/marketplace-api/main.go.
+type UnenforcedDomainAge struct{}
 
-// ValidateWhoisAge always returns nil (passes every domain).
-func (NoOpValidator) ValidateWhoisAge(context.Context, string, int) error { return nil }
+// ValidateWhoisAge always returns nil: no domain is ever rejected for age.
+func (UnenforcedDomainAge) ValidateWhoisAge(context.Context, string, int) error { return nil }
 
 // reviewStore is the narrow data-access interface the Handler needs.
 // *Repository satisfies it automatically. Defined here so handler tests can
@@ -46,11 +65,12 @@ type Handler struct {
 	audit     *audit.Emitter // optional — nil-safe, see WithAudit
 }
 
-// NewHandler constructs a Handler. If v is nil the NoOpValidator is used.
+// NewHandler constructs a Handler. A nil validator falls back to
+// UnenforcedDomainAge, which accepts every domain — see its doc comment.
 // If logger is nil slog.Default() is used.
 func NewHandler(repo reviewStore, v PriorPlatformValidator, logger *slog.Logger) *Handler {
 	if v == nil {
-		v = NoOpValidator{}
+		v = UnenforcedDomainAge{}
 	}
 	if logger == nil {
 		logger = slog.Default()

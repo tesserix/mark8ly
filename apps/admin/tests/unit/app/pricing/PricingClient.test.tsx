@@ -278,20 +278,32 @@ describe('PricingClient — against the real SHARED_PRICING_CATALOGUE', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows the GST disclosure wherever AUD is displayed (spec §19.4)', () => {
+  // Tesserix is not GST-registered, so no GST is charged and none may be
+  // disclosed — including on AUD, which used to carry "Plus 10% GST for
+  // Australian businesses." The copy returns only if we register (#699).
+  it.each(['AUD', 'USD', 'NZD', 'GBP', 'INR'] as const)(
+    'shows no GST disclosure for %s (Tesserix is not GST-registered, #699)',
+    (currency) => {
+      const { unmount } = render(
+        <PricingClient currency={currency} pricing={REAL_PRICING} />,
+      )
+
+      expect(screen.queryAllByText(/GST/i)).toHaveLength(0)
+      expect(screen.queryAllByText(/Plus 10%/i)).toHaveLength(0)
+
+      unmount()
+    },
+  )
+
+  it('still renders the currency disclosure for AUD, with no tax sentence appended', () => {
     render(<PricingClient currency="AUD" pricing={REAL_PRICING} />)
 
+    // The "Prices shown in AUD." line must survive — only the GST
+    // sentence that used to trail it was removed.
     expect(
-      screen.getByText(/Plus 10% GST for Australian businesses\./i, { exact: false }),
+      screen.getByText(/Prices shown in AUD\./i, { exact: false }),
     ).toBeInTheDocument()
-  })
-
-  it('does not show a GST disclosure for a non-AUD currency', () => {
-    render(<PricingClient currency="USD" pricing={REAL_PRICING} />)
-
-    expect(
-      screen.queryByText(/GST/i),
-    ).not.toBeInTheDocument()
+    expect(screen.queryAllByText(/GST/i)).toHaveLength(0)
   })
 
   it('renders a USD-labelled amount for a currency the table cannot price (e.g. THB has no row)', () => {

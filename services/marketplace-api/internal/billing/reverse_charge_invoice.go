@@ -1,7 +1,9 @@
 // Package billing — reverse_charge_invoice.go: §19.2 Stripe `custom_fields`
 // annotation for B2B invoices in jurisdictions where the recipient self-accounts
-// for VAT/GST. Annotation is a no-op for AU (domestic GST charged by Mark8ly
-// Pty Ltd, §19.4) and US (no federal sales-tax reverse-charge concept).
+// for VAT/GST. Annotation is a no-op for AU (Tesserix is not registered for GST
+// and charges none, so there is no GST for a recipient to self-account for —
+// this supersedes §19.4, which assumed registration) and US (no federal
+// sales-tax reverse-charge concept).
 package billing
 
 import (
@@ -11,7 +13,9 @@ import (
 
 // ReverseChargeCountries are the jurisdictions whose validated B2B invoices
 // must carry the reverse-charge clause. AU and US are intentionally excluded;
-// CA uses attestation rather than VAT and is also excluded.
+// CA uses attestation rather than VAT and is also excluded. AU's exclusion was
+// decided under the unregistered position above and must be RE-EXAMINED if
+// Tesserix registers for GST, not inherited as settled.
 var ReverseChargeCountries = map[string]bool{
 	"GB": true,
 	"IE": true, "DE": true, "FR": true, "IT": true, "ES": true, "NL": true,

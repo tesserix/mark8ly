@@ -59,8 +59,12 @@ export interface SharedPricingCatalogue {
  *
  * Developed markets (USD, CAD, GBP, EUR, AUD, NZD, SGD): USD parity.
  * Emerging markets (INR): PPP-adjusted (~33% discount).
- * AU prices are GST-EXCLUSIVE — onboarding/admin surfaces must show
- * "Plus GST" disclosure for AU (§19.4).
+ * AU prices are GST-EXCLUSIVE, deliberately: registration is expected
+ * later, and leaving them exclusive means enabling automatic_tax then
+ * adds 10% on top of the SAME Price objects with no repricing.
+ * Surfaces must NOT show a GST disclosure: Tesserix is not registered
+ * for GST and charges none, so disclosing one would overstate what the
+ * buyer pays. This reverses §19.4, which assumed registration.
  * Pro+App add-on is USD-only globally — no PPP or AUD localization
  * (§4.1.2); the catalogue still offers per-currency rows for display,
  * but billing always bills in USD for the add-on.

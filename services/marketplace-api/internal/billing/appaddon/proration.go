@@ -1,5 +1,18 @@
-// Package appaddon computes the co-termination proration for the white-label
-// mobile app add-on (spec §3.4) and exposes the Pro-gated purchase endpoint.
+// Package appaddon computes the up-front charge for the white-label mobile
+// app add-on (spec §3.4) and exposes the Pro-gated purchase endpoint.
+//
+// THE ADD-ON DOES NOT RECUR (#650). It is a one-time purchase: a single
+// Stripe invoice, after which the webhook flips has_white_label_app_add_on
+// and no billing code reads that flag again. There is no Stripe Price
+// object for it in either account, no subscription item, and no renewal
+// path anywhere in the tree.
+//
+// That matters here because the arithmetic below looks like it is setting
+// up a recurring co-terminated item, and it is not. The proration exists
+// only to make a mid-year purchase cost a fair fraction of the anchor year
+// it is bought into — it aligns the AMOUNT with the Pro anchor date, not a
+// future billing date. Nothing co-terminates, because there is no second
+// charge to co-terminate with.
 //
 // This file is pure math — no I/O, no database, no Stripe calls.
 package appaddon
@@ -8,8 +21,9 @@ import "time"
 
 // Pricing constants, per spec §3.4:
 //
-//   - App subscription : $199 / month × 12 months = $2388 / year
-//   - Setup fee        : $2000 one-time, payable at add-on purchase regardless
+//   - App fee   : $199 / month × 12 months = $2388, quoted as an annual
+//     figure and charged ONCE, prorated — not billed monthly or yearly
+//   - Setup fee : $2000 one-time, payable at add-on purchase regardless
 //     of proration
 //
 // Amounts are in USD cents (int64) to avoid floating-point rounding drift.
@@ -37,8 +51,10 @@ const (
 //   - If remaining > 365 (e.g. a just-renewed anchor), it's clamped to 365
 //     so we never charge for more than one anchor year.
 //   - If remaining == 0 (buying on the exact renewal day), the caller pays
-//     only the setup fee and the add-on co-terminates on the same day as
-//     the upcoming renewal, bundling into the next invoice.
+//     only the setup fee: there is no anchor year left to buy into, so the
+//     prorated component is zero. Nothing is deferred to a later invoice —
+//     this sentence previously said the add-on "bundles into the next
+//     invoice", which describes a charge that does not exist (#650).
 //
 // Rounding: half-to-nearest-even on the prorated component before the setup
 // fee is added. The setup fee is added as-is.
@@ -56,8 +72,8 @@ func ProrationCents(now, renewalAt time.Time) int64 {
 }
 
 // roundHalfEven rounds a float64 to the nearest int64 using banker's
-// rounding (round-half-to-even). Used by ProrationCents so cumulative
-// error is bounded across many co-terminated renewals.
+// rounding (round-half-to-even). Used by ProrationCents so rounding error
+// does not bias one way across many purchases.
 func roundHalfEven(x float64) int64 {
 	floor := int64(x)
 	frac := x - float64(floor)

@@ -81,6 +81,7 @@ argument is what recurs:
 |---|---|---|
 | `GET /admin/tickets` | `tickets.go:40` | mark8ly-specific support read; no id in the seventeen |
 | `POST /admin/inbox/:kind/:id/actions/:actionId` | `inbox_actions.go` | the inbox **write**; `inbox` declares the read only |
+| `GET/PUT /admin/email-templates[/:key]`, `POST .../test-send` | `email_templates.go` | the transactional email template registry (tesserix-home#588); no id in the seventeen |
 
 Because the vocabulary is closed and an unknown key throws (see above), these
 structurally *cannot* appear in `admin-conformance.json` — not "were not

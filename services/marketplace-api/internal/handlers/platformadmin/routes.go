@@ -8,6 +8,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/breakglass"
+	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 )
 
@@ -165,6 +166,30 @@ type Deps struct {
 	// mail log. Nil leaves the route unmounted, matching the nil-safe pattern
 	// used for Outbox above.
 	EmailSends EmailSendLister
+
+	// EmailTemplates, EmailTemplateRegistry and EmailTemplateTestSender
+	// together serve /admin/email-templates (tesserix-home#588) — the
+	// authoring surface that replaces the console's cross-DB write into
+	// this service's database.
+	//
+	// BOTH EmailTemplates and EmailTemplateRegistry must be non-nil for
+	// any of the routes to mount, and that is not the usual "needs its
+	// collaborators" pairing. The registry is the ONLY view of the
+	// registered-but-unseeded keys (mark8ly#717): the twelve billing keys
+	// are registered with the loader and deliberately never seeded, so a
+	// list built from database rows alone silently omits them while
+	// looking complete. Mounting the read without the registry would ship
+	// exactly the bug this endpoint exists to fix, which is worse than not
+	// mounting it.
+	//
+	// EmailTemplateTestSender may be nil: the test-send route still mounts
+	// and answers 503 not_configured, matching how an unset
+	// MARKETPLACE_PLATFORM_ADMIN_SECRET leaves this whole surface mounted
+	// but inert. An absent SendGrid key in dev must not silently remove a
+	// route the console expects to find.
+	EmailTemplates          EmailTemplateStore
+	EmailTemplateRegistry   EmailTemplateRegistry
+	EmailTemplateTestSender emailtemplates.TestSender
 
 	// EstateUsers serves /admin/entities/users (#278). Nil leaves the route
 	// unmounted, matching the nil-safe pattern used for TenantDirectory.
@@ -340,6 +365,38 @@ func Register(g *gin.RouterGroup, deps Deps) {
 			deps.Logger.Warn("platformadmin: break-glass write routes not mounted — BreakGlassRotator, BreakGlassWriter, DB and Emitter are all required",
 				"rotator_nil", deps.BreakGlassRotator == nil, "writer_nil", deps.BreakGlassWriter == nil,
 				"db_nil", deps.DB == nil, "emitter_nil", deps.Emitter == nil)
+		}
+	}
+
+	if deps.EmailTemplates != nil && deps.EmailTemplateRegistry != nil {
+		// The PUT mounts only with a DB, and the reason is NOT the one the
+		// other writes on this surface use.
+		//
+		// TenantLifecycle, TrialExtender, OutboxWriter and the purge pair
+		// each refuse to mount without an Emitter, because a write that
+		// cannot be attributed to an operator should not exist (#287, F1).
+		// The same rule applies here — a template edit changes what every
+		// merchant receives — but the Emitter CANNOT carry it: audit_logs
+		// is tenant partitioned (`tenant_id NOT NULL`, migration 000035;
+		// 000101 relaxed store_id for tenant-scoped platform writes and
+		// deliberately left tenant_id alone) and an email template key is
+		// estate-wide. EmitOperatorAction rejects uuid.Nil for exactly this
+		// reason, so requiring an Emitter here would gate the route on a
+		// dependency that is then never called — a guard that guards
+		// nothing, which is worse than an honest one.
+		//
+		// What actually attributes the write is the revision row
+		// emailtemplates.Store.Upsert inserts ON THE SAME TRANSACTION as
+		// the change (migration 000130): a failed record rolls the change
+		// back. That needs a database, so the DB is the gate, and the rule
+		// is kept rather than dropped — an unattributable template edit
+		// still cannot be reached.
+		NewEmailTemplatesHandler(
+			deps.EmailTemplates, deps.EmailTemplateRegistry,
+			deps.EmailTemplateTestSender, deps.DB != nil, deps.Logger,
+		).Register(group)
+		if deps.DB == nil && deps.Logger != nil {
+			deps.Logger.Warn("platformadmin: email template write route not mounted — DB is required to record the change against an operator")
 		}
 	}
 

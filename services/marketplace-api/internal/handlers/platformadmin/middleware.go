@@ -110,6 +110,12 @@ var RequiredWriteCapabilities = map[string]string{
 	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/outbox/:id/requeue"):     "",
 	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/outbox/requeue"):         "",
 	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/outbox/:id/dead-letter"): "",
+	// tesserix-home#588: the email template registry. The PUT changes what
+	// every merchant receives; the test-send puts a real message through
+	// the production provider at an operator-chosen address. Both are
+	// writes by isWrite's rule and both need a declaration here.
+	CapabilityKey(http.MethodPut, "/api/v1/platform/admin/email-templates/:key"):            "",
+	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/email-templates/:key/test-send"): "",
 }
 
 // RequiredReadCapabilities declares reads that require a specific

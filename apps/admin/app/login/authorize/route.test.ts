@@ -45,3 +45,47 @@ describe("GET /login/authorize — provider gate", () => {
     expect(location).toContain("https://auth.tesserix.app/oauth/v2/authorize");
   });
 });
+
+describe("GET /login/authorize — redirect_uri is pinned to the canonical origin", () => {
+  // Production incident (#524): the post-accept handoff in accept-invite
+  // jumps straight to this route on the host the invitation link opened —
+  // a {slug}-admin host — skipping the canonical bounce /login performs.
+  // redirect_uri was built from that host, and Zitadel refused it with
+  // "The requested redirect_uri is missing in the client configuration",
+  // because the admin OIDC app registers exactly one callback.
+  function slugHostRequest(): NextRequest {
+    return new NextRequest(
+      "https://the-bondi-store-admin.mark8ly.com/login/authorize?returnUrl=%2Fdashboard",
+      {
+        headers: {
+          host: "the-bondi-store-admin.mark8ly.com",
+          "x-forwarded-host": "the-bondi-store-admin.mark8ly.com",
+          "x-forwarded-proto": "https",
+        },
+      },
+    );
+  }
+
+  it("uses the canonical origin even when the request arrives on a slug host", async () => {
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN", "https://admin.mark8ly.com");
+    const res = await GET(slugHostRequest());
+    const redirectUri = new URL(
+      res.headers.get("location") ?? "",
+    ).searchParams.get("redirect_uri");
+    expect(redirectUri).toBe("https://admin.mark8ly.com/auth/callback");
+    expect(redirectUri).not.toContain("the-bondi-store-admin");
+  });
+
+  it("falls back to the request origin when no canonical origin is configured", async () => {
+    // Dev/preview: same-origin is the only sane default, and matches how
+    // middleware.ts treats an unset NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN.
+    vi.stubEnv("NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN", "");
+    const res = await GET(slugHostRequest());
+    const redirectUri = new URL(
+      res.headers.get("location") ?? "",
+    ).searchParams.get("redirect_uri");
+    expect(redirectUri).toBe(
+      "https://the-bondi-store-admin.mark8ly.com/auth/callback",
+    );
+  });
+});

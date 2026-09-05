@@ -54,6 +54,11 @@ type MobileDeps struct {
 	// Requires TokenVerifier to accept both issuers — see
 	// auth.CompositeVerifier. Ignored unless ZitadelEnabled.
 	DualIssuer bool
+	// MyTenantsHandler serves the ONE mobile admin route mounted outside
+	// the tenant gate — see its doc comment for why that is required
+	// rather than an oversight. Nil leaves the route unmounted, which
+	// disables Zitadel tenant discovery on mobile.
+	MyTenantsHandler *MobileMyTenantsHandler
 	// TenantMembershipChecker backs auth.TenantFromRequest (#524 phase 4):
 	// it resolves the caller's X-Acting-Tenant-Id header via an FGA
 	// membership check, for tokens (Zitadel) that carry no tenant_id
@@ -154,6 +159,18 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 	if deps.MobileAccountHandler != nil {
 		acct := router.Group("/mobile/admin/account", tenantMW...)
 		acct.DELETE("", deps.MobileAccountHandler.Delete)
+	}
+
+	// Tenant discovery — the ONLY mobile admin route mounted WITHOUT
+	// requireTenant, and deliberately so: it is how a Zitadel-authenticated
+	// client learns the tenant it will then send as X-Acting-Tenant-Id.
+	// Gating it would deadlock that flow (a tenant would be needed to
+	// discover the tenant). Authentication still applies — bearerAuth and
+	// the per-user rate limiter are both here; only the tenant gate is
+	// absent. Do NOT "tidy" this onto tenantMW.
+	if deps.MyTenantsHandler != nil {
+		me := router.Group("/mobile/admin/me", bearerAuth, rateLimiter)
+		me.GET("/tenants", deps.MyTenantsHandler.List)
 	}
 
 	// Tenant-wide routes

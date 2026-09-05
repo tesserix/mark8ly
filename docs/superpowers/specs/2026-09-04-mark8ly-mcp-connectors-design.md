@@ -1,5 +1,35 @@
 # mark8ly-owned MCP connectors
 
+> # ⚠️ SUPERSEDED ON PACKAGING — 2026-09-05
+>
+> This spec argues for a **product-owned** connector: mark8ly's own service, image
+> and deployment. [australis ADR-0005](https://github.com/tesserix/australis/blob/main/docs/adr/0005-mark8ly-catalog-on-the-shared-gateway.md)
+> reversed that for the catalog connector, which now ships as tenant tools inside
+> the shared `slm-support-platform/services/mcp-gateway`
+> ([slm-support-platform#23](https://github.com/tesserix/slm-support-platform/pull/23),
+> verified serving live on 2026-09-05).
+>
+> **What this spec got right and still stands:** the finding that `mark8ly-mcp`,
+> `platform-mcp`, `kora-mcp`, `homechef-mcp` and `stockpilot-mcp` all run one
+> shared image, so a change for one tenant rebuilds the executable four others
+> run; that mark8ly's only own agent surface was an OpenAPI document which never
+> produced a single tool; and that the document is wrong about pagination,
+> category product counts, and response envelopes.
+>
+> **What it no longer decides:** D1 (where connectors live), D2/D9 (the
+> `go-shared/mcp` foundation as the runtime for this connector), and D7 (own
+> Deployment and identity). The Go implementation those decisions produced —
+> `services/mcp`, five tools with closed input *and* output schemas — has no
+> consumer. `go-shared/mcp` v1.11.0 remains valid and independently useful.
+>
+> **What survived the reversal:** D4 (read through the product API, never its
+> database), D5's intent (project into a declared shape rather than passing
+> upstream bodies through — now enforced by a projection helper rather than by
+> types), D6 (read-only), and D8 (no `latest`).
+>
+> ADR-0005 records the cost of the reversal honestly: no output schemas, read-only
+> as convention rather than structure, and shared release blast radius.
+
 Design for milestone 9 (MCP: platform agent integration). Written 2026-09-04.
 
 Every claim marked **VERIFIED** was observed against the live cluster, the

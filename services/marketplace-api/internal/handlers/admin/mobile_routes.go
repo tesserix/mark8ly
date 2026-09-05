@@ -33,6 +33,27 @@ type MobileDeps struct {
 	// with no header support anywhere) or reopens the unvalidated-claim-
 	// wins-the-race bug (flag-on with the claim write still live).
 	ZitadelEnabled bool
+	// DualIssuer makes tenancy a per-TOKEN decision instead of a
+	// per-deployment one, so a Zitadel-capable app release and the GIP
+	// apps already installed can both work during the drain (#686).
+	//
+	// The incumbent ZitadelEnabled switch is atomic: it changes the bearer
+	// verifier AND the tenant source together, so the moment it flips,
+	// every installed app breaks at once. For a store-distributed app that
+	// is unshippable — old installs cannot be forced to update.
+	//
+	// With DualIssuer, BOTH tenancy writers are mounted, and mutual
+	// exclusion is replaced by ORDERING: GIPBearerAuth writes tenant_id
+	// only when the token actually carries a claim (GIP tokens do,
+	// Zitadel tokens never do), and TenantFromRequest runs AFTER it, so an
+	// FGA-VALIDATED value can only ever overwrite an unvalidated claim,
+	// never the reverse. That direction is the safety property; getting it
+	// backwards reintroduces exactly the unvalidated-claim-wins bug that
+	// phase 4's mutual exclusion existed to remove.
+	//
+	// Requires TokenVerifier to accept both issuers — see
+	// auth.CompositeVerifier. Ignored unless ZitadelEnabled.
+	DualIssuer bool
 	// TenantMembershipChecker backs auth.TenantFromRequest (#524 phase 4):
 	// it resolves the caller's X-Acting-Tenant-Id header via an FGA
 	// membership check, for tokens (Zitadel) that carry no tenant_id
@@ -69,7 +90,10 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 	// below} is active, the other MUST NOT be — see ZitadelEnabled's doc
 	// comment on MobileDeps for why both-active or both-inactive are each
 	// a real incident, not just untidy.
-	bearerAuth := auth.GIPBearerAuth(deps.TokenVerifier, !deps.ZitadelEnabled)
+	// In dual-issuer mode the claim write stays ON for both issuers: it is
+	// now self-selecting, because GIPBearerAuth writes only a NON-EMPTY
+	// claim and a Zitadel token has none. See MobileDeps.DualIssuer.
+	bearerAuth := auth.GIPBearerAuth(deps.TokenVerifier, !deps.ZitadelEnabled || deps.DualIssuer)
 	rateLimiter := auth.NewPerUserRateLimiter(60, 10) // 60 req/min, burst 10
 	// Fails closed for callers with no tenant bound to their identity.
 	// GIPBearerAuth intentionally lets a validly-signed token through even
@@ -105,7 +129,7 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 	// is present — see its doc comment in
 	// internal/auth/tenant_from_request.go.
 	tenantMW := []gin.HandlerFunc{bearerAuth}
-	if deps.ZitadelEnabled {
+	if deps.ZitadelEnabled || deps.DualIssuer {
 		tenantMW = append(tenantMW, auth.TenantFromRequest(deps.TenantMembershipChecker, deps.TenantMembershipLogger))
 	}
 	tenantMW = append(tenantMW, requireTenant)

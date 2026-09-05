@@ -1,4 +1,7 @@
-import auth, { type FirebaseAuthTypes } from "@react-native-firebase/auth";
+// v26 removed the namespaced default export (`import auth from ...`; `auth()`).
+// The modular `getAuth()` is the replacement; the instance it returns keeps the
+// same methods, so only the entry point changes here.
+import { getAuth, type FirebaseAuthTypes } from "@react-native-firebase/auth";
 
 import {
   signInWithGoogleCredential,
@@ -23,7 +26,7 @@ export interface GIPAuthConfig {
 }
 
 export function createGIPAuth(config: GIPAuthConfig) {
-  const firebaseAuth = auth();
+  const firebaseAuth = getAuth();
   // @react-native-firebase v22+: `tenantId` is a read-only getter — direct
   // assignment throws "Proxy set returned false". `setTenantId` sets the JS
   // field synchronously and propagates to native asynchronously. Await this

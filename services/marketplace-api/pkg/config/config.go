@@ -127,6 +127,23 @@ type Config struct {
 	// outage. Zero or negative takes consolecatalog.DefaultTTL.
 	ConsoleCatalogCacheTTL time.Duration `envconfig:"CONSOLE_CATALOG_CACHE_TTL" default:"6h"`
 
+	// Console PROMO-catalog ingest (#726). The console owns promo-code
+	// definitions and mark8ly consumes them; this is the route they are read
+	// from.
+	//
+	// ONLY THE URL IS NEW. The credentials above are reused: the console
+	// gates this route on the `read-promo-catalog` capability, which rides in
+	// the token's roles claim, and one machine identity can hold it alongside
+	// the plan catalog's. A second OAuth client would be a second secret to
+	// rotate and expire for no gain. CONSOLE_CATALOG_MODE and
+	// CONSOLE_CATALOG_INTERVAL likewise apply to both reads.
+	//
+	// OPTIONAL BY DESIGN, like every setting above it. Unset, no ingest runs
+	// and the service starts exactly as it did before — an unreachable
+	// console must never be able to fail startup, and any rows a previous
+	// ingest wrote remain valid.
+	ConsolePromoCatalogURL string `envconfig:"CONSOLE_PROMO_CATALOG_URL" default:""`
+
 	// RESEND_WEBHOOK_SECRET verifies inbound provider delivery events
 	// (#348B). Empty leaves the endpoint mounted but inert: it answers 503
 	// not_configured rather than 404, so a missing secret is diagnosable

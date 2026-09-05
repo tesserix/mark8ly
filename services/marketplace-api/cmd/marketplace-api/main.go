@@ -1058,6 +1058,17 @@ func main() {
 		// See catalog_admin_resolve.go.
 		startAdminCatalogResolve(m, cfg, log)
 
+		// #726 step 2 — ingest the console's promo-code definitions.
+		//
+		// Unlike the plan catalog above, this one WRITES: a redemption's
+		// promo_code_id is a foreign key into promo_codes, so the
+		// definitions have to exist as rows. Boot plus a ticker, entirely on
+		// its own goroutine — unconfigured or unreachable, the service
+		// starts identically and promo_codes is left alone. It carries its
+		// own m.RunsAdmin() gate for the same reason the resolve above does.
+		// See promo_ingest.go.
+		startPromoCatalogIngest(m, cfg, conn, log)
+
 		subscriptionSvc := subscription.NewService(subscription.ServiceConfig{
 			DB:     conn,
 			Repo:   subscriptionRepo,

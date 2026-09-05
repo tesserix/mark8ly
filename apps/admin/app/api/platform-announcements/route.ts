@@ -1,38 +1,61 @@
-// Server-side proxy to tesserix-home's /api/internal/platform-announcements.
-// The browser hits THIS route (no token), the route forwards with the
-// shared INTERNAL_API_TOKEN to tesserix. Keeping the proxy here means the
-// token never leaves the pod and the banner client component can stay
-// simple (plain fetch from same origin, credentials inherited).
+// Server-side proxy for the announcements banner.
+//
+// The browser hits THIS route with no credentials; the route calls
+// tesserix-home's platform API with a Zitadel machine token minted in-pod. The
+// token never leaves the pod and the banner client component stays a plain
+// same-origin fetch.
+//
+// # Repointed from apps/web (tesserix-home#152)
+//
+// This used to call `/api/internal/platform-announcements` with the shared
+// INTERNAL_API_TOKEN. It now calls `/v1/announcements`, which takes the
+// PRODUCT from the scope the machine token resolves to rather than from a
+// query parameter — so this proxy can no longer ask about another product's
+// audience, and sending `?product=` would be a 400 rather than a no-op.
+//
+// # The browser contract is unchanged
+//
+// The banner reads `{ rows }`, and it still does. The platform API answers a
+// §4.4 envelope (`{ data: { announcements } }`), which is unwrapped here rather
+// than passed through — forwarding the envelope would leave the banner reading
+// an absent `rows` and rendering "no announcements" instead of erroring.
 
 import { NextResponse, type NextRequest } from "next/server";
 
-const TESSERIX_INTERNAL_URL =
-  process.env.TESSERIX_INTERNAL_URL ?? "https://tesserix.app";
-const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN ?? "";
+import { getPlatformToken } from "@/lib/api/platform-token";
+
+const TESSERIX_PLATFORM_API_URL =
+  process.env.TESSERIX_PLATFORM_API_URL ?? "http://platform-api.tesserix.svc.cluster.local";
+
+// The lifecycle status the banner asks on behalf of.
+//
+// Hard-coded `active`, exactly as before the repoint: this proxy serves the
+// admin shell's banner, and a merchant reading it is in an active tenant by
+// definition. A suspended tenant does not reach this page.
+const TENANT_STATUS = "active";
+
+/** An empty banner. Never an error — see the comment on the catch below. */
+function empty() {
+  return NextResponse.json({ rows: [] });
+}
 
 export async function GET(_req: NextRequest) {
-  if (!INTERNAL_API_TOKEN) {
-    return NextResponse.json({ rows: [] });
-  }
   try {
-    const url = new URL(
-      `${TESSERIX_INTERNAL_URL}/api/internal/platform-announcements`,
-    );
-    url.searchParams.set("product", "mark8ly");
-    url.searchParams.set("tenant_status", "active");
+    const url = new URL(`${TESSERIX_PLATFORM_API_URL}/v1/announcements`);
+    url.searchParams.set("tenant_status", TENANT_STATUS);
 
     const res = await fetch(url.toString(), {
-      // X-Internal-Token, not Authorization Bearer — istio-ingress at
-      // tesserix.app intercepts Authorization for JWT validation.
-      headers: { "X-Internal-Token": INTERNAL_API_TOKEN.trim() },
+      headers: { Authorization: `Bearer ${await getPlatformToken()}` },
       cache: "no-store",
     });
-    if (!res.ok) {
-      return NextResponse.json({ rows: [] });
-    }
-    const body = await res.json();
-    return NextResponse.json(body);
+    if (!res.ok) return empty();
+
+    const body = (await res.json()) as { data?: { announcements?: unknown[] } };
+    return NextResponse.json({ rows: body.data?.announcements ?? [] });
   } catch {
-    return NextResponse.json({ rows: [] });
+    // A banner is decoration on someone's dashboard. It must never be the
+    // reason the page fails, so every failure — an unmintable token included —
+    // degrades to no banner rather than propagating.
+    return empty();
   }
 }

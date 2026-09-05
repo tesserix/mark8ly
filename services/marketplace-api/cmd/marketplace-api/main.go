@@ -274,6 +274,25 @@ func (t trialSentCounter) WithTemplate(template string) trial.CounterIncrementer
 	return t.cv.WithLabelValues(template)
 }
 
+// migrationSkipCounter / migrationSentCounter do the same again for the
+// migration fast-path decision notices (#703).
+//
+// A third near-identical pair rather than reusing the trial ones: each
+// package declares its own CounterIncrementer, and Go requires the return
+// type to match exactly, so trialSentCounter cannot satisfy
+// migration.SentCounter however alike they look.
+type migrationSkipCounter struct{ cv *prometheus.CounterVec }
+
+func (m migrationSkipCounter) WithTemplateReason(template, reason string) migration.CounterIncrementer {
+	return m.cv.WithLabelValues(template, reason)
+}
+
+type migrationSentCounter struct{ cv *prometheus.CounterVec }
+
+func (m migrationSentCounter) WithTemplate(template string) migration.CounterIncrementer {
+	return m.cv.WithLabelValues(template)
+}
+
 // otelServiceName is the OpenTelemetry service.name reported for traces and
 // metrics. Both MODE variants (admin/storefront) run the same binary/image,
 // so they share one logical service name; the MODE is distinguished via
@@ -1192,7 +1211,21 @@ func main() {
 		// left implicit so an operator reading boot logs learns the gate is inert
 		// instead of inferring it from a passing check.
 		log.Warn("migration fast-path: domain-age check NOT enforced — every domain is accepted; eligibility rests on CSM review (#706)")
-		migrationHandler = migration.NewHandler(migrationRepo, migration.UnenforcedDomainAge{}, log).WithAudit(auditEmitter)
+
+		// The recipient lookup is a closure over conn rather than a handle
+		// passed into the handler — see migration.RecipientLookup. Both
+		// halves are total: a missing subscription row yields "", which
+		// ValidateRecipient classifies as no_address, and a missing store
+		// projection yields "your store".
+		migrationRecipient := func(ctx context.Context, storeID uuid.UUID) (string, string) {
+			return subscription.BillingEmailFor(ctx, conn, storeID),
+				subscription.StoreNameFor(ctx, conn, storeID)
+		}
+		migrationHandler = migration.NewHandler(migrationRepo, migration.UnenforcedDomainAge{}, log).
+			WithAudit(auditEmitter).
+			WithEmail(billingEmailClient, migrationRecipient,
+				migrationSentCounter{metrics.BillingEmailsSentTotal},
+				migrationSkipCounter{metrics.BillingEmailsSkippedTotal})
 
 		// P8 — Arbitrage appeal handler (§18.8.1).
 		arbitrageAppealSvc := arbitrage.NewAppealService(conn, arbitrage.NoOpPublisher{}, arbitrage.NopPIILogger{})

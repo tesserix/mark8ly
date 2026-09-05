@@ -11,6 +11,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/auth"
+	"github.com/mark8ly/marketplace-api/internal/email"
 )
 
 // PriorPlatformValidator is the domain-registration-age check interface. A
@@ -57,12 +58,49 @@ type reviewStore interface {
 	Reject(ctx context.Context, id, reviewerID uuid.UUID, notes string) (*Review, error)
 }
 
+// RecipientLookup resolves the merchant-facing billing address and store name
+// for a store, returning "" for either when it cannot.
+//
+// A function rather than a database handle so the Handler keeps depending on
+// narrow behaviour instead of gorm — the same reason reviewStore exists. The
+// production implementation is a closure over the connection in main.go
+// (subscription.BillingEmailFor + subscription.StoreNameFor); tests supply a
+// literal. It cannot fail: a missing address is "" and is classified by
+// email.ValidateRecipient like any other undeliverable one.
+type RecipientLookup func(ctx context.Context, storeID uuid.UUID) (address, storeName string)
+
+// CounterIncrementer is a one-method counter so tests can stub it.
+type CounterIncrementer interface{ Inc() }
+
+// SentCounter counts decision notices actually delivered, labeled by template.
+// SkipCounter counts those deliberately not sent, labeled by template and
+// reason (see email.SkipReason for the reason vocabulary).
+//
+// Both are declared here rather than imported from the trial package, which
+// declares its own for the same reason: a shared home would make one billing
+// sub-package depend on another purely for a two-line interface.
+type SentCounter interface {
+	WithTemplate(template string) CounterIncrementer
+}
+
+// SkipCounter — see SentCounter.
+type SkipCounter interface {
+	WithTemplateReason(template, reason string) CounterIncrementer
+}
+
 // Handler exposes the fast-path submit and CSM review endpoints.
 type Handler struct {
 	repo      reviewStore
 	validator PriorPlatformValidator
 	logger    *slog.Logger
 	audit     *audit.Emitter // optional — nil-safe, see WithAudit
+
+	// Email is optional in the same way audit is: a Handler built without
+	// WithEmail decides reviews and sends nothing.
+	mailer    email.Client
+	recipient RecipientLookup
+	sent      SentCounter
+	skip      SkipCounter
 }
 
 // NewHandler constructs a Handler. A nil validator falls back to
@@ -84,6 +122,22 @@ func NewHandler(repo reviewStore, v PriorPlatformValidator, logger *slog.Logger)
 // opted-out wiring.
 func (h *Handler) WithAudit(e *audit.Emitter) *Handler {
 	h.audit = e
+	return h
+}
+
+// WithEmail attaches the transactional client used to tell a merchant their
+// fast-path request was decided, the lookup that finds their address, and the
+// optional delivered/skipped counters.
+//
+// Chainable rather than constructor parameters so existing NewHandler callers
+// compile untouched, mirroring trial.ExpiryCron.WithEmail. A Handler missing
+// either the client or the lookup sends nothing: a CSM's decision must never
+// fail because email is unconfigured.
+func (h *Handler) WithEmail(cl email.Client, lookup RecipientLookup, sent SentCounter, skip SkipCounter) *Handler {
+	h.mailer = cl
+	h.recipient = lookup
+	h.sent = sent
+	h.skip = skip
 	return h
 }
 
@@ -229,12 +283,86 @@ func (h *Handler) Review(c *gin.Context) {
 		},
 	})
 
-	// TODO: migration fast-path approval/rejection emails land when the email
-	// package and StoreSubscription.email column exist (deferred from P5 scope).
-	h.logger.Info("migration fast-path decided; email deferred",
+	h.logger.Info("migration fast-path decided",
 		"review_id", id.String(),
 		"decision", req.Decision,
 		"reviewer_id", reviewerID.String())
 
+	h.notifyDecision(c.Request.Context(), review, req.Decision)
+
 	c.JSON(http.StatusOK, gin.H{"status": statusMap[req.Decision]})
+}
+
+// decisionTemplates maps a decision to the merchant-facing template. Both
+// branches must be present: a decision with no template would silently send
+// nothing, which is the failure this whole change exists to remove.
+var decisionTemplates = map[string]email.TemplateID{
+	"approve": email.TemplateMigrationFastPathApproved,
+	"reject":  email.TemplateMigrationFastPathRejected,
+}
+
+// notifyDecision tells the merchant their fast-path request was approved or
+// rejected. Strictly best-effort: the review row is committed and the audit
+// event emitted before this runs, so every failure here is logged and counted
+// and none is returned. The CSM's write is not undone by a mail outage.
+//
+// The review notes are deliberately absent from the template data. They are
+// authored by a CSM for internal review, and nothing in their validation
+// (required, 3–2000 chars) makes them fit to show the merchant they describe.
+func (h *Handler) notifyDecision(ctx context.Context, review *Review, decision string) {
+	if h.mailer == nil || h.recipient == nil {
+		// Email is not configured for this deployment. The decision itself
+		// has already succeeded.
+		return
+	}
+	template, ok := decisionTemplates[decision]
+	if !ok {
+		// Unreachable: the binding tag admits only approve|reject. Guarded
+		// so a third decision added later fails loudly here rather than
+		// quietly sending nothing.
+		h.logger.Error("migration fast-path: no template for decision",
+			"review_id", review.ID.String(), "decision", decision)
+		return
+	}
+
+	to, storeName := h.recipient(ctx, review.StoreID)
+
+	// Classify before the provider sees the address: the placeholder
+	// billing+<uuid>@mark8ly.local addresses minted at bootstrap would
+	// hard-bounce and cost sender reputation.
+	if err := email.ValidateRecipient(to); err != nil {
+		h.countSkip(template, email.SkipReason(err))
+		h.logger.Warn("migration fast-path decision notice not sent",
+			"review_id", review.ID.String(),
+			"store_id", review.StoreID.String(),
+			"reason", email.SkipReason(err))
+		return
+	}
+
+	if err := h.mailer.Send(ctx, template, to, map[string]any{
+		"store_id":   review.StoreID.String(),
+		"tenant_id":  review.TenantID.String(),
+		"store_name": storeName,
+	}); err != nil {
+		h.countSkip(template, email.SkipReason(err))
+		h.logger.Warn("migration fast-path decision notice not sent",
+			"review_id", review.ID.String(),
+			"store_id", review.StoreID.String(),
+			"reason", email.SkipReason(err),
+			"err", err.Error())
+		return
+	}
+
+	if h.sent != nil {
+		h.sent.WithTemplate(string(template)).Inc()
+	}
+	h.logger.Info("migration fast-path decision notice sent",
+		"review_id", review.ID.String(),
+		"store_id", review.StoreID.String())
+}
+
+func (h *Handler) countSkip(template email.TemplateID, reason string) {
+	if h.skip != nil {
+		h.skip.WithTemplateReason(string(template), reason).Inc()
+	}
 }

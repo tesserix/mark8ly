@@ -14,7 +14,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/order"
-	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/storeidentity"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -28,7 +28,11 @@ type Service struct {
 	orderRepo         order.Repository
 	brandingSvc       *branding.Service
 	storefrontURLBase string // template with {slug}
-	logger            *slog.Logger
+	// identity resolves the store's public sender identity (#718). It
+	// replaces the bare `stores` lookup this service used to do — same
+	// one query, plus the branding contact address the envelope needs.
+	identity storeidentity.Loader
+	logger   *slog.Logger
 }
 
 // NewService constructs a Service. Pass empty storefrontURLBase to
@@ -40,6 +44,7 @@ func NewService(db *gorm.DB, mailer Mailer, orderRepo order.Repository, branding
 		orderRepo:         orderRepo,
 		brandingSvc:       brandingSvc,
 		storefrontURLBase: storefrontURLBase,
+		identity:          storeidentity.NewDBLoader(db),
 	}
 }
 
@@ -185,9 +190,17 @@ func (s *Service) buildInput(ctx context.Context, orderID uuid.UUID, asReceipt b
 		return DocumentInput{}, fmt.Errorf("%w (order_id=%s)", errMissingCustomerEmail, orderID)
 	}
 
-	var store stores.Store
-	if err := s.db.WithContext(ctx).Where("id = ?", o.StoreID).First(&store).Error; err != nil {
+	store, err := s.identity.Load(ctx, o.StoreID)
+	if err != nil {
 		return DocumentInput{}, fmt.Errorf("orderdoc: load store: %w", err)
+	}
+	// The loader returns a zero Store for a missing row rather than an
+	// error, because its other callers are best-effort. Here the store is
+	// load-bearing — it supplies the tenant id every downstream document
+	// is scoped by — so the hard failure the previous First() produced is
+	// kept. tenant_id is NOT NULL, so an empty one means no row.
+	if store.TenantID == "" {
+		return DocumentInput{}, fmt.Errorf("orderdoc: store %s not found", o.StoreID)
 	}
 
 	theme := Theme{StoreName: store.Name}
@@ -241,14 +254,17 @@ func (s *Service) buildInput(ctx context.Context, orderID uuid.UUID, asReceipt b
 		DocumentNumber: documentNumber(asReceipt, o.OrderNumber),
 		OrderID:        orderID.String(),
 		StoreSlug:      store.Slug,
-		OrderNumber:    o.OrderNumber,
-		OrderURL:       orderURL,
-		DocumentURL:    documentURL,
-		PlacedAt:       o.PlacedAt,
-		GrandTotal:     o.GrandTotal,
-		CurrencyCode:   o.CurrencyCode,
-		ItemCount:      len(items),
-		Theme:          theme,
+		// Feeds the customer-facing Reply-To (#718); empty is fine and
+		// falls back to the platform address.
+		StoreContactEmail: store.ContactEmail,
+		OrderNumber:       o.OrderNumber,
+		OrderURL:          orderURL,
+		DocumentURL:       documentURL,
+		PlacedAt:          o.PlacedAt,
+		GrandTotal:        o.GrandTotal,
+		CurrencyCode:      o.CurrencyCode,
+		ItemCount:         len(items),
+		Theme:             theme,
 	}
 	if asReceipt {
 		in.DeliveredAt = s.lookupDeliveredAt(ctx, orderID, o.UpdatedAt)

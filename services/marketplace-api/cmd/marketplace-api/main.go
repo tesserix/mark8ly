@@ -114,6 +114,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/signup"
 	"github.com/mark8ly/marketplace-api/internal/stockhold"
+	"github.com/mark8ly/marketplace-api/internal/storeidentity"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/cancel"
@@ -732,7 +733,7 @@ func main() {
 	// sufficient as we only have one storefront brand per cluster.
 	ticketNotifier := ticket.NewEmailNotifier(
 		emailSender, cfg.EmailFrom, cfg.PublicStorefrontHost, log,
-	)
+	).WithStoreIdentity(storeidentity.NewDBLoader(conn))
 	// ticketRepo is hoisted so the platformadmin.Register call sites below
 	// (mode.Both and mode.Admin) can both wire the same #329 cross-store
 	// ticket read without constructing a second, redundant repository.

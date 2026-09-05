@@ -2296,24 +2296,33 @@ func (h *ShipmentsHandler) EmailLabel(c *gin.Context) {
 	var meta struct {
 		OrderNumber string `gorm:"column:order_number"`
 		StoreName   string `gorm:"column:name"`
+		StoreSlug   string `gorm:"column:slug"`
 		TenantID    string `gorm:"column:tenant_id"`
+		// support_email is LEFT JOINed: a store that never opened the
+		// branding editor has no row, and an INNER JOIN would drop the
+		// whole envelope rather than just the Reply-To (#718).
+		ContactEmail string `gorm:"column:contact_email"`
 	}
 	_ = h.db.WithContext(ctx).Raw(`
-		SELECT o.order_number, s.name, s.tenant_id
+		SELECT o.order_number, s.name, s.slug, s.tenant_id,
+		       COALESCE(sb.support_email, '') AS contact_email
 		FROM orders o
 		JOIN stores s ON s.id = o.store_id
+		LEFT JOIN store_branding sb ON sb.store_id = s.id
 		WHERE o.id = ? LIMIT 1`, orderID).Scan(&meta).Error
 
 	if err := h.labelMailer.SendLabel(ctx, shipping.LabelEmailPayload{
-		Recipient:      strings.TrimSpace(req.Recipient),
-		TenantID:       meta.TenantID,
-		StoreName:      meta.StoreName,
-		OrderNumber:    meta.OrderNumber,
-		Carrier:        rec.Carrier,
-		TrackingNumber: rec.TrackingNumber,
-		PDF:            pdf,
-		ContentType:    ct,
-		Filename:       fmt.Sprintf("shipping-label-%s.pdf", rec.TrackingNumber),
+		Recipient:         strings.TrimSpace(req.Recipient),
+		TenantID:          meta.TenantID,
+		StoreName:         meta.StoreName,
+		StoreSlug:         meta.StoreSlug,
+		StoreContactEmail: meta.ContactEmail,
+		OrderNumber:       meta.OrderNumber,
+		Carrier:           rec.Carrier,
+		TrackingNumber:    rec.TrackingNumber,
+		PDF:               pdf,
+		ContentType:       ct,
+		Filename:          fmt.Sprintf("shipping-label-%s.pdf", rec.TrackingNumber),
 	}); err != nil {
 		if h.logger != nil {
 			h.logger.Error("shipments: label email dispatch failed",

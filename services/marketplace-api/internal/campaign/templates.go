@@ -18,19 +18,24 @@ var templateFS embed.FS
 // Paper/Ink/Moss defaults so a merchant who never visited Branding still
 // gets a polished email.
 type CampaignTheme struct {
-	StoreName       string // merchant-facing name, used for masthead wordmark + "from"
-	LogoURL         string // optional — rendered as <img> when non-empty
-	Tagline         string // short store tagline, shown under wordmark
-	ColorBackground string // page background (paper)
-	ColorText       string // body copy color
-	ColorAccent     string // links + masthead wordmark accent
-	ColorButtonBg   string // reserved for future CTA buttons
-	ColorButtonText string // reserved for future CTA buttons
-	HeadingFont     string // serif cascade for h1/h2/h3 (CSS font-family)
-	BodyFont        string // sans cascade for body (CSS font-family)
-	FooterTagline   string // editorial sign-off line
-	FooterCopyright string // copyright footer (e.g. "© 2026 Acme Store")
-	Unsubscribe     string // unsubscribe link (future)
+	StoreName string // merchant-facing name, used for masthead wordmark + "from"
+	// StoreSlug and StoreContactEmail feed the ENVELOPE (#718) — the From
+	// local part and the Reply-To — not the rendered body. The loader
+	// already reads the store row, so carrying them costs no extra query.
+	StoreSlug         string
+	StoreContactEmail string
+	LogoURL           string // optional — rendered as <img> when non-empty
+	Tagline           string // short store tagline, shown under wordmark
+	ColorBackground   string // page background (paper)
+	ColorText         string // body copy color
+	ColorAccent       string // links + masthead wordmark accent
+	ColorButtonBg     string // reserved for future CTA buttons
+	ColorButtonText   string // reserved for future CTA buttons
+	HeadingFont       string // serif cascade for h1/h2/h3 (CSS font-family)
+	BodyFont          string // sans cascade for body (CSS font-family)
+	FooterTagline     string // editorial sign-off line
+	FooterCopyright   string // copyright footer (e.g. "© 2026 Acme Store")
+	Unsubscribe       string // unsubscribe link (future)
 }
 
 // Default palette — matches packages/ui/src/styles/mark8ly-tokens.css and

@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/mark8ly/marketplace-api/internal/email"
+	"github.com/mark8ly/marketplace-api/internal/storeidentity"
 )
 
 // EmailNotifier implements TicketNotifier on top of the shared
@@ -33,7 +34,13 @@ type EmailNotifier struct {
 	sender     email.Sender
 	from       string
 	publicHost string // e.g. "https://mystore.mark8ly.com" for deep links
-	logger     *slog.Logger
+	// identity resolves the store behind a ticket so the customer sees
+	// the merchant they contacted in their inbox (#718). Optional: nil
+	// keeps the platform identity, which is what an unwired notifier had
+	// before — see the send() comment for why that fallback is a
+	// downgrade rather than a neutral default.
+	identity storeidentity.Loader
+	logger   *slog.Logger
 }
 
 // NewEmailNotifier constructs a notifier. publicHost is used to
@@ -49,6 +56,14 @@ func NewEmailNotifier(sender email.Sender, from, publicHost string, logger *slog
 	}
 }
 
+// WithStoreIdentity wires the store-identity loader so support mail is
+// sent as the merchant's store rather than as the platform. Chainable,
+// matching the loader wiring on the orderdoc and giftcard mailers.
+func (m *EmailNotifier) WithStoreIdentity(l storeidentity.Loader) *EmailNotifier {
+	m.identity = l
+	return m
+}
+
 // NotifyTicketCreated emails the customer that a support case has
 // been logged with a case ID they can quote.
 func (m *EmailNotifier) NotifyTicketCreated(ctx context.Context, t *Ticket) {
@@ -56,8 +71,7 @@ func (m *EmailNotifier) NotifyTicketCreated(ctx context.Context, t *Ticket) {
 		return
 	}
 	subject := fmt.Sprintf("Your support request is logged — case %s", t.TicketNumber)
-	body := m.renderCreated(t)
-	m.send(ctx, t.SubmittedByEmail, t.SubmittedByName, subject, body, "ticket_created")
+	m.send(ctx, t, subject, m.renderCreated(t), "ticket_created")
 }
 
 // NotifyTicketResolved emails the customer that the merchant marked
@@ -67,8 +81,7 @@ func (m *EmailNotifier) NotifyTicketResolved(ctx context.Context, t *Ticket) {
 		return
 	}
 	subject := fmt.Sprintf("Your support case %s is resolved", t.TicketNumber)
-	body := m.renderResolved(t)
-	m.send(ctx, t.SubmittedByEmail, t.SubmittedByName, subject, body, "ticket_resolved")
+	m.send(ctx, t, subject, m.renderResolved(t), "ticket_resolved")
 }
 
 // ---------------------------------------------------------------------------
@@ -116,24 +129,51 @@ func (m *EmailNotifier) caseLink(t *Ticket) string {
 // logged, never returned — ticket emails are best-effort by contract
 // (see the package comment). In dev the transport is a LogSender, so
 // the dispatch path still runs end-to-end without a provider account.
-func (m *EmailNotifier) send(ctx context.Context, toEmail, toName, subject, body, kind string) {
-	err := m.sender.Send(ctx, email.Message{
-		From:     m.from,
-		FromName: "Mark8ly Support",
-		To:       toEmail,
-		ToName:   toName,
+func (m *EmailNotifier) send(ctx context.Context, t *Ticket, subject, body, kind string) {
+	msg := email.Message{
+		To:       t.SubmittedByEmail,
+		ToName:   t.SubmittedByName,
 		Subject:  subject,
 		HTMLBody: body,
 		// Wave 1.5 attribution — product/kind let notification-service
-		// group engagement events without parsing subjects.
-		CustomArgs: map[string]string{"product": "mark8ly", "kind": kind},
-	})
-	if err != nil {
+		// group engagement events without parsing subjects. tenant_id
+		// joins them to a merchant; every other customer-facing mailer
+		// already emitted it and this one did not.
+		CustomArgs: map[string]string{
+			"product":   "mark8ly",
+			"kind":      kind,
+			"tenant_id": t.TenantID.String(),
+		},
+	}
+
+	// Customer-facing: the shopper opened a case with a MERCHANT, so the
+	// merchant is who replies. This mail used to go out as
+	// "Mark8ly Support" — a platform identity on a conversation the
+	// platform is not part of, and the exact display name #718's guard
+	// now refuses a store for using. With no loader wired we fall back
+	// to the plain platform identity and no display name, which is
+	// honest rather than actively wrong.
+	identity := email.PlatformIdentity(m.from, "")
+	if m.identity != nil {
+		store, err := m.identity.Load(ctx, t.StoreID)
+		if err != nil {
+			m.log("ticket store identity lookup failed", kind, err)
+		} else {
+			identity = email.StoreIdentity(m.from, email.StoreSender{
+				Name:         store.Name,
+				Slug:         store.Slug,
+				ContactEmail: store.ContactEmail,
+			})
+		}
+	}
+	identity.Apply(&msg)
+
+	if err := m.sender.Send(ctx, msg); err != nil {
 		m.log("ticket email send failed", kind, err)
 		return
 	}
 	if m.logger != nil {
-		m.logger.Info("ticket email sent", "kind", kind, "to", toEmail)
+		m.logger.Info("ticket email sent", "kind", kind, "to", t.SubmittedByEmail)
 	}
 }
 

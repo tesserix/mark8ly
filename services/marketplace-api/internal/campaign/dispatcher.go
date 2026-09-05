@@ -2,6 +2,8 @@ package campaign
 
 import (
 	"context"
+
+	"github.com/mark8ly/marketplace-api/internal/email"
 )
 
 // Dispatcher delivers fully-rendered campaign emails. The send worker
@@ -33,4 +35,10 @@ type OutboundEmail struct {
 	// originating campaign so future per-campaign metrics can be derived
 	// without re-keying recipient strings against the database.
 	CampaignID string
+	// Sender is the store's customer-facing identity (#718). A campaign
+	// is marketing mail FROM the merchant's store, so it wears the store
+	// name and the store's Reply-To. The send worker fills it from the
+	// campaign theme it already loads; a zero value degrades to the
+	// platform identity.
+	Sender email.StoreSender
 }

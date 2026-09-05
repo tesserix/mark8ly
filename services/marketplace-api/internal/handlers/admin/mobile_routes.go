@@ -174,6 +174,11 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 	if deps.LoginHandler != nil {
 		a := router.Group("/mobile/admin/auth", ratelimit.PerIP(0.5, 10))
 		a.POST("/login", deps.LoginHandler.Login)
+		// Completing the emailed challenge. Also unauthenticated — it is
+		// the second half of obtaining a token, not something a token
+		// protects — and under the same IP limit, since guessing a
+		// six-digit code is the other brute-forceable surface here.
+		a.POST("/otp/verify", deps.LoginHandler.VerifyOTP)
 	}
 
 	// Tenant discovery — the ONLY mobile admin route mounted WITHOUT

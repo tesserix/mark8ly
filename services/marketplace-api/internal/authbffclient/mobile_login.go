@@ -62,6 +62,10 @@ type LoginResult struct {
 	TOTPRequired bool
 	SessionID    string
 	SessionToken string
+
+	// PendingToken is the sealed state the email-OTP challenge resumes
+	// from. Opaque to us and to the client; handed straight back.
+	PendingToken string
 }
 
 type loginWire struct {
@@ -75,6 +79,7 @@ type loginWire struct {
 		ExpiresIn        int    `json:"expires_in"`
 		EmailOTPRequired bool   `json:"email_otp_required"`
 		MFARequired      bool   `json:"mfa_required"`
+		PendingToken     string `json:"pending_token"`
 	} `json:"data"`
 	TOTPRequired bool   `json:"totp_required"`
 	SessionID    string `json:"session_id"`
@@ -95,6 +100,21 @@ func (c *MobileLoginClient) Login(ctx context.Context, email, password, workspac
 		"login_name":       email,
 		"password":         password,
 		"workspace_tenant": workspaceTenant,
+	})
+}
+
+// VerifyOTP completes a login that stopped at the email-OTP gate — the
+// common first sign-in on a fresh install, since such a device is by
+// definition unrecognised.
+//
+// The email is deliberately not sent: auth-bff derives identity from the
+// sealed pending token, and offering one here would invite a later change
+// to start trusting it, which is exactly the binding the challenge exists
+// to protect.
+func (c *MobileLoginClient) VerifyOTP(ctx context.Context, pendingToken, code string) (LoginResult, error) {
+	return c.post(ctx, "/auth/zitadel/mobile/otp/verify", map[string]any{
+		"pending_token": pendingToken,
+		"code":          code,
 	})
 }
 
@@ -161,6 +181,7 @@ func (c *MobileLoginClient) post(ctx context.Context, path string, body map[stri
 		out.ExpiresIn = wire.Data.ExpiresIn
 		out.EmailOTPRequired = wire.Data.EmailOTPRequired
 		out.MFARequired = wire.Data.MFARequired
+		out.PendingToken = wire.Data.PendingToken
 	}
 	return out, nil
 }

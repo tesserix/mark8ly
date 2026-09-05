@@ -17,6 +17,7 @@ import (
 // handler needs.
 type MobileLoginBackend interface {
 	Login(ctx context.Context, email, password, workspaceTenant string) (authbffclient.LoginResult, error)
+	VerifyOTP(ctx context.Context, pendingToken, code string) (authbffclient.LoginResult, error)
 }
 
 // MobileLoginHandler is the app's public front door for signing in.
@@ -119,6 +120,12 @@ func (h *MobileLoginHandler) Login(c *gin.Context) {
 }
 
 func mobileLoginResponse(res authbffclient.LoginResult, tenants []teamproxy.TenantMembership) gin.H {
+	// nil on the OTP path: the tenant was already resolved and returned by
+	// the login call, and re-deriving it would mean a second lookup for a
+	// value the client already holds.
+	if tenants == nil {
+		tenants = []teamproxy.TenantMembership{}
+	}
 	out := gin.H{
 		"uid":                res.UID,
 		"email":              res.Email,
@@ -136,11 +143,61 @@ func mobileLoginResponse(res authbffclient.LoginResult, tenants []teamproxy.Tena
 		out["token_type"] = res.TokenType
 		out["expires_in"] = res.ExpiresIn
 	}
+	// Opaque to us; the client hands it straight back to /otp/verify.
+	if res.PendingToken != "" {
+		out["pending_token"] = res.PendingToken
+	}
 	if res.TOTPRequired {
 		out["session_id"] = res.SessionID
 		out["session_token"] = res.SessionToken
 	}
 	return out
+}
+
+type mobileOTPRequest struct {
+	PendingToken string `json:"pending_token"`
+	Code         string `json:"code"`
+}
+
+// VerifyOTP completes a sign-in that stopped at the email-OTP gate.
+//
+// This is the COMMON first-login path on mobile: a fresh install is always
+// an unrecognised device, so the very first sign-in on a new phone lands
+// here rather than getting tokens straight away.
+//
+// No tenant lookup and no password: the sealed pending_token already
+// carries the identity and tenant the login resolved, and auth-bff derives
+// them from it rather than from anything the client sends.
+func (h *MobileLoginHandler) VerifyOTP(c *gin.Context) {
+	var req mobileOTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.PendingToken == "" || req.Code == "" {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "invalid_request", "message": "pending_token and code are required",
+		})
+		return
+	}
+
+	res, err := h.backend.VerifyOTP(c.Request.Context(), req.PendingToken, req.Code)
+	switch {
+	case errors.Is(err, authbffclient.ErrInvalidCredentials):
+		// Covers both a wrong code and an expired/forged challenge —
+		// auth-bff answers those identically on purpose, and flattening
+		// them here keeps that property rather than re-deriving it.
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"error": "invalid_code", "message": "That code isn't right, or it has expired. Request a new one.",
+		})
+		return
+	case err != nil:
+		// The code may well have been correct. Saying so matters: a user
+		// told "wrong code" will retype a correct one forever.
+		h.logError("mobile otp verify: auth-bff call failed", err)
+		c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+			"error": "auth_unavailable", "message": "Sign-in is temporarily unavailable. Try again shortly.",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": mobileLoginResponse(res, nil)})
 }
 
 func (h *MobileLoginHandler) logError(msg string, err error) {

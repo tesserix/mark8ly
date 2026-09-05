@@ -26,6 +26,7 @@ var billingTemplateKeys = []TemplateID{
 	TemplateTrialNoPMT1,
 	TemplateTrialHasPMT1,
 	TemplateTrialStartedBilled,
+	TemplateTrialExpired,
 	TemplatePaymentActionReminder,
 	TemplateDunningDay5,
 	TemplateDunningDay7,

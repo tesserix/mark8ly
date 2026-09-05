@@ -99,3 +99,34 @@ func TestConsumer_RejectsMissingIDs(t *testing.T) {
 		}
 	}
 }
+
+func TestConsumer_FirebaseOnly_StillSeeds(t *testing.T) {
+	// A store may have a Firebase project and no Apple listing. The
+	// no-identifier guard must not reject a partial-but-real event.
+	db := testdb.NewDB(t, "white_label_app_state", "white_label_app_lifecycle")
+	c := lifecycle.NewProAppCancelledConsumer(db, nil)
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	require.NoError(t, c.Handle(context.Background(), lifecycle.ProAppCancelledEvent{
+		TenantID: tenantID, StoreID: storeID, FirebaseProjectID: "fb-x",
+	}))
+
+	var row lifecycle.Row
+	require.NoError(t, db.Where("store_id=?", storeID).First(&row).Error)
+	require.Equal(t, "fb-x", row.FirebaseProjectID)
+}
+
+func TestConsumer_NoIdentifiers_WritesNoRow(t *testing.T) {
+	db := testdb.NewDB(t, "white_label_app_state", "white_label_app_lifecycle")
+	c := lifecycle.NewProAppCancelledConsumer(db, nil)
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	err := c.Handle(context.Background(), lifecycle.ProAppCancelledEvent{
+		TenantID: tenantID, StoreID: storeID,
+	})
+	require.ErrorIs(t, err, lifecycle.ErrNoAppIdentifiers)
+
+	var count int64
+	db.Model(&lifecycle.Row{}).Where("store_id=?", storeID).Count(&count)
+	require.Zero(t, count, "a refused event must leave no row for the advancer")
+}

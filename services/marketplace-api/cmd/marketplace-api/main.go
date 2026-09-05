@@ -259,6 +259,20 @@ func (d dispatchSentCounter) WithTemplate(template string) dispatch.CounterIncre
 	return d.cv.WithLabelValues(template)
 }
 
+// trialSkipCounter / trialSentCounter do the same for the trial_expired
+// notice emitted by the trial expiry cron.
+type trialSkipCounter struct{ cv *prometheus.CounterVec }
+
+func (t trialSkipCounter) WithTemplateReason(template, reason string) trial.CounterIncrementer {
+	return t.cv.WithLabelValues(template, reason)
+}
+
+type trialSentCounter struct{ cv *prometheus.CounterVec }
+
+func (t trialSentCounter) WithTemplate(template string) trial.CounterIncrementer {
+	return t.cv.WithLabelValues(template)
+}
+
 // otelServiceName is the OpenTelemetry service.name reported for traces and
 // metrics. Both MODE variants (admin/storefront) run the same binary/image,
 // so they share one logical service name; the MODE is distinguished via
@@ -1969,7 +1983,13 @@ func main() {
 		log.Error("register trial banner cron", "err", err)
 	}
 
-	expiryCron := trial.NewExpiryCron(conn, auditEmitter, log, nil)
+	// billingEmailClient, not dunningEmailClient: the latter is declared
+	// further down, after this cron is built. Same underlying template
+	// client either way.
+	expiryCron := trial.NewExpiryCron(conn, auditEmitter, log, nil).
+		WithEmail(billingEmailClient,
+			trialSentCounter{metrics.BillingEmailsSentTotal},
+			trialSkipCounter{metrics.BillingEmailsSkippedTotal})
 	if _, err := trialScheduler.AddFunc(trial.ExpirySpec, func() {
 		if err := expiryCron.Run(workerCtx); err != nil {
 			log.Error("trial expiry cron failed", "err", err)

@@ -16,24 +16,24 @@ import (
 const BannerSpec = "0 9 * * *"
 
 type bannerTarget struct {
-	day      int
-	state    string
-	template string // template name for the deferred email (see TODO below)
+	day   int
+	state string
 }
 
 // bannerTargets defines the three thresholds at which trial banner state advances.
 var bannerTargets = []bannerTarget{
-	{60, "day_60", "trial_day_60"},
-	{75, "day_75", "trial_day_75"},
-	{85, "day_85", "trial_day_85"},
+	{60, "day_60"},
+	{75, "day_75"},
+	{85, "day_85"},
 }
 
 // BannerCron scans trialing stores at days 60, 75, and 85 of their trial and
 // advances the trial_banner_state column so the storefront/admin can surface
 // the appropriate urgency banner.
 //
-// Email delivery is deferred until StoreSubscription gains email/store_name
-// columns (planned for P8 or later).
+// This cron drives the in-app banner only. Trial email is owned by
+// internal/subscription/dunning/trial_reminders.go, which sends the
+// T-15/T-10/T-7/T-3/T-1 ladder.
 type BannerCron struct {
 	db     *gorm.DB
 	logger *slog.Logger
@@ -108,14 +108,12 @@ func (c *BannerCron) processOne(ctx context.Context, row *subscription.StoreSubs
 		if res.RowsAffected == 0 {
 			return nil // another pod won the race
 		}
-		// TODO: trial lifecycle emails land when StoreSubscription gets email/store_name
-		// columns (deferred from P5 scope). For now, log the intent so ops can see trial
-		// banner advancement in structured logs.
-		c.logger.Info("trial banner advanced; email deferred",
+		// No email is sent here — dunning/trial_reminders.go owns trial mail.
+		// Log the advance so ops can see banner state changes in structured logs.
+		c.logger.Info("trial banner advanced",
 			"store_id", row.StoreID.String(),
 			"tenant_id", row.TenantID.String(),
 			"banner_state", t.state,
-			"template", t.template,
 			"day", t.day)
 		return nil
 	})

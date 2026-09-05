@@ -32,8 +32,8 @@ func TestRegisterFallbacks_EveryKeyRenders(t *testing.T) {
 	email.RegisterFallbacks(loader)
 
 	keys := email.BillingTemplateKeys()
-	if len(keys) != 11 {
-		t.Fatalf("BillingTemplateKeys() has %d keys, want 11", len(keys))
+	if len(keys) != 12 {
+		t.Fatalf("BillingTemplateKeys() has %d keys, want 12", len(keys))
 	}
 
 	for _, key := range keys {

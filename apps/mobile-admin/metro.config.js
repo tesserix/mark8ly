@@ -27,10 +27,16 @@ config.resolver.unstable_enableSymlinks = true;
 // `undefined`, crashing setUpDefaultReactNativeEnvironment at launch.
 // @repo/mobile-shared subpaths still resolve via classic path resolution.
 config.resolver.unstable_enablePackageExports = false;
-// Do NOT crawl parent node_modules hierarchically — nodeModulesPaths above
-// already lists the two real roots. Without this, metro walks the entire
-// monorepo-root node_modules and hangs on this large workspace.
-config.resolver.disableHierarchicalLookup = true;
+// Hierarchical lookup stays ON. It was previously disabled on the theory that
+// crawling the monorepo-root node_modules made Metro hang. That diagnosis was
+// wrong: the hang came from NativeWind's Tailwind CLI child process dying on a
+// v4 install and never being reported (its `fork` handles only `message`, not
+// `error`/`exit`), which is now prevented by the postinstall guard. Disabling it
+// actively broke resolution of any NESTED dependency — Metro then sees only the
+// two `nodeModulesPaths` roots — e.g. `color` requires color-string@^1.9.1,
+// which npm nests because the root has 2.x, and bundling failed outright.
+// With it enabled the bundle resolves and is FASTER (13.7s vs a 26.3s failure).
+config.resolver.disableHierarchicalLookup = false;
 
 // expo-router@56's Android/iOS native Stack toolbar imports
 // `@expo/ui/{jetpack-compose,swift-ui}`. npm nests `@expo/ui` under

@@ -3,7 +3,12 @@
 // is linked onto that account. Mirrors the web admin's link handshake
 // (apps/admin/lib/gip/link.ts) using the native SDK instead of REST.
 
-import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  AppleAuthProvider,
+  FirebaseAuthTypes,
+} from "@react-native-firebase/auth";
 
 // Imported (not just re-exported) so `unlinkProvider` below can throw it —
 // `export { X } from "./mod"` alone creates no local binding. Re-exported so
@@ -36,7 +41,7 @@ export async function completeLinkWithPassword(
 ): Promise<void> {
   let result: FirebaseAuthTypes.UserCredential;
   try {
-    result = await auth().signInWithEmailAndPassword(email, password);
+    result = await getAuth().signInWithEmailAndPassword(email, password);
   } catch (e: unknown) {
     throw reauthFailed(e);
   }
@@ -48,10 +53,10 @@ export async function completeLinkWithGoogle(
   googleIdToken: string,
   pending: FirebaseAuthTypes.AuthCredential,
 ): Promise<void> {
-  const existing = auth.GoogleAuthProvider.credential(googleIdToken);
+  const existing = GoogleAuthProvider.credential(googleIdToken);
   let result: FirebaseAuthTypes.UserCredential;
   try {
-    result = await auth().signInWithCredential(existing);
+    result = await getAuth().signInWithCredential(existing);
   } catch (e: unknown) {
     throw reauthFailed(e);
   }
@@ -64,10 +69,10 @@ export async function completeLinkWithApple(
   rawNonce: string,
   pending: FirebaseAuthTypes.AuthCredential,
 ): Promise<void> {
-  const existing = auth.AppleAuthProvider.credential(appleIdToken, rawNonce);
+  const existing = AppleAuthProvider.credential(appleIdToken, rawNonce);
   let result: FirebaseAuthTypes.UserCredential;
   try {
-    result = await auth().signInWithCredential(existing);
+    result = await getAuth().signInWithCredential(existing);
   } catch (e: unknown) {
     throw reauthFailed(e);
   }
@@ -80,18 +85,18 @@ export async function completeLinkWithApple(
  * enabled, in which case the caller must ask the user which method they used.
  */
 export async function existingSignInMethods(email: string): Promise<string[]> {
-  return auth().fetchSignInMethodsForEmail(email);
+  return getAuth().fetchSignInMethodsForEmail(email);
 }
 
 function requireCurrentUser(): FirebaseAuthTypes.User {
-  const user = auth().currentUser;
+  const user = getAuth().currentUser;
   if (!user) throw new Error("Not signed in");
   return user;
 }
 
 /** Provider ids on the signed-in user: "password" | "google.com" | "apple.com". */
 export async function linkedProviderIds(): Promise<string[]> {
-  const user = auth().currentUser;
+  const user = getAuth().currentUser;
   if (!user) return [];
   return user.providerData.map((p) => p.providerId);
 }
@@ -99,7 +104,7 @@ export async function linkedProviderIds(): Promise<string[]> {
 /** Attach Google to the CURRENT user — no re-auth, no email matching. */
 export async function linkGoogleToCurrentUser(idToken: string): Promise<void> {
   const user = requireCurrentUser();
-  await user.linkWithCredential(auth.GoogleAuthProvider.credential(idToken));
+  await user.linkWithCredential(GoogleAuthProvider.credential(idToken));
 }
 
 /**
@@ -112,7 +117,7 @@ export async function linkAppleToCurrentUser(
   rawNonce: string,
 ): Promise<void> {
   const user = requireCurrentUser();
-  await user.linkWithCredential(auth.AppleAuthProvider.credential(idToken, rawNonce));
+  await user.linkWithCredential(AppleAuthProvider.credential(idToken, rawNonce));
 }
 
 /** Detach a provider. Refuses to remove the last one (would lock the user out). */

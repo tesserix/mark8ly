@@ -62,7 +62,16 @@ export function authErrorMessage(e: unknown, ctx?: AuthErrorContext): string | n
     // copy, so stay neutral rather than guessing "password".
     return "Couldn't verify your account. Try again.";
   }
-  if (code === "auth/invalid-credential") {
+  // `auth/user-not-found` shares invalid-credential's wording deliberately.
+  // The comment above assumes email-enumeration protection is on, which makes
+  // GIP collapse "no such user" into `auth/invalid-credential` — but this
+  // tenant returns EMAIL_NOT_FOUND, so `auth/user-not-found` really does reach
+  // here and, unmapped, fell through to "Something went wrong. Try again."
+  // That is the exact message a merchant who exists only in Zitadel gets
+  // (#686), and it reads as a transient fault, so they retry forever. Reusing
+  // the neutral copy fixes that without newly confirming whether an address
+  // has an account.
+  if (code === "auth/invalid-credential" || code === "auth/user-not-found") {
     return "Couldn't sign you in. Check your details and try again.";
   }
   if (code === "auth/credential-already-in-use") {

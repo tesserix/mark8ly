@@ -117,7 +117,12 @@ module.exports = {
       ...(USE_DEMO_AUTH
         ? []
         : [
-            '@react-native-firebase/app',
+            // firebase-ios-sdk's SPM products are automatic libraries, so with
+            // `ios.useFrameworks: 'static'` above each react-native-firebase pod
+            // embeds its own copy and they collide at link time. Opting out of SPM
+            // sets `$RNFirebaseDisableSPM = true` in the generated Podfile; without
+            // it `pod install` fails outright.
+            ['@react-native-firebase/app', { ios: { disableSPM: true } }],
             'expo-apple-authentication',
             [
               '@react-native-google-signin/google-signin',

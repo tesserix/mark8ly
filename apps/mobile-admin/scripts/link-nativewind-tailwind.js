@@ -38,9 +38,21 @@ function main() {
   }
   const appTwVersion = versionAt(appTailwind);
   if (!appTwVersion || !appTwVersion.startsWith('3.')) {
-    console.warn(
-      `[link-nativewind-tailwind] app tailwindcss is ${appTwVersion}, expected 3.x; skipping`,
+    // Fail, don't skip. NativeWind is Tailwind-v3-only, and its Metro
+    // integration forks a child process for the Tailwind CLI and resolves only
+    // on `message` — with no `error`/`exit` handler. So a child that dies on a
+    // v4 install does not surface an error: Metro hangs forever at 0% CPU with
+    // no output, in both `expo start` and the Xcode bundle phase. That is what
+    // dependency bump #251 (tailwindcss 3 -> 4) caused, and this script warned
+    // and returned 0, so nothing stopped it. An exit code here is the only
+    // cheap signal between a bad bump and a silent, undebuggable hang.
+    console.error(
+      `[link-nativewind-tailwind] app-local tailwindcss is ${appTwVersion}, but ` +
+        'NativeWind requires 3.x.\n' +
+        '  Leaving this unresolved makes Metro hang indefinitely with no error.\n' +
+        `  Pin "tailwindcss" to ^3.4.19 in ${path.join(APP_ROOT, 'package.json')}.`,
     );
+    process.exitCode = 1;
     return;
   }
 

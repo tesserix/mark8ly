@@ -9,21 +9,29 @@ jest.mock("@react-native-firebase/auth", () => {
   const signInWithCredential = jest.fn().mockResolvedValue({ user: { displayName: "X", updateProfile: jest.fn() } });
   const googleCredential = jest.fn((idToken: string, accessToken?: string) => ({ provider: "google", idToken }));
   const appleCredential = jest.fn((idToken: string, nonce: string) => ({ provider: "apple", idToken, nonce }));
-  const authFn: any = () => ({ signInWithCredential });
-  authFn.GoogleAuthProvider = { credential: googleCredential };
-  authFn.AppleAuthProvider = { credential: appleCredential };
-  return { __esModule: true, default: authFn };
+  return {
+    __esModule: true,
+    getAuth: () => ({ signInWithCredential }),
+    GoogleAuthProvider: { credential: googleCredential },
+    AppleAuthProvider: { credential: appleCredential },
+  };
 });
 
 import { fromByteArray } from "base64-js";
-import auth from "@react-native-firebase/auth";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  AppleAuthProvider,
+} from "@react-native-firebase/auth";
 import { signInWithGoogleCredential, signInWithAppleCredential } from "@repo/mobile-shared/auth/social-credentials";
 
-const mockedAuth = auth as unknown as {
-  (): { signInWithCredential: jest.Mock };
-  GoogleAuthProvider: { credential: jest.Mock };
-  AppleAuthProvider: { credential: jest.Mock };
-};
+const mockedAuth = Object.assign(
+  getAuth as unknown as () => { signInWithCredential: jest.Mock },
+  {
+    GoogleAuthProvider: GoogleAuthProvider as unknown as { credential: jest.Mock },
+    AppleAuthProvider: AppleAuthProvider as unknown as { credential: jest.Mock },
+  },
+);
 
 // Builds a syntactically valid (unsigned) JWT carrying the given claims, so
 // the id_token decoding path under test can be exercised end-to-end without

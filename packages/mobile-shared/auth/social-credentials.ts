@@ -1,4 +1,9 @@
-import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  AppleAuthProvider,
+  FirebaseAuthTypes,
+} from "@react-native-firebase/auth";
 import { toByteArray } from "base64-js";
 
 export interface AppleFullName {
@@ -69,9 +74,9 @@ export async function signInWithGoogleCredential(
   idToken: string,
   accessToken?: string,
 ): Promise<SocialSignInOutcome> {
-  const cred = auth.GoogleAuthProvider.credential(idToken, accessToken);
+  const cred = GoogleAuthProvider.credential(idToken, accessToken);
   try {
-    await auth().signInWithCredential(cred);
+    await getAuth().signInWithCredential(cred);
     return { status: "signed-in" };
   } catch (e: unknown) {
     if (isAccountExistsConflict(e)) {
@@ -91,10 +96,10 @@ export async function signInWithAppleCredential(
   rawNonce: string,
   fullName?: AppleFullName | null,
 ): Promise<SocialSignInOutcome> {
-  const cred = auth.AppleAuthProvider.credential(idToken, rawNonce);
+  const cred = AppleAuthProvider.credential(idToken, rawNonce);
   let result: FirebaseAuthTypes.UserCredential;
   try {
-    result = await auth().signInWithCredential(cred);
+    result = await getAuth().signInWithCredential(cred);
   } catch (e: unknown) {
     if (isAccountExistsConflict(e)) {
       return {

@@ -27,8 +27,7 @@ jest.mock("@react-native-firebase/auth", () => {
       throw new TypeError("Proxy set returned false for property 'tenantId'");
     },
   });
-  const authFn = () => instance;
-  return { __esModule: true, default: authFn };
+  return { __esModule: true, getAuth: () => instance };
 });
 
 jest.mock("@repo/mobile-shared/auth/social-credentials", () => ({
@@ -47,7 +46,7 @@ jest.mock("@repo/mobile-shared/auth/link", () => ({
   unlinkProvider: jest.fn().mockResolvedValue(undefined),
 }));
 
-import auth from "@react-native-firebase/auth";
+import { getAuth } from "@react-native-firebase/auth";
 import {
   signInWithGoogleCredential,
   signInWithAppleCredential,
@@ -61,7 +60,7 @@ interface MockedAuthInstance {
   signOut: jest.Mock;
 }
 
-const instance = (auth as unknown as () => MockedAuthInstance)();
+const instance = (getAuth as unknown as () => MockedAuthInstance)();
 const mockGoogleCredential = signInWithGoogleCredential as jest.Mock;
 const mockAppleCredential = signInWithAppleCredential as jest.Mock;
 

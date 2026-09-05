@@ -9,21 +9,25 @@ jest.mock("@react-native-firebase/auth", () => {
     fetchSignInMethodsForEmail: jest.fn().mockResolvedValue(["password"]),
     currentUser: null,
   };
-  const authFn = () => instance;
-  authFn.GoogleAuthProvider = {
+  const getAuth = () => instance;
+  const GoogleAuthProvider = {
     credential: jest.fn((idToken: string) => ({ provider: "google", idToken })),
   };
-  authFn.AppleAuthProvider = {
+  const AppleAuthProvider = {
     credential: jest.fn((idToken: string, nonce: string) => ({
       provider: "apple",
       idToken,
       nonce,
     })),
   };
-  return { __esModule: true, default: authFn };
+  return { __esModule: true, getAuth, GoogleAuthProvider, AppleAuthProvider };
 });
 
-import auth from "@react-native-firebase/auth";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  AppleAuthProvider,
+} from "@react-native-firebase/auth";
 import {
   completeLinkWithPassword,
   completeLinkWithGoogle,
@@ -47,9 +51,10 @@ interface MockedInstance {
   fetchSignInMethodsForEmail: jest.Mock;
   currentUser: MockedCurrentUser | null;
 }
-const mockedAuth = auth as unknown as (() => MockedInstance) & {
-  GoogleAuthProvider: { credential: jest.Mock };
-  AppleAuthProvider: { credential: jest.Mock };
+const mockedAuth = getAuth as unknown as () => MockedInstance;
+const mockedProviders = {
+  GoogleAuthProvider: GoogleAuthProvider as unknown as { credential: jest.Mock },
+  AppleAuthProvider: AppleAuthProvider as unknown as { credential: jest.Mock },
 };
 const PENDING = { provider: "google", idToken: "pending-tok" } as never;
 
@@ -89,7 +94,7 @@ describe("account linking", () => {
 
   it("google re-auth builds the existing credential, signs in, then links", async () => {
     await completeLinkWithGoogle("existing-gtok", PENDING);
-    expect(mockedAuth.GoogleAuthProvider.credential).toHaveBeenCalledWith("existing-gtok");
+    expect(mockedProviders.GoogleAuthProvider.credential).toHaveBeenCalledWith("existing-gtok");
     const instance = mockedAuth();
     expect(instance.signInWithCredential).toHaveBeenCalledWith({
       provider: "google",
@@ -101,7 +106,7 @@ describe("account linking", () => {
 
   it("apple re-auth builds the existing credential, signs in, then links", async () => {
     await completeLinkWithApple("existing-atok", "nonce", PENDING);
-    expect(mockedAuth.AppleAuthProvider.credential).toHaveBeenCalledWith(
+    expect(mockedProviders.AppleAuthProvider.credential).toHaveBeenCalledWith(
       "existing-atok",
       "nonce",
     );
@@ -195,14 +200,14 @@ describe("connected accounts", () => {
   it("linkGoogleToCurrentUser links the built credential to currentUser", async () => {
     const user = setCurrentUser([{ providerId: "password" }]);
     await linkGoogleToCurrentUser("gtok");
-    expect(mockedAuth.GoogleAuthProvider.credential).toHaveBeenCalledWith("gtok");
+    expect(mockedProviders.GoogleAuthProvider.credential).toHaveBeenCalledWith("gtok");
     expect(user.linkWithCredential).toHaveBeenCalledWith({ provider: "google", idToken: "gtok" });
   });
 
   it("linkAppleToCurrentUser links the built credential to currentUser", async () => {
     const user = setCurrentUser([{ providerId: "password" }]);
     await linkAppleToCurrentUser("atok", "nonce");
-    expect(mockedAuth.AppleAuthProvider.credential).toHaveBeenCalledWith("atok", "nonce");
+    expect(mockedProviders.AppleAuthProvider.credential).toHaveBeenCalledWith("atok", "nonce");
     expect(user.linkWithCredential).toHaveBeenCalledWith({
       provider: "apple",
       idToken: "atok",

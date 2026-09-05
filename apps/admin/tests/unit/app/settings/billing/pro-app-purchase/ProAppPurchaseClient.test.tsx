@@ -80,9 +80,11 @@ vi.mock('@/lib/api/subscription/hooks/useBilling', () => ({
 }))
 
 // Money component stub — renders amount/100 formatted simply.
-// Everything else (SHARED_PRICING_CATALOGUE, getAddOnPrice) stays REAL: the
-// component reads the add-on's full-year price out of the generated
-// catalogue, so stubbing it would make the price assertions vacuous.
+// Everything else (SHARED_PRICING_CATALOGUE, getAddOnPrice) stays REAL. The
+// component no longer reads a full-year price (#650 — the add-on does not
+// recur), but the stub is kept unstubbed-around so that if a price is ever
+// rendered here again it shows up in these assertions rather than being
+// silently mocked away.
 vi.mock('@repo/ui/subscription', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@repo/ui/subscription')>()),
   Money: ({ amount, currency }: { amount: number; currency: string }) => (
@@ -200,7 +202,15 @@ describe('ProAppPurchaseClient', () => {
     expect(screen.getByRole('button', { name: /add to plan/i })).toBeInTheDocument()
   })
 
-  it('next full-year charge is the $2,388 add-on list price, not the $2,000 setup fee', () => {
+  // #650: the add-on is a ONE-TIME purchase. It is charged once — a prorated
+  // year plus the $2,000 setup fee — and never re-billed: there is no Stripe
+  // Price object for it, no subscription item, and nothing reads
+  // has_white_label_app_add_on for billing after the webhook sets it.
+  //
+  // This page used to render "Next full-year charge: $2,388 on <date>",
+  // promising a charge no code produces. These tests are the gate against
+  // reinstating it without a recurring subscription item to back it.
+  it('states the charge is one-time and does not renew', () => {
     mockUseCurrentPlan.mockReturnValue({
       data: makePlan(),
       isLoading: false,
@@ -208,26 +218,28 @@ describe('ProAppPurchaseClient', () => {
     })
     renderComponent()
 
-    // $199/mo x 12 = $2,388/yr (spec 3.4), matching pricing.ProAppAnnual and
-    // appaddon.AppAnnualCents. $2,000 is the ONE-TIME setup fee and must
-    // never appear on this line.
-    expect(screen.getByText(/next full-year charge/i)).toBeInTheDocument()
-    expect(screen.getByText('USD 2388.00')).toBeInTheDocument()
-    expect(screen.queryByText('USD 2000.00')).not.toBeInTheDocument()
+    expect(screen.getByText(/one-time charge/i)).toBeInTheDocument()
+    expect(screen.getByText(/does not renew/i)).toBeInTheDocument()
   })
 
-  it('full-year charge stays in USD for a non-USD merchant (add-on bills in USD globally)', () => {
-    mockUseCurrentPlan.mockReturnValue({
-      data: makePlan({ billingCurrency: 'INR' }),
-      isLoading: false,
-      isError: false,
-    })
-    renderComponent()
+  it('promises no recurring charge, for any merchant currency', () => {
+    for (const billingCurrency of ['USD', 'INR'] as const) {
+      mockUseCurrentPlan.mockReturnValue({
+        data: makePlan({ billingCurrency }),
+        isLoading: false,
+        isError: false,
+      })
+      const { unmount } = renderComponent()
 
-    // Spec 4.1.2: the add-on is billed in USD everywhere, so the USD amount
-    // must not be relabelled with the merchant's billing currency.
-    expect(screen.getByText('USD 2388.00')).toBeInTheDocument()
-    expect(screen.queryByText(/^INR /)).not.toBeInTheDocument()
+      // No recurring-charge wording, and no amount rendered as one. The
+      // proration preview still describes the up-front charge; what must not
+      // appear is a future one.
+      expect(screen.queryByText(/next full-year charge/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/renews|renewal charge|per year|\/yr/i)).not.toBeInTheDocument()
+      expect(screen.queryByText('USD 2388.00')).not.toBeInTheDocument()
+
+      unmount()
+    }
   })
 
   it('acknowledgement checkbox controls submit button state', async () => {

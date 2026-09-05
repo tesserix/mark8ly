@@ -25,14 +25,24 @@
  *   - Per spec §3.4 the add-on lists at $199/mo — $2,388 for a full year —
  *     plus a separate one-time, non-refundable $2,000 setup fee. Server-side
  *     `ProrationCents` charges `(remaining_days / 365) × $2,388 + $2,000` up
- *     front, so the up-front charge and the full-year figure are legitimately
- *     different numbers. Conflating them is how the $2,000 setup fee once
- *     ended up on the full-year line here.
- *   - The full-year figure is read from SHARED_PRICING_CATALOGUE (generated
- *     from the Go `pricing.ProAppAnnual` constant) rather than hardcoded, so
- *     it cannot drift from the billing constants again. The add-on bills in
- *     USD globally (spec §4.1.2), so the USD row is read explicitly and
- *     rendered as USD — never relabelled with the merchant's currency.
+ *     front.
+ *   - THE ADD-ON DOES NOT RECUR (#650). It is charged once and never re-billed:
+ *     the purchase creates a single one-off Stripe invoice, the webhook flips
+ *     `has_white_label_app_add_on`, and nothing reads that flag for billing
+ *     again. There is no Stripe Price object for the add-on in any account,
+ *     and none is needed.
+ *
+ *     This page used to show a "Next full-year charge: $2,388 on <date>" line,
+ *     which promised a charge no code produces. Do not reinstate it without a
+ *     recurring subscription item to back it.
+ *
+ *     `ProrationCents`' own doc still describes the add-on as "bundling into
+ *     the next invoice", which reads as though something recurs. It does not —
+ *     the proration exists only to align a mid-year purchase with the Pro
+ *     anchor date.
+ *   - The add-on bills in USD globally (spec §4.1.2), so the USD row is read
+ *     explicitly and rendered as USD — never relabelled with the merchant's
+ *     currency.
  *
  * Accessibility:
  *   - Checkbox associated via htmlFor/id.
@@ -51,11 +61,6 @@ import { usePurchaseProApp } from '@/lib/api/subscription/hooks/useProApp'
 import { ApiError } from '@/lib/api/client'
 import { useToast } from '@/components/feedback/Toaster'
 import { subscriptionCopy } from '@/lib/copy/subscription'
-import {
-  Money,
-  SHARED_PRICING_CATALOGUE,
-  getAddOnPrice,
-} from '@repo/ui/subscription'
 import { formatBillingDate } from '@/lib/format/date'
 
 // ---------------------------------------------------------------------------
@@ -68,14 +73,15 @@ interface ProAppPurchaseClientProps {
 
 const copy = subscriptionCopy.proApp.purchase
 
-/**
- * Full-year White-label App add-on list price, in USD cents, for the
- * next-year line. Derived from the shared catalogue rather than written
- * here: the same figure lives in Go as `pricing.ProAppAnnual` and
- * `appaddon.AppAnnualCents`, and a third hand-maintained copy is exactly
- * what drifted before.
+/*
+ * The full-year list price is deliberately NOT read here any more (#650). The
+ * add-on is a one-time purchase, so this page has no recurring figure to show;
+ * it previously pulled `pricing.ProAppAnnual` from the shared catalogue to
+ * render a "next full-year charge" line that no billing code produced.
+ *
+ * The Go-side constants and their parity test (`proapp_parity_test.go`) still
+ * stand — they pin the displayed and charged figures for the one-off invoice.
  */
-const { price: proAppUsdPrice } = getAddOnPrice(SHARED_PRICING_CATALOGUE.proApp, 'USD')
 
 /** RHF form schema — only the acknowledgement checkbox. */
 const formSchema = z.object({
@@ -168,14 +174,9 @@ function ProrationPreviewCard({ renewalAt }: ProrationPreviewCardProps) {
           </p>
         )}
         <p>
-          Next full-year charge:{' '}
-          <span className="font-medium text-[var(--ink-900)]">
-            <Money amount={proAppUsdPrice.annual} currency="USD" />
-          </span>
-          {renewalAt && (
-            <> on {formattedRenewal}</>
-          )}
-          .
+          This is a{' '}
+          <span className="font-medium text-[var(--ink-900)]">one-time charge</span>.
+          The add-on does not renew and you will not be billed for it again.
         </p>
       </div>
     </div>

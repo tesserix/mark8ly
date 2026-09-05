@@ -24,6 +24,7 @@ package platformadmin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	htmltpl "html/template"
 	"log/slog"
@@ -35,8 +36,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
+	"github.com/mark8ly/marketplace-api/internal/idempotency"
 )
 
 // EmailTemplateStore is the subset of emailtemplates.Store this handler
@@ -96,6 +100,7 @@ type EmailTemplatesHandler struct {
 	registry EmailTemplateRegistry
 	sender   emailtemplates.TestSender
 	writable bool
+	db       *gorm.DB
 	logger   *slog.Logger
 }
 
@@ -105,16 +110,23 @@ type EmailTemplatesHandler struct {
 // mounted and answering 503 not_configured, matching how a missing
 // MARKETPLACE_PLATFORM_ADMIN_SECRET leaves this whole surface mounted but
 // inert rather than absent. writable gates the PUT; see Register.
+//
+// db backs Idempotency-Key replay on the PUT (#730). It is a separate
+// parameter from writable even though production derives both from the same
+// deps.DB, because the unit tests exercise a writable handler with no
+// database: a nil db there means the write happens but is not replayable,
+// which is the same nil-db handling BillingTrialExtendHandler has.
 func NewEmailTemplatesHandler(
 	store EmailTemplateStore,
 	registry EmailTemplateRegistry,
 	sender emailtemplates.TestSender,
 	writable bool,
+	db *gorm.DB,
 	logger *slog.Logger,
 ) *EmailTemplatesHandler {
 	return &EmailTemplatesHandler{
 		store: store, registry: registry, sender: sender,
-		writable: writable, logger: logger,
+		writable: writable, db: db, logger: logger,
 	}
 }
 
@@ -286,6 +298,20 @@ type upsertRequest struct {
 // does NOT keep is the attribution source: updated_by comes from the
 // SIGNED operator id on the request, never from the body.
 func (h *EmailTemplatesHandler) Upsert(c *gin.Context) {
+	// Checked FIRST, before the key or the body. platform-api's
+	// federation.Client refuses to make a write without this header
+	// (client.go:203), so every real caller already sends one; a request
+	// that arrives without it is malformed, and saying so plainly beats a
+	// validation error that sends the caller fixing the wrong thing.
+	idemKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if idemKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "idempotency_key_required",
+			"message": "the Idempotency-Key header is required for this endpoint",
+		})
+		return
+	}
+
 	key := strings.TrimSpace(c.Param("key"))
 	if key == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -356,6 +382,55 @@ func (h *EmailTemplatesHandler) Upsert(c *gin.Context) {
 		return
 	}
 
+	// Namespaced so a key can never replay across template keys or across
+	// endpoints: idempotency_keys.key is a bare primary key shared by the
+	// whole service, and the caller's raw header is theirs to choose.
+	scopedKey := "email_template_upsert:" + key + ":" + idemKey
+
+	// Reserved AFTER every validation above and immediately before the
+	// write, for the reason billing_trial_extend.go records: validation is
+	// deterministic, so two callers with the same key either both pass it
+	// or both fail it, and only then race. Reserving earlier would let a
+	// malformed request leave the key claimed with an empty response for
+	// the full TTL — turning a typo into a key that answers 409 for a day.
+	if h.db != nil {
+		claimed, err := idempotency.Reserve(c.Request.Context(), h.db, scopedKey,
+			estateWideTenant, time.Now().UTC(), idempotency.DefaultTTL)
+		if err != nil {
+			// Fail CLOSED. A caller that cannot be told whether this key was
+			// already used must not be let through to a second UPSERT, which
+			// would bump the version again and append a second revision row
+			// recording a change nobody made.
+			h.logError("platform email template idempotency reserve failed", err)
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "unavailable", "message": "could not verify idempotency key",
+			})
+			return
+		}
+		if !claimed {
+			stored, ok, err := idempotency.Lookup(c.Request.Context(), h.db, scopedKey)
+			if err != nil {
+				h.logError("platform email template idempotency lookup failed", err)
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": "unavailable", "message": "could not verify idempotency key",
+				})
+				return
+			}
+			if ok {
+				// A replay: the stored bytes verbatim, with no second UPSERT,
+				// no version bump and no extra revision row.
+				c.Data(http.StatusOK, "application/json; charset=utf-8", stored)
+				return
+			}
+			// Reserved but not completed — another caller, or another pod
+			// handling the same retry, is still doing the work.
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "in_progress", "message": "a request with this Idempotency-Key is already in flight",
+			})
+			return
+		}
+	}
+
 	saved, err := h.store.Upsert(c.Request.Context(), emailtemplates.UpsertInput{
 		Key:        key,
 		Subject:    req.Subject,
@@ -367,6 +442,9 @@ func (h *EmailTemplatesHandler) Upsert(c *gin.Context) {
 		Capability: strings.TrimSpace(c.GetString(CtxCapability)),
 	})
 	if err != nil {
+		// Release the reservation so a corrected retry with the same key is
+		// not answered 409 in_progress until the TTL expires.
+		h.releaseReservation(c, scopedKey)
 		h.logError("platform email template write failed", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "internal_error", "message": "could not save the template",
@@ -388,12 +466,54 @@ func (h *EmailTemplatesHandler) Upsert(c *gin.Context) {
 		h.registry.Invalidate(key)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": emailTemplateDetail{
+	body, err := json.Marshal(gin.H{"data": emailTemplateDetail{
 		emailTemplateRow: h.storedRow(saved),
 		HTMLBody:         saved.HTMLBody,
 		TextBody:         saved.TextBody,
 		Variables:        variablesOrEmpty(saved.Variables),
 	}})
+	if err != nil {
+		// The write SUCCEEDED, so this is not a failed request — but the
+		// caller cannot be given a body and the key must not be left
+		// claimed with an empty response.
+		h.releaseReservation(c, scopedKey)
+		h.logError("platform email template response encode failed", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal_error", "message": "the template was saved but the response could not be encoded",
+		})
+		return
+	}
+
+	// Completed AFTER the write, so a retry replays the same body. A failure
+	// here is logged, not returned: the template is saved and the caller must
+	// be told so. The cost is that a retry would write again — strictly better
+	// than reporting a failure for a write that happened.
+	if h.db != nil {
+		if err := idempotency.Complete(c.Request.Context(), h.db, scopedKey, body); err != nil {
+			h.logError("platform email template idempotency complete failed", err)
+		}
+	}
+
+	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
+}
+
+// estateWideTenant is the tenant_id recorded against an email-template
+// reservation. idempotency_keys.tenant_id is NOT NULL (migration 000001) and
+// this registry is estate-wide — a template key belongs to the product, not
+// to a tenant — so the nil uuid is the honest value rather than borrowing an
+// unrelated id to satisfy the constraint.
+var estateWideTenant = uuid.Nil.String()
+
+// releaseReservation drops a claim whose work did not complete. Best-effort:
+// the caller is already being given an error, and the reservation expires on
+// its own TTL regardless.
+func (h *EmailTemplatesHandler) releaseReservation(c *gin.Context, scopedKey string) {
+	if h.db == nil {
+		return
+	}
+	if err := idempotency.Release(c.Request.Context(), h.db, scopedKey); err != nil {
+		h.logError("platform email template idempotency release failed", err)
+	}
 }
 
 // testSendRequest is the test-send wire shape. `to` is required: the

@@ -96,7 +96,7 @@ type zitadelHandlers struct {
 // lists are kept separate. Every other test in this package stays green if
 // that one line is swapped; TestZitadelHandlersUseTheCorrectReturnURLAllowlist
 // is the one that would not.
-func newZitadelHandlers(cfg *config.Config, zitadelClient *zitadellogin.Client, complete zitadellogin.CompleteFunc, notifier *notify.Client) (*zitadelHandlers, error) {
+func newZitadelHandlers(cfg *config.Config, zitadelClient *zitadellogin.Client, complete zitadellogin.CompleteFunc, notifier *notify.Client, codes zitadellogin.CodeVerifier, pending zitadellogin.PendingStore) (*zitadelHandlers, error) {
 	adminReturnURLs, err := zitadellogin.NewReturnURLAllowlist(
 		cfg.ZitadelReturnURLAllowedHostsAdmin, cfg.ZitadelReturnURLAllowedSuffixesAdmin)
 	if err != nil {
@@ -116,6 +116,7 @@ func newZitadelHandlers(cfg *config.Config, zitadelClient *zitadellogin.Client, 
 
 	merchant := zitadellogin.NewHandler(zitadelClient, complete).
 		WithTokenIssuer(mobileTokens, cfg.ZitadelAdminRedirectURI, cfg.ZitadelAdminProjectID).
+		WithStepUp(codes, pending).
 		WithHostedLoginBaseURL(cfg.ZitadelIssuer).
 		WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
 		WithReturnURLAllowlist(adminReturnURLs).
@@ -285,6 +286,9 @@ func main() {
 	// The gate is wired only when both halves exist: a pepper to hash
 	// codes with and a way to mail them. A half-configured gate would
 	// block logins it cannot complete.
+	// nil unless the email-OTP subsystem is enabled; zitadellogin refuses
+	// the mobile step-up route rather than half-working when it is.
+	var mobileCodeVerifier zitadellogin.CodeVerifier
 	var otpIssuer autologin.ChallengeIssuer
 	var otpHandler *loginotp.Handler
 	if cfg.EmailOTPPepper != "" && notifier != nil {
@@ -298,6 +302,9 @@ func main() {
 		}
 		gate := loginotp.NewGate(otpSvc, notifier, emailotp.DefaultTTL)
 		otpIssuer = gate
+		// Same gate the browser challenge uses, exposed to the mobile
+		// step-up so both surfaces verify a code exactly one way.
+		mobileCodeVerifier = codeVerifierAdapter{gate}
 		otpHandler = loginotp.NewHandler(loginotp.Config{
 			Gate:     gate,
 			Sessions: sessions,
@@ -347,9 +354,13 @@ func main() {
 		zitadelClient = zitadellogin.New(cfg.ZitadelIssuer, cfg.ZitadelLoginClientToken, nil)
 		log.Info("zitadel login client enabled", "issuer", cfg.ZitadelIssuer)
 	}
+	// Mobile step-up state (mark8ly#686), sealed with the same AES-GCM key
+	// as the browser's pending cookie so there is one format and one key.
+	mobilePendingStore := pendingStoreAdapter{sessions}
+
 	var zh *zitadelHandlers
 	if zitadelClient != nil {
-		zh, err = newZitadelHandlers(cfg, zitadelClient, autologinSvc.CompleteForProvider, notifier)
+		zh, err = newZitadelHandlers(cfg, zitadelClient, autologinSvc.CompleteForProvider, notifier, mobileCodeVerifier, mobilePendingStore)
 		if err != nil {
 			log.Error("zitadel: refusing to start", "err", err)
 			panic(err)

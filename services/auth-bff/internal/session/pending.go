@@ -40,7 +40,23 @@ type Pending struct {
 	// would challenge that browser on every future sign-in.
 	Fingerprint string `json:"fp,omitempty"`
 	Device      string `json:"dev,omitempty"`
-	IPAddress   string `json:"ip,omitempty"`
+
+	// Zitadel session handle, carried ONLY on the mobile step-up path
+	// (mark8ly#686). A native client has no cookie to resume from, and
+	// after the challenge the server must re-finalize this session to
+	// obtain an authorization code and exchange it for a bearer token.
+	//
+	// This is the same handle the TOTP step-up already returns to callers
+	// (see zitadellogin's totp_required response) — the difference is that
+	// here it is sealed rather than sent in the clear, and bound to the
+	// uid/email/tenant above, which is what stops a challenge minted for
+	// one account completing another's login.
+	//
+	// Empty on the browser path: the web resumes from the pending cookie
+	// and never needs it.
+	ZitadelSessionID    string `json:"zsid,omitempty"`
+	ZitadelSessionToken string `json:"zst,omitempty"`
+	IPAddress           string `json:"ip,omitempty"`
 }
 
 // IsExpired reports whether the pending challenge has timed out.
@@ -57,16 +73,10 @@ func (m *Manager) MintPending(w http.ResponseWriter, p Pending) error {
 		p.ExpiresAt = time.Now().Add(PendingTTL)
 	}
 
-	plaintext, err := json.Marshal(p)
+	encoded, err := m.SealPending(p)
 	if err != nil {
-		return fmt.Errorf("session: pending marshal: %w", err)
+		return err
 	}
-	nonce := make([]byte, m.gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return fmt.Errorf("session: pending nonce: %w", err)
-	}
-	ciphertext := m.gcm.Seal(nonce, nonce, plaintext, nil)
-	encoded := base64.RawURLEncoding.EncodeToString(ciphertext)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     PendingCookieName,
@@ -81,17 +91,36 @@ func (m *Manager) MintPending(w http.ResponseWriter, p Pending) error {
 	return nil
 }
 
-// ReadPending parses and validates the pending cookie from a request.
-// Returns nil with no error when the cookie is absent; that's the
-// normal "no challenge in flight" state. Tampered or expired cookies
-// surface as ErrInvalidSession / ErrExpiredSession to mirror the
-// primary session error taxonomy.
-func (m *Manager) ReadPending(r *http.Request) (*Pending, error) {
-	c, err := r.Cookie(PendingCookieName)
-	if err != nil {
-		return nil, nil
+// SealPending encrypts a Pending into an opaque, URL-safe string.
+//
+// The cookie path and the mobile path share this so there is exactly one
+// pending-state format and one place its crypto lives. A native client
+// receives the result as a value it cannot read and hands back verbatim.
+func (m *Manager) SealPending(p Pending) (string, error) {
+	if p.UID == "" || p.TenantID == "" {
+		return "", errors.New("session: pending requires UID and TenantID")
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(c.Value)
+	if p.ExpiresAt.IsZero() {
+		p.ExpiresAt = time.Now().Add(PendingTTL)
+	}
+	plaintext, err := json.Marshal(p)
+	if err != nil {
+		return "", fmt.Errorf("session: pending marshal: %w", err)
+	}
+	nonce := make([]byte, m.gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("session: pending nonce: %w", err)
+	}
+	ciphertext := m.gcm.Seal(nonce, nonce, plaintext, nil)
+	return base64.RawURLEncoding.EncodeToString(ciphertext), nil
+}
+
+// OpenPending reverses SealPending. Tampered input is ErrInvalidSession and
+// an elapsed one ErrExpiredSession, mirroring the cookie taxonomy — a
+// caller must never be able to tell a forged token from an expired one by
+// the error alone.
+func (m *Manager) OpenPending(value string) (*Pending, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
 		return nil, ErrInvalidSession
 	}
@@ -111,6 +140,19 @@ func (m *Manager) ReadPending(r *http.Request) (*Pending, error) {
 		return nil, ErrExpiredSession
 	}
 	return &p, nil
+}
+
+// ReadPending parses and validates the pending cookie from a request.
+// Returns nil with no error when the cookie is absent; that's the
+// normal "no challenge in flight" state. Tampered or expired cookies
+// surface as ErrInvalidSession / ErrExpiredSession to mirror the
+// primary session error taxonomy.
+func (m *Manager) ReadPending(r *http.Request) (*Pending, error) {
+	c, err := r.Cookie(PendingCookieName)
+	if err != nil {
+		return nil, nil
+	}
+	return m.OpenPending(c.Value)
 }
 
 // ClearPending writes a max-age=-1 cookie so the browser drops the

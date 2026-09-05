@@ -64,6 +64,11 @@ type Charge struct {
 	Status          string `json:"status"`
 	Created         int64  `json:"created"` // Unix timestamp — authoritative for 14-day gate
 	CardFingerprint string `json:"card_fingerprint,omitempty"`
+	// CustomerID is the Stripe customer the charge belongs to, empty for a
+	// one-off charge with no customer attached. It is the ONLY way to
+	// attribute a radar.early_fraud_warning to a store: that event carries a
+	// charge id and nothing else, and there is no local charge→store map.
+	CustomerID string `json:"customer_id,omitempty"`
 }
 
 // GetCharge retrieves a Stripe Charge by ID.
@@ -119,6 +124,9 @@ func mapCharge(ch *sdk.Charge) *Charge {
 		Currency: string(ch.Currency),
 		Status:   string(ch.Status),
 		Created:  ch.Created,
+	}
+	if ch.Customer != nil {
+		out.CustomerID = ch.Customer.ID
 	}
 	// Extract card fingerprint from payment_method_details.card.fingerprint (§8 pattern D).
 	if ch.PaymentMethodDetails != nil && ch.PaymentMethodDetails.Card != nil {

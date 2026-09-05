@@ -55,7 +55,14 @@ type Dispatcher struct {
 	// in the Stripe Dashboard (see handleChargeRefunded). Read-only — nothing
 	// here ever writes that fraud-control table. Nil-safe: a nil repo makes
 	// every refund look externally initiated.
-	refunds  refund.Repository
+	refunds refund.Repository
+	// charges resolves a Stripe charge id to its customer so a
+	// radar.early_fraud_warning can be attributed to a store. That event
+	// carries a charge id and no customer, and there is no local
+	// charge→store mapping, so this Stripe read is the only attribution
+	// path (#704). Read-only. Nil-safe: a nil getter makes every fraud
+	// warning unattributed — logged and counted, never dropped.
+	charges  ChargeGetter
 	skip     SkipCounter // nil-safe: skipped-send counting is optional
 	sent     SentCounter // nil-safe: delivered-send counting is optional
 	handlers map[string]Handler
@@ -80,7 +87,10 @@ func New(em *audit.Emitter) *Dispatcher {
 	d.handlers["charge.refunded"] = d.handleChargeRefunded
 	d.handlers["payment_method.attached"] = handlePaymentMethodAttached
 	d.handlers["payment_method.detached"] = handlePaymentMethodDetached
-	d.handlers["radar.early_fraud_warning"] = handleFraudWarning
+	// radar.early_fraud_warning is a method for the same reason
+	// charge.refunded is: it emits through d.emitter, and it needs d.charges
+	// to attribute the charge to a store (#704).
+	d.handlers["radar.early_fraud_warning"] = d.handleFraudWarning
 	// Methods — state mutations routed through statemachine.Transition.
 	d.handlers["checkout.session.completed"] = d.handleCheckoutSessionCompleted
 	d.handlers["customer.subscription.deleted"] = d.handleSubscriptionDeleted
@@ -94,6 +104,41 @@ func New(em *audit.Emitter) *Dispatcher {
 // check per spec §18.8. Recorder may be nil (skips the check).
 func (d *Dispatcher) WithRecorder(r *arbitrage.Recorder) *Dispatcher {
 	d.recorder = r
+	return d
+}
+
+// ChargeGetter reads a single Stripe charge. Narrow by design: the only
+// caller is the fraud-warning handler, and the only field it needs is the
+// charge's customer.
+type ChargeGetter interface {
+	GetCharge(ctx context.Context, id string) (*billingstripe.Charge, error)
+}
+
+// stripeChargeGetterAdapter wraps the package-level billingstripe.GetCharge
+// helper into the ChargeGetter interface, mirroring
+// stripeInvoiceUpdaterAdapter.
+type stripeChargeGetterAdapter struct {
+	client *billingstripe.Client
+}
+
+func (a *stripeChargeGetterAdapter) GetCharge(ctx context.Context, id string) (*billingstripe.Charge, error) {
+	return billingstripe.GetCharge(ctx, a.client, id)
+}
+
+// WithChargeGetter wires the Stripe charge lookup used to attribute
+// radar.early_fraud_warning events to a store. A nil client leaves the getter
+// unset, which downgrades every fraud warning to unattributed rather than
+// panicking. Tests use withChargeGetter with a stub directly.
+func (d *Dispatcher) WithChargeGetter(client *billingstripe.Client) *Dispatcher {
+	if client == nil {
+		return d
+	}
+	return d.withChargeGetter(&stripeChargeGetterAdapter{client: client})
+}
+
+// withChargeGetter is the test seam for WithChargeGetter.
+func (d *Dispatcher) withChargeGetter(g ChargeGetter) *Dispatcher {
+	d.charges = g
 	return d
 }
 

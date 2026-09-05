@@ -221,6 +221,33 @@ var (
 		[]string{"event"},
 	)
 
+	// FraudWarningsTotal counts radar.early_fraud_warning webhook events
+	// received from Stripe Radar, labeled by whether the warning could be
+	// attributed to a store (attributed | unattributed), the reason
+	// attribution ended that way (ok | malformed_payload | no_charge_id |
+	// no_charge_getter | charge_lookup_failed | no_customer |
+	// no_subscription | subscription_lookup_failed), and whether Stripe
+	// marked the warning actionable (true | false).
+	//
+	// A fraud warning is an EVENT, not a state, which is why #704 is served
+	// by this counter and an audit row rather than by a boolean column: the
+	// thing ops needs is to be told one arrived, promptly, not to be able to
+	// query later that one once did.
+	//
+	// Unattributed warnings are counted deliberately. Attribution needs a
+	// live Stripe charge lookup, so it fails on a Stripe outage, on a
+	// one-off charge, and whenever no billing key is configured — and a
+	// warning we cannot pin to a store is still a warning. Dropping those
+	// would make the counter read healthiest exactly when the lookup path
+	// is broken.
+	FraudWarningsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "mark8ly_subscription_fraud_warnings_total",
+			Help: "Count of Stripe Radar early fraud warnings received, labeled by attribution (attributed | unattributed), the reason attribution resolved that way, and whether Stripe marked the warning actionable. Unattributed warnings are counted too — attribution requires a live Stripe lookup that can fail independently of the warning.",
+		},
+		[]string{"attribution", "reason", "actionable"},
+	)
+
 	// MobileAdminTokenVerifiedTotal counts successful mobile-admin bearer
 	// verifications, labeled by the issuer that accepted the token
 	// (zitadel | gip).
@@ -269,6 +296,7 @@ func init() {
 		APIKeyRateLimitedTotal,
 		MobileAdminTokenVerifiedTotal,
 		CarrierSecretEventsTotal,
+		FraudWarningsTotal,
 	)
 
 	// Pre-declare every carriersecrets event series at 0.

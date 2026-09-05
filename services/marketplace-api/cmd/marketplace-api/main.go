@@ -1420,10 +1420,16 @@ func main() {
 		// then stay unmounted.
 		var teamHandler *admin.TeamHandler
 		var mobileAccountHandler *admin.MobileAccountHandler
+		var myTenantsHandler *admin.MobileMyTenantsHandler
 		if cfg.PlatformAPIURL != "" {
 			teamClient := teamproxy.NewClient(cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			teamHandler = admin.NewTeamHandler(teamClient, log)
 			mobileAccountHandler = admin.NewMobileAccountHandler(teamClient, log)
+			// Mobile tenant discovery (#686). Shares the platform client
+			// above — no new chart env. Unset platform URL leaves it nil
+			// and the route unmounted, which is the pre-existing shape for
+			// every platform-backed mobile route.
+			myTenantsHandler = admin.NewMobileMyTenantsHandler(teamClient, log)
 		} else {
 			log.Info("team: platform client not configured (MARKETPLACE_PLATFORM_API_URL empty); team + account-deletion routes disabled")
 		}
@@ -1452,7 +1458,8 @@ func main() {
 			// the FGA-validated one runs second so it can only ever
 			// overwrite an unvalidated claim, never the reverse. See
 			// MobileDeps.DualIssuer.
-			DualIssuer: cfg.ZitadelEnabled && cfg.ZitadelDualIssuer,
+			DualIssuer:       cfg.ZitadelEnabled && cfg.ZitadelDualIssuer,
+			MyTenantsHandler: myTenantsHandler,
 			// Resolves X-Acting-Tenant-Id via the same FGA client the rest
 			// of the admin surface already checks permissions against, for
 			// bearer tokens (Zitadel) that carry no tenant_id claim at

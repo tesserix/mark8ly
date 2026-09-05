@@ -115,7 +115,9 @@ var mobileOnlySubtrees = map[string]string{
 	"/stores/:storeId/team":        "staff/invite management proxied to platform-api; web admin calls platform-api directly rather than through this service",
 }
 
-var mobileOnlyRoutes = map[string]string{}
+var mobileOnlyRoutes = map[string]string{
+	"GET /me/tenants": "Zitadel tenant discovery (#686): mobile is the only surface that must ask the API which tenants it belongs to, because a Zitadel token carries no tenant claim and every other mobile route is tenant-gated. The web admin resolves the same thing server-side in its own BFF (resolveWorkspaceTenant) by calling platform-api directly, so mirroring it here would add an unused route. It is also the one mobile route deliberately mounted OUTSIDE requireTenant — see MobileMyTenantsHandler",
+}
 
 // ---------------------------------------------------------------------------
 

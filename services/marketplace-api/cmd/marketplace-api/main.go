@@ -1185,7 +1185,14 @@ func main() {
 			log.Error("marketplace-api: customer erasure executor could not be built", "err", err)
 			os.Exit(1)
 		}
-		migrationHandler = migration.NewHandler(migrationRepo, migration.NoOpValidator{}, log).WithAudit(auditEmitter)
+		// #706: the fast path's 90-day domain-age gate is NOT enforced. No WHOIS
+		// or RDAP lookup exists, so UnenforcedDomainAge accepts every domain and
+		// eligibility rests entirely on the CSM review at
+		// POST /internal/csm/migration-fast-path/:id/review. Logged rather than
+		// left implicit so an operator reading boot logs learns the gate is inert
+		// instead of inferring it from a passing check.
+		log.Warn("migration fast-path: domain-age check NOT enforced — every domain is accepted; eligibility rests on CSM review (#706)")
+		migrationHandler = migration.NewHandler(migrationRepo, migration.UnenforcedDomainAge{}, log).WithAudit(auditEmitter)
 
 		// P8 — Arbitrage appeal handler (§18.8.1).
 		arbitrageAppealSvc := arbitrage.NewAppealService(conn, arbitrage.NoOpPublisher{}, arbitrage.NopPIILogger{})

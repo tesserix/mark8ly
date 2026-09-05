@@ -194,13 +194,28 @@ class ReusableCIContract(unittest.TestCase):
                 self.assertNotIn("ARG SERVER_ACTIONS_KEY_FP", contents)
                 self.assertNotIn("ARG REUSABLE_BUILD_SECRET_FP", contents)
 
-    def test_dependabot_tracks_every_pinned_dockerfile(self) -> None:
-        # Discover every Dockerfile on disk rather than hardcoding a
-        # directory list — a hardcoded list can never fail when a new
-        # Dockerfile is added, which is exactly how /services/mcp went
-        # untracked and its base pins silently rotted. node_modules and
-        # vendor trees are excluded because a Dockerfile shipped by a
-        # third-party dependency is not ours to add to dependabot.yml.
+    def test_base_image_pins_are_tracked_by_a_dependency_updater(self) -> None:
+        # WHAT THIS PROTECTS, which is unchanged: every Dockerfile pinning a
+        # company-owned ghcr.io/tesserix/base-* image must be tracked by
+        # something that refreshes that pin. The pin is the exact thing that
+        # goes stale when GHCR prunes old digests, and /services/mcp once went
+        # untracked and rotted for precisely this reason.
+        #
+        # HOW it is tracked changed in #689. Dependabot listed each directory
+        # explicitly in .github/dependabot.yml, so a new Dockerfile could be
+        # forgotten and this test enumerated them to catch that. Renovate
+        # DISCOVERS Dockerfiles itself, so there is no per-directory list to
+        # fall out of step with — a strictly stronger guarantee, and the reason
+        # the old assertion is gone rather than ported.
+        #
+        # WHAT THIS TEST CAN NO LONGER SEE, stated because the guarantee now
+        # lives somewhere this repository cannot read: whether the docker
+        # manager is enabled at all is decided by the shared preset
+        # (github>tesserix/renovate-config). If someone sets `enabledManagers`
+        # there without `dockerfile`, every base pin in this repo stops being
+        # refreshed and NOTHING HERE FAILS. That check belongs in the preset's
+        # own repository; this one asserts only that we are on renovate and
+        # have not silently reverted to a config that tracks nothing.
         dockerfiles = [
             path
             for path in ROOT.rglob("Dockerfile")
@@ -208,27 +223,41 @@ class ReusableCIContract(unittest.TestCase):
         ]
         self.assertTrue(dockerfiles, "no Dockerfiles found — discovery is broken")
 
-        config = (ROOT / ".github/dependabot.yml").read_text()
+        pinned = [
+            path
+            for path in dockerfiles
+            if re.search(r"^FROM\s+ghcr\.io/tesserix/base-", path.read_text(), re.MULTILINE)
+        ]
+        self.assertTrue(
+            pinned,
+            "no Dockerfile pins a ghcr.io/tesserix/base- image — either the "
+            "pins were removed or this discovery is broken; both want a human.",
+        )
 
-        # Only Dockerfiles that pin a company-owned ghcr.io/tesserix/base-*
-        # image are in scope: that pin is the exact thing that goes stale
-        # when GHCR prunes old digests, and it is the property this test
-        # protects. A Dockerfile with no such pin has nothing for
-        # Dependabot's docker ecosystem to refresh.
-        for path in dockerfiles:
-            contents = path.read_text()
-            if not re.search(r"^FROM\s+ghcr\.io/tesserix/base-", contents, re.MULTILINE):
-                continue
-            directory = "/" + str(path.parent.relative_to(ROOT))
-            with self.subTest(directory=directory):
-                self.assertRegex(
-                    config,
-                    rf"package-ecosystem:\s*docker\s+directory:\s*{re.escape(directory)}\b",
-                    f"{directory} pins a ghcr.io/tesserix/base- image but has no "
-                    f"`package-ecosystem: docker` entry for it in "
-                    f".github/dependabot.yml — add one so its base image pin "
-                    f"gets refreshed automatically.",
-                )
+        renovate = ROOT / "renovate.json"
+        self.assertTrue(
+            renovate.is_file(),
+            f"{len(pinned)} Dockerfiles pin a ghcr.io/tesserix/base- image but "
+            "renovate.json is missing — nothing is refreshing those pins.",
+        )
+
+        config = json.loads(renovate.read_text())
+        self.assertIn(
+            "github>tesserix/renovate-config",
+            config.get("extends", []),
+            "renovate.json does not extend the shared org preset, so this "
+            "repository's update policy is whatever happens to be in this file "
+            "rather than the estate's.",
+        )
+
+        # The file dependabot read must be GONE, not merely unused. Leaving it
+        # behind would give a reader two configs and no way to tell which one
+        # is live — and this test would keep passing either way.
+        self.assertFalse(
+            (ROOT / ".github/dependabot.yml").exists(),
+            "both .github/dependabot.yml and renovate.json exist; delete the "
+            "dependabot config so there is one answer to what updates deps.",
+        )
 
     def test_secret_baseline_is_redacted_and_fingerprint_specific(self) -> None:
         findings = json.loads((ROOT / ".gitleaks-baseline.json").read_text())

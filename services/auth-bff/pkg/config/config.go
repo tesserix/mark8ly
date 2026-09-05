@@ -78,6 +78,26 @@ type Config struct {
 	ZitadelAdminProjectID      string `envconfig:"ZITADEL_ADMIN_PROJECT_ID"`
 	ZitadelStorefrontProjectID string `envconfig:"ZITADEL_STOREFRONT_PROJECT_ID"`
 
+	// Mobile token issuance (#686). The mobile login routes exchange the
+	// completed login's authorization code for OAuth tokens, because
+	// marketplace-api verifies a bearer JWT and a native client can use
+	// neither a session cookie nor a callback URL.
+	//
+	// ZITADEL_ADMIN_CLIENT_ID / _SECRET are the mark8ly-admin confidential
+	// client's, and the chart ALREADY injects both — until now nothing read
+	// them (see the correction on #709).
+	//
+	// ZitadelAdminRedirectURI is the one genuinely new value, and it is
+	// deliberately NOT defaulted: it must byte-match the redirect the auth
+	// request is created with or Zitadel refuses the exchange with a
+	// generic invalid_grant, and a hardcoded default would be silently
+	// wrong in any environment that is not production. Empty leaves mobile
+	// token issuance OFF, which is exactly today's behaviour — so this
+	// lands code-first safely and the chart turns it on.
+	ZitadelAdminClientID     string `envconfig:"ZITADEL_ADMIN_CLIENT_ID"`
+	ZitadelAdminClientSecret string `envconfig:"ZITADEL_ADMIN_CLIENT_SECRET"`
+	ZitadelAdminRedirectURI  string `envconfig:"ZITADEL_ADMIN_REDIRECT_URI"`
+
 	// Zitadel IDP-intent return-URL allowlists (internal/zitadellogin's
 	// ReturnURLAllowlist) — the only control preventing an open redirect on
 	// a completed federated sign-in, since Zitadel itself does not validate

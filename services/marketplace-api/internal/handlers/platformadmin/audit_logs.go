@@ -1,6 +1,7 @@
 package platformadmin
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -40,15 +41,26 @@ func (h *AuditLogsHandler) Register(g *gin.RouterGroup) {
 // deliberately absent. Adding fields unilaterally is what the contract exists
 // to prevent.
 //
-// `metadata` is also absent pending the open question on #276: our column is
-// jsonb, the contract's example shows a string. Omission is the one choice
-// that cannot be wrong while it is unresolved.
+// `metadata` is a STRING carrying compact JSON, not an object — settled on
+// #313 by reading the consumer rather than by asking again. All three layers
+// of tesserix-home agree:
+//
+//   - platform-api internal/modules/audit/internal/domain/entry.go —
+//     `Metadata string`, and that struct is the federation decode target
+//   - apps/console/lib/audit.ts — `optionalStr(row.metadata, ...)`
+//   - the console's own audit writer renders compact JSON into the column
+//
+// The cost of the other choice is not a mis-rendered field. platform-api
+// decodes an entire page with one json.Unmarshal, so an object where a string
+// is expected fails that decode and mark8ly is reported as a federation
+// FAILURE — every mark8ly row disappears from the console at once.
 type auditRow struct {
 	ID        string `json:"id"`
 	Actor     string `json:"actor"`
 	Action    string `json:"action"`
 	Timestamp string `json:"timestamp"`
 	Target    string `json:"target,omitempty"`
+	Metadata  string `json:"metadata,omitempty"`
 }
 
 type pagination struct {
@@ -105,7 +117,33 @@ func toRow(e audit.Entry) auditRow {
 		Action:    e.Action,
 		Timestamp: e.CreatedAt.UTC().Format(time.RFC3339),
 		Target:    targetOf(e),
+		Metadata:  metadataOf(e),
 	}
+}
+
+// metadataOf renders the jsonb blob as the compact JSON string the consumer
+// reads, or "" to omit the field.
+//
+// "" for an empty map as well as a nil one: "this event carried no detail"
+// and "this event carried a detail object containing nothing" are the same
+// fact to a reader, and the contract marks the field optional. Sending "{}"
+// would put a literal empty-braces string in front of an operator.
+//
+// A marshal failure also yields "" rather than propagating. Metadata is
+// loaded from jsonb so it should always re-marshal, but this runs per row on
+// a page: one unserialisable value must cost that row its detail, never the
+// whole page its rows.
+func metadataOf(e audit.Entry) string {
+	if len(e.Metadata) == 0 {
+		return ""
+	}
+	// encoding/json sorts map keys, so the output is byte-stable across calls
+	// and a poller does not see a phantom change on an unchanged row.
+	encoded, err := json.Marshal(e.Metadata)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 // actorOf resolves the single "who did it" string the contract asks for.

@@ -25,7 +25,6 @@ import {
   Money,
   getAddOnPrice,
   getPlanPrice,
-  type Currency,
   type PlanId,
   type SharedPricingCatalogue,
 } from '@repo/ui/subscription'
@@ -110,14 +109,9 @@ const PLAN_META: readonly PlanMeta[] = [
 
 export { PLAN_META }
 
-// AU prices in the catalogue are GST-exclusive (spec §19.4).
-// Other countries either have no domestic tax or handle via reverse charge.
-function taxDisclosure(currency: Currency): string {
-  if (currency === 'AUD') {
-    return 'Plus 10% GST for Australian businesses.'
-  }
-  return ''
-}
+// No tax disclosure is rendered for any currency, AUD included: Tesserix is
+// not GST-registered, so no GST is charged and none may be disclosed. The AU
+// catalogue prices stay GST-exclusive; the copy returns if we register (#699).
 
 function TogglePill({
   period,
@@ -184,14 +178,13 @@ export function Pricing({ catalogue }: PricingProps) {
   // currency.
   const { price: proApp } = getAddOnPrice(catalogue.proApp, 'USD')
   const showUsdBilledNote = currency !== 'USD'
-  // Page-level "prices shown in X" / GST copy MUST use the currency actually
+  // Page-level "prices shown in X" copy MUST use the currency actually
   // resolved for the plans below, not the raw cookie value — otherwise a
   // visitor whose currency has no row would read "Prices shown in THB." over
   // amounts that are actually in USD. Every priceable currency has a row on
   // every plan (see PRICEABLE_CURRENCIES), so any plan resolves the same way;
   // the first plan is used as the anchor.
   const resolvedPageCurrency = plans[0] ? getPlanPrice(plans[0], currency).currency : currency
-  const tax = taxDisclosure(resolvedPageCurrency)
 
   return (
     <section
@@ -221,7 +214,6 @@ export function Pricing({ catalogue }: PricingProps) {
           <TogglePill period={period} onChange={setPeriod} />
           <p className="text-sm text-foreground-tertiary">
             Prices shown in {resolvedPageCurrency}.
-            {tax ? ` ${tax}` : ''}
           </p>
         </div>
 

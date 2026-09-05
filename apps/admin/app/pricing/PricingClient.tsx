@@ -43,15 +43,9 @@ interface PricingClientProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// AU prices in the catalogue are GST-exclusive (spec §19.4). Mirrors the
-// wording in apps/onboarding/components/marketing/Pricing.tsx's
-// `taxDisclosure` verbatim — one phrasing, not two.
-function taxDisclosure(currency: Currency): string {
-  if (currency === 'AUD') {
-    return 'Plus 10% GST for Australian businesses.'
-  }
-  return ''
-}
+// No tax disclosure is rendered for any currency, AUD included: Tesserix is
+// not GST-registered, so no GST is charged and none may be disclosed. The AU
+// catalogue prices stay GST-exclusive; the copy returns if we register (#699).
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -376,7 +370,6 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
   const resolvedPageCurrency = pricing.plans[0]
     ? getPlanPrice(pricing.plans[0], currency).currency
     : currency
-  const tax = taxDisclosure(resolvedPageCurrency)
 
   return (
     <div className="px-8 py-16 max-w-6xl mx-auto">
@@ -515,7 +508,6 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
           style={{ color: 'var(--ink-500)' }}
         >
           {pricingCopy.disclosureTemplate(resolvedPageCurrency)}
-          {tax ? ` ${tax}` : ''}
         </p>
       </footer>
     </div>

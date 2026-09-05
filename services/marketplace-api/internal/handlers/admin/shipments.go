@@ -26,6 +26,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/shipmentcancel"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
+	"github.com/mark8ly/marketplace-api/internal/storeidentity"
 	"github.com/mark8ly/marketplace-api/internal/warehouse"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -2292,31 +2293,36 @@ func (h *ShipmentsHandler) EmailLabel(c *gin.Context) {
 		return
 	}
 
-	// Resolve order_number and store display name for the email envelope.
+	// Resolve the order number, then the store's public sender identity
+	// through the shared loader (#718) rather than a fourth hand-written
+	// copy of the stores/store_branding join — that duplication was how
+	// three of these call sites ended up missing the contact address.
 	var meta struct {
 		OrderNumber string `gorm:"column:order_number"`
-		StoreName   string `gorm:"column:name"`
-		StoreSlug   string `gorm:"column:slug"`
-		TenantID    string `gorm:"column:tenant_id"`
-		// support_email is LEFT JOINed: a store that never opened the
-		// branding editor has no row, and an INNER JOIN would drop the
-		// whole envelope rather than just the Reply-To (#718).
-		ContactEmail string `gorm:"column:contact_email"`
+		StoreID     string `gorm:"column:store_id"`
 	}
 	_ = h.db.WithContext(ctx).Raw(`
-		SELECT o.order_number, s.name, s.slug, s.tenant_id,
-		       COALESCE(sb.support_email, '') AS contact_email
-		FROM orders o
-		JOIN stores s ON s.id = o.store_id
-		LEFT JOIN store_branding sb ON sb.store_id = s.id
-		WHERE o.id = ? LIMIT 1`, orderID).Scan(&meta).Error
+		SELECT o.order_number, o.store_id
+		FROM orders o WHERE o.id = ? LIMIT 1`, orderID).Scan(&meta).Error
+
+	var store storeidentity.Store
+	if sid, err := uuid.Parse(meta.StoreID); err == nil {
+		// Best-effort, like the lookup it replaced: a failure here costs
+		// the store branding on the envelope, not the label email.
+		if loaded, lerr := storeidentity.NewDBLoader(h.db).Load(ctx, sid); lerr == nil {
+			store = loaded
+		} else if h.logger != nil {
+			h.logger.Warn("shipments: store identity lookup failed",
+				"order_id", orderID, "err", lerr)
+		}
+	}
 
 	if err := h.labelMailer.SendLabel(ctx, shipping.LabelEmailPayload{
 		Recipient:         strings.TrimSpace(req.Recipient),
-		TenantID:          meta.TenantID,
-		StoreName:         meta.StoreName,
-		StoreSlug:         meta.StoreSlug,
-		StoreContactEmail: meta.ContactEmail,
+		TenantID:          store.TenantID,
+		StoreName:         store.Name,
+		StoreSlug:         store.Slug,
+		StoreContactEmail: store.ContactEmail,
 		OrderNumber:       meta.OrderNumber,
 		Carrier:           rec.Carrier,
 		TrackingNumber:    rec.TrackingNumber,

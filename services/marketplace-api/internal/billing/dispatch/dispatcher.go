@@ -60,8 +60,10 @@ type Dispatcher struct {
 // no-op on a nil receiver.
 func New(em *audit.Emitter) *Dispatcher {
 	d := &Dispatcher{emitter: em, handlers: map[string]Handler{}}
-	// Free functions — side-effect-only handlers that don't advance status.
-	d.handlers["customer.subscription.updated"] = handleSubscriptionUpdated
+	// Side-effect-only handlers that don't advance status. Most are free
+	// functions; customer.subscription.updated is a method because it emits
+	// a period/cancel-flag transition event through d.emitter (#705).
+	d.handlers["customer.subscription.updated"] = d.handleSubscriptionUpdated
 	// invoice.paid runs a chain: the generic handler first (stamps
 	// first_charge_at, clears hosted_invoice_url, emits trial-billed
 	// confirmation email if this is the first charge), then the P15

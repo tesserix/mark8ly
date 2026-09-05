@@ -121,6 +121,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/journal/... \
 	    ./internal/notification/... \
 	    ./internal/order/... \
+	    ./internal/orderdoc/... \
 	    ./internal/orderrefund/... \
 	    ./internal/outbox/... \
 	    ./internal/page/... \
@@ -131,6 +132,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/shipping/... \
 	    ./internal/signup/... \
 	    ./internal/stockhold/... \
+	    ./internal/storeidentity/... \
 	    ./internal/stores/... \
 	    ./internal/subscription \
 	    ./internal/subscription/cancel/... \

@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/campaignbudget"
+	"github.com/mark8ly/marketplace-api/internal/email"
 )
 
 // BudgetReserver is the narrow interface SendWorker needs from the
@@ -232,6 +233,11 @@ func (w *SendWorker) dispatchCampaign(ctx context.Context, c Campaign) error {
 				TextBody:   textBody,
 				TenantID:   c.TenantID.String(),
 				CampaignID: c.ID.String(),
+				Sender: email.StoreSender{
+					Name:         theme.StoreName,
+					Slug:         theme.StoreSlug,
+					ContactEmail: theme.StoreContactEmail,
+				},
 			}
 			if err := w.dispatcher.Send(ctx, outbound); err != nil {
 				w.logger.Error("campaign: dispatch failed",

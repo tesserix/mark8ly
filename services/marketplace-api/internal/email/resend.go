@@ -42,6 +42,37 @@ func (s *ResendSender) Send(ctx context.Context, msg Message) error {
 		return fmt.Errorf("email: Resend API key is not configured")
 	}
 
+	raw, err := json.Marshal(buildResendRequest(msg))
+	if err != nil {
+		return fmt.Errorf("email: marshal resend request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://api.resend.com/emails", bytes.NewReader(raw))
+	if err != nil {
+		return fmt.Errorf("email: build resend request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("email: resend POST: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	respBody, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("email: resend returned %d: %s", resp.StatusCode, string(respBody))
+}
+
+// buildResendRequest renders a Message into Resend's wire shape. Split
+// out of Send so the envelope — the inline "Name <addr>" From, reply_to
+// and the tags that mirror SendGrid's custom_args attribution — can be
+// asserted without an HTTP round trip.
+func buildResendRequest(msg Message) resendRequest {
 	// Resend has no per-send tracking toggle (click/open tracking is off
 	// unless enabled on the domain), so magic-link tokens are safe by
 	// default. Attribution mirrors the SendGrid custom_args via tags —
@@ -87,33 +118,11 @@ func (s *ResendSender) Send(ctx context.Context, msg Message) error {
 		Subject:     msg.Subject,
 		HTML:        msg.HTMLBody,
 		Text:        msg.TextBody,
+		ReplyTo:     msg.ReplyTo,
 		Tags:        tags,
 		Attachments: attachments,
 	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("email: marshal resend request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://api.resend.com/emails", bytes.NewReader(raw))
-	if err != nil {
-		return fmt.Errorf("email: build resend request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+s.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("email: resend POST: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
-	}
-	respBody, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("email: resend returned %d: %s", resp.StatusCode, string(respBody))
+	return body
 }
 
 // resendTagSafe reports whether s is a valid Resend tag name or value:
@@ -138,11 +147,14 @@ func resendTagSafe(s string) bool {
 
 // Resend API request shape — minimum viable subset.
 type resendRequest struct {
-	From        string             `json:"from"`
-	To          []string           `json:"to"`
-	Subject     string             `json:"subject"`
-	HTML        string             `json:"html,omitempty"`
-	Text        string             `json:"text,omitempty"`
+	From    string   `json:"from"`
+	To      []string `json:"to"`
+	Subject string   `json:"subject"`
+	HTML    string   `json:"html,omitempty"`
+	Text    string   `json:"text,omitempty"`
+	// Resend accepts reply_to as either a string or an array; the string
+	// form is used, and omitempty keeps it off the wire when unset.
+	ReplyTo     string             `json:"reply_to,omitempty"`
 	Tags        []resendTag        `json:"tags,omitempty"`
 	Attachments []resendAttachment `json:"attachments,omitempty"`
 }

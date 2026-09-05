@@ -25,14 +25,21 @@ type LabelEmailPayload struct {
 	// TenantID, when non-empty, is forwarded to the email provider as a
 	// custom_arg so notification-service can attribute open/click/bounce
 	// events back to the right tenant in tesserix-home dashboards.
-	TenantID       string
-	StoreName      string
-	OrderNumber    string
-	Carrier        string
-	TrackingNumber string
-	PDF            []byte
-	ContentType    string
-	Filename       string
+	TenantID  string
+	StoreName string
+	// StoreSlug and StoreContactEmail carry the store's sender identity
+	// (#718). This mail goes to an address the MERCHANT nominates (a
+	// fulfiller, a warehouse), not to a shopper — but it is still the
+	// store's own mail, not the platform speaking to the merchant, so it
+	// wears the store identity.
+	StoreSlug         string
+	StoreContactEmail string
+	OrderNumber       string
+	Carrier           string
+	TrackingNumber    string
+	PDF               []byte
+	ContentType       string
+	Filename          string
 }
 
 // EmailLabelMailer sends the label email + PDF attachment through the
@@ -92,8 +99,7 @@ func (m *EmailLabelMailer) SendLabel(ctx context.Context, in LabelEmailPayload) 
 		customArgs["tenant_id"] = in.TenantID
 	}
 
-	if err := m.sender.Send(ctx, email.Message{
-		From:       m.from,
+	msg := email.Message{
 		To:         in.Recipient,
 		Subject:    subject,
 		HTMLBody:   htmlBody,
@@ -104,7 +110,14 @@ func (m *EmailLabelMailer) SendLabel(ctx context.Context, in LabelEmailPayload) 
 			ContentType: ct,
 			Content:     in.PDF,
 		}},
-	}); err != nil {
+	}
+	email.StoreIdentity(m.from, email.StoreSender{
+		Name:         in.StoreName,
+		Slug:         in.StoreSlug,
+		ContactEmail: in.StoreContactEmail,
+	}).Apply(&msg)
+
+	if err := m.sender.Send(ctx, msg); err != nil {
 		return fmt.Errorf("shipping: send label email: %w", err)
 	}
 	return nil

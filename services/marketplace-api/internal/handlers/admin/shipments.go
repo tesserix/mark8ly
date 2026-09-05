@@ -26,6 +26,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/shipmentcancel"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
+	"github.com/mark8ly/marketplace-api/internal/storeidentity"
 	"github.com/mark8ly/marketplace-api/internal/warehouse"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -2292,28 +2293,42 @@ func (h *ShipmentsHandler) EmailLabel(c *gin.Context) {
 		return
 	}
 
-	// Resolve order_number and store display name for the email envelope.
+	// Resolve the order number, then the store's public sender identity
+	// through the shared loader (#718) rather than a fourth hand-written
+	// copy of the stores/store_branding join — that duplication was how
+	// three of these call sites ended up missing the contact address.
 	var meta struct {
 		OrderNumber string `gorm:"column:order_number"`
-		StoreName   string `gorm:"column:name"`
-		TenantID    string `gorm:"column:tenant_id"`
+		StoreID     string `gorm:"column:store_id"`
 	}
 	_ = h.db.WithContext(ctx).Raw(`
-		SELECT o.order_number, s.name, s.tenant_id
-		FROM orders o
-		JOIN stores s ON s.id = o.store_id
-		WHERE o.id = ? LIMIT 1`, orderID).Scan(&meta).Error
+		SELECT o.order_number, o.store_id
+		FROM orders o WHERE o.id = ? LIMIT 1`, orderID).Scan(&meta).Error
+
+	var store storeidentity.Store
+	if sid, err := uuid.Parse(meta.StoreID); err == nil {
+		// Best-effort, like the lookup it replaced: a failure here costs
+		// the store branding on the envelope, not the label email.
+		if loaded, lerr := storeidentity.NewDBLoader(h.db).Load(ctx, sid); lerr == nil {
+			store = loaded
+		} else if h.logger != nil {
+			h.logger.Warn("shipments: store identity lookup failed",
+				"order_id", orderID, "err", lerr)
+		}
+	}
 
 	if err := h.labelMailer.SendLabel(ctx, shipping.LabelEmailPayload{
-		Recipient:      strings.TrimSpace(req.Recipient),
-		TenantID:       meta.TenantID,
-		StoreName:      meta.StoreName,
-		OrderNumber:    meta.OrderNumber,
-		Carrier:        rec.Carrier,
-		TrackingNumber: rec.TrackingNumber,
-		PDF:            pdf,
-		ContentType:    ct,
-		Filename:       fmt.Sprintf("shipping-label-%s.pdf", rec.TrackingNumber),
+		Recipient:         strings.TrimSpace(req.Recipient),
+		TenantID:          store.TenantID,
+		StoreName:         store.Name,
+		StoreSlug:         store.Slug,
+		StoreContactEmail: store.ContactEmail,
+		OrderNumber:       meta.OrderNumber,
+		Carrier:           rec.Carrier,
+		TrackingNumber:    rec.TrackingNumber,
+		PDF:               pdf,
+		ContentType:       ct,
+		Filename:          fmt.Sprintf("shipping-label-%s.pdf", rec.TrackingNumber),
 	}); err != nil {
 		if h.logger != nil {
 			h.logger.Error("shipments: label email dispatch failed",

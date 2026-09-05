@@ -39,6 +39,37 @@ func (s *SendGridSender) Send(ctx context.Context, msg Message) error {
 		return fmt.Errorf("email: SendGrid API key is not configured")
 	}
 
+	raw, err := json.Marshal(buildSendGridRequest(msg))
+	if err != nil {
+		return fmt.Errorf("email: marshal sendgrid request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://api.sendgrid.com/v3/mail/send", bytes.NewReader(raw))
+	if err != nil {
+		return fmt.Errorf("email: build sendgrid request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("email: sendgrid POST: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	respBody, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("email: sendgrid returned %d: %s", resp.StatusCode, string(respBody))
+}
+
+// buildSendGridRequest renders a Message into SendGrid's wire shape.
+// Split out of Send so the envelope — sender identity, reply-to and the
+// custom_args attribution the notification-service webhook receiver
+// joins on — can be asserted without an HTTP round trip.
+func buildSendGridRequest(msg Message) sgRequest {
 	// SendGrid rejects content entries with empty values and requires
 	// text/plain to precede text/html, so only the parts a mailer
 	// actually rendered are included (the ticket notifier is HTML-only).
@@ -73,7 +104,11 @@ func (s *SendGridSender) Send(ctx context.Context, msg Message) error {
 		Personalizations: []sgPersonalization{{
 			To: []sgAddress{{Email: msg.To, Name: msg.ToName}},
 		}},
-		From:        sgAddress{Email: msg.From, Name: msg.FromName},
+		From: sgAddress{Email: msg.From, Name: msg.FromName},
+		// Reply-To is a pointer so an unset one is omitted entirely;
+		// SendGrid rejects `"reply_to": {}` with a 400 rather than
+		// ignoring it.
+		ReplyTo:     replyToAddress(msg),
 		Subject:     msg.Subject,
 		Content:     content,
 		Attachments: attachments,
@@ -95,36 +130,25 @@ func (s *SendGridSender) Send(ctx context.Context, msg Message) error {
 			},
 		},
 	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("email: marshal sendgrid request: %w", err)
-	}
+	return body
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://api.sendgrid.com/v3/mail/send", bytes.NewReader(raw))
-	if err != nil {
-		return fmt.Errorf("email: build sendgrid request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+s.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("email: sendgrid POST: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+// replyToAddress renders Message.ReplyTo as SendGrid's reply_to object,
+// or nil when unset. The display name is deliberately NOT repeated here:
+// the merchant's contact address is their own mailbox, and labelling it
+// with the store name would let a store name reach a second header.
+func replyToAddress(msg Message) *sgAddress {
+	if msg.ReplyTo == "" {
 		return nil
 	}
-	respBody, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("email: sendgrid returned %d: %s", resp.StatusCode, string(respBody))
+	return &sgAddress{Email: msg.ReplyTo}
 }
 
 // SendGrid v3 API request shapes — minimum viable subset.
 type sgRequest struct {
 	Personalizations []sgPersonalization `json:"personalizations"`
 	From             sgAddress           `json:"from"`
+	ReplyTo          *sgAddress          `json:"reply_to,omitempty"`
 	Subject          string              `json:"subject"`
 	Content          []sgContent         `json:"content"`
 	Attachments      []sgAttachment      `json:"attachments,omitempty"`

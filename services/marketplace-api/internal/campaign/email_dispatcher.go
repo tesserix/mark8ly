@@ -55,12 +55,16 @@ func (d *EmailDispatcher) Send(ctx context.Context, msg OutboundEmail) error {
 		customArgs["campaign_id"] = msg.CampaignID
 	}
 
-	return d.sender.Send(ctx, email.Message{
-		From:       d.from,
+	out := email.Message{
 		To:         msg.Recipient,
 		Subject:    msg.Subject,
 		HTMLBody:   msg.HTMLBody,
 		TextBody:   msg.TextBody,
 		CustomArgs: customArgs,
-	})
+	}
+	// Customer-facing marketing sent BY the store, so it carries the
+	// store identity — never the platform's.
+	email.StoreIdentity(d.from, msg.Sender).Apply(&out)
+
+	return d.sender.Send(ctx, out)
 }

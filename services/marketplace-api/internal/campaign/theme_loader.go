@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/branding"
-	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/storeidentity"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -24,11 +24,16 @@ import (
 type StoreThemeLoader struct {
 	db          *gorm.DB
 	brandingSvc *branding.Service
+	identity    storeidentity.Loader
 }
 
 // NewStoreThemeLoader constructs a theme loader.
 func NewStoreThemeLoader(db *gorm.DB, brandingSvc *branding.Service) *StoreThemeLoader {
-	return &StoreThemeLoader{db: db, brandingSvc: brandingSvc}
+	return &StoreThemeLoader{
+		db:          db,
+		brandingSvc: brandingSvc,
+		identity:    storeidentity.NewDBLoader(db),
+	}
 }
 
 // LoadTheme resolves a store + its branding into a CampaignTheme. Any
@@ -41,14 +46,13 @@ func (l *StoreThemeLoader) LoadTheme(ctx context.Context, storeID uuid.UUID) (Ca
 	// worker calls us with a campaign's StoreID and an orphaned campaign
 	// should still attempt dispatch with neutral defaults (which will
 	// almost certainly fail downstream, surfacing the issue explicitly).
-	var store stores.Store
-	err := l.db.WithContext(ctx).
-		Where("id = ?", storeID).
-		First(&store).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	store, err := l.identity.Load(ctx, storeID)
+	if err != nil {
 		return CampaignTheme{}, fmt.Errorf("campaign: load store: %w", err)
 	}
 	theme.StoreName = store.Name
+	theme.StoreSlug = store.Slug
+	theme.StoreContactEmail = store.ContactEmail
 
 	// Branding is optional — service returns defaults when none exists,
 	// and ErrNotFound is surfaced for truly missing rows. Keep going with

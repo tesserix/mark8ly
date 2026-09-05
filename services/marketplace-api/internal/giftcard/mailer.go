@@ -40,7 +40,14 @@ type DeliveryInput struct {
 // gift-card email. Kept as a plain struct (not a branding type) so the
 // giftcard package doesn't depend on the branding package internals.
 type GiftCardEmailTheme struct {
-	StoreName       string
+	StoreName string
+	// StoreSlug and StoreContactEmail feed the ENVELOPE (#718) — the
+	// From local part and the Reply-To — not the rendered body. They
+	// live here because the theme loader already reads the store row, so
+	// carrying them costs no extra query.
+	StoreSlug         string
+	StoreContactEmail string
+
 	LogoURL         string
 	Tagline         string
 	ColorBackground string
@@ -267,14 +274,21 @@ func (m *DeliveryMailer) SendDelivery(ctx context.Context, in DeliveryInput) err
 		customArgs["tenant_id"] = in.TenantID
 	}
 
-	if err := m.sender.Send(ctx, email.Message{
-		From:       m.from,
+	msg := email.Message{
 		To:         in.Recipient,
 		Subject:    subject,
 		HTMLBody:   htmlBody,
 		TextBody:   textBody,
 		CustomArgs: customArgs,
-	}); err != nil {
+	}
+	// Customer-facing: a gift card arrives from the store that issued it.
+	email.StoreIdentity(m.from, email.StoreSender{
+		Name:         in.Theme.StoreName,
+		Slug:         in.Theme.StoreSlug,
+		ContactEmail: in.Theme.StoreContactEmail,
+	}).Apply(&msg)
+
+	if err := m.sender.Send(ctx, msg); err != nil {
 		return fmt.Errorf("giftcard: send delivery email: %w", err)
 	}
 	return nil

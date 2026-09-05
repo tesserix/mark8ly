@@ -117,6 +117,12 @@ type DocumentInput struct {
 	// — empty string suppresses the block entirely.
 	AdminNote string
 
+	// StoreContactEmail is store_branding.support_email — the merchant's
+	// own address, used as the customer-facing Reply-To so a reply to an
+	// order confirmation reaches the merchant instead of the platform's
+	// unattended noreply box. Empty falls back to the platform address.
+	StoreContactEmail string
+
 	// Brand surface
 	Theme Theme
 }
@@ -548,15 +554,24 @@ func (m *DocumentMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 		customArgs["tenant_id"] = in.TenantID
 	}
 
-	if err := m.sender.Send(ctx, email.Message{
-		From:        m.from,
+	msg := email.Message{
 		To:          in.Recipient,
 		Subject:     subject,
 		HTMLBody:    htmlBody,
 		TextBody:    textBody,
 		CustomArgs:  customArgs,
 		Attachments: attachments,
-	}); err != nil {
+	}
+	// Customer-facing: the buyer bought from this store, so the store is
+	// who the inbox line names (#718). Deliberately explicit here rather
+	// than defaulted in the transport — see email/identity.go.
+	email.StoreIdentity(m.from, email.StoreSender{
+		Name:         in.Theme.StoreName,
+		Slug:         in.StoreSlug,
+		ContactEmail: in.StoreContactEmail,
+	}).Apply(&msg)
+
+	if err := m.sender.Send(ctx, msg); err != nil {
 		return fmt.Errorf("orderdoc: send %s email: %w", string(kind), err)
 	}
 	return nil

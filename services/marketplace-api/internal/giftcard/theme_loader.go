@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/branding"
-	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/storeidentity"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -20,6 +20,7 @@ import (
 // never customized their branding still gets a polished email.
 type StoreThemeLoader struct {
 	db                *gorm.DB
+	identity          storeidentity.Loader
 	brandingSvc       *branding.Service
 	storefrontURLBase string // e.g. "https://{slug}.mark8ly.com" — {slug} is substituted
 }
@@ -31,6 +32,7 @@ type StoreThemeLoader struct {
 func NewStoreThemeLoader(db *gorm.DB, brandingSvc *branding.Service, storefrontURLBase string) *StoreThemeLoader {
 	return &StoreThemeLoader{
 		db:                db,
+		identity:          storeidentity.NewDBLoader(db),
 		brandingSvc:       brandingSvc,
 		storefrontURLBase: storefrontURLBase,
 	}
@@ -43,14 +45,13 @@ func (l *StoreThemeLoader) LoadTheme(ctx context.Context, storeID uuid.UUID) (Gi
 	theme := GiftCardEmailTheme{}
 	storefrontURL := ""
 
-	var store stores.Store
-	err := l.db.WithContext(ctx).
-		Where("id = ?", storeID).
-		First(&store).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	store, err := l.identity.Load(ctx, storeID)
+	if err != nil {
 		return GiftCardEmailTheme{}, "", fmt.Errorf("giftcard: load store: %w", err)
 	}
 	theme.StoreName = store.Name
+	theme.StoreSlug = store.Slug
+	theme.StoreContactEmail = store.ContactEmail
 
 	// Build storefront URL from template if we have a slug + template.
 	if store.Slug != "" && l.storefrontURLBase != "" {

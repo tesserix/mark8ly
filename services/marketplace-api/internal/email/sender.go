@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 )
 
 // Message is one outbound email, provider-agnostic. The product mailers
@@ -24,6 +25,15 @@ type Message struct {
 	FromName string // optional display name (e.g. "Mark8ly Support")
 	To       string // recipient address — required
 	ToName   string // optional recipient display name
+
+	// ReplyTo, when set, is emitted as the RFC 5322 Reply-To header so a
+	// recipient's reply reaches a mailbox someone actually reads instead
+	// of the unattended From address. Store-branded mail carries the
+	// merchant's contact address (see StoreIdentity); platform mail
+	// leaves this empty rather than inviting replies to a noreply box.
+	// validate rejects a malformed value — a broken Reply-To silently
+	// strands every reply, so it fails the send instead.
+	ReplyTo string
 
 	Subject  string
 	HTMLBody string // either body may be empty, but not both
@@ -76,6 +86,30 @@ func validate(msg Message) error {
 	}
 	if msg.HTMLBody == "" && msg.TextBody == "" {
 		return fmt.Errorf("email: missing body")
+	}
+	// Header-injection backstop. Every one of these lands in an RFC 5322
+	// header, and FromName is merchant-controlled text (the store name).
+	// SafeDisplayName already neutralises it upstream, but this is the
+	// boundary no call site can bypass — and Resend's From is an inline
+	// "Name <addr>" string the provider re-parses, so a bare newline
+	// there is a real injection point rather than a JSON-escaped one.
+	for label, value := range map[string]string{
+		"from": msg.From, "from name": msg.FromName,
+		"to": msg.To, "to name": msg.ToName,
+		"reply-to": msg.ReplyTo, "subject": msg.Subject,
+	} {
+		if strings.ContainsAny(value, "\r\n\x00") {
+			return fmt.Errorf("email: %s contains a line break or NUL", label)
+		}
+	}
+	// An unset Reply-To is fine (platform mail); a set-but-unroutable one
+	// is not. Emitting it would strand every reply, and neither provider
+	// rejects it for us — SendGrid accepts any syntactically-plausible
+	// address and Resend accepts the string verbatim.
+	if msg.ReplyTo != "" {
+		if err := ValidateRecipient(msg.ReplyTo); err != nil {
+			return fmt.Errorf("email: invalid reply-to %q: %w", msg.ReplyTo, err)
+		}
 	}
 	return nil
 }

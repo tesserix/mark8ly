@@ -926,10 +926,6 @@ func handlePaymentMethodAttached(ctx context.Context, tx *gorm.DB, raw []byte) e
 // default_payment_method=null which clears the flag in handleCustomerUpdated.
 func handlePaymentMethodDetached(ctx context.Context, tx *gorm.DB, raw []byte) error { return nil }
 
-// handleFraudWarning is audit-only in P2.
-// TODO(P3): flag account for manual review via arbitrage_flag column.
-func handleFraudWarning(ctx context.Context, tx *gorm.DB, raw []byte) error { return nil }
-
 // extractCustomerID parses the customer ID from a standard Stripe event
 // payload that wraps the object under data.object.customer.
 func extractCustomerID(raw []byte) (string, error) {

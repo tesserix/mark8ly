@@ -1926,6 +1926,12 @@ func main() {
 		// invoice.finalized for validated tax IDs in reverse-charge jurisdictions.
 		dispatcher.WithReverseChargeAnnotator(billingStripeClient)
 
+		// #704: radar.early_fraud_warning carries a charge id and no customer,
+		// so attributing a Radar fraud warning to a store needs a live Stripe
+		// charge lookup. A nil client (no billing key) leaves the getter unset
+		// and every warning is recorded as unattributed rather than dropped.
+		dispatcher.WithChargeGetter(billingStripeClient)
+
 		// P8 §18.8: wire arbitrage recorder into the checkout webhook handler.
 		// KeyLoader + Hasher use Secret Manager when ARBITRAGE_HMAC_SECRET_PATH
 		// is set; omit gracefully in local dev (recorder stays nil → no-op).

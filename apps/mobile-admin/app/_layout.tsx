@@ -76,6 +76,7 @@ function AuthGate() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="login" />
+      <Stack.Screen name="otp" />
       <Stack.Screen name="notifications" />
     </Stack>
   );

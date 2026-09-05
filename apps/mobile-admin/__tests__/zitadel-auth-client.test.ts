@@ -9,13 +9,15 @@ function jsonResponse(status: number, body: unknown) {
   } as unknown as Response);
 }
 
-function clientWith(fetchImpl: jest.Mock) {
+type FetchMock = jest.Mock<Promise<Response>, [string, RequestInit]>;
+
+function clientWith(fetchImpl: FetchMock) {
   global.fetch = fetchImpl as unknown as typeof fetch;
   return createZitadelAuthClient({ baseUrl: "https://api.mark8ly.com" });
 }
 
 it("signs in and reports the tokens", async () => {
-  const f = jest.fn(() =>
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) =>
     jsonResponse(200, {
       data: {
         uid: "u1", email: "a@b.test", tenant_id: "t-1",
@@ -35,14 +37,14 @@ it("signs in and reports the tokens", async () => {
 
   const [url, init] = f.mock.calls[0];
   expect(url).toBe("https://api.mark8ly.com/api/v1/mobile/admin/auth/login");
-  expect((init as RequestInit).method).toBe("POST");
+  expect(init.method).toBe("POST");
   // No bearer: this call is how one is obtained.
-  expect((init as RequestInit).headers).not.toHaveProperty("Authorization");
+  expect(init.headers).not.toHaveProperty("Authorization");
 });
 
 // THE common first-login path: a fresh install is always a new device.
 it("reports an OTP challenge with the token needed to resume it", async () => {
-  const f = jest.fn(() =>
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) =>
     jsonResponse(200, {
       data: {
         uid: "u1", email: "a@b.test", tenant_id: "t-1",
@@ -63,7 +65,7 @@ it("reports an OTP challenge with the token needed to resume it", async () => {
 // normal OTP prompt would strand the user on a screen whose submit can
 // never succeed, so it fails loudly instead.
 it("rejects an OTP challenge that carries no pending token", async () => {
-  const f = jest.fn(() =>
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) =>
     jsonResponse(200, { data: { email_otp_required: true, email: "a@b.test" } }),
   );
   // Asserted on the stable code, not the copy: screens map from the code,
@@ -74,7 +76,7 @@ it("rejects an OTP challenge that carries no pending token", async () => {
 });
 
 it("maps 401 to invalid credentials", async () => {
-  const f = jest.fn(() => jsonResponse(401, { error: "invalid_credentials" }));
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) => jsonResponse(401, { error: "invalid_credentials" }));
   await expect(clientWith(f).signIn("a@b.test", "bad")).rejects.toMatchObject({
     code: "invalid_credentials",
   });
@@ -83,7 +85,7 @@ it("maps 401 to invalid credentials", async () => {
 // 404 no_store is a distinct, actionable state — the account exists but has
 // no store — and must not be flattened into "wrong password".
 it("maps 404 no_store distinctly", async () => {
-  const f = jest.fn(() => jsonResponse(404, { error: "no_store" }));
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) => jsonResponse(404, { error: "no_store" }));
   await expect(clientWith(f).signIn("a@b.test", "pw")).rejects.toMatchObject({
     code: "no_store",
   });
@@ -92,14 +94,14 @@ it("maps 404 no_store distinctly", async () => {
 // A 502 means the credential may have been correct. Reporting it as a bad
 // password makes a merchant retype a correct one indefinitely.
 it("maps 502 to an availability error, not a credential error", async () => {
-  const f = jest.fn(() => jsonResponse(502, { error: "auth_unavailable" }));
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) => jsonResponse(502, { error: "auth_unavailable" }));
   await expect(clientWith(f).signIn("a@b.test", "pw")).rejects.toMatchObject({
     code: "auth_unavailable",
   });
 });
 
 it("completes the OTP challenge and returns tokens", async () => {
-  const f = jest.fn(() =>
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) =>
     jsonResponse(200, {
       data: {
         uid: "u1", email: "a@b.test", tenant_id: "t-1",
@@ -114,14 +116,14 @@ it("completes the OTP challenge and returns tokens", async () => {
 
   const [url, init] = f.mock.calls[0];
   expect(url).toBe("https://api.mark8ly.com/api/v1/mobile/admin/auth/otp/verify");
-  expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+  expect(JSON.parse(init.body as string)).toEqual({
     pending_token: "sealed-value",
     code: "123456",
   });
 });
 
 it("maps a rejected OTP code to invalid_code", async () => {
-  const f = jest.fn(() => jsonResponse(401, { error: "invalid_code" }));
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) => jsonResponse(401, { error: "invalid_code" }));
   await expect(clientWith(f).verifyOtp("sealed", "000000")).rejects.toMatchObject({
     code: "invalid_code",
   });

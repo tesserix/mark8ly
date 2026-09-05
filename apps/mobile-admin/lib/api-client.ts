@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createApiClient } from "@repo/mobile-shared/api/client";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useAuthNoticeStore } from "@repo/mobile-shared/stores/auth-notice";
+import { zitadelSession } from "@repo/mobile-shared/auth/zitadel-session";
+import { isZitadelProvider } from "@/lib/auth-provider";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useEnvironment } from "@repo/mobile-shared/config/env";
 import { createDemoApiClient } from "./demo-api-client";
@@ -36,7 +38,12 @@ export function useApiClient() {
     () =>
       createApiClient({
         baseUrl: env.apiBaseUrl,
-        getToken,
+        // Under Zitadel the bearer is a plain token this app persisted at
+        // sign-in, not something a Firebase SDK mints on demand. Falls back
+        // to the GIP getter so a non-Zitadel build is unchanged.
+        getToken: isZitadelProvider()
+          ? () => zitadelSession.accessTokenIfFresh()
+          : getToken,
         refreshToken,
         getStoreId: () => activeStore?.id ?? null,
         // Tenancy for a Zitadel token, which carries no tenant claim

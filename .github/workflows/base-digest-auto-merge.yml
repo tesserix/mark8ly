@@ -1,26 +1,21 @@
 name: base digest auto-merge
 
-# Auto-merges ONLY the Dependabot docker-ecosystem PRs that bump a pinned
-# ghcr.io/tesserix/base-* digest in a Dockerfile. This is the fix for a real
-# outage path: GHCR keeps just the latest weekly build of each base image, so
-# a pinned digest survives at most one rebuild before it 404s on pull. The
-# intended updater is Dependabot, and dependabot-auto-merge.yml exists to
-# land those PRs automatically — but it requires a DEPENDABOT_PAT secret that
-# does not exist in this repo, so it has never merged anything. A PR
-# triggered BY Dependabot gets a read-only GITHUB_TOKEN with no secret
-# access, which is exactly why that workflow needs a PAT at all. A
-# `schedule`-triggered run is an ordinary run: it gets a full-permission
-# GITHUB_TOKEN with no human credential required, so it can do the merge
-# itself.
+# Auto-merges ONLY the Renovate PRs that bump a pinned ghcr.io/tesserix/base-*
+# digest/tag in a Dockerfile. This is the fix for a real outage path: GHCR
+# keeps just the latest weekly build of each base image, so a pinned
+# reference survives at most one rebuild before it 404s on pull. Renovate
+# (mark8ly#689, replacing Dependabot) is the updater that opens these PRs,
+# but nothing was landing them automatically — the 2026-09-04 outage was
+# exactly that gap. A `schedule`-triggered run is an ordinary run: it gets a
+# full-permission GITHUB_TOKEN with no human credential required, so it can
+# do the merge itself.
 #
 # Scope is intentionally narrow — every one of these must hold or the PR is
 # left alone:
-#   - authored by dependabot[bot] — this is the real provenance boundary: the
-#     PR listing below only ever considers that author, so a human PR is
-#     never even enumerated. fetch-metadata performs its own secondary check
-#     of the PR author and Dependabot's commit metadata format, but that is
-#     a defense-in-depth parse, not the primary guarantee.
-#   - a `docker` ecosystem update, per dependabot/fetch-metadata
+#   - authored by renovate[bot] — this is the actual provenance boundary,
+#     read from GitHub's authoritative PR author field. A PR's title or
+#     branch name is caller-controlled text and proves nothing, so neither
+#     is used as a gate anywhere below.
 #   - every changed file in the PR is a Dockerfile (checked against the PR's
 #     actual file list, not inferred from its title)
 #   - every check run on the PR's head commit has completed, none failed,
@@ -28,10 +23,10 @@ name: base digest auto-merge
 #     not started yet, not that nothing needs to run (ci.yml triggers
 #     unconditionally on `pull_request`, no path filter)
 #
-# Anything else — a gomod/npm/github-actions Dependabot PR, or any
-# human-authored PR — is never touched. Runs daily (the upstream rebuild is
-# weekly, so this gives six chances to land a PR before the next prune) and
-# exits quietly when there is nothing to do.
+# Anything else — a non-Dockerfile Renovate PR, or any human-authored PR —
+# is never touched. Runs daily (the upstream rebuild is weekly, so this
+# gives six chances to land a PR before the next prune) and exits quietly
+# when there is nothing to do.
 
 on:
   schedule:
@@ -45,20 +40,20 @@ permissions:
 
 jobs:
   discover:
-    name: Find open Dependabot PRs
+    name: Find open Renovate PRs
     runs-on: ubuntu-latest
     outputs:
       prs: ${{ steps.list.outputs.prs }}
     steps:
-      - name: List open PRs authored by dependabot[bot]
+      - name: List open PRs authored by renovate[bot]
         id: list
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          prs=$(gh pr list --repo "$REPO" --state open --author "dependabot[bot]" --json number --jq '[.[].number]')
-          echo "Open Dependabot PRs: $prs"
+          prs=$(gh pr list --repo "$REPO" --state open --author "renovate[bot]" --json number --jq '[.[].number]')
+          echo "Open Renovate PRs: $prs"
           echo "prs=$prs" >> "$GITHUB_OUTPUT"
 
   evaluate:
@@ -71,39 +66,11 @@ jobs:
       matrix:
         pr: ${{ fromJson(needs.discover.outputs.prs) }}
     steps:
-      - name: Fetch PR as a synthetic pull_request event
-        id: pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          gh api "repos/$REPO/pulls/${{ matrix.pr }}" > pr.json
-          jq -n --slurpfile pr pr.json '{pull_request: $pr[0]}' > event.json
-          echo "path=$PWD/event.json" >> "$GITHUB_OUTPUT"
-
-      # fetch-metadata reads the pull_request event payload, not a live API
-      # call — this repo only triggers it on `pull_request`. A schedule run
-      # has no such payload, so we hand it one built from the PR we just
-      # fetched. It performs its own author/metadata check on top of this,
-      # but the `discover` job's author filter above is what actually keeps
-      # a human PR out of this matrix in the first place.
-      - name: Fetch Dependabot metadata
-        id: meta
-        continue-on-error: true
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3
-        env:
-          GITHUB_EVENT_PATH: ${{ steps.pr.outputs.path }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Evaluate eligibility and merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR: ${{ matrix.pr }}
-          META_OK: ${{ steps.meta.outcome }}
-          ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
         run: |
           set -euo pipefail
 
@@ -112,12 +79,15 @@ jobs:
             exit 0
           }
 
-          if [ "$META_OK" != "success" ]; then
-            skip "Dependabot metadata could not be verified (not from dependabot[bot], or an unsigned commit)."
-          fi
-
-          if [ "$ECOSYSTEM" != "docker" ]; then
-            skip "not a docker-ecosystem update (ecosystem: '${ECOSYSTEM:-unknown}') — left for a human or the existing PR-triggered workflow."
+          # The author field on the PR object itself is GitHub's authoritative
+          # record of who opened the PR — unlike a title or branch name, it
+          # cannot be set by the PR's contents. This is the actual provenance
+          # check; `discover`'s --author filter above is what keeps a human PR
+          # out of this matrix in the first place, and this re-check guards
+          # against a PR number changing hands between the two jobs.
+          author=$(gh api "repos/$REPO/pulls/$PR" --jq '.user.login')
+          if [ "$author" != "renovate[bot]" ]; then
+            skip "not authored by renovate[bot] (author: '$author')."
           fi
 
           files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename')
@@ -168,6 +138,6 @@ jobs:
             skip "no check runs found yet — CI has not started (ci.yml triggers on every pull_request with no path filter, so this means 'not yet', never 'none will run'); will re-check on tomorrow's run."
           fi
 
-          echo "::notice::PR #$PR is a docker digest bump touching only Dockerfile(s), all checks green — merging."
+          echo "::notice::PR #$PR is a base image bump touching only Dockerfile(s), all checks green — merging."
           gh pr merge --squash --delete-branch "$PR" --repo "$REPO"
           echo "::notice::PR #$PR merged."

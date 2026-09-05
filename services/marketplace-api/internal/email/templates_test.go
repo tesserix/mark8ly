@@ -10,7 +10,7 @@ import (
 )
 
 // sampleVars covers every field any billing template references, so one
-// map renders all eleven. Extra keys are harmless.
+// map renders them all. Extra keys are harmless.
 func sampleVars() map[string]any {
 	return map[string]any{
 		"store_id":           "11111111-2222-3333-4444-555555555555",
@@ -32,8 +32,8 @@ func TestRegisterFallbacks_EveryKeyRenders(t *testing.T) {
 	email.RegisterFallbacks(loader)
 
 	keys := email.BillingTemplateKeys()
-	if len(keys) != 12 {
-		t.Fatalf("BillingTemplateKeys() has %d keys, want 12", len(keys))
+	if len(keys) != 14 {
+		t.Fatalf("BillingTemplateKeys() has %d keys, want 14", len(keys))
 	}
 
 	for _, key := range keys {

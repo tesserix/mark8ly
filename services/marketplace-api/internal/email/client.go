@@ -34,6 +34,14 @@ const (
 	// to reactivate.
 	TemplateTrialExpired TemplateID = "trial_expired"
 
+	// Migration fast-path decisions (#703). A merchant submits evidence of
+	// trading on a prior platform and a CSM approves or rejects it; these
+	// two close that loop. The CSM's review notes are NOT rendered into
+	// either template — they are written for internal review, not for the
+	// merchant. See migration.Handler.notifyDecision.
+	TemplateMigrationFastPathApproved TemplateID = "migration_fast_path_approved"
+	TemplateMigrationFastPathRejected TemplateID = "migration_fast_path_rejected"
+
 	// Day-30 post-expiry win-back promo. Lived in the lifecycle package
 	// until #381; moved here so the billing catalog is complete in one
 	// place and the email package can register its fallback without

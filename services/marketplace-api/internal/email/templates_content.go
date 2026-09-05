@@ -55,6 +55,9 @@ var billingSubjects = map[TemplateID]string{
 	TemplateTrialStartedBilled:    `Your {{.plan}} plan for {{.store_name}} is active`,
 	TemplateTrialExpired:          `Your {{.store_name}} trial has ended`,
 	TemplateWinBack:               `Come back to Mark8ly — 20% off six months`,
+
+	TemplateMigrationFastPathApproved: `Your migration request for {{.store_name}} is approved`,
+	TemplateMigrationFastPathRejected: `We could not approve the migration request for {{.store_name}}`,
 }
 
 // --- HTML fragments -------------------------------------------------
@@ -109,6 +112,15 @@ var billingHTMLFragments = map[TemplateID]string{
 	TemplateWinBack: `<h1 ` + h1 + `>Your store is still here</h1>
 <p><strong>{{.store_name}}</strong> has been closed for a month. Everything — products, orders, settings — is exactly as you left it.</p>
 <p>If you want to pick it back up, we will take <strong>20% off your first six months</strong>.</p>`,
+
+	TemplateMigrationFastPathApproved: `<h1 ` + h1 + `>Your migration request is approved</h1>
+<p>We reviewed the evidence you sent for <strong>{{.store_name}}</strong> and approved your migration request. Nothing further is needed from you.</p>
+<p>You can see the current state of your plan any time in your Mark8ly billing settings.</p>`,
+
+	TemplateMigrationFastPathRejected: `<h1 ` + h1 + `>We could not approve your migration request</h1>
+<p>We reviewed the evidence you sent for <strong>{{.store_name}}</strong> and were not able to approve the migration request this time.</p>
+<p>Your store is unaffected — this changes nothing about your current plan, and you can submit a new request with different evidence.</p>
+<p>If you would like to know more about this decision, reply to this email and our team will go through it with you.</p>`,
 }
 
 // --- text fragments -------------------------------------------------
@@ -217,6 +229,24 @@ Mark8ly`,
 {{.store_name}} has been closed for a month. Everything — products, orders, settings — is exactly as you left it.
 
 If you want to pick it back up, we will take 20% off your first six months.
+
+Mark8ly`,
+
+	TemplateMigrationFastPathApproved: `Your migration request is approved
+
+We reviewed the evidence you sent for {{.store_name}} and approved your migration request. Nothing further is needed from you.
+
+You can see the current state of your plan any time in your Mark8ly billing settings.
+
+Mark8ly`,
+
+	TemplateMigrationFastPathRejected: `We could not approve your migration request
+
+We reviewed the evidence you sent for {{.store_name}} and were not able to approve the migration request this time.
+
+Your store is unaffected — this changes nothing about your current plan, and you can submit a new request with different evidence.
+
+If you would like to know more about this decision, reply to this email and our team will go through it with you.
 
 Mark8ly`,
 }

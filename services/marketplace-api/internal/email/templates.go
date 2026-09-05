@@ -31,6 +31,8 @@ var billingTemplateKeys = []TemplateID{
 	TemplateDunningDay5,
 	TemplateDunningDay7,
 	TemplateWinBack,
+	TemplateMigrationFastPathApproved,
+	TemplateMigrationFastPathRejected,
 }
 
 // BillingTemplateKeys returns a copy of the catalog. A copy, so a caller

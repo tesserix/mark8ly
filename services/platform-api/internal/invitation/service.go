@@ -455,8 +455,7 @@ func (s *Service) Accept(ctx context.Context, in AcceptInput) (*AcceptResult, er
 		first, last := profileNames(in.FirstName, in.LastName, inv.Email)
 		zitadelUID, err := s.provisioner.ProvisionStaff(ctx, inv.Email, first, last, in.Password)
 		if err != nil {
-			return nil, apperrors.Wrap(err, 500, "provisioning_failed",
-				"we couldn't finish setting up your account — please try the invitation link again")
+			return nil, provisioningError(err, inv.ID, inv.TenantID, in.Password)
 		}
 		// Both identity keys, deliberately. Three readers disagree on
 		// what a member is keyed by:

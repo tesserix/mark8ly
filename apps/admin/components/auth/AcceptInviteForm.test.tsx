@@ -76,7 +76,7 @@ beforeEach(() => {
   });
 });
 
-async function submitExistingAccount(password = "correct-horse-battery") {
+async function submitExistingAccount(password = "Not-A-Real-Password-1!") {
   await userEvent.type(screen.getByLabelText(/^password$/i), password);
   await userEvent.click(screen.getByRole("button", { name: /accept invite|sign in and accept/i }));
 }
@@ -99,7 +99,7 @@ describe("AcceptInviteForm — Zitadel path", () => {
     expect(acceptInviteWithZitadel).toHaveBeenCalledWith({
       token: "invite-token",
       email: "staff@example.com",
-      password: "correct-horse-battery",
+      password: "Not-A-Real-Password-1!",
     });
     // No GIP account creation, no GIP sign-in, and therefore no
     // id_token for the old accept action to forward.
@@ -150,6 +150,70 @@ describe("AcceptInviteForm — Zitadel path", () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
+  // The exact password from the production incident: eleven characters,
+  // which the old `min(8)` schema accepted and Zitadel's 12-character
+  // policy then rejected with a message that explained nothing.
+  it("rejects the 11-character password that failed in production, before submitting", async () => {
+    render(
+      <AcceptInviteForm
+        token="invite-token"
+        invitation={invitation}
+        provider="zitadel"
+      />,
+    );
+
+    await submitExistingAccount("Test@123_01");
+
+    expect(
+      await screen.findByText(/at least 12 characters/i),
+    ).toBeTruthy();
+    // The whole point: it never reaches the server.
+    expect(acceptInviteWithZitadel).not.toHaveBeenCalled();
+  });
+
+  it("shows the full requirements before the first submit", () => {
+    render(
+      <AcceptInviteForm
+        token="invite-token"
+        invitation={invitation}
+        provider="zitadel"
+      />,
+    );
+
+    const hint = screen.getByText(/at least 12 characters/i);
+    expect(hint).toBeTruthy();
+    expect(hint.textContent).toMatch(/uppercase/i);
+    expect(hint.textContent).toMatch(/lowercase/i);
+    expect(hint.textContent).toMatch(/number/i);
+    expect(hint.textContent).toMatch(/symbol/i);
+  });
+
+  it("renders the server's specific policy error on the password field", async () => {
+    // Client validation and the server's policy can drift; the server is
+    // authoritative, so its message has to be renderable even for a
+    // password the client accepted.
+    acceptInviteWithZitadel.mockResolvedValue({
+      ok: false,
+      code: "password_policy",
+      message: "That password needs a symbol, for example ! ? @ or #.",
+    });
+
+    render(
+      <AcceptInviteForm
+        token="invite-token"
+        invitation={invitation}
+        provider="zitadel"
+      />,
+    );
+
+    await submitExistingAccount();
+
+    const error = await screen.findByRole("alert");
+    expect(error).toHaveTextContent(/needs a symbol/i);
+    expect(error.id).toBe("invite-password-error");
+    expect(assign).not.toHaveBeenCalled();
+  });
+
   it("offers no Google button — that path is GIP end to end", () => {
     render(
       <AcceptInviteForm
@@ -174,7 +238,7 @@ describe("AcceptInviteForm — GIP path (unchanged)", () => {
     await waitFor(() => expect(acceptInvite).toHaveBeenCalledTimes(1));
     expect(signInWithPassword).toHaveBeenCalledWith(
       "staff@example.com",
-      "correct-horse-battery",
+      "Not-A-Real-Password-1!",
     );
     expect(acceptInvite).toHaveBeenCalledWith({
       token: "invite-token",
@@ -190,19 +254,31 @@ describe("AcceptInviteForm — GIP path (unchanged)", () => {
     render(<AcceptInviteForm token="invite-token" invitation={invitation} />);
 
     await userEvent.click(screen.getByRole("tab", { name: /create an account/i }));
-    await userEvent.type(screen.getByLabelText(/^create password$/i), "pw-123456789");
+    await userEvent.type(screen.getByLabelText(/^create password$/i), "Also-Not-A-Real-Password-2!");
     await userEvent.type(
       screen.getByLabelText(/^confirm password$/i),
-      "pw-123456789",
+      "Also-Not-A-Real-Password-2!",
     );
     await userEvent.click(
       screen.getByRole("button", { name: /create account and join store/i }),
     );
 
     await waitFor(() =>
-      expect(signUp).toHaveBeenCalledWith("staff@example.com", "pw-123456789"),
+      expect(signUp).toHaveBeenCalledWith("staff@example.com", "Also-Not-A-Real-Password-2!"),
     );
     expect(acceptInviteWithZitadel).not.toHaveBeenCalled();
+  });
+
+  it("does not hold an existing GIP sign-in password to the Zitadel policy", async () => {
+    // GIP's own minimum is 8. A user whose password was set under that
+    // rule must still be able to sign in and accept — they cannot change
+    // it from this form.
+    render(<AcceptInviteForm token="invite-token" invitation={invitation} />);
+
+    await submitExistingAccount("gip-old8");
+
+    await waitFor(() => expect(signInWithPassword).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(/at least 12 characters/i)).toBeNull();
   });
 
   it("still offers the Google button", () => {

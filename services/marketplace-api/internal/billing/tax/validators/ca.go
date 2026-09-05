@@ -22,7 +22,10 @@ func NewCA() *CAValidator { return &CAValidator{} }
 // Country returns ISO-3166 alpha-2.
 func (v *CAValidator) Country() string { return "CA" }
 
-// Validate checks BN shape only, mirroring BusinessName as RegistryName.
+// Validate checks BN shape only. No CRA registry lookup exists, so no registry
+// name is returned and the name match records as "not_checked" (#707). It
+// previously echoed the submitted name back, which wrote "matched" for a check
+// that never ran.
 func (v *CAValidator) Validate(_ context.Context, req tax.ValidationRequest) (tax.ValidationResult, error) {
 	if req.Country != "CA" {
 		return tax.ValidationResult{}, tax.ErrInvalidFormat
@@ -32,7 +35,8 @@ func (v *CAValidator) Validate(_ context.Context, req tax.ValidationRequest) (ta
 		return tax.ValidationResult{}, tax.ErrInvalidFormat
 	}
 	return tax.ValidationResult{
-		Valid:        true,
-		RegistryName: req.BusinessName,
+		Valid: true,
+		// Deliberately empty — see the doc comment (#707).
+		RegistryName: "",
 	}, nil
 }

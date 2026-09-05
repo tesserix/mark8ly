@@ -20,6 +20,12 @@ import { theme } from '@/lib/theme';
 import { IconButton } from '@/components/ui/IconButton';
 import { LinkAccountPrompt } from '../components/auth/LinkAccountPrompt';
 import { Text } from '../components/ui/Text';
+import { router } from 'expo-router';
+import { useTenantStore } from '@repo/mobile-shared/stores/tenant-store';
+import { useEnvironment } from '@repo/mobile-shared/config/env';
+import { createZitadelSignIn } from '@repo/mobile-shared/auth/zitadel-signin';
+import { ZitadelAuthError } from '@repo/mobile-shared/auth/zitadel-client';
+import { isZitadelProvider } from '@/lib/auth-provider';
 
 const DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === 'demo';
 
@@ -116,6 +122,8 @@ function AppleMark({ size = PROVIDER_MARK }: { size?: number }) {
 
 export default function LoginScreen() {
   const { signIn, signInWithGoogle, signInWithApple } = useAuth();
+  const env = useEnvironment();
+  const setTenantId = useTenantStore((s) => s.setTenantId);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -135,8 +143,44 @@ export default function LoginScreen() {
     setError(null);
     setSubmitting(true);
     try {
+      if (isZitadelProvider()) {
+        // Our own form, posted to marketplace-api rather than to Zitadel's
+        // hosted login. A fresh install is always an unrecognised device,
+        // so the usual answer here is a challenge, not a session.
+        const out = await createZitadelSignIn(env.apiBaseUrl).signIn(email, password, setTenantId);
+        if (out.kind === 'otp') {
+          router.push({
+            pathname: '/otp',
+            params: { pendingToken: out.pendingToken ?? '', email: out.email },
+          });
+          return;
+        }
+        router.replace('/(tabs)');
+        return;
+      }
       await signIn(email, password);
     } catch (e: unknown) {
+      if (isZitadelProvider() && e instanceof ZitadelAuthError) {
+        // Mapped from the server's stable code. `no_store` is a real,
+        // actionable state — the account exists but has no store — and
+        // `auth_unavailable` must never read as a wrong password.
+        setError(
+          e.code === 'invalid_credentials'
+            ? "Couldn't sign you in. Check your details and try again."
+            : e.code === 'no_store'
+              ? "We couldn't find a store for this account. Did you finish onboarding?"
+              : e.code === 'auth_unavailable' || e.code === 'network'
+                ? 'Sign-in is temporarily unavailable. Try again shortly.'
+                : e.code === 'challenge_unresumable'
+                  // The server asked for a verification step but sent
+                  // nothing to resume it with — in practice, an app newer
+                  // than the API it is talking to. Distinct copy because
+                  // "try again" is useless advice here: retrying repeats it.
+                  ? 'This app version needs an update to finish signing in.'
+                  : GENERIC_AUTH_ERROR,
+        );
+        return;
+      }
       const msg = authErrorMessage(e);
       // null is the mapper's deliberate "user cancelled — stay silent" signal;
       // anything else always surfaces copy, falling back to generic wording so

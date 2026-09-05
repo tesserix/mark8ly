@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/mark8ly/auth-bff/internal/geoip"
 )
@@ -67,6 +68,11 @@ type CompleteFunc func(ctx context.Context, w http.ResponseWriter, lc LoginConte
 type Handler struct {
 	c        *Client
 	complete CompleteFunc
+	// tokens/tokenRedirectURI power the mobile routes only. Nil leaves
+	// them refusing rather than degrading — see WithTokenIssuer.
+	tokens           *TokenExchanger
+	tokenRedirectURI string
+	tokenProjectID   string
 
 	// hostedLoginBaseURL is the Zitadel instance's own login UI (the
 	// Aurora-branded hosted login), used ONLY as the OutcomeHandoff target
@@ -152,6 +158,26 @@ func (h *Handler) WithOrgID(id string) *Handler {
 	return h
 }
 
+// WithTokenIssuer enables the mobile routes, which answer a completed
+// login with OAuth tokens instead of a callback_url.
+//
+// The mobile app keeps mark8ly's own login form rather than being sent to
+// Zitadel's hosted login, so it posts credentials here — but it then has
+// to call marketplace-api, which verifies a BEARER JWT and cannot use a
+// session cookie or a callback URL. redirectURI must byte-match the one
+// the auth request was created with.
+//
+// Unset, the mobile routes fail closed with 500 rather than falling back
+// to callback_url: that fallback would look like a successful login right
+// up until the first API call 401s, which is the hardest possible failure
+// to diagnose from a device.
+func (h *Handler) WithTokenIssuer(ex *TokenExchanger, redirectURI, adminProjectID string) *Handler {
+	h.tokens = ex
+	h.tokenRedirectURI = redirectURI
+	h.tokenProjectID = adminProjectID
+	return h
+}
+
 // Register mounts the Zitadel login routes onto the given gin.RouterGroup.
 // The handlers themselves are plain net/http funcs so this package's tests
 // stay httptest-only; the two routing closures below are the ONLY place gin
@@ -164,6 +190,19 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 	})
 	r.POST("/zitadel/totp", func(c *gin.Context) {
 		h.totp(c.Writer, withClientIP(c.Request, c.ClientIP()))
+	})
+
+	// Mobile surface (#686). Same handlers, same internal-auth gate, same
+	// gauntlet — they differ ONLY in answering a completed login with
+	// tokens, because marketplace-api verifies a bearer JWT and a native
+	// client can use neither a session cookie nor a callback_url. Mounted
+	// as separate routes rather than a request flag so a web caller can
+	// never opt itself into token issuance.
+	r.POST("/zitadel/mobile/login", func(c *gin.Context) {
+		h.mobileLogin(c.Writer, withClientIP(c.Request, c.ClientIP()))
+	})
+	r.POST("/zitadel/mobile/totp", func(c *gin.Context) {
+		h.mobileTOTP(c.Writer, withClientIP(c.Request, c.ClientIP()))
 	})
 
 	// Google sign-in through Zitadel's IDP-intent flow (#524 phase 3c-2).
@@ -263,6 +302,19 @@ type totpRequest struct {
 // creates a Zitadel password session, and asks sufficiency.go whether that
 // session may finalize.
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+	h.loginMode(w, r, false)
+}
+
+// mobileLogin is login with one difference: a completed login answers with
+// tokens. It shares the whole path deliberately — the credential
+// enumeration collapse, resolving the subject from Zitadel rather than the
+// request body, the gauntlet, and the step-up gate are all security
+// properties that must not be reimplemented per surface.
+func (h *Handler) mobileLogin(w http.ResponseWriter, r *http.Request) {
+	h.loginMode(w, r, true)
+}
+
+func (h *Handler) loginMode(w http.ResponseWriter, r *http.Request, issueTokens bool) {
 	ctx := r.Context()
 
 	// First, before the body is even read: an unauthenticated caller must
@@ -278,6 +330,21 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
 		return
 	}
+	// A mobile caller has no browser to be redirected through
+	// /oauth/v2/authorize, so it cannot obtain an auth_request_id and the
+	// server mints one for it. Web callers still must supply theirs: the
+	// browser already has one, and creating a second would orphan the
+	// flow the user is actually in.
+	if issueTokens && req.AuthRequestID == "" {
+		id, err := h.newAuthRequest(ctx)
+		if err != nil {
+			slog.ErrorContext(ctx, "zitadellogin: could not create an auth request for mobile login", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+			return
+		}
+		req.AuthRequestID = id
+	}
+
 	if req.AuthRequestID == "" || req.LoginName == "" || req.Password == "" || req.WorkspaceTenant == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
 		return
@@ -295,13 +362,23 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	// Password login through this page is never a federated (Google/Apple)
 	// identity — those never present a password to us at all.
 	res, err := h.c.CompleteIfSufficient(ctx, req.AuthRequestID, sess, false)
-	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant)
+	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant, issueTokens)
 }
 
 // totp reads {auth_request_id, login_name, session_id, session_token, code,
 // workspace_tenant}, submits the TOTP code against the session opened by
 // login, and re-asks sufficiency.go whether the session may now finalize.
 func (h *Handler) totp(w http.ResponseWriter, r *http.Request) {
+	h.totpMode(w, r, false)
+}
+
+// mobileTOTP is totp for the mobile surface: same verification, tokens
+// instead of a callback_url on completion.
+func (h *Handler) mobileTOTP(w http.ResponseWriter, r *http.Request) {
+	h.totpMode(w, r, true)
+}
+
+func (h *Handler) totpMode(w http.ResponseWriter, r *http.Request, issueTokens bool) {
 	ctx := r.Context()
 
 	// See login: reject before any Zitadel call.
@@ -335,7 +412,7 @@ func (h *Handler) totp(w http.ResponseWriter, r *http.Request) {
 	// instead, so a caller cannot walk away with a session cookie, an audit
 	// event, or a mailed sign-in code addressed to an email of their choice.
 	res, err := h.c.CompleteAfterFactor(ctx, req.AuthRequestID, sess)
-	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant)
+	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant, issueTokens)
 }
 
 type idpStartRequest struct {
@@ -578,8 +655,11 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 	// forceMfaLocalOnly (which applies only to local/password credentials —
 	// see LoginPolicy's doc) must not apply to it, unlike login()'s
 	// password path immediately below in this file.
+	// issueTokens=false: Google sign-in has no mobile surface yet — the
+	// app's Google button still goes through the Firebase SDK. When it
+	// moves to Zitadel this becomes a mode parameter like login/totp.
 	res, err := h.c.CompleteIfSufficient(ctx, req.AuthRequestID, sess, true)
-	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant)
+	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant, false)
 }
 
 // idpCompleteRequest is what the admin app posts once it has resolved which
@@ -651,7 +731,7 @@ func (h *Handler) idpComplete(w http.ResponseWriter, r *http.Request) {
 	// comment on forceMfaLocalOnly) — a session reaching this endpoint is
 	// always the product of a Google IDP intent, never a password login.
 	res, err := h.c.CompleteIfSufficient(ctx, req.AuthRequestID, sess, true)
-	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant)
+	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant, false)
 }
 
 // respondIDPIntentError maps RetrieveIDPIntent's errors. Mirrors
@@ -681,6 +761,7 @@ func (h *Handler) respondOutcome(
 	authRequestID string,
 	sess Session,
 	workspaceTenant string,
+	issueTokens bool,
 ) {
 	ctx := r.Context()
 	switch res.Outcome {
@@ -694,7 +775,7 @@ func (h *Handler) respondOutcome(
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
 			return
 		}
-		h.finishComplete(w, r, res, sess, workspaceTenant)
+		h.finishComplete(w, r, res, sess, workspaceTenant, issueTokens)
 
 	case OutcomeFactorRequired:
 		// No session minted here — this IS the MFA gate. Minting now would
@@ -727,7 +808,7 @@ func (h *Handler) respondOutcome(
 
 // finishComplete resolves the subject of the now-sufficient session and runs
 // the shared post-identity gauntlet via the injected CompleteFunc.
-func (h *Handler) finishComplete(w http.ResponseWriter, r *http.Request, res Result, sess Session, workspaceTenant string) {
+func (h *Handler) finishComplete(w http.ResponseWriter, r *http.Request, res Result, sess Session, workspaceTenant string, issueTokens bool) {
 	ctx := r.Context()
 	// Result carries no subject — re-read it.
 	factors, err := h.c.SessionFactors(ctx, sess.ID)
@@ -783,7 +864,67 @@ func (h *Handler) finishComplete(w http.ResponseWriter, r *http.Request, res Res
 		})
 		return
 	}
+	if issueTokens {
+		h.respondTokens(w, r, res, factors.UserID, email, workspaceTenant)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"callback_url": res.CallbackURL})
+}
+
+// newAuthRequest starts an OIDC flow server-side for a mobile login.
+//
+// The state parameter is not used for CSRF here: there is no browser
+// round-trip to protect — the same process creates the request, drives the
+// login and exchanges the code — so it carries a random value purely to
+// satisfy the parameter.
+func (h *Handler) newAuthRequest(ctx context.Context) (string, error) {
+	if h.tokens == nil {
+		return "", fmt.Errorf("zitadellogin: no token issuer configured")
+	}
+	return h.tokens.CreateAuthRequest(ctx, h.tokenRedirectURI, h.tokenProjectID, uuid.NewString())
+}
+
+// respondTokens exchanges the completed login's authorization code for
+// OAuth tokens and returns them to the mobile client.
+//
+// Reached only after the full gauntlet has passed with no outstanding
+// step-up, so by here the login IS complete — the exchange is the last
+// step, not another gate.
+func (h *Handler) respondTokens(w http.ResponseWriter, r *http.Request, res Result, uid, email, workspaceTenant string) {
+	ctx := r.Context()
+	if h.tokens == nil {
+		slog.ErrorContext(ctx, "zitadellogin: mobile login completed but no token issuer is configured")
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+		return
+	}
+
+	code, err := CodeFromCallbackURL(res.CallbackURL)
+	if err != nil {
+		slog.ErrorContext(ctx, "zitadellogin: completed login produced no usable code", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+		return
+	}
+
+	tok, err := h.tokens.ExchangeCodeForTokens(ctx, code, h.tokenRedirectURI)
+	if err != nil {
+		slog.ErrorContext(ctx, "zitadellogin: token exchange failed after a completed login", "err", err, "user_id", uid)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+		return
+	}
+
+	// The callback_url is deliberately NOT included: a mobile client has
+	// no use for it, and it carries a live authorization code.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"uid":           uid,
+			"email":         email,
+			"tenant_id":     workspaceTenant,
+			"access_token":  tok.AccessToken,
+			"refresh_token": tok.RefreshToken,
+			"token_type":    tok.TokenType,
+			"expires_in":    tok.ExpiresIn,
+		},
+	})
 }
 
 // respondSessionCreateError maps CreatePasswordSession's errors.

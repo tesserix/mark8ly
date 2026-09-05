@@ -393,7 +393,7 @@ func Register(g *gin.RouterGroup, deps Deps) {
 		// still cannot be reached.
 		NewEmailTemplatesHandler(
 			deps.EmailTemplates, deps.EmailTemplateRegistry,
-			deps.EmailTemplateTestSender, deps.DB != nil, deps.Logger,
+			deps.EmailTemplateTestSender, deps.DB != nil, deps.DB, deps.Logger,
 		).Register(group)
 		if deps.DB == nil && deps.Logger != nil {
 			deps.Logger.Warn("platformadmin: email template write route not mounted — DB is required to record the change against an operator")

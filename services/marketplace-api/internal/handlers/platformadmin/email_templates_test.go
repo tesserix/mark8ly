@@ -144,11 +144,24 @@ func templateRouter(
 		c.Set(platformadmin.CtxOperatorID, testOperatorID)
 		c.Set(platformadmin.CtxCapability, "platform.email_templates.write")
 	})
-	platformadmin.NewEmailTemplatesHandler(store, registry, sender, writable, nil).Register(g)
+	platformadmin.NewEmailTemplatesHandler(store, registry, sender, writable, nil, nil).Register(g)
 	return r
 }
 
+// do sends an Idempotency-Key by default, because the PUT requires one
+// (#730) and every other assertion in this file is about something else.
+// Use doWithoutIdempotencyKey for the case that tests the requirement.
 func do(t *testing.T, r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return doHeaders(t, r, method, path, body, true)
+}
+
+func doWithoutIdempotencyKey(t *testing.T, r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return doHeaders(t, r, method, path, body, false)
+}
+
+func doHeaders(t *testing.T, r *gin.Engine, method, path, body string, withIdempotencyKey bool) *httptest.ResponseRecorder {
 	t.Helper()
 	var req *http.Request
 	if body == "" {
@@ -156,6 +169,9 @@ func do(t *testing.T, r *gin.Engine, method, path, body string) *httptest.Respon
 	} else {
 		req = httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if withIdempotencyKey {
+		req.Header.Set("Idempotency-Key", "test-key-"+method+"-"+path)
 	}
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)

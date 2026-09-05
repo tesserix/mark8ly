@@ -1,5 +1,54 @@
 # `mcp-catalog` Deployment Implementation Plan
 
+> # ⚠️ SUPERSEDED — DO NOT EXECUTE
+>
+> **Superseded 2026-09-05 by [australis ADR-0005](https://github.com/tesserix/australis/blob/main/docs/adr/0005-mark8ly-catalog-on-the-shared-gateway.md).**
+>
+> This plan stands up a product-owned `mcp-catalog` workload — image, chart, ArgoCD
+> Application, ExternalSecret, mesh policy, Kargo subscription, Registry record.
+> **That workload was never created and will not be.**
+>
+> What actually happened: the five catalog tools ship as tenant tools inside
+> `slm-support-platform/services/mcp-gateway`
+> ([slm-support-platform#23](https://github.com/tesserix/slm-support-platform/pull/23)),
+> served by the existing `mark8ly-mcp` deployment. **Verified live on 2026-09-05** —
+> a `tools/list` against the running gateway returns thirteen mark8ly tools, the
+> original eight plus `list_store_products`, `get_store_product`,
+> `list_store_categories`, `list_products_by_category` and `get_store_branding`.
+>
+> Executing this plan now would build an image nothing runs (mark8ly#687 removed
+> that entry), add an eighth subscription to a Kargo warehouse that must stay at
+> seven, and duplicate tools already being served.
+>
+> ## What is still true, and worth reading
+>
+> These were established by reading the real handlers, and they outlived the plan:
+>
+> - **Pagination is `page`/`page_size`, capped at 100 — never `limit`/`offset`.**
+>   marketplace-api silently ignores the wrong names and returns page 1 forever.
+>   The OpenAPI document says `limit`/`offset` and is wrong.
+> - **List endpoints wrap in `{"data": […]}`; single-resource endpoints return a
+>   bare object.** Unwrapping the wrong one yields an empty result with no error.
+> - **Branding's promotion is `active_promotion`** — singular, top-level, omitted
+>   when absent. Not the plural nested array the spec implies.
+> - **Categories carry no product count**, whatever the spec claims.
+> - **`mark8ly` has ONE Kargo warehouse subscribed to seven images**, and freight
+>   forms only when all seven share a tag. An eighth subscription stalls every
+>   mark8ly deploy.
+> - **A waypoint alone does not admit a caller.** Reaching an MCP server needs a
+>   dedicated ServiceAccount, STRICT `PeerAuthentication`, workload *and*
+>   Service-targeted ALLOW/DENY, plus a NetworkPolicy.
+> - **Calling an MCP server needs more than a key**: `MCP-Protocol-Version`,
+>   `Mcp-Method`, a `Host` header, and a `params._meta` carrying both
+>   `io.modelcontextprotocol/protocolVersion` and
+>   `io.modelcontextprotocol/clientCapabilities`. Miss any and you get an error
+>   that reads like an auth failure and is not one.
+>
+> The design spec it implements
+> (`docs/superpowers/specs/2026-09-04-mark8ly-mcp-connectors-design.md`) is
+> likewise superseded on packaging, though its analysis of *why* the shared image
+> couples four products remains the honest account of the tradeoff ADR-0005 accepts.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Get `mcp-catalog` — merged, tested and sitting on `main` since #663 — actually running in the `mark8ly` namespace and answering a `tools/list`.

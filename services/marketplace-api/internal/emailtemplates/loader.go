@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	htmltpl "html/template"
+	"sort"
 	"sync"
 	texttpl "text/template"
 	"time"
@@ -106,6 +107,44 @@ func (l *Loader) Register(key string, fb EmbeddedFallback) {
 	l.fallbackMu.Lock()
 	defer l.fallbackMu.Unlock()
 	l.fallbacks[key] = fb
+}
+
+// RegisteredKeys returns every key that has an embedded fallback
+// registered, sorted. This is the ONLY view of the in-memory registry:
+// without it a key that is registered but has no email_templates row is
+// invisible to every reader, which is exactly why the twelve billing keys
+// could not be seen from the operator console (#717).
+//
+// It is deliberately separate from whatever rows the DB happens to hold —
+// the two sets overlap but neither contains the other, and the caller is
+// expected to merge them and say which state each key is in.
+func (l *Loader) RegisteredKeys() []string {
+	if l == nil {
+		return nil
+	}
+	l.fallbackMu.RLock()
+	keys := make([]string, 0, len(l.fallbacks))
+	for k := range l.fallbacks {
+		keys = append(keys, k)
+	}
+	l.fallbackMu.RUnlock()
+	sort.Strings(keys)
+	return keys
+}
+
+// Fallback returns the embedded default registered for key. The second
+// result reports whether the key is registered at all — a caller must not
+// treat the zero EmbeddedFallback as "an empty template", because an
+// unregistered key means no Go call site renders it and editing it would
+// create a row nothing ever reads.
+func (l *Loader) Fallback(key string) (EmbeddedFallback, bool) {
+	if l == nil {
+		return EmbeddedFallback{}, false
+	}
+	l.fallbackMu.RLock()
+	defer l.fallbackMu.RUnlock()
+	fb, ok := l.fallbacks[key]
+	return fb, ok
 }
 
 // Invalidate clears the cache entry for a given key so the next

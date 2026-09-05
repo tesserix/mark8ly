@@ -38,6 +38,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/auth"
+	"github.com/mark8ly/marketplace-api/internal/authbffclient"
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
 	appcredspkg "github.com/mark8ly/marketplace-api/internal/billing/appcreds"
@@ -1421,6 +1422,7 @@ func main() {
 		var teamHandler *admin.TeamHandler
 		var mobileAccountHandler *admin.MobileAccountHandler
 		var myTenantsHandler *admin.MobileMyTenantsHandler
+		var mobileLoginHandler *admin.MobileLoginHandler
 		if cfg.PlatformAPIURL != "" {
 			teamClient := teamproxy.NewClient(cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			teamHandler = admin.NewTeamHandler(teamClient, log)
@@ -1430,6 +1432,19 @@ func main() {
 			// and the route unmounted, which is the pre-existing shape for
 			// every platform-backed mobile route.
 			myTenantsHandler = admin.NewMobileMyTenantsHandler(teamClient, log)
+			// Public mobile sign-in (#686). Needs auth-bff as well as the
+			// platform client; both env vars already exist on this
+			// deployment, so no chart change. Unset AUTH_BFF_URL leaves it
+			// nil and the route unmounted.
+			if cfg.AuthBFFURL != "" {
+				mobileLoginHandler = admin.NewMobileLoginHandler(
+					teamClient,
+					authbffclient.NewMobileLoginClient(cfg.AuthBFFURL, cfg.InternalAuthSecret, nil),
+					log,
+				)
+			} else {
+				log.Info("mobile login: AUTH_BFF_URL empty; mobile sign-in route disabled")
+			}
 		} else {
 			log.Info("team: platform client not configured (MARKETPLACE_PLATFORM_API_URL empty); team + account-deletion routes disabled")
 		}
@@ -1460,6 +1475,7 @@ func main() {
 			// MobileDeps.DualIssuer.
 			DualIssuer:       cfg.ZitadelEnabled && cfg.ZitadelDualIssuer,
 			MyTenantsHandler: myTenantsHandler,
+			LoginHandler:     mobileLoginHandler,
 			// Resolves X-Acting-Tenant-Id via the same FGA client the rest
 			// of the admin surface already checks permissions against, for
 			// bearer tokens (Zitadel) that carry no tenant_id claim at

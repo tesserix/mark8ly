@@ -54,6 +54,28 @@ export async function GET(req: NextRequest): Promise<Response> {
     ? `${forwardedProto ?? "https"}://${forwardedHost}`
     : new URL(req.url).origin;
 
+  // redirect_uri MUST be the canonical login origin, never the host this
+  // request happened to arrive on. Zitadel matches redirect_uri against an
+  // exact registered list, and the admin OIDC app registers exactly one:
+  // https://admin.mark8ly.com/auth/callback.
+  //
+  // Reaching here on a {slug}-admin host is not hypothetical. /login bounces
+  // unauthenticated traffic to the canonical origin first, so the normal path
+  // is already canonical — but the post-accept handoff in accept-invite jumps
+  // straight to THIS route on whatever host the invitation link opened, which
+  // skips that normalisation. In production that produced:
+  //
+  //   {"error":"invalid_request","error_description":"The requested
+  //    redirect_uri is missing in the client configuration."}
+  //
+  // Registering every {slug}-admin callback instead would mean a Zitadel
+  // change per merchant before their admin could log in — the same
+  // does-not-scale trap as the auth-bff return-URL allowlist. The callback
+  // lands on the canonical host and then forwards to returnUrl, so a slug
+  // destination still works; only the OIDC hop is pinned.
+  const canonicalOrigin =
+    process.env.NEXT_PUBLIC_ADMIN_LOGIN_ORIGIN || externalOrigin;
+
   // Re-sanitize even though /login already did: this route is itself
   // a public GET endpoint and must not trust a returnUrl handed to it
   // directly.
@@ -67,7 +89,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const authorizeUrl = buildZitadelAuthorizeUrl({
     issuer,
     clientId,
-    redirectUri: `${externalOrigin}/auth/callback`,
+    redirectUri: `${canonicalOrigin}/auth/callback`,
     state,
     codeChallenge: challenge,
   });

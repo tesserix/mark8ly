@@ -1,6 +1,6 @@
 package email
 
-// templates_content.go — embedded fallback copy for the eleven billing
+// templates_content.go — embedded fallback copy for the twelve billing
 // templates (#381).
 //
 // These are FALLBACKS. The authoritative copy, once an operator writes one,
@@ -53,6 +53,7 @@ var billingSubjects = map[TemplateID]string{
 	TemplateTrialNoPMT1:           `Your {{.store_name}} trial ends tomorrow`,
 	TemplateTrialHasPMT1:          `Your {{.plan}} plan for {{.store_name}} starts tomorrow`,
 	TemplateTrialStartedBilled:    `Your {{.plan}} plan for {{.store_name}} is active`,
+	TemplateTrialExpired:          `Your {{.store_name}} trial has ended`,
 	TemplateWinBack:               `Come back to Mark8ly — 20% off six months`,
 }
 
@@ -99,6 +100,11 @@ var billingHTMLFragments = map[TemplateID]string{
 	TemplateTrialStartedBilled: `<h1 ` + h1 + `>Your {{.plan}} plan is active</h1>
 <p>Thank you — the first payment for <strong>{{.store_name}}</strong> went through and your <strong>{{.plan}}</strong> plan is now active, billed {{.period}}.</p>
 <p>Your receipt is in your billing settings.</p>`,
+
+	TemplateTrialExpired: `<h1 ` + h1 + `>Your trial has ended</h1>
+<p>The free trial for <strong>{{.store_name}}</strong> ended today. No payment method was added, so the store is not on a paid plan and the storefront has stopped serving customers.</p>
+<p>Nothing has been deleted. Your products, orders and settings are exactly as you left them.</p>
+<p>To reopen the store, add a payment method and choose a plan in your Mark8ly billing settings — it comes back straight away.</p>`,
 
 	TemplateWinBack: `<h1 ` + h1 + `>Your store is still here</h1>
 <p><strong>{{.store_name}}</strong> has been closed for a month. Everything — products, orders, settings — is exactly as you left it.</p>
@@ -193,6 +199,16 @@ Mark8ly`,
 Thank you — the first payment for {{.store_name}} went through and your {{.plan}} plan is now active, billed {{.period}}.
 
 Your receipt is in your billing settings.
+
+Mark8ly`,
+
+	TemplateTrialExpired: `Your trial has ended
+
+The free trial for {{.store_name}} ended today. No payment method was added, so the store is not on a paid plan and the storefront has stopped serving customers.
+
+Nothing has been deleted. Your products, orders and settings are exactly as you left them.
+
+To reopen the store, add a payment method and choose a plan in your Mark8ly billing settings — it comes back straight away.
 
 Mark8ly`,
 

@@ -28,6 +28,12 @@ const (
 	// confirms the chosen plan is now active.
 	TemplateTrialStartedBilled TemplateID = "trial_started_billed"
 
+	// Sent by the trial expiry cron once a cardless trial has actually
+	// ended and the store has moved to "expired". The T-1 reminder warned
+	// the merchant it would happen; this confirms that it did and says how
+	// to reactivate.
+	TemplateTrialExpired TemplateID = "trial_expired"
+
 	// Day-30 post-expiry win-back promo. Lived in the lifecycle package
 	// until #381; moved here so the billing catalog is complete in one
 	// place and the email package can register its fallback without

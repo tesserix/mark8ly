@@ -21,6 +21,23 @@ export interface ApiClientConfig {
   refreshToken?: () => Promise<string | null>;
   getStoreId: () => string | null;
   /**
+   * Returns the tenant the caller is acting as, sent as
+   * `X-Acting-Tenant-Id` and validated server-side against FGA membership
+   * (#686).
+   *
+   * A GIP id_token carried a tenant claim, so the server could resolve
+   * tenancy from the token alone. A Zitadel access token carries no such
+   * claim — by design, since FGA membership is a list and only the client
+   * knows which tenant is on screen — so the client has to state it. Omit
+   * this on a GIP build and behaviour is unchanged.
+   *
+   * This is the TENANT id, NOT the active store id. They are different
+   * identifiers, and sending a store id fails every FGA membership check,
+   * surfacing as a 404 that is indistinguishable from an account with no
+   * store at all.
+   */
+  getActingTenantId?: () => string | null;
+  /**
    * Called when the API rejects the (possibly refreshed) token with a
    * 401. The caller normally signs the user out and routes back to /login.
    */
@@ -88,6 +105,14 @@ export function createApiClient(config: ApiClientConfig) {
       Accept: "application/json",
       ...(init.headers ?? {}),
     };
+    // Only when actually known. An empty-string header is NOT equivalent to
+    // an absent one: the server treats a present value as a stated tenant
+    // and fails it against FGA, turning "not resolved yet" into a hard
+    // refusal instead of falling through to the token's own claim.
+    const actingTenantId = config.getActingTenantId?.() ?? null;
+    if (actingTenantId) {
+      headers["X-Acting-Tenant-Id"] = actingTenantId;
+    }
     let body: BodyInit | undefined;
     if (init.formData) {
       body = init.formData;

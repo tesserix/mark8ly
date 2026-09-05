@@ -58,7 +58,18 @@ describe('tenant-store hydration', () => {
     await useTenantStore.getState().hydrate();
 
     expect(useTenantStore.getState().activeStore).toEqual(STORE);
-    expect(useTenantStore.getState().tenantId).toBe(STORE.id);
+    // CHANGED with #686. This previously asserted tenantId === STORE.id,
+    // i.e. it pinned the store-id/tenant-id conflation as intended
+    // behaviour. It was invisible while GIP's token carried the real tenant
+    // claim server-side, but the client now STATES its tenant via
+    // X-Acting-Tenant-Id, and a store id there fails the FGA membership
+    // check and is refused 404 "no store" for a genuine member.
+    //
+    // Selecting a store says nothing about which tenant the user is acting
+    // as; only the sign-in flow learns that, from the login response. So a
+    // cold launch that restores a store must leave the tenant untouched
+    // rather than inventing one.
+    expect(useTenantStore.getState().tenantId).toBeNull();
   });
 
   it('discards a persisted store that no longer matches the schema', async () => {

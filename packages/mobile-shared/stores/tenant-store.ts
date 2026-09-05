@@ -33,7 +33,17 @@ export const useTenantStore = create<TenantStoreState>((set, get) => ({
     set({ activeStore: store });
     if (store) {
       tokenStorage.setStoreId(store.id).catch(() => undefined);
-      tokenStorage.setTenantId(store.id).catch(() => undefined);
+      // Deliberately NOT setTenantId(store.id). A store id and a tenant id
+      // are different identifiers; writing one into the other's slot was
+      // invisible while GIP's token carried the real tenant claim
+      // server-side, but the client now STATES its tenant via
+      // X-Acting-Tenant-Id (#686). A store id there fails the FGA
+      // membership check and is refused 404 "no store" — while the
+      // merchant genuinely is a member. It only surfaced after a restart,
+      // because this wrote to storage and hydrate() read it back.
+      //
+      // The tenant is set explicitly by the sign-in flow, which is the
+      // only thing that actually learns it (from the login response).
       tokenStorage.setActiveStore(store).catch(() => undefined);
     }
   },
@@ -55,7 +65,11 @@ export const useTenantStore = create<TenantStoreState>((set, get) => ({
       // resolver has to re-decide.
       const restored = activeStore && activeStore.id === storeId ? activeStore : null;
       set({
-        tenantId: tenantId ?? storeId ?? null,
+        // No storeId fallback: a WRONG tenant is worse than none. With a
+        // fallback the client confidently states a store id as its tenant
+        // and gets an unexplained 404; with null it simply has no tenant
+        // yet and the sign-in flow resolves one.
+        tenantId: tenantId ?? null,
         activeStore: restored,
         hydrated: true,
       });

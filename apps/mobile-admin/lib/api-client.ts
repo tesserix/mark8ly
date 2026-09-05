@@ -27,6 +27,7 @@ const demoClient = DEMO_MODE ? createDemoApiClient() : null;
 export function useApiClient() {
   const { getToken, refreshToken, signOut } = useAuth();
   const activeStore = useTenantStore((s) => s.activeStore);
+  const tenantId = useTenantStore((s) => s.tenantId);
   const clearActiveStore = useTenantStore((s) => s.clearActiveStore);
   const env = useEnvironment();
   const queryClient = useQueryClient();
@@ -38,6 +39,10 @@ export function useApiClient() {
         getToken,
         refreshToken,
         getStoreId: () => activeStore?.id ?? null,
+        // Tenancy for a Zitadel token, which carries no tenant claim
+        // (#686). Read from the tenant slot, never from activeStore — see
+        // tenant-store.ts for why those must not be conflated.
+        getActingTenantId: () => tenantId ?? null,
         onUnauthorized: async (reason) => {
           // Record WHY before tearing the session down — /login reads this and
           // explains itself instead of bouncing the user with no message.
@@ -56,6 +61,7 @@ export function useApiClient() {
       getToken,
       refreshToken,
       activeStore?.id,
+      tenantId,
       clearActiveStore,
       signOut,
       queryClient,

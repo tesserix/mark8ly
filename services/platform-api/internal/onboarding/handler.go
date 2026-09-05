@@ -2,6 +2,7 @@ package onboarding
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -117,6 +118,24 @@ func (h *Handler) verifyAndMarkSession(c *gin.Context) {
 	}
 	res, err := h.verifSvc.VerifyToken(c.Request.Context(), req.Token)
 	if err != nil {
+		// A replayed link is not a failure when the first open worked.
+		// Mail clients and security scanners prefetch URLs and users
+		// double-click, so a second open is ordinary traffic — and the
+		// failure page it used to render offers "Start over", which would
+		// discard a session that had already progressed (#710).
+		//
+		// Success here is narrow on purpose: the token must be consumed AND
+		// still unexpired (ResolveReplay enforces that), and the session it
+		// belongs to must ALREADY be verified. A consumed token whose
+		// session is not verified is a genuinely dead link and still fails.
+		if replay, ok := h.resolveVerifiedReplay(c, req.Token, err); ok {
+			c.JSON(http.StatusOK, gin.H{"data": gin.H{
+				"verified":   true,
+				"session_id": replay.SessionID,
+				"email":      replay.Email,
+			}})
+			return
+		}
 		respondError(c, err)
 		return
 	}
@@ -129,6 +148,33 @@ func (h *Handler) verifyAndMarkSession(c *gin.Context) {
 		"session_id": res.SessionID,
 		"email":      res.Email,
 	}})
+}
+
+// resolveVerifiedReplay reports whether verifyErr is a consumed-token error
+// for a link whose session is already verified — i.e. a harmless replay of a
+// link that worked. Returns the session tuple to answer with when so.
+//
+// Any doubt resolves to false, so the caller falls through to the original
+// error: an unrelated error, a token that resolves to nothing, or a session
+// that is not actually verified all keep the failure page. This only ever
+// converts a failure into a success, never the reverse, so being strict here
+// costs a user nothing beyond the page they would have seen anyway.
+func (h *Handler) resolveVerifiedReplay(c *gin.Context, token string, verifyErr error) (*verification.VerifyResult, bool) {
+	var ae *apperrors.AppError
+	if !errors.As(verifyErr, &ae) || ae.Code != verification.ErrCodeTokenConsumed {
+		return nil, false
+	}
+
+	replay, err := h.verifSvc.ResolveReplay(c.Request.Context(), token)
+	if err != nil {
+		return nil, false
+	}
+
+	sess, err := h.svc.Get(c.Request.Context(), replay.SessionID)
+	if err != nil || sess == nil || sess.EmailVerifiedAt == nil {
+		return nil, false
+	}
+	return replay, true
 }
 
 func (h *Handler) completeSession(c *gin.Context) {

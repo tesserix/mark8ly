@@ -30,9 +30,22 @@ const (
 	// OutcomePending — the store's subscription row exists but its
 	// stripe_subscription_id is NULL, so there is no Stripe subscription to
 	// carry a discount. That is the card-less trialing tenant, which is
-	// exactly the population an operator discounts. For Apply the override
-	// is recorded and will be applied when the subscription is created
-	// (T6); for Remove there is nothing attached to take off.
+	// exactly the population an operator discounts. For Remove there is
+	// nothing attached to take off.
+	//
+	// NOTHING PICKS THIS UP LATER, AND THAT IS THE HONEST STATE TODAY.
+	// "Pending" names what did not happen; it is not a queue. This service
+	// holds NO record of a tenant's override — the grant lives in the
+	// console's `tenant_pricing_override_coupons` (tesserix-home 0047), which
+	// this service cannot read — so when the subscription is later created
+	// there is nothing here to consult and the discount is not applied. The
+	// operator has to apply it again once the tenant has a subscription.
+	//
+	// Closing that gap needs a decision recorded on mark8ly#660: a local
+	// applied-override table, the console re-driving the apply, or a
+	// tenant-scoped console read. Until one lands, do not write code that
+	// assumes this outcome is durable, and do not soften this comment — a
+	// caller told the override is "recorded" would stop re-applying it.
 	OutcomePending Outcome = "pending"
 
 	// OutcomeNoSubscription — the store has no store_subscriptions row at

@@ -27,6 +27,9 @@ type fakeLoginBackend struct {
 	otpErr                   error
 	totpResult               authbffclient.LoginResult
 	totpErr                  error
+	resendResult             authbffclient.ResendResult
+	resendErr                error
+	resendCalls              int
 }
 
 func (f *fakeLoginBackend) Login(_ context.Context, email, _, workspaceTenant string) (authbffclient.LoginResult, error) {
@@ -42,6 +45,12 @@ func (f *fakeLoginBackend) VerifyOTP(_ context.Context, pendingToken, code strin
 func (f *fakeLoginBackend) VerifyTOTP(_ context.Context, pendingToken, code string) (authbffclient.LoginResult, error) {
 	f.gotPendingToken, f.gotCode = pendingToken, code
 	return f.totpResult, f.totpErr
+}
+
+func (f *fakeLoginBackend) ResendOTP(_ context.Context, pendingToken string) (authbffclient.ResendResult, error) {
+	f.resendCalls++
+	f.gotPendingToken = pendingToken
+	return f.resendResult, f.resendErr
 }
 
 func loginRouter(t *testing.T, lister TenantLister, backend MobileLoginBackend) *gin.Engine {

@@ -187,6 +187,19 @@ export function createZitadelSignIn(baseUrl: string) {
       return { kind: "signed_in", email: res.email, tenantId: res.tenantId };
     },
 
+    /**
+     * Sends a fresh emailed code and returns the pending token that
+     * replaces the caller's (#686 item 3).
+     *
+     * Nothing is persisted here: no sign-in has completed, and the only
+     * state that changes is the token the screen holds. Callers MUST store
+     * what comes back — verifying with the original afterwards submits the
+     * stale half of a re-sealed pair.
+     */
+    async resendOtp(pendingToken: string): Promise<string> {
+      return client.resendOtp(pendingToken);
+    },
+
     async signOut(): Promise<void> {
       await zitadelSession.clear();
     },

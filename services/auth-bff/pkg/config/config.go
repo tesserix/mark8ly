@@ -130,6 +130,15 @@ type Config struct {
 	// code change and redeploy.
 	ZitadelGoogleIDPID string `envconfig:"ZITADEL_GOOGLE_IDP_ID"`
 
+	// ZitadelAppleIDPID is the id of the Apple IDP configured on the same
+	// Zitadel org (currently "389173155337339395" for the live TESSERIX
+	// org). Environment-specific for exactly the same reasons
+	// ZitadelGoogleIDPID is, so it is read from config rather than
+	// hardcoded. Required at boot: mobile Apple sign-in is a shipped
+	// surface, and "deployed the code without the config" must be
+	// impossible rather than a runtime 500 on the first Apple button tap.
+	ZitadelAppleIDPID string `envconfig:"ZITADEL_APPLE_IDP_ID"`
+
 	// ZitadelOrgID scopes idp/finish's link-an-existing-account lookup
 	// (internal/zitadellogin's Client.FindUserByVerifiedEmail) to the
 	// merchant org. Required: the login-client PAT is instance-level and
@@ -196,6 +205,9 @@ func (c *Config) ValidateZitadel() error {
 	}
 	if c.ZitadelGoogleIDPID == "" {
 		missing = append(missing, "ZITADEL_GOOGLE_IDP_ID")
+	}
+	if c.ZitadelAppleIDPID == "" {
+		missing = append(missing, "ZITADEL_APPLE_IDP_ID")
 	}
 	if c.ZitadelOrgID == "" {
 		missing = append(missing, "ZITADEL_ORG_ID")

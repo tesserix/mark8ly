@@ -199,6 +199,57 @@ func TestReadRawEmailDefaultsToUnverifiedWhenKeyIsAbsent(t *testing.T) {
 	}
 }
 
+// TestReadRawEmailAcceptsAppleStringBooleanAndNothingElse pins the exact
+// set of shapes that count as verified. Apple documents email_verified as
+// String OR Boolean and has historically sent the string "true", so a
+// bool-only read would refuse every Apple link with email_not_verified —
+// which would read as a policy decision rather than the type bug it is.
+//
+// The widening is a NORMALISATION of a documented claim type, not a
+// loosening of the gate: only a real boolean and the exact lowercase
+// strings are recognised. A number, a differently-cased or truthy-looking
+// string, nil, and an absent claim all still mean UNVERIFIED — this
+// function is upstream of the link decision, where "probably fine" is an
+// account-takeover primitive.
+func TestReadRawEmailAcceptsAppleStringBooleanAndNothingElse(t *testing.T) {
+	cases := []struct {
+		name  string
+		claim any
+		want  bool
+	}{
+		{"google boolean true", true, true},
+		{"apple string true", "true", true},
+		{"boolean false", false, false},
+		{"apple string false", "false", false},
+		{"uppercase string is not a documented shape", "TRUE", false},
+		{"truthy-looking string", "yes", false},
+		{"empty string", "", false},
+		{"number one is not a boolean", float64(1), false},
+		{"explicit nil", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := map[string]any{"email": "person@icloud.com", "email_verified": tc.claim}
+			email, verified := readRawEmail(raw)
+			if verified != tc.want {
+				t.Fatalf("verified = %v, want %v for email_verified=%#v", verified, tc.want, tc.claim)
+			}
+			if email != "person@icloud.com" {
+				t.Fatalf("email = %q, want person@icloud.com", email)
+			}
+		})
+	}
+
+	// A nil map and an absent key must stay unverified too — the same
+	// fail-soft default the bool-only version had.
+	if _, verified := readRawEmail(nil); verified {
+		t.Error("verified = true for a nil raw claims map, want false")
+	}
+	if _, verified := readRawEmail(map[string]any{"email": "person@icloud.com"}); verified {
+		t.Error("verified = true when email_verified is absent, want false")
+	}
+}
+
 func TestRetrieveIDPIntentSurfacesTheZitadelErrorID(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

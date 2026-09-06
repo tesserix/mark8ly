@@ -9,11 +9,14 @@ import (
 	"net/http"
 )
 
-// ProviderGoogle is the only federated provider the mobile admin app signs
-// in with today. auth-bff pins the IDP by this name and refuses any other
-// value outright, so passing anything else is a client bug, not a feature
-// flag.
-const ProviderGoogle = "google"
+// ProviderGoogle and ProviderApple are the federated providers the mobile
+// admin app signs in with. auth-bff pins the IDP by this name and refuses
+// any other value outright, so passing anything else is a client bug, not a
+// feature flag.
+const (
+	ProviderGoogle = "google"
+	ProviderApple  = "apple"
+)
 
 // IDPError carries auth-bff's own stable error code for the IDP routes.
 //

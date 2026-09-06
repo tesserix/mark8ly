@@ -122,6 +122,7 @@ func newZitadelHandlers(cfg *config.Config, zitadelClient *zitadellogin.Client, 
 		WithInternalAuth(cfg.MarketplaceInternalAuthSecret).
 		WithReturnURLAllowlist(adminReturnURLs).
 		WithGoogleIDPID(cfg.ZitadelGoogleIDPID).
+		WithAppleIDPID(cfg.ZitadelAppleIDPID).
 		WithOrgID(cfg.ZitadelOrgID)
 
 	storefrontReturnURLs, err := zitadellogin.NewReturnURLAllowlist(

@@ -348,28 +348,26 @@ describe('involuntary sign-out notice', () => {
   });
 });
 
-// Apple must not be offered on a Zitadel build until it has a Zitadel path.
+// Apple is offered on BOTH builds, and has been since #771 gave it a Zitadel
+// path of its own (handleAppleSignIn's isZitadelProvider branch).
 //
-// handleAppleSignIn does not branch on the provider: it authenticates against
-// Firebase and sets the provider's `user`, which AuthGate ignores under
-// Zitadel (it reads zitadelSignedIn) and api-client ignores too (it reads
-// zitadelSession). The result is a silent bounce back to /login — #493's
-// shape. A button that cannot work must not be shown.
+// It was hidden under Zitadel before that, and not cosmetically: the handler
+// authenticated against Firebase and set the provider's `user`, which AuthGate
+// ignores under Zitadel (it reads zitadelSignedIn) and api-client ignores too
+// (it reads zitadelSession) — a silent bounce back to /login, #493's shape.
 //
-// This is a submission blocker, not a preference: Apple guideline 4.8 requires
-// Sign in with Apple wherever another social provider is offered, and Google
-// is offered on this screen. Apple has to be migrated before an App Store
-// release, and this test should be deleted then, not weakened.
+// Apple guideline 4.8 requires Sign in with Apple wherever another social
+// provider is offered, and Google is offered here, so this button being
+// present on a Zitadel build is a submission requirement, not a preference.
 describe('Apple button visibility by provider', () => {
   afterEach(() => {
     delete process.env.EXPO_PUBLIC_AUTH_PROVIDER;
   });
 
-  it('is hidden on a Zitadel build', () => {
+  it('is shown on a Zitadel build, where it now has a Zitadel path', () => {
     process.env.EXPO_PUBLIC_AUTH_PROVIDER = 'zitadel';
     const { queryByTestId } = render(<LoginScreen />);
-    expect(queryByTestId('provider-apple')).toBeNull();
-    // Google still is offered — it has a Zitadel path (#686 item 1).
+    expect(queryByTestId('provider-apple')).not.toBeNull();
     expect(queryByTestId('provider-google')).not.toBeNull();
   });
 

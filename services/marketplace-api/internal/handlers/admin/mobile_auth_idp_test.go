@@ -112,22 +112,122 @@ func TestMobileIDPStartBuildsTheReturnURLServerSide(t *testing.T) {
 	require.Equal(t, "google", backend.gotStartProvider)
 }
 
-// Google is the only provider this surface trusts, and an unknown one must
-// be refused before auth-bff is called at all.
-func TestMobileIDPStartRejectsAnyProviderButGoogle(t *testing.T) {
-	for _, provider := range []string{"apple", "facebook", "", "GOOGLE "} {
-		t.Run("provider="+provider, func(t *testing.T) {
+// Google and Apple are the providers this surface trusts, and anything else
+// — an empty provider included — must be refused before auth-bff is called
+// at all. Start has always required an explicit provider and every shipped
+// client sends one, so "" staying a 400 here is deliberate and is NOT the
+// same rule Finish follows.
+func TestMobileIDPStartAcceptsOnlyTheAllowlistedProviders(t *testing.T) {
+	cases := []struct {
+		provider     string
+		wantOK       bool
+		wantForwards string
+	}{
+		{provider: "google", wantOK: true, wantForwards: "google"},
+		{provider: "apple", wantOK: true, wantForwards: "apple"},
+		{provider: "GOOGLE ", wantOK: true, wantForwards: "google"},
+		{provider: " Apple", wantOK: true, wantForwards: "apple"},
+		{provider: "facebook"},
+		{provider: ""},
+	}
+	for _, tc := range cases {
+		t.Run("provider="+tc.provider, func(t *testing.T) {
 			backend := &fakeIDPBackend{authURL: "https://zitadel.test/idp/start"}
 			r := idpRouter(t, &fakeTenantLister{}, backend)
 
-			rec := postIDP(t, r, "/start", `{"provider":"`+provider+`"}`)
+			rec := postIDP(t, r, "/start", `{"provider":"`+tc.provider+`"}`)
 
-			if strings.TrimSpace(strings.ToLower(provider)) == "google" {
+			if tc.wantOK {
 				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+				require.Equal(t, tc.wantForwards, backend.gotStartProvider)
 				return
 			}
 			require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+			require.Contains(t, rec.Body.String(), "unsupported_provider")
 			require.Empty(t, backend.gotStartProvider, "auth-bff must not be called for an unsupported provider")
+		})
+	}
+}
+
+// auth-bff pins the intent against the IDP the REQUEST names, so the
+// provider forwarded on finish decides whether a valid sign-in is accepted.
+//
+// The empty case is the back-compat contract and is asserted explicitly:
+// app builds already installed send no provider on finish, and they must
+// keep resolving to Google. This asymmetry with Start is deliberate.
+func TestMobileIDPFinishForwardsTheProviderTheRequestNames(t *testing.T) {
+	cases := []struct {
+		name, body, want string
+	}{
+		{"apple", `{"provider":"apple","intent_id":"i1","intent_token":"it1"}`, "apple"},
+		{"google", `{"provider":"google","intent_id":"i1","intent_token":"it1"}`, "google"},
+		{"mixed case", `{"provider":" Apple ","intent_id":"i1","intent_token":"it1"}`, "apple"},
+		{"omitted defaults to google", `{"intent_id":"i1","intent_token":"it1"}`, "google"},
+		{"empty defaults to google", `{"provider":"","intent_id":"i1","intent_token":"it1"}`, "google"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &fakeIDPBackend{
+				finish: authbffclient.IDPFinishResult{
+					TenantRequired: true, SessionID: "s1", SessionToken: "tok-1", LoginName: "a@b.test",
+				},
+				complete: authbffclient.LoginResult{Email: "a@b.test", TenantID: "t-1", AccessToken: "AT"},
+			}
+			lister := &fakeTenantLister{result: []teamproxy.TenantMembership{{TenantID: "t-1"}}}
+			r := idpRouter(t, lister, backend)
+
+			rec := postIDP(t, r, "/finish", tc.body)
+
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			require.Equal(t, tc.want, backend.gotFinishProvider)
+		})
+	}
+}
+
+// An unknown provider on finish is refused on the same allowlist Start
+// uses, before auth-bff is called at all.
+func TestMobileIDPFinishRejectsAnUnsupportedProviderWithoutCallingAuthBFF(t *testing.T) {
+	for _, provider := range []string{"facebook", "microsoft"} {
+		t.Run("provider="+provider, func(t *testing.T) {
+			backend := &fakeIDPBackend{}
+			r := idpRouter(t, &fakeTenantLister{}, backend)
+
+			rec := postIDP(t, r, "/finish", `{"provider":"`+provider+`","intent_id":"i1","intent_token":"it1"}`)
+
+			require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+			require.Contains(t, rec.Body.String(), "unsupported_provider")
+			require.Empty(t, backend.gotFinishProvider, "auth-bff must not be called for an unsupported provider")
+			require.Empty(t, backend.gotIntentID)
+		})
+	}
+}
+
+// Merchant-facing copy names the provider the request actually used —
+// telling an Apple user that "Google hasn't verified" their email is simply
+// wrong. The status and the stable `error` code are unchanged either way.
+func TestMobileIDPFinishErrorCopyNamesTheRequestedProvider(t *testing.T) {
+	cases := []struct {
+		name, body, wantName, wantAbsent string
+	}{
+		{"apple", `{"provider":"apple","intent_id":"i1","intent_token":"it1"}`, "Apple", "Google"},
+		{"google", `{"provider":"google","intent_id":"i1","intent_token":"it1"}`, "Google", "Apple"},
+		{"omitted", `{"intent_id":"i1","intent_token":"it1"}`, "Google", "Apple"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &fakeIDPBackend{finishErr: &authbffclient.IDPError{
+				Code: "email_not_verified", Status: http.StatusUnauthorized,
+			}}
+			r := idpRouter(t, &fakeTenantLister{}, backend)
+
+			rec := postIDP(t, r, "/finish", tc.body)
+
+			require.Equal(t, http.StatusUnauthorized, rec.Code, rec.Body.String())
+			var body struct{ Error, Message string }
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+			require.Equal(t, "email_not_verified", body.Error)
+			require.Contains(t, body.Message, tc.wantName)
+			require.NotContains(t, body.Message, tc.wantAbsent)
 		})
 	}
 }

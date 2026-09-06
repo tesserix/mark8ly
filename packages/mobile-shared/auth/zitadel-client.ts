@@ -68,12 +68,13 @@ export type SignInResult = CompleteSignIn | StepUpRequired;
  * A union, not a string: auth-bff pins the Zitadel IDP by this exact name
  * and refuses anything else outright, so a typo here must be a compile
  * error rather than a runtime "unsupported_provider" the merchant sees.
- * Apple is deliberately absent — it is provisioned on the Zitadel org but
- * has never been exercised end to end (see auth-bff's zitadellogin
- * README), and adding it here without that is a promise the backend does
- * not keep.
+ *
+ * Apple joined the union in #771, once auth-bff's idp/start AND idp/finish
+ * both accepted it. Both legs matter: finish pins the intent's IDP against
+ * the id it resolves from the provider the request names, so an Apple
+ * intent finished without one is checked against Google's id and refused.
  */
-export type IdpProvider = "google";
+export type IdpProvider = "google" | "apple";
 
 /**
  * A failure with a stable `code`, so screens map to copy from the code
@@ -121,8 +122,8 @@ const PATHS = {
   // The authenticator-app half (#686 item 2). A separate route because the
   // server verifies it against a Zitadel session, not an emailed value.
   totpVerify: "/api/v1/mobile/admin/auth/totp/verify",
-  // Federated sign-in (#686 item 1). Two legs, because which tenant a
-  // Google-authenticated merchant belongs to is unknowable until the
+  // Federated sign-in (#686 item 1, Apple in #771). Two legs, because
+  // which tenant a federated merchant belongs to is unknowable until the
   // identity has been resolved: start opens the intent, finish exchanges
   // it AND resolves the tenant server-side.
   idpStart: "/api/v1/mobile/admin/auth/idp/start",
@@ -257,9 +258,25 @@ export function createZitadelAuthClient(config: ZitadelAuthClientConfig) {
      * Exchanges the intent the browser handed back for a session. Answers
      * with the SAME union `signIn` does — tokens, or an outstanding OTP —
      * because the server answers with the same body.
+     *
+     * The provider is sent, and is not optional (#771). auth-bff resolves
+     * an IDP id from it and pins the intent against that id, so omitting
+     * it finishes every intent as Google — which refuses an Apple one with
+     * a failure that reads as Apple being broken. The server still treats
+     * an ABSENT provider as Google, deliberately, so builds shipped before
+     * #771 keep working; that back-compat is not a licence to leave it out
+     * here.
      */
-    async idpFinish(intentId: string, intentToken: string): Promise<SignInResult> {
-      const d = await post(PATHS.idpFinish, { intent_id: intentId, intent_token: intentToken });
+    async idpFinish(
+      provider: IdpProvider,
+      intentId: string,
+      intentToken: string,
+    ): Promise<SignInResult> {
+      const d = await post(PATHS.idpFinish, {
+        provider,
+        intent_id: intentId,
+        intent_token: intentToken,
+      });
 
       const stepUp = stepUpFrom(d, "");
       if (stepUp) return stepUp;

@@ -633,7 +633,7 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 
 	sess, err := h.c.CreateIDPIntentSession(ctx, req.IntentID, req.IntentToken)
 	if err != nil {
-		h.respondSessionCreateError(ctx, w, err)
+		h.respondIDPSessionCreateError(ctx, w, err)
 		return
 	}
 
@@ -753,6 +753,43 @@ func (h *Handler) respondIDPIntentError(ctx context.Context, w http.ResponseWrit
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
 	default:
 		slog.ErrorContext(ctx, "zitadellogin: unexpected error retrieving idp intent", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+	}
+}
+
+// respondIDPSessionCreateError maps CreateIDPIntentSession's errors.
+//
+// This exists because respondSessionCreateError — which this call site used
+// to share — maps CreatePasswordSession's errors, and do() turns ANY Zitadel
+// 400 into ErrBadCredentials (see client.go's requestOptions default). On the
+// Google path that produced two lies at once: the operator saw
+// "login rejected: bad credentials" for a flow in which no credential was
+// ever presented, and the merchant got `invalid_credentials`, which
+// google-sign-in-admin.ts states as a hard rule must never happen here —
+// "no outcome may imply the Google credential itself was wrong (it never is:
+// every failure here is either a platform-side account/authorization
+// decision or an availability problem, never a bad password)". Observed in
+// production 2026-09-06: a merchant with a correctly linked Google identity
+// was told to check their details.
+//
+// Unlike the password path, every branch logs `err`. The wrapped error
+// carries Zitadel's own error id (do() formats it in, e.g. "COMMAND-3M0fs")
+// and nothing else — no credential, no token. On the password path a bare
+// "bad credentials" is a complete explanation; here it is the only clue
+// there is, and discarding it is what made this cost an afternoon to find.
+func (h *Handler) respondIDPSessionCreateError(ctx context.Context, w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrBadCredentials), errors.Is(err, ErrUserNotFound):
+		// Zitadel refused the intent -> session exchange: consumed,
+		// expired, or not linked to a user. Same answer as a bad intent
+		// on retrieve, because to the caller it is the same situation.
+		slog.WarnContext(ctx, "zitadellogin: idp finish rejected: could not create a session from the intent", "err", err)
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "invalid_intent"})
+	case errors.Is(err, ErrUnavailable):
+		slog.ErrorContext(ctx, "zitadellogin: zitadel unavailable creating a session from the idp intent", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
+	default:
+		slog.ErrorContext(ctx, "zitadellogin: unexpected error creating a session from the idp intent", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
 	}
 }

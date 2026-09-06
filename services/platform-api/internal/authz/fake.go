@@ -307,6 +307,31 @@ func (f *FakeClient) ListMemberTenants(ctx context.Context, userID string) ([]st
 	return out, nil
 }
 
+// ListTenantMembers returns every user holding a direct role tuple on
+// the tenant, mirroring the real client's Read-based enumeration. No
+// pagination to simulate here — the fake holds everything in memory.
+func (f *FakeClient) ListTenantMembers(ctx context.Context, tenantID string) ([]Member, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.checkCallCount++
+	if f.failNextChecks > 0 {
+		f.failNextChecks--
+		return nil, fakeError("simulated FGA check failure")
+	}
+	var out []Member
+	suffix := "|" + tenantID
+	for _, r := range allRoles {
+		for key := range f.roles[r] {
+			if len(key) <= len(suffix) || key[len(key)-len(suffix):] != suffix {
+				continue
+			}
+			userID := key[:len(key)-len(suffix)]
+			out = append(out, Member{UserID: userID, Relation: string(r)})
+		}
+	}
+	return out, nil
+}
+
 // DeleteTuple removes the user:<userID> <relation> tenant:<tenantID>
 // tuple if present. Idempotent: deleting an already-absent tuple (or
 // an unrecognized relation) is a no-op that returns nil, mirroring

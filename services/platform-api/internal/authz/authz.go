@@ -128,6 +128,21 @@ type Client interface {
 	DeleteTuple(ctx context.Context, userID, relation, tenantID string) error
 	// DeleteStoreParent removes tenant:<tenantID> parent store:<storeID>. Idempotent.
 	DeleteStoreParent(ctx context.Context, storeID, tenantID string) error
+
+	// ListTenantMembers returns every user holding a direct role tuple
+	// on the tenant, along with which relation each holds. Used by
+	// tenant teardown (#361) to enumerate everyone whose FGA state
+	// needs cleaning up, not just the owner. Unlike ListMemberTenants
+	// (which asks "which tenants does this user belong to"), this asks
+	// the reverse: "which users belong to this tenant".
+	ListTenantMembers(ctx context.Context, tenantID string) ([]Member, error)
+}
+
+// Member is one user's direct role tuple on a tenant, as returned by
+// ListTenantMembers.
+type Member struct {
+	UserID   string
+	Relation string
 }
 
 // fgaClient is the OpenFGA-backed implementation of Client.
@@ -308,6 +323,47 @@ func (c *fgaClient) ListMemberTenants(ctx context.Context, userID string) ([]str
 		}
 	}
 	return out, nil
+}
+
+// ListTenantMembers returns every user holding a direct role tuple on
+// tenant:<tenantID>, via OpenFGA's Read (a tuple query by object),
+// not ListObjects — ListObjects answers "which objects does this user
+// relate to", the opposite of what teardown needs here. Read is
+// paginated; this loops on the continuation token until OpenFGA
+// reports none left, so a tenant with more members than fit in one
+// page is still enumerated completely.
+func (c *fgaClient) ListTenantMembers(ctx context.Context, tenantID string) ([]Member, error) {
+	object := "tenant:" + tenantID
+	var out []Member
+	var continuationToken *string
+	for {
+		body := client.ClientReadRequest{Object: &object}
+		req := c.api.Read(ctx).Body(body)
+		if continuationToken != nil && *continuationToken != "" {
+			req = req.Options(client.ClientReadOptions{ContinuationToken: continuationToken})
+		}
+		resp, err := req.Execute()
+		if err != nil {
+			return nil, fmt.Errorf("authz: list tenant members: %w", err)
+		}
+		if resp == nil {
+			return out, nil
+		}
+		for _, tuple := range resp.GetTuples() {
+			key := tuple.GetKey()
+			user := key.GetUser()
+			// Tuples are stored as "user:<id>" — strip the prefix the
+			// same way ListMemberTenants strips "tenant:".
+			if len(user) > len("user:") && user[:len("user:")] == "user:" {
+				out = append(out, Member{UserID: user[len("user:"):], Relation: key.GetRelation()})
+			}
+		}
+		if resp.ContinuationToken == "" {
+			return out, nil
+		}
+		token := resp.ContinuationToken
+		continuationToken = &token
+	}
 }
 
 // GetRole iterates the direct role relations in priority order and

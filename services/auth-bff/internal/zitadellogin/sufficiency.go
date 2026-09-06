@@ -38,6 +38,19 @@ type sufficient struct{}
 const (
 	methodPassword = "AUTHENTICATION_METHOD_TYPE_PASSWORD" // not a second factor
 	methodTOTP     = "AUTHENTICATION_METHOD_TYPE_TOTP"     // the one we can collect
+	// An identity SOURCE, not a factor to collect. Zitadel reports this the
+	// moment a user holds any IDP link — and the Google flow CREATES that
+	// link — so classifying it uncollectible meant a completed Google
+	// sign-in permanently prevented the next one. Verified in production
+	// 2026-09-06: enrolled methods were exactly [PASSWORD, IDP], sufficiency
+	// handed off, and Zitadel's hosted login answered the handoff with
+	// {"error":"no valid authentication request found"}. A Google-only
+	// account would carry [IDP] alone and fail identically.
+	//
+	// This does NOT weaken MFA. Enforcement still runs through the login
+	// policy and totpEnrolled below, and a genuinely uncollectible factor —
+	// a passkey, U2F — still falls to `default` and still hands off.
+	methodIDP = "AUTHENTICATION_METHOD_TYPE_IDP"
 )
 
 // finalize exchanges a session for an authorization code. Unexported and
@@ -73,6 +86,7 @@ func (c *Client) classifyEnrolledMethods(ctx context.Context, userID string) (to
 	for _, t := range types {
 		switch t {
 		case methodPassword:
+		case methodIDP:
 		case methodTOTP:
 			totpEnrolled = true
 		default:

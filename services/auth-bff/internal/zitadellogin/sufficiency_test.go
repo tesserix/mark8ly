@@ -275,3 +275,52 @@ func TestDecideAfterFactorFailsClosedWhenTOTPIsNotConfirmed(t *testing.T) {
 		t.Fatalf("outcome = %v, want OutcomeHandoff", res.Outcome)
 	}
 }
+
+// An IDP link must not make a session uncollectible.
+//
+// Zitadel reports AUTHENTICATION_METHOD_TYPE_IDP the moment a user holds any
+// IDP link — and the Google sign-in flow is what CREATES that link. Treating
+// it as uncollectible therefore made a completed Google sign-in permanently
+// prevent the next one: sufficiency handed off, the browser followed the
+// handoff to Zitadel's hosted login, and Zitadel answered
+// {"error":"no valid authentication request found"}.
+//
+// Verified in production 2026-09-06: the reporting account's enrolled methods
+// were exactly [PASSWORD, IDP]. A Google-only account carries [IDP] alone and
+// failed identically, so no choice of address avoided it.
+func TestDecideSufficiencyTreatsAnIDPLinkAsCollectible(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		methodsJSON string
+	}{
+		{"password and idp", `["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_IDP"]`},
+		{"idp only", `["AUTHENTICATION_METHOD_TYPE_IDP"]`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fakeZitadelNoFinalize(t, policyNoMFA, tc.methodsJSON, factorsPasswordOnly)
+			res, err := c.DecideSufficiency(context.Background(), Session{ID: "s1", Token: "t"}, true)
+			if err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if res.Outcome == OutcomeHandoff {
+				t.Fatalf("outcome = OutcomeHandoff — an IDP link is an identity source, not an uncollectible factor")
+			}
+		})
+	}
+}
+
+// The guard that keeps the fix honest: a REAL uncollectible factor alongside
+// an IDP link must still hand off. Ignoring IDP must not become "ignore
+// everything that is not password or TOTP".
+func TestDecideSufficiencyStillHandsOffForAPasskeyBesideAnIDPLink(t *testing.T) {
+	c := fakeZitadelNoFinalize(t, policyForceMFA,
+		`["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_IDP","AUTHENTICATION_METHOD_TYPE_PASSKEY"]`,
+		factorsPasswordOnly)
+	res, err := c.DecideSufficiency(context.Background(), Session{ID: "s1", Token: "t"}, true)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if res.Outcome != OutcomeHandoff {
+		t.Fatalf("outcome = %v, want OutcomeHandoff — a passkey is still uncollectible", res.Outcome)
+	}
+}

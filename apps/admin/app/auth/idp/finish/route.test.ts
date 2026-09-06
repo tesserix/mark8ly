@@ -68,7 +68,8 @@ describe("GET /auth/idp/finish", () => {
     const location = res.headers.get("location") ?? "";
     expect(location).toContain("/login?");
     expect(location).toContain("error=google_sign_in_unavailable");
-    expect(location).toContain("authRequest=ar-1");
+    // NOT ar-1 — see the recovery-sentinel describe block below.
+    expect(new URL(location).searchParams.get("authRequest")).toBe("recovery");
     expect(finishZitadelGoogleSignInMock).not.toHaveBeenCalled();
   });
 
@@ -296,7 +297,7 @@ describe("GET /auth/idp/finish", () => {
     expect(location).toContain("error=internal_error");
   });
 
-  it("redirects with step_up_unsupported when a step-up is outstanding", async () => {
+  it("redirects with step_up_unsupported when auth-bff's usermfa gate is outstanding", async () => {
     finishZitadelGoogleSignInMock.mockResolvedValue({
       ok: true,
       data: { tenantId: "tenant-1", multipleTenants: false, mfaRequired: true, emailOtpRequired: false },
@@ -306,5 +307,175 @@ describe("GET /auth/idp/finish", () => {
 
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toContain("error=step_up_unsupported");
+  });
+
+  it("redirects with step_up_unsupported when Zitadel's own TOTP step-up is outstanding", async () => {
+    finishZitadelGoogleSignInMock.mockResolvedValue({
+      ok: true,
+      data: {
+        tenantId: "tenant-1",
+        multipleTenants: false,
+        mfaRequired: false,
+        emailOtpRequired: false,
+        totpRequired: true,
+        zitadelSessionId: "sess-1",
+        zitadelSessionToken: "sess-token-1",
+        zitadelTenantCode: "tenant-code-1",
+      },
+    });
+
+    const res = await GET(makeRequest("?id=i1&token=t1&auth_request_id=ar-1"));
+
+    expect(res.status).toBe(303);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("error=step_up_unsupported");
+    // The whole reason TOTP stays refused: its continuation needs a
+    // session id/token, and a redirect-only route has nowhere to put them
+    // but the URL.
+    expect(location).not.toContain("sess-1");
+    expect(location).not.toContain("sess-token-1");
+    expect(location).not.toContain("tenant-code-1");
+  });
+});
+
+// #686 — the last gap in WEB merchant Google sign-in. A browser auth-bff
+// has not fingerprinted before always trips the deviceguard/emailotp gate,
+// so refusing email OTP here refused Google sign-in outright for every new
+// device. This continues into the code screen the password path already
+// has, and leaves TOTP/MFA refused.
+describe("GET /auth/idp/finish — email-OTP continuation", () => {
+  const emailOtpOutcome = (multipleTenants = false) => ({
+    ok: true,
+    data: {
+      tenantId: "tenant-1",
+      multipleTenants,
+      mfaRequired: false,
+      emailOtpRequired: true,
+    },
+  });
+
+  it("redirects to /login's code step instead of refusing with step_up_unsupported", async () => {
+    finishZitadelGoogleSignInMock.mockResolvedValue(emailOtpOutcome());
+
+    const res = await GET(makeRequest("?id=i1&token=t1&auth_request_id=ar-1"));
+
+    expect(res.status).toBe(303);
+    const url = new URL(res.headers.get("location") ?? "");
+    expect(url.origin + url.pathname).toBe("https://admin.mark8ly.com/login");
+    expect(url.searchParams.get("challenge")).toBe("email_otp");
+    expect(url.searchParams.get("error")).toBeNull();
+  });
+
+  it("keeps the real auth request id so /login renders the form rather than bouncing through /login/authorize", async () => {
+    finishZitadelGoogleSignInMock.mockResolvedValue(emailOtpOutcome());
+
+    const res = await GET(makeRequest("?id=i1&token=t1&auth_request_id=ar-1"));
+
+    const url = new URL(res.headers.get("location") ?? "");
+    expect(url.searchParams.get("authRequest")).toBe("ar-1");
+    expect(wouldMiddleware404(url.toString())).toBe(false);
+  });
+
+  it("flags a multi-store account so the post-code landing is /pick-tenant", async () => {
+    finishZitadelGoogleSignInMock.mockResolvedValue(emailOtpOutcome(true));
+
+    const res = await GET(makeRequest("?id=i1&token=t1&auth_request_id=ar-1"));
+
+    expect(new URL(res.headers.get("location") ?? "").searchParams.get("multi")).toBe("1");
+  });
+
+  it("omits the multi flag for a single-store account", async () => {
+    finishZitadelGoogleSignInMock.mockResolvedValue(emailOtpOutcome(false));
+
+    const res = await GET(makeRequest("?id=i1&token=t1&auth_request_id=ar-1"));
+
+    expect(new URL(res.headers.get("location") ?? "").searchParams.get("multi")).toBeNull();
+  });
+
+  it("puts no session id, session token, intent id or intent token in the redirect URL", async () => {
+    finishZitadelGoogleSignInMock.mockResolvedValue(emailOtpOutcome());
+
+    const res = await GET(
+      makeRequest("?id=intent-abc&token=intent-token-xyz&auth_request_id=ar-1"),
+    );
+
+    const location = res.headers.get("location") ?? "";
+    for (const secret of ["intent-abc", "intent-token-xyz", "sess", "token"]) {
+      expect(location).not.toContain(secret);
+    }
+    // Only these three params, and nothing that could be a credential.
+    const params = [...new URL(location).searchParams.keys()].sort();
+    expect(params).toEqual(["authRequest", "challenge"]);
+  });
+
+  it("forwards the pending cookie auth-bff minted onto the redirect", async () => {
+    // The pending Set-Cookie is applied by finishZitadelGoogleSignIn ->
+    // mapZitadelOutcome -> applySetCookies, which writes through
+    // next/headers' cookies(); Next merges that store onto whatever
+    // response this handler returns, the same mechanism
+    // app/auth/handoff/route.ts relies on to land a session cookie on a
+    // 303. That mechanism is action-side, so this route test (which mocks
+    // the action wholesale) cannot observe it — the assertion that the
+    // email-OTP outcome really does apply its Set-Cookie headers lives in
+    // app/login/actions.zitadel.test.ts, "forwards the PENDING cookie on
+    // an email_otp_required outcome". This case is here only so the link
+    // between the two is not lost: without it the merchant reaches the
+    // code screen with no challenge to resume and a correct code fails.
+    finishZitadelGoogleSignInMock.mockResolvedValue(emailOtpOutcome());
+
+    const res = await GET(makeRequest("?id=i1&token=t1&auth_request_id=ar-1"));
+
+    expect(res.status).toBe(303);
+  });
+});
+
+// Production report: after a failed Google attempt the merchant followed
+// the "sign in with your email and password instead" advice and got a raw
+// Zitadel body — {"error": "No valid authentication request found"} —
+// because this route handed back the auth request idp/complete had already
+// spent. Every error redirect now carries the recovery sentinel instead.
+describe("GET /auth/idp/finish — error redirects never reuse a spent auth request", () => {
+  it("never carries the original auth_request_id on any error branch", async () => {
+    finishZitadelGoogleSignInMock.mockResolvedValue({
+      ok: false,
+      code: "no_admin_account",
+      message: "no admin account",
+    });
+
+    const scenarios = [
+      makeRequest("?id=i1&error=access_denied&auth_request_id=ar-1"),
+      makeRequest("?id=i1&token=t1&auth_request_id=ar-1"),
+    ];
+    for (const req of scenarios) {
+      const res = await GET(req);
+      const url = new URL(res.headers.get("location") ?? "");
+      expect(url.searchParams.get("authRequest")).toBe("recovery");
+      expect(url.toString()).not.toContain("ar-1");
+    }
+  });
+
+  it("uses the sentinel on the step_up_unsupported branch too, where the auth request is definitely spent", async () => {
+    finishZitadelGoogleSignInMock.mockResolvedValue({
+      ok: true,
+      data: { tenantId: "tenant-1", multipleTenants: false, mfaRequired: true, emailOtpRequired: false },
+    });
+
+    const res = await GET(makeRequest("?id=i1&token=t1&auth_request_id=ar-1"));
+
+    expect(new URL(res.headers.get("location") ?? "").searchParams.get("authRequest")).toBe(
+      "recovery",
+    );
+  });
+
+  it("still satisfies middleware's canonical-/login gate with the sentinel", async () => {
+    finishZitadelGoogleSignInMock.mockResolvedValue({
+      ok: false,
+      code: "no_admin_account",
+      message: "no admin account",
+    });
+
+    const res = await GET(makeRequest("?id=i1&token=t1&auth_request_id=ar-1"));
+
+    expect(wouldMiddleware404(res.headers.get("location") ?? "")).toBe(false);
   });
 });

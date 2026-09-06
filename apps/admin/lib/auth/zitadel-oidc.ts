@@ -18,6 +18,26 @@ export const ZITADEL_RETURN_URL_COOKIE = "zt_return_url";
 // tab open overnight.
 export const ZITADEL_FLOW_COOKIE_MAX_AGE_SECONDS = 600;
 
+// Carries a merchant-facing Google sign-in outcome code across the
+// /login/authorize -> Zitadel /authorize -> /login?authRequest=… hop.
+//
+// A query param cannot do this job: Zitadel builds that final /login URL
+// itself from the app's configured login base URI and appends only its own
+// `authRequest`, so anything this app puts on the way in is dropped. The
+// returnUrl already rides a cookie for the same reason
+// (ZITADEL_RETURN_URL_COOKIE) — this is that pattern, not a new one.
+//
+// Only a value that passes `isAdminGoogleErrorCode` is ever written here
+// (see app/login/authorize/route.ts), so nothing free-text — least of all
+// a provider's own error body — can reach the page through it.
+export const ZITADEL_LOGIN_ERROR_COOKIE = "zt_login_error";
+
+// Two minutes: the hop it survives is three redirects long. A Server
+// Component render cannot clear a cookie, so this TTL is the only thing
+// bounding how long a stale message could reappear on a /login reload —
+// short enough that it cannot outlive the attempt it describes.
+export const ZITADEL_LOGIN_ERROR_COOKIE_MAX_AGE_SECONDS = 120;
+
 function base64url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
 }

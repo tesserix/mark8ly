@@ -38,6 +38,29 @@ export function buildAdminGoogleReturnUrl(
 }
 
 /**
+ * RECOVERY_AUTH_REQUEST_SENTINEL is the value app/auth/idp/finish/route.ts
+ * puts in `?authRequest=` on EVERY error redirect back to /login.
+ *
+ * It is deliberately NOT the auth_request_id the attempt started with. By
+ * the time a Google attempt has reached auth-bff's idp/complete, Zitadel
+ * has spent that auth request — handing it back rendered the login form
+ * around a dead id, and the password submit the error copy recommends came
+ * back as raw provider JSON:
+ *
+ *   {"error": "No valid authentication request found"}
+ *
+ * The sentinel exists purely so the redirect still satisfies middleware's
+ * canonical-/login gate (which 404s a /login with neither a valid slug
+ * returnUrl nor a non-empty authRequest). app/login/page.tsx recognises it
+ * and bounces through /login/authorize to mint a FRESH auth request,
+ * carrying the error code across that hop so the merchant still sees why
+ * Google failed — see that file and app/login/authorize/route.ts.
+ *
+ * It must never be sent to auth-bff or Zitadel as an auth_request_id.
+ */
+export const RECOVERY_AUTH_REQUEST_SENTINEL = "recovery";
+
+/**
  * AdminGoogleErrorCode enumerates every distinct code the merchant Google
  * flow can redirect back to /login with. Kept as a type (not just `string`)
  * so `messageForAdminGoogleError`'s exhaustiveness is checkable, and so a

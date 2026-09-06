@@ -623,6 +623,78 @@ describe("finishZitadelGoogleSignIn", () => {
     expect(cookiesSetSpy).not.toHaveBeenCalled();
   });
 
+  // THE regression that matters for #686's email-OTP continuation. The
+  // finish route now redirects this outcome to /login's code step instead
+  // of refusing it. auth-bff mints only a PENDING cookie at this point,
+  // and confirmEmailOTPLogin resumes from that cookie plus the typed code
+  // — so if these Set-Cookie headers are dropped, the merchant reaches the
+  // code screen, types a CORRECT code, and verification fails with no
+  // pending challenge to resume. That is strictly worse than the honest
+  // refusal it replaced, which is why it is pinned here rather than left
+  // to the route test (which mocks this action wholesale).
+  it("forwards the PENDING cookie on an email_otp_required outcome", async () => {
+    zitadelIdpFinishMock.mockResolvedValue({
+      sessionId: "sess-1",
+      sessionToken: "sess-token-1",
+      loginName: "merchant@example.com",
+    });
+    zitadelIdpCompleteMock.mockResolvedValue({
+      kind: "email_otp_required",
+      setCookies: [
+        "m8_otp_pending=pending-abc; Path=/; HttpOnly; Secure; Max-Age=300",
+        "m8_device=dev-1; Path=/; HttpOnly",
+      ],
+    });
+
+    const result = await finishZitadelGoogleSignIn(input);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.emailOtpRequired).toBe(true);
+      expect(result.data.mfaRequired).toBe(false);
+    }
+
+    // EVERY Set-Cookie auth-bff sent, not just the first.
+    expect(cookiesSetSpy).toHaveBeenCalledTimes(2);
+    expect(cookiesSetSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "m8_otp_pending",
+        value: "pending-abc",
+        httpOnly: true,
+        secure: true,
+        maxAge: 300,
+      }),
+    );
+    expect(cookiesSetSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "m8_device", value: "dev-1" }),
+    );
+    expect(cookieStore.map((c) => c.name)).toEqual(["m8_otp_pending", "m8_device"]);
+  });
+
+  it("carries multipleTenants through an email_otp_required outcome so the post-code landing is right", async () => {
+    listMemberTenantsMock.mockResolvedValue([
+      { tenant_id: "tenant-1", name: "Store One", role: "owner" },
+      { tenant_id: "tenant-2", name: "Store Two", role: "staff" },
+    ]);
+    zitadelIdpFinishMock.mockResolvedValue({
+      sessionId: "sess-1",
+      sessionToken: "sess-token-1",
+      loginName: "merchant@example.com",
+    });
+    zitadelIdpCompleteMock.mockResolvedValue({
+      kind: "email_otp_required",
+      setCookies: ["m8_otp_pending=pending-abc; Path=/; HttpOnly"],
+    });
+
+    const result = await finishZitadelGoogleSignIn(input);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.multipleTenants).toBe(true);
+      expect(result.data.emailOtpRequired).toBe(true);
+    }
+  });
+
   it("surfaces a step-up outcome from idp/complete with no session cookie minted", async () => {
     zitadelIdpFinishMock.mockResolvedValue({
       sessionId: "sess-1",

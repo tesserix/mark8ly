@@ -89,3 +89,83 @@ describe("GET /login/authorize — redirect_uri is pinned to the canonical origi
     );
   });
 });
+
+// The other half of the spent-auth-request fix: /login sends a `recovery`
+// arrival here to mint a FRESH auth request, and the truthful Google
+// failure message has to survive the hop. Zitadel builds the final
+// /login?authRequest=… URL itself from its configured login base URI and
+// appends only its own param, so a query string cannot carry the message —
+// it rides a short-lived cookie, exactly like returnUrl already does.
+describe("GET /login/authorize — carrying a Google outcome code across the Zitadel hop", () => {
+  function setCookieHeaders(res: Response): string[] {
+    const getSetCookie = (res.headers as unknown as {
+      getSetCookie?: () => string[];
+    }).getSetCookie;
+    if (typeof getSetCookie === "function") return getSetCookie.call(res.headers);
+    const raw = res.headers.get("set-cookie");
+    return raw ? [raw] : [];
+  }
+
+  function errorCookie(res: Response): string | undefined {
+    return setCookieHeaders(res).find((c) => c.startsWith("zt_login_error="));
+  }
+
+  it("stores a recognised outcome code so /login can show it after the round trip", async () => {
+    const res = await GET(makeRequest("?error=no_admin_account"));
+
+    const cookie = errorCookie(res);
+    expect(cookie).toBeDefined();
+    expect(cookie).toContain("zt_login_error=no_admin_account");
+    expect(cookie).toContain("HttpOnly");
+    expect(cookie).toContain("Max-Age=120");
+  });
+
+  it("still redirects to Zitadel — carrying the message must not change where the browser goes", async () => {
+    const res = await GET(makeRequest("?error=no_admin_account"));
+
+    expect(res.headers.get("location")).toContain(
+      "https://auth.tesserix.app/oauth/v2/authorize",
+    );
+  });
+
+  it("leaves the PKCE state and verifier cookies untouched", async () => {
+    const withError = setCookieHeaders(await GET(makeRequest("?error=no_admin_account")));
+    const withoutError = setCookieHeaders(await GET(makeRequest()));
+
+    for (const cookies of [withError, withoutError]) {
+      expect(cookies.some((c) => c.startsWith("zt_auth_state="))).toBe(true);
+      expect(cookies.some((c) => c.startsWith("zt_pkce_verifier="))).toBe(true);
+    }
+  });
+
+  it("refuses to store an unrecognised error value — no provider text can reach the page this way", async () => {
+    const res = await GET(
+      makeRequest(
+        "?error=" + encodeURIComponent('{"error": "No valid authentication request found"}'),
+      ),
+    );
+
+    const cookie = errorCookie(res);
+    expect(cookie).toBeDefined();
+    // Present but EXPIRED and empty: an unrecognised value clears the
+    // channel rather than passing anything through it.
+    expect(cookie).toContain("Max-Age=0");
+    expect(cookie).not.toContain("No valid authentication request found");
+  });
+
+  it("clears any stale message when a new authorize starts with no error", async () => {
+    const cookie = errorCookie(await GET(makeRequest("?returnUrl=%2Fdashboard")));
+
+    expect(cookie).toBeDefined();
+    expect(cookie).toContain("Max-Age=0");
+  });
+
+  it("never mints the error cookie under GIP, where this route does not exist", async () => {
+    configMock.authProvider = "gip";
+
+    const res = await GET(makeRequest("?error=no_admin_account"));
+
+    expect(res.status).toBe(404);
+    expect(setCookieHeaders(res)).toEqual([]);
+  });
+});

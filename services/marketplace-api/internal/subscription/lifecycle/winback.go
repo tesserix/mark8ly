@@ -18,15 +18,16 @@ const WinBackSpec = "0 10 * * *"
 // winBack30Days is the post-expiry window after which the win-back promo is sent.
 const winBack30Days = 30 * 24 * time.Hour
 
-// WinBackCron sends a 20%-off-6-months promo email to expired stores at day 30
-// post-expiry (§15.3).
+// WinBackCron emails expired stores at day 30 post-expiry (§15.3).
 //
 // Idempotence comes from the billing_email_sends claim, NOT from the window
 // query. The window selects the same rows on every run within the same day —
 // before #381 the comment here claimed that was idempotent, which it was only
 // because the client was a no-op that never sent anything.
 //
-// NOTE: The actual promo code attachment (P10 promo service) is deferred.
+// The mail is sent whether or not a discount is available; which of the two
+// win-back templates goes out is decided per recipient by offerFor. See
+// winback_offer.go for why the campaign is not gated on the offer.
 type WinBackCron struct {
 	db     *gorm.DB
 	mailer email.Client
@@ -34,6 +35,7 @@ type WinBackCron struct {
 	clock  func() time.Time
 	skip   SkipCounter
 	sent   SentCounter
+	promo  WinBackPromoChecker
 }
 
 // CounterIncrementer is a one-method counter so tests can stub it.
@@ -127,12 +129,19 @@ func (c *WinBackCron) sendOne(ctx context.Context, row *subscription.StoreSubscr
 		to = *row.Email
 	}
 
-	err = c.mailer.Send(ctx, email.TemplateWinBack, to, map[string]any{
+	offer, offered := c.offerFor(ctx, row, to)
+	data := map[string]any{
 		"store_id":   row.StoreID.String(),
 		"tenant_id":  row.TenantID.String(),
 		"store_name": subscription.StoreNameFor(ctx, c.db, row.StoreID),
-		"promo":      "20%-off-6-months",
-	})
+	}
+	if offered {
+		data["promo_code"] = offer.Code
+		data["percent_off"] = offer.PercentOff
+		data["duration_months"] = offer.DurationMonths
+	}
+
+	err = c.mailer.Send(ctx, WinBackTemplate(offered), to, data)
 	if err != nil {
 		c.logger.Warn("lifecycle: win-back email not sent",
 			"store_id", row.StoreID, "tenant_id", row.TenantID,
@@ -154,9 +163,17 @@ func (c *WinBackCron) sendOne(ctx context.Context, row *subscription.StoreSubscr
 		}
 		return
 	}
+	// The claim key and both counters stay on email.TemplateWinBack even
+	// when the offer-less variant was rendered. They identify the CAMPAIGN —
+	// one day-30 send per store — and splitting them by variant would break
+	// the sent+skipped identity documented on
+	// metrics.BillingEmailsSkippedTotal, since a claim taken under one label
+	// could be skipped under the other. Which variant went out is on the log
+	// line below and in the message's `kind` attribution arg.
 	if c.sent != nil {
 		c.sent.WithTemplate(string(email.TemplateWinBack)).Inc()
 	}
 	c.logger.Info("lifecycle: win-back email sent",
-		"store_id", row.StoreID, "tenant_id", row.TenantID)
+		"store_id", row.StoreID, "tenant_id", row.TenantID,
+		"template", string(WinBackTemplate(offered)), "offer", offered)
 }

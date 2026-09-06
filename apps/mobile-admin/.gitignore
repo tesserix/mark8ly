@@ -14,9 +14,23 @@ web-build/
 # metro FileStore cache
 .metro-cache/
 
-# Firebase config (gitignored - injected via GOOGLE_SERVICES_PLIST or provided locally)
-GoogleService-Info.plist
-google-services.json
+# Firebase client config is COMMITTED, deliberately, and must stay that way.
+#
+# Both files were already tracked while these ignore rules matched them, which
+# git allows silently (an ignore rule does not evict an already-tracked file,
+# and `git check-ignore` will not even report one unless you pass --no-index).
+# That mismatch was invisible on EAS CLOUD builds, which package the committed
+# git tree, and fatal for `eas build --local`, which copies the working tree
+# HONOURING these rules: prebuild died with
+#   [ios.xcodeproj]: withIosXcodeprojBaseMod: ENOENT ... GoogleService-Info.plist
+#
+# Keeping them committed is also what lets app.config.js read REVERSED_CLIENT_ID
+# out of the plist at CONFIG time, before any EXPO_PUBLIC_* env exists.
+#
+# These are not secrets: a GoogleService-Info.plist / google-services.json holds
+# client identifiers that ship inside every copy of the app binary, and this
+# repository is public, so they are already world-readable. The env overrides
+# (GOOGLE_SERVICES_PLIST / GOOGLE_SERVICES_JSON) still win when set.
 
 # Google Play submit service-account key (real secret — never commit; provide via EAS secret)
 play-service-account.json

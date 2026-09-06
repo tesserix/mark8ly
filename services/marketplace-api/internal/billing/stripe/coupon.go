@@ -125,6 +125,44 @@ func subscriptionDiscounts(ctx context.Context, c *Client, subID string) ([]*sdk
 	return s.Discounts, nil
 }
 
+// discountFromCoupon reports whether d is a discount created from couponID.
+// One definition for the three callers below, so "is our coupon on this
+// subscription" cannot come to mean different things in the add, the remove
+// and the read.
+func discountFromCoupon(d *sdk.Discount, couponID string) bool {
+	return d != nil && d.Coupon != nil && d.Coupon.ID == couponID
+}
+
+// SubscriptionHasDiscount reports whether the subscription already carries a
+// discount created from couponID.
+//
+// AddSubscriptionDiscount treats an already-attached coupon as a no-op, but it
+// reports that no-op and a real attachment identically — both return nil. A
+// caller that must tell "we applied it" from "it was already there", which the
+// tenant-discount fan-out's per-store report is, needs the question asked
+// separately. Asking it here rather than widening AddSubscriptionDiscount's
+// return leaves that helper and its three call sites in internal/promo alone.
+//
+// The answer is a snapshot: nothing stops the array changing between this read
+// and a following add, and it is not meant to. AddSubscriptionDiscount stays
+// idempotent on its own, so the worst outcome of a lost race is an outcome
+// label that reads "applied" for a coupon a concurrent call had just attached.
+func SubscriptionHasDiscount(ctx context.Context, c *Client, subID, couponID string) (bool, error) {
+	if subID == "" || couponID == "" {
+		return false, errors.New("stripe: SubscriptionHasDiscount: subscription and coupon ids are required")
+	}
+	existing, err := subscriptionDiscounts(ctx, c, subID)
+	if err != nil {
+		return false, err
+	}
+	for _, d := range existing {
+		if discountFromCoupon(d, couponID) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // reuseParams maps existing discounts to update params that reuse them.
 // The Discount arm carries a discount id already on the object; the Coupon
 // arm would mint a second discount from the same coupon instead.
@@ -181,7 +219,7 @@ func AddSubscriptionDiscount(ctx context.Context, c *Client, subID, couponID str
 		return err
 	}
 	for _, d := range existing {
-		if d != nil && d.Coupon != nil && d.Coupon.ID == couponID {
+		if discountFromCoupon(d, couponID) {
 			return nil
 		}
 	}
@@ -216,7 +254,7 @@ func RemoveSubscriptionDiscount(ctx context.Context, c *Client, subID, couponID 
 	keep := make([]*sdk.Discount, 0, len(existing))
 	found := false
 	for _, d := range existing {
-		if d != nil && d.Coupon != nil && d.Coupon.ID == couponID {
+		if discountFromCoupon(d, couponID) {
 			found = true
 			continue
 		}

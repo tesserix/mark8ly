@@ -100,8 +100,16 @@ export default function OtpScreen() {
         <ScrollView
           contentContainerStyle={{ flexGrow: 1 }}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
         >
-          <View className="flex-1 px-6 pt-16">
+          {/* NO flex-1 here, deliberately. With it the inner View is forced to
+              the container's height, so when the keyboard opens and
+              KeyboardAvoidingView shrinks that container the content is
+              SQUEEZED rather than made scrollable — the heading slides off the
+              top edge with no way to scroll back to it. Sized by its content,
+              with flexGrow on the container, a short screen still sits
+              top-aligned and a keyboard simply makes the view scrollable. */}
+          <View className="px-6 pb-12 pt-16">
             <Text preset="eyebrow" className="text-moss">
               CHECK YOUR EMAIL
             </Text>

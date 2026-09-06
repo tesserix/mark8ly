@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
 )
@@ -61,7 +62,7 @@ func TestNewEmitter_NilRepo_ReturnsErrorAndStartsNoWorkers(t *testing.T) {
 
 // TestNilEmitter_AllExportedMethodsAreSafe pins the documented opt-out
 // contract: a nil *Emitter is safe to call every exported method on —
-// all eleven, enumerated by grepping the PACKAGE (every "func (e
+// all twelve, enumerated by grepping the PACKAGE (every "func (e
 // *Emitter)" across every file in internal/audit), not just emitter.go.
 // A narrower enumeration is exactly how #318's follow-up review found
 // EmitCredentialAccess, EmitPromoApplied, EmitPromoCancelled,
@@ -69,7 +70,7 @@ func TestNewEmitter_NilRepo_ReturnsErrorAndStartsNoWorkers(t *testing.T) {
 // though they live outside emitter.go and share the same delegation
 // pattern.
 //
-// Emit, EmitSync and Stop guard the receiver explicitly; the other eight
+// Emit, EmitSync, EmitTx and Stop guard the receiver explicitly; the other eight
 // are safe only because they delegate to Emit without dereferencing e
 // themselves — an implementation detail nothing else currently pins. If
 // a future refactor made any of them touch e directly before calling
@@ -85,6 +86,12 @@ func TestNilEmitter_AllExportedMethodsAreSafe(t *testing.T) {
 		err := e.EmitSync(nil, audit.Event{Action: "a", ResourceType: "b", TenantID: uuid.New()})
 		require.Error(t, err, "EmitSync on a nil *Emitter must return an error, not silently succeed")
 	}, "EmitSync on a nil *Emitter must not panic")
+
+	require.NotPanics(t, func() {
+		err := e.EmitTx(context.Background(), &gorm.DB{}, nil,
+			audit.Event{Action: "a", ResourceType: "b", TenantID: uuid.New()})
+		require.Error(t, err, "EmitTx on a nil *Emitter must return an error, not silently succeed")
+	}, "EmitTx on a nil *Emitter must not panic")
 
 	require.NotPanics(t, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)

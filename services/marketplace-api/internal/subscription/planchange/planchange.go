@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/billing/tenantdiscount"
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
@@ -117,6 +119,25 @@ type Deps struct {
 	// is called inside the upgrade/downgrade-commit transaction so that plan
 	// and budget rows always commit atomically.
 	BudgetRecomputer BudgetRecomputer
+
+	// TenantDiscount is optional (#660 T6). When non-nil,
+	// executeInitialSubscription offers the subscription it has just created
+	// to the tenant's standing platform override. Nil is the configuration
+	// with no Stripe billing key, where no tenantdiscount.Service exists to
+	// wire — and with it Execute behaves exactly as it did before T6.
+	TenantDiscount TenantDiscountApplier
+}
+
+// TenantDiscountApplier offers a newly created subscription to the tenant's
+// standing platform override (mark8ly#660). *tenantdiscount.Service satisfies
+// it.
+//
+// Declared here as an interface for the reason StripeClient above is —
+// substitutable in tests — and NOT for the reason BudgetRecomputer is.
+// BudgetRecomputer exists to avoid a circular import; there is no cycle here,
+// because tenantdiscount imports neither this package nor internal/billing/trial.
+type TenantDiscountApplier interface {
+	ApplyToNewSubscription(ctx context.Context, in tenantdiscount.NewSubscriptionInput) (tenantdiscount.Outcome, error)
 }
 
 // Orchestrator runs the plan-change workflow under an advisory lock.
@@ -291,11 +312,55 @@ func (o *Orchestrator) executeInitialSubscription(ctx context.Context, tx *gorm.
 		})
 	}
 
+	// #660 T6 — this store had no Stripe subscription until a moment ago, so
+	// a platform override granted to its tenant could not be attached to it.
+	// It can be now, and this is the second of the two places where that is
+	// true (the other is trial.Subscriber.subscribeInTx).
+	o.applyTenantDiscount(ctx, in, stripeSub.ID)
+
 	return Output{
 		Result:        ResultUpgradeCommitted,
 		EffectiveAt:   in.Now,
 		StripeUpdated: true,
 	}, nil
+}
+
+// applyTenantDiscount offers the new subscription to the tenant's standing
+// override, and RETURNS NOTHING.
+//
+// That is the contract, not an oversight. A discount that cannot be applied
+// costs the tenant a discount an operator can re-apply by hand; a discount
+// that blocks this call costs the merchant their plan change. The first is
+// recoverable and the second is not, so the failure is logged and dropped.
+//
+// It is also handed no transaction: ApplyToNewSubscription works entirely on
+// the tenantdiscount service's own handle. A failed statement poisons a
+// Postgres transaction, so writing on the transaction this runs inside would
+// turn exactly the failure this function exists to swallow into a failed plan
+// change.
+func (o *Orchestrator) applyTenantDiscount(ctx context.Context, in Input, stripeSubID string) {
+	if o.deps.TenantDiscount == nil {
+		return
+	}
+	outcome, err := o.deps.TenantDiscount.ApplyToNewSubscription(ctx, tenantdiscount.NewSubscriptionInput{
+		TenantID:             in.TenantID,
+		StoreID:              in.StoreID,
+		StripeSubscriptionID: stripeSubID,
+	})
+	if err != nil {
+		slog.Error("planchange: could not apply the tenant's standing platform override to a new subscription",
+			"tenant_id", in.TenantID.String(),
+			"store_id", in.StoreID.String(),
+			"stripe_subscription_id", stripeSubID,
+			"err", err)
+		return
+	}
+	if outcome == tenantdiscount.OutcomeApplied {
+		slog.Info("planchange: applied the tenant's standing platform override to a new subscription",
+			"tenant_id", in.TenantID.String(),
+			"store_id", in.StoreID.String(),
+			"stripe_subscription_id", stripeSubID)
+	}
 }
 
 // executeUpgrade handles immediate plan upgrades and period upgrades

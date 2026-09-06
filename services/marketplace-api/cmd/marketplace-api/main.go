@@ -50,6 +50,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/billing/tax/revalidation"
 	"github.com/mark8ly/marketplace-api/internal/billing/tax/seaqueue"
 	"github.com/mark8ly/marketplace-api/internal/billing/tax/taxreg"
+	"github.com/mark8ly/marketplace-api/internal/billing/tenantdiscount"
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/billingarchive"
 	"github.com/mark8ly/marketplace-api/internal/branding"
@@ -638,6 +639,13 @@ func main() {
 	// hard-delete runner's Stripe customer deletion step.
 	var billingStripeClient *billingstripe.Client
 
+	// tenantDiscountSvc is hoisted for the same reason and one more: it is
+	// used in THREE places at two different depths — the two
+	// subscription-creation paths inside the admin-mode block (#660 T6) and
+	// the platform-admin route wiring far below it — and constructing it
+	// twice would give the fan-out and the creation hook different services.
+	var tenantDiscountSvc *tenantdiscount.Service
+
 	// wlAppCredsSvc is hoisted so both admin route registration (constructs
 	// AppCredentialsHandler + AppAddOnHandler) and the white-label lifecycle
 	// cron (constructs Advancer) share a single appcreds.Service instance.
@@ -1030,6 +1038,28 @@ func main() {
 		if cfg.StripeBillingSecretKey != "" {
 			billingStripeClient = billingstripe.New(cfg.StripeBillingSecretKey)
 			stripeAdapter = &stripeClientAdapter{c: billingStripeClient}
+
+			// #660 — the tenant-wide platform discount. Constructed HERE,
+			// before the plan-change orchestrator and the trial subscriber
+			// below, because both take it as their T6 creation hook; the
+			// platform-admin routes far below reuse this same instance.
+			//
+			// A construction failure is logged and leaves the service nil,
+			// which is a supported state everywhere it is used: the two
+			// creation paths skip the hook and the two operator routes stay
+			// unmounted. It cannot fail on the audit writer here — the
+			// emitter is unconditional — so in practice this only fires if a
+			// future dependency is added and not wired.
+			if svc, tdErr := tenantdiscount.NewService(tenantdiscount.Config{
+				DB:     conn,
+				Stripe: &tenantdiscount.StripeAdapter{C: billingStripeClient},
+				Audit:  auditEmitter,
+				Logger: log,
+			}); tdErr != nil {
+				log.Warn("tenant discount service not available", "err", tdErr)
+			} else {
+				tenantDiscountSvc = svc
+			}
 		} else {
 			log.Warn("STRIPE_BILLING_SECRET_KEY not set — subscription checkout/portal will fail")
 		}
@@ -1088,6 +1118,7 @@ func main() {
 				Emitter:          auditEmitter,
 				SubscriptionRepo: subscriptionRepo,
 				StoreRepo:        storesRepo,
+				TenantDiscount:   tenantDiscountApplier(tenantDiscountSvc),
 			})
 			changePlanHandler = admin.NewChangePlanHandler(planChangeOrch, log)
 
@@ -1187,6 +1218,9 @@ func main() {
 		var trialBillingHandler *admin.TrialBillingHandler
 		if billingStripeClient != nil {
 			trialSubscriber := trial.NewSubscriber(conn, &trial.StripeAdapter{C: billingStripeClient}, nil)
+			if tenantDiscountSvc != nil {
+				trialSubscriber = trialSubscriber.WithTenantDiscount(tenantDiscountSvc)
+			}
 			trialBillingHandler = admin.NewTrialBillingHandler(trialSubscriber, log)
 		}
 
@@ -2423,6 +2457,28 @@ func main() {
 		log.Warn("STRIPE_BILLING_SECRET_KEY not set — card-backed trials cannot be extended (409 stripe_managed)")
 	}
 
+	// tenantDiscounter stays a TRUE nil interface unless the service was
+	// really constructed, for the same reason trialStripe above does: a
+	// typed nil assigned into platformadmin.Deps.TenantDiscount is a
+	// non-nil interface value and would defeat Register's mount guard.
+	//
+	// The service itself is built up in the admin-mode block, beside the
+	// Stripe client and the two subscription-creation paths that share it
+	// (#660 T6). It is nil here when Stripe billing is unconfigured, when
+	// MODE=storefront so that block never ran, or when construction failed —
+	// and unlike trials there is no degraded mode to fall back to. Every
+	// operation this service performs IS a Stripe operation
+	// (tenantdiscount.ErrNoStripeClient), and it refuses construction
+	// without an audit writer as well (ErrNoAuditWriter), so a missing
+	// dependency leaves the two discount routes unmounted rather than
+	// mounted and answering an error.
+	var tenantDiscounter platformadmin.TenantDiscounter
+	if tenantDiscountSvc != nil {
+		tenantDiscounter = tenantDiscountSvc
+	} else {
+		log.Warn("tenant discount service not available — tenant discounts cannot be applied or removed (routes unmounted)")
+	}
+
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)
 
@@ -2488,6 +2544,7 @@ func main() {
 			Outbox:                  platformadmin.OutboxListerFunc(outbox.ListPlatform),
 			OutboxWriter:            outbox.WriterFuncs{},
 			TrialExtender:           trial.NewExtender(trialStripe),
+			TenantDiscount:          tenantDiscounter,
 			TenantTeardown:          tenantTeardownClient,
 			Purger:                  tenantpurge.NewGormPurger(conn),
 			Inbox:                   inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
@@ -2640,6 +2697,7 @@ func main() {
 				Outbox:                  platformadmin.OutboxListerFunc(outbox.ListPlatform),
 				OutboxWriter:            outbox.WriterFuncs{},
 				TrialExtender:           trial.NewExtender(trialStripe),
+				TenantDiscount:          tenantDiscounter,
 				TenantTeardown:          tenantTeardownClient,
 				Purger:                  tenantpurge.NewGormPurger(conn),
 				Inbox:                   inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
@@ -2944,4 +3002,21 @@ func (c *arbitragePrometheusCounter) IncArbitrageFalsePositiveCleared() {
 		metrics.Subscription.SubscriptionArbitrageFlaggedTotal.
 			WithLabelValues("false_positive_cleared").Inc()
 	}
+}
+
+// tenantDiscountApplier converts a possibly-nil *tenantdiscount.Service into a
+// planchange.TenantDiscountApplier that is TRULY nil when no service was
+// constructed.
+//
+// Assigning the typed nil straight into the struct field would make
+// Deps.TenantDiscount != nil true, and every initial subscription would call a
+// method on a nil receiver. That is survivable — ApplyToNewSubscription
+// returns ErrNilService and the hook swallows it — but it would log an error
+// on every subscription created without Stripe billing configured, which is
+// noise that reads like a fault.
+func tenantDiscountApplier(s *tenantdiscount.Service) planchange.TenantDiscountApplier {
+	if s == nil {
+		return nil
+	}
+	return s
 }

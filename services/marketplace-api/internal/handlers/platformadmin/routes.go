@@ -128,6 +128,15 @@ type Deps struct {
 	// used for the read routes in this struct.
 	TrialExtender TrialExtender
 
+	// TenantDiscount serves POST and DELETE
+	// /admin/billing/tenants/:tenantID/discount (#660) — applying and
+	// revoking a console-minted Stripe coupon across every store the tenant
+	// owns. Like TrialExtender it needs DB and Emitter as well, and mounting
+	// is hard-gated on both; see the guard below for what each one is
+	// actually doing there, since this handler — unlike every other write on
+	// this surface — does not emit the audit row itself.
+	TenantDiscount TenantDiscounter
+
 	// TenantTeardown and Purger together serve POST /admin/tenants/:id/purge
 	// and GET /admin/tenants/:id/purge/preview (#288) — the surface's
 	// IRREVERSIBLE endpoint. Both must be non-nil, along with DB, Emitter
@@ -454,6 +463,35 @@ func Register(g *gin.RouterGroup, deps Deps) {
 		// reachable.
 		if deps.Logger != nil {
 			deps.Logger.Warn("platformadmin: trial extend route not mounted — DB and Emitter are both required",
+				"db_nil", deps.DB == nil, "emitter_nil", deps.Emitter == nil)
+		}
+	}
+
+	switch {
+	case deps.TenantDiscount != nil && deps.DB != nil && deps.Emitter != nil:
+		NewBillingTenantDiscountHandler(deps.DB, deps.TenantDiscount, deps.Logger).Register(group)
+	case deps.TenantDiscount != nil:
+		// TenantDiscount is wired but DB or Emitter isn't. Both gates are
+		// real, and they are not the same gate:
+		//
+		// DB is the idempotency store. Without it the handler still
+		// REQUIRES an Idempotency-Key but has nowhere to reserve, replay or
+		// release it, so the retry safety the header promises is decorative
+		// — a retried apply would fan out a second time.
+		//
+		// Emitter is this surface's standing rule, kept uniform: a write
+		// endpoint that cannot be attributed to an operator should not
+		// exist rather than run silently unaudited (#287, F1). Unlike the
+		// TrialExtender case below, the Emitter is NOT handed to this
+		// handler — internal/billing/tenantdiscount writes its own audit
+		// row with EmitTx, inside each store's transaction, and refuses
+		// construction without an audit writer (ErrNoAuditWriter). main.go
+		// builds that service from the SAME auditEmitter this field holds,
+		// so a nil here means the wiring that would have attributed these
+		// writes is absent, and the gate says so at the mount rather than
+		// leaving it to a constructor two packages away.
+		if deps.Logger != nil {
+			deps.Logger.Warn("platformadmin: tenant discount routes not mounted — DB and Emitter are both required",
 				"db_nil", deps.DB == nil, "emitter_nil", deps.Emitter == nil)
 		}
 	}

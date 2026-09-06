@@ -1,0 +1,21 @@
+-- 000132_tenant_applied_discounts.down.sql
+--
+-- Dropping this table does not undo anything in Stripe. Every discount it
+-- records is still attached to a real subscription and still reducing real
+-- invoices; what is lost is this service's ability to say WHICH tenants hold
+-- one, and therefore its ability to cover a store created afterwards.
+--
+-- That is a data loss with no local reconstruction: the applications are
+-- audited (audit_logs, action billing.tenant_discount.apply) and the console
+-- holds the grants (tesserix-home 0047), but neither is queried by the
+-- subscription-creation hook, and the audit trail records attempts per store
+-- rather than the tenant's current standing.
+--
+-- It is NOT guarded the way 000131's revert is. That guard exists because
+-- reverting would have had to DELETE rows to succeed, and the choice of
+-- deleting versus refusing belonged to a human. Here there is no such choice —
+-- the whole table is the new thing, and refusing to drop it would leave a
+-- migration that cannot be reverted at all. Take a snapshot first if the rows
+-- matter; reverting past 000132 is a decision about a live billing account.
+
+DROP TABLE IF EXISTS tenant_applied_discounts;

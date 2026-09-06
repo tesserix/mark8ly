@@ -97,6 +97,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/billing/dispatch/... \
 	    ./internal/billing/migration/... \
 	    ./internal/billing/tax/... \
+	    ./internal/billing/tenantdiscount/... \
 	    ./internal/billing/trial/... \
 	    ./internal/branding/... \
 	    ./internal/breakglass/... \

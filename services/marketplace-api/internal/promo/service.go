@@ -149,10 +149,10 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 		couponID = *pc.StripeCouponID
 	}
 	if s.stripe != nil && in.StripeSubscriptionID != "" && couponID != "" {
-		if err := billingstripe.AttachCoupon(ctx, s.stripe, in.StripeSubscriptionID, couponID); err != nil {
-			return ApplyOutput{}, fmt.Errorf("promo: apply: stripe attach coupon: %w", err)
+		if err := billingstripe.AddSubscriptionDiscount(ctx, s.stripe, in.StripeSubscriptionID, couponID); err != nil {
+			return ApplyOutput{}, fmt.Errorf("promo: apply: stripe add subscription discount: %w", err)
 		}
-		s.logger.Info("promo: coupon attached to stripe subscription",
+		s.logger.Info("promo: coupon added to stripe subscription discounts",
 			"store_id", in.StoreID,
 			"coupon_id", couponID,
 			"stripe_sub_id", in.StripeSubscriptionID)
@@ -174,12 +174,12 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 		RedeemedAt:     time.Now().UTC(),
 	}
 	if err := s.repo.CreateRedemption(ctx, s.db, red); err != nil {
-		// Best-effort rollback: try to detach from Stripe. Only when we
-		// actually attached something — a code with no coupon attached
-		// nothing, and detaching here would strip an unrelated coupon the
-		// subscription already carried.
+		// Best-effort rollback: remove what we just added, and only when we
+		// actually added something — a code with no coupon added nothing.
+		// RemoveSubscriptionDiscount takes out that coupon's discount alone,
+		// so an unrelated coupon the subscription already carried survives.
 		if s.stripe != nil && in.StripeSubscriptionID != "" && couponID != "" {
-			_ = billingstripe.DetachCoupon(ctx, s.stripe, in.StripeSubscriptionID)
+			_ = billingstripe.RemoveSubscriptionDiscount(ctx, s.stripe, in.StripeSubscriptionID, couponID)
 		}
 		return ApplyOutput{}, fmt.Errorf("promo: apply: record redemption: %w", err)
 	}
@@ -196,17 +196,26 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 	}, nil
 }
 
-// CancelPromo detaches the coupon from the Stripe subscription and removes
-// the local redemption record. Idempotent — if no redemption exists, returns nil.
+// CancelPromo removes this code's coupon from the Stripe subscription's
+// discounts and removes the local redemption record. Idempotent — if no
+// redemption exists, returns nil.
 func (s *Service) CancelPromo(ctx context.Context, in CancelInput) error {
-	// Detach from Stripe first (idempotent on 404).
+	// Remove from Stripe first. Only this code's coupon goes: any other
+	// discount on the subscription is written back untouched.
 	if s.stripe != nil && in.StripeSubscriptionID != "" {
-		if err := billingstripe.DetachCoupon(ctx, s.stripe, in.StripeSubscriptionID); err != nil {
-			return fmt.Errorf("promo: cancel: stripe detach coupon: %w", err)
+		couponID, err := s.cancelCouponID(ctx, in.PromoCodeID)
+		if err != nil {
+			return err
 		}
-		s.logger.Info("promo: coupon detached from stripe subscription",
-			"store_id", in.StoreID,
-			"stripe_sub_id", in.StripeSubscriptionID)
+		if couponID != "" {
+			if err := billingstripe.RemoveSubscriptionDiscount(ctx, s.stripe, in.StripeSubscriptionID, couponID); err != nil {
+				return fmt.Errorf("promo: cancel: stripe remove subscription discount: %w", err)
+			}
+			s.logger.Info("promo: coupon removed from stripe subscription discounts",
+				"store_id", in.StoreID,
+				"coupon_id", couponID,
+				"stripe_sub_id", in.StripeSubscriptionID)
+		}
 	}
 
 	// Remove local redemption record.
@@ -214,6 +223,26 @@ func (s *Service) CancelPromo(ctx context.Context, in CancelInput) error {
 		return fmt.Errorf("promo: cancel: delete redemption: %w", err)
 	}
 	return nil
+}
+
+// cancelCouponID returns the Stripe coupon backing promoCodeID, or "" when
+// there is nothing to remove from Stripe: the code carries no coupon (a
+// trial-extension-only code never does, and the console omits the id for a
+// code not minted in the current Stripe mode, #726), or the promo code row
+// is gone — in which case the local redemption delete still runs, keeping
+// CancelPromo idempotent.
+func (s *Service) cancelCouponID(ctx context.Context, promoCodeID uuid.UUID) (string, error) {
+	pc, err := s.repo.GetByID(ctx, s.db, promoCodeID)
+	if err != nil {
+		if errors.As(err, new(*apperrors.Error)) {
+			return "", nil
+		}
+		return "", fmt.Errorf("promo: cancel: lookup promo code: %w", err)
+	}
+	if pc.StripeCouponID == nil {
+		return "", nil
+	}
+	return *pc.StripeCouponID, nil
 }
 
 // ValidateForSaveOffer is called by P11's cancel flow to assert that a promo

@@ -13,17 +13,19 @@ import (
 )
 
 // allWriteRoutesDeps wires every dependency Register (routes.go) needs to
-// mount ALL NINE of this surface's write routes at once: POST
+// mount ALL ELEVEN of this surface's write routes at once: POST
 // /admin/billing/trials/:storeID/extend, POST /admin/tenants/:id/suspend,
 // POST /admin/tenants/:id/unsuspend, POST /admin/tenants/:id/purge,
 // (#405) POST /admin/outbox/:id/requeue, POST /admin/outbox/requeue, POST
-// /admin/outbox/:id/dead-letter, and (tesserix-home#588) PUT
+// /admin/outbox/:id/dead-letter, (tesserix-home#588) PUT
 // /admin/email-templates/:key plus POST
-// /admin/email-templates/:key/test-send.
+// /admin/email-templates/:key/test-send, and (#660) POST plus DELETE
+// /admin/billing/tenants/:tenantID/discount.
 //
 // Register's switch statements (routes.go) mount each write route group
 // only when THAT group's own dependency set is fully non-nil —
-// TrialExtender needs DB+Emitter, TenantLifecycle needs DB+Emitter, the
+// TrialExtender needs DB+Emitter, TenantLifecycle needs DB+Emitter,
+// TenantDiscount needs DB+Emitter, the
 // purge pair needs DB+Emitter+TenantDirectory+TenantTeardown+Purger, and
 // OutboxWriter needs Outbox+DB+Emitter, and the email template writes
 // need EmailTemplates+EmailTemplateRegistry+DB (NOT Emitter — see
@@ -32,7 +34,7 @@ import (
 // mount only some write routes, and TestAllWriteRoutesDeclareACapability
 // below would pass VACUOUSLY on the ones it never saw. That is why this
 // helper wires every dependency, and why the test separately asserts the
-// mounted write-route count is exactly 7 rather than trusting an empty
+// mounted write-route count is exactly 11 rather than trusting an empty
 // failure list alone.
 func allWriteRoutesDeps(t *testing.T) platformadmin.Deps {
 	return platformadmin.Deps{
@@ -44,6 +46,7 @@ func allWriteRoutesDeps(t *testing.T) platformadmin.Deps {
 		Emitter:         mustEmitter(t, &recordingRepo{}),
 		TenantLifecycle: &stubLifecycle{},
 		TrialExtender:   &stubExtender{},
+		TenantDiscount:  &stubDiscounter{},
 		TenantTeardown:  &fakeTeardown{seq: &seq{}},
 		Purger:          &fakePurger{seq: &seq{}},
 		Outbox:          &stubOutboxLister{},
@@ -114,8 +117,8 @@ func TestAllWriteRoutesDeclareACapability(t *testing.T) {
 	// loop above would just see fewer routes and pass on the ones it never
 	// saw, exactly the vacuous-pass hazard this file's doc comments warn
 	// about.
-	require.Equal(t, 9, writeRouteCount,
-		"expected exactly the 9 known write routes to be mounted; got %d — "+
+	require.Equal(t, 11, writeRouteCount,
+		"expected exactly the 11 known write routes to be mounted; got %d — "+
 			"either allWriteRoutesDeps is missing a dependency, or a new "+
 			"write route was added and this test's expected count needs "+
 			"updating alongside its capability declaration in "+

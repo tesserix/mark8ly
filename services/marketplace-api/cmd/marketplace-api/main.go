@@ -50,6 +50,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/billing/tax/revalidation"
 	"github.com/mark8ly/marketplace-api/internal/billing/tax/seaqueue"
 	"github.com/mark8ly/marketplace-api/internal/billing/tax/taxreg"
+	"github.com/mark8ly/marketplace-api/internal/billing/tenantdiscount"
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/billingarchive"
 	"github.com/mark8ly/marketplace-api/internal/branding"
@@ -2418,6 +2419,34 @@ func main() {
 		log.Warn("STRIPE_BILLING_SECRET_KEY not set — card-backed trials cannot be extended (409 stripe_managed)")
 	}
 
+	// tenantDiscountSvc stays a TRUE nil interface unless the service was
+	// really constructed, for the same reason trialStripe above does: a
+	// typed nil assigned into platformadmin.Deps.TenantDiscount is a
+	// non-nil interface value and would defeat Register's mount guard.
+	//
+	// Unlike trials there is no degraded mode to fall back to. Every
+	// operation this service performs IS a Stripe operation
+	// (tenantdiscount.ErrNoStripeClient), and it refuses construction
+	// without an audit writer as well (ErrNoAuditWriter), so a missing
+	// dependency leaves the two discount routes unmounted rather than
+	// mounted and answering an error.
+	var tenantDiscountSvc platformadmin.TenantDiscounter
+	if billingStripeClient != nil {
+		svc, err := tenantdiscount.NewService(tenantdiscount.Config{
+			DB:     conn,
+			Stripe: &tenantdiscount.StripeAdapter{C: billingStripeClient},
+			Audit:  auditEmitter,
+			Logger: log,
+		})
+		if err != nil {
+			log.Warn("tenant discount routes not available", "err", err)
+		} else {
+			tenantDiscountSvc = svc
+		}
+	} else {
+		log.Warn("STRIPE_BILLING_SECRET_KEY not set — tenant discounts cannot be applied or removed (routes unmounted)")
+	}
+
 	// Construct Gin engine(s) per MODE.
 	healthHandler := health.New(conn)
 
@@ -2483,6 +2512,7 @@ func main() {
 			Outbox:                  platformadmin.OutboxListerFunc(outbox.ListPlatform),
 			OutboxWriter:            outbox.WriterFuncs{},
 			TrialExtender:           trial.NewExtender(trialStripe),
+			TenantDiscount:          tenantDiscountSvc,
 			TenantTeardown:          tenantTeardownClient,
 			Purger:                  tenantpurge.NewGormPurger(conn),
 			Inbox:                   inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
@@ -2635,6 +2665,7 @@ func main() {
 				Outbox:                  platformadmin.OutboxListerFunc(outbox.ListPlatform),
 				OutboxWriter:            outbox.WriterFuncs{},
 				TrialExtender:           trial.NewExtender(trialStripe),
+				TenantDiscount:          tenantDiscountSvc,
 				TenantTeardown:          tenantTeardownClient,
 				Purger:                  tenantpurge.NewGormPurger(conn),
 				Inbox:                   inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),

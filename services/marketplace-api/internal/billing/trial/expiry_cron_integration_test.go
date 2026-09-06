@@ -12,18 +12,19 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
+	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
 // TestExpiryCron_TransitionsDay90StoresWithoutCard seeds a trialing store
 // whose created_at is 91 days ago (past the 90-day cutoff) and verifies Run
 // transitions it to "expired".
 func TestExpiryCron_TransitionsDay90StoresWithoutCard(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 	now := time.Date(2026, 7, 1, 0, 15, 0, 0, time.UTC)
 	// 91 days ago — clearly past the cutoff.
 	createdAt := now.AddDate(0, 0, -(trial.TrialDays + 1))
 
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_expiry_91",
 		Status:             subscription.StatusTrialing,
 		Plan:               subscription.PlanTrial,
@@ -45,12 +46,12 @@ func TestExpiryCron_TransitionsDay90StoresWithoutCard(t *testing.T) {
 // store that already has a Stripe subscription ID (card was added) is not
 // expired by the cron — it will convert to active when Stripe fires invoice.paid.
 func TestExpiryCron_SkipsStoresWithStripeSubscription(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 	now := time.Date(2026, 7, 2, 0, 15, 0, 0, time.UTC)
 	createdAt := now.AddDate(0, 0, -(trial.TrialDays + 1))
 
 	subID := "sub_has_card"
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:     "cus_expiry_carded",
 		StripeSubscriptionID: &subID,
 		Status:               subscription.StatusTrialing,
@@ -73,11 +74,11 @@ func TestExpiryCron_SkipsStoresWithStripeSubscription(t *testing.T) {
 // twice for the same store produces no error and does not change the status a
 // second time (the state machine guards the trialing → expired transition).
 func TestExpiryCron_Idempotent_SecondRunNoop(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 	now := time.Date(2026, 7, 3, 0, 15, 0, 0, time.UTC)
 	createdAt := now.AddDate(0, 0, -(trial.TrialDays + 1))
 
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_expiry_idem",
 		Status:             subscription.StatusTrialing,
 		Plan:               subscription.PlanTrial,

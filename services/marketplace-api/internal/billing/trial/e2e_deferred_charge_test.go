@@ -12,6 +12,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
+	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
 // TestE2E_Criterion46_CardDay45_ChargeDay90 asserts the spec §28 criterion #46
@@ -25,12 +26,12 @@ import (
 // trial_end against the arithmetic anchor (signup_date + 90d), which must
 // equal (card_add_day + 45d) when the card is added on day 45.
 func TestE2E_Criterion46_CardDay45_ChargeDay90(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 
 	// Day 0: merchant signs up. CreatedAt stands in for signup_date.
 	day0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_criterion_46",
 		Status:             subscription.StatusSignup,
 		Plan:               subscription.PlanTrial,

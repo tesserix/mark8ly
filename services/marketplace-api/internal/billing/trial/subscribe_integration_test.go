@@ -4,19 +4,18 @@ package trial_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
+	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
 // fakeStripe is a test double for trial.StripeAPI that records calls and
@@ -43,18 +42,28 @@ func (f *fakeStripe) PriceIDFor(_ context.Context, _ subscription.SubscriptionPl
 	return f.priceIDResult, f.priceIDErr
 }
 
-// openIntegrationDB connects to the database specified by TEST_DB_DSN.
-// Tests that call this are skipped when the env var is absent.
-func openIntegrationDB(t *testing.T) *gorm.DB {
+// seedStoreAndSubscription seeds the stores row that
+// store_subscriptions_store_id_fkey requires, then the subscription itself.
+//
+// seedSubscription alone cannot be used by a caller that does not seed a
+// store: it invents a store_id when the caller leaves the field zero, and
+// store_subscriptions.store_id has referenced stores(id) since migration
+// 000015, so the INSERT is rejected outright. UNIQUE (store_id) on the same
+// table means each subscription needs its own store, never a shared one.
+//
+// Callers that mint their own ids and seed the store themselves — see
+// subscribe_tenantdiscount_integration_test.go — call seedSubscription
+// directly instead.
+func seedStoreAndSubscription(t *testing.T, db *gorm.DB, row subscription.StoreSubscription) subscription.StoreSubscription {
 	t.Helper()
-	dsn, ok := os.LookupEnv("TEST_DB_DSN")
-	if !ok || dsn == "" {
-		t.Skip("TEST_DB_DSN not set; skipping integration test")
+	if row.TenantID == uuid.Nil {
+		row.TenantID = uuid.New()
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	require.NoError(t, err, "open integration DB")
-	t.Cleanup(func() { sqlDB, _ := db.DB(); _ = sqlDB.Close() })
-	return db
+	if row.StoreID == uuid.Nil {
+		row.StoreID = uuid.New()
+	}
+	testdb.SeedStore(t, db, row.TenantID, row.StoreID)
+	return seedSubscription(t, db, row)
 }
 
 // seedSubscription inserts a StoreSubscription row and registers cleanup.
@@ -96,10 +105,10 @@ func buildInput(tenantID, storeID uuid.UUID) trial.SubscribeInput {
 // TestSubscribe_TrialEndIsSignupPlus90Days verifies that trial_end equals
 // row.CreatedAt + 90d (the signup_date proxy).
 func TestSubscribe_TrialEndIsSignupPlus90Days(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 	day0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_abc",
 		Status:             subscription.StatusSignup,
 		Plan:               subscription.PlanTrial,
@@ -122,9 +131,9 @@ func TestSubscribe_TrialEndIsSignupPlus90Days(t *testing.T) {
 // TestSubscribe_PersistsStripeSubscriptionID verifies the DB row is updated
 // with the Stripe subscription ID returned from the API.
 func TestSubscribe_PersistsStripeSubscriptionID(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_abc",
 		Status:             subscription.StatusSignup,
 		Plan:               subscription.PlanTrial,
@@ -151,9 +160,9 @@ func TestSubscribe_PersistsStripeSubscriptionID(t *testing.T) {
 // TestSubscribe_NoImmediateStatusMutation verifies Subscribe does NOT flip
 // subscription.status — the webhook owns that transition.
 func TestSubscribe_NoImmediateStatusMutation(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_abc",
 		Status:             subscription.StatusSignup,
 		Plan:               subscription.PlanTrial,
@@ -174,9 +183,9 @@ func TestSubscribe_NoImmediateStatusMutation(t *testing.T) {
 // TestSubscribe_BlockedWhenAlreadyActive verifies ErrSubscriptionAlreadyActive
 // for stores whose status is already active.
 func TestSubscribe_BlockedWhenAlreadyActive(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_abc",
 		Status:             subscription.StatusActive,
 		Plan:               subscription.PlanStarter,
@@ -192,9 +201,9 @@ func TestSubscribe_BlockedWhenAlreadyActive(t *testing.T) {
 // TestSubscribe_MissingStripeCustomer verifies ErrMissingStripeCustomer when
 // StripeCustomerID is empty.
 func TestSubscribe_MissingStripeCustomer(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "",
 		Status:             subscription.StatusSignup,
 		Plan:               subscription.PlanTrial,
@@ -211,9 +220,9 @@ func TestSubscribe_MissingStripeCustomer(t *testing.T) {
 // the same inputs (and a fake that returns the same sub ID on both calls)
 // produces the same result. This mirrors Stripe's idempotency-key behaviour.
 func TestSubscribe_IdempotentOnReplay(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_abc",
 		Status:             subscription.StatusSignup,
 		Plan:               subscription.PlanTrial,

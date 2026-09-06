@@ -35,7 +35,12 @@ export function parseIdpCallback(url: string): IdpCallback {
   const start = url.indexOf("?");
   if (start === -1) return {};
   // Drop any fragment: a value after '#' was never a query parameter.
-  const query = url.slice(start + 1).split("#")[0];
+  // `?? ""` is required, not defensive: this package compiles under the root
+  // tsconfig's `noUncheckedIndexedAccess`, so `split()[0]` is
+  // `string | undefined` here even though it can never actually be absent.
+  // apps/mobile-admin does NOT enable that flag, so a check there passes
+  // while `@repo/mobile-shared#check-types` fails the whole Next.js gate.
+  const query = url.slice(start + 1).split("#")[0] ?? "";
 
   const out: IdpCallback = {};
   for (const pair of query.split("&")) {

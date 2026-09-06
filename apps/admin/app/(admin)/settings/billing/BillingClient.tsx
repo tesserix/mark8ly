@@ -12,6 +12,7 @@ import { subscriptionCopy } from '@/lib/copy/subscription'
 import { PlanCard } from './PlanCard'
 import { InvoicesList } from './InvoicesList'
 import { PaymentMethodCard } from './PaymentMethodCard'
+import { PromoCodeCard } from './PromoCodeCard'
 import { WhiteLabelAppCard } from './WhiteLabelAppCard'
 
 interface BillingClientProps {
@@ -214,6 +215,10 @@ export function BillingClient({ storeId }: BillingClientProps) {
     <div className="space-y-10">
       <PlanCard plan={plan} storeId={storeId} />
       <PaymentMethodCard plan={plan} storeId={storeId} />
+      {/* Above the invoice history: a merchant arriving from the day-30
+          win-back email (#727) came here to redeem a code, and the panel
+          they came for should not be below a table. */}
+      <PromoCodeCard plan={plan} storeId={storeId} />
       <InvoicesList storeId={storeId} />
       <WhiteLabelAppCard plan={plan} storeId={storeId} />
     </div>

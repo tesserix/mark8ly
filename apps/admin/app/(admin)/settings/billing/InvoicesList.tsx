@@ -9,6 +9,7 @@ import {
 import type { Invoice } from '@/lib/api/subscription/schemas/billing'
 import { subscriptionCopy } from '@/lib/copy/subscription'
 import { formatBillingDate } from '@/lib/format/date'
+import { formatMinorUnits } from '@/lib/format/minorUnits'
 
 interface InvoicesListProps {
   storeId: string
@@ -16,25 +17,6 @@ interface InvoicesListProps {
 
 const copy = subscriptionCopy.billing
 
-const ZERO_DECIMAL = new Set([
-  'bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg',
-  'rwf', 'ugx', 'vnd', 'vuv', 'xaf', 'xof', 'xpf',
-])
-
-function formatAmount(minor: number, currency: string): string {
-  const code = currency.toUpperCase()
-  const lower = currency.toLowerCase()
-  const major = ZERO_DECIMAL.has(lower) ? minor : minor / 100
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: code,
-      minimumFractionDigits: ZERO_DECIMAL.has(lower) ? 0 : 2,
-    }).format(major)
-  } catch {
-    return `${code} ${major.toFixed(ZERO_DECIMAL.has(lower) ? 0 : 2)}`
-  }
-}
 
 function statusLabel(status: string): { label: string; tone: string } {
   switch (status) {
@@ -67,7 +49,7 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
         {invoice.number || '—'}
       </td>
       <td className="py-4 text-sm text-[var(--ink-900)]">
-        {formatAmount(amount, invoice.currency)}
+        {formatMinorUnits(amount, invoice.currency)}
       </td>
       <td className="py-4 text-sm" style={{ color: tone }}>
         {label}

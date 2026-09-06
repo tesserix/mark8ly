@@ -174,6 +174,91 @@ export const subscriptionCopy = {
   },
 
   /**
+   * Promo-code redemption panel — /settings/billing (#770).
+   *
+   * Voice: calm, editorial, factual. The refusal sentences carry the whole
+   * feature. Five of the eight reasons mean the code is FINE — it has been
+   * fully claimed, already used, or cannot combine with this plan, period or
+   * price floor — and saying "invalid or expired" for those sends a merchant
+   * to support holding a code that works. Two of them (wrong_plan,
+   * annual_only) name the change that would make the code work; one
+   * (unknown_discount_type) is our own data fault and must never read as the
+   * merchant's mistake.
+   *
+   * `invalid_or_expired` is the only reason that covers two server-side
+   * cases, and its sentence says so rather than picking one. The server
+   * merges "no such code" with "past its end date" on purpose — telling them
+   * apart would confirm which codes are real to anyone typing strings — so
+   * the copy must not imply we know which of the two it was.
+   */
+  promo: {
+    heading: 'Promo code',
+    description:
+      'If you have a code from us, redeem it here. The discount shows on your next invoice.',
+    inputLabel: 'Promo code',
+    inputPlaceholder: 'Enter your code',
+    submitCta: 'Redeem code',
+    submitInProgress: 'Checking\u2026',
+
+    /** Shown when the field is submitted empty. Never reaches the server. */
+    emptyCode: 'Enter the code from your email to redeem it.',
+
+    /**
+     * Merchant-facing sentence for each machine-readable rejection reason.
+     *
+     * Keyed by PromoRejectReason. Every value is a distinct sentence: two
+     * reasons sharing one string would put the merchant back where this
+     * issue found them, told nothing they can act on.
+     */
+    rejected: {
+      invalidOrExpired:
+        'We don\u2019t recognise that code, or it has passed its end date. Check the spelling and try again \u2014 codes are not case-sensitive.',
+      maxRedemptionsReached:
+        'This offer has been fully claimed. Your code was genuine \u2014 it has simply reached the number of redemptions it was issued for, so there is nothing to fix on your side.',
+      maxPerEmailReached:
+        'You have already redeemed this code. Each code can be used once per account, and the discount from your first redemption still stands.',
+      wrongPlan: (plan: string) =>
+        `This code does not apply to the ${plan} plan. It is a valid code \u2014 change plan and it will work.`,
+      annualOnly:
+        'This code applies to annual billing only. It is a valid code \u2014 switch to annual billing and it will work.',
+      belowAbsoluteFloor: (plan: string) =>
+        `This code is valid, but the discount would take your ${plan} plan below the lowest price we can bill it at in your currency. Changing plan may let you use it; otherwise contact us and we will find something that works.`,
+      currencyNotCovered:
+        'We cannot apply this code to a subscription billed in your currency yet. Contact us with the code and we will apply the discount by hand.',
+      unknownDiscountType:
+        'Something is wrong with this code on our side \u2014 it is not set up correctly. Contact us with the code and we will fix it.',
+    },
+
+    /**
+     * Confirmation sentences.
+     *
+     * Both state the new price and that it starts on the NEXT invoice. That
+     * is what actually happens: applying a code attaches a Stripe coupon to
+     * the subscription's discounts (AddSubscriptionDiscount) and nothing
+     * re-bills the current period, so "applied immediately" would be untrue
+     * and "you have been charged less today" doubly so.
+     *
+     * `appliedForMonths` is used only when the response carries BOTH a
+     * whole-percentage discount and a month bound. A code with a flat amount
+     * off, or no bound on how long it runs, cannot be described by that
+     * sentence \u2014 so it gets `applied`, which claims only the number the
+     * response actually contains. Same rule the win-back email follows
+     * (#727): never invent the part of an offer the data does not state.
+     */
+    appliedForMonths: (percentOff: string, months: number, price: string) =>
+      `Code applied. ${percentOff}% off for your next ${months === 1 ? 'month' : `${months} months`} \u2014 your plan is ${price} until then, starting with your next invoice.`,
+    applied: (price: string) =>
+      `Code applied. Your plan is ${price}, starting with your next invoice.`,
+    /** Used when the server returned no currency, so no price can be quoted. */
+    appliedNoPrice:
+      'Code applied. The discount shows on your next invoice.',
+
+    /** Non-refusal failures \u2014 the code was never judged. */
+    networkError:
+      'We could not reach billing just now. Your code has not been used \u2014 try again in a moment.',
+  },
+
+  /**
    * Trial banners + email ramp visualizer (§5, §5.3).
    *
    * Voice: calm, editorial. Trials are a positive state — never urgency.

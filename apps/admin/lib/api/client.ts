@@ -24,6 +24,21 @@ export class ApiError extends Error {
     public readonly code: string,
     public readonly status: number,
     message?: string,
+    /**
+     * Machine-readable sub-reason from the error body's `reason` field,
+     * when the endpoint sends one.
+     *
+     * `code` is coarse and stable — it names the class of failure and UI
+     * branches on it. `reason` is the detail within that class, so an
+     * endpoint can add a case without every existing caller having to learn
+     * a new `code`. apply-promo is the first user: one `code`
+     * (`promo_invalid_or_expired`), eight reasons, each a different sentence
+     * the merchant can act on (#770).
+     *
+     * Undefined for every endpoint that does not send one, which is most of
+     * them — always fall back to `message` rather than assuming it is here.
+     */
+    public readonly reason?: string,
   ) {
     super(message ?? code)
     this.name = 'ApiError'
@@ -58,6 +73,7 @@ interface ErrorBody {
   error?: string
   message?: string
   status?: string
+  reason?: string
 }
 
 async function parseErrorBody(res: Response): Promise<ErrorBody> {
@@ -98,6 +114,7 @@ async function handleResponse<T>(
     body.error ?? 'network_error',
     res.status,
     body.message,
+    body.reason,
   )
 }
 

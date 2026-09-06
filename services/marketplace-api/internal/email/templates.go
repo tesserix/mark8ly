@@ -31,6 +31,7 @@ var billingTemplateKeys = []TemplateID{
 	TemplateDunningDay5,
 	TemplateDunningDay7,
 	TemplateWinBack,
+	TemplateWinBackNoOffer,
 	TemplateMigrationFastPathApproved,
 	TemplateMigrationFastPathRejected,
 }

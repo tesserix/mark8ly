@@ -50,6 +50,34 @@ type ApplyOutput struct {
 	EffectiveMinor int64
 	// RejectReason is empty on success; set when the code was rejected (for audit).
 	RejectReason ValidationRejectReason
+	// PercentOffBps is the code's percentage discount in basis points (2000
+	// = 20%), or 0 when the code carries no percentage discount — it may
+	// carry a flat amount instead, or none at all. Exposed so a caller that
+	// has to DESCRIBE the offer (the day-30 win-back email, #727) states the
+	// row's own number rather than one written into prose.
+	PercentOffBps int
+	// MaxDurationMonths is how many months the discount runs for, or 0 when
+	// the row sets no bound. 0 is "unbounded", never "zero months".
+	MaxDurationMonths int
+}
+
+// terms copies the describable parts of a promo row into an output. Kept in
+// one place so ApplyPromo and ValidateCode cannot describe the same row
+// differently.
+func terms(out ApplyOutput, pc *PromoCode) ApplyOutput {
+	if pc == nil {
+		return out
+	}
+	if pc.StripeCouponID != nil {
+		out.StripeCouponID = *pc.StripeCouponID
+	}
+	if pc.DiscountType != nil && *pc.DiscountType == DiscountTypePercentage && pc.DiscountValue != nil {
+		out.PercentOffBps = *pc.DiscountValue
+	}
+	if pc.MaxDurationMonths != nil {
+		out.MaxDurationMonths = *pc.MaxDurationMonths
+	}
+	return out
 }
 
 // CancelInput is the input to Service.CancelPromo.
@@ -189,11 +217,11 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 			WithLabelValues(string(in.Plan), in.Currency, "applied").Inc()
 	}
 
-	return ApplyOutput{
+	return terms(ApplyOutput{
 		PromoCodeID:    pc.ID,
 		StripeCouponID: couponID,
 		EffectiveMinor: result.EffectiveMinor,
-	}, nil
+	}, pc), nil
 }
 
 // CancelPromo removes this code's coupon from the Stripe subscription's
@@ -245,26 +273,33 @@ func (s *Service) cancelCouponID(ctx context.Context, promoCodeID uuid.UUID) (st
 	return *pc.StripeCouponID, nil
 }
 
-// ValidateForSaveOffer is called by P11's cancel flow to assert that a promo
-// code is valid for the save-offer flow before accepting the cancellation
-// rescind. It runs all §7.3 checks but does NOT record a redemption — that
-// happens only if the merchant confirms the save-offer.
-func (s *Service) ValidateForSaveOffer(ctx context.Context, in ApplyInput) (ApplyOutput, error) {
+// ValidateCode runs every §7.3 check for `in` and records NOTHING: no
+// redemption row, no Stripe call, no metric. It answers "would this code be
+// accepted for this store right now", which is a different question from
+// "apply it".
+//
+// Two callers want that question, for different reasons. The cancel save
+// offer asks before accepting the rescind, and applies straight after. The
+// day-30 win-back email (#727) asks so it can decide whether to STATE the
+// offer, and must not redeem: the merchant has not asked for anything yet,
+// and burning the redemption here would leave them unable to use the code
+// when they return — max_per_email is 1.
+func (s *Service) ValidateCode(ctx context.Context, in ApplyInput) (ApplyOutput, error) {
 	pc, err := s.repo.GetByCode(ctx, s.db, in.Code)
 	if err != nil {
 		if errors.As(err, new(*apperrors.Error)) {
 			return ApplyOutput{RejectReason: RejectReasonNotFound}, ErrInvalidOrExpired
 		}
-		return ApplyOutput{}, fmt.Errorf("promo: validate for save offer: lookup: %w", err)
+		return ApplyOutput{}, fmt.Errorf("promo: validate code: lookup: %w", err)
 	}
 
 	totalRed, err := s.repo.CountRedemptions(ctx, s.db, pc.ID)
 	if err != nil {
-		return ApplyOutput{}, fmt.Errorf("promo: validate for save offer: count: %w", err)
+		return ApplyOutput{}, fmt.Errorf("promo: validate code: count: %w", err)
 	}
 	emailRed, err := s.repo.CountRedemptionsByEmail(ctx, s.db, pc.ID, normaliseEmail(in.MerchantEmail))
 	if err != nil {
-		return ApplyOutput{}, fmt.Errorf("promo: validate for save offer: count email: %w", err)
+		return ApplyOutput{}, fmt.Errorf("promo: validate code: count email: %w", err)
 	}
 
 	result := Validate(ValidationInput{
@@ -282,14 +317,17 @@ func (s *Service) ValidateForSaveOffer(ctx context.Context, in ApplyInput) (Appl
 		return ApplyOutput{RejectReason: result.RejectReason}, ErrInvalidOrExpired
 	}
 
-	out := ApplyOutput{
+	return terms(ApplyOutput{
 		PromoCodeID:    pc.ID,
 		EffectiveMinor: result.EffectiveMinor,
-	}
-	if pc.StripeCouponID != nil {
-		out.StripeCouponID = *pc.StripeCouponID
-	}
-	return out, nil
+	}, pc), nil
+}
+
+// ValidateForSaveOffer is the cancel flow's name for ValidateCode. Kept as
+// its own method because the save offer's call site and its tests read for
+// the flow, not the mechanism; it adds no behaviour of its own.
+func (s *Service) ValidateForSaveOffer(ctx context.Context, in ApplyInput) (ApplyOutput, error) {
+	return s.ValidateCode(ctx, in)
 }
 
 func normaliseEmail(email string) string {

@@ -9,16 +9,16 @@ import (
 
 // SaveOfferPromoCode is the promo code the cancellation save offer redeems.
 //
-// Provisioning a promo_codes row whose code is exactly this string is what
-// switches the save-offer discount on. Nothing in the product creates promo
-// codes today (promo.Repository.Create has no production caller and no
-// migration seeds a row), so until such a row exists this path is a deliberate
-// no-op: the reversal still happens and the merchant is simply not told about a
-// discount that was not applied (#701).
+// A promo_codes row whose code is exactly this string is what switches the
+// save-offer discount on. mark8ly does not mint codes: rows arrive from the
+// tesserix-home promo catalog through internal/billing/consolepromo (#726),
+// so authoring this code is a console action. Until the row exists this path
+// is a deliberate no-op — the reversal still happens and the merchant is not
+// told about a discount that was not applied (#701).
 //
-// The promo_codes table carries CHECK (char_length(code) >= 12), so any
-// replacement for this constant must be at least 12 characters or it could
-// never be provisioned.
+// promo_codes now floors code length at 4 characters (migration 000131,
+// relaxed from 12 for console campaign codes such as "LAUNCH50"), so this
+// constant is comfortably provisionable at either bound.
 const SaveOfferPromoCode = "SAVEOFFER20OFF6MONTHS"
 
 const (
@@ -88,14 +88,19 @@ func (s *Service) applySaveOfferDiscount(ctx context.Context, in Input, sub *sub
 	}
 
 	applyIn := promo.ApplyInput{
-		TenantID:             in.TenantID,
-		StoreID:              in.StoreID,
-		SubscriptionID:       sub.ID,
-		Code:                 SaveOfferPromoCode,
-		MerchantEmail:        derefString(sub.Email),
-		Plan:                 sub.Plan,
-		Period:               sub.SubscriptionPeriod,
-		BasePriceMinor:       0, // floor validation keys off plan + currency; mirrors admin.PromoHandler.
+		TenantID:       in.TenantID,
+		StoreID:        in.StoreID,
+		SubscriptionID: sub.ID,
+		Code:           SaveOfferPromoCode,
+		MerchantEmail:  derefString(sub.Email),
+		Plan:           sub.Plan,
+		Period:         sub.SubscriptionPeriod,
+		// The §7.4 absolute floor is computed FROM this price, so a zero
+		// here rejected every priced plan out of hand — the save-offer
+		// discount could never apply to a paying merchant. See
+		// promo.BasePriceMinorFor.
+		BasePriceMinor: promo.BasePriceMinorFor(
+			sub.Plan, sub.SubscriptionPeriod, sub.PriceTier, derefString(sub.BillingCurrency)),
 		Currency:             derefString(sub.BillingCurrency),
 		StripeSubscriptionID: derefString(sub.StripeSubscriptionID),
 		Actor:                in.Actor,

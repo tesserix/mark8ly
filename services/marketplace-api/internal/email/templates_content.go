@@ -54,7 +54,8 @@ var billingSubjects = map[TemplateID]string{
 	TemplateTrialHasPMT1:          `Your {{.plan}} plan for {{.store_name}} starts tomorrow`,
 	TemplateTrialStartedBilled:    `Your {{.plan}} plan for {{.store_name}} is active`,
 	TemplateTrialExpired:          `Your {{.store_name}} trial has ended`,
-	TemplateWinBack:               `Come back to Mark8ly — 20% off six months`,
+	TemplateWinBack:               `Come back to Mark8ly — {{.percent_off}}% off for {{.duration_months}} months`,
+	TemplateWinBackNoOffer:        `Your {{.store_name}} store is still here`,
 
 	TemplateMigrationFastPathApproved: `Your migration request for {{.store_name}} is approved`,
 	TemplateMigrationFastPathRejected: `We could not approve the migration request for {{.store_name}}`,
@@ -109,9 +110,29 @@ var billingHTMLFragments = map[TemplateID]string{
 <p>Nothing has been deleted. Your products, orders and settings are exactly as you left them.</p>
 <p>To reopen the store, add a payment method and choose a plan in your Mark8ly billing settings — it comes back straight away.</p>`,
 
+	// The discount sentence names {{.promo_code}}, so this fragment cannot
+	// render a credible offer without one — the cron only reaches this key
+	// when it holds a code that validated. Its numbers come from the promo
+	// row too, so a console edit to the discount cannot leave the email
+	// quoting a stale one.
+	//
+	// It deliberately does NOT tell the merchant where to enter the code.
+	// POST /admin/stores/:storeId/subscription/apply-promo has no caller in
+	// apps/ — there is no field in the merchant admin that redeems a promo
+	// code — so naming a screen would be the same class of untrue statement
+	// this template was fixed to stop making. Whoever authors the code in
+	// the console owns closing that gap first.
 	TemplateWinBack: `<h1 ` + h1 + `>Your store is still here</h1>
 <p><strong>{{.store_name}}</strong> has been closed for a month. Everything — products, orders, settings — is exactly as you left it.</p>
-<p>If you want to pick it back up, we will take <strong>20% off your first six months</strong>.</p>`,
+<p>If you want to pick it back up, use the code <strong>{{.promo_code}}</strong> when you reopen your store and we will take <strong>{{.percent_off}}% off your first {{.duration_months}} months</strong>.</p>`,
+
+	// The offer-less variant. It carries no number and names no code,
+	// because when this key is chosen there is nothing to name. What is
+	// left is still worth sending: a merchant a month past expiry does not
+	// know their catalogue survived.
+	TemplateWinBackNoOffer: `<h1 ` + h1 + `>Your store is still here</h1>
+<p><strong>{{.store_name}}</strong> has been closed for a month. Everything — products, orders, settings — is exactly as you left it.</p>
+<p>Nothing has been deleted. Whenever you want to reopen it, add a payment method and choose a plan in your Mark8ly billing settings — the storefront comes back straight away.</p>`,
 
 	TemplateMigrationFastPathApproved: `<h1 ` + h1 + `>Your migration request is approved</h1>
 <p>We reviewed the evidence you sent for <strong>{{.store_name}}</strong> and approved your migration request. Nothing further is needed from you.</p>
@@ -228,7 +249,15 @@ Mark8ly`,
 
 {{.store_name}} has been closed for a month. Everything — products, orders, settings — is exactly as you left it.
 
-If you want to pick it back up, we will take 20% off your first six months.
+If you want to pick it back up, use the code {{.promo_code}} when you reopen your store and we will take {{.percent_off}}% off your first {{.duration_months}} months.
+
+Mark8ly`,
+
+	TemplateWinBackNoOffer: `Your store is still here
+
+{{.store_name}} has been closed for a month. Everything — products, orders, settings — is exactly as you left it.
+
+Nothing has been deleted. Whenever you want to reopen it, add a payment method and choose a plan in your Mark8ly billing settings — the storefront comes back straight away.
 
 Mark8ly`,
 

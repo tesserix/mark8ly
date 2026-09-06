@@ -22,7 +22,9 @@ func sampleVars() map[string]any {
 		"has_payment_method": false,
 		"plan":               "growth",
 		"period":             "monthly",
-		"promo":              "20%-off-6-months",
+		"promo_code":         "WINBACK20OFF6MONTHS",
+		"percent_off":        "20",
+		"duration_months":    6,
 		"hosted_invoice_url": "https://invoice.stripe.com/i/test",
 	}
 }
@@ -32,8 +34,8 @@ func TestRegisterFallbacks_EveryKeyRenders(t *testing.T) {
 	email.RegisterFallbacks(loader)
 
 	keys := email.BillingTemplateKeys()
-	if len(keys) != 14 {
-		t.Fatalf("BillingTemplateKeys() has %d keys, want 14", len(keys))
+	if len(keys) != 15 {
+		t.Fatalf("BillingTemplateKeys() has %d keys, want 15", len(keys))
 	}
 
 	for _, key := range keys {

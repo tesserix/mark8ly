@@ -2341,9 +2341,17 @@ func main() {
 	}
 
 	winBackEmailClient := billingEmailClient
+
+	// The win-back only ever VALIDATES a promo code — it never redeems one —
+	// so this service is constructed with a nil Stripe client on purpose.
+	// promo.Service.ValidateCode makes no Stripe call, and handing the cron a
+	// client it must not use would be an invitation to start using it.
+	winBackPromo := promo.NewService(conn, promo.NewRepository(), nil, log)
+
 	winBackCron := lifecycle.NewWinBackCron(conn, winBackEmailClient, log, nil).
 		WithSkipCounter(lifecycleSkipCounter{metrics.BillingEmailsSkippedTotal}).
-		WithSentCounter(lifecycleSentCounter{metrics.BillingEmailsSentTotal})
+		WithSentCounter(lifecycleSentCounter{metrics.BillingEmailsSentTotal}).
+		WithPromo(winBackPromo)
 	if _, err := trialScheduler.AddFunc(lifecycle.WinBackSpec, func() {
 		if err := winBackCron.Run(workerCtx); err != nil {
 			log.Error("lifecycle win-back cron failed", "err", err)

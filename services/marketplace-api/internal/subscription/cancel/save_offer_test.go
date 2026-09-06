@@ -152,3 +152,27 @@ func TestApplySaveOfferDiscount_NilSubscriptionIsSafe(t *testing.T) {
 	})
 	require.Empty(t, stub.validateCalls)
 }
+
+// TestApplySaveOfferDiscount_SendsTheRealBasePrice guards the defect the
+// save offer inherited from admin.PromoHandler: BasePriceMinor was a literal
+// 0, and promo.Validate computes the §7.4 floor comparison FROM it, so every
+// priced plan came back below_absolute_floor. The save-offer discount could
+// not have applied to a single paying merchant, whatever code existed.
+func TestApplySaveOfferDiscount_SendsTheRealBasePrice(t *testing.T) {
+	sub := testSub()
+	sub.Plan = subscription.PlanStudio
+	sub.SubscriptionPeriod = subscription.PeriodMonthly
+	sub.PriceTier = subscription.PriceTierDeveloped
+	aud := "aud"
+	sub.BillingCurrency = &aud
+
+	stub := &stubPromo{}
+	svc := testService(stub)
+	require.True(t, svc.applySaveOfferDiscount(context.Background(), testInput(sub), sub))
+
+	require.Len(t, stub.validateCalls, 1)
+	want := promo.BasePriceMinorFor(sub.Plan, sub.SubscriptionPeriod, sub.PriceTier, aud)
+	require.NotZero(t, want, "the pricing catalog must know studio monthly AUD")
+	require.Equal(t, want, stub.validateCalls[0].BasePriceMinor)
+	require.Equal(t, want, stub.applyCalls[0].BasePriceMinor)
+}

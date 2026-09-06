@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
+	"github.com/mark8ly/marketplace-api/internal/promo"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/lifecycle"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
@@ -257,4 +259,190 @@ func TestWinBack_TransportFailureKeepsClaimBurned(t *testing.T) {
 	var claims int64
 	require.NoError(t, db.Raw(`SELECT count(*) FROM billing_email_sends`).Scan(&claims).Error)
 	require.EqualValues(t, 1, claims, "transport failure released the claim; a retry could duplicate")
+}
+
+// ---------------------------------------------------------------------------
+// #727 — the offer the email states must be one that exists.
+// ---------------------------------------------------------------------------
+
+// winBackTables is the cleanup set for the promo-aware tests. promo_codes and
+// promo_redemptions are added because the offer check reads both.
+var winBackTables = []string{
+	"promo_redemptions", "promo_codes", "store_subscriptions", "stores", "billing_email_sends",
+}
+
+// seedWinBackCode inserts the console-authored row the win-back offers. The
+// shape mirrors what internal/billing/consolepromo writes: a percentage
+// discount in basis points, bounded by max_duration_months.
+func seedWinBackCode(t *testing.T, db *gorm.DB, mutate func(*promo.PromoCode)) {
+	t.Helper()
+	typ := promo.DiscountTypePercentage
+	val := 2000
+	months := 6
+	coupon := "co_test_winback"
+	pc := &promo.PromoCode{
+		Code:              lifecycle.WinBackPromoCode,
+		StripeCouponID:    &coupon,
+		DiscountType:      &typ,
+		DiscountValue:     &val,
+		MaxDurationMonths: &months,
+		MaxPerEmail:       1,
+		ValidFrom:         time.Now().UTC().Add(-24 * time.Hour),
+		CreatedBy:         "console:promo-catalog",
+	}
+	if mutate != nil {
+		mutate(pc)
+	}
+	require.NoError(t, promo.NewRepository().Create(context.Background(), db, pc))
+}
+
+// onStarterUSD moves a seeded row onto a real paid plan and currency, which
+// is what a lapsed paying merchant looks like. Uses a raw UPDATE so GORM does
+// not restamp updated_at and push the row out of the 30-day window.
+func onStarterUSD(t *testing.T, db *gorm.DB, id uuid.UUID) {
+	t.Helper()
+	require.NoError(t, db.Exec(
+		`UPDATE store_subscriptions
+		    SET plan = 'starter', billing_currency = 'usd',
+		        subscription_period = 'monthly', price_tier = 'developed'
+		  WHERE id = ?`, id).Error)
+}
+
+// winBackMessage runs the cron with the REAL email client and promo service
+// and returns the single message that reached the transport.
+func winBackMessage(t *testing.T, db *gorm.DB, now time.Time) email.Message {
+	t.Helper()
+	loader := emailtemplates.NewLoader(nil)
+	email.RegisterFallbacks(loader)
+	sender := &captureSender{}
+	client := email.NewTemplateClient(loader, sender, "noreply@mark8ly.com", nil)
+
+	cron := lifecycle.NewWinBackCron(db, client, slog.Default(), func() time.Time { return now }).
+		WithPromo(promo.NewService(db, promo.NewRepository(), nil, slog.Default()))
+
+	require.NoError(t, cron.Run(context.Background()))
+	require.Len(t, sender.msgs, 1, "expected exactly one win-back message")
+	return sender.msgs[0]
+}
+
+// requireNoDiscountClaim asserts the rendered message promises nothing. This
+// is the property #727 is about: the day-30 mail quantified an offer that
+// nothing could honour.
+func requireNoDiscountClaim(t *testing.T, msg email.Message) {
+	t.Helper()
+	tag := regexp.MustCompile(`<[^>]*>`)
+	parts := map[string]string{
+		"subject": msg.Subject,
+		"text":    msg.TextBody,
+		"html":    tag.ReplaceAllString(msg.HTMLBody, " "),
+	}
+	for name, body := range parts {
+		lower := strings.ToLower(body)
+		for _, claim := range []string{"%", "discount", "off your", "promo", lifecycle.WinBackPromoCode} {
+			require.NotContainsf(t, lower, strings.ToLower(claim),
+				"%s promises %q with no code behind it: %s", name, claim, body)
+		}
+	}
+	require.Contains(t, msg.TextBody, "Nothing has been deleted",
+		"the offer-less win-back must still be worth sending")
+}
+
+// The state production is in today: the catalog holds no win-back code. The
+// email goes out — a merchant a month past expiry does not know their
+// catalogue survived — and states no discount.
+func TestWinBack_NoCodeSendsWithoutAnOffer(t *testing.T) {
+	db := testdb.NewDB(t, winBackTables...)
+	now := time.Now().UTC()
+
+	addr := "merchant@example.com"
+	sub := seedExpired(t, db, now, &addr)
+	onStarterUSD(t, db, sub.ID)
+
+	msg := winBackMessage(t, db, now)
+	require.Equal(t, string(email.TemplateWinBackNoOffer), msg.CustomArgs["kind"])
+	requireNoDiscountClaim(t, msg)
+}
+
+// The mutation the honesty property is worth testing under: the code EXISTS,
+// so a happy-path-only test would be green, but it is no longer redeemable.
+// The email must fall back to stating nothing rather than naming a code that
+// would be refused.
+func TestWinBack_ExpiredCodeSendsWithoutAnOffer(t *testing.T) {
+	db := testdb.NewDB(t, winBackTables...)
+	now := time.Now().UTC()
+
+	past := time.Now().UTC().Add(-time.Hour)
+	seedWinBackCode(t, db, func(pc *promo.PromoCode) { pc.ValidUntil = &past })
+
+	addr := "merchant@example.com"
+	sub := seedExpired(t, db, now, &addr)
+	onStarterUSD(t, db, sub.ID)
+
+	msg := winBackMessage(t, db, now)
+	require.Equal(t, string(email.TemplateWinBackNoOffer), msg.CustomArgs["kind"])
+	requireNoDiscountClaim(t, msg)
+}
+
+// The same mutation from the other direction: the code is live, but this
+// merchant's address has already used its one permitted redemption.
+func TestWinBack_AlreadyRedeemedSendsWithoutAnOffer(t *testing.T) {
+	db := testdb.NewDB(t, winBackTables...)
+	now := time.Now().UTC()
+
+	seedWinBackCode(t, db, nil)
+	addr := "merchant@example.com"
+	sub := seedExpired(t, db, now, &addr)
+	onStarterUSD(t, db, sub.ID)
+
+	repo := promo.NewRepository()
+	pc, err := repo.GetByCode(context.Background(), db, lifecycle.WinBackPromoCode)
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateRedemption(context.Background(), db, &promo.Redemption{
+		PromoCodeID:    pc.ID,
+		StoreID:        uuid.New(),
+		SubscriptionID: uuid.New(),
+		Email:          addr,
+		RedeemedAt:     time.Now().UTC(),
+	}))
+
+	msg := winBackMessage(t, db, now)
+	require.Equal(t, string(email.TemplateWinBackNoOffer), msg.CustomArgs["kind"])
+	requireNoDiscountClaim(t, msg)
+}
+
+// And the offer itself: a redeemable code produces an email that names it and
+// quotes the row's own terms.
+func TestWinBack_RedeemableCodeIsNamedInTheEmail(t *testing.T) {
+	db := testdb.NewDB(t, winBackTables...)
+	now := time.Now().UTC()
+
+	seedWinBackCode(t, db, nil)
+	addr := "merchant@example.com"
+	sub := seedExpired(t, db, now, &addr)
+	onStarterUSD(t, db, sub.ID)
+
+	msg := winBackMessage(t, db, now)
+	require.Equal(t, string(email.TemplateWinBack), msg.CustomArgs["kind"])
+	require.Contains(t, msg.TextBody, lifecycle.WinBackPromoCode)
+	require.Contains(t, msg.TextBody, "20% off your first 6 months")
+	require.Contains(t, msg.Subject, "20% off for 6 months")
+}
+
+// Asking whether a code is offerable must not consume it. max_per_email is 1,
+// so a redemption recorded at email time would leave the merchant holding a
+// code the apply-promo endpoint refuses.
+func TestWinBack_OfferCheckRecordsNoRedemption(t *testing.T) {
+	db := testdb.NewDB(t, winBackTables...)
+	now := time.Now().UTC()
+
+	seedWinBackCode(t, db, nil)
+	addr := "merchant@example.com"
+	sub := seedExpired(t, db, now, &addr)
+	onStarterUSD(t, db, sub.ID)
+
+	winBackMessage(t, db, now)
+
+	var n int64
+	require.NoError(t, db.Raw(`SELECT count(*) FROM promo_redemptions`).Scan(&n).Error)
+	require.EqualValues(t, 0, n, "the win-back redeemed the code on the merchant's behalf")
 }

@@ -1154,3 +1154,53 @@ func TestIDPFinishWithoutTenantStillRefusesNoAdminAccountAndReturnsNoSession(t *
 		t.Fatalf("body = %v, must not carry any session/tenant_required fields", respBody)
 	}
 }
+
+// A Zitadel 400 on the intent -> session exchange must NEVER surface as
+// `invalid_credentials`.
+//
+// Observed in production 2026-09-06: a merchant whose Google identity was
+// correctly linked (one Zitadel user, verified email, one Google IDP link)
+// was told to check their details, and the log said "login rejected: bad
+// credentials" — on a flow where no credential is presented at all. The
+// cause was this call site sharing respondSessionCreateError, which maps
+// CreatePasswordSession's errors, combined with do() turning any Zitadel 400
+// into ErrBadCredentials.
+//
+// google-sign-in-admin.ts states the rule this broke: no outcome of this
+// flow may imply the Google credential itself was wrong, because it never
+// is. `invalid_intent` is the honest answer — the intent was refused.
+func TestIDPFinishReportsARefusedIntentExchangeAsInvalidIntent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			w.Write([]byte(`{"result":[{"userId":"existing-1","human":{"email":{"email":"person@gmail.com","isVerified":true}}}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users/existing-1/links":
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			// Zitadel refusing the exchange — a consumed or expired intent.
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":3,"message":"invalid intent","details":[{"id":"COMMAND-3M0fs"}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401, body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "invalid_credentials") {
+		t.Fatalf("a Google sign-in must never be reported as a credential failure, got %s", body)
+	}
+	if !strings.Contains(body, "invalid_intent") {
+		t.Fatalf("error = %s, want invalid_intent", body)
+	}
+}

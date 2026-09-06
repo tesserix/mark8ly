@@ -19,8 +19,9 @@ import (
 // (#405) POST /admin/outbox/:id/requeue, POST /admin/outbox/requeue, POST
 // /admin/outbox/:id/dead-letter, (tesserix-home#588) PUT
 // /admin/email-templates/:key plus POST
-// /admin/email-templates/:key/test-send, and (#660) POST plus DELETE
-// /admin/billing/tenants/:tenantID/discount.
+// /admin/email-templates/:key/test-send, and (#660) POST
+// /admin/billing/tenants/:tenantID/discount plus POST
+// /admin/billing/tenants/:tenantID/discount/remove.
 //
 // Register's switch statements (routes.go) mount each write route group
 // only when THAT group's own dependency set is fully non-nil —

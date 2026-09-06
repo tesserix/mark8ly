@@ -92,6 +92,7 @@ type BrandingResponse struct {
 	SeoAiPolicy           string          `json:"seo_ai_policy"`
 	SeoLlmsTxt            *string         `json:"seo_llms_txt,omitempty"`
 	ReturnPolicy          *string         `json:"return_policy,omitempty"`
+	SupportEmail          string          `json:"support_email"`
 	HomepageContent       json.RawMessage `json:"homepage_content"`
 	CreatedAt             string          `json:"created_at"`
 	UpdatedAt             string          `json:"updated_at"`
@@ -136,6 +137,7 @@ func toBrandingResponse(b branding.StoreBranding) BrandingResponse {
 		SeoAiPolicy:           b.SeoAiPolicy,
 		SeoLlmsTxt:            b.SeoLlmsTxt,
 		ReturnPolicy:          b.ReturnPolicy,
+		SupportEmail:          b.SupportEmail,
 		CreatedAt:             b.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:             b.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
@@ -205,6 +207,7 @@ type UpdateBrandingRequest struct {
 	SeoAiPolicy           *string                   `json:"seo_ai_policy"`
 	SeoLlmsTxt            *string                   `json:"seo_llms_txt"`
 	ReturnPolicy          *string                   `json:"return_policy"`
+	SupportEmail          *string                   `json:"support_email"`
 	HomepageContent       *json.RawMessage          `json:"homepage_content"`
 }
 
@@ -288,6 +291,7 @@ func (h *BrandingHandler) Update(c *gin.Context) {
 		SeoAiPolicy:           req.SeoAiPolicy,
 		SeoLlmsTxt:            req.SeoLlmsTxt,
 		ReturnPolicy:          req.ReturnPolicy,
+		SupportEmail:          req.SupportEmail,
 	})
 	if err != nil {
 		RespondErr(c, err, h.logger)

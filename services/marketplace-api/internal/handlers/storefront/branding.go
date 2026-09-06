@@ -41,9 +41,18 @@ type ActivePromotionResponse struct {
 // PublicBrandingResponse is the public wire DTO for the storefront.
 //
 // Relative to branding.StoreBranding it withholds the row's identifiers
-// and timestamps (ID, TenantID, StoreID, CreatedAt, UpdatedAt) and
+// and timestamps (ID, TenantID, StoreID, CreatedAt, UpdatedAt),
 // ReturnPolicy, which only the admin DTO carries
-// (handlers/admin/branding.go).
+// (handlers/admin/branding.go), and SupportEmail.
+//
+// SupportEmail is withheld because nothing on the storefront renders it
+// and this endpoint is unauthenticated — carrying it would make every
+// merchant's contact address harvestable from one public GET for no
+// gain. Its two real consumers reach it another way: Reply-To is set
+// server-side from internal/storeidentity, and the closed-store page is
+// rendered by the storefront-gate Worker from
+// GET /internal/storefront-status/:host. Publishing it here would be a
+// deliberate new decision, not a consequence of #749.
 //
 // It DOES carry custom_css. That is deliberate: the field is
 // merchant-authored styling for the merchant's own storefront, so the

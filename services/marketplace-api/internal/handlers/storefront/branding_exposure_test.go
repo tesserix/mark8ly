@@ -32,6 +32,9 @@ func TestPublicBrandingExposureIsExactlyWhatTheCommentClaims(t *testing.T) {
 		"UpdatedAt": {},
 
 		"ReturnPolicy": {},
+		// #749: merchant contact address. Withheld from this
+		// unauthenticated endpoint — see the PublicBrandingResponse doc.
+		"SupportEmail": {},
 	}
 
 	public := map[string]struct{}{}

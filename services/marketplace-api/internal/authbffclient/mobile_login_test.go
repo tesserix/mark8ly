@@ -99,3 +99,70 @@ func TestMobileLogin_UpstreamFailureIsDistinctFromBadCredentials(t *testing.T) {
 	require.NotErrorIs(t, err, ErrInvalidCredentials,
 		"an auth-bff outage must never read as 'wrong password'")
 }
+
+// The TOTP gate answers OUTSIDE the data envelope — it is not a completed
+// login — so the sealed token arrives top-level. Losing it there is the
+// #686 item 2 lockout: the app gets `totp_required` with nothing to resume
+// from and reports that the app needs an update.
+func TestMobileLogin_TOTPGateSurfacesTheTopLevelPendingToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"totp_required":true,"pending_token":"sealed-value"}`))
+	}))
+	defer srv.Close()
+
+	got, err := NewMobileLoginClient(srv.URL, "", srv.Client()).
+		Login(context.Background(), "a@b.test", "pw", "t1")
+	require.NoError(t, err, "a step-up is a normal outcome, not an error")
+	require.True(t, got.TOTPRequired)
+	require.Equal(t, "sealed-value", got.PendingToken)
+	require.Empty(t, got.AccessToken)
+}
+
+// VerifyTOTP must hit /mobile/totp/VERIFY. /mobile/totp is the web handler
+// in token-issuing mode: it requires an auth_request_id auth-bff never
+// returns to a device and a workspace_tenant the device cannot know, so
+// calling it from here 400s every time.
+func TestMobileVerifyTOTP_PostsTheSealedTokenToTheVerifyRoute(t *testing.T) {
+	var gotPath, gotSecret string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotSecret = r.Header.Get("X-Internal-Auth")
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		_, _ = w.Write([]byte(`{"data":{"uid":"u1","email":"a@b.test","tenant_id":"t1","access_token":"AT","refresh_token":"RT","token_type":"Bearer","expires_in":3599}}`))
+	}))
+	defer srv.Close()
+
+	got, err := NewMobileLoginClient(srv.URL, "s3cret", srv.Client()).
+		VerifyTOTP(context.Background(), "sealed", "123456")
+	require.NoError(t, err)
+
+	require.Equal(t, "/auth/zitadel/mobile/totp/verify", gotPath)
+	require.Equal(t, "s3cret", gotSecret)
+	require.Equal(t, "sealed", gotBody["pending_token"])
+	require.Equal(t, "123456", gotBody["code"])
+	// Nothing identifying is offered: the sealed token is the binding, and
+	// a field here would invite a later change to start trusting it.
+	require.NotContains(t, gotBody, "login_name")
+	require.NotContains(t, gotBody, "session_id")
+	require.NotContains(t, gotBody, "workspace_tenant")
+
+	require.Equal(t, "AT", got.AccessToken)
+	require.Equal(t, "t1", got.TenantID)
+}
+
+// auth-bff answers a wrong code with 401, which the shared post() flattens
+// into ErrInvalidCredentials. The handler is what turns that back into
+// TOTP-specific copy; here the only requirement is that it stays a
+// credential error and never a generic upstream failure.
+func TestMobileVerifyTOTP_WrongCodeIsACredentialError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"invalid_totp"}`))
+	}))
+	defer srv.Close()
+
+	_, err := NewMobileLoginClient(srv.URL, "", srv.Client()).
+		VerifyTOTP(context.Background(), "sealed", "000000")
+	require.ErrorIs(t, err, ErrInvalidCredentials)
+}

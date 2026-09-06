@@ -136,6 +136,12 @@ func (h *Handler) mobileOTPVerify(w http.ResponseWriter, r *http.Request) {
 // a challenge the client could never complete.
 var errStepUpUnconfigured = errors.New("zitadellogin: step-up store not configured")
 
+// errStepUpUnresolved is returned when the session a TOTP challenge would
+// be sealed against has no readable subject. Sealing without one is not an
+// option: the pending value REQUIRES a uid, which is what binds a
+// challenge to an account.
+var errStepUpUnresolved = errors.New("zitadellogin: could not resolve the session subject for a step-up")
+
 // mintPendingLogin seals the state the OTP challenge will resume from.
 func (h *Handler) mintPendingLogin(uid, email, tenantID string, sess Session) (string, error) {
 	if h.pending == nil {

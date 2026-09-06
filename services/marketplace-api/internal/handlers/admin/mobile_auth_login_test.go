@@ -25,6 +25,8 @@ type fakeLoginBackend struct {
 	gotPendingToken, gotCode string
 	otpResult                authbffclient.LoginResult
 	otpErr                   error
+	totpResult               authbffclient.LoginResult
+	totpErr                  error
 }
 
 func (f *fakeLoginBackend) Login(_ context.Context, email, _, workspaceTenant string) (authbffclient.LoginResult, error) {
@@ -35,6 +37,11 @@ func (f *fakeLoginBackend) Login(_ context.Context, email, _, workspaceTenant st
 func (f *fakeLoginBackend) VerifyOTP(_ context.Context, pendingToken, code string) (authbffclient.LoginResult, error) {
 	f.gotPendingToken, f.gotCode = pendingToken, code
 	return f.otpResult, f.otpErr
+}
+
+func (f *fakeLoginBackend) VerifyTOTP(_ context.Context, pendingToken, code string) (authbffclient.LoginResult, error) {
+	f.gotPendingToken, f.gotCode = pendingToken, code
+	return f.totpResult, f.totpErr
 }
 
 func loginRouter(t *testing.T, lister TenantLister, backend MobileLoginBackend) *gin.Engine {
@@ -260,4 +267,98 @@ func TestMobileLogin_ReturnsThePendingToken(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.True(t, body.Data.EmailOTPRequired)
 	require.Equal(t, "sealed-value", body.Data.PendingToken)
+}
+
+// ---- TOTP completion --------------------------------------------------
+//
+// #686 item 2: a merchant with an authenticator app was locked OUT of the
+// app entirely. The login answered `totp_required` with nothing to resume
+// from, and the app rendered that as "this app version needs an update" —
+// advice no update could ever satisfy, because the route did not exist.
+
+func postTOTP(t *testing.T, r *gin.Engine, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mobile/admin/auth/totp/verify", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestMobileTOTP_CorrectCodeReturnsTokensWithoutABearer(t *testing.T) {
+	backend := &fakeLoginBackend{totpResult: authbffclient.LoginResult{
+		UID: "u1", Email: "a@b.test", TenantID: "t-1", AccessToken: "AT", RefreshToken: "RT", ExpiresIn: 3599,
+	}}
+	r := loginRouter(t, &fakeTenantLister{}, backend)
+
+	rec := postTOTP(t, r, `{"pending_token":"sealed","code":"123456"}`)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var body struct {
+		Data struct {
+			AccessToken string `json:"access_token"`
+			TenantID    string `json:"tenant_id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "AT", body.Data.AccessToken)
+	require.Equal(t, "t-1", body.Data.TenantID)
+
+	// Identity travels in the sealed token, exactly as on the OTP path.
+	require.Equal(t, "sealed", backend.gotPendingToken)
+	require.Equal(t, "123456", backend.gotCode)
+	require.Empty(t, backend.gotEmail, "no tenant lookup: the sealed token already carries it")
+}
+
+// A wrong code must map to the TOTP-specific error. `invalid_credentials`
+// would have the app show password copy on a screen with no password
+// field on it.
+func TestMobileTOTP_WrongCodeIsTOTPSpecific401(t *testing.T) {
+	backend := &fakeLoginBackend{totpErr: authbffclient.ErrInvalidCredentials}
+	rec := postTOTP(t, loginRouter(t, &fakeTenantLister{}, backend), `{"pending_token":"sealed","code":"000000"}`)
+
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+
+	var body struct {
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "invalid_totp", body.Error)
+}
+
+// A six-digit code rolls every 30 seconds; telling a merchant a correct
+// one was wrong sends them round a loop that cannot end.
+func TestMobileTOTP_UpstreamFailureIs502Not401(t *testing.T) {
+	backend := &fakeLoginBackend{totpErr: errors.New("auth-bff down")}
+	rec := postTOTP(t, loginRouter(t, &fakeTenantLister{}, backend), `{"pending_token":"sealed","code":"123456"}`)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+}
+
+func TestMobileTOTP_MissingFieldsIs400(t *testing.T) {
+	r := loginRouter(t, &fakeTenantLister{}, &fakeLoginBackend{})
+	require.Equal(t, http.StatusBadRequest, postTOTP(t, r, `{"code":"123456"}`).Code)
+	require.Equal(t, http.StatusBadRequest, postTOTP(t, r, `{"pending_token":"sealed"}`).Code)
+}
+
+// The TOTP gate on LOGIN must hand back the sealed token and NOT the raw
+// session handles — the app has one resumption mechanism, and empty
+// session_id/session_token would advertise a route that does not work.
+func TestMobileLogin_TOTPGateReturnsPendingTokenNotSessionHandles(t *testing.T) {
+	lister := &fakeTenantLister{result: []teamproxy.TenantMembership{{TenantID: "t-1"}}}
+	backend := &fakeLoginBackend{result: authbffclient.LoginResult{
+		TOTPRequired: true, PendingToken: "sealed-value",
+	}}
+
+	rec := post(t, loginRouter(t, lister, backend), `{"email":"a@b.test","password":"pw"}`)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Data map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, true, body.Data["totp_required"])
+	require.Equal(t, "sealed-value", body.Data["pending_token"])
+	require.NotContains(t, body.Data, "session_id")
+	require.NotContains(t, body.Data, "session_token")
+	require.Empty(t, body.Data["access_token"])
 }

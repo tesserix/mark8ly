@@ -100,7 +100,8 @@ func TestMobileLogin_TOTPGateIssuesNoTokens(t *testing.T) {
 	h := NewHandler(c, func(_ context.Context, _ http.ResponseWriter, _ LoginContext) (CompleteResult, error) {
 		t.Fatal("complete() must not run at the MFA gate")
 		return CompleteResult{}, nil
-	}).WithTokenIssuer(tokenServer(t), "https://admin.mark8ly.com/auth/callback", "proj-1")
+	}).WithTokenIssuer(tokenServer(t), "https://admin.mark8ly.com/auth/callback", "proj-1").
+		WithStepUp(&fakeCodeVerifier{}, &fakePendingStore{sealed: "sealed-value"})
 
 	rec := httptest.NewRecorder()
 	h.mobileLogin(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/mobile/login",
@@ -111,8 +112,94 @@ func TestMobileLogin_TOTPGateIssuesNoTokens(t *testing.T) {
 	if body["totp_required"] != true {
 		t.Fatalf("want totp_required, got %v", body)
 	}
+	if _, ok := body["access_token"]; ok {
+		t.Fatal("tokens must NOT be issued at the MFA gate")
+	}
 	if fin.Load() {
 		t.Fatal("finalize must not run at the MFA gate")
+	}
+}
+
+// The mobile TOTP gate must hand back the sealed state /mobile/totp/verify
+// resumes from, and must NOT hand back the raw Zitadel session handles.
+//
+// Without the token the app has a challenge it cannot finish: the only
+// other TOTP route needs an auth_request_id it never sees and a
+// workspace_tenant it cannot know. That was the #686 item 2 lockout.
+func TestMobileLogin_TOTPGateReturnsAPendingToken(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelHandler(t, policyForceMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_TOTP"]`, factorsPasswordOnly, &fin)
+
+	h := NewHandler(c, func(_ context.Context, _ http.ResponseWriter, _ LoginContext) (CompleteResult, error) {
+		t.Fatal("complete() must not run at the MFA gate")
+		return CompleteResult{}, nil
+	}).WithTokenIssuer(tokenServer(t), "https://admin.mark8ly.com/auth/callback", "proj-1").
+		WithStepUp(&fakeCodeVerifier{}, &fakePendingStore{sealed: "sealed-value"})
+
+	rec := httptest.NewRecorder()
+	h.mobileLogin(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/mobile/login",
+		strings.NewReader(`{"auth_request_id":"V2_1","login_name":"a@b.test","password":"x","workspace_tenant":"t1"}`)))
+
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["pending_token"] != "sealed-value" {
+		t.Fatalf("want a pending_token to resume the totp challenge from, got %v", body)
+	}
+	if _, leaked := body["session_token"]; leaked {
+		t.Fatal("a native client must not receive the raw zitadel session token")
+	}
+}
+
+// The WEB path is untouched: it resumes at /zitadel/totp with the handles
+// it has always been given, alongside the auth_request_id its browser
+// already holds.
+func TestWebLogin_TOTPGateStillReturnsSessionHandles(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelHandler(t, policyForceMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_TOTP"]`, factorsPasswordOnly, &fin)
+
+	h := NewHandler(c, func(_ context.Context, _ http.ResponseWriter, _ LoginContext) (CompleteResult, error) {
+		t.Fatal("complete() must not run at the MFA gate")
+		return CompleteResult{}, nil
+	}).WithStepUp(&fakeCodeVerifier{}, &fakePendingStore{sealed: "sealed-value"})
+
+	rec := httptest.NewRecorder()
+	h.login(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/login",
+		strings.NewReader(`{"auth_request_id":"V2_1","login_name":"a@b.test","password":"x","workspace_tenant":"t1"}`)))
+
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["totp_required"] != true {
+		t.Fatalf("want totp_required, got %v", body)
+	}
+	if body["session_id"] != "s1" || body["session_token"] != "tok-1" {
+		t.Fatalf("the web totp gate must keep returning its session handles, got %v", body)
+	}
+	if _, leaked := body["pending_token"]; leaked {
+		t.Fatal("the web path resumes from its own handles and must not receive a sealed step-up token")
+	}
+}
+
+// With no step-up store the mobile TOTP gate must refuse rather than
+// answer with a challenge the client could never complete — the same rule
+// the email-OTP gate already follows. A dead end that looks like a working
+// login is worse than an honest failure.
+func TestMobileLogin_TOTPGateWithoutStepUpStoreFailsLoudly(t *testing.T) {
+	var fin atomic.Bool
+	c := fakeZitadelHandler(t, policyForceMFA, `["AUTHENTICATION_METHOD_TYPE_PASSWORD","AUTHENTICATION_METHOD_TYPE_TOTP"]`, factorsPasswordOnly, &fin)
+
+	h := NewHandler(c, func(_ context.Context, _ http.ResponseWriter, _ LoginContext) (CompleteResult, error) {
+		return CompleteResult{}, nil
+	}).WithTokenIssuer(tokenServer(t), "https://admin.mark8ly.com/auth/callback", "proj-1")
+
+	rec := httptest.NewRecorder()
+	h.mobileLogin(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/mobile/login",
+		strings.NewReader(`{"auth_request_id":"V2_1","login_name":"a@b.test","password":"x","workspace_tenant":"t1"}`)))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body = %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "totp_required") {
+		t.Fatal("an unfinishable challenge must not be reported as a step-up")
 	}
 }
 

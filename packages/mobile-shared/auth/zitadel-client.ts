@@ -38,16 +38,29 @@ export interface CompleteSignIn {
   tokens: AuthTokens;
 }
 
-export interface OtpRequired {
-  status: "otp_required";
+/**
+ * A step-up the caller must collect a code for.
+ *
+ * `challenge` separates the two: an emailed code and an authenticator-app
+ * code are six digits each, but they are read from different places and
+ * need different screens and different copy. Collapsing them — which this
+ * client used to do — is how a merchant with TOTP enrolled was shown
+ * "check your email" for a code no email would ever carry (#686 item 2).
+ *
+ * Both carry a `pendingToken`, so "a step-up is resumable" is simply true
+ * on mobile rather than something each caller has to test for.
+ */
+export interface StepUpRequired {
+  status: "step_up_required";
+  challenge: "email_otp" | "totp";
   email: string;
   tenantId: string;
   tenants: TenantMembership[];
-  /** Opaque; handed straight back to verifyOtp. */
+  /** Opaque; handed straight back to verifyOtp / verifyTotp. */
   pendingToken: string;
 }
 
-export type SignInResult = CompleteSignIn | OtpRequired;
+export type SignInResult = CompleteSignIn | StepUpRequired;
 
 /**
  * Federated providers this client will start a sign-in with.
@@ -100,6 +113,9 @@ interface WireData {
 const PATHS = {
   login: "/api/v1/mobile/admin/auth/login",
   otpVerify: "/api/v1/mobile/admin/auth/otp/verify",
+  // The authenticator-app half (#686 item 2). A separate route because the
+  // server verifies it against a Zitadel session, not an emailed value.
+  totpVerify: "/api/v1/mobile/admin/auth/totp/verify",
   // Federated sign-in (#686 item 1). Two legs, because which tenant a
   // Google-authenticated merchant belongs to is unknowable until the
   // identity has been resolved: start opens the intent, finish exchanges
@@ -138,6 +154,41 @@ export function createZitadelAuthClient(config: ZitadelAuthClientConfig) {
     return parsed.data ?? {};
   }
 
+  /**
+   * Reads a step-up out of a response, or null when there is none.
+   *
+   * TOTP is tested FIRST and separately: the two flags can in principle
+   * both be set (a policy demanding an authenticator AND an unrecognised
+   * device), and the authenticator gate is the one the server is standing
+   * at — its pending token resumes into the email challenge afterwards if
+   * one is still outstanding.
+   */
+  function stepUpFrom(d: WireData, fallbackEmail: string): StepUpRequired | null {
+    const challenge = d.totp_required
+      ? ("totp" as const)
+      : d.email_otp_required || d.mfa_required
+        ? ("email_otp" as const)
+        : null;
+    if (!challenge) return null;
+
+    // A challenge with nothing to resume from is unfinishable. Failing
+    // here is better than a code screen whose submit can never succeed.
+    if (!d.pending_token) {
+      throw new ZitadelAuthError(
+        "challenge_unresumable",
+        "We couldn't start the verification step. Try signing in again.",
+      );
+    }
+    return {
+      status: "step_up_required",
+      challenge,
+      email: d.email ?? fallbackEmail,
+      tenantId: d.tenant_id ?? "",
+      tenants: d.tenants ?? [],
+      pendingToken: d.pending_token,
+    };
+  }
+
   function tokensFrom(d: WireData): AuthTokens {
     return {
       accessToken: d.access_token ?? "",
@@ -147,27 +198,24 @@ export function createZitadelAuthClient(config: ZitadelAuthClientConfig) {
     };
   }
 
+  /** The shape both code-verification routes answer with. */
+  function completed(d: WireData): CompleteSignIn {
+    return {
+      status: "complete",
+      uid: d.uid ?? "",
+      email: d.email ?? "",
+      tenantId: d.tenant_id ?? "",
+      tenants: d.tenants ?? [],
+      tokens: tokensFrom(d),
+    };
+  }
+
   return {
     async signIn(email: string, password: string): Promise<SignInResult> {
       const d = await post(PATHS.login, { email, password });
 
-      if (d.email_otp_required || d.mfa_required || d.totp_required) {
-        // A challenge with nothing to resume from is unfinishable. Failing
-        // here is better than a code screen whose submit can never succeed.
-        if (!d.pending_token) {
-          throw new ZitadelAuthError(
-            "challenge_unresumable",
-            "We couldn't start the verification step. Try signing in again.",
-          );
-        }
-        return {
-          status: "otp_required",
-          email: d.email ?? email,
-          tenantId: d.tenant_id ?? "",
-          tenants: d.tenants ?? [],
-          pendingToken: d.pending_token,
-        };
-      }
+      const stepUp = stepUpFrom(d, email);
+      if (stepUp) return stepUp;
 
       return {
         status: "complete",
@@ -208,21 +256,8 @@ export function createZitadelAuthClient(config: ZitadelAuthClientConfig) {
     async idpFinish(intentId: string, intentToken: string): Promise<SignInResult> {
       const d = await post(PATHS.idpFinish, { intent_id: intentId, intent_token: intentToken });
 
-      if (d.email_otp_required || d.mfa_required || d.totp_required) {
-        if (!d.pending_token) {
-          throw new ZitadelAuthError(
-            "challenge_unresumable",
-            "We couldn't start the verification step. Try signing in again.",
-          );
-        }
-        return {
-          status: "otp_required",
-          email: d.email ?? "",
-          tenantId: d.tenant_id ?? "",
-          tenants: d.tenants ?? [],
-          pendingToken: d.pending_token,
-        };
-      }
+      const stepUp = stepUpFrom(d, "");
+      if (stepUp) return stepUp;
 
       return {
         status: "complete",
@@ -235,15 +270,18 @@ export function createZitadelAuthClient(config: ZitadelAuthClientConfig) {
     },
 
     async verifyOtp(pendingToken: string, code: string): Promise<CompleteSignIn> {
-      const d = await post(PATHS.otpVerify, { pending_token: pendingToken, code });
-      return {
-        status: "complete",
-        uid: d.uid ?? "",
-        email: d.email ?? "",
-        tenantId: d.tenant_id ?? "",
-        tenants: d.tenants ?? [],
-        tokens: tokensFrom(d),
-      };
+      return completed(await post(PATHS.otpVerify, { pending_token: pendingToken, code }));
+    },
+
+    /**
+     * Completes an authenticator-app challenge (#686 item 2).
+     *
+     * Its own route, not verifyOtp's: the server checks the code against a
+     * Zitadel session rather than an emailed value, and answering one with
+     * the other's endpoint fails in a way that reads as a wrong code.
+     */
+    async verifyTotp(pendingToken: string, code: string): Promise<CompleteSignIn> {
+      return completed(await post(PATHS.totpVerify, { pending_token: pendingToken, code }));
     },
   };
 }

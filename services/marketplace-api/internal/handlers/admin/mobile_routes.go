@@ -184,6 +184,11 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 		// protects — and under the same IP limit, since guessing a
 		// six-digit code is the other brute-forceable surface here.
 		a.POST("/otp/verify", deps.LoginHandler.VerifyOTP)
+		// Completing the authenticator-app challenge. Same group, same IP
+		// limit, and for the same reason: guessing a six-digit TOTP is the
+		// identical brute-forceable surface, and it is the second half of
+		// obtaining a token rather than something a token protects.
+		a.POST("/totp/verify", deps.LoginHandler.VerifyTOTP)
 	}
 
 	// Federated sign-in (#686 item 1) — same unauthenticated group, same

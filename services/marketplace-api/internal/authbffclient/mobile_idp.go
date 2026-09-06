@@ -195,6 +195,10 @@ func decodeLoginWire(raw []byte) (LoginResult, error) {
 		TOTPRequired: wire.TOTPRequired,
 		SessionID:    wire.SessionID,
 		SessionToken: wire.SessionToken,
+		// The TOTP gate's sealed token, which arrives outside the data
+		// envelope. Read first so the completed-login branch below can
+		// still override it; the two are never both populated.
+		PendingToken: wire.PendingToken,
 	}
 	if wire.Data != nil {
 		out.UID = wire.Data.UID
@@ -206,7 +210,9 @@ func decodeLoginWire(raw []byte) (LoginResult, error) {
 		out.ExpiresIn = wire.Data.ExpiresIn
 		out.EmailOTPRequired = wire.Data.EmailOTPRequired
 		out.MFARequired = wire.Data.MFARequired
-		out.PendingToken = wire.Data.PendingToken
+		if wire.Data.PendingToken != "" {
+			out.PendingToken = wire.Data.PendingToken
+		}
 	}
 	return out, nil
 }

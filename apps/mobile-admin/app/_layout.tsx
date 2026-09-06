@@ -80,10 +80,12 @@ function AuthGate() {
     // null means the token read has not resolved yet. Redirecting on an
     // unknown answer would race the check and bounce a signed-in user.
     if (zitadelSignedIn === null) return;
-    // /otp is part of the sign-in flow: the caller is legitimately not
-    // authenticated there yet, so it must not be treated as a protected
-    // route.
-    const inAuthGroup = segments[0] === 'login' || segments[0] === 'otp';
+    // /otp and /totp are part of the sign-in flow: the caller is
+    // legitimately not authenticated there yet, so neither may be treated
+    // as a protected route — a step-up screen that bounces to /login is
+    // the same lockout, one layer up.
+    const inAuthGroup =
+      segments[0] === 'login' || segments[0] === 'otp' || segments[0] === 'totp';
     const signedIn = isZitadelProvider() ? zitadelSignedIn : Boolean(user);
 
     // Identity changed → wipe cached queries + tenant so user A's data can't
@@ -113,6 +115,7 @@ function AuthGate() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="login" />
       <Stack.Screen name="otp" />
+      <Stack.Screen name="totp" />
       <Stack.Screen name="notifications" />
     </Stack>
   );

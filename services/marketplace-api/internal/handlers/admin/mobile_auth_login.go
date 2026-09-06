@@ -18,6 +18,7 @@ import (
 type MobileLoginBackend interface {
 	Login(ctx context.Context, email, password, workspaceTenant string) (authbffclient.LoginResult, error)
 	VerifyOTP(ctx context.Context, pendingToken, code string) (authbffclient.LoginResult, error)
+	VerifyTOTP(ctx context.Context, pendingToken, code string) (authbffclient.LoginResult, error)
 }
 
 // MobileLoginHandler is the app's public front door for signing in.
@@ -147,7 +148,12 @@ func mobileLoginResponse(res authbffclient.LoginResult, tenants []teamproxy.Tena
 	if res.PendingToken != "" {
 		out["pending_token"] = res.PendingToken
 	}
-	if res.TOTPRequired {
+	// Only when auth-bff actually sent them. Since #686 item 2 the mobile
+	// TOTP gate answers with a sealed pending_token INSTEAD of these
+	// handles — the app resumes at /auth/totp/verify — so emitting two
+	// empty strings here would advertise a resumption route that does not
+	// work.
+	if res.SessionID != "" {
 		out["session_id"] = res.SessionID
 		out["session_token"] = res.SessionToken
 	}
@@ -191,6 +197,51 @@ func (h *MobileLoginHandler) VerifyOTP(c *gin.Context) {
 		// The code may well have been correct. Saying so matters: a user
 		// told "wrong code" will retype a correct one forever.
 		h.logError("mobile otp verify: auth-bff call failed", err)
+		c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+			"error": "auth_unavailable", "message": "Sign-in is temporarily unavailable. Try again shortly.",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": mobileLoginResponse(res, nil)})
+}
+
+// VerifyTOTP completes a sign-in that stopped at the TOTP gate.
+//
+// Same shape as VerifyOTP, and deliberately so: both step-ups resume from
+// the one sealed pending_token, so the app has a single mechanism rather
+// than a second one built out of raw Zitadel session handles.
+//
+// Before this existed a merchant with an authenticator app was locked out
+// of the app entirely — the login answered `totp_required` with nothing
+// the client could resume from, and the app rendered that as "this app
+// version needs an update", which no update could ever fix (#686 item 2).
+func (h *MobileLoginHandler) VerifyTOTP(c *gin.Context) {
+	var req mobileOTPRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.PendingToken == "" || req.Code == "" {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "invalid_request", "message": "pending_token and code are required",
+		})
+		return
+	}
+
+	res, err := h.backend.VerifyTOTP(c.Request.Context(), req.PendingToken, req.Code)
+	switch {
+	case errors.Is(err, authbffclient.ErrInvalidCredentials):
+		// `invalid_totp`, NOT `invalid_credentials`: the screen this
+		// answers has no password field on it, so password copy there is
+		// advice a merchant cannot act on. As on the OTP path it also
+		// covers an expired or forged challenge, which auth-bff answers
+		// identically on purpose.
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"error": "invalid_totp", "message": "That code isn't right, or it has expired. Try the next one from your authenticator app.",
+		})
+		return
+	case err != nil:
+		// The code may well have been correct — a six-digit code rolls
+		// every 30 seconds, and telling a merchant it was wrong sends them
+		// round a loop that cannot end.
+		h.logError("mobile totp verify: auth-bff call failed", err)
 		c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
 			"error": "auth_unavailable", "message": "Sign-in is temporarily unavailable. Try again shortly.",
 		})

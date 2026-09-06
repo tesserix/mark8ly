@@ -210,6 +210,14 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 	r.POST("/zitadel/mobile/otp/verify", func(c *gin.Context) {
 		h.mobileOTPVerify(c.Writer, withClientIP(c.Request, c.ClientIP()))
 	})
+	// The TOTP step-up's resumable half (#686 item 2). /mobile/totp above
+	// is the web handler in token-issuing mode and needs an
+	// auth_request_id + workspace_tenant the app cannot supply, which made
+	// it unreachable from a device; this one resumes from the sealed
+	// pending token, exactly as /mobile/otp/verify does.
+	r.POST("/zitadel/mobile/totp/verify", func(c *gin.Context) {
+		h.mobileTOTPVerify(c.Writer, withClientIP(c.Request, c.ClientIP()))
+	})
 
 	// Google sign-in through Zitadel's IDP-intent flow (#524 phase 3c-2).
 	// Grouped separately from the two routes above so a later Apple pair
@@ -971,11 +979,34 @@ func (h *Handler) respondOutcome(
 	case OutcomeFactorRequired:
 		// No session minted here — this IS the MFA gate. Minting now would
 		// defeat the entire reason this package exists.
-		writeJSON(w, http.StatusOK, map[string]any{
-			"totp_required": true,
-			"session_id":    sess.ID,
-			"session_token": sess.Token,
-		})
+		out := map[string]any{"totp_required": true}
+		if issueTokens {
+			// A native client cannot resume from a raw session handle: the
+			// route that would take one (/mobile/totp) also demands an
+			// auth_request_id the app never sees and a workspace_tenant it
+			// cannot know. So mobile gets the SAME sealed value the
+			// email-OTP step-up hands back, and resumes at
+			// /mobile/totp/verify — one resumption mechanism for both
+			// step-ups. See mobile_totp.go.
+			//
+			// Refuse rather than answer with a challenge the client could
+			// never complete: a dead end that looks like a working login is
+			// exactly the defect this whole path exists to prevent.
+			token, err := h.mintTOTPPending(ctx, sess, workspaceTenant)
+			if err != nil {
+				slog.ErrorContext(ctx, "zitadellogin: could not mint the mobile totp step-up token", "err", err)
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+				return
+			}
+			out["pending_token"] = token
+		} else {
+			// The web keeps the handles it has always had: its /zitadel/totp
+			// call carries them back alongside the auth_request_id the
+			// browser already holds.
+			out["session_id"] = sess.ID
+			out["session_token"] = sess.Token
+		}
+		writeJSON(w, http.StatusOK, out)
 
 	default: // OutcomeHandoff, including the zero value.
 		if resErr != nil {

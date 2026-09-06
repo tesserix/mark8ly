@@ -63,8 +63,9 @@ type LoginResult struct {
 	SessionID    string
 	SessionToken string
 
-	// PendingToken is the sealed state the email-OTP challenge resumes
-	// from. Opaque to us and to the client; handed straight back.
+	// PendingToken is the sealed state a step-up resumes from — the
+	// email-OTP challenge and, since #686 item 2, the TOTP one too.
+	// Opaque to us and to the client; handed straight back.
 	PendingToken string
 }
 
@@ -84,6 +85,10 @@ type loginWire struct {
 	TOTPRequired bool   `json:"totp_required"`
 	SessionID    string `json:"session_id"`
 	SessionToken string `json:"session_token"`
+	// The TOTP gate answers OUTSIDE the data envelope (it is not a
+	// completed login), so its pending token arrives here rather than in
+	// Data. auth-bff sends one or the other, never both.
+	PendingToken string `json:"pending_token"`
 }
 
 // Login posts credentials to auth-bff's mobile route.
@@ -118,15 +123,23 @@ func (c *MobileLoginClient) VerifyOTP(ctx context.Context, pendingToken, code st
 	})
 }
 
-// VerifyTOTP completes a login that stopped at the TOTP gate.
-func (c *MobileLoginClient) VerifyTOTP(ctx context.Context, authRequestID, email, sessionID, sessionToken, code, workspaceTenant string) (LoginResult, error) {
-	return c.post(ctx, "/auth/zitadel/mobile/totp", map[string]any{
-		"auth_request_id":  authRequestID,
-		"login_name":       email,
-		"session_id":       sessionID,
-		"session_token":    sessionToken,
-		"code":             code,
-		"workspace_tenant": workspaceTenant,
+// VerifyTOTP completes a login that stopped at the TOTP gate (#686 item 2).
+//
+// It posts to /mobile/totp/VERIFY, not /mobile/totp. The latter is the web
+// handler in token-issuing mode and requires an auth_request_id and a
+// workspace_tenant: auth-bff mints the auth request for a mobile login and
+// never returns its id, and the tenant is resolved here from the email, so
+// neither value can come back from the device. That is precisely why a
+// merchant with TOTP enrolled could not sign in on the app at all.
+//
+// Like VerifyOTP, everything identifying travels inside the sealed pending
+// token. Offering an email or a session handle here would invite a later
+// change to start trusting one, which is the binding the challenge exists
+// to protect.
+func (c *MobileLoginClient) VerifyTOTP(ctx context.Context, pendingToken, code string) (LoginResult, error) {
+	return c.post(ctx, "/auth/zitadel/mobile/totp/verify", map[string]any{
+		"pending_token": pendingToken,
+		"code":          code,
 	})
 }
 

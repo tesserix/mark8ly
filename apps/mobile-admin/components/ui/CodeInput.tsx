@@ -26,6 +26,19 @@ interface CodeInputProps {
   onFilled?: (code: string) => void;
   disabled?: boolean;
   accessibilityLabel: string;
+  /**
+   * Where the merchant reads the code from, which decides the AutoFill
+   * hints.
+   *
+   * "email" asks for iOS one-time-code AutoFill. "authenticator" must NOT:
+   * `oneTimeCode` / `one-time-code` are defined for codes DELIVERED to the
+   * device by mail or SMS, and an authenticator code is never delivered —
+   * offering the hint produces a suggestion banner that can only ever be
+   * empty or, worse, offer an unrelated code from a message.
+   *
+   * Defaults to "email" so the existing OTP screen is unchanged.
+   */
+  codeSource?: "email" | "authenticator";
 }
 
 /**
@@ -52,7 +65,9 @@ export function CodeInput({
   onFilled,
   disabled,
   accessibilityLabel,
+  codeSource = "email",
 }: CodeInputProps) {
+  const emailed = codeSource === "email";
   return (
     <View style={styles.wrap}>
       <OtpInput
@@ -69,10 +84,12 @@ export function CodeInput({
         focusColor={theme.colors.accent}
         textInputProps={{
           accessibilityLabel,
-          // Both halves of iOS AutoFill. Without them the code banner never
-          // offers itself above the keyboard.
-          textContentType: "oneTimeCode",
-          autoComplete: "one-time-code",
+          // Both halves of iOS/Android AutoFill for a DELIVERED code.
+          // Without them the code banner never offers itself above the
+          // keyboard. Switched off for an authenticator code, which is not
+          // delivered to the device at all — see `codeSource`.
+          textContentType: emailed ? "oneTimeCode" : "none",
+          autoComplete: emailed ? "one-time-code" : "off",
         }}
         theme={{
           containerStyle: styles.container,

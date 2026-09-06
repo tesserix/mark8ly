@@ -55,10 +55,78 @@ it("reports an OTP challenge with the token needed to resume it", async () => {
   );
   const res = await clientWith(f).signIn("a@b.test", "pw");
 
-  expect(res.status).toBe("otp_required");
-  if (res.status !== "otp_required") throw new Error("unreachable");
+  expect(res.status).toBe("step_up_required");
+  if (res.status !== "step_up_required") throw new Error("unreachable");
+  expect(res.challenge).toBe("email_otp");
   expect(res.pendingToken).toBe("sealed-value");
   expect(res.email).toBe("a@b.test");
+});
+
+// #686 item 2. The TOTP gate answers OUTSIDE the data envelope and carries
+// its own sealed token; it must surface as a step-up the caller can tell
+// APART from an emailed one, since the screens and the copy differ.
+it("reports a TOTP challenge distinctly, with the token needed to resume it", async () => {
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) =>
+    jsonResponse(200, {
+      data: {
+        tenant_id: "t-1",
+        email_otp_required: false, mfa_required: false, totp_required: true,
+        pending_token: "sealed-value",
+      },
+    }),
+  );
+  const res = await clientWith(f).signIn("a@b.test", "pw");
+
+  expect(res.status).toBe("step_up_required");
+  if (res.status !== "step_up_required") throw new Error("unreachable");
+  expect(res.challenge).toBe("totp");
+  expect(res.pendingToken).toBe("sealed-value");
+});
+
+// The regression this branch exists for: a TOTP enrolment used to produce
+// `challenge_unresumable`, which the login screen renders as "this app
+// version needs an update" — advice no update could ever satisfy.
+it("does not report challenge_unresumable for a TOTP step-up", async () => {
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) =>
+    jsonResponse(200, { data: { totp_required: true, pending_token: "sealed-value" } }),
+  );
+  await expect(clientWith(f).signIn("a@b.test", "pw")).resolves.toMatchObject({
+    status: "step_up_required",
+    challenge: "totp",
+  });
+});
+
+it("verifies a TOTP code on its own route and returns tokens", async () => {
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) =>
+    jsonResponse(200, {
+      data: {
+        uid: "u1", email: "a@b.test", tenant_id: "t-1",
+        access_token: "AT", refresh_token: "RT", token_type: "Bearer", expires_in: 3599,
+      },
+    }),
+  );
+  const res = await clientWith(f).verifyTotp("sealed-value", "123456");
+
+  expect(res.tokens.accessToken).toBe("AT");
+  const [url, init] = f.mock.calls[0];
+  // NOT the OTP route: the server checks this code against a Zitadel
+  // session, not an emailed value.
+  expect(url).toBe("https://api.mark8ly.com/api/v1/mobile/admin/auth/totp/verify");
+  expect(JSON.parse(init.body as string)).toEqual({
+    pending_token: "sealed-value",
+    code: "123456",
+  });
+});
+
+// A wrong TOTP code must keep its own code so the screen can show
+// authenticator copy rather than password copy.
+it("maps a rejected TOTP code to invalid_totp", async () => {
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) =>
+    jsonResponse(401, { error: "invalid_totp" }),
+  );
+  await expect(clientWith(f).verifyTotp("sealed-value", "000000")).rejects.toMatchObject({
+    code: "invalid_totp",
+  });
 });
 
 // A challenge with no pending_token cannot be completed. Treating it as a

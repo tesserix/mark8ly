@@ -22,7 +22,7 @@ import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useTenantStore } from '@repo/mobile-shared/stores/tenant-store';
 import { useEnvironment } from '@repo/mobile-shared/config/env';
-import { createZitadelSignIn } from '@repo/mobile-shared/auth/zitadel-signin';
+import { createZitadelSignIn, type SignInOutcome } from '@repo/mobile-shared/auth/zitadel-signin';
 import { ZitadelAuthError } from '@repo/mobile-shared/auth/zitadel-client';
 import { isZitadelProvider } from '@/lib/auth-provider';
 
@@ -159,13 +159,7 @@ export default function LoginScreen() {
         // hosted login. A fresh install is always an unrecognised device,
         // so the usual answer here is a challenge, not a session.
         const out = await createZitadelSignIn(env.apiBaseUrl).signIn(email, password, setTenantId);
-        if (out.kind === 'otp') {
-          router.push({
-            pathname: '/otp',
-            params: { pendingToken: out.pendingToken ?? '', email: out.email },
-          });
-          return;
-        }
+        if (routeStepUp(out)) return;
         router.replace('/(tabs)');
         return;
       }
@@ -187,6 +181,30 @@ export default function LoginScreen() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  /**
+   * Sends an outstanding step-up to its screen, and reports whether it did.
+   *
+   * The two challenges get different screens because they are different
+   * things: /otp says "check your email", which is wrong — actively
+   * misleading — for a code that only ever exists inside an authenticator
+   * app. Shared by the password and Google paths so the same challenge
+   * cannot land on two different screens depending on how the merchant
+   * signed in.
+   */
+  function routeStepUp(out: SignInOutcome): boolean {
+    if (out.kind !== 'otp' && out.kind !== 'totp') return false;
+    router.push({
+      pathname: out.kind === 'totp' ? '/totp' : '/otp',
+      // The TOTP screen shows no address — the code is not sent anywhere —
+      // so it is given only what it needs to resume.
+      params:
+        out.kind === 'totp'
+          ? { pendingToken: out.pendingToken ?? '' }
+          : { pendingToken: out.pendingToken ?? '', email: out.email },
+    });
+    return true;
   }
 
   /**
@@ -222,6 +240,12 @@ export default function LoginScreen() {
         // resume it with — in practice, an app newer than the API it is
         // talking to. Distinct copy because "try again" is useless advice
         // here: retrying repeats it.
+        //
+        // A TOTP enrolment used to land here on EVERY sign-in (#686 item
+        // 2): the login answered totp_required with no pending_token at
+        // all, so a merchant with an authenticator was told to update an
+        // app that was already current. The server now seals one, and this
+        // stays for its real case.
         return 'This app version needs an update to finish signing in.';
       default:
         return GENERIC_AUTH_ERROR;
@@ -246,13 +270,7 @@ export default function LoginScreen() {
           },
           setTenantId,
         );
-        if (out.kind === 'otp') {
-          router.push({
-            pathname: '/otp',
-            params: { pendingToken: out.pendingToken ?? '', email: out.email },
-          });
-          return;
-        }
+        if (routeStepUp(out)) return;
         router.replace('/(tabs)');
         return;
       }

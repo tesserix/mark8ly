@@ -97,6 +97,41 @@ it("persists on OTP completion", async () => {
   expect(setTenantId).toHaveBeenCalledWith("t-1");
 });
 
+// #686 item 2. A TOTP challenge must be reported as its OWN kind: routing
+// it to the emailed-code screen tells a merchant to check an inbox for a
+// code that only ever exists inside their authenticator app.
+it("reports a TOTP challenge as its own kind, with a token to resume it", async () => {
+  respond({ data: { tenant_id: "t-1", totp_required: true, pending_token: "sealed" } });
+  const setTenantId = jest.fn();
+  const flow = createZitadelSignIn("https://api.mark8ly.com");
+
+  const out = await flow.signIn("a@b.test", "pw", setTenantId);
+
+  expect(out.kind).toBe("totp");
+  expect(out.pendingToken).toBe("sealed");
+  // Nothing may be persisted yet: a stored tenant with no token leaves the
+  // app sending X-Acting-Tenant-Id unauthenticated.
+  expect(await zitadelSession.read()).toBeNull();
+  expect(setTenantId).not.toHaveBeenCalled();
+});
+
+it("persists on TOTP completion", async () => {
+  respond({
+    data: {
+      uid: "u1", email: "a@b.test", tenant_id: "t-1",
+      access_token: "AT3", refresh_token: "RT3", expires_in: 3600,
+    },
+  });
+  const setTenantId = jest.fn();
+  const flow = createZitadelSignIn("https://api.mark8ly.com");
+
+  const out = await flow.verifyTotp("sealed", "123456", setTenantId);
+
+  expect(out.kind).toBe("signed_in");
+  expect(await zitadelSession.accessTokenIfFresh()).toBe("AT3");
+  expect(setTenantId).toHaveBeenCalledWith("t-1");
+});
+
 it("clears the session on sign-out", async () => {
   await zitadelSession.save("AT", "RT", 3600);
   await createZitadelSignIn("https://api.mark8ly.com").signOut();

@@ -4,6 +4,7 @@ import {
   type CompleteSignIn,
   type IdpProvider,
   type SignInResult,
+  type StepUpRequired,
 } from "./zitadel-client";
 import { parseIdpCallback } from "./zitadel-idp-callback";
 import { zitadelSession } from "./zitadel-session";
@@ -18,8 +19,13 @@ import { zitadelSession } from "./zitadel-session";
  */
 
 export interface SignInOutcome {
-  /** "otp" means a code was emailed and the caller must show the screen. */
-  kind: "signed_in" | "otp";
+  /**
+   * "otp" means a code was emailed; "totp" means the merchant must read one
+   * from their authenticator app. Distinct because the screens and the copy
+   * differ — "check your email" on a TOTP challenge sends someone looking
+   * for a message that will never arrive.
+   */
+  kind: "signed_in" | "otp" | "totp";
   email: string;
   tenantId: string;
   pendingToken?: string;
@@ -53,6 +59,20 @@ export interface FederatedSignInOptions {
   openAuthSession: AuthSessionOpener;
 }
 
+/**
+ * Maps a step-up to the outcome the screens branch on. One function so the
+ * password and Google paths cannot route the same challenge to different
+ * screens.
+ */
+function stepUpOutcome(res: StepUpRequired): SignInOutcome {
+  return {
+    kind: res.challenge === "totp" ? "totp" : "otp",
+    email: res.email,
+    tenantId: res.tenantId,
+    pendingToken: res.pendingToken,
+  };
+}
+
 export function createZitadelSignIn(baseUrl: string) {
   const client = createZitadelAuthClient({ baseUrl });
 
@@ -76,14 +96,7 @@ export function createZitadelSignIn(baseUrl: string) {
       setTenantId: (id: string) => void,
     ): Promise<SignInOutcome> {
       const res: SignInResult = await client.signIn(email, password);
-      if (res.status === "otp_required") {
-        return {
-          kind: "otp",
-          email: res.email,
-          tenantId: res.tenantId,
-          pendingToken: res.pendingToken,
-        };
-      }
+      if (res.status === "step_up_required") return stepUpOutcome(res);
       await persist(res, setTenantId);
       return { kind: "signed_in", email: res.email, tenantId: res.tenantId };
     },
@@ -142,14 +155,7 @@ export function createZitadelSignIn(baseUrl: string) {
       }
 
       const res: SignInResult = await client.idpFinish(cb.intentId, cb.intentToken);
-      if (res.status === "otp_required") {
-        return {
-          kind: "otp",
-          email: res.email,
-          tenantId: res.tenantId,
-          pendingToken: res.pendingToken,
-        };
-      }
+      if (res.status === "step_up_required") return stepUpOutcome(res);
       await persist(res, setTenantId);
       return { kind: "signed_in", email: res.email, tenantId: res.tenantId };
     },
@@ -160,6 +166,23 @@ export function createZitadelSignIn(baseUrl: string) {
       setTenantId: (id: string) => void,
     ): Promise<SignInOutcome> {
       const res = await client.verifyOtp(pendingToken, code);
+      await persist(res, setTenantId);
+      return { kind: "signed_in", email: res.email, tenantId: res.tenantId };
+    },
+
+    /**
+     * Completes an authenticator-app challenge (#686 item 2).
+     *
+     * Shares `persist` with verifyOtp deliberately: both end a sign-in, and
+     * two copies of "save the tokens, then set the tenant" is exactly how
+     * one surface ends up half-signed-in.
+     */
+    async verifyTotp(
+      pendingToken: string,
+      code: string,
+      setTenantId: (id: string) => void,
+    ): Promise<SignInOutcome> {
+      const res = await client.verifyTotp(pendingToken, code);
       await persist(res, setTenantId);
       return { kind: "signed_in", email: res.email, tenantId: res.tenantId };
     },

@@ -85,6 +85,27 @@ interface SignInFormProps {
    * internal error string.
    */
   googleErrorCode?: string;
+  /**
+   * Set only when app/auth/idp/finish/route.ts redirected here because a
+   * Google-through-Zitadel sign-in hit auth-bff's email-OTP gate. The form
+   * then OPENS on the code step instead of the password fields: the
+   * pending cookie auth-bff minted rode in on that redirect, and
+   * `confirmEmailOTPLogin` resumes from that cookie plus the typed code
+   * alone — nothing else has to survive the navigation.
+   *
+   * Deliberately narrower than the internal `challenge` state: "mfa" is
+   * not accepted, because auth-bff's usermfa gate and Zitadel's own TOTP
+   * step-up are still refused on the redirect path (they need a session
+   * id/token that must never travel in a URL).
+   */
+  initialChallenge?: "email_otp";
+  /**
+   * Whether the account resolved to more than one store, carried across
+   * the same redirect so the post-code landing is /pick-tenant rather
+   * than /dashboard — the job `mfaMultipleTenants` does on the password
+   * path, where it is remembered in state instead.
+   */
+  initialMultipleTenants?: boolean;
 }
 
 export function SignInForm({
@@ -92,6 +113,8 @@ export function SignInForm({
   authRequestId,
   provider,
   googleErrorCode,
+  initialChallenge,
+  initialMultipleTenants,
 }: SignInFormProps = {}) {
   const router = useRouter();
   const isZitadel = provider === "zitadel";
@@ -138,12 +161,20 @@ export function SignInForm({
   // Which challenge the server asked for. "mfa" is an authenticator
   // app; "email_otp" is the new-device code auth-bff emails. Both leave
   // only a PENDING cookie, so neither may skip to goToDestination.
-  const [challenge, setChallenge] = useState<"mfa" | "email_otp" | null>(null);
+  //
+  // `initialChallenge` seeds all three from a redirect arrival (the Google
+  // email-OTP path) instead of from a server-action result, so the code
+  // screen renders on first paint with no flash of the password form.
+  const [challenge, setChallenge] = useState<"mfa" | "email_otp" | null>(
+    initialChallenge ?? null,
+  );
   const [resendNotice, setResendNotice] = useState<string | null>(null);
-  const [mfaStep, setMfaStep] = useState(false);
+  const [mfaStep, setMfaStep] = useState(initialChallenge !== undefined);
   const [mfaCode, setMfaCode] = useState("");
   const [mfaPending, setMfaPending] = useState(false);
-  const [mfaMultipleTenants, setMfaMultipleTenants] = useState(false);
+  const [mfaMultipleTenants, setMfaMultipleTenants] = useState(
+    initialMultipleTenants ?? false,
+  );
 
   // Zitadel's own TOTP step-up — a different mechanism from auth-bff's
   // `usermfa` gate above. Zitadel itself demands a verified
@@ -491,6 +522,17 @@ export function SignInForm({
   }
 
   function cancelMFA() {
+    // Arrived here by redirect from the Google flow: the auth_request_id
+    // on this page was already spent by idp/complete, so simply revealing
+    // the password fields would hand the merchant a form Zitadel rejects
+    // ("No valid authentication request found"). Re-enter through
+    // /login/authorize for a fresh one instead. The password path never
+    // takes this branch — initialChallenge is undefined there — so its
+    // behaviour is unchanged.
+    if (initialChallenge && typeof window !== "undefined") {
+      window.location.assign("/login/authorize");
+      return;
+    }
     setMfaStep(false);
     setChallenge(null);
     setMfaCode("");

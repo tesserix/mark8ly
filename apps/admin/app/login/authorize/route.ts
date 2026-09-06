@@ -20,12 +20,15 @@ import {
   ZITADEL_STATE_COOKIE,
   ZITADEL_VERIFIER_COOKIE,
   ZITADEL_RETURN_URL_COOKIE,
+  ZITADEL_LOGIN_ERROR_COOKIE,
+  ZITADEL_LOGIN_ERROR_COOKIE_MAX_AGE_SECONDS,
   ZITADEL_FLOW_COOKIE_MAX_AGE_SECONDS,
   generateState,
   generatePkcePair,
   buildZitadelAuthorizeUrl,
 } from "@/lib/auth/zitadel-oidc";
 import { sanitizeReturnUrl } from "@/lib/auth/sanitize-return-url";
+import { isAdminGoogleErrorCode } from "@/lib/auth/google-sign-in-admin";
 import { publicConfig } from "@/lib/config";
 
 export const runtime = "nodejs";
@@ -83,6 +86,23 @@ export async function GET(req: NextRequest): Promise<Response> {
     req.nextUrl.searchParams.get("returnUrl"),
   );
 
+  // A Google sign-in that failed is redirected here (via /login's recovery
+  // sentinel — see app/auth/idp/finish/route.ts) precisely BECAUSE the auth
+  // request it held is spent and a fresh one is needed. The merchant must
+  // still be told why Google failed once they land back on the form, so the
+  // outcome code rides a short-lived cookie across the Zitadel hop: Zitadel
+  // builds that final /login URL itself and drops anything this route puts
+  // on the way in.
+  //
+  // Allowlisted, never free text. Only a value `isAdminGoogleErrorCode`
+  // recognises is stored, so no provider error body — and nothing else
+  // attacker-supplied — can reach the rendered page through this channel.
+  // Anything unrecognised (and the no-error case) CLEARS the cookie instead,
+  // so a stale message cannot resurface on an unrelated sign-in.
+  const errorParam = req.nextUrl.searchParams.get("error");
+  const safeErrorCode =
+    errorParam && isAdminGoogleErrorCode(errorParam) ? errorParam : null;
+
   const state = generateState();
   const { verifier, challenge } = await generatePkcePair();
 
@@ -115,5 +135,17 @@ export async function GET(req: NextRequest): Promise<Response> {
       ...cookieBase,
     });
   }
+  // Deliberately separate from the PKCE/state pair above: this cookie is a
+  // display hint with its own (shorter) lifetime and carries no security
+  // weight, so it must not borrow theirs.
+  res.cookies.set({
+    name: ZITADEL_LOGIN_ERROR_COOKIE,
+    value: safeErrorCode ?? "",
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: safeErrorCode ? ZITADEL_LOGIN_ERROR_COOKIE_MAX_AGE_SECONDS : 0,
+  });
   return res;
 }

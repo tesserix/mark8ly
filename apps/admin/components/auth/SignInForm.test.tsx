@@ -15,6 +15,8 @@ const signInWithPassword = vi.fn();
 const signIn = vi.fn();
 const signInWithZitadel = vi.fn();
 const confirmZitadelTotp = vi.fn();
+const confirmEmailOTPLogin = vi.fn();
+const resendEmailOTPCode = vi.fn();
 const push = vi.fn();
 
 vi.mock("@/lib/gip/signup", () => ({
@@ -47,8 +49,8 @@ vi.mock("@/app/login/actions", () => ({
   signInWithZitadel: (...args: unknown[]) => signInWithZitadel(...args),
   confirmZitadelTotp: (...args: unknown[]) => confirmZitadelTotp(...args),
   confirmMFALogin: vi.fn(),
-  confirmEmailOTPLogin: vi.fn(),
-  resendEmailOTPCode: vi.fn(),
+  confirmEmailOTPLogin: (...args: unknown[]) => confirmEmailOTPLogin(...args),
+  resendEmailOTPCode: (...args: unknown[]) => resendEmailOTPCode(...args),
 }));
 
 const startAdminGoogleSignIn = vi.fn();
@@ -334,5 +336,90 @@ describe("SignInForm — handoffUrl validation (Minor)", () => {
 
     await waitFor(() => expect(signInWithZitadel).toHaveBeenCalledTimes(1));
     expect(assign).not.toHaveBeenCalled();
+  });
+});
+
+// #686 — a Google sign-in that hits auth-bff's email-OTP gate is redirected
+// back to /login with ?challenge=email_otp instead of being refused. The
+// form has to OPEN on the code step: the pending cookie rode in on that
+// redirect, and there is no password submit to reach the step through.
+describe("SignInForm — email-OTP challenge arriving by redirect", () => {
+  it("renders the code step on first paint, not the password form", () => {
+    render(<SignInForm provider="zitadel" authRequestId="ar-1" initialChallenge="email_otp" />);
+
+    expect(screen.getByLabelText(/sign-in code/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/^password$/i)).toBeNull();
+    // The email-OTP copy, not the authenticator-app copy.
+    expect(screen.getByRole("heading", { name: /check your email/i })).toBeTruthy();
+  });
+
+  it("keeps the password form when no initial challenge is supplied — the untouched default", () => {
+    render(<SignInForm provider="zitadel" authRequestId="ar-1" />);
+
+    expect(screen.getByLabelText(/^password$/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/sign-in code/i)).toBeNull();
+  });
+
+  it("verifies through confirmEmailOTPLogin — the same resume path the password flow uses", async () => {
+    confirmEmailOTPLogin.mockResolvedValue({ ok: true, data: { tenantId: "tenant-1" } });
+    render(<SignInForm provider="zitadel" authRequestId="ar-1" initialChallenge="email_otp" />);
+
+    await userEvent.type(screen.getByLabelText(/sign-in code/i), "123456");
+    await userEvent.click(screen.getByRole("button", { name: /verify and continue/i }));
+
+    await waitFor(() => expect(confirmEmailOTPLogin).toHaveBeenCalledWith("123456"));
+    // Nothing but the code: the pending cookie carries the rest.
+    expect(confirmEmailOTPLogin.mock.calls[0]).toHaveLength(1);
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
+  });
+
+  it("lands on /pick-tenant when the redirect flagged a multi-store account", async () => {
+    confirmEmailOTPLogin.mockResolvedValue({ ok: true, data: { tenantId: "tenant-1" } });
+    render(
+      <SignInForm
+        provider="zitadel"
+        authRequestId="ar-1"
+        initialChallenge="email_otp"
+        initialMultipleTenants
+      />,
+    );
+
+    await userEvent.type(screen.getByLabelText(/sign-in code/i), "123456");
+    await userEvent.click(screen.getByRole("button", { name: /verify and continue/i }));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/pick-tenant"));
+  });
+
+  it("offers the resend affordance the password email-OTP step has", async () => {
+    resendEmailOTPCode.mockResolvedValue({ ok: true, data: null });
+    render(<SignInForm provider="zitadel" authRequestId="ar-1" initialChallenge="email_otp" />);
+
+    await userEvent.click(screen.getByRole("button", { name: /send a new code/i }));
+
+    await waitFor(() => expect(resendEmailOTPCode).toHaveBeenCalled());
+  });
+
+  it("re-enters through /login/authorize on cancel, because this page's auth request is already spent", async () => {
+    render(<SignInForm provider="zitadel" authRequestId="ar-1" initialChallenge="email_otp" />);
+
+    await userEvent.click(screen.getByRole("button", { name: /use a different account/i }));
+
+    expect(assign).toHaveBeenCalledWith("/login/authorize");
+  });
+
+  it("cancel on the PASSWORD email-OTP step still just reveals the form — no navigation", async () => {
+    signInWithZitadel.mockResolvedValue({
+      ok: true,
+      data: { multipleTenants: false, mfaRequired: false, emailOtpRequired: true },
+    });
+    render(<SignInForm provider="zitadel" authRequestId="ar-1" />);
+
+    await fillAndSubmit();
+    await waitFor(() => expect(screen.getByLabelText(/sign-in code/i)).toBeTruthy());
+
+    await userEvent.click(screen.getByRole("button", { name: /use a different account/i }));
+
+    expect(assign).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/^password$/i)).toBeTruthy();
   });
 });

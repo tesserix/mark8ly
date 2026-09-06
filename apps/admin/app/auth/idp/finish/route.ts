@@ -34,26 +34,16 @@ import { NextResponse } from "next/server";
 import { publicConfig } from "@/lib/config";
 import { isTrustedCallbackUrl, isTrustedZitadelHostedUrl } from "@/lib/auth/zitadel-oidc";
 import { finishZitadelGoogleSignIn } from "@/app/login/actions";
-import type { AdminGoogleErrorCode } from "@/lib/auth/google-sign-in-admin";
+import {
+  RECOVERY_AUTH_REQUEST_SENTINEL,
+  type AdminGoogleErrorCode,
+} from "@/lib/auth/google-sign-in-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_DESTINATION = "/dashboard";
 const MULTI_TENANT_DESTINATION = "/pick-tenant";
-
-// middleware.ts 404s canonical `/login` unless the request carries either
-// a valid slug returnUrl or a (merely non-empty — see its own check)
-// `authRequest` param. This flow has no slug to build a returnUrl from
-// (resolving one is the whole point of finishZitadelGoogleSignIn), so a
-// sentinel authRequest is the only way to guarantee the error page stays
-// reachable if Zitadel's callback ever omits the real auth_request_id.
-// /login/page.tsx only redirects to /login/authorize (minting a fresh
-// one) when authRequest is completely ABSENT, so this sentinel renders
-// the form normally with the truthful error message; a merchant who then
-// retries with this stale id gets a clean auth-bff rejection rather than
-// a blank 404 here.
-const RECOVERY_AUTH_REQUEST_SENTINEL = "recovery";
 
 export async function GET(req: Request): Promise<Response> {
   // This route only applies under the Zitadel provider — under GIP there
@@ -74,22 +64,58 @@ export async function GET(req: Request): Promise<Response> {
   const proto = headerBag.get("x-forwarded-proto") ??
     (forwardedHost.startsWith("localhost") || forwardedHost.startsWith("127.") ? "http" : "https");
 
-  // /login re-derives a fresh `authRequest` via /login/authorize whenever
-  // it renders under Zitadel without one already in the query string —
-  // see app/login/page.tsx. Carrying the SAME auth_request_id (still
-  // valid: this attempt never consumed it, it only failed to link a
-  // Google identity to it) back onto every error redirect avoids that
-  // detour and its side effect of losing `error` along the way, so a
-  // merchant landing back on /login after a Google failure both sees the
-  // truthful message AND can retry with a password using the exact auth
-  // request already in flight, rather than an invisible one silently
-  // restarted underneath them.
+  // Every error redirect lands on canonical /login carrying the RECOVERY
+  // sentinel rather than this attempt's own `auth_request_id`.
+  //
+  // An earlier version handed the original id back, on the theory that a
+  // failed Google link leaves the auth request untouched and reusable. It
+  // does not: once the flow has reached auth-bff's idp/complete, Zitadel
+  // has SPENT that auth request. /login then rendered its form around a
+  // dead id and the password fallback this route's own copy recommends
+  // came back as raw provider JSON —
+  // `{"error": "No valid authentication request found"}` — so the one
+  // recovery path offered to the merchant could not work. Reported from
+  // production.
+  //
+  // The sentinel keeps the redirect past middleware's canonical-/login
+  // 404 gate (which needs either a valid slug returnUrl — this flow has
+  // no slug — or a non-empty authRequest) and tells /login to mint a
+  // FRESH auth request via /login/authorize while carrying `error`
+  // across that hop, so the merchant still sees why Google failed AND
+  // gets a form that actually submits. See
+  // RECOVERY_AUTH_REQUEST_SENTINEL, app/login/page.tsx and
+  // app/login/authorize/route.ts.
   function errorRedirect(code: AdminGoogleErrorCode): Response {
     const params = new URLSearchParams({ error: code });
-    params.set("authRequest", authRequestId || RECOVERY_AUTH_REQUEST_SENTINEL);
+    params.set("authRequest", RECOVERY_AUTH_REQUEST_SENTINEL);
     const dest = forwardedHost
       ? `${proto}://${forwardedHost}/login?${params.toString()}`
       : `/login?${params.toString()}`;
+    return NextResponse.redirect(dest, { status: 303 });
+  }
+
+  // The email-OTP continuation: NOT an error, so it keeps this attempt's
+  // real `auth_request_id` and does not detour through /login/authorize
+  // (that detour would lose `challenge` — Zitadel rebuilds the /login URL
+  // itself and only appends its own authRequest). The id is spent by now,
+  // but nothing on the code screen uses it: confirmEmailOTPLogin resumes
+  // purely from the pending cookie auth-bff minted plus the typed code.
+  // It rides along only so /login renders instead of 404ing, and so the
+  // form has the same prop shape it has on the password path.
+  //
+  // `multi` is a UI hint, not a credential — it decides /pick-tenant vs
+  // /dashboard after the code verifies, exactly like `mfaMultipleTenants`
+  // does on the password path. Forging it buys nothing: /pick-tenant
+  // re-lists the caller's real memberships server-side and auto-skips to
+  // /dashboard for a single-tenant account.
+  //
+  // No session id, session token, intent id or intent token is ever put
+  // in this URL — see the TOTP refusal below for why that rule exists.
+  function emailOtpRedirect(multipleTenants: boolean): Response {
+    const params = new URLSearchParams({ authRequest: authRequestId ?? "" });
+    params.set("challenge", "email_otp");
+    if (multipleTenants) params.set("multi", "1");
+    const dest = `${proto}://${forwardedHost}/login?${params.toString()}`;
     return NextResponse.redirect(dest, { status: 303 });
   }
 
@@ -148,22 +174,36 @@ export async function GET(req: Request): Promise<Response> {
 
   const { data } = result;
 
-  // A step-up (Zitadel's own TOTP, or auth-bff's usermfa/email-OTP gate)
-  // is outstanding. auth-bff's usermfa/email-OTP gate DOES mint a pending
-  // cookie even here (forwarded above via finishZitadelGoogleSignIn's
-  // reuse of mapZitadelOutcome/applySetCookies), but there is no
-  // interactive form on this redirect-only path to collect the code the
-  // way SignInForm's challenge screens do for the password path — and
-  // Zitadel's own TOTP step-up hands back a session id/session token that
-  // must not travel in a URL. Rather than strand the merchant on a broken
-  // continuation, this treats every step-up as unsupported for the
-  // Google path today and sends them back to sign in with a password,
-  // where the exact same account can complete its second factor.
-  if (data.totpRequired || data.mfaRequired || data.emailOtpRequired) {
+  // Zitadel's OWN TOTP step-up, and auth-bff's usermfa gate, both stay
+  // unsupported on this path. The reason has not changed: Zitadel's TOTP
+  // step-up hands back a session id and session token that
+  // confirmZitadelTotp must carry forward, and those must never travel in
+  // a URL — which is the only channel a redirect-only route has. The
+  // merchant is sent back to sign in with a password, where the exact
+  // same account can complete its second factor.
+  if (data.totpRequired || data.mfaRequired) {
     console.error(
-      "admin google idp finish: a step-up is outstanding, which this redirect-only route cannot collect",
+      "admin google idp finish: a totp/mfa step-up is outstanding, which this redirect-only route cannot collect",
     );
     return errorRedirect("step_up_unsupported");
+  }
+
+  // Email OTP is the one step-up this path CAN continue, and it is the
+  // common case rather than an edge: a merchant signing in with Google
+  // from a browser auth-bff has not fingerprinted before always trips the
+  // deviceguard/emailotp gate, so refusing it refused web Google sign-in
+  // outright (#686).
+  //
+  // Nothing needs to be smuggled through the URL to resume it. auth-bff
+  // minted a PENDING cookie on this very response —
+  // finishZitadelGoogleSignIn's mapZitadelOutcome ran applySetCookies,
+  // which writes through next/headers' cookies() and so rides onto the
+  // 303 below, the same mechanism app/auth/handoff/route.ts uses to land
+  // a session cookie on a redirect. The code screen then calls
+  // confirmEmailOTPLogin, which needs exactly that pending cookie plus
+  // the typed code and nothing else.
+  if (data.emailOtpRequired) {
+    return emailOtpRedirect(data.multipleTenants);
   }
 
   if (data.handoffUrl) {

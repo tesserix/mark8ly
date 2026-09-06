@@ -211,3 +211,39 @@ func TestPromoApply_AbovePriceFloor_USD(t *testing.T) {
 		t.Errorf("percent_off_bps = %v, want 2000", got)
 	}
 }
+
+// TestPromoApply_RateLimiterIsActuallyWired proves the §7.3 limiters reach the
+// route, not merely that they work in isolation.
+//
+// The unit tests in internal/ratelimit exercise the middleware directly and
+// would pass with it wired to nothing — which is exactly the state it sat in
+// from the day it was written until mark8ly#773 gave merchants a field to type
+// codes into. A limiter that is never mounted reads as protection and provides
+// none, and nothing in the package could tell you.
+//
+// PromoPerIP is the tighter of the two (burst 5, vs 10 per tenant), so it trips
+// first. httptest gives every request the same RemoteAddr, so all six share a
+// bucket. The status codes before the 6th are deliberately not asserted: what
+// the handler makes of an unseeded code is another test's business, and pinning
+// it here would couple this to promo validation.
+func TestPromoApply_RateLimiterIsActuallyWired(t *testing.T) {
+	env := setupTestRouter(t)
+	storeID, tenantID := seedStoreRow(t, env.db, "")
+	userID := uuid.NewString()
+	env.fga.Grant(userID, authz.RoleOwner, tenantID)
+	seedSubscriptionForPromoTest(t, env.db, storeID, tenantID, "starter", "usd")
+
+	body := map[string]any{"code": "NOPE"}
+	for i := 0; i < 5; i++ {
+		w := request(t, env.router, http.MethodPost, promoApplyURL(storeID), body, authHeaders(userID, tenantID))
+		if w.Code == http.StatusTooManyRequests {
+			t.Fatalf("request %d was throttled inside the burst of 5", i)
+		}
+	}
+
+	w := request(t, env.router, http.MethodPost, promoApplyURL(storeID), body, authHeaders(userID, tenantID))
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("6th request: expected 429 from PromoPerIP, got %d — the limiter is not on the route; body: %s",
+			w.Code, w.Body.String())
+	}
+}

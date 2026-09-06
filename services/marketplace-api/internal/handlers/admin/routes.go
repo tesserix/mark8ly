@@ -15,6 +15,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/billing/migration"
 	"github.com/mark8ly/marketplace-api/internal/handlers/internalsvc"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
+	"github.com/mark8ly/marketplace-api/internal/ratelimit"
 	"github.com/mark8ly/marketplace-api/internal/subscription/cancel"
 )
 
@@ -772,8 +773,20 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 
 				// P10 — promo-code engine (§7).
 				if deps.PromoHandler != nil {
+					// §7.3 abuse prevention. These were written with the engine
+					// and wired to nothing until mark8ly#773 gave merchants a
+					// field to type codes into — which is also the first thing
+					// that makes guessing codes worth doing.
+					//
+					// IP first, so an unauthenticated flood is shed before the
+					// authz round-trip. Tenant second, because it keys on
+					// `tenant_id`, which tenantMW sets upstream in storeMW.
+					// Both are per-pod and in-memory; see the package docs for
+					// why that is accepted here.
 					sub.POST("/apply-promo",
+						ratelimit.PromoPerIP(),
 						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+						ratelimit.PromoPerTenant(),
 						deps.PromoHandler.ApplyPromo)
 					sub.DELETE("/promo",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),

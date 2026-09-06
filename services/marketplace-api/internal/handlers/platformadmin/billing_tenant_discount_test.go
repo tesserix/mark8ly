@@ -439,6 +439,11 @@ func TestTenantDiscountDomainSentinelsMapToDistinctCodes(t *testing.T) {
 		{"no_stores", tenantdiscount.ErrNoStores, http.StatusNotFound, "no_stores"},
 		{"no_tenant", tenantdiscount.ErrNoTenant, http.StatusBadRequest, "invalid_tenant_id"},
 		{"no_coupon", tenantdiscount.ErrNoCoupon, http.StatusBadRequest, "invalid_coupon_id"},
+		{
+			"override_already_recorded",
+			tenantdiscount.ErrOverrideAlreadyRecorded,
+			http.StatusConflict, "override_already_recorded",
+		},
 		{"stripe_call", tenantdiscount.ErrStripeCall, http.StatusBadGateway, "stripe_unavailable"},
 		{
 			"divergence",

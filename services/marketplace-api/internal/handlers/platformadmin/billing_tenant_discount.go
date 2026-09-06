@@ -449,9 +449,10 @@ func (h *BillingTenantDiscountHandler) releaseReservation(c *gin.Context, op, sc
 // tenant owns no stores" from "the store lookup broke" rather than getting
 // one opaque refusal.
 //
-// Apply and Remove return ErrNoTenant, ErrNoCoupon, ErrNoStores or a wrapped
-// store-lookup error, and nothing else — a single store's failure is a
-// StoreResult, not an error, because its siblings still committed. The two
+// Apply and Remove return ErrNoTenant, ErrNoCoupon, ErrNoStores,
+// ErrOverrideAlreadyRecorded, or a wrapped store-lookup or override-record
+// error, and nothing else — a single store's failure is a StoreResult, not an
+// error, because its siblings still committed. The two
 // per-store sentinels are matched here anyway, divergence first, so that a
 // future change which does surface one of them at the request level cannot
 // land it in the default branch and report a live billing divergence as a
@@ -470,6 +471,19 @@ func (h *BillingTenantDiscountHandler) respondDiscountErr(c *gin.Context, op str
 	case errors.Is(err, tenantdiscount.ErrNoCoupon):
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid_coupon_id", "message": "coupon_id is required", "field": "coupon_id",
+		})
+	case errors.Is(err, tenantdiscount.ErrOverrideAlreadyRecorded):
+		// 409 and not 400: the request is well formed and would have been
+		// accepted a moment earlier or after a removal. Nothing was sent to
+		// Stripe, so a corrected retry is safe.
+		//
+		// The message says what to do rather than restating the refusal,
+		// because the operator's next move is not obvious: replacing an
+		// override is a removal and then an application, two audited acts,
+		// and this service will not fold them into one.
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "override_already_recorded",
+			"message": "this tenant already holds a platform discount applied by this service; remove it before applying a different coupon",
 		})
 	case errors.Is(err, tenantdiscount.ErrStripeChangedAuditWriteFailed):
 		// Checked BEFORE ErrStripeCall, and 500 rather than the 502 below:

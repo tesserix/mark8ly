@@ -36,7 +36,7 @@ const merchantPromo = "co_merchant_promo"
 // into a savepoint, which is precisely the behaviour under test.
 func newDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	return testdb.NewDB(t, "audit_logs", "store_subscriptions", "stores")
+	return testdb.NewDB(t, "audit_logs", "tenant_applied_discounts", "store_subscriptions", "stores")
 }
 
 // seededStore is one store plus (optionally) its subscription row.
@@ -385,8 +385,9 @@ func TestApply_AnAuditFailureWithoutAStripeChangeIsNotTheDivergence(t *testing.T
 
 // Applying twice must not report the second run as a fresh application, and
 // must not send a second attach. This is idempotent APPLICATION, which is not
-// the "at most one active override per tenant" guarantee #660 asserts — there
-// is no local table here to enforce that against.
+// the "at most one active override per tenant" guarantee #660 asserts — the
+// local record migration 000132 added bounds what this service applied, not
+// what the Stripe customer carries.
 func TestApply_ReAppliedCouponReportsAlreadyApplied(t *testing.T) {
 	db := newDB(t)
 	tenantID := uuid.New()

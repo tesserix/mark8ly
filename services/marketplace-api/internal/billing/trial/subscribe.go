@@ -9,12 +9,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/billing/tenantdiscount"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
@@ -55,11 +57,29 @@ func (a *StripeAdapter) PriceIDFor(ctx context.Context, plan subscription.Subscr
 	return billingstripe.PriceIDFor(ctx, a.C, plan, period, currency, tier)
 }
 
+// TenantDiscountApplier offers a newly created subscription to the tenant's
+// standing platform override (mark8ly#660). *tenantdiscount.Service satisfies
+// it.
+//
+// Declared here rather than imported as a concrete type for the reason
+// StripeAPI above is: it keeps the dependency pointing inward and lets the
+// tests substitute a stub. There is no import cycle to avoid — tenantdiscount
+// does not import this package — so the input and outcome types are the
+// domain's own rather than re-spelled as strings.
+type TenantDiscountApplier interface {
+	ApplyToNewSubscription(ctx context.Context, in tenantdiscount.NewSubscriptionInput) (tenantdiscount.Outcome, error)
+}
+
 // Subscriber orchestrates the deferred-charge trial flow.
 type Subscriber struct {
 	db     *gorm.DB
 	stripe StripeAPI
 	clock  func() time.Time
+
+	// discounts may be nil: without Stripe billing configured there is no
+	// tenantdiscount.Service to wire, and a nil one means Subscribe behaves
+	// exactly as it did before #660 T6.
+	discounts TenantDiscountApplier
 }
 
 // NewSubscriber constructs a Subscriber. If clock is nil, time.Now().UTC() is used.
@@ -68,6 +88,19 @@ func NewSubscriber(db *gorm.DB, s StripeAPI, clock func() time.Time) *Subscriber
 		clock = func() time.Time { return time.Now().UTC() }
 	}
 	return &Subscriber{db: db, stripe: s, clock: clock}
+}
+
+// WithTenantDiscount wires the tenant-override hook and returns the receiver
+// so it can be chained onto NewSubscriber.
+//
+// A setter rather than a fourth NewSubscriber parameter: the discounter is
+// optional (see Subscriber.discounts) and every existing caller and test
+// constructs a Subscriber without one. It follows the same shape as
+// brandingHandler.SetPlanResolver in main.go, where a dependency built later
+// in the wiring is attached after construction.
+func (s *Subscriber) WithTenantDiscount(d TenantDiscountApplier) *Subscriber {
+	s.discounts = d
+	return s
 }
 
 // SubscribeInput carries the caller-supplied parameters for a trial subscription.
@@ -156,8 +189,51 @@ func (s *Subscriber) subscribeInTx(ctx context.Context, tx *gorm.DB, in Subscrib
 		return nil, fmt.Errorf("trial: persist subscription id: %w", err)
 	}
 
+	// #660 T6 — the tenant may hold a standing platform override granted
+	// before this store had a Stripe subscription to carry it. Applying it
+	// here is what makes the grant cover stores created after the operator
+	// pressed the button.
+	s.applyTenantDiscount(ctx, in, sub.ID)
+
 	return &SubscribeResult{
 		StripeSubscriptionID: sub.ID,
 		TrialEndUnix:         trialEnd,
 	}, nil
+}
+
+// applyTenantDiscount offers the new subscription to the tenant's standing
+// override, and RETURNS NOTHING.
+//
+// That is the contract, not an oversight. A discount that cannot be applied
+// costs the tenant a discount an operator can re-apply by hand; a discount
+// that blocks this call costs the merchant their subscription. The first is
+// recoverable and the second is not, so the failure is logged and dropped.
+//
+// It also touches no transaction: ApplyToNewSubscription works entirely on the
+// tenantdiscount service's own handle. A failed statement poisons a Postgres
+// transaction, so writing on the caller's tx would turn exactly the failure
+// this function is built to swallow back into a failed subscription.
+func (s *Subscriber) applyTenantDiscount(ctx context.Context, in SubscribeInput, stripeSubID string) {
+	if s.discounts == nil {
+		return
+	}
+	outcome, err := s.discounts.ApplyToNewSubscription(ctx, tenantdiscount.NewSubscriptionInput{
+		TenantID:             in.TenantID,
+		StoreID:              in.StoreID,
+		StripeSubscriptionID: stripeSubID,
+	})
+	if err != nil {
+		slog.Error("trial: could not apply the tenant's standing platform override to a new subscription",
+			"tenant_id", in.TenantID.String(),
+			"store_id", in.StoreID.String(),
+			"stripe_subscription_id", stripeSubID,
+			"err", err)
+		return
+	}
+	if outcome == tenantdiscount.OutcomeApplied {
+		slog.Info("trial: applied the tenant's standing platform override to a new subscription",
+			"tenant_id", in.TenantID.String(),
+			"store_id", in.StoreID.String(),
+			"stripe_subscription_id", stripeSubID)
+	}
 }

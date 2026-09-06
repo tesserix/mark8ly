@@ -200,11 +200,21 @@ type operation struct {
 	// run performs the Stripe side and returns the outcome. It is only
 	// reached for a store that has a Stripe subscription id.
 	run func(ctx context.Context, sd StripeDiscounts, subID, couponID string) (Outcome, error)
+
+	// record writes the tenant-scoped applied-override row: Apply creates it,
+	// Remove retires it. Called ONCE per request, before the fan-out.
+	record func(s *Service, ctx context.Context, in Input) error
+}
+
+// recordFanOut applies the operation's tenant-scoped record write.
+func (s *Service) recordFanOut(ctx context.Context, in Input, op operation) error {
+	return op.record(s, ctx, in)
 }
 
 var applyOp = operation{
 	name:   "apply",
 	action: ActionApply,
+	record: (*Service).recordApplied,
 	run: func(ctx context.Context, sd StripeDiscounts, subID, couponID string) (Outcome, error) {
 		// Read before write so "we attached it" and "it was already there"
 		// are told apart. AddSubscriptionDiscount is idempotent on its own
@@ -227,6 +237,7 @@ var applyOp = operation{
 var removeOp = operation{
 	name:   "remove",
 	action: ActionRemove,
+	record: (*Service).recordRemoved,
 	run: func(ctx context.Context, sd StripeDiscounts, subID, couponID string) (Outcome, error) {
 		has, err := sd.SubscriptionHasDiscount(ctx, subID, couponID)
 		if err != nil {
@@ -244,7 +255,7 @@ var removeOp = operation{
 
 func (s *Service) fanOut(ctx context.Context, in Input, op operation) (Result, error) {
 	if s == nil {
-		return Result{}, errors.New("tenantdiscount: nil service")
+		return Result{}, ErrNilService
 	}
 
 	// Validated before the fan-out query, not inside the per-store loop: a
@@ -264,6 +275,23 @@ func (s *Service) fanOut(ctx context.Context, in Input, op operation) (Result, e
 	}
 	if len(storeIDs) == 0 {
 		return Result{}, ErrNoStores
+	}
+
+	// The tenant-scoped record, written ONCE and BEFORE the per-store loop.
+	//
+	// It is tenant-scoped because the grant is: a store created tomorrow is
+	// covered by an override granted today, and the creation paths read this
+	// row to do it. Before the loop, because a fan-out that fails for some or
+	// all of today's stores must still leave the tenant marked as holding the
+	// override — those stores are reported failed and the operator retries,
+	// while a store provisioned in the meantime is covered either way.
+	//
+	// A failure here refuses the WHOLE request rather than being reported per
+	// store. Nothing has been sent to Stripe yet, so refusing costs nothing;
+	// continuing would apply the discount to today's stores while silently
+	// dropping every future one, which is the exact gap this record closes.
+	if err := s.recordFanOut(ctx, in, op); err != nil {
+		return Result{}, err
 	}
 
 	out := Result{TenantID: in.TenantID, CouponID: in.CouponID, Stores: make([]StoreResult, 0, len(storeIDs))}

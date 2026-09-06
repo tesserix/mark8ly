@@ -14,9 +14,12 @@ const (
 	OutcomeApplied Outcome = "applied"
 
 	// OutcomeAlreadyApplied — the coupon was already on the subscription, so
-	// nothing was sent. This is idempotent APPLICATION, and it is not the
-	// "at most one active override per tenant" guarantee #660 asserts: there
-	// is no local grant table here to enforce that against.
+	// nothing was sent. This is idempotent APPLICATION, and it is still not
+	// the "at most one active override per tenant" guarantee #660 asserts.
+	// Migration 000132 added a local record of what THIS SERVICE applied, and
+	// ErrOverrideAlreadyRecorded refuses a second recorded override — but
+	// neither can see a coupon attached out of band, so neither can answer
+	// what a Stripe customer is really carrying.
 	OutcomeAlreadyApplied Outcome = "already_applied"
 
 	// OutcomeRemoved — the coupon was on the subscription and this call took
@@ -33,20 +36,49 @@ const (
 	// exactly the population an operator discounts. For Remove there is
 	// nothing attached to take off.
 	//
-	// NOTHING PICKS THIS UP LATER, AND THAT IS THE HONEST STATE TODAY.
-	// "Pending" names what did not happen; it is not a queue. This service
-	// holds NO record of a tenant's override — the grant lives in the
-	// console's `tenant_pricing_override_coupons` (tesserix-home 0047), which
-	// this service cannot read — so when the subscription is later created
-	// there is nothing here to consult and the discount is not applied. The
-	// operator has to apply it again once the tenant has a subscription.
+	// "Pending" still names what did not happen in THIS call — it is not a
+	// queue, and nothing retries it. What changed with migration 000132 is
+	// that the store no longer has to be re-applied by hand: the SAME Apply
+	// that reported this outcome first wrote the tenant's override to
+	// tenant_applied_discounts, and the two places this service creates a
+	// Stripe subscription (trial.Subscriber.subscribeInTx and
+	// planchange.Orchestrator.executeInitialSubscription) read that record
+	// and attach the coupon to the subscription they create. A store reported
+	// pending is picked up when one of those two creates its subscription,
+	// not before — and NOT when the subscription is created by hosted Stripe
+	// Checkout, which this service only learns about from a webhook. See the
+	// migration 000132 header.
 	//
-	// Closing that gap needs a decision recorded on mark8ly#660: a local
-	// applied-override table, the console re-driving the apply, or a
-	// tenant-scoped console read. Until one lands, do not write code that
-	// assumes this outcome is durable, and do not soften this comment — a
-	// caller told the override is "recorded" would stop re-applying it.
+	// BE EXACT ABOUT WHAT IS DURABLE. What is durable is THIS SERVICE'S
+	// RECORD OF WHAT IT APPLIED, and only for a tenant an Apply reached. What
+	// is NOT:
+	//
+	//   - the grant itself, which lives in the console's
+	//     `tenant_pricing_override_coupons` (tesserix-home 0047) and is still
+	//     unreadable from here. A grant the console minted and never
+	//     successfully sent to this service leaves nothing behind, and a
+	//     store created afterwards gets no discount;
+	//
+	//   - the reverse: a console-side retirement that never reaches this
+	//     service leaves our record live, and new stores keep receiving a
+	//     coupon the console believes it withdrew;
+	//
+	//   - anything about a coupon attached out of band. Only what this
+	//     service applied through Apply — or through the creation hook — is
+	//     recorded.
+	//
+	// The application to the new subscription is also NON-FATAL by design: it
+	// is never allowed to block a subscription being created, so it can fail
+	// and be logged, leaving the store undiscounted with the tenant's record
+	// still live.
 	OutcomePending Outcome = "pending"
+
+	// OutcomeNoOverride — the tenant holds no live recorded override, so
+	// there was nothing to apply. Produced ONLY by ApplyToNewSubscription,
+	// never by the Apply/Remove fan-out, which is always called with an
+	// explicit coupon. It is the ordinary case on the subscription-creation
+	// path: most tenants have no override at all.
+	OutcomeNoOverride Outcome = "no_override"
 
 	// OutcomeNoSubscription — the store has no store_subscriptions row at
 	// all. Nothing to lock and nothing to bill; reported rather than skipped.

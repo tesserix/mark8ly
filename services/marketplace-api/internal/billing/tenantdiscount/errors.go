@@ -27,6 +27,36 @@ var (
 	ErrNoTenant = errors.New("tenantdiscount: a tenant id is required")
 	ErrNoCoupon = errors.New("tenantdiscount: a coupon id is required")
 
+	// ErrNilService: a method was called on a nil *Service. Named rather than
+	// left as an inline errors.New so ApplyToNewSubscription's caller — whose
+	// contract is to discard the error — can still be tested for it.
+	ErrNilService = errors.New("tenantdiscount: nil service")
+
+	// ErrNoStripeSubscription: ApplyToNewSubscription was handed a blank
+	// Stripe subscription id. Refused rather than treated as "nothing to do":
+	// its two callers are the paths that have just CREATED a subscription, so
+	// a blank id there is a bug in the caller and a silent no-op would hide
+	// the very gap this hook exists to close.
+	ErrNoStripeSubscription = errors.New("tenantdiscount: a stripe subscription id is required")
+
+	// ErrOverrideAlreadyRecorded: Apply was asked to put a SECOND, different
+	// coupon on a tenant that already holds a live recorded override. Refused
+	// before any Stripe call, so nothing is half-applied.
+	//
+	// The alternative — retiring the recorded row and applying the new coupon
+	// — was rejected: that retirement never happens in Stripe, so the old
+	// coupon would stay on every existing subscription while this service's
+	// record claimed it was gone. Removing the first override is a real
+	// operation with its own Stripe calls and its own audit rows, and it has
+	// to be asked for.
+	//
+	// This refusal is NOT the "at most one active override per tenant"
+	// guarantee #660 asserts. It bounds what THIS SERVICE has recorded and
+	// will act on; a coupon attached out of band — in the Stripe dashboard,
+	// or by this service before migration 000132 existed — is invisible to
+	// it, and a tenant can still be carrying one.
+	ErrOverrideAlreadyRecorded = errors.New("tenantdiscount: the tenant already holds a recorded override")
+
 	// ErrNoStores: the tenant owns no stores, so there is nothing to apply
 	// the override to. Refused rather than returned as an empty success,
 	// which would read to an operator as "done".

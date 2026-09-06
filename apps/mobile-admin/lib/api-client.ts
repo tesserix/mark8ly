@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createApiClient } from "@repo/mobile-shared/api/client";
-import { useAuth } from "@repo/mobile-shared/auth/provider";
+import { useAuth, type AuthUser } from "@repo/mobile-shared/auth/provider";
 import { useAuthNoticeStore } from "@repo/mobile-shared/stores/auth-notice";
 import { zitadelSession } from "@repo/mobile-shared/auth/zitadel-session";
 import { isZitadelProvider } from "@/lib/auth-provider";
@@ -13,6 +13,20 @@ import { createDemoApiClient } from "./demo-api-client";
 // and bounce the user back to /login. Serve canned data instead.
 const DEMO_MODE = process.env.EXPO_PUBLIC_AUTH_BACKEND === "demo";
 const demoClient = DEMO_MODE ? createDemoApiClient() : null;
+
+/**
+ * Did a session ever exist on this device?
+ *
+ * Under Zitadel that is the persisted token record — present even once
+ * EXPIRED, which is exactly the case where "your session ended" is both true
+ * and useful. Under GIP the Firebase SDK owns persistence, so the provider's
+ * user is the signal (it is always null under Zitadel, which is why this
+ * cannot be one shared check).
+ */
+async function hadSession(gipUser: AuthUser | null): Promise<boolean> {
+  if (!isZitadelProvider()) return gipUser !== null;
+  return (await zitadelSession.read()) !== null;
+}
 
 /**
  * Shared API client hook used by every admin data hook.
@@ -27,7 +41,11 @@ const demoClient = DEMO_MODE ? createDemoApiClient() : null;
  *     redirects a member-revoked user back to /pick-tenant.
  */
 export function useApiClient() {
-  const { getToken, refreshToken, signOut } = useAuth();
+  const { user, getToken, refreshToken, signOut } = useAuth();
+  // Read at 401 time rather than captured into the memo below, so an
+  // auth-state change does not rebuild the whole client.
+  const userRef = useRef<AuthUser | null>(user);
+  userRef.current = user;
   const activeStore = useTenantStore((s) => s.activeStore);
   const tenantId = useTenantStore((s) => s.tenantId);
   const clearActiveStore = useTenantStore((s) => s.clearActiveStore);
@@ -53,7 +71,19 @@ export function useApiClient() {
         onUnauthorized: async (reason) => {
           // Record WHY before tearing the session down — /login reads this and
           // explains itself instead of bouncing the user with no message.
-          useAuthNoticeStore.getState().setNotice(reason);
+          //
+          // But only when a session actually existed. On a FIRST launch the
+          // gate has not routed to /login yet, so the mounted dashboard fires
+          // its queries and every one of them 401s with no token at all —
+          // which is how someone who has never signed in was greeted with
+          // "Your session ended. Sign in again." That copy asserts a past the
+          // user does not have.
+          //
+          // `access-denied` is exempt: it is only reachable with a freshly
+          // minted token in hand, so a session provably existed.
+          if (reason === "access-denied" || (await hadSession(userRef.current))) {
+            useAuthNoticeStore.getState().setNotice(reason);
+          }
           await signOut();
         },
         onTenantInvalid: async () => {

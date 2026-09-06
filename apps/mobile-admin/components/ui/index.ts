@@ -1,4 +1,6 @@
 export { Screen } from "./Screen";
+export { AuthScreen } from "./AuthScreen";
+export { CodeInput, CODE_LENGTH } from "./CodeInput";
 export { Card } from "./Card";
 export { Text, MAX_FONT_SCALE } from "./Text";
 export { Eyebrow } from "./Eyebrow";

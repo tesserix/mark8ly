@@ -72,6 +72,15 @@ module.exports = {
     // write lands nowhere, with no error to explain it.
     '^expo-secure-store$': '<rootDir>/node_modules/expo-secure-store',
     '^expo-secure-store/(.*)$': '<rootDir>/node_modules/expo-secure-store/$1',
+    // Seventh instance of the hoisting bug. babel-preset-expo injects a
+    // `require('expo/virtual/env')` into the modules it transforms, resolved
+    // relative to the FILE — so anything under packages/mobile-shared (which
+    // has no node_modules of its own) walks up to the hoisted ROOT `expo`,
+    // which ships no `virtual/` directory at all: "Cannot find module
+    // 'expo/virtual/env'". A test's own jest.mock cannot help, because the
+    // require is injected rather than written. Pin the virtual modules to this
+    // app's install, which does have them.
+    '^expo/virtual/(.*)$': '<rootDir>/node_modules/expo/virtual/$1',
     '^@gorhom/bottom-sheet$': '<rootDir>/lib/test-support/gorhom-bottom-sheet-mock',
   },
 };

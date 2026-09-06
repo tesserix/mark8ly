@@ -1,15 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  KeyboardAvoidingView,
   Linking,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '@repo/mobile-shared/auth/provider';
 import { authErrorMessage } from '@repo/mobile-shared/auth/errors';
@@ -17,6 +14,7 @@ import type { SocialSignInOutcome } from '@repo/mobile-shared/auth/social-creden
 import { useAuthNoticeStore, type AuthNotice } from '@repo/mobile-shared/stores/auth-notice';
 import { configureGoogleSignin, signInWithAppleNative, signInWithGoogleNative } from '@/lib/social-auth';
 import { theme } from '@/lib/theme';
+import { AuthScreen } from '@/components/ui/AuthScreen';
 import { IconButton } from '@/components/ui/IconButton';
 import { LinkAccountPrompt } from '../components/auth/LinkAccountPrompt';
 import { Text } from '../components/ui/Text';
@@ -241,153 +239,147 @@ export default function LoginScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-paper">
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
-          <View className="flex-1 px-6 pt-16">
-            <Text preset="eyebrow" className="text-moss">
-              Merchant admin
-            </Text>
-            <Text preset="display" className="mt-2">
-              Mark8ly
-            </Text>
-            <Text preset="body" className="mt-2 text-ink-muted">
-              Sign in to manage your store.
-            </Text>
+    <AuthScreen>
+      <Text preset="eyebrow" className="text-moss">
+        Merchant admin
+      </Text>
+      <Text preset="display" className="mt-2">
+        Mark8ly
+      </Text>
+      <Text preset="body" className="mt-2 text-ink-muted">
+        Sign in to manage your store.
+      </Text>
 
-            <View className="mt-8 gap-3">
-              <TextInput
-                accessibilityLabel="Email"
-                className="min-h-touch rounded border border-border bg-paper-elevated px-4 font-sans text-body text-ink"
-                placeholder="Email"
-                placeholderTextColor={theme.colors.textTertiary}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                textContentType="emailAddress"
-                autoComplete="email"
-                value={email}
-                onChangeText={setEmail}
-              />
-              <TextInput
-                accessibilityLabel="Password"
-                className="min-h-touch rounded border border-border bg-paper-elevated px-4 font-sans text-body text-ink"
-                placeholder="Password"
-                placeholderTextColor={theme.colors.textTertiary}
-                secureTextEntry
-                textContentType="password"
-                autoComplete="password"
-                value={password}
-                onChangeText={setPassword}
-              />
-            </View>
+      <View className="mt-8 gap-3">
+        <TextInput
+          accessibilityLabel="Email"
+          className="min-h-touch rounded border border-border bg-paper-elevated px-4 font-sans text-body text-ink"
+          placeholder="Email"
+          placeholderTextColor={theme.colors.textTertiary}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          textContentType="emailAddress"
+          autoComplete="email"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <TextInput
+          accessibilityLabel="Password"
+          className="min-h-touch rounded border border-border bg-paper-elevated px-4 font-sans text-body text-ink"
+          placeholder="Password"
+          placeholderTextColor={theme.colors.textTertiary}
+          secureTextEntry
+          textContentType="password"
+          autoComplete="password"
+          value={password}
+          onChangeText={setPassword}
+        />
+      </View>
 
-            {error ? (
-              <Text
-                preset="caption"
-                className="mt-3 text-danger"
-                accessibilityRole="alert"
-                accessibilityLiveRegion="polite"
-              >
-                {error}
-              </Text>
-            ) : null}
+      {error ? (
+        <Text
+          preset="caption"
+          className="mt-3 text-danger"
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
+          {error}
+        </Text>
+      ) : null}
 
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Sign in"
-              disabled={submitting}
-              onPress={handleSignIn}
-              className="mt-6 min-h-touch items-center justify-center rounded bg-ink active:opacity-90"
-            >
-              <Text preset="bodyEmphasis" className="text-paper">
-                {submitting ? 'Signing in…' : 'Sign in'}
-              </Text>
-            </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Sign in"
+        disabled={submitting}
+        onPress={handleSignIn}
+        className="mt-6 min-h-touch items-center justify-center rounded bg-ink active:opacity-90"
+      >
+        <Text preset="bodyEmphasis" className="text-paper">
+          {submitting ? 'Signing in…' : 'Sign in'}
+        </Text>
+      </Pressable>
 
-            <View className="mt-6 flex-row items-center gap-3">
-              <View className="h-px flex-1 bg-border" />
-              <Text preset="caption">or</Text>
-              <View className="h-px flex-1 bg-border" />
-            </View>
+      <View className="mt-6 flex-row items-center gap-3">
+        <View className="h-px flex-1 bg-border" />
+        <Text preset="caption">or</Text>
+        <View className="h-px flex-1 bg-border" />
+      </View>
 
-            {/*
-              Deliberately CENTRED — the one local exception to the page's
-              left-aligned, asymmetric rhythm. A provider row is a pair of
-              equal-weight alternatives with no reading order, not a hero;
-              everything around it stays left-aligned. Collapsing both
-              providers to icons leaves the full-width ink "Sign in" bar as
-              the only solid on screen, which is the whole point of the
-              change.
-            */}
-            <View style={styles.providerRow} testID="provider-row">
-              <IconButton
-                accessibilityLabel="Continue with Google"
-                disabled={submitting}
-                onPress={handleGoogleSignIn}
-                testID="provider-google"
-                // "ink" tone: the Google box is an outline/white surface, so
-                // it takes the dark ripple and the standard iOS press dim.
-                tone="ink"
-                style={[styles.providerBox, styles.providerBoxOutline]}
-              >
-                <GoogleMark />
-              </IconButton>
+      {/*
+        Deliberately CENTRED — the one local exception to the page's
+        left-aligned, asymmetric rhythm. A provider row is a pair of
+        equal-weight alternatives with no reading order, not a hero;
+        everything around it stays left-aligned. Collapsing both
+        providers to icons leaves the full-width ink "Sign in" bar as
+        the only solid on screen, which is the whole point of the
+        change.
+      */}
+      <View style={styles.providerRow} testID="provider-row">
+        <IconButton
+          accessibilityLabel="Continue with Google"
+          disabled={submitting}
+          onPress={handleGoogleSignIn}
+          testID="provider-google"
+          // "ink" tone: the Google box is an outline/white surface, so
+          // it takes the dark ripple and the standard iOS press dim.
+          tone="ink"
+          style={[styles.providerBox, styles.providerBoxOutline]}
+        >
+          <GoogleMark />
+        </IconButton>
 
-              {Platform.OS === 'ios' ? (
-                <IconButton
-                  accessibilityLabel="Sign in with Apple"
-                  disabled={submitting}
-                  onPress={handleAppleSignIn}
-                  testID="provider-apple"
-                  // "ink" tone, matching Google: both targets are now the same
-                  // outline/Paper surface, so both take the dark ripple and the
-                  // standard iOS press dim. (The "onDark" tone exists for solid
-                  // fills, where a 45% fade reads as broken rather than pressed
-                  // — see lib/theme.ts. Nothing on this row is solid any more.)
-                  tone="ink"
-                  style={[styles.providerBox, styles.providerBoxOutline]}
-                >
-                  <AppleMark />
-                </IconButton>
-              ) : null}
-            </View>
+        {Platform.OS === 'ios' ? (
+          <IconButton
+            accessibilityLabel="Sign in with Apple"
+            disabled={submitting}
+            onPress={handleAppleSignIn}
+            testID="provider-apple"
+            // "ink" tone, matching Google: both targets are now the same
+            // outline/Paper surface, so both take the dark ripple and the
+            // standard iOS press dim. (The "onDark" tone exists for solid
+            // fills, where a 45% fade reads as broken rather than pressed
+            // — see lib/theme.ts. Nothing on this row is solid any more.)
+            tone="ink"
+            style={[styles.providerBox, styles.providerBoxOutline]}
+          >
+            <AppleMark />
+          </IconButton>
+        ) : null}
+      </View>
 
-            {linkTarget ? (
-              <LinkAccountPrompt
-                visible
-                email={linkTarget.email}
-                provider={linkTarget.provider}
-                pendingCredential={linkTarget.pendingCredential}
-                onCancel={() => setLinkTarget(null)}
-                onLinked={() => setLinkTarget(null)}
-              />
-            ) : null}
+      {linkTarget ? (
+        <LinkAccountPrompt
+          visible
+          email={linkTarget.email}
+          provider={linkTarget.provider}
+          pendingCredential={linkTarget.pendingCredential}
+          onCancel={() => setLinkTarget(null)}
+          onLinked={() => setLinkTarget(null)}
+        />
+      ) : null}
 
-            <View className="mt-8 flex-row items-center justify-center gap-3">
-              <Pressable
-                accessibilityRole="link"
-                accessibilityLabel="Privacy Policy"
-                onPress={() => Linking.openURL(PRIVACY_URL)}
-              >
-                <Text preset="caption" className="underline">
-                  Privacy Policy
-                </Text>
-              </Pressable>
-              <Text preset="caption">·</Text>
-              <Pressable
-                accessibilityRole="link"
-                accessibilityLabel="Terms of Service"
-                onPress={() => Linking.openURL(TERMS_URL)}
-              >
-                <Text preset="caption" className="underline">
-                  Terms of Service
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      <View className="mt-8 flex-row items-center justify-center gap-3">
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="Privacy Policy"
+          onPress={() => Linking.openURL(PRIVACY_URL)}
+        >
+          <Text preset="caption" className="underline">
+            Privacy Policy
+          </Text>
+        </Pressable>
+        <Text preset="caption">·</Text>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="Terms of Service"
+          onPress={() => Linking.openURL(TERMS_URL)}
+        >
+          <Text preset="caption" className="underline">
+            Terms of Service
+          </Text>
+        </Pressable>
+      </View>
+    </AuthScreen>
   );
 }
 

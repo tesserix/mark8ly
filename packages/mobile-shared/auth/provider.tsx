@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { tokenStorage } from "./token-storage";
+import { zitadelSession } from "./zitadel-session";
 import { getEnv } from "../config/env";
 import type { AppleFullName, SocialSignInOutcome } from "./social-credentials";
 import type { FirebaseAuthTypes } from "@react-native-firebase/auth";
@@ -246,6 +247,14 @@ export function AuthProvider({ tenantId, children }: AuthProviderProps) {
 
   const signOut = async () => {
     await tokenStorage.clearAll();
+    // The Zitadel bearer tokens live in SecureStore, owned by this app rather
+    // than by a Firebase SDK, so `backend.signOut()` below cannot reach them.
+    // Without this, signing out of a Zitadel build left the tokens in place:
+    // AuthGate re-read a still-fresh token, decided the user was signed in and
+    // sent them straight back to the dashboard. Unconditional on purpose — on
+    // a GIP build the keys were never written and deleting them is a no-op, so
+    // there is no provider branch to keep in sync here.
+    await zitadelSession.clear();
     await backend.signOut();
   };
 

@@ -320,6 +320,66 @@ Phase 3c-2's admin route derived the tenant from the request host and was 100% b
 
 ---
 
+### Mobile Google Sign-In (#686 item 1)
+
+The native admin app's "Continue with Google" runs the same three steps the
+web does, on `POST /auth/zitadel/mobile/idp/{start,finish,complete}`. Those
+are the SAME handlers as the web routes, differing only in `issueTokens` —
+exactly the mode parameter `idpFinish`'s old comment promised. Nothing about
+the IDP pin, the verified-email rule, link-only provisioning or the gauntlet
+is reimplemented for mobile, deliberately: a second copy of that path is a
+second place for an account-takeover bug to live.
+
+**`/mobile/idp/start` is literally `idpStart`.** A start has no completion
+tail to differ in. It is mounted on the merchant `Handler`, so it validates
+against the ADMIN return-URL allowlist — `TestZitadelHandlersUseTheCorrect-
+ReturnURLAllowlist` in `cmd/server/main_test.go` still guards the split.
+
+**The IDP pin is now provider-SELECTED, not "any configured IDP".** Both
+`idpStart` and `idpFinish` resolve `idpIDForProvider(req.Provider)` (empty
+means `google`, so every existing web caller is unchanged) and pin the
+retrieved intent against THAT id. Accepting whichever IDP an intent happens
+to carry would look identical while exactly one IDP exists and diverge
+dangerously the moment a second does — and an Apple IDP already exists on
+this org. Adding a provider is therefore one switch case, a deliberate act
+of trusting it. `customer_handler.go` is untouched and still hard-pins
+Google.
+
+**The mobile routes mint their own `auth_request_id`**, like `loginMode`
+does: a native client has no browser round trip through `/oauth/v2/authorize`
+to obtain one. The web routes still REQUIRE one — the browser already holds
+it, and minting a second would orphan the flow the merchant is in.
+
+**The return URL cannot be the app's own scheme.** `ValidateReturnURL`
+requires https on an allowlisted host, and that check is the entire control
+against handing a completed admin sign-in to another origin (Zitadel does
+not validate `successUrl` at all). Universal links are not an option either:
+`https://admin.mark8ly.com/.well-known/apple-app-site-association` 404s
+today. So Zitadel returns to `apps/admin/app/auth/idp/mobile/route.ts`, an
+https bridge on the allowlisted admin host that 302s to
+`mark8ly-admin://auth/idp` with `id`/`token` — or `error` — carried through.
+Forwarding the failure params matters as much as the success ones: without
+them a cancelled Google sign-in leaves the browser sitting on that page and
+the app waiting for a callback that never comes, which reads as a frozen
+sign-in rather than a cancelled one. `app/auth/idp/finish/route.ts` (the web
+flow) is untouched.
+
+**Two round trips, for the same reason the web needs them (phase 3c-2b).**
+Which tenant a Google-authenticated merchant belongs to is unknowable until
+the identity is resolved, so `marketplace-api` never sends a
+`workspace_tenant` on finish, gets `tenant_required` back, resolves the
+tenant by the VERIFIED email through the same `ListMyTenants` path password
+login uses, and then calls complete. Complete answers with the byte-identical
+body `/mobile/admin/auth/login` does, so the app's existing handling — tokens,
+or a step-up routed to the OTP screen — works unchanged.
+
+**Unlike the password path, IDP refusals are NOT collapsed.** Google already
+authenticated the person, so there is no enumeration oracle to protect, and
+`no_admin_account` / `email_not_verified` / `email_ambiguous` are exactly
+what the merchant needs in order to act. `authbffclient.IDPError` carries
+auth-bff's own code through instead of flattening a 401 into
+`ErrInvalidCredentials`.
+
 ## Testing and Validation
 
 The three architecture tests (`TestFinalizeIsOnlyCalledFromSufficiency`, `TestSufficientWitnessIsOnlyConstructedInSufficiency`, `TestSufficiencyNeverUsesTheUnscopedDisplayPolicy`) are not unit tests in the traditional sense. They are code-inspection tests that verify file-level invariants. They catch the obvious mistakes but accept the blind spot described in section 2.

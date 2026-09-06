@@ -55,6 +55,7 @@ const PUBLIC_PREFIXES = [
   "/accept-invite", // Phase P: invitees must land here without a session
   "/auth/handoff", // cross-TLD admin handoff — mints a session for this host, so it MUST render before the cookie exists
   "/auth/callback", // Zitadel OIDC callback (Task 4, #524) — by the time it's hit, auth-bff has already minted the session, but the canonical-host tenant-redirect logic below would otherwise bounce this path to a slug subdomain before it can complete the flow
+  "/auth/idp/mobile", // Google IdP bridge for the NATIVE app (#686 item 1) — Zitadel redirects a browser here with no m8_session cookie and this route only 302s to the app's own scheme; gating it would strand every mobile Google sign-in on a login page the app cannot use
   "/auth/idp/finish", // Google IdP callback (Task 4, #524, phase 3c2b) — the merchant's browser lands here straight from Google with no m8_session cookie yet; auth-bff mints it inside this handler, so the same no-cookie 404 that /auth/callback needed a carve-out for would otherwise fire first
   "/webhooks", // external provider callbacks (Stripe, etc.) — never gated
   "/api/health", // kubelet probe target; must not 30x to /login

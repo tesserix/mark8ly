@@ -93,6 +93,20 @@ type Config struct {
 
 	// S1 — auth-bff URL for MFA/session proxying.
 	AuthBFFURL string `envconfig:"AUTH_BFF_URL" default:""`
+
+	// MobileIDPReturnURL is the https page Zitadel redirects the browser
+	// back to at the end of a mobile "Continue with Google" (#686 item 1).
+	// It must be an ADMIN-allowlisted host on auth-bff — Zitadel does not
+	// validate successUrl at all, and auth-bff's allowlist is the entire
+	// control against handing a completed admin sign-in elsewhere.
+	//
+	// It cannot be the app's own mark8ly-admin:// scheme: auth-bff's
+	// ValidateReturnURL requires https. The configured page is a bridge
+	// that 302s to the custom scheme with the query preserved.
+	//
+	// Defaulted rather than required so this ships without a chart change
+	// — adding a REQUIRED env var would make the deploy order matter.
+	MobileIDPReturnURL string `envconfig:"MOBILE_IDP_RETURN_URL" default:"https://admin.mark8ly.com/auth/idp/mobile"`
 	// S3 — Stripe Billing keys + webhook / orphan cron config.
 	StripeBillingSecretKey     string `envconfig:"STRIPE_BILLING_SECRET_KEY" default:""`
 	StripeBillingWebhookSecret string `envconfig:"STRIPE_BILLING_WEBHOOK_SECRET" default:""`

@@ -224,6 +224,23 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 	r.POST("/zitadel/idp/complete", func(c *gin.Context) {
 		h.idpComplete(c.Writer, withClientIP(c.Request, c.ClientIP()))
 	})
+
+	// The same three steps for the native app (#686 item 1). idp/start is
+	// literally the same handler — a start has no completion tail to
+	// differ in — while finish/complete run in token-issuing mode. They
+	// share the merchant Handler, and therefore the ADMIN return-URL
+	// allowlist; wiring them anywhere else would hand a completed admin
+	// sign-in to a merchant-controlled storefront host (see
+	// cmd/server/main.go's newZitadelHandlers and its swap test).
+	r.POST("/zitadel/mobile/idp/start", func(c *gin.Context) {
+		h.idpStart(c.Writer, withClientIP(c.Request, c.ClientIP()))
+	})
+	r.POST("/zitadel/mobile/idp/finish", func(c *gin.Context) {
+		h.mobileIDPFinish(c.Writer, withClientIP(c.Request, c.ClientIP()))
+	})
+	r.POST("/zitadel/mobile/idp/complete", func(c *gin.Context) {
+		h.mobileIDPComplete(c.Writer, withClientIP(c.Request, c.ClientIP()))
+	})
 }
 
 type contextKey int
@@ -423,6 +440,65 @@ func (h *Handler) totpMode(w http.ResponseWriter, r *http.Request, issueTokens b
 
 type idpStartRequest struct {
 	ReturnURL string `json:"return_url"`
+	// Provider names WHICH federated IDP to open an intent against.
+	// Empty means Google, so the web callers — which predate this field —
+	// keep working byte-for-byte unchanged. See idpIDForProvider.
+	Provider string `json:"provider"`
+}
+
+// providerGoogle is the only federated provider this handler accepts.
+// Named rather than inlined so a later provider (Apple is provisioned on
+// the same Zitadel org but never exercised — see README.md) is added by
+// extending idpIDForProvider's switch and nothing else.
+const providerGoogle = "google"
+
+var (
+	// errUnsupportedIDPProvider means the caller named a provider this
+	// handler will not open an intent against. A CLIENT error: the caller
+	// asked for something that does not exist here.
+	errUnsupportedIDPProvider = errors.New("zitadellogin: unsupported idp provider")
+	// errIDPProviderNotConfigured means the provider is supported but its
+	// Zitadel IDP id was never configured. A SERVER error: the deployment
+	// is incomplete, not the request.
+	errIDPProviderNotConfigured = errors.New("zitadellogin: no idp id configured for provider")
+)
+
+// idpIDForProvider resolves the provider a caller named to the single
+// Zitadel IDP id an intent is allowed to have come from.
+//
+// The pin is provider-SELECTED, never "any IDP that happens to be
+// configured on this handler". Those look the same while exactly one IDP
+// exists and diverge dangerously the moment a second one does: accepting
+// whichever provider an intent carries would let an attacker start an
+// intent against the WEAKER provider, register victim@merchant.com there,
+// and have idpFinish trust that provider's email_verified claim exactly
+// like Google's — which is an account-takeover primitive, not a
+// convenience. An Apple IDP already exists on the same org (README.md), so
+// this is not hypothetical. Adding a provider here is therefore a
+// deliberate act of trusting it, one switch case at a time.
+func (h *Handler) idpIDForProvider(provider string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "", providerGoogle:
+		if h.googleIDPID == "" {
+			return "", errIDPProviderNotConfigured
+		}
+		return h.googleIDPID, nil
+	default:
+		return "", errUnsupportedIDPProvider
+	}
+}
+
+// respondIDPProviderError maps idpIDForProvider's two errors onto the
+// client/server split they describe. Shared by idpStart and idpFinish so
+// the two cannot drift into answering the same condition differently.
+func (h *Handler) respondIDPProviderError(ctx context.Context, w http.ResponseWriter, err error) {
+	if errors.Is(err, errUnsupportedIDPProvider) {
+		slog.WarnContext(ctx, "zitadellogin: idp request rejected: unsupported provider")
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "unsupported_provider"})
+		return
+	}
+	slog.ErrorContext(ctx, "zitadellogin: idp request: no idp id configured for the requested provider (see WithGoogleIDPID)", "err", err)
+	writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
 }
 
 // idpFinishRequest is what the frontend's own finish route (the target of
@@ -433,6 +509,13 @@ type idpFinishRequest struct {
 	IntentID        string `json:"intent_id"`
 	IntentToken     string `json:"intent_token"`
 	WorkspaceTenant string `json:"workspace_tenant"`
+
+	// Provider must name the SAME provider idp/start was called with.
+	// Empty means Google, matching idpStartRequest.Provider. It selects
+	// which IDP id the retrieved intent is pinned against — it never
+	// widens what is accepted, because an unknown value is refused rather
+	// than falling back. See idpIDForProvider.
+	Provider string `json:"provider"`
 
 	// User carries whatever value the caller received in Zitadel's `user`
 	// redirect query parameter, if it forwards one at all.
@@ -484,9 +567,9 @@ func (h *Handler) idpStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.googleIDPID == "" {
-		slog.ErrorContext(ctx, "zitadellogin: idp start: no google idp id configured (see WithGoogleIDPID)")
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+	idpID, err := h.idpIDForProvider(req.Provider)
+	if err != nil {
+		h.respondIDPProviderError(ctx, w, err)
 		return
 	}
 
@@ -494,7 +577,7 @@ func (h *Handler) idpStart(w http.ResponseWriter, r *http.Request) {
 	// from failure by which query params it appends (id+token vs
 	// id+error+error_description — see idpintent.go), so the frontend's one
 	// finish route can handle both without needing two allowlisted targets.
-	authURL, err := h.c.StartIDPIntent(ctx, h.googleIDPID, returnURL, returnURL)
+	authURL, err := h.c.StartIDPIntent(ctx, idpID, returnURL, returnURL)
 	if err != nil {
 		slog.ErrorContext(ctx, "zitadellogin: start idp intent failed", "err", err)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "zitadel_unavailable"})
@@ -508,6 +591,22 @@ func (h *Handler) idpStart(w http.ResponseWriter, r *http.Request) {
 // intent, and runs it through the exact same sufficiency + gauntlet +
 // m8_session path login/totp use.
 func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
+	h.idpFinishMode(w, r, false)
+}
+
+// mobileIDPFinish is idpFinish for the mobile surface. It differs in
+// EXACTLY the two ways loginMode already differs for a native client: an
+// auth_request_id is minted here because there is no browser round trip
+// through /oauth/v2/authorize to obtain one, and a completed sign-in
+// answers with tokens instead of a callback_url. Every trust decision —
+// the IDP pin, the verified-email rule, link-only, the gauntlet — is the
+// same code, deliberately: a second implementation of this path is a
+// second place for an account-takeover bug to live.
+func (h *Handler) mobileIDPFinish(w http.ResponseWriter, r *http.Request) {
+	h.idpFinishMode(w, r, true)
+}
+
+func (h *Handler) idpFinishMode(w http.ResponseWriter, r *http.Request, issueTokens bool) {
 	ctx := r.Context()
 
 	// First, before the body is even read: an unauthenticated caller must
@@ -527,8 +626,33 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 	// redirect back from Zitadel, so the admin app cannot know which tenant
 	// to send until this call has told it who signed in. See the
 	// tenant_required branch below.
+	// See loginMode: a native client has no browser redirect through
+	// /oauth/v2/authorize, so it cannot obtain an auth_request_id and the
+	// server mints one for it. Web callers still must supply theirs — the
+	// browser already has one, and creating a second would orphan the
+	// flow the user is actually in.
+	if issueTokens && req.AuthRequestID == "" {
+		id, err := h.newAuthRequest(ctx)
+		if err != nil {
+			slog.ErrorContext(ctx, "zitadellogin: could not create an auth request for mobile idp finish", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+			return
+		}
+		req.AuthRequestID = id
+	}
+
 	if req.AuthRequestID == "" || req.IntentID == "" || req.IntentToken == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+
+	// Resolved BEFORE RetrieveIDPIntent: an unsupported provider is a
+	// refusal this endpoint can make without touching Zitadel at all, and
+	// the pin below must compare against a value chosen by the request,
+	// never against "whatever the intent brought".
+	expectedIDPID, err := h.idpIDForProvider(req.Provider)
+	if err != nil {
+		h.respondIDPProviderError(ctx, w, err)
 		return
 	}
 
@@ -550,8 +674,8 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 	// onto the victim's Zitadel account. Every trust decision below this
 	// line assumes "Google asserted this" — this is what actually makes
 	// that assumption true, rather than merely convenient to write.
-	if identity.IDPID == "" || identity.IDPID != h.googleIDPID {
-		slog.WarnContext(ctx, "zitadellogin: idp finish rejected: intent did not come from the configured google idp")
+	if identity.IDPID == "" || identity.IDPID != expectedIDPID {
+		slog.WarnContext(ctx, "zitadellogin: idp finish rejected: intent did not come from the idp the caller named")
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unexpected_idp"})
 		return
 	}
@@ -661,11 +785,11 @@ func (h *Handler) idpFinish(w http.ResponseWriter, r *http.Request) {
 	// forceMfaLocalOnly (which applies only to local/password credentials —
 	// see LoginPolicy's doc) must not apply to it, unlike login()'s
 	// password path immediately below in this file.
-	// issueTokens=false: Google sign-in has no mobile surface yet — the
-	// app's Google button still goes through the Firebase SDK. When it
-	// moves to Zitadel this becomes a mode parameter like login/totp.
+	// issueTokens is the mode parameter this comment used to promise: the
+	// mobile surface answers a completed Google sign-in with tokens, the
+	// web surface with a callback_url, and NOTHING else differs.
 	res, err := h.c.CompleteIfSufficient(ctx, req.AuthRequestID, sess, true)
-	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant, false)
+	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant, issueTokens)
 }
 
 // idpCompleteRequest is what the admin app posts once it has resolved which
@@ -712,6 +836,18 @@ type idpCompleteRequest struct {
 // response) would duplicate a guarantee Zitadel's session token already
 // provides and diverge from totp's precedent for no additional safety.
 func (h *Handler) idpComplete(w http.ResponseWriter, r *http.Request) {
+	h.idpCompleteMode(w, r, false)
+}
+
+// mobileIDPComplete is idpComplete for the mobile surface: same session,
+// same sufficiency decision, same gauntlet — tokens instead of a
+// callback_url, and a minted auth_request_id, for the reasons
+// mobileIDPFinish states.
+func (h *Handler) mobileIDPComplete(w http.ResponseWriter, r *http.Request) {
+	h.idpCompleteMode(w, r, true)
+}
+
+func (h *Handler) idpCompleteMode(w http.ResponseWriter, r *http.Request, issueTokens bool) {
 	ctx := r.Context()
 
 	// See login/totp/idpFinish: reject before any Zitadel call.
@@ -725,6 +861,18 @@ func (h *Handler) idpComplete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
 		return
 	}
+	// See loginMode/idpFinishMode: minted for a native client, required
+	// from a browser caller.
+	if issueTokens && req.AuthRequestID == "" {
+		id, err := h.newAuthRequest(ctx)
+		if err != nil {
+			slog.ErrorContext(ctx, "zitadellogin: could not create an auth request for mobile idp complete", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+			return
+		}
+		req.AuthRequestID = id
+	}
+
 	if req.AuthRequestID == "" || req.LoginName == "" || req.SessionID == "" || req.SessionToken == "" ||
 		req.WorkspaceTenant == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
@@ -737,7 +885,7 @@ func (h *Handler) idpComplete(w http.ResponseWriter, r *http.Request) {
 	// comment on forceMfaLocalOnly) — a session reaching this endpoint is
 	// always the product of a Google IDP intent, never a password login.
 	res, err := h.c.CompleteIfSufficient(ctx, req.AuthRequestID, sess, true)
-	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant, false)
+	h.respondOutcome(w, r, res, err, req.AuthRequestID, sess, req.WorkspaceTenant, issueTokens)
 }
 
 // respondIDPIntentError maps RetrieveIDPIntent's errors. Mirrors

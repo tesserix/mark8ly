@@ -12,6 +12,7 @@
         "simulator": true
       },
       "env": {
+        "EXPO_PUBLIC_AUTH_PROVIDER": "zitadel",
         "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
         "GIP_TENANT_ID": "MP-Internal-e986p",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "849928263410-5djgu3n40c5tpr86votuptkitqveegor.apps.googleusercontent.com",
@@ -29,6 +30,7 @@
         "buildType": "apk"
       },
       "env": {
+        "EXPO_PUBLIC_AUTH_PROVIDER": "zitadel",
         "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
         "GIP_TENANT_ID": "MP-Internal-e986p",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "849928263410-5djgu3n40c5tpr86votuptkitqveegor.apps.googleusercontent.com",
@@ -44,6 +46,7 @@
         "resourceClass": "m-medium"
       },
       "env": {
+        "EXPO_PUBLIC_AUTH_PROVIDER": "zitadel",
         "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
         "GIP_TENANT_ID": "MP-Internal-e986p",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "849928263410-5djgu3n40c5tpr86votuptkitqveegor.apps.googleusercontent.com",
@@ -62,6 +65,7 @@
         "buildType": "app-bundle"
       },
       "env": {
+        "EXPO_PUBLIC_AUTH_PROVIDER": "zitadel",
         "EXPO_PUBLIC_API_URL": "https://api.mark8ly.com",
         "GIP_TENANT_ID": "MP-Internal-e986p",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "849928263410-5djgu3n40c5tpr86votuptkitqveegor.apps.googleusercontent.com",

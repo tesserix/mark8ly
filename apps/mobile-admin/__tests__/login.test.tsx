@@ -347,3 +347,35 @@ describe('involuntary sign-out notice', () => {
     expect(queryByText(/session ended|doesn't have access/i)).toBeNull();
   });
 });
+
+// Apple must not be offered on a Zitadel build until it has a Zitadel path.
+//
+// handleAppleSignIn does not branch on the provider: it authenticates against
+// Firebase and sets the provider's `user`, which AuthGate ignores under
+// Zitadel (it reads zitadelSignedIn) and api-client ignores too (it reads
+// zitadelSession). The result is a silent bounce back to /login — #493's
+// shape. A button that cannot work must not be shown.
+//
+// This is a submission blocker, not a preference: Apple guideline 4.8 requires
+// Sign in with Apple wherever another social provider is offered, and Google
+// is offered on this screen. Apple has to be migrated before an App Store
+// release, and this test should be deleted then, not weakened.
+describe('Apple button visibility by provider', () => {
+  afterEach(() => {
+    delete process.env.EXPO_PUBLIC_AUTH_PROVIDER;
+  });
+
+  it('is hidden on a Zitadel build', () => {
+    process.env.EXPO_PUBLIC_AUTH_PROVIDER = 'zitadel';
+    const { queryByTestId } = render(<LoginScreen />);
+    expect(queryByTestId('provider-apple')).toBeNull();
+    // Google still is offered — it has a Zitadel path (#686 item 1).
+    expect(queryByTestId('provider-google')).not.toBeNull();
+  });
+
+  it('is still shown on a GIP build, where it works', () => {
+    delete process.env.EXPO_PUBLIC_AUTH_PROVIDER;
+    const { queryByTestId } = render(<LoginScreen />);
+    expect(queryByTestId('provider-apple')).not.toBeNull();
+  });
+});

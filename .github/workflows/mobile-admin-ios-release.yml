@@ -1,0 +1,66 @@
+# Builds the iOS app ON THIS RUNNER and ships the exact IPA to TestFlight.
+#
+# Why local rather than `expo-eas-build.yml`: that workflow queues a build on
+# EAS's servers and burns the account's build quota. This one runs
+# `eas build --local` on a GitHub-hosted macOS runner, so the only Expo service
+# it uses is credential storage (signing certs and the App Store Connect key),
+# which is free. mark8ly is a PUBLIC repo, so the macOS minutes are free too.
+#
+# The IPA that is submitted is the exact artifact this job built — it is never
+# re-built between build and submit.
+name: Mobile Admin - iOS Release (local build)
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        type: choice
+        options: [production, preview]
+        default: production
+      submit:
+        description: Submit to TestFlight when the build succeeds
+        type: boolean
+        default: true
+  push:
+    tags: ["mobile-admin-v*"]
+
+# Serial, and never cancelled: a half-finished submit leaves an orphaned
+# TestFlight build, and `autoIncrement` has already consumed a build number.
+concurrency:
+  group: mobile-admin-ios-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    uses: tesserix/tesserix-workflows/.github/workflows/expo-ios-release.yml@v2.3.0
+    with:
+      working_directory: apps/mobile-admin
+      # Root, not apps/mobile-admin: this is an npm-workspaces monorepo with a
+      # single root lockfile, and the app resolves @repo/* through it.
+      install_directory: .
+      lockfile_path: package-lock.json
+      # Node 24 is REQUIRED and is not a style choice. On Node 22 the Expo
+      # config plugins die with `SyntaxError: Unexpected token 'typeof'`, and
+      # NativeWind's Tailwind fork can hang Metro forever at 0% CPU with no
+      # output (it resolves only on `message`, with no error/exit handler).
+      # The sibling cloud workflow passes "22" harmlessly because prebuild and
+      # Metro run on EAS's servers there; in a LOCAL build they run HERE.
+      # Root package.json pins `engines: { node: ">=24" }`.
+      node_version: "24"
+      # The committed lockfile needs legacy peer resolution, same as the cloud
+      # workflow — without it `npm ci` fails on peer conflicts.
+      legacy_peer_dependencies: true
+      profile: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'production' }}
+      submit: ${{ github.event_name != 'workflow_dispatch' || inputs.submit }}
+    secrets:
+      expo_token: ${{ secrets.EXPO_TOKEN }}
+      # @tesserix/otto-widget is on GitHub Packages, so `npm ci` 401s without
+      # this. Not optional for this repo despite being optional in the callee.
+      package_read_token: ${{ secrets.GHCR_PAT }}
+      # asc_* are deliberately NOT passed. The callee requires all three or
+      # none, and none are set here — so `eas submit` uses the App Store
+      # Connect key stored with Expo, exactly as kora's release does.

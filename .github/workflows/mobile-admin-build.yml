@@ -1,4 +1,11 @@
-name: Mobile Admin - EAS Build
+# Cloud EAS builds, which consume the account's EAS build quota.
+#
+# iOS RELEASES DO NOT COME FROM HERE ANY MORE. `mobile-admin-ios-release.yml`
+# builds the IPA locally on a free macOS runner and submits it to TestFlight.
+# This workflow stays for Android (Play needs an .aab, and there is no free
+# Linux path to one that also handles signing) and for on-demand iOS builds
+# someone explicitly asks for via workflow_dispatch.
+name: Mobile Admin - EAS Build (cloud)
 
 on:
   push:
@@ -38,7 +45,11 @@ jobs:
       lockfile_path: package-lock.json
       node_version: "22"
       legacy_peer_dependencies: true
-      platform: ${{ inputs.platform || 'all' }}
+      # A tag push builds ANDROID only: mobile-admin-ios-release.yml answers
+      # the same tag with a local iOS build, and leaving this at 'all' would
+      # build and submit iOS twice — once here on EAS quota, once there for
+      # free — racing each other to TestFlight with the same build number.
+      platform: ${{ inputs.platform || 'android' }}
       profile: ${{ inputs.profile || 'production' }}
       no_wait: true
       auto_submit: ${{ github.event_name == 'push' || inputs.submit }}

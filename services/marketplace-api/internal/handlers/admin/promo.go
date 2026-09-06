@@ -89,14 +89,15 @@ func (h *PromoHandler) ApplyPromo(c *gin.Context) {
 	}
 
 	out, applyErr := h.svc.ApplyPromo(c.Request.Context(), promo.ApplyInput{
-		TenantID:             tenantID,
-		StoreID:              storeID,
-		SubscriptionID:       subID,
-		Code:                 req.Code,
-		MerchantEmail:        req.Email,
-		Plan:                 sub.Plan,
-		Period:               sub.SubscriptionPeriod,
-		BasePriceMinor:       0, // populated from billing_currency/plan lookup in future; floor uses plan+currency
+		TenantID:       tenantID,
+		StoreID:        storeID,
+		SubscriptionID: subID,
+		Code:           req.Code,
+		MerchantEmail:  req.Email,
+		Plan:           sub.Plan,
+		Period:         sub.SubscriptionPeriod,
+		BasePriceMinor: promo.BasePriceMinorFor(
+			sub.Plan, sub.SubscriptionPeriod, sub.PriceTier, stringVal(sub.BillingCurrency)),
 		Currency:             stringVal(sub.BillingCurrency),
 		StripeSubscriptionID: stringVal(sub.StripeSubscriptionID),
 		Actor:                actor,

@@ -217,6 +217,7 @@ func TestIdentitySplit_PlatformMail(t *testing.T) {
 		email.TemplateMigrationFastPathApproved,
 		email.TemplateMigrationFastPathRejected,
 		email.TemplateWinBack,
+		email.TemplateWinBackNoOffer,
 	}
 
 	for _, tmpl := range billing {

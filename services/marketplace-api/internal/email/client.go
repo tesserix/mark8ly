@@ -42,11 +42,25 @@ const (
 	TemplateMigrationFastPathApproved TemplateID = "migration_fast_path_approved"
 	TemplateMigrationFastPathRejected TemplateID = "migration_fast_path_rejected"
 
-	// Day-30 post-expiry win-back promo. Lived in the lifecycle package
-	// until #381; moved here so the billing catalog is complete in one
-	// place and the email package can register its fallback without
-	// importing lifecycle (which imports email).
-	TemplateWinBack TemplateID = "win_back_day30"
+	// Day-30 post-expiry win-back. Lived in the lifecycle package until
+	// #381; moved here so the billing catalog is complete in one place and
+	// the email package can register its fallback without importing
+	// lifecycle (which imports email).
+	//
+	// TWO keys, one campaign. TemplateWinBack states a discount and is sent
+	// only when the cron has confirmed a redeemable promo code; the copy
+	// interpolates that code and its terms. TemplateWinBackNoOffer states no
+	// discount at all and is what goes out when there is none to state.
+	//
+	// The choice is made in Go (lifecycle.WinBackTemplate) rather than by a
+	// {{if}} inside one template, because these keys are overridable from
+	// the operator console: a single template would put the guard on the
+	// discount claim into a text box an operator can edit, and deleting it
+	// would restore #727's unconditional promise with no code change and no
+	// review. Two keys make the offer-less copy a separate row, which cannot
+	// grow a discount claim by accident.
+	TemplateWinBack        TemplateID = "win_back_day30"
+	TemplateWinBackNoOffer TemplateID = "win_back_day30_no_offer"
 )
 
 // Client is the narrow interface every caller uses.

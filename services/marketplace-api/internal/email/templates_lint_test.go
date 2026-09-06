@@ -25,7 +25,9 @@ func TestBillingTemplates_NoMissingVariables(t *testing.T) {
 		"has_payment_method": false,
 		"plan":               "growth",
 		"period":             "monthly",
-		"promo":              "20%-off-6-months",
+		"promo_code":         "WINBACK20OFF6MONTHS",
+		"percent_off":        "20",
+		"duration_months":    6,
 		"hosted_invoice_url": "https://invoice.stripe.com/i/test",
 	}
 

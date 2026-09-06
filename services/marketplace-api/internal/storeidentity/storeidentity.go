@@ -7,11 +7,16 @@
 // while missing the fourth column. One joined query, one definition of
 // "who this store is to a customer".
 //
-// The contact address lives in store_branding.support_email. That column
-// is deliberately NOT mapped onto branding.StoreBranding: the branding
-// Upsert writes with Select("*"), and no admin surface populates the
-// column today, so a mapped field would be blanked on the merchant's
-// next branding save. Reading it here keeps that hazard off the model.
+// The contact address lives in store_branding.support_email. This package
+// reads it with an explicit LEFT JOIN rather than through the branding
+// model, so a store with no branding row at all still resolves an
+// identity — an INNER JOIN would strip the sender identity from every
+// merchant who never opened the branding editor.
+//
+// The column was unmapped on branding.StoreBranding until #749, when the
+// admin branding form gained a field that writes it; it is mapped now.
+// The join stays because of the missing-row case above, not because the
+// model cannot see the column.
 package storeidentity
 
 import (

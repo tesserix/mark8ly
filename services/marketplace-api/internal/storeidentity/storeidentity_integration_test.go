@@ -12,9 +12,8 @@ import (
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
-// TestLoad_JoinsBrandingSupportEmail is the reason this package issues a
-// LEFT JOIN rather than reading the branding model: support_email is not
-// a field on branding.StoreBranding, so only SQL can see it.
+// TestLoad_JoinsBrandingSupportEmail pins the join that carries the
+// merchant's contact address onto the resolved identity.
 func TestLoad_JoinsBrandingSupportEmail(t *testing.T) {
 	tx := testdb.NewTx(t)
 	ctx := context.Background()
@@ -49,8 +48,8 @@ func TestLoad_NoBrandingRow(t *testing.T) {
 }
 
 // TestLoad_BrandingRowWithoutSupportEmail — the column is NOT NULL
-// DEFAULT ”, so this is the common case today: no admin surface writes
-// it, and Reply-To falls back to the platform address.
+// DEFAULT ”, so this is every store that has not filled the field in
+// yet: Reply-To falls back to the platform address.
 func TestLoad_BrandingRowWithoutSupportEmail(t *testing.T) {
 	tx := testdb.NewTx(t)
 

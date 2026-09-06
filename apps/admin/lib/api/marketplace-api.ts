@@ -2163,6 +2163,11 @@ export interface StoreBranding {
   seo_ai_policy: "allow" | "deny" | "training-only-denied";
   seo_llms_txt?: string | null;
   return_policy?: string | null;
+  // Customer-facing contact address. Reply-To on store mail and the
+  // mailto link on the closed-store page. Always a string, never null:
+  // the column is NOT NULL DEFAULT '' and "" means "not set", in which
+  // case replies go to the Mark8ly platform address instead.
+  support_email: string;
   created_at: string;
   updated_at: string;
 }

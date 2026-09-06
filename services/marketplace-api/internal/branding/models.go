@@ -54,6 +54,20 @@ type StoreBranding struct {
 	SeoJsonLd             *string `gorm:"column:seo_json_ld"`
 	SeoAiPolicy           string  `gorm:"column:seo_ai_policy;type:varchar(30);not null;default:'allow'"`
 	SeoLlmsTxt            *string `gorm:"column:seo_llms_txt"`
+	// SupportEmail is the merchant's customer-facing contact address:
+	// the Reply-To on store mail (#748) and the mailto link on the
+	// closed-store page. Empty means "not set" and both consumers fall
+	// back — Reply-To to the platform address, the closed-store link to
+	// nothing.
+	//
+	// A `string`, not a `*string`, unlike the optional text fields above.
+	// Pointer-ness on this model tracks column NULLability, not
+	// optionality: support_email is NOT NULL DEFAULT '' (migration
+	// 000069), and Upsert's Select("*") writes every mapped column, so a
+	// nil *string here would send an explicit NULL into a NOT NULL column
+	// and fail the whole branding save. "" is both the zero value and a
+	// legal one.
+	SupportEmail string `gorm:"column:support_email;type:varchar(255);not null"`
 	// Policies
 	ReturnPolicy *string   `gorm:"column:return_policy"`
 	CreatedAt    time.Time `gorm:"column:created_at;not null;default:now()"`

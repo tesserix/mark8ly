@@ -367,6 +367,56 @@ function IdentityTab({ form, patch, editable }: TabProps) {
           </p>
         </div>
       </div>
+
+      <div className="space-y-4 border-t border-border-subtle pt-6">
+        <SectionHeader
+          title="Contact"
+          description="Where customers reach you. Not shown as a link on your storefront pages — this is the address behind your store's email."
+        />
+        <SupportEmailField form={form} patch={patch} editable={editable} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Support email ──────────────────────────────────────────────────
+
+// The server is the authority on what counts as a usable address: it
+// applies the same guard the mail sender applies before it will use the
+// value as Reply-To, so what saves is exactly what sends. This check is
+// deliberately looser — it catches a typo before a round trip and nothing
+// more. Restating the server rule here would give it a second spelling
+// free to drift.
+function looksLikeEmail(v: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+}
+
+function SupportEmailField({ form, patch, editable }: TabProps) {
+  const value = form.support_email ?? "";
+  const trimmed = value.trim();
+  const malformed = trimmed !== "" && !looksLikeEmail(trimmed);
+
+  return (
+    <div className="space-y-1.5">
+      <FieldLabel htmlFor="support_email">Support email</FieldLabel>
+      <TextInput
+        id="support_email"
+        value={value}
+        onChange={(v) => patch({ support_email: v })}
+        placeholder="hello@yourstore.com"
+        disabled={!editable}
+        maxLength={255}
+      />
+      {malformed ? (
+        <p role="alert" className="text-xs text-[color:var(--signal)]">
+          That doesn&apos;t look like an email address.
+        </p>
+      ) : null}
+      <p className="text-xs text-foreground-tertiary">
+        {trimmed === ""
+          ? "Not set — when a customer replies to an order confirmation or shipping update, their reply goes to Mark8ly, not to you. Add an address to receive replies yourself."
+          : "Customer replies to your store's order confirmations and shipping updates go here. It's also the contact shown if your store is ever temporarily closed. Clear the field to send replies back to Mark8ly."}
+      </p>
     </div>
   );
 }

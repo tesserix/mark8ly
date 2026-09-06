@@ -100,6 +100,9 @@ type UpdateInput struct {
 	SeoAiPolicy           *string
 	SeoLlmsTxt            *string
 	ReturnPolicy          *string
+	// SupportEmail: nil = leave unchanged; non-nil = write this value,
+	// where "" (or whitespace) clears it.
+	SupportEmail *string
 }
 
 // Update validates and persists branding changes.
@@ -289,6 +292,17 @@ func (s *Service) Update(ctx context.Context, in UpdateInput) (*StoreBranding, e
 	}
 	if in.SeoLlmsTxt != nil {
 		b.SeoLlmsTxt = in.SeoLlmsTxt
+	}
+
+	// Contact. Guarded on nil, like every other optional field: a PUT that
+	// omits support_email must leave the merchant's address alone. The
+	// admin form sends only the keys it changed, so most saves omit it.
+	if in.SupportEmail != nil {
+		normalised, err := normaliseSupportEmail(*in.SupportEmail)
+		if err != nil {
+			return nil, err
+		}
+		b.SupportEmail = normalised
 	}
 
 	// Policies.

@@ -16,9 +16,21 @@ import (
 //
 // Same thin-HTTP-client philosophy as SendGridSender: the whole integration
 // is one POST request, so the official SDK is not worth the dependency.
-// Resend is wired as the FALLBACK provider behind SendGrid — see
-// FallbackSender — so transactional mail keeps flowing when SendGrid is
-// down, rate-limiting, or rejecting the account.
+//
+// RESEND IS THE ONLY PROVIDER. This comment used to say the opposite — that
+// Resend was "the FALLBACK provider behind SendGrid ... so transactional mail
+// keeps flowing when SendGrid is down" — and that is now backwards in both
+// halves. The SendGrid account was closed, and its key was removed from every
+// workload (tesserix/tesserix-k8s#1014), so `NewFromConfig` builds a
+// single-provider chain and logs "single provider configured — no fallback"
+// at boot.
+//
+// The uncomfortable half, stated because a reader will otherwise assume the
+// old shape: NOTHING CATCHES A RESEND FAILURE. FallbackSender is still here
+// and still correct, but with one provider in the chain it has nothing to
+// fall back to. That is a deliberate position (tesserix/tesserix-k8s#1011),
+// not an oversight — and it is the reason this comment is worth keeping
+// accurate rather than deleting.
 type ResendSender struct {
 	apiKey string
 	client *http.Client

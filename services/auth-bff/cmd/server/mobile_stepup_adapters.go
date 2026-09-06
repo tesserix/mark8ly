@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
+	"github.com/mark8ly/auth-bff/internal/emailotp"
 	"github.com/mark8ly/auth-bff/internal/loginotp"
 	"github.com/mark8ly/auth-bff/internal/session"
 	"github.com/mark8ly/auth-bff/internal/zitadellogin"
@@ -19,6 +22,26 @@ type codeVerifierAdapter struct{ g *loginotp.Gate }
 
 func (a codeVerifierAdapter) VerifyCode(ctx context.Context, email, code string) error {
 	return a.g.Verify(ctx, email, code)
+}
+
+// challengeIssuerAdapter lets the browser challenge's Gate back the mobile
+// resend (#686 item 3), translating the one issuer failure the handler has
+// to answer differently.
+//
+// *loginotp.Gate already satisfies zitadellogin.ChallengeIssuer by
+// signature; the adapter exists for the ERROR vocabulary. zitadellogin
+// deliberately knows nothing about the OTP subsystem (see its CodeVerifier
+// doc), so it cannot errors.Is against emailotp.ErrRateLimited itself.
+// Without this translation a merchant who has spent their code budget
+// would get a generic failure and keep tapping Resend against a wall.
+type challengeIssuerAdapter struct{ g *loginotp.Gate }
+
+func (a challengeIssuerAdapter) IssueChallenge(ctx context.Context, email, ip string) error {
+	err := a.g.IssueChallenge(ctx, email, ip)
+	if errors.Is(err, emailotp.ErrRateLimited) {
+		return fmt.Errorf("%w: %w", zitadellogin.ErrChallengeRateLimited, err)
+	}
+	return err
 }
 
 // pendingStoreAdapter exposes the session manager's sealed-pending format

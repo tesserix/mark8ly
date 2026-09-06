@@ -76,6 +76,9 @@ type Handler struct {
 	// Mobile email-OTP step-up (mark8ly#686). See WithStepUp.
 	codes   CodeVerifier
 	pending PendingStore
+	// challenges issues a FRESH emailed code for an outstanding step-up
+	// (#686 item 3). See WithChallengeIssuer in mobile_otp_resend.go.
+	challenges ChallengeIssuer
 
 	// hostedLoginBaseURL is the Zitadel instance's own login UI (the
 	// Aurora-branded hosted login), used ONLY as the OutcomeHandoff target
@@ -209,6 +212,15 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 	})
 	r.POST("/zitadel/mobile/otp/verify", func(c *gin.Context) {
 		h.mobileOTPVerify(c.Writer, withClientIP(c.Request, c.ClientIP()))
+	})
+	// Resending the emailed code (#686 item 3). auth-bff's existing
+	// /auth/otp/resend resumes from the pending COOKIE, which a native
+	// client has none of; this one resumes from the sealed pending token
+	// and answers with a fresh one, because the code and the challenge
+	// expire together and re-mailing only the code would hand a merchant a
+	// correct code that fails.
+	r.POST("/zitadel/mobile/otp/resend", func(c *gin.Context) {
+		h.mobileOTPResend(c.Writer, withClientIP(c.Request, c.ClientIP()))
 	})
 	// The TOTP step-up's resumable half (#686 item 2). /mobile/totp above
 	// is the web handler in token-issuing mode and needs an

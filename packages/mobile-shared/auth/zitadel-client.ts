@@ -102,6 +102,7 @@ interface WireData {
   refresh_token?: string;
   token_type?: string;
   expires_in?: number;
+  sent?: boolean;
   email_otp_required?: boolean;
   mfa_required?: boolean;
   totp_required?: boolean;
@@ -113,6 +114,10 @@ interface WireData {
 const PATHS = {
   login: "/api/v1/mobile/admin/auth/login",
   otpVerify: "/api/v1/mobile/admin/auth/otp/verify",
+  // Resending the emailed code (#686 item 3). It answers with a FRESH
+  // pending token, not just `sent`, because the code and the challenge
+  // expire together — see resendOtp below.
+  otpResend: "/api/v1/mobile/admin/auth/otp/resend",
   // The authenticator-app half (#686 item 2). A separate route because the
   // server verifies it against a Zitadel session, not an emailed value.
   totpVerify: "/api/v1/mobile/admin/auth/totp/verify",
@@ -271,6 +276,33 @@ export function createZitadelAuthClient(config: ZitadelAuthClientConfig) {
 
     async verifyOtp(pendingToken: string, code: string): Promise<CompleteSignIn> {
       return completed(await post(PATHS.otpVerify, { pending_token: pendingToken, code }));
+    },
+
+    /**
+     * Mails a fresh emailed code and returns the pending token to resume
+     * from (#686 item 3).
+     *
+     * The RETURN VALUE is the point. The emailed code and the sealed
+     * challenge expire on the same order of minutes, so the server
+     * re-seals rather than only re-mailing; a caller that keeps its
+     * original token would then submit the stale half of the pair and be
+     * told a correct code was wrong.
+     *
+     * A spent code budget arrives as `rate_limited` from the generic
+     * error path above — its own code, so the screen can say "wait"
+     * rather than "try again", which is advice that cannot work.
+     */
+    async resendOtp(pendingToken: string): Promise<string> {
+      const d = await post(PATHS.otpResend, { pending_token: pendingToken });
+      if (!d.pending_token) {
+        // Better to fail here than to leave the caller verifying against a
+        // challenge that is about to expire under a brand new code.
+        throw new ZitadelAuthError(
+          "challenge_unresumable",
+          "We couldn't send a new code. Try signing in again.",
+        );
+      }
+      return d.pending_token;
     },
 
     /**

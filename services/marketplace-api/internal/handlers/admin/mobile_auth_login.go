@@ -19,6 +19,7 @@ type MobileLoginBackend interface {
 	Login(ctx context.Context, email, password, workspaceTenant string) (authbffclient.LoginResult, error)
 	VerifyOTP(ctx context.Context, pendingToken, code string) (authbffclient.LoginResult, error)
 	VerifyTOTP(ctx context.Context, pendingToken, code string) (authbffclient.LoginResult, error)
+	ResendOTP(ctx context.Context, pendingToken string) (authbffclient.ResendResult, error)
 }
 
 // MobileLoginHandler is the app's public front door for signing in.
@@ -165,6 +166,14 @@ type mobileOTPRequest struct {
 	Code         string `json:"code"`
 }
 
+// mobileOTPResendRequest carries only the challenge to resend against. No
+// email field, deliberately: auth-bff reads the address out of the sealed
+// token, and offering one here would invite a later change to start
+// trusting it — which would make this a way to mail a code anywhere.
+type mobileOTPResendRequest struct {
+	PendingToken string `json:"pending_token"`
+}
+
 // VerifyOTP completes a sign-in that stopped at the email-OTP gate.
 //
 // This is the COMMON first-login path on mobile: a fresh install is always
@@ -249,6 +258,64 @@ func (h *MobileLoginHandler) VerifyTOTP(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": mobileLoginResponse(res, nil)})
+}
+
+// ResendOTP mails a fresh emailed code for an outstanding challenge and
+// answers with the FRESH pending token to resume from (#686 item 3).
+//
+// # Why the new token is the whole point
+//
+// The emailed code and the sealed challenge expire on the same order of
+// minutes. Before this route the only recovery from an expired code was
+// restarting the entire sign-in — and during testing that window elapsed
+// twice while a human fetched the email. A resend that re-mailed only the
+// code would be worse than nothing: the merchant would type a CORRECT code
+// against an about-to-expire challenge and be told it was wrong. auth-bff
+// re-seals, and the client must swap to what comes back here.
+func (h *MobileLoginHandler) ResendOTP(c *gin.Context) {
+	var req mobileOTPResendRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.PendingToken == "" {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": "invalid_request", "message": "pending_token is required",
+		})
+		return
+	}
+
+	res, err := h.backend.ResendOTP(c.Request.Context(), req.PendingToken)
+	switch {
+	case errors.Is(err, authbffclient.ErrRateLimited):
+		// Its OWN code, never folded into a generic failure. A merchant
+		// gets a small number of codes per window and the sign-in itself
+		// spends one; told only "something went wrong" they would keep
+		// tapping a button that cannot work until the window rolls.
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+			"error":   "rate_limited",
+			"message": "You've requested too many codes. Try again in a few minutes.",
+		})
+		return
+	case errors.Is(err, authbffclient.ErrInvalidCredentials):
+		// The challenge is expired or forged — there is nothing to resend
+		// against, and only starting over will help.
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"error":   "invalid_challenge",
+			"message": "This sign-in attempt has expired. Sign in again.",
+		})
+		return
+	case err != nil:
+		h.logError("mobile otp resend: auth-bff call failed", err)
+		c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{
+			"error": "auth_unavailable", "message": "Sign-in is temporarily unavailable. Try again shortly.",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"sent": true,
+		// The client REPLACES the token it holds with this one; verifying
+		// with the original after a resend would submit the stale half of
+		// the pair.
+		"pending_token": res.PendingToken,
+	}})
 }
 
 func (h *MobileLoginHandler) logError(msg string, err error) {

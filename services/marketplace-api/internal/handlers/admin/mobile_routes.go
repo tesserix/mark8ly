@@ -189,6 +189,12 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 		// identical brute-forceable surface, and it is the second half of
 		// obtaining a token rather than something a token protects.
 		a.POST("/totp/verify", deps.LoginHandler.VerifyTOTP)
+		// Resending the emailed code (#686 item 3). Same group, same IP
+		// limit: it is part of obtaining a token, so no bearer can gate
+		// it. Its own abuse budget lives in auth-bff's emailotp limiter —
+		// a small number of codes per address per window — which this
+		// route surfaces as a distinct `rate_limited` rather than hiding.
+		a.POST("/otp/resend", deps.LoginHandler.ResendOTP)
 	}
 
 	// Federated sign-in (#686 item 1) — same unauthenticated group, same

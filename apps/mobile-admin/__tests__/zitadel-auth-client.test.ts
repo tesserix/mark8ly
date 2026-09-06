@@ -196,3 +196,44 @@ it("maps a rejected OTP code to invalid_code", async () => {
     code: "invalid_code",
   });
 });
+
+// #686 item 3. The RETURN VALUE is the point: the server re-seals the
+// challenge because the emailed code and the pending token expire
+// together, so a caller keeping its original token would submit the stale
+// half of the pair and be told a correct code was wrong.
+it("resends the code and returns the FRESH pending token", async () => {
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) =>
+    jsonResponse(200, { data: { sent: true, pending_token: "resealed-2" } }),
+  );
+  const fresh = await clientWith(f).resendOtp("original");
+
+  expect(fresh).toBe("resealed-2");
+
+  const [url, init] = f.mock.calls[0];
+  expect(url).toBe("https://api.mark8ly.com/api/v1/mobile/admin/auth/otp/resend");
+  // No address on the wire: the server reads it from the sealed token, and
+  // offering one would make this a way to mail a code anywhere.
+  expect(JSON.parse(init.body as string)).toEqual({ pending_token: "original" });
+});
+
+// A spent code budget must keep its own code all the way to the screen —
+// "wait a few minutes" is the only advice that works here.
+it("maps a spent code budget to rate_limited", async () => {
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) =>
+    jsonResponse(429, { error: "rate_limited", message: "too many" }),
+  );
+  await expect(clientWith(f).resendOtp("original")).rejects.toMatchObject({
+    code: "rate_limited",
+  });
+});
+
+// A 200 with no fresh token would leave the caller verifying against the
+// old challenge under a brand new code. Fail loudly instead.
+it("refuses a resend that returns no fresh pending token", async () => {
+  const f: FetchMock = jest.fn((_u: string, _i: RequestInit) =>
+    jsonResponse(200, { data: { sent: true } }),
+  );
+  await expect(clientWith(f).resendOtp("original")).rejects.toMatchObject({
+    code: "challenge_unresumable",
+  });
+});

@@ -19,6 +19,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { LinkAccountPrompt } from '../components/auth/LinkAccountPrompt';
 import { Text } from '../components/ui/Text';
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import { useTenantStore } from '@repo/mobile-shared/stores/tenant-store';
 import { useEnvironment } from '@repo/mobile-shared/config/env';
 import { createZitadelSignIn } from '@repo/mobile-shared/auth/zitadel-signin';
@@ -36,6 +37,18 @@ const GENERIC_AUTH_ERROR = 'Something went wrong. Please try again.';
 // apps. These point at the live web pages served from mark8ly.com.
 const PRIVACY_URL = 'https://mark8ly.com/privacy';
 const TERMS_URL = 'https://mark8ly.com/terms';
+
+/**
+ * Where the web bridge page (apps/admin/app/auth/idp/mobile/route.ts) sends
+ * the browser at the end of a Zitadel Google sign-in. `ASWebAuthenticationSession`
+ * matches on this scheme and closes, handing the URL back.
+ *
+ * It cannot be the Zitadel return URL directly: auth-bff's allowlist
+ * requires https on an allowlisted host, and that check is the ONLY thing
+ * stopping a completed admin sign-in being handed to another origin. The
+ * scheme itself is registered in app.config.js — the two must match.
+ */
+const IDP_REDIRECT_URL = 'mark8ly-admin://auth/idp';
 
 type LinkTarget = Extract<SocialSignInOutcome, { status: 'needs-link' }>;
 
@@ -162,21 +175,8 @@ export default function LoginScreen() {
         // Mapped from the server's stable code. `no_store` is a real,
         // actionable state — the account exists but has no store — and
         // `auth_unavailable` must never read as a wrong password.
-        setError(
-          e.code === 'invalid_credentials'
-            ? "Couldn't sign you in. Check your details and try again."
-            : e.code === 'no_store'
-              ? "We couldn't find a store for this account. Did you finish onboarding?"
-              : e.code === 'auth_unavailable' || e.code === 'network'
-                ? 'Sign-in is temporarily unavailable. Try again shortly.'
-                : e.code === 'challenge_unresumable'
-                  // The server asked for a verification step but sent
-                  // nothing to resume it with — in practice, an app newer
-                  // than the API it is talking to. Distinct copy because
-                  // "try again" is useless advice here: retrying repeats it.
-                  ? 'This app version needs an update to finish signing in.'
-                  : GENERIC_AUTH_ERROR,
-        );
+        const msg = zitadelErrorMessage(e);
+        if (msg !== null) setError(msg);
         return;
       }
       const msg = authErrorMessage(e);
@@ -189,11 +189,73 @@ export default function LoginScreen() {
     }
   }
 
+  /**
+   * Maps a ZitadelAuthError to copy. Shared by the password and Google
+   * paths so the two cannot answer the same server code differently —
+   * `auth_unavailable` in particular must never read as a wrong
+   * credential, or a merchant retries a correct one indefinitely.
+   *
+   * Returns null for a deliberate cancellation, matching
+   * `authErrorMessage`'s own "stay silent" contract on the GIP path.
+   */
+  function zitadelErrorMessage(e: ZitadelAuthError): string | null {
+    switch (e.code) {
+      case 'cancelled':
+        return null;
+      case 'invalid_credentials':
+        return "Couldn't sign you in. Check your details and try again.";
+      case 'no_store':
+        return "We couldn't find a store for this account. Did you finish onboarding?";
+      case 'email_not_verified':
+        return "Google hasn't verified that email address, so we can't sign you in with it.";
+      case 'email_ambiguous':
+        return 'More than one account uses that email. Contact support to sort it out.';
+      case 'google_sign_in_failed':
+        return "Couldn't sign you in with Google. Try again.";
+      case 'unsupported_provider':
+        return "That sign-in method isn't available.";
+      case 'auth_unavailable':
+      case 'network':
+        return 'Sign-in is temporarily unavailable. Try again shortly.';
+      case 'challenge_unresumable':
+        // The server asked for a verification step but sent nothing to
+        // resume it with — in practice, an app newer than the API it is
+        // talking to. Distinct copy because "try again" is useless advice
+        // here: retrying repeats it.
+        return 'This app version needs an update to finish signing in.';
+      default:
+        return GENERIC_AUTH_ERROR;
+    }
+  }
+
   async function handleGoogleSignIn() {
     if (submitting) return;
     setError(null);
     setSubmitting(true);
     try {
+      if (isZitadelProvider()) {
+        // Zitadel's IDP-intent flow, not the Firebase SDK: the browser
+        // round trip is what proves the Google identity, and the app
+        // never sees a Google token at all. Mirrors handleSignIn's branch
+        // above, including routing a step-up to the same /otp screen.
+        const out = await createZitadelSignIn(env.apiBaseUrl).signInWithGoogle(
+          {
+            redirectUrl: IDP_REDIRECT_URL,
+            openAuthSession: (authUrl, redirectUrl) =>
+              WebBrowser.openAuthSessionAsync(authUrl, redirectUrl),
+          },
+          setTenantId,
+        );
+        if (out.kind === 'otp') {
+          router.push({
+            pathname: '/otp',
+            params: { pendingToken: out.pendingToken ?? '', email: out.email },
+          });
+          return;
+        }
+        router.replace('/(tabs)');
+        return;
+      }
       let outcome: SocialSignInOutcome;
       if (DEMO_AUTH) {
         outcome = await signInWithGoogle('demo-google-token');
@@ -204,6 +266,11 @@ export default function LoginScreen() {
       }
       if (outcome.status === 'needs-link') setLinkTarget(outcome);
     } catch (e: unknown) {
+      if (isZitadelProvider() && e instanceof ZitadelAuthError) {
+        const msg = zitadelErrorMessage(e);
+        if (msg !== null) setError(msg);
+        return;
+      }
       const msg = authErrorMessage(e);
       // null is the mapper's deliberate "user cancelled — stay silent" signal;
       // anything else always surfaces copy, falling back to generic wording so

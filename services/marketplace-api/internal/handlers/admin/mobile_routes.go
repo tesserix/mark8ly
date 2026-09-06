@@ -64,6 +64,11 @@ type MobileDeps struct {
 	// route mounted with NO bearer auth at all, because it is how a client
 	// obtains one. Nil leaves it unmounted.
 	LoginHandler *MobileLoginHandler
+	// IDPHandler serves "Continue with Google" (#686 item 1). Mounted in
+	// the same unauthenticated, IP-limited group as LoginHandler, for the
+	// same reason: these routes are how a client obtains a token. Nil
+	// leaves them unmounted and the app falls back to its Firebase path.
+	IDPHandler *MobileIDPHandler
 	// TenantMembershipChecker backs auth.TenantFromRequest (#524 phase 4):
 	// it resolves the caller's X-Acting-Tenant-Id header via an FGA
 	// membership check, for tokens (Zitadel) that carry no tenant_id
@@ -179,6 +184,18 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 		// protects — and under the same IP limit, since guessing a
 		// six-digit code is the other brute-forceable surface here.
 		a.POST("/otp/verify", deps.LoginHandler.VerifyOTP)
+	}
+
+	// Federated sign-in (#686 item 1) — same unauthenticated group, same
+	// IP limit, and for the same reason: /idp/start and /idp/finish are
+	// how a client obtains a token, so no bearer auth can gate them, and
+	// they are the other credential-adjacent surface an unauthenticated
+	// caller can reach. Mounted as its own group only because it may be
+	// wired independently of LoginHandler.
+	if deps.IDPHandler != nil {
+		idp := router.Group("/mobile/admin/auth/idp", ratelimit.PerIP(0.5, 10))
+		idp.POST("/start", deps.IDPHandler.Start)
+		idp.POST("/finish", deps.IDPHandler.Finish)
 	}
 
 	// Tenant discovery — the ONLY mobile admin route mounted WITHOUT

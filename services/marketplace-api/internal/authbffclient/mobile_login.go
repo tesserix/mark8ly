@@ -161,27 +161,8 @@ func (c *MobileLoginClient) post(ctx context.Context, path string, body map[stri
 		return LoginResult{}, fmt.Errorf("authbffclient: auth-bff returned %d: %s", resp.StatusCode, string(raw))
 	}
 
-	var wire loginWire
-	if err := json.Unmarshal(raw, &wire); err != nil {
-		return LoginResult{}, fmt.Errorf("authbffclient: decode: %w", err)
-	}
-
-	out := LoginResult{
-		TOTPRequired: wire.TOTPRequired,
-		SessionID:    wire.SessionID,
-		SessionToken: wire.SessionToken,
-	}
-	if wire.Data != nil {
-		out.UID = wire.Data.UID
-		out.Email = wire.Data.Email
-		out.TenantID = wire.Data.TenantID
-		out.AccessToken = wire.Data.AccessToken
-		out.RefreshToken = wire.Data.RefreshToken
-		out.TokenType = wire.Data.TokenType
-		out.ExpiresIn = wire.Data.ExpiresIn
-		out.EmailOTPRequired = wire.Data.EmailOTPRequired
-		out.MFARequired = wire.Data.MFARequired
-		out.PendingToken = wire.Data.PendingToken
-	}
-	return out, nil
+	// Shared with the IDP routes (mobile_idp.go): auth-bff answers a
+	// completed Google sign-in with the identical body, and two decoders
+	// would be two places for that contract to rot.
+	return decodeLoginWire(raw)
 }

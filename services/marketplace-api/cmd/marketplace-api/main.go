@@ -1480,6 +1480,7 @@ func main() {
 		var mobileAccountHandler *admin.MobileAccountHandler
 		var myTenantsHandler *admin.MobileMyTenantsHandler
 		var mobileLoginHandler *admin.MobileLoginHandler
+		var mobileIDPHandler *admin.MobileIDPHandler
 		if cfg.PlatformAPIURL != "" {
 			teamClient := teamproxy.NewClient(cfg.PlatformAPIURL, cfg.PlatformAPISecret, nil)
 			teamHandler = admin.NewTeamHandler(teamClient, log)
@@ -1494,11 +1495,14 @@ func main() {
 			// deployment, so no chart change. Unset AUTH_BFF_URL leaves it
 			// nil and the route unmounted.
 			if cfg.AuthBFFURL != "" {
-				mobileLoginHandler = admin.NewMobileLoginHandler(
-					teamClient,
-					authbffclient.NewMobileLoginClient(cfg.AuthBFFURL, cfg.InternalAuthSecret, nil),
-					log,
-				)
+				authBFF := authbffclient.NewMobileLoginClient(cfg.AuthBFFURL, cfg.InternalAuthSecret, nil)
+				mobileLoginHandler = admin.NewMobileLoginHandler(teamClient, authBFF, log)
+				// "Continue with Google" (#686 item 1). Shares the same
+				// auth-bff client and the same tenant lookup as password
+				// login; the only extra input is the bridge-page return
+				// URL, which is built from config here and never from
+				// anything the device sends.
+				mobileIDPHandler = admin.NewMobileIDPHandler(teamClient, authBFF, cfg.MobileIDPReturnURL, log)
 			} else {
 				log.Info("mobile login: AUTH_BFF_URL empty; mobile sign-in route disabled")
 			}
@@ -1533,6 +1537,7 @@ func main() {
 			DualIssuer:       cfg.ZitadelEnabled && cfg.ZitadelDualIssuer,
 			MyTenantsHandler: myTenantsHandler,
 			LoginHandler:     mobileLoginHandler,
+			IDPHandler:       mobileIDPHandler,
 			// Resolves X-Acting-Tenant-Id via the same FGA client the rest
 			// of the admin surface already checks permissions against, for
 			// bearer tokens (Zitadel) that carry no tenant_id claim at

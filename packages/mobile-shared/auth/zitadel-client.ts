@@ -50,6 +50,19 @@ export interface OtpRequired {
 export type SignInResult = CompleteSignIn | OtpRequired;
 
 /**
+ * Federated providers this client will start a sign-in with.
+ *
+ * A union, not a string: auth-bff pins the Zitadel IDP by this exact name
+ * and refuses anything else outright, so a typo here must be a compile
+ * error rather than a runtime "unsupported_provider" the merchant sees.
+ * Apple is deliberately absent — it is provisioned on the Zitadel org but
+ * has never been exercised end to end (see auth-bff's zitadellogin
+ * README), and adding it here without that is a promise the backend does
+ * not keep.
+ */
+export type IdpProvider = "google";
+
+/**
  * A failure with a stable `code`, so screens map to copy from the code
  * rather than from a status number or a message string.
  *
@@ -80,11 +93,19 @@ interface WireData {
   mfa_required?: boolean;
   totp_required?: boolean;
   pending_token?: string;
+  /** idp/start only. */
+  auth_url?: string;
 }
 
 const PATHS = {
   login: "/api/v1/mobile/admin/auth/login",
   otpVerify: "/api/v1/mobile/admin/auth/otp/verify",
+  // Federated sign-in (#686 item 1). Two legs, because which tenant a
+  // Google-authenticated merchant belongs to is unknowable until the
+  // identity has been resolved: start opens the intent, finish exchanges
+  // it AND resolves the tenant server-side.
+  idpStart: "/api/v1/mobile/admin/auth/idp/start",
+  idpFinish: "/api/v1/mobile/admin/auth/idp/finish",
 } as const;
 
 export function createZitadelAuthClient(config: ZitadelAuthClientConfig) {
@@ -152,6 +173,61 @@ export function createZitadelAuthClient(config: ZitadelAuthClientConfig) {
         status: "complete",
         uid: d.uid ?? "",
         email: d.email ?? email,
+        tenantId: d.tenant_id ?? "",
+        tenants: d.tenants ?? [],
+        tokens: tokensFrom(d),
+      };
+    },
+
+    /**
+     * Opens a federated sign-in and returns the URL to show the user.
+     *
+     * No return URL is sent: the server builds it from configuration.
+     * Zitadel does not validate an intent's successUrl at all, so a
+     * client-supplied one would put the server's allowlist alone between
+     * an attacker and a completed admin sign-in.
+     */
+    async idpStart(provider: IdpProvider): Promise<string> {
+      const d = await post(PATHS.idpStart, { provider });
+      if (!d.auth_url) {
+        // Returning "" would open a blank browser session, which the user
+        // can only read as the button being broken.
+        throw new ZitadelAuthError(
+          "auth_unavailable",
+          "Sign-in is temporarily unavailable. Try again shortly.",
+        );
+      }
+      return d.auth_url;
+    },
+
+    /**
+     * Exchanges the intent the browser handed back for a session. Answers
+     * with the SAME union `signIn` does — tokens, or an outstanding OTP —
+     * because the server answers with the same body.
+     */
+    async idpFinish(intentId: string, intentToken: string): Promise<SignInResult> {
+      const d = await post(PATHS.idpFinish, { intent_id: intentId, intent_token: intentToken });
+
+      if (d.email_otp_required || d.mfa_required || d.totp_required) {
+        if (!d.pending_token) {
+          throw new ZitadelAuthError(
+            "challenge_unresumable",
+            "We couldn't start the verification step. Try signing in again.",
+          );
+        }
+        return {
+          status: "otp_required",
+          email: d.email ?? "",
+          tenantId: d.tenant_id ?? "",
+          tenants: d.tenants ?? [],
+          pendingToken: d.pending_token,
+        };
+      }
+
+      return {
+        status: "complete",
+        uid: d.uid ?? "",
+        email: d.email ?? "",
         tenantId: d.tenant_id ?? "",
         tenants: d.tenants ?? [],
         tokens: tokensFrom(d),

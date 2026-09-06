@@ -116,15 +116,21 @@ var billingHTMLFragments = map[TemplateID]string{
 	// row too, so a console edit to the discount cannot leave the email
 	// quoting a stale one.
 	//
-	// It deliberately does NOT tell the merchant where to enter the code.
-	// POST /admin/stores/:storeId/subscription/apply-promo has no caller in
-	// apps/ — there is no field in the merchant admin that redeems a promo
-	// code — so naming a screen would be the same class of untrue statement
-	// this template was fixed to stop making. Whoever authors the code in
-	// the console owns closing that gap first.
+	// It now names where the code goes. It deliberately did not until #770,
+	// because POST /admin/stores/:storeId/subscription/apply-promo had no
+	// caller in apps/ — there was no field in the merchant admin that
+	// redeemed a promo code, so naming a screen would have been the same
+	// class of untrue statement this template was fixed to stop making.
+	// apps/admin/app/(admin)/settings/billing/PromoCodeCard.tsx is that
+	// field. If it is ever removed, this sentence goes with it.
+	//
+	// Billing settings is reachable in the state this email finds the
+	// merchant in: they are a month past expiry, and readonly.DefaultAllowlist
+	// lets POST /subscription/* through in every read-only state.
 	TemplateWinBack: `<h1 ` + h1 + `>Your store is still here</h1>
 <p><strong>{{.store_name}}</strong> has been closed for a month. Everything — products, orders, settings — is exactly as you left it.</p>
-<p>If you want to pick it back up, use the code <strong>{{.promo_code}}</strong> when you reopen your store and we will take <strong>{{.percent_off}}% off your first {{.duration_months}} months</strong>.</p>`,
+<p>If you want to pick it back up, use the code <strong>{{.promo_code}}</strong> when you reopen your store and we will take <strong>{{.percent_off}}% off your first {{.duration_months}} months</strong>.</p>
+<p>Enter it under Promo code in your Mark8ly billing settings.</p>`,
 
 	// The offer-less variant. It carries no number and names no code,
 	// because when this key is chosen there is nothing to name. What is
@@ -250,6 +256,8 @@ Mark8ly`,
 {{.store_name}} has been closed for a month. Everything — products, orders, settings — is exactly as you left it.
 
 If you want to pick it back up, use the code {{.promo_code}} when you reopen your store and we will take {{.percent_off}}% off your first {{.duration_months}} months.
+
+Enter it under Promo code in your Mark8ly billing settings.
 
 Mark8ly`,
 

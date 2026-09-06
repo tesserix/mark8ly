@@ -3,11 +3,18 @@
 // Every product mailer (campaign, ticket, giftcard, orderdoc, shipping
 // label) renders its own envelope and hands the result to a Sender; the
 // adapters in this package translate the provider-agnostic Message into
-// each provider's wire format. Production wiring is SendGrid (primary)
-// → Resend (fallback) via FallbackSender so a SendGrid outage degrades
-// to a provider switch instead of dropped transactional mail. Mirrors
-// platform-api/internal/notification so both services fail over the
-// same way.
+// each provider's wire format.
+//
+// Production wiring is RESEND ALONE. This used to read "SendGrid (primary)
+// → Resend (fallback) ... so a SendGrid outage degrades to a provider switch
+// instead of dropped transactional mail", which is now wrong in a way that
+// matters: the SendGrid account was closed and its key removed from every
+// workload (tesserix/tesserix-k8s#1014), so there is no switch to degrade to.
+// A Resend failure drops the mail.
+//
+// The provider-agnostic shape is still worth having — adding a second
+// provider is a factory plus a defaultOrder entry (see providers.go) — but
+// nothing should read this package as currently redundant.
 package email
 
 import (

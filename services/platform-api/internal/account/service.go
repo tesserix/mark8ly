@@ -251,6 +251,20 @@ func (s *Service) deleteStaffAccount(ctx context.Context, tenantID, actorUID str
 	if err := s.fga.DeleteTuple(ctx, actorUID, string(role), tenantID); err != nil {
 		return fmt.Errorf("account: delete role tuple: %w", err)
 	}
+	// Same rule as the teardown paths (#361), and the case most likely to
+	// occur: a staff member who belongs to two tenants leaves ONE of them.
+	// Deleting their identity here would take their access to the other
+	// tenant with it. Unlike cleanupTenantMembers this runs inside the
+	// caller's request rather than post-commit, so failures are returned
+	// rather than logged — including a failed membership lookup, because
+	// an inconclusive answer must not fall through to a delete.
+	remaining, err := s.fga.ListMemberTenants(ctx, actorUID)
+	if err != nil {
+		return fmt.Errorf("account: list member tenants: %w", err)
+	}
+	if len(remaining) > 0 {
+		return nil
+	}
 	if err := s.gip.DeleteAccount(ctx, actorUID); err != nil {
 		return fmt.Errorf("account: delete gip account: %w", err)
 	}

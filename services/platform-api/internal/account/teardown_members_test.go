@@ -231,3 +231,42 @@ func TestPurgeTenant_ListTenantMembersFailure_LogsAndContinues(t *testing.T) {
 	require.False(t, fga.HasStoreParent("store-a", "t-1"))
 	require.False(t, gip.deleted["uid-1"])
 }
+
+// A staff member leaving ONE of their tenants must keep their identity —
+// this is the likeliest instance of #361's bug to occur in practice, since
+// self-serve "delete my account" is a user-facing action and multi-tenant
+// staff are ordinary. Deleting the identity here would silently revoke their
+// access to every other tenant they belong to.
+func TestDeleteAccount_Staff_MemberOnAnotherTenantKeepsIdentity(t *testing.T) {
+	ctx := context.Background()
+	fga := authz.NewFake()
+	require.NoError(t, fga.WriteRole(ctx, "staff-1", authz.RoleStaff, "t1"))
+	require.NoError(t, fga.WriteRole(ctx, "staff-1", authz.RoleStaff, "t2"))
+	gip := &fakeGIP{}
+	repo := &fakeTenantRepo{stores: map[string][]string{"t1": {"s1"}}}
+	ob := &fakeOutbox{}
+
+	svc := NewService(nil, repo, fga, gip, ob.Enqueue, testLogger())
+
+	require.NoError(t, svc.DeleteAccount(ctx, "t1", "staff-1"))
+
+	require.False(t, fga.HasRole("staff-1", authz.RoleStaff, "t1"), "t1 tuple should be deleted")
+	require.True(t, fga.HasRole("staff-1", authz.RoleStaff, "t2"), "t2 tuple must survive")
+	require.False(t, gip.deleted["staff-1"], "identity must survive: still a member of t2")
+}
+
+// The counterpart: their last membership, so the identity does go.
+func TestDeleteAccount_Staff_LastMembershipDeletesIdentity(t *testing.T) {
+	ctx := context.Background()
+	fga := authz.NewFake()
+	require.NoError(t, fga.WriteRole(ctx, "staff-1", authz.RoleStaff, "t1"))
+	gip := &fakeGIP{}
+	repo := &fakeTenantRepo{stores: map[string][]string{"t1": {"s1"}}}
+	ob := &fakeOutbox{}
+
+	svc := NewService(nil, repo, fga, gip, ob.Enqueue, testLogger())
+
+	require.NoError(t, svc.DeleteAccount(ctx, "t1", "staff-1"))
+
+	require.True(t, gip.deleted["staff-1"], "identity should be deleted: no memberships remain")
+}

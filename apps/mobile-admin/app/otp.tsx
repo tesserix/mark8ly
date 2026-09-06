@@ -88,29 +88,21 @@ export default function OtpScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-paper">
+      {/* style={{flex:1}}, NOT className="flex-1". NativeWind's interop does
+          not reliably apply a className to KeyboardAvoidingView, so the
+          container never fills its parent and the content collapses upward
+          with no top margin. login.tsx uses the inline style for the same
+          reason; this screen must match it exactly, not approximately. */}
       <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/* Mirrors login.tsx exactly — contentContainerStyle flexGrow + an
-            inner flex-1 px-6 pt-16 — so the two screens share a top edge and
-            a left margin. Centring the content (the first attempt) pushed
-            the heading into the middle of a tall device and read as though
-            the top of the screen had been cut off. */}
         <ScrollView
           contentContainerStyle={{ flexGrow: 1 }}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
         >
-          {/* NO flex-1 here, deliberately. With it the inner View is forced to
-              the container's height, so when the keyboard opens and
-              KeyboardAvoidingView shrinks that container the content is
-              SQUEEZED rather than made scrollable — the heading slides off the
-              top edge with no way to scroll back to it. Sized by its content,
-              with flexGrow on the container, a short screen still sits
-              top-aligned and a keyboard simply makes the view scrollable. */}
-          <View className="px-6 pb-12 pt-16">
-            <Text preset="eyebrow" className="text-moss">
+          <View className="flex-1 px-6 pt-16">
+          <Text preset="eyebrow" className="text-moss">
               CHECK YOUR EMAIL
             </Text>
             <Text preset="display" className="mt-2 text-ink">

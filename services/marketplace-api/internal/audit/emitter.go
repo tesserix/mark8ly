@@ -74,17 +74,18 @@ type EmitterConfig struct {
 // NewEmitter constructs an Emitter and starts its worker goroutines.
 // Call Stop() at process shutdown to drain the queue.
 //
-// cfg.Repo is required: it is dereferenced on every write (Emit's worker
-// and EmitSync both call repo.Create). A nil Repo returns an error instead
+// cfg.Repo is required: it is dereferenced on every write (Emit's worker,
+// EmitSync and EmitTx all call repo.Create). A nil Repo returns an error instead
 // of a broken Emitter. If auditing is intentionally disabled — e.g. in a
 // unit test — do not pass a nil Repo here; use a nil *Emitter instead
-// (var em *audit.Emitter). Every exported method (all eleven — see
+// (var em *audit.Emitter). Every exported method (all twelve — see
 // nil_repo_test.go's TestNilEmitter_AllExportedMethodsAreSafe) is
 // nil-receiver-safe, so that is the supported opt-out, not a nil Repo.
 //
 // cfg.DB may legitimately be nil: the Emitter never dereferences it
-// itself — it is opaque data forwarded to Repo.Create on each write, so
-// whether nil is safe depends on the Repository implementation (a test
+// itself — it is opaque data forwarded to Repo.Create on each write
+// except EmitTx's, which forwards the caller's transaction handle in its
+// place — so whether nil is safe depends on the Repository implementation (a test
 // double may not need it at all). Note that the shipped Repository —
 // audit.NewRepository()'s gormRepository — DOES dereference it
 // (db.WithContext(ctx).Create(e)); pairing a real Repo from
@@ -188,6 +189,63 @@ func (e *Emitter) EmitSync(c *gin.Context, ev Event) error {
 	defer cancel()
 	if err := e.repo.Create(ctx, e.db, entry); err != nil {
 		return fmt.Errorf("audit.EmitSync: insert: %w", err)
+	}
+	return nil
+}
+
+// EmitTx writes an audit row on the CALLER's transaction, so the row and
+// the state change it describes commit or roll back together. Required by
+// tesserix-home#331 for federated writes: an operator-driven change that
+// commits without its audit row is an unattributable change, and an audit
+// row that commits without its change is a false record.
+//
+// Emit and EmitSync both write on the Emitter's own handle (e.db), which
+// is a separate connection from the caller's transaction — their row
+// commits whatever the caller's transaction goes on to do. That is the
+// property EmitTx exists to remove; use it only when there is a
+// transaction to join, and Emit everywhere else.
+//
+// ctx is the CALLER's, and this deliberately contradicts both neighbours.
+// write() and EmitSync each substitute a fresh context.Background() with a
+// 5s timeout so a disconnecting client cannot cancel the record. That is
+// right for them — their write outlives the request by design — and wrong
+// here: this insert runs inside someone else's transaction and must share
+// that transaction's cancellation. Do not "fix" it back to
+// context.Background(); TestEmitTx_UsesTheCallersContext pins it.
+//
+// tx must not be nil. Falling back to e.db would hand a caller who forgot
+// their transaction a non-transactional row that looks entirely correct in
+// the table, which is the failure this function exists to prevent, so a
+// nil tx is an error instead.
+//
+// A nil *Emitter returns an error rather than the silent no-op Emit gives
+// it, for the same reason as EmitSync: a transactional audit that quietly
+// does nothing is worse than none at all.
+//
+// buildEntry is REUSED, as in EmitSync: a second derivation of actor type,
+// operator id, capability and IP would drift the moment either path gained
+// a field.
+//
+// The queue, the worker, e.wg and e.stop are untouched — EmitTx runs
+// entirely on the caller's goroutine.
+func (e *Emitter) EmitTx(ctx context.Context, tx *gorm.DB, c *gin.Context, ev Event) error {
+	if e == nil {
+		return errors.New("audit.EmitTx: nil emitter")
+	}
+	if tx == nil {
+		return errors.New("audit.EmitTx: nil tx; EmitTx must be given the caller's transaction — use EmitSync if there is no transaction to join")
+	}
+	if ev.Action == "" || ev.ResourceType == "" {
+		return errors.New("audit.EmitTx: action and resource_type are required")
+	}
+
+	entry := buildEntry(c, ev)
+	if entry == nil {
+		return errors.New("audit.EmitTx: no tenant in scope, refusing to write a tenant-unscoped row")
+	}
+
+	if err := e.repo.Create(ctx, tx, entry); err != nil {
+		return fmt.Errorf("audit.EmitTx: insert: %w", err)
 	}
 	return nil
 }

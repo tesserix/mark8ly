@@ -808,11 +808,49 @@ func (h *Handler) idpFinishMode(w http.ResponseWriter, r *http.Request, issueTok
 	// before completion. login_name is identity.Email — the email from the
 	// retrieved identity — never anything the caller supplied.
 	if req.WorkspaceTenant == "" {
+		// `identity.Email` is
+		// readRawEmail's output, which FAILS SOFT to "" on any payload shape
+		// it does not recognise (see idpintent.go) — and the already-linked
+		// path never checks it, because the email-verified gate only guards
+		// creating a link. So a returning Google user could reach here with
+		// an empty login_name, and the admin app rejected the whole
+		// otherwise-successful response as `unrecognised_response_shape`
+		// (observed in production 2026-09-06, immediately after the
+		// COMMAND-Sfw3r fix let the flow get this far for the first time).
+		//
+		// This also matches the rule finishComplete already states for the
+		// same value: resolve the subject's email from Zitadel rather than
+		// trusting anything the caller or the provider supplied.
+		loginName := identity.Email
+		if loginName == "" {
+			// Only when the provider claim is absent: this path deliberately
+			// makes no further Zitadel calls once it has decided to defer
+			// tenant selection, and two tests pin that. Reading the subject's
+			// email is the one exception worth making, because the
+			// alternative is answering with an empty login_name.
+			resolved, err := h.c.UserEmail(ctx, sessionUserID)
+			if err != nil {
+				slog.ErrorContext(ctx, "zitadellogin: idp finish: no provider email and could not resolve the subject email from zitadel",
+					"err", err, "user_id", sessionUserID)
+			} else {
+				loginName = resolved
+			}
+		}
+		if sess.ID == "" || sess.Token == "" || loginName == "" {
+			// Refuse loudly rather than answer a shape the caller can only
+			// reject as unrecognisable. Naming the empty field is the whole
+			// point: the previous failure was diagnosable only by reading
+			// the client's parser.
+			slog.ErrorContext(ctx, "zitadellogin: idp finish: incomplete tenant_required response, refusing",
+				"has_session_id", sess.ID != "", "has_session_token", sess.Token != "", "has_login_name", loginName != "")
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"tenant_required": true,
 			"session_id":      sess.ID,
 			"session_token":   sess.Token,
-			"login_name":      identity.Email,
+			"login_name":      loginName,
 		})
 		return
 	}

@@ -1247,3 +1247,55 @@ func TestIDPFinishSendsTheLinkedUserWhenTheIdentityIsAlreadyLinked(t *testing.T)
 		t.Fatalf("session must be created for the linked user, body = %s", sessionBody)
 	}
 }
+
+// A returning Google user whose intent carries no usable raw email must
+// still get a complete tenant_required response.
+//
+// `identity.Email` is readRawEmail's soft-fail output: any rawInformation
+// shape it does not recognise yields "". The already-linked path never
+// checks it — the email-verified gate only guards CREATING a link — so an
+// empty provider email reached the response as an empty `login_name`, and
+// the admin app rejected the whole 200 as `unrecognised_response_shape`.
+// Observed in production the moment the COMMAND-Sfw3r fix let the flow get
+// this far. login_name must come from Zitadel's record of the subject.
+func TestIDPFinishResolvesLoginNameFromZitadelWhenTheProviderEmailIsAbsent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			// Already linked, and rawInformation carries NO email — exactly
+			// what readRawEmail fails soft on.
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{}},"userId":"linked-user-1"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v2/users/"):
+			w.Write([]byte(`{"user":{"human":{"email":{"email":"person@gmail.com"}}}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).
+		WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok"}`)))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// The admin app rejects the response unless ALL FOUR are present.
+	for _, k := range []string{"tenant_required", "session_id", "session_token", "login_name"} {
+		if v, ok := body[k]; !ok || v == "" || v == nil {
+			t.Errorf("%s missing or empty in %v", k, body)
+		}
+	}
+	if body["login_name"] != "person@gmail.com" {
+		t.Errorf("login_name = %v, want the email from Zitadel's record", body["login_name"])
+	}
+}

@@ -754,3 +754,52 @@ func TestUserEmailVerifiedReadsIsVerified(t *testing.T) {
 		t.Fatal("verified = true, want false")
 	}
 }
+
+// CreateIDPIntentSession MUST send a user check alongside the intent check.
+//
+// Zitadel's CheckIntent (internal/command/session.go) begins:
+//
+//	if cmd.sessionWriteModel.UserID == "" {
+//	    return nil, zerrors.ThrowPreconditionFailed(nil,
+//	        "COMMAND-Sfw3r", "Errors.User.UserIDMissing")
+//	}
+//
+// and only CheckUser sets that field. An intent check alone therefore can
+// never create a session: it validates that an ALREADY-IDENTIFIED user is
+// linked to the external identity, it does not resolve who the user is.
+//
+// Sending only the intent is what made every merchant Google sign-in fail
+// in production with `COMMAND-Sfw3r`, surfaced to the merchant as "that
+// sign-in link expired" and to operators, before #755, as "bad credentials"
+// on a flow where no credential is presented. There was no test on this
+// call at all, which is why it shipped.
+func TestCreateIDPIntentSessionSendsTheUserCheck(t *testing.T) {
+	var body string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v2/sessions" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		b, _ := io.ReadAll(r.Body)
+		body = string(b)
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
+	})
+
+	sess, err := c.CreateIDPIntentSession(context.Background(), "user-1", "intent-1", "intent-tok")
+	if err != nil {
+		t.Fatalf("CreateIDPIntentSession() error = %v", err)
+	}
+	if sess.ID != "s1" || sess.Token != "tok-1" {
+		t.Fatalf("session = %+v", sess)
+	}
+
+	// The user check, without which Zitadel answers COMMAND-Sfw3r.
+	if !strings.Contains(body, `"user"`) || !strings.Contains(body, `"userId":"user-1"`) {
+		t.Errorf("request body must carry the user check, got %s", body)
+	}
+	// And the intent check is still what proves the external identity.
+	if !strings.Contains(body, `"idpIntentId":"intent-1"`) ||
+		!strings.Contains(body, `"idpIntentToken":"intent-tok"`) {
+		t.Errorf("request body must still carry the intent check, got %s", body)
+	}
+}

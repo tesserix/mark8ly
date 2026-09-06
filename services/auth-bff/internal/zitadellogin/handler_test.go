@@ -3,6 +3,7 @@ package zitadellogin
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1202,5 +1203,47 @@ func TestIDPFinishReportsARefusedIntentExchangeAsInvalidIntent(t *testing.T) {
 	}
 	if !strings.Contains(body, "invalid_intent") {
 		t.Fatalf("error = %s, want invalid_intent", body)
+	}
+}
+
+// The ALREADY-LINKED path must still resolve a user for the session.
+//
+// This is the case that failed in production: a merchant accepted an invite,
+// set a password, and signed in with Google. Their Google identity was
+// already linked, so `identity.ZitadelUserID` was set, the link block was
+// skipped entirely — and the session was then created with no user check at
+// all, which Zitadel refuses with COMMAND-Sfw3r (Errors.User.UserIDMissing).
+//
+// The link-creating path had a test; this one did not, and it is the one
+// every returning Google user takes.
+func TestIDPFinishSendsTheLinkedUserWhenTheIdentityIsAlreadyLinked(t *testing.T) {
+	var sessionBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v2/idp_intents/"):
+			// userId present => Zitadel already knows this identity.
+			w.Write([]byte(`{"idpInformation":{"idpId":"` + testGoogleIDPID + `","userId":"ext-1","userName":"person@gmail.com","rawInformation":{"email":"person@gmail.com","email_verified":true}},"userId":"linked-user-1"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/users":
+			t.Error("must not search by email: the identity is already linked")
+			w.WriteHeader(http.StatusInternalServerError)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/sessions":
+			b, _ := io.ReadAll(r.Body)
+			sessionBody = string(b)
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"sessionId":"s1","sessionToken":"tok-1"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	h := NewHandler(New(srv.URL, "pat", srv.Client()), nil).
+		WithGoogleIDPID(testGoogleIDPID).WithOrgID("org-1")
+	rec := httptest.NewRecorder()
+	h.idpFinish(rec, httptest.NewRequest(http.MethodPost, "/auth/zitadel/idp/finish",
+		strings.NewReader(`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"tok"}`)))
+
+	if !strings.Contains(sessionBody, `"userId":"linked-user-1"`) {
+		t.Fatalf("session must be created for the linked user, body = %s", sessionBody)
 	}
 }

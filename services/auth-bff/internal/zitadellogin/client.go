@@ -364,9 +364,26 @@ func (c *Client) CreatePasswordSession(ctx context.Context, loginName, password 
 // The intent must already be linked to an existing Zitadel user (see
 // IDPIdentity.ZitadelUserID's doc); callers are expected to have checked
 // that via RetrieveIDPIntent before calling this.
-func (c *Client) CreateIDPIntentSession(ctx context.Context, intentID, intentToken string) (Session, error) {
+func (c *Client) CreateIDPIntentSession(ctx context.Context, userID, intentID, intentToken string) (Session, error) {
 	body := map[string]any{
 		"checks": map[string]any{
+			// The user check is REQUIRED alongside the intent check, not
+			// belt-and-braces. Zitadel's CheckIntent
+			// (internal/command/session.go) opens with:
+			//
+			//     if cmd.sessionWriteModel.UserID == "" {
+			//         return nil, zerrors.ThrowPreconditionFailed(nil,
+			//             "COMMAND-Sfw3r", "Errors.User.UserIDMissing")
+			//     }
+			//
+			// and only CheckUser sets that field. An intent check alone can
+			// therefore NEVER create a session — it validates that an
+			// already-identified user is linked to the external identity,
+			// it does not resolve who that user is. Sending only the intent
+			// produced COMMAND-Sfw3r on every merchant Google sign-in.
+			"user": map[string]any{
+				"userId": userID,
+			},
 			"idpIntent": map[string]any{
 				"idpIntentId":    intentID,
 				"idpIntentToken": intentToken,

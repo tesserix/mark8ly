@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -47,13 +48,37 @@ func (h *PromoHandler) WithAudit(e *audit.Emitter) *PromoHandler {
 
 type applyPromoRequest struct {
 	Code string `json:"code" binding:"required"`
-	// Email is the merchant email for per-email rate-limit and redemption tracking.
-	Email string `json:"email" binding:"required"`
 }
 
 type applyPromoResponse struct {
 	StripeCouponID string `json:"stripe_coupon_id"`
 	EffectiveMinor int64  `json:"effective_minor"`
+	// Currency is the store's billing currency, echoed so a client can format
+	// EffectiveMinor. It is not derivable client-side: the GET subscription
+	// DTO does not carry billing_currency, and the admin schema defaults the
+	// missing field to USD — which would render an INR price as dollars.
+	Currency string `json:"currency"`
+	// PercentOffBps and MaxDurationMonths describe the offer that was just
+	// applied, so the confirmation can state its size and how long it runs
+	// instead of only the new price. Both are 0 when the row does not say:
+	// 0 months is "no bound stated", never "zero months". A client that
+	// cannot describe the terms must say nothing about them rather than
+	// guess — the same rule the win-back email follows (#727).
+	PercentOffBps     int `json:"percent_off_bps"`
+	MaxDurationMonths int `json:"max_duration_months"`
+}
+
+// applyPromoErrorResponse is the 422 body for a refused code.
+//
+// Error stays the coarse, unchanging code. Reason is the machine-readable
+// rejection reason, already collapsed by promo.PublicReasonFor so that
+// not_found and expired are indistinguishable here — see public_reason.go for
+// why that pair alone is merged. Message remains the safe fallback sentence
+// for a client that does not recognise the reason.
+type applyPromoErrorResponse struct {
+	Error   string `json:"error"`
+	Message string `json:"message"`
+	Reason  string `json:"reason"`
 }
 
 // ApplyPromo handles POST /admin/stores/:storeId/subscription/apply-promo.
@@ -81,19 +106,26 @@ func (h *PromoHandler) ApplyPromo(c *gin.Context) {
 		RespondErr(c, err, h.logger)
 		return
 	}
+	if sub == nil {
+		RespondErr(c, apperrors.NotFound("subscription"), h.logger)
+		return
+	}
+
+	merchantEmail, ok := h.merchantEmail(c, sub)
+	if !ok {
+		RespondErr(c, apperrors.ValidationFailed("email",
+			"this store has no billing email, so per-email redemption limits cannot be checked"), h.logger)
+		return
+	}
 
 	actor := "user:" + c.GetString("user_id")
-	var subID uuid.UUID
-	if sub != nil {
-		subID = sub.ID
-	}
 
 	out, applyErr := h.svc.ApplyPromo(c.Request.Context(), promo.ApplyInput{
 		TenantID:       tenantID,
 		StoreID:        storeID,
-		SubscriptionID: subID,
+		SubscriptionID: sub.ID,
 		Code:           req.Code,
-		MerchantEmail:  req.Email,
+		MerchantEmail:  merchantEmail,
 		Plan:           sub.Plan,
 		Period:         sub.SubscriptionPeriod,
 		BasePriceMinor: promo.BasePriceMinorFor(
@@ -121,9 +153,10 @@ func (h *PromoHandler) ApplyPromo(c *gin.Context) {
 
 	if applyErr != nil {
 		if errors.Is(applyErr, promo.ErrInvalidOrExpired) {
-			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{
-				"error":   "promo_invalid_or_expired",
-				"message": "the promo code is invalid or has expired",
+			c.AbortWithStatusJSON(http.StatusUnprocessableEntity, applyPromoErrorResponse{
+				Error:   "promo_invalid_or_expired",
+				Message: "the promo code is invalid or has expired",
+				Reason:  string(promo.PublicReasonFor(out.RejectReason)),
 			})
 			return
 		}
@@ -132,9 +165,46 @@ func (h *PromoHandler) ApplyPromo(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, applyPromoResponse{
-		StripeCouponID: out.StripeCouponID,
-		EffectiveMinor: out.EffectiveMinor,
+		StripeCouponID:    out.StripeCouponID,
+		EffectiveMinor:    out.EffectiveMinor,
+		Currency:          stringVal(sub.BillingCurrency),
+		PercentOffBps:     out.PercentOffBps,
+		MaxDurationMonths: out.MaxDurationMonths,
 	})
+}
+
+// merchantEmail returns the address the per-email redemption cap is counted
+// against, and whether one was found.
+//
+// It is deliberately NOT taken from the request body, which is where this
+// handler used to read it. A client that chooses the address chooses whose
+// cap it spends: submitting someone else's address writes a redemption row
+// under it, and max_per_email being 1 for the campaign codes, that merchant's
+// own attempt is then refused max_per_email_reached. A merchant supplying
+// throwaway addresses would also clear their own cap at will.
+//
+// The subscription's billing email comes first because the other two callers
+// of promo.ApplyPromo already use it — cancel.applySaveOfferDiscount and the
+// day-30 win-back's offerFor both pass sub.Email. The cap only means anything
+// if all three agree on which address they mean, and disagreement here would
+// be worse than a wrong number: the win-back email validates against
+// sub.Email before it states the offer, so a redemption booked against the
+// session address would let the email promise a code this endpoint then
+// refuses.
+//
+// The session address is the fallback for a row whose email column is unset
+// — a store that never reached Stripe customer creation. It cannot fall back
+// further to the empty string: "" is a single shared bucket that every
+// address-less store would count redemptions in, so one store's redemption
+// would exhaust the cap for all of them.
+func (h *PromoHandler) merchantEmail(c *gin.Context, sub *subscription.StoreSubscription) (string, bool) {
+	if email := strings.TrimSpace(stringVal(sub.Email)); email != "" {
+		return email, true
+	}
+	if email := strings.TrimSpace(c.GetString("user_email")); email != "" {
+		return email, true
+	}
+	return "", false
 }
 
 type cancelPromoRequest struct {

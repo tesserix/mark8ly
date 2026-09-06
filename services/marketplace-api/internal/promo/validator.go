@@ -32,8 +32,12 @@ type ValidationInput struct {
 	Currency string
 }
 
-// ValidationRejectReason records the internal reason for audit events.
-// Never sent to the HTTP client — the external response is always ErrInvalidOrExpired.
+// ValidationRejectReason records the precise reason for audit events. It is
+// the internal record and stays complete: not_found and expired remain
+// separate here even though a client is told the same thing for both.
+//
+// It is never returned to a client as-is. PublicReasonFor (public_reason.go)
+// decides what leaves the server; go through it rather than casting.
 type ValidationRejectReason string
 
 const (

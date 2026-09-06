@@ -2,9 +2,15 @@ package promo
 
 import "errors"
 
-// ErrInvalidOrExpired is the uniform external error returned for every
-// promo validation failure (§7.3 pattern A). The true reason is recorded
-// in the audit event but never exposed to the HTTP client.
+// ErrInvalidOrExpired is the single Go error returned for every promo
+// validation failure (§7.3 pattern A), so no caller can branch on the failure
+// mode by comparing errors. The reason travels beside it on
+// ApplyOutput.RejectReason.
+//
+// It is no longer the whole story at the HTTP layer: the handler returns
+// PublicReasonFor(out.RejectReason) alongside the message, which keeps
+// not_found and expired indistinguishable while letting the seven reasons
+// that describe the caller's own subscription through. See public_reason.go.
 var ErrInvalidOrExpired = errors.New("promo: invalid or expired")
 
 // ErrAlreadyApplied is returned when the store already has an active

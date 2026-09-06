@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -62,8 +63,34 @@ type mobileIDPStartRequest struct {
 }
 
 type mobileIDPFinishRequest struct {
+	Provider    string `json:"provider"`
 	IntentID    string `json:"intent_id"`
 	IntentToken string `json:"intent_token"`
+}
+
+// supportedIDPProviders is the allowlist both routes check. An unknown
+// value is refused here AND again in auth-bff — adding a provider must be a
+// deliberate change in both, never something a request opts into.
+var supportedIDPProviders = map[string]string{
+	authbffclient.ProviderGoogle: "Google",
+	authbffclient.ProviderApple:  "Apple",
+}
+
+// normalizeIDPProvider canonicalises what a request named and reports
+// whether this surface trusts it.
+func normalizeIDPProvider(raw string) (string, bool) {
+	provider := strings.ToLower(strings.TrimSpace(raw))
+	_, ok := supportedIDPProviders[provider]
+	return provider, ok
+}
+
+// providerLabel is the merchant-facing name for a provider. It falls back
+// to Google because an absent provider means Google everywhere here.
+func providerLabel(provider string) string {
+	if label, ok := supportedIDPProviders[provider]; ok {
+		return label
+	}
+	return supportedIDPProviders[authbffclient.ProviderGoogle]
 }
 
 // Start returns the URL the app opens in its authentication session.
@@ -73,11 +100,11 @@ func (h *MobileIDPHandler) Start(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "message": "provider is required"})
 		return
 	}
-	// Google is the only provider this surface trusts. An unknown value is
-	// refused here AND again in auth-bff — adding a provider must be a
-	// deliberate change in both, never something a request opts into.
-	provider := strings.ToLower(strings.TrimSpace(req.Provider))
-	if provider != authbffclient.ProviderGoogle {
+	// Start has ALWAYS required an explicit provider and every shipped
+	// client sends one, so an empty value stays a 400 here. Finish is
+	// deliberately different — see below.
+	provider, ok := normalizeIDPProvider(req.Provider)
+	if !ok {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"error": "unsupported_provider", "message": "That sign-in method isn't available.",
 		})
@@ -96,7 +123,7 @@ func (h *MobileIDPHandler) Start(c *gin.Context) {
 
 	authURL, err := h.backend.IDPStart(c.Request.Context(), provider, h.returnURL)
 	if err != nil {
-		h.respondIDPError(c, "mobile idp start: auth-bff call failed", err)
+		h.respondIDPError(c, provider, "mobile idp start: auth-bff call failed", err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"auth_url": authURL}})
@@ -119,9 +146,26 @@ func (h *MobileIDPHandler) Finish(c *gin.Context) {
 		return
 	}
 
-	res, err := h.backend.IDPFinish(c.Request.Context(), authbffclient.ProviderGoogle, req.IntentID, req.IntentToken)
+	// The provider is load-bearing on finish: auth-bff pins the intent
+	// against the IDP this names, so forwarding the wrong one refuses a
+	// valid sign-in. An ABSENT provider must keep meaning Google — app
+	// builds already in the wild send none, and requiring it would break
+	// every existing Google merchant on the next deploy.
+	provider := authbffclient.ProviderGoogle
+	if strings.TrimSpace(req.Provider) != "" {
+		named, ok := normalizeIDPProvider(req.Provider)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": "unsupported_provider", "message": "That sign-in method isn't available.",
+			})
+			return
+		}
+		provider = named
+	}
+
+	res, err := h.backend.IDPFinish(c.Request.Context(), provider, req.IntentID, req.IntentToken)
 	if err != nil {
-		h.respondIDPError(c, "mobile idp finish: auth-bff call failed", err)
+		h.respondIDPError(c, provider, "mobile idp finish: auth-bff call failed", err)
 		return
 	}
 	// marketplace-api never sends a workspace_tenant on finish, so
@@ -158,7 +202,7 @@ func (h *MobileIDPHandler) Finish(c *gin.Context) {
 
 	done, err := h.backend.IDPComplete(c.Request.Context(), res.LoginName, res.SessionID, res.SessionToken, primary)
 	if err != nil {
-		h.respondIDPError(c, "mobile idp complete: auth-bff call failed", err)
+		h.respondIDPError(c, provider, "mobile idp complete: auth-bff call failed", err)
 		return
 	}
 
@@ -176,38 +220,46 @@ func (h *MobileIDPHandler) Finish(c *gin.Context) {
 // and the reason a sign-in was refused is exactly what the merchant needs
 // in order to do something about it. A refusal reported as "temporarily
 // unavailable" is the dead end that produced #493.
+// messageFmt, where set, takes the merchant-facing provider name: naming
+// Google in an answer to an Apple sign-in is simply wrong. Only the message
+// varies — the status and the stable `error` code are identical either way.
 var idpErrorCopy = map[string]struct {
-	status  int
-	code    string
-	message string
+	status     int
+	code       string
+	message    string
+	messageFmt string
 }{
-	"no_admin_account": {http.StatusNotFound, "no_store",
-		"We couldn't find a store for this account. Did you finish onboarding?"},
-	"email_not_verified": {http.StatusUnauthorized, "email_not_verified",
-		"Google hasn't verified that email address, so we can't sign you in with it."},
-	"email_ambiguous": {http.StatusConflict, "email_ambiguous",
-		"More than one account uses that email. Contact support to sort it out."},
-	"unexpected_idp": {http.StatusUnauthorized, "invalid_credentials",
-		"Couldn't sign you in with Google. Try again."},
-	"invalid_intent": {http.StatusUnauthorized, "invalid_credentials",
-		"That sign-in attempt expired. Try again."},
-	"unsupported_provider": {http.StatusBadRequest, "unsupported_provider",
-		"That sign-in method isn't available."},
-	"invalid_return_url": {http.StatusBadGateway, "auth_unavailable",
-		"Sign-in is temporarily unavailable. Try again shortly."},
+	"no_admin_account": {status: http.StatusNotFound, code: "no_store",
+		message: "We couldn't find a store for this account. Did you finish onboarding?"},
+	"email_not_verified": {status: http.StatusUnauthorized, code: "email_not_verified",
+		messageFmt: "%s hasn't verified that email address, so we can't sign you in with it."},
+	"email_ambiguous": {status: http.StatusConflict, code: "email_ambiguous",
+		message: "More than one account uses that email. Contact support to sort it out."},
+	"unexpected_idp": {status: http.StatusUnauthorized, code: "invalid_credentials",
+		messageFmt: "Couldn't sign you in with %s. Try again."},
+	"invalid_intent": {status: http.StatusUnauthorized, code: "invalid_credentials",
+		message: "That sign-in attempt expired. Try again."},
+	"unsupported_provider": {status: http.StatusBadRequest, code: "unsupported_provider",
+		message: "That sign-in method isn't available."},
+	"invalid_return_url": {status: http.StatusBadGateway, code: "auth_unavailable",
+		message: "Sign-in is temporarily unavailable. Try again shortly."},
 }
 
 // respondIDPError answers with mapped copy where auth-bff gave a code we
 // understand, and with an explicit "unavailable" otherwise — never with a
 // credential error for an upstream failure.
-func (h *MobileIDPHandler) respondIDPError(c *gin.Context, logMsg string, err error) {
+func (h *MobileIDPHandler) respondIDPError(c *gin.Context, provider, logMsg string, err error) {
 	var idpErr *authbffclient.IDPError
 	if errors.As(err, &idpErr) {
 		if mapped, ok := idpErrorCopy[idpErr.Code]; ok {
 			// Logged even when mapped: a spike in email_ambiguous or
 			// unexpected_idp is an operational signal, not just copy.
 			h.logError(logMsg, err)
-			c.AbortWithStatusJSON(mapped.status, gin.H{"error": mapped.code, "message": mapped.message})
+			message := mapped.message
+			if mapped.messageFmt != "" {
+				message = fmt.Sprintf(mapped.messageFmt, providerLabel(provider))
+			}
+			c.AbortWithStatusJSON(mapped.status, gin.H{"error": mapped.code, "message": message})
 			return
 		}
 	}

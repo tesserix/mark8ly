@@ -1,19 +1,12 @@
 import { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  TextInput,
-  View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { Pressable, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { createZitadelSignIn } from "@repo/mobile-shared/auth/zitadel-signin";
 import { ZitadelAuthError } from "@repo/mobile-shared/auth/zitadel-client";
 import { useEnvironment } from "@repo/mobile-shared/config/env";
-import { theme } from "@/lib/theme";
+import { AuthScreen } from "../components/ui/AuthScreen";
+import { CodeInput } from "../components/ui/CodeInput";
 import { Text } from "../components/ui/Text";
 
 /**
@@ -39,9 +32,15 @@ export default function OtpScreen() {
 
   const pendingToken = params.pendingToken ?? "";
 
-  async function handleVerify() {
+  /**
+   * `submitted` is the value CodeInput reports the moment its last cell
+   * fills. Reading `code` there would read the previous render's state and
+   * verify a five-digit code.
+   */
+  async function handleVerify(submitted?: string) {
     if (submitting) return;
-    if (code.trim().length === 0) {
+    const entered = (submitted ?? code).trim();
+    if (entered.length === 0) {
       setError("Enter the code we emailed you.");
       return;
     }
@@ -57,7 +56,7 @@ export default function OtpScreen() {
     try {
       await createZitadelSignIn(env.apiBaseUrl).verifyOtp(
         pendingToken,
-        code.trim(),
+        entered,
         setTenantId,
       );
       router.replace("/(tabs)");
@@ -87,83 +86,66 @@ export default function OtpScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-paper">
-      {/* style={{flex:1}}, NOT className="flex-1". NativeWind's interop does
-          not reliably apply a className to KeyboardAvoidingView, so the
-          container never fills its parent and the content collapses upward
-          with no top margin. login.tsx uses the inline style for the same
-          reason; this screen must match it exactly, not approximately. */}
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
+    <AuthScreen>
+      <Text preset="eyebrow" className="text-moss">
+        CHECK YOUR EMAIL
+      </Text>
+      <Text preset="display" className="mt-2 text-ink">
+        Enter code
+      </Text>
+      <Text preset="body" className="mt-3 text-ink-secondary">
+        {params.email
+          ? `We sent a sign-in code to ${params.email}.`
+          : "We sent a sign-in code to your email."}
+      </Text>
+
+      <CodeInput
+        accessibilityLabel="Email code"
+        onChangeText={(next) => {
+          setCode(next);
+          // Clear a stale "that code isn't right" the moment they start
+          // correcting it, rather than leaving the old verdict under a new
+          // code.
+          if (error) setError(null);
+        }}
+        onFilled={(next) => void handleVerify(next)}
+        disabled={submitting}
+      />
+
+      {error ? (
+        <Text
+          preset="caption"
+          className="mt-3 text-danger"
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
         >
-          <View className="flex-1 px-6 pt-16">
-          <Text preset="eyebrow" className="text-moss">
-              CHECK YOUR EMAIL
-            </Text>
-            <Text preset="display" className="mt-2 text-ink">
-              Enter code
-            </Text>
-            <Text preset="body" className="mt-3 text-ink-secondary">
-              {params.email
-                ? `We sent a sign-in code to ${params.email}.`
-                : "We sent a sign-in code to your email."}
-            </Text>
+          {error}
+        </Text>
+      ) : null}
 
-            <TextInput
-              accessibilityLabel="Email code"
-              className="mt-8 min-h-touch rounded border border-border bg-paper-elevated px-4 text-center font-sans text-display text-ink"
-              placeholder="000000"
-              placeholderTextColor={theme.colors.textTertiary}
-              keyboardType="number-pad"
-              textContentType="oneTimeCode"
-              autoComplete="one-time-code"
-              maxLength={8}
-              value={code}
-              onChangeText={setCode}
-            />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Verify code"
+        disabled={submitting}
+        onPress={() => void handleVerify()}
+        className="mt-6 min-h-touch items-center justify-center rounded bg-ink active:opacity-90"
+      >
+        <Text preset="bodyEmphasis" className="text-paper">
+          {submitting ? "Verifying…" : "Verify"}
+        </Text>
+      </Pressable>
 
-            {error ? (
-              <Text
-                preset="caption"
-                className="mt-3 text-danger"
-                accessibilityRole="alert"
-                accessibilityLiveRegion="polite"
-              >
-                {error}
-              </Text>
-            ) : null}
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Verify code"
-              disabled={submitting}
-              onPress={handleVerify}
-              className="mt-6 min-h-touch items-center justify-center rounded bg-ink active:opacity-90"
-            >
-              <Text preset="bodyEmphasis" className="text-paper">
-                {submitting ? "Verifying…" : "Verify"}
-              </Text>
-            </Pressable>
-
-            <View className="mt-6 items-center">
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Back to sign in"
-                onPress={() => router.replace("/login")}
-              >
-                <Text preset="caption" className="text-moss underline">
-                  Back to sign in
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      <View className="mt-6 items-center">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Back to sign in"
+          onPress={() => router.replace("/login")}
+        >
+          <Text preset="caption" className="text-moss underline">
+            Back to sign in
+          </Text>
+        </Pressable>
+      </View>
+    </AuthScreen>
   );
 }

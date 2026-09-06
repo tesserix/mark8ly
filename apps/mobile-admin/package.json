@@ -7,7 +7,7 @@
     "dev": "expo start",
     "ios": "expo run:ios",
     "build": "echo 'use eas build'",
-    "lint": "echo 'lint stub \u2014 needs ESLint flat config (eslint.config.js); this app has no eslint config or eslint dep, so `eslint .` was an unconditional fatal error'",
+    "lint": "echo 'lint stub — needs ESLint flat config (eslint.config.js); this app has no eslint config or eslint dep, so `eslint .` was an unconditional fatal error'",
     "check-types": "tsc --noEmit",
     "test": "jest",
     "postinstall": "node scripts/link-nativewind-tailwind.js"
@@ -46,6 +46,7 @@
     "react-dom": "19.2.3",
     "react-native": "0.85.3",
     "react-native-gesture-handler": "~3.1.0",
+    "react-native-otp-entry": "^1.8.6",
     "react-native-reanimated": "4.3.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",

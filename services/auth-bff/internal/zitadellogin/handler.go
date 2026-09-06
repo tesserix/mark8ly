@@ -719,6 +719,12 @@ func (h *Handler) idpFinishMode(w http.ResponseWriter, r *http.Request, issueTok
 	// raw claims (see IDPIdentity's doc) and defaults to false when the
 	// claim is absent — so an absent claim refuses here exactly like an
 	// explicit false, never like "probably fine".
+	// The user this session will belong to. Zitadel cannot derive it from
+	// the intent alone (see CreateIDPIntentSession), so it has to be
+	// resolved here — from the intent when the identity is already linked,
+	// otherwise from the account the link is about to be attached to.
+	sessionUserID := identity.ZitadelUserID
+
 	if identity.ZitadelUserID == "" {
 		if identity.Email == "" || !identity.EmailVerified {
 			slog.WarnContext(ctx, "zitadellogin: idp finish rejected: unlinked identity with no verified email")
@@ -761,9 +767,19 @@ func (h *Handler) idpFinishMode(w http.ResponseWriter, r *http.Request, issueTok
 			return
 		}
 		slog.InfoContext(ctx, "zitadellogin: idp finish linked a first-time Google identity to an existing account", "user_id", existingUserID)
+		sessionUserID = existingUserID
 	}
 
-	sess, err := h.c.CreateIDPIntentSession(ctx, req.IntentID, req.IntentToken)
+	if sessionUserID == "" {
+		// Unreachable: the branch above either sets it or has already
+		// answered. Refuse rather than call Zitadel with an empty user and
+		// take COMMAND-Sfw3r back as an opaque "bad credentials".
+		slog.ErrorContext(ctx, "zitadellogin: idp finish: no user resolved for the session, refusing")
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
+		return
+	}
+
+	sess, err := h.c.CreateIDPIntentSession(ctx, sessionUserID, req.IntentID, req.IntentToken)
 	if err != nil {
 		h.respondIDPSessionCreateError(ctx, w, err)
 		return

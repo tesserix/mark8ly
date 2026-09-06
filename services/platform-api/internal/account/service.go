@@ -123,9 +123,12 @@ func (s *Service) DeleteAccount(ctx context.Context, tenantID, actorUID string) 
 	return s.deleteStaffAccount(ctx, tenantID, actorUID, role)
 }
 
-// deleteOwnerAccount runs the atomic DB teardown, then best-effort
-// cleans up FGA tuples and the GIP identity. See the package doc for why
-// the second half is best-effort.
+// deleteOwnerAccount runs the atomic DB teardown, then best-effort cleans
+// up FGA tuples and GIP identities for every member of the tenant — not
+// just the owner (actorUID). A tenant can have staff/admin/viewer
+// invitees with their own role tuples, and those tuples must not survive
+// pointing at a tenant object that no longer exists (#361). See the
+// package doc for why this second half is best-effort.
 func (s *Service) deleteOwnerAccount(ctx context.Context, tenantID, actorUID string) error {
 	storeIDs, err := s.repo.ListStoreIDs(ctx, nil, tenantID)
 	if err != nil {
@@ -136,18 +139,85 @@ func (s *Service) deleteOwnerAccount(ctx context.Context, tenantID, actorUID str
 		return fmt.Errorf("account: teardown tenant: %w", err)
 	}
 
-	if err := s.fga.DeleteTuple(ctx, actorUID, string(authz.RoleOwner), tenantID); err != nil {
-		s.warn("account: post-commit owner tuple delete failed", "tenant_id", tenantID, "actor_uid", actorUID, "err", err)
-	}
+	s.cleanupTenantMembers(ctx, tenantID)
 	for _, storeID := range storeIDs {
 		if err := s.fga.DeleteStoreParent(ctx, storeID, tenantID); err != nil {
 			s.warn("account: post-commit store parent delete failed", "tenant_id", tenantID, "store_id", storeID, "err", err)
 		}
 	}
-	if err := s.gip.DeleteAccount(ctx, actorUID); err != nil {
-		s.warn("account: post-commit gip delete failed", "tenant_id", tenantID, "actor_uid", actorUID, "err", err)
-	}
 	return nil
+}
+
+// cleanupTenantMembers enumerates every user holding a direct FGA role
+// tuple on tenantID — the owner included — and unwinds their role
+// tuple(s) and (conditionally) their identity. Called only after the
+// tenant's DB row is already gone in the same transaction that enqueued
+// the tenant.deleted outbox event, so every step here is best-effort:
+// a failure is logged via s.warn and cleanup moves on, never aborting or
+// returning an error.
+//
+// Nil-tolerant on s.fga: PurgeTenant's route is mounted unconditionally
+// and may be wired with fga == nil (see purge.go's cleanupAfterTeardown
+// doc). deleteOwnerAccount's caller always wires a real client, so this
+// nil check is a no-op there in practice — it exists so the same helper
+// serves both call sites without each having to remember to guard.
+func (s *Service) cleanupTenantMembers(ctx context.Context, tenantID string) {
+	if s.fga == nil {
+		return
+	}
+	members, err := s.fga.ListTenantMembers(ctx, tenantID)
+	if err != nil {
+		s.warn("account: post-commit list tenant members failed", "tenant_id", tenantID, "err", err)
+		return
+	}
+
+	// A user can hold more than one direct role tuple on the same
+	// tenant (e.g. a staff→admin promotion intentionally leaves the old
+	// tuple in place for audit trail — see authz.rolePriority's doc
+	// comment). Remove every tuple for a user before deciding whether
+	// to delete their identity, so that decision is made once per user
+	// against a tenant that's already fully unwound for them.
+	touchedUsers := map[string]bool{}
+	for _, m := range members {
+		if err := s.fga.DeleteTuple(ctx, m.UserID, m.Relation, tenantID); err != nil {
+			s.warn("account: post-commit member tuple delete failed",
+				"tenant_id", tenantID, "user_id", m.UserID, "relation", m.Relation, "err", err)
+		}
+		touchedUsers[m.UserID] = true
+	}
+	for userID := range touchedUsers {
+		s.deleteIdentityIfNoTenantsRemain(ctx, userID, tenantID)
+	}
+}
+
+// deleteIdentityIfNoTenantsRemain deletes userID's GIP/Zitadel identity
+// ONLY if authz.ListMemberTenants shows no remaining tenant membership
+// anywhere. A user can hold roles on multiple tenants — that's exactly
+// why ListMemberTenants exists — so deleting their identity because ONE
+// of their tenants was torn down would destroy their access to every
+// other tenant they belong to.
+//
+// If the ListMemberTenants lookup itself fails, the answer is
+// inconclusive and this deliberately does NOT delete: an inconclusive
+// answer must never be treated as "safe to delete". The failure is
+// logged and the identity deletion is skipped.
+func (s *Service) deleteIdentityIfNoTenantsRemain(ctx context.Context, userID, justRemovedTenantID string) {
+	if s.gip == nil {
+		return
+	}
+	remaining, err := s.fga.ListMemberTenants(ctx, userID)
+	if err != nil {
+		s.warn("account: post-commit list member tenants failed, skipping identity delete",
+			"user_id", userID, "tenant_id", justRemovedTenantID, "err", err)
+		return
+	}
+	if len(remaining) > 0 {
+		return
+	}
+	if err := s.gip.DeleteAccount(ctx, userID); err != nil {
+		s.warn("account: post-commit identity delete failed",
+			"user_id", userID, "tenant_id", justRemovedTenantID, "err", err)
+	}
 }
 
 // teardownTenantTx deletes the tenant row and enqueues the tenant.deleted

@@ -8,7 +8,6 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/mark8ly/platform-api/internal/authz"
 	"github.com/mark8ly/platform-api/internal/tenant"
 )
 
@@ -109,11 +108,11 @@ const PurgeBackstopDelay = 30 * time.Second
 // nil pointer; cleanupAfterTeardown's `!= nil` guards would pass, and the
 // nil receiver would panic AFTER this transaction has already committed.
 //
-// KNOWN GAP, inherited from deleteOwnerAccount rather than introduced
-// here: authz.Client has no method enumerating a tenant's members
-// (DeleteTuple requires a userID), so staff/admin/viewer tuples and their
-// GIP identities survive, pointing at a tenant object that no longer
-// exists. Filed separately.
+// #361 FIXED: cleanupAfterTeardown now enumerates every member via
+// authz.Client.ListTenantMembers (not just snap.OwnerUserID), so
+// staff/admin/viewer tuples no longer survive pointing at a tenant object
+// that no longer exists. See cleanupAfterTeardown and
+// Service.cleanupTenantMembers in service.go.
 func (s *Service) PurgeTenant(ctx context.Context, tenantID string, suppliedSlugs []string) (*PurgeResult, error) {
 	var snap *tenant.TeardownSnapshot
 
@@ -159,16 +158,20 @@ func (s *Service) PurgeTenant(ctx context.Context, tenantID string, suppliedSlug
 	}, nil
 }
 
-// cleanupAfterTeardown removes the owner's FGA role tuple, the store
-// parent tuples and the owner's GIP identity. Every failure is logged and
-// swallowed: the transaction has already committed and the outbox event is
-// the durable retry channel. Nil-tolerant on both clients.
+// cleanupAfterTeardown removes every member's FGA role tuple(s), the store
+// parent tuples, and (conditionally) member identities — via the same
+// cleanupTenantMembers helper deleteOwnerAccount uses, so the merchant and
+// operator teardown paths can't drift on which users get cleaned up (#361:
+// before this, only snap.OwnerUserID was unwound, leaving staff/admin/
+// viewer tuples pointing at a tenant object that no longer exists). Every
+// failure is logged and swallowed: the transaction has already committed
+// and the outbox event is the durable retry channel. Nil-tolerant on both
+// clients — cleanupTenantMembers no-ops when s.fga is nil, and
+// deleteIdentityIfNoTenantsRemain (called from within it) no-ops when
+// s.gip is nil.
 func (s *Service) cleanupAfterTeardown(ctx context.Context, snap *tenant.TeardownSnapshot) {
 	if s.fga != nil {
-		if err := s.fga.DeleteTuple(ctx, snap.OwnerUserID, string(authz.RoleOwner), snap.TenantID); err != nil {
-			s.warn("account: post-purge owner tuple delete failed",
-				"tenant_id", snap.TenantID, "owner_uid", snap.OwnerUserID, "err", err)
-		}
+		s.cleanupTenantMembers(ctx, snap.TenantID)
 		for _, st := range snap.Stores {
 			if err := s.fga.DeleteStoreParent(ctx, st.ID, snap.TenantID); err != nil {
 				s.warn("account: post-purge store parent delete failed",
@@ -180,12 +183,7 @@ func (s *Service) cleanupAfterTeardown(ctx context.Context, snap *tenant.Teardow
 			"tenant_id", snap.TenantID)
 	}
 
-	if s.gip != nil {
-		if err := s.gip.DeleteAccount(ctx, snap.OwnerUserID); err != nil {
-			s.warn("account: post-purge gip delete failed",
-				"tenant_id", snap.TenantID, "owner_uid", snap.OwnerUserID, "err", err)
-		}
-	} else {
+	if s.gip == nil {
 		s.warn("account: post-purge GIP cleanup skipped, no client configured",
 			"tenant_id", snap.TenantID)
 	}

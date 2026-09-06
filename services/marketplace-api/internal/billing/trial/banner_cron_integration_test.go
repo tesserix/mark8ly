@@ -12,6 +12,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
+	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
 // fixedClock returns a clock func that always returns t.
@@ -21,14 +22,14 @@ func fixedClock(t time.Time) func() time.Time { return func() time.Time { return
 // 59, 60, and 61 relative to "now", runs the cron, and asserts only the
 // day-60 row advances to "day_60".
 func TestBannerCron_SetsDay60State_SkipsOtherDays(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 	now := time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
 
 	day60 := now.AddDate(0, 0, -60)
 	day59 := now.AddDate(0, 0, -59)
 	day61 := now.AddDate(0, 0, -61)
 
-	rowAt60 := seedSubscription(t, db, subscription.StoreSubscription{
+	rowAt60 := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_banner_60",
 		Status:             subscription.StatusTrialing,
 		Plan:               subscription.PlanTrial,
@@ -36,7 +37,7 @@ func TestBannerCron_SetsDay60State_SkipsOtherDays(t *testing.T) {
 		PriceTier:          subscription.PriceTierDeveloped,
 		CreatedAt:          day60,
 	})
-	rowAt59 := seedSubscription(t, db, subscription.StoreSubscription{
+	rowAt59 := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_banner_59",
 		Status:             subscription.StatusTrialing,
 		Plan:               subscription.PlanTrial,
@@ -44,7 +45,7 @@ func TestBannerCron_SetsDay60State_SkipsOtherDays(t *testing.T) {
 		PriceTier:          subscription.PriceTierDeveloped,
 		CreatedAt:          day59,
 	})
-	rowAt61 := seedSubscription(t, db, subscription.StoreSubscription{
+	rowAt61 := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_banner_61",
 		Status:             subscription.StatusTrialing,
 		Plan:               subscription.PlanTrial,
@@ -83,11 +84,11 @@ func TestBannerCron_SetsDay60State_SkipsOtherDays(t *testing.T) {
 // TestBannerCron_Idempotent_SameDay runs the cron twice at the same simulated
 // day and asserts the second run is a no-op (state stays "day_60", not promoted).
 func TestBannerCron_Idempotent_SameDay(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 	now := time.Date(2026, 4, 1, 9, 0, 0, 0, time.UTC)
 	createdAt := now.AddDate(0, 0, -60)
 
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_idem_60",
 		Status:             subscription.StatusTrialing,
 		Plan:               subscription.PlanTrial,
@@ -115,12 +116,12 @@ func TestBannerCron_Idempotent_SameDay(t *testing.T) {
 // store that already has a Stripe subscription (card added late) is not touched
 // by the banner cron.
 func TestBannerCron_SkipsStoresWithStripeSubscriptionID(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 	now := time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC)
 	createdAt := now.AddDate(0, 0, -60)
 
 	subID := "sub_already_carded"
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:     "cus_carded",
 		StripeSubscriptionID: &subID,
 		Status:               subscription.StatusTrialing,
@@ -144,11 +145,11 @@ func TestBannerCron_SkipsStoresWithStripeSubscriptionID(t *testing.T) {
 // gets state "day_75" directly, skipping "day_60" entirely, because each query
 // selects only stores whose created_at matches the specific day window.
 func TestBannerCron_AdvancesStateAcrossThresholds(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
 	now := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
 	createdAt := now.AddDate(0, 0, -75)
 
-	row := seedSubscription(t, db, subscription.StoreSubscription{
+	row := seedStoreAndSubscription(t, db, subscription.StoreSubscription{
 		StripeCustomerID:   "cus_day75",
 		Status:             subscription.StatusTrialing,
 		Plan:               subscription.PlanTrial,

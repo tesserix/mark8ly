@@ -21,9 +21,11 @@ import (
 // when the subscription is finally created — otherwise the discount silently
 // stops covering the tenant as they grow.
 //
-// These use testdb (TEST_DATABASE_URL) rather than this file's neighbours'
-// openIntegrationDB (TEST_DB_DSN). `make test-int` exports only the former, so
-// a test written against the latter never runs there.
+// These use testdb (TEST_DATABASE_URL), which is what `make test-int` exports.
+// They once stood alone in doing so: the rest of this package opened its own
+// connection from TEST_DB_DSN, a variable no Makefile has ever exported, so
+// nineteen of its tests silently skipped in CI. That harness is now gone and
+// every file here uses testdb.
 
 // stubDiscounter stands in for tenantdiscount.Service at the port trial
 // declares. Hand-rolled per this repository's convention.

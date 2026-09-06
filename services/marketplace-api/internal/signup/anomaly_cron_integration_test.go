@@ -5,19 +5,19 @@ package signup_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/signup"
+	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
 // newTestCounter creates an unregistered prometheus counter safe for test use.
@@ -32,20 +32,6 @@ func testCounterValue(c prometheus.Counter) float64 {
 	return m.GetCounter().GetValue()
 }
 
-// openIntegrationDB connects to the database specified by TEST_DB_DSN.
-// Tests that call this are skipped when the env var is absent.
-func openIntegrationDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	dsn, ok := os.LookupEnv("TEST_DB_DSN")
-	if !ok || dsn == "" {
-		t.Skip("TEST_DB_DSN not set; skipping integration test")
-	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	require.NoError(t, err, "open integration DB")
-	t.Cleanup(func() { sqlDB, _ := db.DB(); _ = sqlDB.Close() })
-	return db
-}
-
 // fakeSlack records calls to Send.
 type fakeSlack struct {
 	calls atomic.Int32
@@ -56,25 +42,33 @@ func (f *fakeSlack) Send(_ context.Context, _ string) error {
 	return nil
 }
 
-// seedSignups inserts n store_subscriptions rows with created_at = ts and
-// registers cleanup to delete them. Returns a unique marker stripe_customer_id
-// prefix for isolation.
+// seedSignups inserts n store_subscriptions rows with created_at = ts, each
+// with its own stores parent row.
+//
+// The parent is not optional and cannot be shared. store_subscriptions.store_id
+// has referenced stores(id) since migration 000015, so a synthetic
+// gen_random_uuid() store_id is rejected by store_subscriptions_store_id_fkey;
+// and UNIQUE (store_id) on the same table means n subscriptions need n stores.
+//
+// prefix distinguishes one test's rows from another's in stripe_customer_id.
+// No cleanup is registered here: the caller's testdb.NewDB truncates
+// store_subscriptions, stores and signup_anomaly_log on test completion, and
+// testdb.SeedStore registers its own per-store row and sequence cleanup.
 func seedSignups(t *testing.T, db *gorm.DB, n int, ts time.Time, prefix string) {
 	t.Helper()
 	for i := 0; i < n; i++ {
+		tenantID, storeID := uuid.New(), uuid.New()
+		testdb.SeedStore(t, db, tenantID, storeID)
+
 		err := db.Exec(`
 			INSERT INTO store_subscriptions
 				(id, tenant_id, store_id, stripe_customer_id, plan, status, subscription_period, price_tier, created_at, updated_at)
 			VALUES
-				(gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), ?, 'trial', 'trialing', 'monthly', 'developed', ?, now())`,
-			fmt.Sprintf("%s_%d", prefix, i), ts,
+				(gen_random_uuid(), ?, ?, ?, 'trial', 'trialing', 'monthly', 'developed', ?, now())`,
+			tenantID, storeID, fmt.Sprintf("%s_%d", prefix, i), ts,
 		).Error
 		require.NoError(t, err)
 	}
-	t.Cleanup(func() {
-		db.Exec("DELETE FROM store_subscriptions WHERE stripe_customer_id LIKE ?", prefix+"%")
-		db.Exec("DELETE FROM signup_anomaly_log WHERE alert_date >= ?", ts.Format("2006-01-02"))
-	})
 }
 
 // fixedClock returns a clock func that always returns t.
@@ -83,7 +77,7 @@ func fixedClock(t time.Time) func() time.Time { return func() time.Time { return
 // TestAnomalyCron_QuietUnder50_NoSlack_NoCounter seeds 49 rows created
 // yesterday and asserts: no Slack send, no log row, counter stays at 0.
 func TestAnomalyCron_QuietUnder50_NoSlack_NoCounter(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores", "signup_anomaly_log")
 	now := time.Date(2026, 8, 1, 5, 0, 0, 0, time.UTC)
 	yesterday := now.AddDate(0, 0, -1)
 
@@ -108,7 +102,7 @@ func TestAnomalyCron_QuietUnder50_NoSlack_NoCounter(t *testing.T) {
 // TestAnomalyCron_AlertsOver50 seeds 75 rows yesterday, runs the cron, and
 // asserts exactly one Slack send, counter incremented once, and a log row present.
 func TestAnomalyCron_AlertsOver50(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores", "signup_anomaly_log")
 	now := time.Date(2026, 8, 2, 5, 0, 0, 0, time.UTC)
 	yesterday := now.AddDate(0, 0, -1)
 
@@ -133,7 +127,7 @@ func TestAnomalyCron_AlertsOver50(t *testing.T) {
 // TestAnomalyCron_IdempotentSameDay_SecondRunNoOp seeds 75 rows, runs the cron
 // twice with the same clock, and asserts only one Slack send total.
 func TestAnomalyCron_IdempotentSameDay_SecondRunNoOp(t *testing.T) {
-	db := openIntegrationDB(t)
+	db := testdb.NewDB(t, "store_subscriptions", "stores", "signup_anomaly_log")
 	now := time.Date(2026, 8, 3, 5, 0, 0, 0, time.UTC)
 	yesterday := now.AddDate(0, 0, -1)
 

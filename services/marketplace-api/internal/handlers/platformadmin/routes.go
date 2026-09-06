@@ -128,10 +128,11 @@ type Deps struct {
 	// used for the read routes in this struct.
 	TrialExtender TrialExtender
 
-	// TenantDiscount serves POST and DELETE
-	// /admin/billing/tenants/:tenantID/discount (#660) — applying and
-	// revoking a console-minted Stripe coupon across every store the tenant
-	// owns. Like TrialExtender it needs DB and Emitter as well, and mounting
+	// TenantDiscount serves POST /admin/billing/tenants/:tenantID/discount
+	// and POST /admin/billing/tenants/:tenantID/discount/remove (#660) —
+	// applying and revoking a console-minted Stripe coupon across every store
+	// the tenant owns. Both are POSTs; see the Register doc comment in
+	// billing_tenant_discount.go for why the revoke is not a DELETE. Like TrialExtender it needs DB and Emitter as well, and mounting
 	// is hard-gated on both; see the guard below for what each one is
 	// actually doing there, since this handler — unlike every other write on
 	// this surface — does not emit the audit row itself.

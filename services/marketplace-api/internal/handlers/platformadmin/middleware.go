@@ -118,9 +118,11 @@ var RequiredWriteCapabilities = map[string]string{
 	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/email-templates/:key/test-send"): "",
 	// #660: apply and revoke a console-minted tenant discount. BOTH
 	// directions are declared — a revoke is as much a billing change as a
-	// grant, and DELETE is a write by isWrite's rule.
-	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/billing/tenants/:tenantID/discount"):   "",
-	CapabilityKey(http.MethodDelete, "/api/v1/platform/admin/billing/tenants/:tenantID/discount"): "",
+	// grant. The revoke is a POST on its own path, not a DELETE on the
+	// apply's path; see the Register doc comment in
+	// billing_tenant_discount.go.
+	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/billing/tenants/:tenantID/discount"):        "",
+	CapabilityKey(http.MethodPost, "/api/v1/platform/admin/billing/tenants/:tenantID/discount/remove"): "",
 }
 
 // RequiredReadCapabilities declares reads that require a specific

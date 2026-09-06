@@ -30,9 +30,14 @@ func discountRouter(db *gorm.DB, svc platformadmin.TenantDiscounter) *gin.Engine
 	return r
 }
 
-func sendDiscount(r *gin.Engine, method, tenantID, key, body string) *httptest.ResponseRecorder {
+// sendDiscount drives one operation. It takes an OPERATION, not a method:
+// apply and remove are two distinct routes (POST .../discount and POST
+// .../discount/remove), and discountRoute is the single place that pairs a
+// method with its path — see its doc comment.
+func sendDiscount(r *gin.Engine, op, tenantID, key, body string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(method, discountPath(tenantID), bytes.NewBufferString(body))
+	method, path := discountRoute(op, tenantID)
+	req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", key)
 	r.ServeHTTP(rec, req)
@@ -47,15 +52,15 @@ func TestTenantDiscountIsIdempotentPerKey(t *testing.T) {
 	svc := &stubDiscounter{applyResult: twoStoreApplyResult()}
 	r := discountRouter(db, svc)
 
-	first := sendDiscount(r, http.MethodPost, discountTenantID.String(), "key-alpha", discountBody)
+	first := sendDiscount(r, opApply, discountTenantID.String(), "key-alpha", discountBody)
 	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
 
-	second := sendDiscount(r, http.MethodPost, discountTenantID.String(), "key-alpha", discountBody)
+	second := sendDiscount(r, opApply, discountTenantID.String(), "key-alpha", discountBody)
 	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
 	require.JSONEq(t, first.Body.String(), second.Body.String(), "same key must replay the same body")
 	require.Equal(t, 1, svc.applyCalls, "same key must NOT apply the discount a second time")
 
-	third := sendDiscount(r, http.MethodPost, discountTenantID.String(), "key-beta", discountBody)
+	third := sendDiscount(r, opApply, discountTenantID.String(), "key-beta", discountBody)
 	require.Equal(t, http.StatusOK, third.Code, third.Body.String())
 	require.Equal(t, 2, svc.applyCalls, "a DIFFERENT key is a new request")
 }
@@ -85,9 +90,9 @@ func TestTenantDiscountKeyDoesNotReplayAcrossTenants(t *testing.T) {
 	}
 	r := discountRouter(db, svc)
 
-	first := sendDiscount(r, http.MethodPost, tenantA.String(), "shared-key", discountBody)
+	first := sendDiscount(r, opApply, tenantA.String(), "shared-key", discountBody)
 	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
-	second := sendDiscount(r, http.MethodPost, tenantB.String(), "shared-key", discountBody)
+	second := sendDiscount(r, opApply, tenantB.String(), "shared-key", discountBody)
 	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
 
 	require.Equal(t, []uuid.UUID{tenantA, tenantB},
@@ -106,6 +111,11 @@ func TestTenantDiscountKeyDoesNotReplayAcrossTenants(t *testing.T) {
 // idempotency namespace: an operator reusing a key to REVOKE a discount they
 // just applied would otherwise get the apply's stored report back and the
 // discount would silently stay on.
+//
+// The separate routes do NOT provide this on their own, so this assertion
+// still bites: the scoped key is "tenant_discount:<op>:<tenant>:<key>" and
+// the request PATH never enters it. Drop the operation from that scope and
+// the two calls below collide again, whatever paths they arrived on.
 func TestTenantDiscountApplyAndRemoveDoNotShareAnIdempotencyScope(t *testing.T) {
 	db := testdb.NewDB(t, "idempotency_keys")
 	removed := twoStoreApplyResult()
@@ -113,13 +123,13 @@ func TestTenantDiscountApplyAndRemoveDoNotShareAnIdempotencyScope(t *testing.T) 
 	svc := &stubDiscounter{applyResult: twoStoreApplyResult(), removeResult: removed}
 	r := discountRouter(db, svc)
 
-	applied := sendDiscount(r, http.MethodPost, discountTenantID.String(), "same-key", discountBody)
+	applied := sendDiscount(r, opApply, discountTenantID.String(), "same-key", discountBody)
 	require.Equal(t, http.StatusOK, applied.Code, applied.Body.String())
 
-	revoked := sendDiscount(r, http.MethodDelete, discountTenantID.String(), "same-key", discountBody)
+	revoked := sendDiscount(r, opRemove, discountTenantID.String(), "same-key", discountBody)
 	require.Equal(t, http.StatusOK, revoked.Code, revoked.Body.String())
 
-	require.Equal(t, 1, svc.removeCalls, "the DELETE must run, not replay the POST's stored report")
+	require.Equal(t, 1, svc.removeCalls, "the remove call must run, not replay the apply's stored report")
 	body := map[string]any{}
 	require.NoError(t, json.Unmarshal(revoked.Body.Bytes(), &body))
 	require.Equal(t, "remove", body["operation"])
@@ -132,13 +142,13 @@ func TestTenantDiscountCorrectedRetryAfterDomainFailureProceeds(t *testing.T) {
 	svc := &stubDiscounter{applyErr: tenantdiscount.ErrNoStores}
 	r := discountRouter(db, svc)
 
-	refused := sendDiscount(r, http.MethodPost, discountTenantID.String(), "key-retry", discountBody)
+	refused := sendDiscount(r, opApply, discountTenantID.String(), "key-retry", discountBody)
 	require.Equal(t, http.StatusNotFound, refused.Code, refused.Body.String())
 
 	// The operator fixes whatever was wrong and retries the same request.
 	svc.applyErr = nil
 	svc.applyResult = twoStoreApplyResult()
-	retried := sendDiscount(r, http.MethodPost, discountTenantID.String(), "key-retry", discountBody)
+	retried := sendDiscount(r, opApply, discountTenantID.String(), "key-retry", discountBody)
 	require.Equal(t, http.StatusOK, retried.Code, retried.Body.String())
 	require.Equal(t, 2, svc.applyCalls, "the corrected retry must reach the domain")
 }
@@ -156,10 +166,10 @@ func TestTenantDiscountPartialResultCompletesTheKey(t *testing.T) {
 	svc := &stubDiscounter{applyResult: res}
 	r := discountRouter(db, svc)
 
-	first := sendDiscount(r, http.MethodPost, discountTenantID.String(), "key-partial", discountBody)
+	first := sendDiscount(r, opApply, discountTenantID.String(), "key-partial", discountBody)
 	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
 
-	second := sendDiscount(r, http.MethodPost, discountTenantID.String(), "key-partial", discountBody)
+	second := sendDiscount(r, opApply, discountTenantID.String(), "key-partial", discountBody)
 	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
 	require.JSONEq(t, first.Body.String(), second.Body.String())
 	require.Equal(t, 1, svc.applyCalls, "a partial result is a completed request, not a retryable one")

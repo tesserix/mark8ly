@@ -52,8 +52,11 @@ func (f *TenantDiscounterFuncs) Remove(ctx context.Context, in tenantdiscount.In
 	return f.RemoveFunc(ctx, in)
 }
 
-// BillingTenantDiscountHandler serves POST and DELETE
-// /admin/billing/tenants/:tenantID/discount (#660).
+// BillingTenantDiscountHandler serves the two tenant-discount writes (#660):
+// POST /admin/billing/tenants/:tenantID/discount to apply one and POST
+// /admin/billing/tenants/:tenantID/discount/remove to revoke it. Both are
+// POSTs carrying a JSON body — see Register for why the revoke is not a
+// DELETE.
 //
 // The path parameter is a BARE tenant uuid, like every other handler in this
 // package (tenant_lifecycle.go). The console addresses tenants with a
@@ -77,16 +80,38 @@ func NewBillingTenantDiscountHandler(db *gorm.DB, svc TenantDiscounter, logger *
 }
 
 // Register mounts both routes on the supplied group.
+//
+// The revoke is POST .../discount/remove and NOT DELETE .../discount. Do not
+// "restore REST correctness" by turning it back into a DELETE — the verb was
+// chosen against three specific facts, not by taste:
+//
+//  1. Both routes need a request body: the coupon id (a subscription may
+//     carry several discounts and a merchant's own promo must survive) and a
+//     mandatory reason. A DELETE body has no defined semantics in HTTP and
+//     intermediaries are permitted to drop it.
+//  2. The caller is tesserix-home's platform-api, whose federated requests
+//     are HMAC-signed over a sha256 OF THE BODY, and the path traverses an
+//     Istio waypoint. A hop that stripped the body would break the signature,
+//     and the failure would surface as a 401 — reading as an authentication
+//     problem rather than a stripped payload, and extremely hard to diagnose.
+//  3. platform-api's federation.Client has no DELETE helper at all, and Put's
+//     docstring there argues against a free-form method parameter precisely
+//     so a DELETE cannot be smuggled through a write helper.
+//
+// Changed while the endpoint was deployed but unreachable — nothing called it
+// yet, so it cost one PR. Once the console calls it, it costs three.
 func (h *BillingTenantDiscountHandler) Register(g *gin.RouterGroup) {
 	g.POST("/admin/billing/tenants/:tenantID/discount", h.apply)
-	g.DELETE("/admin/billing/tenants/:tenantID/discount", h.remove)
+	g.POST("/admin/billing/tenants/:tenantID/discount/remove", h.remove)
 }
 
-// tenantDiscountRequest is the body of BOTH routes. The DELETE carries one
+// tenantDiscountRequest is the body of BOTH routes. The revoke carries one
 // too: it needs the coupon id to know which discount to take off (the
 // subscription may carry several, and a merchant's own promo must survive),
-// and it needs a reason for the same rule that makes the POST need one —
-// tesserix-home#331's "removal is as audited as application".
+// and it needs a reason for the same rule that makes the apply need one —
+// tesserix-home#331's "removal is as audited as application". That both
+// routes must carry a body is also why the revoke is a POST rather than a
+// DELETE; see Register.
 type tenantDiscountRequest struct {
 	CouponID string `json:"coupon_id"`
 	Reason   string `json:"reason"`
@@ -154,8 +179,8 @@ func (h *BillingTenantDiscountHandler) handle(
 	idemKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	if idemKey == "" {
 		// A write that cannot be retried safely is worse than one that
-		// refuses to start. The DELETE is held to the same rule as the
-		// POST: revoking a discount is as much a billing change as
+		// refuses to start. The revoke is held to the same rule as the
+		// apply: revoking a discount is as much a billing change as
 		// granting one.
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "idempotency_key_required", "message": "the Idempotency-Key header is required for this endpoint",

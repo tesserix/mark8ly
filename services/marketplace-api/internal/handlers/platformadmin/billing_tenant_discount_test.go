@@ -84,21 +84,50 @@ func twoStoreApplyResult() tenantdiscount.Result {
 
 const discountBody = `{"coupon_id":"cpn_test","reason":"negotiated renewal discount"}`
 
-func discountPath(tenantID string) string {
-	return "/admin/billing/tenants/" + tenantID + "/discount"
+// The two operations this handler serves. Named constants rather than bare
+// strings because they now select a ROUTE as well as labelling a report:
+// see discountRoute.
+const (
+	opApply  = "apply"
+	opRemove = "remove"
+)
+
+// bothDiscountOps is the pair every "both routes" table below iterates.
+var bothDiscountOps = []string{opApply, opRemove}
+
+// discountRoute returns the method AND path for one operation, so no test
+// can vary one without the other.
+//
+// The two routes are not one path distinguished by verb: apply is POST
+// .../discount and remove is POST .../discount/remove. Remove was a DELETE
+// carrying a body until it was found to be unreachable-and-fragile — see
+// Register in billing_tenant_discount.go for the body-hash HMAC and Istio
+// waypoint reasoning. A table that varied only the method would address a
+// route that does not exist and would get gin's 404, not the handler.
+func discountRoute(op, tenantID string) (method, path string) {
+	base := "/admin/billing/tenants/" + tenantID + "/discount"
+	switch op {
+	case opApply:
+		return http.MethodPost, base
+	case opRemove:
+		return http.MethodPost, base + "/remove"
+	default:
+		panic("unknown tenant discount operation: " + op)
+	}
 }
 
 // doDiscount drives the handler with a nil DB, which is how the trial
 // extend unit tests skip the idempotency store: the missing-header check
 // still fires, but nothing touches Postgres. Integration coverage of the
 // idempotency dance lives in billing_tenant_discount_integration_test.go.
-func doDiscount(t *testing.T, svc platformadmin.TenantDiscounter, method, tenantID, body string, withKey bool) *httptest.ResponseRecorder {
+func doDiscount(t *testing.T, svc platformadmin.TenantDiscounter, op, tenantID, body string, withKey bool) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	platformadmin.NewBillingTenantDiscountHandler(nil, svc, nil).Register(r.Group(""))
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(method, discountPath(tenantID), bytes.NewBufferString(body))
+	method, path := discountRoute(op, tenantID)
+	req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	if withKey {
 		req.Header.Set("Idempotency-Key", "test-key-"+tenantID)
@@ -115,13 +144,13 @@ func decodeDiscount(t *testing.T, rec *httptest.ResponseRecorder) map[string]any
 }
 
 // Both routes refuse without an Idempotency-Key: a write that cannot be
-// retried safely is worse than one that refuses to start, and the DELETE
-// is as much a billing change as the POST.
+// retried safely is worse than one that refuses to start, and revoking a
+// discount is as much a billing change as granting one.
 func TestTenantDiscountRequiresIdempotencyKey(t *testing.T) {
-	for _, method := range []string{http.MethodPost, http.MethodDelete} {
-		t.Run(method, func(t *testing.T) {
+	for _, op := range bothDiscountOps {
+		t.Run(op, func(t *testing.T) {
 			svc := &stubDiscounter{applyResult: twoStoreApplyResult(), removeResult: twoStoreApplyResult()}
-			rec := doDiscount(t, svc, method, discountTenantID.String(), discountBody, false)
+			rec := doDiscount(t, svc, op, discountTenantID.String(), discountBody, false)
 			require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 			require.Equal(t, "idempotency_key_required", decodeDiscount(t, rec)["error"])
 			require.Zero(t, svc.applyCalls+svc.removeCalls, "the domain must not be called at all")
@@ -137,8 +166,8 @@ func TestTenantDiscountRejectsBlankIdempotencyKey(t *testing.T) {
 	r := gin.New()
 	platformadmin.NewBillingTenantDiscountHandler(nil, svc, nil).Register(r.Group(""))
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, discountPath(discountTenantID.String()),
-		bytes.NewBufferString(discountBody))
+	method, path := discountRoute(opApply, discountTenantID.String())
+	req := httptest.NewRequest(method, path, bytes.NewBufferString(discountBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", "   ")
 	r.ServeHTTP(rec, req)
@@ -152,10 +181,10 @@ func TestTenantDiscountRejectsBlankIdempotencyKey(t *testing.T) {
 // tenant_lifecycle.go already returns so the console handles every write on
 // this surface the same way.
 func TestTenantDiscountRejectsInvalidTenantID(t *testing.T) {
-	for _, method := range []string{http.MethodPost, http.MethodDelete} {
-		t.Run(method, func(t *testing.T) {
+	for _, op := range bothDiscountOps {
+		t.Run(op, func(t *testing.T) {
 			svc := &stubDiscounter{}
-			rec := doDiscount(t, svc, method, "not-a-uuid", discountBody, true)
+			rec := doDiscount(t, svc, op, "not-a-uuid", discountBody, true)
 			require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 			body := decodeDiscount(t, rec)
 			require.Equal(t, "invalid_tenant_id", body["error"])
@@ -170,17 +199,17 @@ func TestTenantDiscountRejectsInvalidTenantID(t *testing.T) {
 // clean 400, never a tenant id that half-parses.
 func TestTenantDiscountRejectsNamespacedTenantID(t *testing.T) {
 	svc := &stubDiscounter{}
-	rec := doDiscount(t, svc, http.MethodPost, "mark8ly:"+discountTenantID.String(), discountBody, true)
+	rec := doDiscount(t, svc, opApply, "mark8ly:"+discountTenantID.String(), discountBody, true)
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	require.Equal(t, "invalid_tenant_id", decodeDiscount(t, rec)["error"])
 	require.Zero(t, svc.applyCalls)
 }
 
 func TestTenantDiscountRequiresCouponID(t *testing.T) {
-	for _, method := range []string{http.MethodPost, http.MethodDelete} {
-		t.Run(method, func(t *testing.T) {
+	for _, op := range bothDiscountOps {
+		t.Run(op, func(t *testing.T) {
 			svc := &stubDiscounter{}
-			rec := doDiscount(t, svc, method, discountTenantID.String(),
+			rec := doDiscount(t, svc, op, discountTenantID.String(),
 				`{"coupon_id":"  ","reason":"why"}`, true)
 			require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 			body := decodeDiscount(t, rec)
@@ -195,10 +224,10 @@ func TestTenantDiscountRequiresCouponID(t *testing.T) {
 // removal is as audited as application, and an audit row saying what
 // happened without why is the gap this series exists to close.
 func TestTenantDiscountRequiresReason(t *testing.T) {
-	for _, method := range []string{http.MethodPost, http.MethodDelete} {
-		t.Run(method, func(t *testing.T) {
+	for _, op := range bothDiscountOps {
+		t.Run(op, func(t *testing.T) {
 			svc := &stubDiscounter{}
-			rec := doDiscount(t, svc, method, discountTenantID.String(),
+			rec := doDiscount(t, svc, op, discountTenantID.String(),
 				`{"coupon_id":"cpn_test","reason":"   "}`, true)
 			require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 			body := decodeDiscount(t, rec)
@@ -213,7 +242,7 @@ func TestTenantDiscountRequiresReason(t *testing.T) {
 // the field checks above ever run.
 func TestTenantDiscountRejectsUnparseableBody(t *testing.T) {
 	svc := &stubDiscounter{}
-	rec := doDiscount(t, svc, http.MethodPost, discountTenantID.String(), ``, true)
+	rec := doDiscount(t, svc, opApply, discountTenantID.String(), ``, true)
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	require.Equal(t, "invalid_request", decodeDiscount(t, rec)["error"])
 	require.Zero(t, svc.applyCalls)
@@ -233,7 +262,7 @@ func TestTenantDiscountTruncatesReasonOnARuneBoundary(t *testing.T) {
 	require.NoError(t, err)
 
 	svc := &stubDiscounter{applyResult: twoStoreApplyResult()}
-	rec := doDiscount(t, svc, http.MethodPost, discountTenantID.String(), string(body), true)
+	rec := doDiscount(t, svc, opApply, discountTenantID.String(), string(body), true)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
 	require.Equal(t, 1, svc.applyCalls)
@@ -247,7 +276,7 @@ func TestTenantDiscountTruncatesReasonOnARuneBoundary(t *testing.T) {
 // response carries one line per store rather than a single status.
 func TestTenantDiscountApplyReportsPerStore(t *testing.T) {
 	svc := &stubDiscounter{applyResult: twoStoreApplyResult()}
-	rec := doDiscount(t, svc, http.MethodPost, discountTenantID.String(), discountBody, true)
+	rec := doDiscount(t, svc, opApply, discountTenantID.String(), discountBody, true)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
 	body := decodeDiscount(t, rec)
@@ -279,14 +308,15 @@ func TestTenantDiscountApplyReportsPerStore(t *testing.T) {
 	require.NotNil(t, svc.gotIn.C, "the gin context must be forwarded so the audit row names the operator")
 }
 
-// DELETE reaches Remove, not Apply, and reports the same per-store shape.
+// The remove route reaches Remove, not Apply, and reports the same
+// per-store shape.
 func TestTenantDiscountRemoveReportsPerStore(t *testing.T) {
 	res := twoStoreApplyResult()
 	res.Stores[0].Outcome = tenantdiscount.OutcomeRemoved
 	res.Stores[1].Outcome = tenantdiscount.OutcomeNotApplied
 	svc := &stubDiscounter{removeResult: res}
 
-	rec := doDiscount(t, svc, http.MethodDelete, discountTenantID.String(), discountBody, true)
+	rec := doDiscount(t, svc, opRemove, discountTenantID.String(), discountBody, true)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
 	body := decodeDiscount(t, rec)
@@ -296,7 +326,7 @@ func TestTenantDiscountRemoveReportsPerStore(t *testing.T) {
 	require.Equal(t, "not_applied", stores[1].(map[string]any)["outcome"])
 
 	require.Equal(t, 1, svc.removeCalls)
-	require.Zero(t, svc.applyCalls, "DELETE must never apply a discount")
+	require.Zero(t, svc.applyCalls, "the remove route must never apply a discount")
 }
 
 // Every outcome the domain declares survives the trip to JSON under its own
@@ -321,7 +351,7 @@ func TestTenantDiscountSurfacesEveryOutcomeVerbatim(t *testing.T) {
 	}
 
 	svc := &stubDiscounter{applyResult: res}
-	rec := doDiscount(t, svc, http.MethodPost, discountTenantID.String(), discountBody, true)
+	rec := doDiscount(t, svc, opApply, discountTenantID.String(), discountBody, true)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
 	stores := decodeDiscount(t, rec)["stores"].([]any)
@@ -340,7 +370,7 @@ func TestTenantDiscountFailedStoreNeverEchoesDriverText(t *testing.T) {
 	res.Stores[1].Err = errors.New(`pq: relation "store_subscriptions" does not exist`)
 
 	svc := &stubDiscounter{applyResult: res}
-	rec := doDiscount(t, svc, http.MethodPost, discountTenantID.String(), discountBody, true)
+	rec := doDiscount(t, svc, opApply, discountTenantID.String(), discountBody, true)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.NotContains(t, rec.Body.String(), "does not exist", "driver text must never be echoed")
 
@@ -378,7 +408,7 @@ func TestTenantDiscountPerStoreDivergenceGetsItsOwnCode(t *testing.T) {
 			}
 
 			svc := &stubDiscounter{applyResult: res}
-			rec := doDiscount(t, svc, http.MethodPost, discountTenantID.String(), discountBody, true)
+			rec := doDiscount(t, svc, opApply, discountTenantID.String(), discountBody, true)
 			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 			require.NotContains(t, rec.Body.String(), "deadlock detected")
 
@@ -402,7 +432,7 @@ func TestTenantDiscountPerStoreStripeFailureIsNotTheDivergence(t *testing.T) {
 	res.Stores[0].Err = tenantdiscount.ErrStripeCall
 
 	svc := &stubDiscounter{applyResult: res}
-	rec := doDiscount(t, svc, http.MethodPost, discountTenantID.String(), discountBody, true)
+	rec := doDiscount(t, svc, opApply, discountTenantID.String(), discountBody, true)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
 	body := decodeDiscount(t, rec)
@@ -421,7 +451,7 @@ func TestTenantDiscountAllStoresFailedIsStatusFailed(t *testing.T) {
 		res.Stores[i].Err = tenantdiscount.ErrStripeCall
 	}
 	svc := &stubDiscounter{applyResult: res}
-	rec := doDiscount(t, svc, http.MethodPost, discountTenantID.String(), discountBody, true)
+	rec := doDiscount(t, svc, opApply, discountTenantID.String(), discountBody, true)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Equal(t, "failed", decodeDiscount(t, rec)["status"])
 }
@@ -455,8 +485,8 @@ func TestTenantDiscountDomainSentinelsMapToDistinctCodes(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := &stubDiscounter{applyErr: tc.err, removeErr: tc.err}
-			for _, method := range []string{http.MethodPost, http.MethodDelete} {
-				rec := doDiscount(t, svc, method, discountTenantID.String(), discountBody, true)
+			for _, op := range bothDiscountOps {
+				rec := doDiscount(t, svc, op, discountTenantID.String(), discountBody, true)
 				require.Equal(t, tc.status, rec.Code, rec.Body.String())
 				body := decodeDiscount(t, rec)
 				require.Equal(t, tc.code, body["error"])

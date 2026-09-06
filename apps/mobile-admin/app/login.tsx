@@ -413,7 +413,20 @@ export default function LoginScreen() {
           <GoogleMark />
         </IconButton>
 
-        {Platform.OS === 'ios' ? (
+        {/* Hidden under Zitadel, and NOT cosmetic: handleAppleSignIn has no
+            Zitadel branch, so it authenticates against Firebase and sets the
+            provider's `user` — which AuthGate ignores under Zitadel (it reads
+            zitadelSignedIn) and which api-client ignores too (it reads
+            zitadelSession). The tester would land back on /login with no
+            error at all, the #493 failure shape exactly. Offering a control
+            that cannot work is worse than not offering it.
+
+            This MUST come back before any App Store submission: Apple's
+            guideline 4.8 requires Sign in with Apple wherever another social
+            provider is offered, and Google IS offered here (#686 item 1). So
+            migrating Apple to Zitadel is a submission blocker, not a polish
+            item — see #686. */}
+        {Platform.OS === 'ios' && !isZitadelProvider() ? (
           <IconButton
             accessibilityLabel="Sign in with Apple"
             disabled={submitting}

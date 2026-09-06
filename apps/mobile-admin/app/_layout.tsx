@@ -1,6 +1,6 @@
 import '../global.css';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -15,6 +15,8 @@ import {
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { AuthProvider, useAuth } from '@repo/mobile-shared/auth/provider';
+import { zitadelSession } from '@repo/mobile-shared/auth/zitadel-session';
+import { isZitadelProvider } from '@/lib/auth-provider';
 import { useTenantStore } from '@repo/mobile-shared/stores/tenant-store';
 import { ApiError } from '@repo/mobile-shared/api/client';
 import { ErrorBoundary } from '../components/ErrorBoundary';
@@ -37,6 +39,33 @@ function AuthGate() {
   const { user, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  // Re-read the token whenever the route changes, so completing the OTP
+  // screen is noticed without waiting for a remount.
+  const segmentsKey = segments.join('/');
+  // Under Zitadel `user` is ALWAYS null — that field belongs to the Firebase
+  // SDK and this provider never populates it. Signed-in-ness comes from the
+  // token this app persisted at sign-in instead. Without this the gate below
+  // bounces every Zitadel session straight back to /login: the navigation
+  // succeeds, the guard undoes it, and the user sees a blank login form with
+  // no error anywhere — the #493 failure, reproduced exactly.
+  const [zitadelSignedIn, setZitadelSignedIn] = useState<boolean | null>(
+    isZitadelProvider() ? null : false,
+  );
+  useEffect(() => {
+    if (!isZitadelProvider()) return;
+    let cancelled = false;
+    zitadelSession
+      .accessTokenIfFresh()
+      .then((t) => {
+        if (!cancelled) setZitadelSignedIn(Boolean(t));
+      })
+      .catch(() => {
+        if (!cancelled) setZitadelSignedIn(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [segmentsKey]);
   const qc = useQueryClient();
   const hydrate = useTenantStore((s) => s.hydrate);
   const clearTenant = useTenantStore((s) => s.clear);
@@ -48,7 +77,14 @@ function AuthGate() {
 
   useEffect(() => {
     if (loading) return;
-    const inAuthGroup = segments[0] === 'login';
+    // null means the token read has not resolved yet. Redirecting on an
+    // unknown answer would race the check and bounce a signed-in user.
+    if (zitadelSignedIn === null) return;
+    // /otp is part of the sign-in flow: the caller is legitimately not
+    // authenticated there yet, so it must not be treated as a protected
+    // route.
+    const inAuthGroup = segments[0] === 'login' || segments[0] === 'otp';
+    const signedIn = isZitadelProvider() ? zitadelSignedIn : Boolean(user);
 
     // Identity changed → wipe cached queries + tenant so user A's data can't
     // leak into user B's session.
@@ -59,13 +95,13 @@ function AuthGate() {
     }
     previousUid.current = currentUid;
 
-    if (!user && !inAuthGroup) {
+    if (!signedIn && !inAuthGroup) {
       router.replace('/login');
-    } else if (user && inAuthGroup) {
+    } else if (signedIn && inAuthGroup) {
       router.replace('/');
     }
     SplashScreen.hideAsync();
-  }, [user, loading, segments, router, clearTenant, qc]);
+  }, [user, loading, segments, router, clearTenant, qc, zitadelSignedIn]);
 
   // Root stack (not Slot) so screens outside the tab group — like the
   // notifications inbox — push as cards ABOVE the tabs. Launching the inbox

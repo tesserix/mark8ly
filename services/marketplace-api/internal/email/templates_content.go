@@ -115,9 +115,16 @@ var billingHTMLFragments = map[TemplateID]string{
 	// when it holds a code that validated. Its numbers come from the promo
 	// row too, so a console edit to the discount cannot leave the email
 	// quoting a stale one.
+	//
+	// It deliberately does NOT tell the merchant where to enter the code.
+	// POST /admin/stores/:storeId/subscription/apply-promo has no caller in
+	// apps/ — there is no field in the merchant admin that redeems a promo
+	// code — so naming a screen would be the same class of untrue statement
+	// this template was fixed to stop making. Whoever authors the code in
+	// the console owns closing that gap first.
 	TemplateWinBack: `<h1 ` + h1 + `>Your store is still here</h1>
 <p><strong>{{.store_name}}</strong> has been closed for a month. Everything — products, orders, settings — is exactly as you left it.</p>
-<p>If you want to pick it back up, use the code <strong>{{.promo_code}}</strong> in your billing settings and we will take <strong>{{.percent_off}}% off your first {{.duration_months}} months</strong>.</p>`,
+<p>If you want to pick it back up, use the code <strong>{{.promo_code}}</strong> when you reopen your store and we will take <strong>{{.percent_off}}% off your first {{.duration_months}} months</strong>.</p>`,
 
 	// The offer-less variant. It carries no number and names no code,
 	// because when this key is chosen there is nothing to name. What is
@@ -242,7 +249,7 @@ Mark8ly`,
 
 {{.store_name}} has been closed for a month. Everything — products, orders, settings — is exactly as you left it.
 
-If you want to pick it back up, use the code {{.promo_code}} in your billing settings and we will take {{.percent_off}}% off your first {{.duration_months}} months.
+If you want to pick it back up, use the code {{.promo_code}} when you reopen your store and we will take {{.percent_off}}% off your first {{.duration_months}} months.
 
 Mark8ly`,
 

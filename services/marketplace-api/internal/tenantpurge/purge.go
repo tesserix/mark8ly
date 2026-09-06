@@ -374,6 +374,19 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		tenantScoped("break_glass_accounts", tenantID),  // 000072: tenant_id (PK)
 		tenantScoped("enterprise_api_keys", tenantID),   // 000068: tenant_id, store_id
 		tenantScoped("webhook_subscriptions", tenantID), // 000126: tenant_id, store_id
+		// PURGED, not excluded. The row is operational state — the coupon this
+		// service applies to subscriptions the tenant creates later — so once
+		// the tenant is gone there is nothing left for it to act on, and a
+		// surviving row would be a live instruction aimed at a tenant that no
+		// longer exists.
+		//
+		// It is NOT the record of the grant, which is what makes purging it
+		// safe: who granted the discount and why lives in the console's
+		// `tenant_pricing_override_coupons` (tesserix-home 0047), and the
+		// operator's act of applying it is an `actor_type = 'operator'` row in
+		// audit_logs, which the predicate above deliberately spares. Both
+		// survive this purge, so nothing accountable is destroyed by it.
+		tenantScoped("tenant_applied_discounts", tenantID), // 000132: tenant_id
 		// audit_logs is tenant-scoped EXCEPT for operator rows. A platform
 		// operator's action against a tenant (suspend, trial extend, purge)
 		// is a governance record about the OPERATOR, not tenant data, and it

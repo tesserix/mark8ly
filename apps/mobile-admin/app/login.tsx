@@ -23,7 +23,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useTenantStore } from '@repo/mobile-shared/stores/tenant-store';
 import { useEnvironment } from '@repo/mobile-shared/config/env';
 import { createZitadelSignIn, type SignInOutcome } from '@repo/mobile-shared/auth/zitadel-signin';
-import { ZitadelAuthError } from '@repo/mobile-shared/auth/zitadel-client';
+import { ZitadelAuthError, type IdpProvider } from '@repo/mobile-shared/auth/zitadel-client';
 import { isZitadelProvider } from '@/lib/auth-provider';
 
 const DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === 'demo';
@@ -169,7 +169,7 @@ export default function LoginScreen() {
         // Mapped from the server's stable code. `no_store` is a real,
         // actionable state — the account exists but has no store — and
         // `auth_unavailable` must never read as a wrong password.
-        const msg = zitadelErrorMessage(e);
+        const msg = zitadelErrorMessage(e, null);
         if (msg !== null) setError(msg);
         return;
       }
@@ -208,15 +208,23 @@ export default function LoginScreen() {
   }
 
   /**
-   * Maps a ZitadelAuthError to copy. Shared by the password and Google
-   * paths so the two cannot answer the same server code differently —
+   * Maps a ZitadelAuthError to copy. Shared by the password, Google and
+   * Apple paths so they cannot answer the same server code differently —
    * `auth_unavailable` in particular must never read as a wrong
    * credential, or a merchant retries a correct one indefinitely.
+   *
+   * `attempted` is which button was pressed, and null for the password
+   * form. It exists because two of these strings NAME a provider, and the
+   * screen renders this mapping rather than the server's own message
+   * (nothing here shows `e.message`) — so a merchant who tapped Apple and
+   * read "Couldn't sign you in with Google" would be told the wrong thing
+   * about which sign-in failed (#771).
    *
    * Returns null for a deliberate cancellation, matching
    * `authErrorMessage`'s own "stay silent" contract on the GIP path.
    */
-  function zitadelErrorMessage(e: ZitadelAuthError): string | null {
+  function zitadelErrorMessage(e: ZitadelAuthError, attempted: IdpProvider | null): string | null {
+    const providerName = attempted === 'apple' ? 'Apple' : 'Google';
     switch (e.code) {
       case 'cancelled':
         return null;
@@ -225,11 +233,18 @@ export default function LoginScreen() {
       case 'no_store':
         return "We couldn't find a store for this account. Did you finish onboarding?";
       case 'email_not_verified':
-        return "Google hasn't verified that email address, so we can't sign you in with it.";
+        // Only ever reachable on the federated path — auth-bff raises it
+        // from idp/finish, never from a password login — so naming the
+        // provider that failed to verify is accurate here.
+        return attempted === null
+          ? "That email address isn't verified, so we can't sign you in with it."
+          : `${providerName} hasn't verified that email address, so we can't sign you in with it.`;
       case 'email_ambiguous':
         return 'More than one account uses that email. Contact support to sort it out.';
       case 'google_sign_in_failed':
         return "Couldn't sign you in with Google. Try again.";
+      case 'apple_sign_in_failed':
+        return "Couldn't sign you in with Apple. Try again.";
       case 'unsupported_provider':
         return "That sign-in method isn't available.";
       case 'auth_unavailable':
@@ -285,7 +300,7 @@ export default function LoginScreen() {
       if (outcome.status === 'needs-link') setLinkTarget(outcome);
     } catch (e: unknown) {
       if (isZitadelProvider() && e instanceof ZitadelAuthError) {
-        const msg = zitadelErrorMessage(e);
+        const msg = zitadelErrorMessage(e, 'google');
         if (msg !== null) setError(msg);
         return;
       }
@@ -304,6 +319,23 @@ export default function LoginScreen() {
     setError(null);
     setSubmitting(true);
     try {
+      if (isZitadelProvider()) {
+        // Zitadel's IDP-intent flow, not expo-apple-authentication: the
+        // browser round trip is what proves the Apple identity, and the app
+        // never sees an Apple token at all. Mirrors handleGoogleSignIn's
+        // branch, including routing a step-up to the same screens (#771).
+        const out = await createZitadelSignIn(env.apiBaseUrl).signInWithApple(
+          {
+            redirectUrl: IDP_REDIRECT_URL,
+            openAuthSession: (authUrl, redirectUrl) =>
+              WebBrowser.openAuthSessionAsync(authUrl, redirectUrl),
+          },
+          setTenantId,
+        );
+        if (routeStepUp(out)) return;
+        router.replace('/(tabs)');
+        return;
+      }
       let outcome: SocialSignInOutcome;
       if (DEMO_AUTH) {
         outcome = await signInWithApple('demo-apple-token', '', null);
@@ -313,6 +345,11 @@ export default function LoginScreen() {
       }
       if (outcome.status === 'needs-link') setLinkTarget(outcome);
     } catch (e: unknown) {
+      if (isZitadelProvider() && e instanceof ZitadelAuthError) {
+        const msg = zitadelErrorMessage(e, 'apple');
+        if (msg !== null) setError(msg);
+        return;
+      }
       const msg = authErrorMessage(e);
       // null is the mapper's deliberate "user cancelled — stay silent" signal;
       // anything else always surfaces copy, falling back to generic wording so
@@ -413,20 +450,7 @@ export default function LoginScreen() {
           <GoogleMark />
         </IconButton>
 
-        {/* Hidden under Zitadel, and NOT cosmetic: handleAppleSignIn has no
-            Zitadel branch, so it authenticates against Firebase and sets the
-            provider's `user` — which AuthGate ignores under Zitadel (it reads
-            zitadelSignedIn) and which api-client ignores too (it reads
-            zitadelSession). The tester would land back on /login with no
-            error at all, the #493 failure shape exactly. Offering a control
-            that cannot work is worse than not offering it.
-
-            This MUST come back before any App Store submission: Apple's
-            guideline 4.8 requires Sign in with Apple wherever another social
-            provider is offered, and Google IS offered here (#686 item 1). So
-            migrating Apple to Zitadel is a submission blocker, not a polish
-            item — see #686. */}
-        {Platform.OS === 'ios' && !isZitadelProvider() ? (
+        {Platform.OS === 'ios' ? (
           <IconButton
             accessibilityLabel="Sign in with Apple"
             disabled={submitting}

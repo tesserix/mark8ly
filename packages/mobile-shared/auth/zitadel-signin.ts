@@ -60,8 +60,35 @@ export interface FederatedSignInOptions {
 }
 
 /**
+ * The per-provider half of the federated flow: everything about it that is
+ * NOT shared logic.
+ *
+ * `failureCode` must be distinct per provider, because the screen maps copy
+ * from the code alone — a merchant who tapped Apple and is told "Couldn't
+ * sign you in with Google" is being told something false about which of the
+ * two buttons failed.
+ */
+interface FederatedProviderCopy {
+  provider: IdpProvider;
+  failureCode: string;
+  failureMessage: string;
+}
+
+const GOOGLE: FederatedProviderCopy = {
+  provider: "google",
+  failureCode: "google_sign_in_failed",
+  failureMessage: "Couldn't sign you in with Google. Try again.",
+};
+
+const APPLE: FederatedProviderCopy = {
+  provider: "apple",
+  failureCode: "apple_sign_in_failed",
+  failureMessage: "Couldn't sign you in with Apple. Try again.",
+};
+
+/**
  * Maps a step-up to the outcome the screens branch on. One function so the
- * password and Google paths cannot route the same challenge to different
+ * password and federated paths cannot route the same challenge to different
  * screens.
  */
 function stepUpOutcome(res: StepUpRequired): SignInOutcome {
@@ -89,6 +116,64 @@ export function createZitadelSignIn(baseUrl: string) {
     if (res.tenantId) setTenantId(res.tenantId);
   }
 
+  /**
+   * A federated sign-in, end to end (#686 item 1 for Google, #771 for Apple).
+   *
+   * Four steps, and the middle two are why this cannot be one call:
+   *   1. ask the server for an authUrl (the return URL is the server's,
+   *      never ours — Zitadel does not validate successUrl at all);
+   *   2. open it in an authentication session, which closes when the
+   *      browser is sent to `redirectUrl`;
+   *   3. read `id`/`token` (or `error`) off the URL it closed with;
+   *   4. hand those, WITH the provider, to the server, which resolves the
+   *      identity, looks the tenant up by the VERIFIED email, and completes.
+   *
+   * Shared by both providers rather than copied: the two differ only in the
+   * provider name and the failure copy, and a second copy of this is exactly
+   * where the provider stops being threaded through to `idpFinish` — the one
+   * mistake that makes an Apple intent be checked against Google's IDP id.
+   *
+   * Returns the same union as `signIn`, including `kind: "otp"`: a fresh
+   * install is always an unrecognised device, so a step-up is the ordinary
+   * outcome here too, not an edge case.
+   */
+  async function federatedSignIn(
+    copy: FederatedProviderCopy,
+    opts: FederatedSignInOptions,
+    setTenantId: (id: string) => void,
+  ): Promise<SignInOutcome> {
+    const authUrl = await client.idpStart(copy.provider);
+
+    const session = await opts.openAuthSession(authUrl, opts.redirectUrl);
+    if (session.type !== "success" || !session.url) {
+      // Dismissing the sheet is a DECISION, not a failure. It gets its
+      // own code so the screen can stay silent, the way the existing
+      // provider path already does for a cancelled native sheet.
+      throw new ZitadelAuthError("cancelled", "");
+    }
+
+    const cb = parseIdpCallback(session.url);
+    if (cb.error) {
+      // The provider's own "the user said no" is a cancellation too,
+      // however it arrived. `error_description` is upstream free text and
+      // is deliberately never shown.
+      if (cb.error === "access_denied" || cb.error === "user_cancelled_login") {
+        throw new ZitadelAuthError("cancelled", "");
+      }
+      throw new ZitadelAuthError(copy.failureCode, copy.failureMessage);
+    }
+    if (!cb.intentId || !cb.intentToken) {
+      // The session closed on a URL carrying neither a result nor an
+      // error. Reporting it as a credential problem would be a lie.
+      throw new ZitadelAuthError(copy.failureCode, copy.failureMessage);
+    }
+
+    const res: SignInResult = await client.idpFinish(copy.provider, cb.intentId, cb.intentToken);
+    if (res.status === "step_up_required") return stepUpOutcome(res);
+    await persist(res, setTenantId);
+    return { kind: "signed_in", email: res.email, tenantId: res.tenantId };
+  }
+
   return {
     async signIn(
       email: string,
@@ -101,63 +186,34 @@ export function createZitadelSignIn(baseUrl: string) {
       return { kind: "signed_in", email: res.email, tenantId: res.tenantId };
     },
 
-    /**
-     * "Continue with Google", end to end (#686 item 1).
-     *
-     * Four steps, and the middle two are why this cannot be one call:
-     *   1. ask the server for an authUrl (the return URL is the server's,
-     *      never ours — Zitadel does not validate successUrl at all);
-     *   2. open it in an authentication session, which closes when the
-     *      browser is sent to `redirectUrl`;
-     *   3. read `id`/`token` (or `error`) off the URL it closed with;
-     *   4. hand those to the server, which resolves the identity, looks
-     *      the tenant up by the VERIFIED email, and completes.
-     *
-     * Returns the same union as `signIn`, including `kind: "otp"`: a
-     * fresh install is always an unrecognised device, so a step-up is the
-     * ordinary outcome here too, not an edge case.
-     */
+    /** "Continue with Google" (#686 item 1). */
     async signInWithGoogle(
       opts: FederatedSignInOptions,
       setTenantId: (id: string) => void,
     ): Promise<SignInOutcome> {
-      const provider: IdpProvider = "google";
-      const authUrl = await client.idpStart(provider);
+      return federatedSignIn(GOOGLE, opts, setTenantId);
+    },
 
-      const session = await opts.openAuthSession(authUrl, opts.redirectUrl);
-      if (session.type !== "success" || !session.url) {
-        // Dismissing the sheet is a DECISION, not a failure. It gets its
-        // own code so the screen can stay silent, the way the existing
-        // provider path already does for a cancelled native sheet.
-        throw new ZitadelAuthError("cancelled", "");
-      }
-
-      const cb = parseIdpCallback(session.url);
-      if (cb.error) {
-        // Google's own "the user said no" is a cancellation too, however
-        // it arrived. `error_description` is upstream free text and is
-        // deliberately never shown.
-        if (cb.error === "access_denied" || cb.error === "user_cancelled_login") {
-          throw new ZitadelAuthError("cancelled", "");
-        }
-        throw new ZitadelAuthError(
-          "google_sign_in_failed",
-          "Couldn't sign you in with Google. Try again.",
-        );
-      }
-      if (!cb.intentId || !cb.intentToken) {
-        // The session closed on a URL carrying neither a result nor an
-        // error. Reporting it as a credential problem would be a lie.
-        throw new ZitadelAuthError(
-          "google_sign_in_failed",
-          "Couldn't sign you in with Google. Try again.",
-        );
-      }
-
-      const res: SignInResult = await client.idpFinish(cb.intentId, cb.intentToken);
-      if (res.status === "step_up_required") return stepUpOutcome(res);
-      await persist(res, setTenantId);
-      return { kind: "signed_in", email: res.email, tenantId: res.tenantId };
+    /**
+     * "Sign in with Apple" (#771).
+     *
+     * Same flow as Google, and that is the point: Apple's guideline 4.8
+     * requires Sign in with Apple wherever another social provider is
+     * offered, so this had to become as real as the Google path rather
+     * than a button that authenticates against something the app no
+     * longer reads.
+     *
+     * Apple private relay ("Hide My Email") yields an
+     * @privaterelay.appleid.com address, which will not match a
+     * merchant's account email — the server's link-only finish refuses
+     * it. That refusal is correct and arrives here as the server's own
+     * code, not as apple_sign_in_failed.
+     */
+    async signInWithApple(
+      opts: FederatedSignInOptions,
+      setTenantId: (id: string) => void,
+    ): Promise<SignInOutcome> {
+      return federatedSignIn(APPLE, opts, setTenantId);
     },
 
     async verifyOtp(

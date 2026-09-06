@@ -115,14 +115,14 @@ func TestMobileIDPFinish_RejectsAnIntentFromAnotherIDP(t *testing.T) {
 	}
 }
 
-// Google is the only provider this change trusts. Naming any other one is
-// refused BEFORE Zitadel is called at all — adding a provider must be a
-// deliberate switch case, never something a request can opt into.
+// Google and Apple are the only providers this handler trusts. Naming any
+// other one is refused BEFORE Zitadel is called at all — adding a provider
+// must be a deliberate switch case, never something a request can opt into.
 func TestMobileIDPFinish_RejectsAnUnsupportedProviderWithoutCallingZitadel(t *testing.T) {
-	for _, provider := range []string{"apple", "github", "anything"} {
+	for _, provider := range []string{"github", "facebook", "anything"} {
 		t.Run(provider, func(t *testing.T) {
 			c := unreachableZitadel(t)
-			h := NewHandler(c, nil).WithGoogleIDPID(testGoogleIDPID)
+			h := NewHandler(c, nil).WithGoogleIDPID(testGoogleIDPID).WithAppleIDPID(testAppleIDPID)
 
 			rec, body := postMobileIDP(t, h.mobileIDPFinish, "/auth/zitadel/mobile/idp/finish",
 				`{"auth_request_id":"V2_1","intent_id":"i1","intent_token":"it1","workspace_tenant":"t1","provider":"`+provider+`"}`)
@@ -146,10 +146,10 @@ func TestMobileIDPStart_RejectsAnUnsupportedProvider(t *testing.T) {
 		t.Fatalf("allowlist: %v", err)
 	}
 	c := unreachableZitadel(t)
-	h := NewHandler(c, nil).WithGoogleIDPID(testGoogleIDPID).WithReturnURLAllowlist(allow)
+	h := NewHandler(c, nil).WithGoogleIDPID(testGoogleIDPID).WithAppleIDPID(testAppleIDPID).WithReturnURLAllowlist(allow)
 
 	rec, body := postMobileIDP(t, h.idpStart, "/auth/zitadel/mobile/idp/start",
-		`{"return_url":"https://admin.mark8ly.com/auth/idp/mobile","provider":"apple"}`)
+		`{"return_url":"https://admin.mark8ly.com/auth/idp/mobile","provider":"github"}`)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())

@@ -144,8 +144,19 @@ func readRawEmail(raw map[string]any) (email string, verified bool) {
 	if v, ok := raw["email"].(string); ok {
 		email = v
 	}
-	if v, ok := raw["email_verified"].(bool); ok {
+	// email_verified is a Boolean for Google but Apple documents it as
+	// String OR Boolean and has historically sent the string "true", so a
+	// bool-only read would refuse every Apple link with email_not_verified
+	// — a type bug wearing a policy decision's clothes. Only a real
+	// boolean and the exact lowercase strings "true"/"false" are
+	// recognised: this NORMALISES a documented claim type, it does not
+	// loosen the gate. Anything else — a number, "TRUE", "yes", nil, an
+	// absent claim — still falls soft to unverified.
+	switch v := raw["email_verified"].(type) {
+	case bool:
 		verified = v
+	case string:
+		verified = v == "true"
 	}
 	return email, verified
 }

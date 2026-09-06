@@ -111,6 +111,14 @@ type Handler struct {
 	// WithGoogleIDPID.
 	googleIDPID string
 
+	// appleIDPID is the id of the Apple IDP on the same Zitadel org, read
+	// from config for exactly the reasons googleIDPID is: it is
+	// environment-specific and repointing it must not need a redeploy.
+	// Empty means an intent naming provider "apple" is refused as an
+	// incomplete deployment (errIDPProviderNotConfigured), never silently
+	// resolved to some other provider's id — see WithAppleIDPID.
+	appleIDPID string
+
 	// orgID scopes FindUserByVerifiedEmail (idp/finish's link path) to the
 	// merchant org. Required for that call to run at all — see
 	// Client.FindUserByVerifiedEmail's doc for why an unscoped, instance-
@@ -153,6 +161,15 @@ func (h *Handler) WithReturnURLAllowlist(a ReturnURLAllowlist) *Handler {
 // configuration rather than a constant.
 func (h *Handler) WithGoogleIDPID(id string) *Handler {
 	h.googleIDPID = id
+	return h
+}
+
+// WithAppleIDPID sets the Zitadel org's Apple IDP id that idp/start opens
+// an intent against when the caller names provider "apple". See the
+// appleIDPID field doc for why this is configuration rather than a
+// constant.
+func (h *Handler) WithAppleIDPID(id string) *Handler {
+	h.appleIDPID = id
 	return h
 }
 
@@ -466,11 +483,13 @@ type idpStartRequest struct {
 	Provider string `json:"provider"`
 }
 
-// providerGoogle is the only federated provider this handler accepts.
-// Named rather than inlined so a later provider (Apple is provisioned on
-// the same Zitadel org but never exercised — see README.md) is added by
-// extending idpIDForProvider's switch and nothing else.
-const providerGoogle = "google"
+// providerGoogle and providerApple are the federated providers this
+// handler accepts. Named rather than inlined so a later provider is added
+// by extending idpIDForProvider's switch and nothing else.
+const (
+	providerGoogle = "google"
+	providerApple  = "apple"
+)
 
 var (
 	// errUnsupportedIDPProvider means the caller named a provider this
@@ -493,9 +512,16 @@ var (
 // intent against the WEAKER provider, register victim@merchant.com there,
 // and have idpFinish trust that provider's email_verified claim exactly
 // like Google's — which is an account-takeover primitive, not a
-// convenience. An Apple IDP already exists on the same org (README.md), so
-// this is not hypothetical. Adding a provider here is therefore a
-// deliberate act of trusting it, one switch case at a time.
+// convenience. Adding a provider here is therefore a deliberate act of
+// trusting it, one switch case at a time.
+//
+// Apple is such a deliberate act: the Apple IDP on the same org is now
+// accepted, but ONLY for a request that named "apple", and an intent that
+// came from it is still refused for a request that named "google" (and
+// vice versa). That mutual refusal is the whole property — it is what
+// stops an intent opened against one provider being spent as the other.
+// The empty string keeps meaning Google, because the web callers predate
+// the provider field.
 func (h *Handler) idpIDForProvider(provider string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "", providerGoogle:
@@ -503,6 +529,11 @@ func (h *Handler) idpIDForProvider(provider string) (string, error) {
 			return "", errIDPProviderNotConfigured
 		}
 		return h.googleIDPID, nil
+	case providerApple:
+		if h.appleIDPID == "" {
+			return "", errIDPProviderNotConfigured
+		}
+		return h.appleIDPID, nil
 	default:
 		return "", errUnsupportedIDPProvider
 	}
@@ -517,7 +548,7 @@ func (h *Handler) respondIDPProviderError(ctx context.Context, w http.ResponseWr
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "unsupported_provider"})
 		return
 	}
-	slog.ErrorContext(ctx, "zitadellogin: idp request: no idp id configured for the requested provider (see WithGoogleIDPID)", "err", err)
+	slog.ErrorContext(ctx, "zitadellogin: idp request: no idp id configured for the requested provider (see WithGoogleIDPID/WithAppleIDPID)", "err", err)
 	writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error"})
 }
 
@@ -684,16 +715,17 @@ func (h *Handler) idpFinishMode(w http.ResponseWriter, r *http.Request, issueTok
 		return
 	}
 
-	// This endpoint is Google sign-in specifically, not "any federated
-	// identity Zitadel happens to have" — the instance can (and, as of
-	// 2026-09-04, does) carry more than one IDP. Without this check, an
+	// This endpoint is the provider the CALLER named specifically, not
+	// "any federated identity Zitadel happens to have" — the instance
+	// carries more than one IDP (Google and Apple). Without this check, an
 	// intent from a WEAKER or attacker-influenced provider would be
-	// accepted here and its email_verified claim trusted exactly like
-	// Google's: start an intent against that other provider, register
+	// accepted here and its email_verified claim trusted exactly like the
+	// named one's: start an intent against that other provider, register
 	// victim@merchant.com there, and this endpoint would link it straight
 	// onto the victim's Zitadel account. Every trust decision below this
-	// line assumes "Google asserted this" — this is what actually makes
-	// that assumption true, rather than merely convenient to write.
+	// line assumes "the named provider asserted this" — this is what
+	// actually makes that assumption true, rather than merely convenient
+	// to write.
 	if identity.IDPID == "" || identity.IDPID != expectedIDPID {
 		slog.WarnContext(ctx, "zitadellogin: idp finish rejected: intent did not come from the idp the caller named")
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unexpected_idp"})

@@ -34,6 +34,7 @@ func TestZitadelHandlersUseTheCorrectReturnURLAllowlist(t *testing.T) {
 		ZitadelLoginClientToken:       "pat",
 		MarketplaceInternalAuthSecret: "secret",
 		ZitadelGoogleIDPID:            "idp-1",
+		ZitadelAppleIDPID:             "idp-apple-1",
 		ZitadelOrgID:                  "org-1",
 		// Deliberately non-overlapping domains — a suffix under one must
 		// never accidentally also satisfy the other, which would make this

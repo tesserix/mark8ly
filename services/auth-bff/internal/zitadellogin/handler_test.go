@@ -19,6 +19,14 @@ import (
 // carrying it — see the idp-id pinning check in idpFinish.
 const testGoogleIDPID = "idp-1"
 
+// testAppleIDPID is the fixed Apple IDP id the provider-switch and
+// cross-provider pin tests use. Deliberately distinct from
+// testGoogleIDPID: the two must never resolve to the same value, or a
+// test that claims to prove the pin refuses a cross-provider intent would
+// pass for the wrong reason. The real id lives in config
+// (ZITADEL_APPLE_IDP_ID), never in Go.
+const testAppleIDPID = "idp-apple-1"
+
 func TestLoginCollapsesUnknownUserAndWrongPasswordIntoOneAnswer(t *testing.T) {
 	// A different status or message for "no such user" is an account-
 	// enumeration oracle. Both must look identical to the browser.

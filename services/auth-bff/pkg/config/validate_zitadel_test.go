@@ -15,6 +15,7 @@ func zitadelReadyConfig() Config {
 		ZitadelReturnURLAllowedHostsAdmin:         []string{"admin.mark8ly.com"},
 		ZitadelReturnURLAllowedSuffixesStorefront: []string{"mark8ly.com"},
 		ZitadelGoogleIDPID:                        "386381087862948767",
+		ZitadelAppleIDPID:                         "389173155337339395",
 		ZitadelOrgID:                              "339070697432875523",
 		PlatformAPIURL:                            "http://mark8ly-platform-api.mark8ly.svc.cluster.local:8086",
 	}
@@ -60,6 +61,7 @@ func TestValidateZitadelRefusesOnEachMissingValue(t *testing.T) {
 			c.ZitadelReturnURLAllowedSuffixesStorefront = nil
 		}, "ZITADEL_RETURN_URL_ALLOWED_HOSTS_STOREFRONT"},
 		{"google idp id", func(c *Config) { c.ZitadelGoogleIDPID = "" }, "ZITADEL_GOOGLE_IDP_ID"},
+		{"apple idp id", func(c *Config) { c.ZitadelAppleIDPID = "" }, "ZITADEL_APPLE_IDP_ID"},
 		{"org id", func(c *Config) { c.ZitadelOrgID = "" }, "ZITADEL_ORG_ID"},
 		{"platform api url", func(c *Config) { c.PlatformAPIURL = "" }, "PLATFORM_API_URL"},
 	}

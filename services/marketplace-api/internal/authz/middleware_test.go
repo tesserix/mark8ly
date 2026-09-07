@@ -26,6 +26,9 @@ func (errClient) CheckMembership(context.Context, string, string) (bool, error) 
 func (errClient) GetRole(context.Context, string, string) (Role, error) {
 	return "", errors.New("boom")
 }
+func (errClient) WriteRole(context.Context, string, Role, string) error {
+	return errors.New("boom")
+}
 
 func newRouter(mw *Middleware, required Role, userID, tenantID string) *gin.Engine {
 	r := gin.New()

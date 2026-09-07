@@ -154,12 +154,16 @@ export const subscriptionCopy = {
       'Add the white-label app to publish iOS and Android builds of your storefront.',
     whiteLabelAppAddCta: 'Add white-label app',
 
-    // ─── Setup / first-run ──────────────────────────────────────────────
-    setupHeading: 'Set up billing',
-    setupDescription:
-      'Finish setting up your billing account to see your plan, payment method, and invoices.',
-    setupCta: 'Set up billing',
-    setupInProgress: 'Setting up\u2026',
+    // ─── Missing subscription row ───────────────────────────────────────
+    //
+    // Replaced the old "Set up billing" CTA (#827). That button existed
+    // because nothing created a subscription row at signup, so every store
+    // arrived here needing one — and pressing it was what started the 90-day
+    // trial. Onboarding creates the row now, so a store without one is our
+    // data problem, and the copy says so rather than handing the merchant a
+    // button to run our migration.
+    missingSubscription:
+      'We can\u2019t find your billing details. This is on our side \u2014 contact us and we\u2019ll put it right.',
 
     // ─── Error / loading states ─────────────────────────────────────────
     loadingError: 'Something went wrong loading your plan.',

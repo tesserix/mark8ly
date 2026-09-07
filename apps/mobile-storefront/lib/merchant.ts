@@ -14,8 +14,6 @@ export interface MerchantConfig {
   defaultStoreSlug: string;
   /** Mark8ly storefront API base URL — always prod for white-label apps. */
   apiBaseUrl: string;
-  /** Customer GIP/Identity Platform tenant pool id. */
-  gipTenantId: string;
   /** Short brand label for UI strings ("Welcome to Acme"). */
   shortName: string;
   /** Build-time palette. Runtime branding from /storefront/branding can override. */
@@ -45,7 +43,6 @@ function readMerchantFromExpoConfig(): MerchantConfig {
     merchantSlug: extra.merchantSlug,
     defaultStoreSlug: extra.defaultStoreSlug,
     apiBaseUrl: extra.apiBaseUrl ?? "https://api.mark8ly.com",
-    gipTenantId: extra.gipTenantId ?? "",
     shortName: extra.shortName ?? "Shop",
     colors: extra.colors ?? {
       primary: "#0E0E0C",

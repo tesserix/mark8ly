@@ -59,7 +59,6 @@ if (!fs.existsSync(configPath)) {
  * @property {string} colors.accent
  * @property {string} colors.background
  * @property {string} colors.text
- * @property {string} gipTenantId       Customer GIP/Identity Platform tenant pool id.
  */
 
 /** @type {MerchantConfig} */
@@ -74,7 +73,6 @@ const REQUIRED = [
   "associatedDomain",
   "defaultStoreSlug",
   "colors",
-  "gipTenantId",
 ];
 for (const key of REQUIRED) {
   if (!merchant[key]) {
@@ -133,18 +131,16 @@ module.exports = {
       "expo-router",
       "expo-secure-store",
       "expo-notifications",
-      "@react-native-firebase/app",
     ],
     // `extra` is the runtime side of the merchant config — every value
     // here lands in Constants.expoConfig.extra at runtime so the app can
-    // bind to the right merchant slug, API base, palette, and identity
-    // pool without rebuilding.
+    // bind to the right merchant slug, API base, and palette without
+    // rebuilding.
     extra: {
       eas: { projectId: merchant.easProjectId || "" },
       apiBaseUrl: "https://api.mark8ly.com",
       merchantSlug: merchant.merchantSlug,
       defaultStoreSlug: merchant.defaultStoreSlug,
-      gipTenantId: merchant.gipTenantId,
       shortName: merchant.shortName || merchant.name,
       colors: merchant.colors,
     },

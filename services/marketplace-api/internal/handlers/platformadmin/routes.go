@@ -244,6 +244,19 @@ type Deps struct {
 	// unsetting CONSOLE_CATALOG_* in the chart reverts this surface to the
 	// compiled amounts without a code change. See compiledPriceCatalog.
 	PriceCatalog CatalogResolver
+
+	// CatalogMode is CONSOLE_CATALOG_MODE (cfg.ConsoleCatalogMode), reported
+	// verbatim by GET /admin/billing/entitlements so the console knows which
+	// catalog mode this process reads — `test` today, moving at the Stripe
+	// live-key swap. It is a plain string, not a dependency: an empty value
+	// unmounts nothing and is published as empty rather than defaulted to
+	// `test`, because a console told `test` by a service that was never
+	// configured would parity-check the wrong mode and report agreement.
+	//
+	// Both main.go call sites must set it. A site that forgets leaves that
+	// binary path reporting an empty mode while every other field looks
+	// right, which reads as a configuration problem rather than a wiring one.
+	CatalogMode string
 }
 
 // TenantGateInvalidator drops a tenant's cached admin-gate status. Declared
@@ -333,6 +346,13 @@ func Register(g *gin.RouterGroup, deps Deps) {
 	if deps.AllSubscriptions != nil && deps.TenantDirectory != nil {
 		NewBillingSubscriptionsHandler(deps.AllSubscriptions, deps.TenantDirectory, deps.DB, deps.PriceCatalog, deps.Logger).Register(group)
 	}
+
+	// The compiled plan-feature matrix (tesserix-home#146). Mounted
+	// unconditionally, beside health and the lifecycle reason codes and for
+	// the same reason: it reads a compile-time constant and depends on
+	// nothing. Gating it on the billing dependencies above would hide what is
+	// enforced in exactly the deployment where the console needs to see it.
+	NewBillingEntitlementsHandler(deps.CatalogMode, deps.Logger).Register(group)
 
 	if deps.Tickets != nil {
 		NewTicketsHandler(deps.DB, deps.Tickets, deps.Logger).Register(group)

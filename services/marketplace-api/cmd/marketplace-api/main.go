@@ -2484,6 +2484,7 @@ func main() {
 			EmailTemplateRegistry:   templateLoader,
 			EmailTemplateTestSender: templateTestSender,
 			PriceCatalog:            newServingCatalogResolver(cfg, log),
+			CatalogMode:             cfg.ConsoleCatalogMode,
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		public.RegisterPublic(r.Group("/api/v1"), public.PublicDeps{
@@ -2636,6 +2637,7 @@ func main() {
 				EmailTemplateRegistry:   templateLoader,
 				EmailTemplateTestSender: templateTestSender,
 				PriceCatalog:            newServingCatalogResolver(cfg, log),
+				CatalogMode:             cfg.ConsoleCatalogMode,
 			})
 			// Public Delhivery webhook receiver. Mounted on the admin
 			// engine because the merchant-configured URL points at the

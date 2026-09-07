@@ -4,6 +4,7 @@
 package plangate
 
 import (
+	"slices"
 	"time"
 
 	"github.com/mark8ly/marketplace-api/internal/subscription"
@@ -111,6 +112,44 @@ func AllFeatures() []Feature {
 	out := make([]Feature, len(allFeatures))
 	copy(out, allFeatures)
 	return out
+}
+
+// AllPlans returns the plans featureMatrix actually keys on, public tier
+// order first.
+//
+// DERIVED from the matrix, never restated. A caller that publishes "the
+// plans" from a hand-written list is describing a matrix that may no
+// longer exist: a plan added to or removed from featureMatrix would leave
+// that list silently wrong while every one of its own tests still passed.
+// The public-plan order is used only for ORDERING; membership comes from
+// the matrix alone, and any matrix plan the public list does not know
+// about is appended (sorted, so the output is deterministic) rather than
+// dropped.
+//
+// subscription.PlanMarketplace is deliberately absent from the matrix —
+// it is a hidden platform tier and platform routes bypass plangate — so
+// it is absent here too. That is not an omission to fix: AllFeatureLimits
+// would answer all-Disabled for it, which would publish "marketplace is a
+// plan on which nothing is enabled" rather than "marketplace is not gated
+// by this matrix".
+func AllPlans() []subscription.SubscriptionPlan {
+	out := make([]subscription.SubscriptionPlan, 0, len(featureMatrix))
+	seen := make(map[subscription.SubscriptionPlan]bool, len(featureMatrix))
+	for _, p := range subscription.AllPublicPlans() {
+		if _, ok := featureMatrix[p]; ok {
+			out = append(out, p)
+			seen[p] = true
+		}
+	}
+
+	rest := make([]subscription.SubscriptionPlan, 0)
+	for p := range featureMatrix {
+		if !seen[p] {
+			rest = append(rest, p)
+		}
+	}
+	slices.Sort(rest)
+	return append(out, rest...)
 }
 
 type planLimits map[Feature]int

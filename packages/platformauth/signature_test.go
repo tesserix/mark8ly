@@ -1,4 +1,4 @@
-package platformadmin_test
+package platformauth_test
 
 import (
 	"encoding/json"
@@ -8,14 +8,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
+	"github.com/mark8ly/platformauth"
 )
 
 // The canonical string is where every design decision lives — field order,
 // separator, how an absent body is hashed. Assert it byte-exactly. If the
 // console disagrees with mark8ly, this is the artifact both sides compare.
 func TestCanonicalStringIsExact(t *testing.T) {
-	in := platformadmin.SignatureInput{
+	in := platformauth.SignatureInput{
 		Method:     "get",
 		Path:       "/api/v1/platform/admin/audit-logs",
 		RawQuery:   "since_hours=720&limit=200",
@@ -26,7 +26,7 @@ func TestCanonicalStringIsExact(t *testing.T) {
 		Capability: "audit.read",
 	}
 
-	got, err := platformadmin.CanonicalString(in)
+	got, err := platformauth.CanonicalString(in)
 	require.NoError(t, err)
 
 	// sha256 of the empty string, for the absent body.
@@ -45,29 +45,29 @@ func TestCanonicalStringIsExact(t *testing.T) {
 }
 
 func TestCanonicalQuerySortsKeysAndValues(t *testing.T) {
-	got, err := platformadmin.CanonicalQuery("b=2&a=z&a=a")
+	got, err := platformauth.CanonicalQuery("b=2&a=z&a=a")
 	require.NoError(t, err)
 	require.Equal(t, "a=a&a=z&b=2", got)
 }
 
 func TestCanonicalQueryEmpty(t *testing.T) {
-	got, err := platformadmin.CanonicalQuery("")
+	got, err := platformauth.CanonicalQuery("")
 	require.NoError(t, err)
 	require.Equal(t, "", got)
 }
 
 func TestVerifyAcceptsOwnSignature(t *testing.T) {
-	in := platformadmin.SignatureInput{
+	in := platformauth.SignatureInput{
 		Method: "POST", Path: "/api/v1/platform/admin/tenants/t1/suspend",
 		Body:      []byte(`{"reason_code":"fraud"}`),
 		Timestamp: "1755859200", Nonce: "n1",
 		Operator: "op_7f3a", Capability: "tenant.suspend",
 	}
 
-	sig, err := platformadmin.Sign("shhh", in)
+	sig, err := platformauth.Sign("shhh", in)
 	require.NoError(t, err)
 
-	ok, err := platformadmin.Verify("shhh", sig, in)
+	ok, err := platformauth.Verify("shhh", sig, in)
 	require.NoError(t, err)
 	require.True(t, ok)
 }
@@ -75,24 +75,24 @@ func TestVerifyAcceptsOwnSignature(t *testing.T) {
 // Each signed component must actually change the signature. A component that
 // does not is a component an attacker can swap after signing.
 func TestVerifyRejectsTampering(t *testing.T) {
-	base := platformadmin.SignatureInput{
+	base := platformauth.SignatureInput{
 		Method: "POST", Path: "/api/v1/platform/admin/tenants/t1/suspend",
 		Body:      []byte(`{"reason_code":"fraud"}`),
 		Timestamp: "1755859200", Nonce: "n1",
 		Operator: "op_7f3a", Capability: "tenant.suspend",
 	}
-	sig, err := platformadmin.Sign("shhh", base)
+	sig, err := platformauth.Sign("shhh", base)
 	require.NoError(t, err)
 
-	tampered := map[string]func(*platformadmin.SignatureInput){
-		"method":     func(i *platformadmin.SignatureInput) { i.Method = "GET" },
-		"path":       func(i *platformadmin.SignatureInput) { i.Path = "/api/v1/platform/admin/tenants/t2/suspend" },
-		"query":      func(i *platformadmin.SignatureInput) { i.RawQuery = "force=true" },
-		"body":       func(i *platformadmin.SignatureInput) { i.Body = []byte(`{"reason_code":"other"}`) },
-		"timestamp":  func(i *platformadmin.SignatureInput) { i.Timestamp = "1755859999" },
-		"nonce":      func(i *platformadmin.SignatureInput) { i.Nonce = "n2" },
-		"operator":   func(i *platformadmin.SignatureInput) { i.Operator = "op_evil" },
-		"capability": func(i *platformadmin.SignatureInput) { i.Capability = "tenant.purge" },
+	tampered := map[string]func(*platformauth.SignatureInput){
+		"method":     func(i *platformauth.SignatureInput) { i.Method = "GET" },
+		"path":       func(i *platformauth.SignatureInput) { i.Path = "/api/v1/platform/admin/tenants/t2/suspend" },
+		"query":      func(i *platformauth.SignatureInput) { i.RawQuery = "force=true" },
+		"body":       func(i *platformauth.SignatureInput) { i.Body = []byte(`{"reason_code":"other"}`) },
+		"timestamp":  func(i *platformauth.SignatureInput) { i.Timestamp = "1755859999" },
+		"nonce":      func(i *platformauth.SignatureInput) { i.Nonce = "n2" },
+		"operator":   func(i *platformauth.SignatureInput) { i.Operator = "op_evil" },
+		"capability": func(i *platformauth.SignatureInput) { i.Capability = "tenant.purge" },
 	}
 
 	for name, mutate := range tampered {
@@ -101,7 +101,7 @@ func TestVerifyRejectsTampering(t *testing.T) {
 			in.Body = append([]byte(nil), base.Body...)
 			mutate(&in)
 
-			ok, err := platformadmin.Verify("shhh", sig, in)
+			ok, err := platformauth.Verify("shhh", sig, in)
 			require.NoError(t, err)
 			require.False(t, ok, "%s must be covered by the signature", name)
 		})
@@ -109,11 +109,11 @@ func TestVerifyRejectsTampering(t *testing.T) {
 }
 
 func TestVerifyRejectsWrongSecret(t *testing.T) {
-	in := platformadmin.SignatureInput{Method: "GET", Path: "/x", Timestamp: "1", Nonce: "n"}
-	sig, err := platformadmin.Sign("right", in)
+	in := platformauth.SignatureInput{Method: "GET", Path: "/x", Timestamp: "1", Nonce: "n"}
+	sig, err := platformauth.Sign("right", in)
 	require.NoError(t, err)
 
-	ok, err := platformadmin.Verify("wrong", sig, in)
+	ok, err := platformauth.Verify("wrong", sig, in)
 	require.NoError(t, err)
 	require.False(t, ok)
 }
@@ -123,14 +123,14 @@ func TestVerifyRejectsWrongSecret(t *testing.T) {
 // string-equality check against our (always-lowercase) output would fail
 // this with an unexplained 401.
 func TestVerifyAcceptsUppercaseHexSignature(t *testing.T) {
-	in := platformadmin.SignatureInput{
+	in := platformauth.SignatureInput{
 		Method: "GET", Path: "/x", Timestamp: "1", Nonce: "n",
 		Operator: "op_7f3a", Capability: "audit.read",
 	}
-	sig, err := platformadmin.Sign("shhh", in)
+	sig, err := platformauth.Sign("shhh", in)
 	require.NoError(t, err)
 
-	ok, err := platformadmin.Verify("shhh", strings.ToUpper(sig), in)
+	ok, err := platformauth.Verify("shhh", strings.ToUpper(sig), in)
 	require.NoError(t, err)
 	require.True(t, ok)
 }
@@ -139,9 +139,9 @@ func TestVerifyAcceptsUppercaseHexSignature(t *testing.T) {
 // verification, not a caller error — indistinguishable in effect from a
 // client that simply got the signature wrong.
 func TestVerifyRejectsMalformedHexSignature(t *testing.T) {
-	in := platformadmin.SignatureInput{Method: "GET", Path: "/x", Timestamp: "1", Nonce: "n"}
+	in := platformauth.SignatureInput{Method: "GET", Path: "/x", Timestamp: "1", Nonce: "n"}
 
-	ok, err := platformadmin.Verify("shhh", "not-hex-at-all!!", in)
+	ok, err := platformauth.Verify("shhh", "not-hex-at-all!!", in)
 	require.NoError(t, err)
 	require.False(t, ok)
 }
@@ -149,16 +149,16 @@ func TestVerifyRejectsMalformedHexSignature(t *testing.T) {
 // An empty secret reaching this layer is a misconfiguration, not something
 // that should silently produce a valid-looking HMAC.
 func TestSignRejectsEmptySecret(t *testing.T) {
-	in := platformadmin.SignatureInput{Method: "GET", Path: "/x", Timestamp: "1", Nonce: "n"}
+	in := platformauth.SignatureInput{Method: "GET", Path: "/x", Timestamp: "1", Nonce: "n"}
 
-	_, err := platformadmin.Sign("", in)
+	_, err := platformauth.Sign("", in)
 	require.Error(t, err)
 }
 
 func TestVerifyRejectsEmptySecret(t *testing.T) {
-	in := platformadmin.SignatureInput{Method: "GET", Path: "/x", Timestamp: "1", Nonce: "n"}
+	in := platformauth.SignatureInput{Method: "GET", Path: "/x", Timestamp: "1", Nonce: "n"}
 
-	_, err := platformadmin.Verify("", "deadbeef", in)
+	_, err := platformauth.Verify("", "deadbeef", in)
 	require.Error(t, err)
 }
 
@@ -170,18 +170,18 @@ func TestVerifyRejectsEmptySecret(t *testing.T) {
 // especially for Path, which is populated from a decoded URL where a
 // literal '%0A' becomes a real newline.
 func TestCanonicalStringRejectsLineBreaksInSignedFields(t *testing.T) {
-	base := platformadmin.SignatureInput{
+	base := platformauth.SignatureInput{
 		Method: "GET", Path: "/x", Timestamp: "1", Nonce: "n",
 		Operator: "op_7f3a", Capability: "audit.read",
 	}
 
-	cases := map[string]func(*platformadmin.SignatureInput){
-		"method":     func(i *platformadmin.SignatureInput) { i.Method = "GET\n" },
-		"path":       func(i *platformadmin.SignatureInput) { i.Path = "/x\ny" },
-		"timestamp":  func(i *platformadmin.SignatureInput) { i.Timestamp = "1\r" },
-		"nonce":      func(i *platformadmin.SignatureInput) { i.Nonce = "n\n" },
-		"operator":   func(i *platformadmin.SignatureInput) { i.Operator = "op\n7f3a" },
-		"capability": func(i *platformadmin.SignatureInput) { i.Capability = "audit\r\n.read" },
+	cases := map[string]func(*platformauth.SignatureInput){
+		"method":     func(i *platformauth.SignatureInput) { i.Method = "GET\n" },
+		"path":       func(i *platformauth.SignatureInput) { i.Path = "/x\ny" },
+		"timestamp":  func(i *platformauth.SignatureInput) { i.Timestamp = "1\r" },
+		"nonce":      func(i *platformauth.SignatureInput) { i.Nonce = "n\n" },
+		"operator":   func(i *platformauth.SignatureInput) { i.Operator = "op\n7f3a" },
+		"capability": func(i *platformauth.SignatureInput) { i.Capability = "audit\r\n.read" },
 	}
 
 	for name, mutate := range cases {
@@ -189,7 +189,7 @@ func TestCanonicalStringRejectsLineBreaksInSignedFields(t *testing.T) {
 			in := base
 			mutate(&in)
 
-			_, err := platformadmin.CanonicalString(in)
+			_, err := platformauth.CanonicalString(in)
 			require.Error(t, err, "%s must reject embedded newlines/carriage returns", name)
 		})
 	}
@@ -225,7 +225,7 @@ func TestTestdataVectorsMatchImplementation(t *testing.T) {
 
 	for _, v := range vectors {
 		t.Run(v.Name, func(t *testing.T) {
-			in := platformadmin.SignatureInput{
+			in := platformauth.SignatureInput{
 				Method:     v.Method,
 				Path:       v.Path,
 				RawQuery:   v.RawQuery,
@@ -236,11 +236,11 @@ func TestTestdataVectorsMatchImplementation(t *testing.T) {
 				Capability: v.Capability,
 			}
 
-			canonical, err := platformadmin.CanonicalString(in)
+			canonical, err := platformauth.CanonicalString(in)
 			require.NoError(t, err)
 			require.Equal(t, v.Canonical, canonical, "canonical string drifted from testdata/vectors.json")
 
-			sig, err := platformadmin.Sign(v.Secret, in)
+			sig, err := platformauth.Sign(v.Secret, in)
 			require.NoError(t, err)
 			require.Equal(t, v.Signature, sig, "signature drifted from testdata/vectors.json")
 		})

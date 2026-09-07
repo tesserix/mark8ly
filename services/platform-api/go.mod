@@ -10,6 +10,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/lib/pq v1.12.3
+	github.com/mark8ly/platformauth v0.0.0-00010101000000-000000000000
 	github.com/openfga/go-sdk v0.8.2
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.70.0
@@ -81,3 +82,5 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/mark8ly/platformauth => ../../packages/platformauth

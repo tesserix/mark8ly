@@ -40,6 +40,7 @@ import (
 	"github.com/mark8ly/platform-api/internal/observability"
 	"github.com/mark8ly/platform-api/internal/onboarding"
 	"github.com/mark8ly/platform-api/internal/outbox"
+	"github.com/mark8ly/platform-api/internal/platformadmin"
 	"github.com/mark8ly/platform-api/internal/routes"
 	"github.com/mark8ly/platform-api/internal/store"
 	"github.com/mark8ly/platform-api/internal/tenant"
@@ -408,6 +409,21 @@ func main() {
 	// Trace every request. No-op spans when telemetry is disabled, so this
 	// is safe to install unconditionally.
 	r.Use(otelgin.Middleware(serviceName))
+
+	// The Tesserix console's HMAC-signed contract surface (#720 Task 3).
+	// Mounted under platformadmin.MountPrefix (/api/v1/platform), never
+	// /api/v1/admin — see the Register doc comment in
+	// internal/platformadmin/routes.go for why. An empty
+	// cfg.PlatformAdminSecret leaves this mounted but inert (503
+	// not_configured on every request), matching marketplace-api's
+	// platformadmin surface, so this binary ships before the secret exists.
+	platformadmin.Register(r.Group(platformadmin.MountPrefix), platformadmin.Deps{
+		DB:      conn,
+		Logger:  log,
+		Secret:  cfg.PlatformAdminSecret,
+		Emitter: auditClient,
+	})
+
 	v1 := r.Group("/api/v1")
 	// /internal/* is the in-cluster trust surface — admin BFF, auth-bff,
 	// marketplace-api call into here. The route-to-guard mapping lives in

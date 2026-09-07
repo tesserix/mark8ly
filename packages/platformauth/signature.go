@@ -1,8 +1,16 @@
-// Package platformadmin serves mark8ly's /admin/* surface to the Tesserix
-// platform console (#274). It is deliberately separate from
+// Package platformauth implements mark8ly's request-signing scheme for the
+// platform admin surface(s) served to the Tesserix platform console (#274),
+// so more than one Go service can share one contract instead of
+// reimplementing it (#720). It is deliberately separate from
 // internal/handlers/admin: different auth chain, different response
 // envelope, different audience. The two share the domain packages beneath
 // them and nothing at the HTTP layer.
+//
+// This package holds only the signing/verification primitives, the replay
+// nonce store, and the gin auth middleware — routing, capability maps, and
+// audit wiring stay with the service that mounts them (marketplace-api's
+// internal/handlers/platformadmin re-exports the symbols below as thin
+// aliases).
 //
 // # Signature scheme
 //
@@ -71,7 +79,7 @@
 // and "+" to a space on input, so the raw query string the caller happened
 // to build with is irrelevant — what matters is how CanonicalQuery
 // re-escapes it on the way out.
-package platformadmin
+package platformauth
 
 import (
 	"crypto/hmac"
@@ -119,7 +127,7 @@ func CanonicalQuery(raw string) (string, error) {
 	}
 	values, err := url.ParseQuery(raw)
 	if err != nil {
-		return "", fmt.Errorf("platformadmin: parse query: %w", err)
+		return "", fmt.Errorf("platformauth: parse query: %w", err)
 	}
 
 	keys := make([]string, 0, len(values))
@@ -159,7 +167,7 @@ func checkNoLineBreaks(in SignatureInput) error {
 	}
 	for _, f := range fields {
 		if strings.ContainsAny(f.value, "\n\r") {
-			return fmt.Errorf("platformadmin: %s must not contain a newline or carriage return", f.name)
+			return fmt.Errorf("platformauth: %s must not contain a newline or carriage return", f.name)
 		}
 	}
 	return nil
@@ -197,7 +205,7 @@ func CanonicalString(in SignatureInput) (string, error) {
 // producing a valid-looking HMAC.
 func Sign(secret string, in SignatureInput) (string, error) {
 	if secret == "" {
-		return "", fmt.Errorf("platformadmin: secret must not be empty")
+		return "", fmt.Errorf("platformauth: secret must not be empty")
 	}
 
 	canonical, err := CanonicalString(in)

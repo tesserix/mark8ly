@@ -1,6 +1,6 @@
 //go:build integration
 
-package platformadmin_test
+package platformauth_test
 
 import (
 	"context"
@@ -10,13 +10,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
-	"github.com/mark8ly/marketplace-api/pkg/testdb"
+	"github.com/mark8ly/platformauth"
 )
 
 func TestClaimAcceptsFirstUseAndRejectsReplay(t *testing.T) {
-	db := testdb.NewDB(t, "platform_request_nonces")
-	store := platformadmin.NewNonceStore(db)
+	db := newTestDB(t)
+	store := platformauth.NewNonceStore(db)
 	ctx := context.Background()
 	nonce := uuid.NewString()
 	expires := time.Now().Add(5 * time.Minute)
@@ -31,8 +30,8 @@ func TestClaimAcceptsFirstUseAndRejectsReplay(t *testing.T) {
 }
 
 func TestClaimRejectsMalformedNonce(t *testing.T) {
-	db := testdb.NewDB(t, "platform_request_nonces")
-	store := platformadmin.NewNonceStore(db)
+	db := newTestDB(t)
+	store := platformauth.NewNonceStore(db)
 
 	ok, err := store.Claim(context.Background(), "not-a-uuid", time.Now().Add(time.Minute))
 	require.Error(t, err)
@@ -46,17 +45,17 @@ func TestClaimRejectsMalformedNonce(t *testing.T) {
 // genuinely exercises two separate Postgres connections racing on the
 // unique constraint rather than being serialized by a shared transaction.
 func TestClaimIsSafeUnderConcurrency(t *testing.T) {
-	db := testdb.NewDB(t, "platform_request_nonces")
+	db := newTestDB(t)
 	nonce := uuid.NewString()
 	expires := time.Now().Add(5 * time.Minute)
 
-	store1 := platformadmin.NewNonceStore(db)
-	store2 := platformadmin.NewNonceStore(testdb.NewDB(t, "platform_request_nonces"))
+	store1 := platformauth.NewNonceStore(db)
+	store2 := platformauth.NewNonceStore(newTestDB(t))
 
 	results := make(chan bool, 2)
 	errs := make(chan error, 2)
 
-	claim := func(s platformadmin.NonceStore) {
+	claim := func(s platformauth.NonceStore) {
 		ok, err := s.Claim(context.Background(), nonce, expires)
 		errs <- err
 		results <- ok

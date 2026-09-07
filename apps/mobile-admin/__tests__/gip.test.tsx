@@ -58,6 +58,7 @@ interface MockedAuthInstance {
   setTenantId: jest.Mock;
   signInWithEmailAndPassword: jest.Mock;
   signOut: jest.Mock;
+  currentUser: unknown;
 }
 
 const instance = (getAuth as unknown as () => MockedAuthInstance)();
@@ -127,5 +128,59 @@ describe("createGIPAuth tenant scoping", () => {
       "pw",
       pending,
     );
+  });
+});
+
+// Signing out when nobody is signed in must be a NO-OP, not a rejection.
+//
+// On a Zitadel build the Firebase SDK never has a current user, so
+// `firebaseAuth.signOut()` rejects with `auth/no-current-user`. The provider
+// clears the tokens that actually hold the session BEFORE calling this, so the
+// person really is signed out — the rejection was pure noise: a red-box console
+// error on the device in dev, an unhandled promise rejection in production, and
+// worst of all it made every single sign-out look broken, which would mask a
+// real one. Observed on an iPhone 17 Pro Max simulator, 2026-09-07.
+describe("createGIPAuth sign-out is idempotent", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    instance.setTenantId.mockResolvedValue(undefined);
+  });
+
+  it("resolves without calling Firebase when no user is signed in", async () => {
+    instance.currentUser = null;
+    const gip = createGIPAuth({ tenantId: "T6" });
+    await expect(gip.signOut()).resolves.toBeUndefined();
+    expect(instance.signOut).not.toHaveBeenCalled();
+  });
+
+  it("swallows auth/no-current-user when the user disappears mid-call", async () => {
+    instance.currentUser = { uid: "u1" };
+    instance.signOut.mockRejectedValueOnce(
+      Object.assign(new Error("No user currently signed in."), {
+        code: "auth/no-current-user",
+      }),
+    );
+    const gip = createGIPAuth({ tenantId: "T7" });
+    await expect(gip.signOut()).resolves.toBeUndefined();
+    expect(instance.signOut).toHaveBeenCalled();
+  });
+
+  it("still signs out normally when a user IS signed in", async () => {
+    instance.currentUser = { uid: "u1" };
+    instance.signOut.mockResolvedValueOnce(undefined);
+    const gip = createGIPAuth({ tenantId: "T8" });
+    await gip.signOut();
+    expect(instance.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates a genuine sign-out failure", async () => {
+    instance.currentUser = { uid: "u1" };
+    instance.signOut.mockRejectedValueOnce(
+      Object.assign(new Error("network request failed"), {
+        code: "auth/network-request-failed",
+      }),
+    );
+    const gip = createGIPAuth({ tenantId: "T9" });
+    await expect(gip.signOut()).rejects.toThrow("network request failed");
   });
 });

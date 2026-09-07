@@ -2,8 +2,14 @@ package authz
 
 import (
 	"context"
+	"errors"
 	"sync"
 )
+
+// errUnknownRole mirrors the real client's fmt.Errorf("authz: unknown
+// role %q", role) closely enough for tests — FakeClient callers assert
+// on error presence, not message text.
+var errUnknownRole = errors.New("authz: unknown role")
 
 // FakeClient is an in-memory Client used by unit tests. It mirrors the
 // derived-relation semantics of the real OpenFGA model: granting `owner`
@@ -79,4 +85,16 @@ func (f *FakeClient) GetRole(_ context.Context, userID, tenantID string) (Role, 
 		return "", nil
 	}
 	return role, nil
+}
+
+// WriteRole grants role to userID on tenantID, exercising the same
+// "promote up only" semantics as Grant — repeated calls with the same or
+// a lower role are no-ops, matching the real client's idempotent tuple
+// write (see client.go's isAlreadyExistsError tolerance).
+func (f *FakeClient) WriteRole(_ context.Context, userID string, role Role, tenantID string) error {
+	if _, ok := rolePriority[role]; !ok {
+		return errUnknownRole
+	}
+	f.Grant(userID, role, tenantID)
+	return nil
 }

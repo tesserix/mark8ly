@@ -1,10 +1,20 @@
-// Package authz is marketplace-api's read-only OpenFGA client for tenant-
-// scoped permission checks. Per spec §13.1.1, marketplace-api NEVER writes
-// tuples — all writes happen in platform-api during onboarding and
-// invitation accept. This package exposes only Check / CheckMembership /
-// GetRole. The Write* methods that platform-api's authz package exposes
-// are intentionally absent so accidental tuple writes from marketplace-api
-// are a compile error.
+// Package authz is marketplace-api's OpenFGA client for tenant-scoped
+// permission checks. Per spec §13.1.1, marketplace-api does not write
+// tuples on the request path — all onboarding / invitation-accept writes
+// happen in platform-api, and this package's Check / CheckMembership /
+// GetRole surface deliberately stays read-only there so an accidental
+// tuple write from a request handler is a compile error.
+//
+// The one exception is WriteRole, added for mark8ly#642: break-glass
+// accounts, their OpenBao secret, their DB row, and their Bootstrapper
+// all live in marketplace-api, and the emergency provisioning path must
+// not gain a dependency on platform-api being reachable (#404). WriteRole
+// is called by cmd/break-glass-provision only — never from an HTTP
+// handler — and mirrors platform-api's internal/authz/authz.go WriteRole
+// (including its isAlreadyExistsError tolerance, so re-provisioning is
+// idempotent rather than an error) without porting the rest of that
+// package's write surface (WriteOwnership, WriteStoreParent,
+// WriteRoleObject, DeleteTuple, ...), none of which marketplace-api needs.
 //
 // The middleware that consumes this Client lives in the same package
 // (middleware.go). Tests use the FakeClient in fake.go to drive the
@@ -16,6 +26,7 @@ import (
 	"fmt"
 	"net/http"
 
+	openfga "github.com/openfga/go-sdk"
 	"github.com/openfga/go-sdk/client"
 )
 
@@ -67,6 +78,13 @@ type Client interface {
 	// tenant, or "" if they have no role. Iterates the four roles in
 	// priority order; worst case 4 Check calls.
 	GetRole(ctx context.Context, userID, tenantID string) (Role, error)
+
+	// WriteRole writes the tuple `user:<userID> <role> tenant:<tenantID>`.
+	// The sole write this package exposes — see the package doc for why.
+	// Idempotent: a tuple that already exists is treated as success (see
+	// isAlreadyExistsError), so calling this twice for the same
+	// (userID, role, tenantID) converges rather than errors.
+	WriteRole(ctx context.Context, userID string, role Role, tenantID string) error
 }
 
 // Config holds the values needed to construct a real OpenFGA client.
@@ -158,4 +176,44 @@ func (c *fgaClient) GetRole(ctx context.Context, userID, tenantID string) (Role,
 		}
 	}
 	return "", nil
+}
+
+func (c *fgaClient) WriteRole(ctx context.Context, userID string, role Role, tenantID string) error {
+	if _, ok := rolePriority[role]; !ok {
+		return fmt.Errorf("authz: unknown role %q", role)
+	}
+	body := client.ClientWriteRequest{
+		Writes: []client.ClientTupleKey{{
+			User:     "user:" + userID,
+			Relation: string(role),
+			Object:   "tenant:" + tenantID,
+		}},
+	}
+	_, err := c.api.Write(ctx).Body(body).Execute()
+	if err != nil {
+		// OpenFGA returns a validation error if the tuple already exists.
+		// Treat that as success — the desired state is met. Mirrors
+		// platform-api's internal/authz/authz.go isAlreadyExistsError.
+		if isAlreadyExistsError(err) {
+			return nil
+		}
+		return fmt.Errorf("authz: write %s tuple: %w", role, err)
+	}
+	return nil
+}
+
+// isAlreadyExistsError reports whether err is OpenFGA's response to
+// writing a tuple that already exists. Conservative pattern, ported
+// verbatim from platform-api/internal/authz/authz.go: any FGA validation
+// error is treated as "tuple state already matches what we wanted", which
+// is safe here because WriteRole never writes conflicting values for the
+// same (user, role, tenant) triple.
+func isAlreadyExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if _, ok := err.(openfga.FgaApiValidationError); ok {
+		return true
+	}
+	return false
 }

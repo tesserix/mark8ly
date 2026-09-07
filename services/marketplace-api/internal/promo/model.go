@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/datatypes"
 )
 
@@ -51,11 +52,16 @@ type PromoCode struct {
 	MaxRedemptions               *int           `gorm:"column:max_redemptions"`
 	MaxPerEmail                  int            `gorm:"column:max_per_email;not null;default:1"`
 	MinEffectivePricePerCurrency datatypes.JSON `gorm:"column:min_effective_price_per_currency;type:jsonb"`
-	AllowedPlans                 []string       `gorm:"column:allowed_plans;type:text[];serializer:json"`
-	AnnualOnly                   bool           `gorm:"column:annual_only;not null;default:false"`
-	CreatedBy                    string         `gorm:"column:created_by;not null"`
-	CreatedAt                    time.Time      `gorm:"column:created_at;not null;default:now()"`
-	UpdatedAt                    time.Time      `gorm:"column:updated_at;not null;default:now()"`
+	// AllowedPlans scopes the code to a set of plan ids; NULL/empty means
+	// every plan (validator.go guards on len() > 0). It must be
+	// pq.StringArray, not []string with a JSON serializer: the column is
+	// text[], and a serializer sends the JSON document as a text literal,
+	// which Postgres rejects with "malformed array literal" (#795).
+	AllowedPlans pq.StringArray `gorm:"column:allowed_plans;type:text[]"`
+	AnnualOnly   bool           `gorm:"column:annual_only;not null;default:false"`
+	CreatedBy    string         `gorm:"column:created_by;not null"`
+	CreatedAt    time.Time      `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt    time.Time      `gorm:"column:updated_at;not null;default:now()"`
 }
 
 // TableName returns the database table name for GORM.

@@ -43,11 +43,15 @@ They need their own migration phase. #708 cannot touch them.
 
 | Service | State (verified in prod, 2026-09-07) |
 |---|---|
-| `marketplace-api-admin` | `ZITADEL_ENABLED=true`, **`ZITADEL_DUAL_ISSUER=true`** |
+| `marketplace-api-admin` | `ZITADEL_ENABLED=true`; `ZITADEL_DUAL_ISSUER` **was `true`, set to `false` 2026-09-07** (tesserix-k8s#1041) — GIP tokens are no longer accepted |
 | `marketplace-api-storefront` | **no `ZITADEL_ENABLED`** — customer path still GIP |
 | `platform-api` | `ZITADEL_ENABLED=true`, still holds `GIP_PROJECT_ID` + `GIP_TENANT_ID` |
 
-Dual-issuer being ON means GIP-issued tokens are still accepted, so the
+Dual-issuer has since been turned OFF (#785), which is what unblocked the
+admin-path collapse. The paragraph below describes the state that blocked it,
+kept because the reasoning still explains the ordering.
+
+While dual-issuer was ON, GIP-issued tokens were still accepted, so the
 `tenant_id` custom claim invite-accept writes through GIP is still load-bearing.
 `provider_wiring.go` states the unblock condition in its own error text:
 GIP config may only leave platform-api once Zitadel is enabled on

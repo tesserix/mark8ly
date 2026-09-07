@@ -24,6 +24,12 @@ import (
 // either backend.
 type orderedTraceLogger struct {
 	order *[]string
+	// insertSQL, when non-nil, additionally collects the fully-rendered
+	// INSERT statement text (values inlined, per gorm's Explain) — used by
+	// TestBootstrapper_Provision_StoresBaoShapedSecretPath to inspect what
+	// Create actually persisted without a live DB to read the row back
+	// from.
+	insertSQL *[]string
 }
 
 func (l *orderedTraceLogger) LogMode(logger.LogLevel) logger.Interface      { return l }
@@ -37,6 +43,9 @@ func (l *orderedTraceLogger) Trace(_ context.Context, _ time.Time, fc func() (st
 	// cares about ordering against the secret write.
 	if strings.Contains(strings.ToUpper(sql), "INSERT INTO") {
 		*l.order = append(*l.order, "db_insert")
+		if l.insertSQL != nil {
+			*l.insertSQL = append(*l.insertSQL, sql)
+		}
 	}
 }
 
@@ -62,8 +71,9 @@ func (c *orderedSecretClient) AccessLatest(context.Context, string) ([]byte, err
 // executing the built statement) — the same no-database technique
 // TestListPlatform_PageQueryNeverSelectsStarOrCredentialColumns uses, so
 // this test runs in the ordinary `go test ./...` pass with no
-// TEST_DATABASE_URL and no `integration` build tag.
-func newDryRunRepo(t *testing.T, order *[]string) *breakglass.Repository {
+// TEST_DATABASE_URL and no `integration` build tag. insertSQL may be nil
+// when a test only cares about ordering, not the INSERT's rendered values.
+func newDryRunRepo(t *testing.T, order *[]string, insertSQL *[]string) *breakglass.Repository {
 	t.Helper()
 	base, err := gorm.Open(postgres.Open("postgres://dry-run:unused@127.0.0.1:1/dry-run?sslmode=disable"), &gorm.Config{
 		DisableAutomaticPing: true,
@@ -82,7 +92,7 @@ func newDryRunRepo(t *testing.T, order *[]string) *breakglass.Repository {
 		// gorm.io/gorm/gorm.go's ToSQL: `Session(&Session{DryRun: true,
 		// SkipDefaultTransaction: true})`).
 		SkipDefaultTransaction: true,
-		Logger:                 &orderedTraceLogger{order: order},
+		Logger:                 &orderedTraceLogger{order: order, insertSQL: insertSQL},
 	})
 
 	// DryRun's query callback (gorm.io/gorm/callbacks.Query) deliberately
@@ -113,9 +123,9 @@ func newDryRunRepo(t *testing.T, order *[]string) *breakglass.Repository {
 // it was run that way by hand while writing this test, then restored.
 func TestBootstrapper_Provision_WritesSecretBeforeDBRow(t *testing.T) {
 	var order []string
-	repo := newDryRunRepo(t, &order)
+	repo := newDryRunRepo(t, &order, nil)
 	secrets := breakglass.NewSecretManager(&orderedSecretClient{order: &order})
-	b := breakglass.NewBootstrapper(repo, secrets, "test-project")
+	b := breakglass.NewBootstrapper(repo, secrets)
 
 	// The DB insert is a DryRun no-op (Create's Trace call still fires —
 	// see orderedTraceLogger — but nothing is sent over the wire), so
@@ -133,10 +143,10 @@ func TestBootstrapper_Provision_WritesSecretBeforeDBRow(t *testing.T) {
 // "db_insert" appears at all.
 func TestBootstrapper_Provision_SecretFailureNeverReachesDB(t *testing.T) {
 	var order []string
-	repo := newDryRunRepo(t, &order)
+	repo := newDryRunRepo(t, &order, nil)
 	boom := errors.New("boom: secret backend unreachable")
 	secrets := breakglass.NewSecretManager(&orderedSecretClient{order: &order, failWith: boom})
-	b := breakglass.NewBootstrapper(repo, secrets, "test-project")
+	b := breakglass.NewBootstrapper(repo, secrets)
 
 	err := b.Provision(context.Background(), uuid.New())
 	require.Error(t, err)
@@ -144,4 +154,36 @@ func TestBootstrapper_Provision_SecretFailureNeverReachesDB(t *testing.T) {
 
 	require.Equal(t, []string{"secret_write"}, order,
 		"a failed secret write must short-circuit Provision before any DB insert is attempted")
+}
+
+// TestBootstrapper_Provision_StoresBaoShapedSecretPath is the assertion
+// whose absence let a GCP-shaped path (SecretPathFor's
+// "/projects/{project}/secrets/break-glass-{tenant}") reach production
+// undetected: every other test here exercised ordering and error
+// propagation, but none checked what path Provision actually persisted.
+// Account.SecretPath is replayed verbatim by both Rotator (rotation.go)
+// and the login handler (break_glass_login.go), so a wrong shape here
+// would only surface as a runtime failure the first time either of them
+// tried to read the blob back from OpenBao — exactly the "adapter exists,
+// nothing reaches it" failure mode this test exists to catch.
+func TestBootstrapper_Provision_StoresBaoShapedSecretPath(t *testing.T) {
+	var order []string
+	var insertSQL []string
+	repo := newDryRunRepo(t, &order, &insertSQL)
+	secrets := breakglass.NewSecretManager(&orderedSecretClient{order: &order})
+	b := breakglass.NewBootstrapper(repo, secrets)
+
+	tenantID := uuid.New()
+	require.NoError(t, b.Provision(context.Background(), tenantID))
+
+	require.Len(t, insertSQL, 1, "Provision must issue exactly one INSERT")
+	wantPath := breakglass.BaoSecretPathFor(tenantID.String())
+	require.Contains(t, insertSQL[0], wantPath,
+		"Account.SecretPath must be the OpenBao path BaoSecretPathFor builds "+
+			"(kv/mark8ly/marketplace-api/break-glass/{tenant}), not the retired "+
+			"GCP-shaped SecretPathFor path — Rotator and the login handler replay "+
+			"this value verbatim against OpenBao, so a GCP-shaped path here means "+
+			"break-glass fails the first time either of them reads the blob back")
+	require.NotContains(t, insertSQL[0], "/projects/",
+		"Account.SecretPath must not carry the retired GCP Secret Manager path shape")
 }

@@ -25,10 +25,20 @@ func NewStore(db *gorm.DB) Store { return &gormStore{db: db} }
 
 // upsertColumns are the columns a re-sync overwrites from the console.
 //
-// Everything absent from this list is deliberately preserved on an existing
-// row: max_per_email, min_effective_price_per_currency, allowed_plans and
-// annual_only are mark8ly policy the console cannot express (#726), and id
-// and created_at belong to the row, not to the definition.
+// Everything absent from this list is preserved on an existing row, and there
+// are TWO separate reasons for an absence — this is not one rule:
+//
+//  1. id and created_at belong to the ROW, not to the definition. Rewriting
+//     either would re-identify a code that promo_redemptions already points at.
+//  2. max_per_email and min_effective_price_per_currency are mark8ly's own
+//     abuse controls (§7.3, §7.4) that the console deliberately cannot express
+//     (#726). A publication says nothing about them, so it must not clear them.
+//
+// allowed_plans and annual_only used to sit in group 2 and no longer do
+// (#795). The console publishes both, so they are console-owned like every
+// other column listed here. Preserving them instead made re-scoping a code the
+// ingest had already seen silently never land: the operator narrowed the code
+// and the row went on applying to every plan and both periods.
 var upsertColumns = []string{
 	"stripe_coupon_id",
 	"discount_type",
@@ -38,6 +48,8 @@ var upsertColumns = []string{
 	"valid_from",
 	"valid_until",
 	"max_redemptions",
+	"allowed_plans",
+	"annual_only",
 	"created_by",
 	"updated_at",
 }

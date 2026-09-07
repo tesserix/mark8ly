@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
+	"github.com/mark8ly/marketplace-api/internal/billing/pricing"
 	"github.com/mark8ly/marketplace-api/internal/promo"
 )
 
@@ -61,6 +65,7 @@ const (
 	ReasonDuration          Reason = "bad_duration"
 	ReasonDurationInMonths  Reason = "bad_duration_in_months"
 	ReasonEmptyStripeCoupon Reason = "empty_stripe_coupon_id"
+	ReasonUnknownPlan       Reason = "unknown_plan"
 	ReasonUnknown           Reason = "unknown"
 )
 
@@ -116,6 +121,11 @@ func MapCode(in Code, now time.Time) (promo.PromoCode, error) {
 			code, n, minConsoleCodeLength, maxConsoleCodeLength)
 	}
 
+	plans, err := allowedPlans(code, in.AllowedPlans)
+	if err != nil {
+		return promo.PromoCode{}, err
+	}
+
 	out := promo.PromoCode{
 		Code:        code,
 		MaxPerEmail: DefaultMaxPerEmail,
@@ -124,6 +134,8 @@ func MapCode(in Code, now time.Time) (promo.PromoCode, error) {
 		// MaxRedemptions nil means unlimited on both sides, so it passes
 		// through untouched.
 		MaxRedemptions: in.MaxRedemptions,
+		AllowedPlans:   plans,
+		AnnualOnly:     in.AnnualOnly,
 	}
 
 	if in.ValidFrom != nil {
@@ -159,6 +171,75 @@ func MapCode(in Code, now time.Time) (promo.PromoCode, error) {
 
 	out.CreatedAt, out.UpdatedAt = now, now
 	return out, nil
+}
+
+// knownPlans is the vocabulary allowed_plans may name: starter, studio, pro.
+//
+// It is DERIVED from the price catalog rather than restated as three literals,
+// so a plan added to or renamed in pricing cannot leave a stale list here
+// rejecting a scope the console legitimately publishes.
+//
+// That derivation also fixes the boundary of the set. plangate's "trial" is a
+// plan in that other sense but has no Price object, so it is absent here — and
+// correctly: it is not something a subscription is billed on, and the console
+// does not offer it as a scope either.
+var knownPlans = func() map[string]struct{} {
+	m := map[string]struct{}{}
+	for _, d := range pricing.AllDescriptors() {
+		m[string(d.Plan)] = struct{}{}
+	}
+	return m
+}()
+
+// allowedPlans maps the console's plan scope onto promo_codes.allowed_plans.
+//
+// Three things this does and one it must never do:
+//
+//   - An empty or absent scope becomes nil, which stores as NULL. The column's
+//     NULL and '{}' are the same fact to the redeemer (validator.go guards on
+//     len() > 0), so only ONE of the two spellings may ever cross this
+//     boundary; '{}' would additionally read as "scoped" to anything
+//     inspecting the column by eye.
+//   - An unrecognised plan REJECTS the whole definition, so the sync counts it
+//     as skipped with a reason. Storing it instead would scope the code to a
+//     plan nothing can ever be on — a code that is dead at redemption while
+//     reading as perfectly configured.
+//   - Names are trimmed and lower-cased. The redeemer already compares with
+//     strings.EqualFold, so this changes no redemption outcome; it only keeps
+//     the stored column in one spelling.
+func allowedPlans(code string, in []string) (pq.StringArray, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(pq.StringArray, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, raw := range in {
+		plan := strings.ToLower(strings.TrimSpace(raw))
+		if _, ok := knownPlans[plan]; !ok {
+			return nil, reject(ReasonUnknownPlan,
+				"code %q: allowed_plans names %q, which is not one of %s",
+				code, raw, knownPlanList())
+		}
+		// A repeat says nothing the first mention did not; dropping it keeps
+		// the column comparable between two publications of the same scope.
+		if _, dup := seen[plan]; dup {
+			continue
+		}
+		seen[plan] = struct{}{}
+		out = append(out, plan)
+	}
+	return out, nil
+}
+
+// knownPlanList renders the vocabulary in a stable order for error messages,
+// so two rejections of the same mistake are the same text.
+func knownPlanList() string {
+	names := make([]string, 0, len(knownPlans))
+	for p := range knownPlans {
+		names = append(names, strconv.Quote(p))
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 // applyDiscount fills the discount half of the row. It writes DiscountType

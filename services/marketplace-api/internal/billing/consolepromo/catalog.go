@@ -57,6 +57,23 @@ type Code struct {
 	ValidUntil *time.Time `json:"valid_until"`
 	// MaxRedemptions is nil for unlimited global redemptions.
 	MaxRedemptions *int `json:"max_redemptions"`
+	// AllowedPlans scopes the code to a set of plan ids. NIL MEANS EVERY
+	// PLAN — not "no plan" — which is also what promo_codes.allowed_plans
+	// NULL means and what the redeemer reads (validator.go guards on
+	// len() > 0).
+	//
+	// A plain slice and not a pointer, because here the two absent readings
+	// coincide: the console refuses to publish an empty array precisely
+	// because `[]` and absent would be the same fact to the redeemer, so
+	// there is no `[]` for a nil to be distinguished from.
+	AllowedPlans []string `json:"allowed_plans"`
+	// AnnualOnly restricts the code to annual subscriptions.
+	//
+	// The only plain non-pointer optional on this struct, and deliberately
+	// so: false and absent both mean "applies to both billing periods", so
+	// unlike max_redemptions or trial_extension_days there is no zero-value
+	// reading to confuse with absence.
+	AnnualOnly bool `json:"annual_only"`
 }
 
 // Discount is the money part of a promo definition.

@@ -158,6 +158,9 @@ func (h *PromoHandler) ApplyPromo(c *gin.Context) {
 			Actor:        actor,
 			RejectReason: rejectReason,
 			Accepted:     applyErr == nil,
+
+			TrialExtensionDays: out.TrialExtensionDays,
+			TrialEndsAt:        out.TrialEndsAt,
 		})
 	}
 

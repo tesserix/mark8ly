@@ -2583,6 +2583,20 @@ func main() {
 		// EnsureSelfVendor). See internal_handler.go for idempotency.
 		stores.NewInternalHandler(domainStoresRepo).
 			RegisterRoutes(r.Group("/internal"))
+		// Onboarding's subscription callback — what makes the 90-day trial
+		// start at signup rather than when a merchant happens to open the
+		// Billing page (#827). Mounted on BOTH engines via the same method,
+		// so MODE=admin (production) and local mode.Both cannot drift the
+		// way #323 found they had.
+		//
+		// Its Service needs no Stripe client, which is the point of #827's
+		// split: starting a trial is a database write, not a payment-provider
+		// call, so this route cannot be taken down by a billing key.
+		subscription.NewInternalHandler(
+			subscription.NewService(subscription.ServiceConfig{
+				DB: conn, Repo: subscription.NewRepository(), Logger: log,
+			})).
+			RegisterRoutes(r.Group("/internal"), cfg.InternalAuthSecret)
 		// Otto escalation hook — slm-router POSTs
 		// /internal/v1/tickets/from-conversation when an AI chat is
 		// handed off to a human. Same /internal namespace + same shared
@@ -2745,6 +2759,18 @@ func main() {
 			// writes stores.
 			stores.NewInternalHandler(domainStoresRepo).
 				RegisterRoutes(engine.Group("/internal"))
+			// Onboarding's subscription callback — what makes the 90-day trial
+			// start at signup rather than when a merchant happens to open the
+			// Billing page (#827). Mounted on BOTH engines via the same method,
+			// so MODE=admin (production) and local mode.Both cannot drift the
+			// way #323 found they had.
+			//
+			// No Stripe client — see the mode-Both mount above.
+			subscription.NewInternalHandler(
+				subscription.NewService(subscription.ServiceConfig{
+					DB: conn, Repo: subscription.NewRepository(), Logger: log,
+				})).
+				RegisterRoutes(engine.Group("/internal"), cfg.InternalAuthSecret)
 			// slm-router escalation hook + the mark8ly-mcp
 			// create_support_ticket tool both POST /internal/v1/tickets/
 			// from-conversation to open a support ticket from an AI chat

@@ -84,6 +84,17 @@ type Config struct {
 	// internal/middleware.RequireInternalAuth.
 	InternalAuthSecret string `envconfig:"INTERNAL_AUTH_SECRET"`
 
+	// PlatformAdminSecret is the HMAC key for the Tesserix platform
+	// console's signed /api/v1/platform/* calls (#720 Task 3), matching
+	// marketplace-api's MARKETPLACE_PLATFORM_ADMIN_SECRET. Separate from
+	// InternalAuthSecret: different caller (the console, not another
+	// in-cluster service), different blast radius.
+	//
+	// Unlike InternalAuthSecret, an empty value does NOT no-op the check —
+	// the platform admin surface fails closed and answers 503 until this
+	// is populated, matching marketplace-api's platformadmin surface.
+	PlatformAdminSecret string `envconfig:"PLATFORM_API_PLATFORM_ADMIN_SECRET" default:""`
+
 	// GIP (Google Identity Platform) admin settings used by the
 	// password-reset flow. ProjectID + TenantID are required in prod.
 	// If project, tenant and a usable key are not all present,
@@ -188,6 +199,7 @@ func Load() (*Config, error) {
 	cfg.InternalAuthSecret = strings.TrimSpace(cfg.InternalAuthSecret)
 	cfg.MarketplaceInternalAuthSecret = strings.TrimSpace(cfg.MarketplaceInternalAuthSecret)
 	cfg.AuditIngestSecret = strings.TrimSpace(cfg.AuditIngestSecret)
+	cfg.PlatformAdminSecret = strings.TrimSpace(cfg.PlatformAdminSecret)
 	// Provider API keys go straight into Authorization headers — a
 	// trailing LF from GCP SM would make net/http reject every request
 	// with "invalid header field value".

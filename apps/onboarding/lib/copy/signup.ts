@@ -7,6 +7,39 @@
 export const signupCopy = {
   taxIdLabel: "Tax ID (optional)",
 
+  // ─── Promo code (#620) ──────────────────────────────────────────────
+  //
+  // The field is optional and stays quiet until it has something true to
+  // say. Every message below states only what the server actually
+  // returned: the number of days comes from the promo definition, never
+  // from copy, so a code's terms can change in the console without a
+  // deploy here.
+  promoLabel: "Promo code (optional)",
+  promoPlaceholder: "If you have one",
+  promoChecking: "Checking\u2026",
+  /** The offer, stated in the code's own numbers. */
+  promoAccepted: (days: number) =>
+    days === 1
+      ? "Adds a day to your free trial."
+      : `Adds ${days} days to your free trial.`,
+  /** Accepted, but grants nothing we can describe — say nothing rather
+   *  than invent a benefit. The code is still carried and still redeemed. */
+  promoAcceptedNoTerms: "That code is valid.",
+  promoInvalid:
+    "We don\u2019t recognise that code, or it has passed its end date. You can carry on without it.",
+  /** The code works, just not here. Saying "invalid" would send a merchant
+   *  holding a good code away from the page that would have taken it. */
+  promoRedeemInBilling:
+    "That code applies to a paid plan. Finish signing up and redeem it in Billing.",
+  promoMaxRedemptions:
+    "That offer has been fully claimed. Your code was genuine \u2014 it has simply run out.",
+  promoAlreadyUsed:
+    "That code has already been used with this email address.",
+  /** We could not ASK. Never rendered as "invalid": a merchant holding a
+   *  good code must not be told it is bad because a service was down. */
+  promoCheckFailed:
+    "We couldn\u2019t check that code just now. You can carry on \u2014 we\u2019ll try again when you finish.",
+
   // Country-aware help text shown below the tax ID field.
   // Keyed by ISO 3166-1 alpha-2 country code.
   taxIdHelpByCountry: {

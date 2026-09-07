@@ -17,7 +17,12 @@ import {
 
 import type { Country, Currency, Timezone } from "@/lib/types";
 import { useOnboardingStore } from "@/lib/store/onboarding-store";
-import { checkSlug, submitOnboarding } from "@/app/onboarding/actions";
+import {
+  checkPromoCode,
+  checkSlug,
+  submitOnboarding,
+} from "@/app/onboarding/actions";
+import { promoMessage, type PromoMessage } from "@/lib/promo/message";
 import { signupCopy } from "@/lib/copy/signup";
 
 interface Props {
@@ -58,6 +63,7 @@ const schema = z
     countryCode: z.string().min(1, "Please select a country"),
     currencyCode: z.string().min(1, "Please select a currency"),
     taxId: z.string().optional(),
+    promoCode: z.string().optional(),
     migrationType: z.enum(["new", "migrating"]),
     whoisUrl: z.string().optional(),
     // screenshotFile is handled outside RHF via a ref; its upload
@@ -123,6 +129,8 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     state: "idle",
   });
   const [slugTouched, setSlugTouched] = useState(false);
+  const [promoStatus, setPromoStatus] = useState<PromoMessage | null>(null);
+  const [promoChecking, setPromoChecking] = useState(false);
   const [screenshotUploading, setScreenshotUploading] = useState(false);
   const [screenshotFileName, setScreenshotFileName] = useState<string | null>(
     null,
@@ -148,6 +156,7 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
       countryCode: "",
       currencyCode: "",
       taxId: "",
+      promoCode: "",
       migrationType: "new",
       whoisUrl: "",
       screenshotUrl: "",
@@ -157,6 +166,12 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
   const watchedBusinessName = watch("businessName");
   const watchedSlug = watch("slug");
   const watchedCountry = watch("countryCode");
+  const watchedPromoCode = watch("promoCode");
+  // The email and currency travel with the promo check: the per-email
+  // redemption cap is the only abuse control available before a store
+  // exists, and the currency decides which prices a code could apply to.
+  const watchedEmail = watch("email");
+  const watchedCurrency = watch("currencyCode");
   const watchedMigrationType = watch("migrationType");
   const isMigrating = watchedMigrationType === "migrating";
 
@@ -223,6 +238,33 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     return () => clearTimeout(handle);
   }, [watchedSlug]);
 
+  // Debounced promo-code check.
+  //
+  // Longer debounce than the slug check: a promo code is typed once and read
+  // back from an email, not explored, and every keystroke here is an attempt
+  // against a rate limit shared with the merchant's real submission.
+  useEffect(() => {
+    const code = (watchedPromoCode ?? "").trim();
+    if (code.length < 3) {
+      setPromoStatus(null);
+      setPromoChecking(false);
+      return;
+    }
+    setPromoChecking(true);
+    const handle = setTimeout(async () => {
+      const r = await checkPromoCode(code, watchedEmail ?? "", watchedCurrency ?? "");
+      setPromoChecking(false);
+      if (!r.ok) {
+        // Rate limited. Say nothing rather than imply the code is bad —
+        // the merchant still submits it and it is still redeemed.
+        setPromoStatus(null);
+        return;
+      }
+      setPromoStatus(promoMessage(r.data));
+    }, 600);
+    return () => clearTimeout(handle);
+  }, [watchedPromoCode, watchedEmail, watchedCurrency]);
+
   // Clear migration evidence when switching back to "new store".
   useEffect(() => {
     if (!isMigrating) {
@@ -270,6 +312,7 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
       currencyCode: values.currencyCode,
       timezone: resolvedTimezone,
       taxId: values.taxId?.trim() || undefined,
+      promoCode: values.promoCode?.trim() || undefined,
       migrationType: values.migrationType,
       whoisUrl:
         values.migrationType === "migrating"
@@ -472,6 +515,35 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
                 errors.taxId ? "taxId-error" : "taxId-hint"
               }
               {...register("taxId")}
+            />
+          </Field>
+        </div>
+
+        {/* ── Promo code (#620) ─────────────────────────────── */}
+        <div className="border-t border-border-subtle pt-5">
+          <Field
+            id="promoCode"
+            label={signupCopy.promoLabel}
+            hint={promoChecking ? signupCopy.promoChecking : promoStatus?.text}
+            hintState={
+              promoStatus?.tone === "accepted"
+                ? "success"
+                : promoStatus?.tone === "refused"
+                  ? "error"
+                  : // "unknown" stays neutral on purpose: we could not check,
+                    // which is not the merchant's problem and not a refusal.
+                    "default"
+            }
+          >
+            <Input
+              id="promoCode"
+              type="text"
+              placeholder={signupCopy.promoPlaceholder}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              aria-describedby="promoCode-hint"
+              {...register("promoCode")}
             />
           </Field>
         </div>

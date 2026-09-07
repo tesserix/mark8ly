@@ -22,8 +22,12 @@
 //                                 user, the admin project grant and both
 //                                 FGA owner tuples.
 
+import { headers } from "next/headers";
+
 import { onboarding, tenants, PlatformApiError } from "@/lib/api/platform-api";
 import { config } from "@/lib/config";
+import { allowPromoCheck } from "@/lib/promo/rateLimit";
+import type { PromoCheck } from "@/lib/promo/message";
 
 type Result<T> =
   | { ok: true; data: T }
@@ -48,6 +52,49 @@ export async function checkSlug(
   }
 }
 
+// ─── checkPromoCode: live check as the merchant types ──────────────────
+//
+// Answers what a code WOULD grant, and redeems nothing. Redeeming here would
+// be fatal: max_per_email is 1, so a redemption written while someone is still
+// typing is a code they can never actually use.
+//
+// Rate limited on the visitor's address, which only this layer can see — the
+// call to platform-api comes from this app's pod, so its own limiter counts
+// every visitor in one bucket. See lib/promo/rateLimit.ts.
+//
+// Returns null for "we could not ask", which the field renders as its own
+// message. It must never collapse into "invalid": telling a merchant their
+// working code is bad because a service was down is the one outcome here that
+// silently costs a signup.
+export async function checkPromoCode(
+  code: string,
+  email: string,
+  currencyCode: string,
+): Promise<Result<PromoCheck | null>> {
+  const trimmed = code.trim();
+  if (!trimmed) {
+    return { ok: true, data: null };
+  }
+
+  const h = await headers();
+  // x-forwarded-for is a list; the first entry is the client as seen by the
+  // edge. Falling back to a single shared bucket is deliberate — an absent
+  // header must not mean "unlimited".
+  const visitor = (h.get("x-forwarded-for") ?? "unknown").split(",")[0]!.trim();
+  if (!allowPromoCheck(visitor)) {
+    return { ok: false, code: "rate_limited", message: "too many attempts" };
+  }
+
+  try {
+    const res = await onboarding.validatePromo(trimmed, email, currencyCode);
+    return { ok: true, data: res };
+  } catch {
+    // Deliberately not `fail(err)`: the caller distinguishes "could not ask"
+    // from "answered no", and an ok:false here would be read as the latter.
+    return { ok: true, data: null };
+  }
+}
+
 // ─── submitOnboarding: form submit → create session + send magic link ──
 interface SubmitInput {
   email: string;
@@ -59,6 +106,9 @@ interface SubmitInput {
   // §5.1.1 — optional; persisted to draft so completeOnboarding can
   // forward them to the backend tax-ID endpoint once the store exists.
   taxId?: string;
+  // §620 — optional; persisted to the draft so completeOnboarding can hand it
+  // to marketplace-api, which redeems it once the subscription row exists.
+  promoCode?: string;
   migrationType?: "new" | "migrating";
   whoisUrl?: string;
   // screenshot_url is the GCS URL returned by the upload helper; the
@@ -87,6 +137,7 @@ export async function submitOnboarding(
       timezone: input.timezone,
     };
     if (input.taxId) draft.tax_id = input.taxId;
+    if (input.promoCode) draft.promo_code = input.promoCode;
     if (input.migrationType) draft.migration_type = input.migrationType;
     if (input.whoisUrl) draft.whois_url = input.whoisUrl;
     if (input.screenshotUrl) draft.screenshot_url = input.screenshotUrl;
@@ -214,6 +265,11 @@ export async function completeOnboardingWithZitadel(
     const countryCode = draft.country_code ?? "";
     const currencyCode = draft.currency_code ?? "";
     const timezone = draft.timezone ?? "UTC";
+    // Carried from the form rather than re-asked. It is redeemed by
+    // marketplace-api immediately after the subscription row is created —
+    // the earliest moment redemption is possible, since the ledger row needs
+    // a subscription id and the trial extension needs a row to move (#620).
+    const promoCode = draft.promo_code ?? "";
 
     if (!businessName || !slug || !countryCode || !currencyCode) {
       return {
@@ -241,6 +297,7 @@ export async function completeOnboardingWithZitadel(
       password: input.password,
       first_name: firstName,
       last_name: lastName,
+      ...(promoCode ? { promo_code: promoCode } : {}),
     });
 
     return {

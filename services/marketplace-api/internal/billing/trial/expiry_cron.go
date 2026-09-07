@@ -24,6 +24,20 @@ const ExpirySpec = "15 0 * * *"
 // TrialDays, extended if an operator has set trial_ends_at) to the "expired"
 // status via the state machine. It is idempotent: stores already in "expired"
 // are never selected.
+//
+// `trialing` ONLY, AND A `signup` ROW IS THEREFORE NEVER AGED OUT. That is a
+// recorded decision, not an oversight — mark8ly#803, 2026-09-07. A tenant who
+// signed up and never completed Stripe Checkout stays at `signup` forever:
+// this cron does not select them, the dunning ladder does not, and nothing
+// bills them. `EndsAt` will happily compute `created_at + TrialDays` for such
+// a row, but that date is NOTIONAL, because this is the code that would have
+// acted on it and does not.
+//
+// Nothing was built because there is nothing to act on yet: `store_subscriptions`
+// held zero rows when this was measured, and Stripe is deliberately still on
+// the test key (mark8ly#371). Widening the predicate here is the obvious
+// change and would be writer code against zero rows. See
+// subscription.StatusSignup for what reopens the decision.
 type ExpiryCron struct {
 	db      *gorm.DB
 	emitter *audit.Emitter

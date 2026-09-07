@@ -71,6 +71,21 @@ type HumanUser struct {
 	// empty givenName/familyName.
 	FirstName string
 	LastName  string
+	// WithoutPassword creates the account with NO password credential.
+	//
+	// For SSO just-in-time provisioning (mark8ly#820), where there is no
+	// password to set — the IdP is what authenticates. It is deliberately an
+	// explicit flag rather than "Password == \"\" means passwordless",
+	// because a caller that simply forgot to pass one would then silently
+	// create an account with a credential path it did not intend.
+	//
+	// The point is what it withholds. An SSO-provisioned account WITH a
+	// password can be signed into through Zitadel's own password flow, and a
+	// password can be set later through password reset — both bypassing the
+	// tenant's IdP and everything it enforces (MFA, device posture,
+	// offboarding). A tenant buys SSO to centralise exactly that, so the
+	// second credential path must never be created in the first place.
+	WithoutPassword bool
 	// Password is set with changeRequired=false so the invitee can
 	// sign in immediately with what they just typed. Required when the
 	// user does not already exist.
@@ -116,8 +131,11 @@ func (c *Client) EnsureHumanUser(ctx context.Context, in HumanUser) (string, err
 	if first == "" || last == "" {
 		return "", fmt.Errorf("zitadeladmin: first and last name are required to create a human user")
 	}
-	if in.Password == "" {
+	if in.Password == "" && !in.WithoutPassword {
 		return "", fmt.Errorf("zitadeladmin: password is required to create a human user")
+	}
+	if in.Password != "" && in.WithoutPassword {
+		return "", fmt.Errorf("zitadeladmin: WithoutPassword and a password are contradictory")
 	}
 
 	body := map[string]any{
@@ -130,10 +148,15 @@ func (c *Client) EnsureHumanUser(ctx context.Context, in HumanUser) (string, err
 			"email":      email,
 			"isVerified": true,
 		},
-		"password": map[string]any{
+	}
+	// Omitted entirely rather than sent empty: Zitadel treats an absent
+	// password block as "no password credential", while a present one with
+	// an empty string is a policy violation.
+	if !in.WithoutPassword {
+		body["password"] = map[string]any{
 			"password":       in.Password,
 			"changeRequired": false,
-		},
+		}
 	}
 	var wire struct {
 		UserID string `json:"userId"`
@@ -277,16 +300,56 @@ func NewStaffProvisioner(client *Client, projectID string, roleKeys []string) (*
 // earlier GIP-era migration) has no grant on the admin project, and
 // without one it cannot complete the OIDC flow.
 func (p *StaffProvisioner) ProvisionStaff(ctx context.Context, email, firstName, lastName, password string) (string, error) {
+	return p.provision(ctx, email, firstName, lastName, password, false)
+}
+
+// ProvisionSSOStaff is ProvisionStaff for an identity that authenticates
+// through a tenant's own IdP (mark8ly#820), and differs in exactly one way:
+// when the account has to be created, it is created with NO password.
+//
+// That difference is the whole point. An SSO-provisioned account holding a
+// password can be signed into through Zitadel directly, and a password can be
+// set later through password reset — both bypassing the tenant's IdP and the
+// MFA, device posture and offboarding it enforces. A tenant buys SSO to
+// centralise exactly that.
+//
+// It shares provision() with ProvisionStaff rather than copying it, because
+// the resolve-first behaviour and the always-ensure-the-grant rule are
+// properties of "make an identity on the admin project" and must not drift
+// between the two callers.
+//
+// An account that ALREADY exists keeps whatever credentials it already had:
+// this path withholds a password, it does not remove one. A merchant who
+// already signs in with a password and then arrives via SSO is the same
+// person with the same account, which is the point of resolving rather than
+// creating — see internal/ssousers.
+func (p *StaffProvisioner) ProvisionSSOStaff(ctx context.Context, email, firstName, lastName string) (string, error) {
+	return p.provision(ctx, email, firstName, lastName, "", true)
+}
+
+// ResolveUserIDByEmail exposes the lookup provision() already performs, so a
+// caller that only needs to ASK ("is this address a known identity?") does not
+// have to be handed the whole client to do it.
+//
+// Same guarantees as the client's: scoped to the configured org, requires a
+// VERIFIED email, refuses an ambiguous match rather than picking one, and
+// returns idperr.ErrUserNotFound on zero matches.
+func (p *StaffProvisioner) ResolveUserIDByEmail(ctx context.Context, email string) (string, error) {
+	return p.client.ResolveUserIDByEmail(ctx, email)
+}
+
+func (p *StaffProvisioner) provision(ctx context.Context, email, firstName, lastName, password string, withoutPassword bool) (string, error) {
 	userID, err := p.client.ResolveUserIDByEmail(ctx, email)
 	switch {
 	case err == nil:
 		// Existing account — password intentionally unused.
 	case errors.Is(err, idperr.ErrUserNotFound):
 		userID, err = p.client.EnsureHumanUser(ctx, HumanUser{
-			Email:     email,
-			FirstName: firstName,
-			LastName:  lastName,
-			Password:  password,
+			Email:           email,
+			FirstName:       firstName,
+			LastName:        lastName,
+			Password:        password,
+			WithoutPassword: withoutPassword,
 		})
 		if err != nil {
 			return "", err

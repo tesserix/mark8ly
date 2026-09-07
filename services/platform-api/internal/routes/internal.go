@@ -26,6 +26,7 @@ type InternalHandlers struct {
 	EstateCounts        Registrar
 	EstateUsers         Registrar
 	AccountOperator     Registrar
+	SSOUsers            Registrar
 
 	Tenant          Registrar
 	Store           Registrar
@@ -40,7 +41,7 @@ type InternalHandlers struct {
 func StrictSlots() []string {
 	return []string{
 		"TenantDirectory", "TenantLifecycle", "OnboardingAnalytics",
-		"EstateCounts", "EstateUsers", "AccountOperator",
+		"EstateCounts", "EstateUsers", "AccountOperator", "SSOUsers",
 	}
 }
 
@@ -58,7 +59,10 @@ func PermissiveSlots() []string {
 // to know — you need a tenant id to ask for its members.
 //
 // The strict group refuses with 503 on an empty secret instead. Its
-// routes return ESTATE-WIDE data — every tenant (#277), every staff
+// routes either return ESTATE-WIDE data or perform a privileged WRITE —
+// SSOUsers creates an account and grants it a role on a tenant
+// (mark8ly#820), which an unconfigured deploy must refuse rather than offer
+// to anything that reaches the pod. Its other routes return ESTATE-WIDE data — every tenant (#277), every staff
 // identity (#278), platform-wide counts (#282), the onboarding funnel
 // (#283) — so an unconfigured deploy must refuse rather than serve the
 // lot to anything that reaches the pod.
@@ -69,7 +73,7 @@ func MountInternal(r gin.IRouter, secret string, h InternalHandlers) {
 	strict := r.Group("/internal", middleware.RequireInternalAuthStrict(secret))
 	mount(strict,
 		h.TenantDirectory, h.TenantLifecycle, h.OnboardingAnalytics,
-		h.EstateCounts, h.EstateUsers, h.AccountOperator,
+		h.EstateCounts, h.EstateUsers, h.AccountOperator, h.SSOUsers,
 	)
 
 	permissive := r.Group("/internal", middleware.RequireInternalAuth(secret))

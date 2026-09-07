@@ -34,6 +34,12 @@ var (
 	wantStrict = []string{
 		"TenantDirectory", "TenantLifecycle", "OnboardingAnalytics",
 		"EstateCounts", "EstateUsers", "AccountOperator",
+		// SSOUsers is strict for a different reason from the rest: it is
+		// not estate-wide data, it is a privileged WRITE — it creates an
+		// account and grants it a role on a tenant (mark8ly#820). The
+		// permissive guard no-ops on an empty secret, so an unconfigured
+		// deploy would offer that to anything that reaches the pod.
+		"SSOUsers",
 	}
 	wantPermissive = []string{
 		"Tenant", "Store", "Invitation", "Auth", "MerchantAccount", "Notification",

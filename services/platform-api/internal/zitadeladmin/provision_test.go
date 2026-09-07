@@ -360,3 +360,78 @@ func TestNewStaffProvisioner_RefusesEmptyConfig(t *testing.T) {
 		t.Error("NewStaffProvisioner with no roles = nil error, want a refusal")
 	}
 }
+
+// An SSO-provisioned account must carry NO password credential
+// (mark8ly#820). A password on such an account is a second way in that
+// bypasses the tenant's IdP — through Zitadel's own password flow, or through
+// password reset — which defeats the MFA, device posture and offboarding the
+// tenant bought SSO to centralise.
+//
+// The block must be ABSENT, not empty: Zitadel reads an absent password block
+// as "no credential", while a present one carrying an empty string is a policy
+// violation.
+func TestEnsureHumanUser_WithoutPasswordOmitsTheBlockEntirely(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		body := decodeBody(t, r)
+
+		if _, present := body["password"]; present {
+			t.Errorf("body carries a password block for a passwordless account: %v", body["password"])
+		}
+		// Everything else must still be the verified shape — in particular
+		// the explicit isVerified, without which the account is invisible to
+		// resolveUserIDByEmail and can never be found again.
+		email, _ := body["email"].(map[string]any)
+		if email == nil || email["isVerified"] != true {
+			t.Errorf("email = %v, want isVerified sent explicitly", body["email"])
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"userId":"zid-sso","details":{}}`))
+	})
+
+	in := newUser()
+	in.Password = ""
+	in.WithoutPassword = true
+
+	id, err := c.EnsureHumanUser(context.Background(), in)
+	if err != nil {
+		t.Fatalf("EnsureHumanUser: %v", err)
+	}
+	if id != "zid-sso" {
+		t.Errorf("id = %q, want zid-sso", id)
+	}
+}
+
+// Passwordless has to be asked for. A caller that merely forgot the password
+// must still be refused, or a missing argument silently becomes an account
+// with a different credential model than the caller intended.
+func TestEnsureHumanUser_AnAbsentPasswordIsStillRefusedWithoutTheFlag(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("a request was sent for an input that should have been refused locally")
+		w.WriteHeader(http.StatusTeapot)
+	})
+
+	in := newUser()
+	in.Password = ""
+
+	if _, err := c.EnsureHumanUser(context.Background(), in); err == nil {
+		t.Fatal("an empty password created an account without the flag")
+	}
+}
+
+// The two are contradictory: one of them is wrong, and guessing which would
+// either create a credential the caller meant to withhold or drop one they
+// meant to set.
+func TestEnsureHumanUser_APasswordWithTheFlagIsRefused(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("a contradictory input reached Zitadel")
+		w.WriteHeader(http.StatusTeapot)
+	})
+
+	in := newUser()
+	in.WithoutPassword = true
+
+	if _, err := c.EnsureHumanUser(context.Background(), in); err == nil {
+		t.Fatal("WithoutPassword alongside a password was accepted")
+	}
+}

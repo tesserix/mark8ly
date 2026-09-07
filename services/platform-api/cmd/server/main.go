@@ -287,6 +287,18 @@ func main() {
 		panic(provisionerErr)
 	}
 
+	// The same provisioner, kept at its CONCRETE type for the SSO identity
+	// routes (mark8ly#820). staffProvisioner above is an interface, so a
+	// "not configured" value there is a typed nil that no == nil check can
+	// see — the trap buildZitadelProvisioner's doc exists to keep out of the
+	// wiring. Built through that function for the same reason the two
+	// provisioners above are.
+	ssoUsersProvisioner, ssoProvErr := buildZitadelProvisioner(cfg)
+	if ssoProvErr != nil {
+		log.Error("sso users provisioner wiring", "err", ssoProvErr)
+		panic(ssoProvErr)
+	}
+
 	invitationSvc := invitation.NewService(invitation.Config{
 		Repo:        invitation.NewRepository(conn),
 		TenantRepo:  tenantRepo,
@@ -382,6 +394,7 @@ func main() {
 		EstateCounts:        estate.NewHandler(estate.NewRepository(conn)).Register,
 		EstateUsers:         estateuser.NewHandler(estateuser.NewRepository(conn)).Register,
 		AccountOperator:     accountHandler.RegisterOperator,
+		SSOUsers:            ssoUsersRegistrar(ssoUsersProvisioner, fga),
 
 		Tenant:          func(g *gin.RouterGroup) { tenantHandler.Register(v1, g) },
 		Store:           func(g *gin.RouterGroup) { storeHandler.Register(v1, g) },

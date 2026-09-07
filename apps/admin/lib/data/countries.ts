@@ -1,6 +1,6 @@
 /**
- * Static list of ~50 primary markets for the arbitrage appeal jurisdiction
- * selector. USD/EUR zone + Asia-Pacific + known tenant geos.
+ * Static list of ~50 primary markets for the tax registration jurisdiction
+ * selector (see TaxIdForm). USD/EUR zone + Asia-Pacific + known tenant geos.
  *
  * Sorted alphabetically by label. Each entry is { value: CC, label: name }.
  */

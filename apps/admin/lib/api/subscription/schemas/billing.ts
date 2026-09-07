@@ -6,7 +6,6 @@
  * Currently populated by the Go handler:
  *   id, store_id, plan, status, current_period_start, current_period_end,
  *   cancel_at_period_end, stripe_subscription_id, created_at,
- *   arbitrage_flag, latest_arbitrage_audit,
  *   payment_method_type/brand/last4,
  *   has_default_payment_method, trial_ends_at, days_remaining_in_trial,
  *   trial_cta, feature_limits, min_plan_for_feature.
@@ -36,35 +35,6 @@ export const subscriptionStatusSchema = z.enum([
 export type SubscriptionStatus = z.infer<typeof subscriptionStatusSchema>
 
 // ---------------------------------------------------------------------------
-// Arbitrage audit summary (returned on the GET subscription endpoint, §18.8.1)
-// ---------------------------------------------------------------------------
-
-export const appealStatusSchema = z.enum([
-  'pending',
-  'under_review',
-  'resolved',
-  'rejected',
-])
-
-export type AppealStatus = z.infer<typeof appealStatusSchema>
-
-export const arbitrageAuditSummarySchema = z.object({
-  card_country: z.string(),
-  billing_country: z.string(),
-  ip_country: z.string(),
-  resolution: z.string(),
-  flagged_at: z.string(),
-  mismatch_reason: z.string(),
-  // ─── Appeal fields (added by P8 backend; optional until P8 ships) ──────
-  /** Status of an in-progress or completed appeal. */
-  appeal_status: appealStatusSchema.nullable().optional(),
-  /** ISO date string when the appeal was submitted. */
-  appeal_submitted_at: z.string().nullable().optional(),
-})
-
-export type ArbitrageAuditSummary = z.infer<typeof arbitrageAuditSummarySchema>
-
-// ---------------------------------------------------------------------------
 // GET /api/v1/admin/stores/:storeId/subscription
 // ---------------------------------------------------------------------------
 
@@ -86,8 +56,6 @@ export const subscriptionResponseSchema = z.object({
   cancel_at_period_end: z.boolean(),
   stripe_subscription_id: z.string().nullable().optional(),
   created_at: z.string(),
-  arbitrage_flag: z.boolean(),
-  latest_arbitrage_audit: arbitrageAuditSummarySchema.nullable().optional(),
 
   // ─── Fields not yet in the Go DTO ─────────────────────────────────────
   // Safe defaults so code that reads them doesn't crash; remove the
@@ -213,7 +181,6 @@ export interface CurrentPlan {
   periodStart: string | null
   periodEnd: string | null
   cancelAtPeriodEnd: boolean
-  arbitrageFlag: boolean
   billingCurrency: string
   addOns: string[]
   /** ISO date string: when the subscription record was created (signup timestamp). */
@@ -278,7 +245,6 @@ export function toCurrentPlan(raw: SubscriptionResponse): CurrentPlan {
     periodStart: raw.current_period_start ?? null,
     periodEnd: raw.current_period_end ?? null,
     cancelAtPeriodEnd: raw.cancel_at_period_end,
-    arbitrageFlag: raw.arbitrage_flag,
     billingCurrency: raw.billing_currency ?? 'USD',
     addOns: raw.add_ons ?? [],
     createdAt: raw.created_at,

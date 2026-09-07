@@ -358,41 +358,6 @@ export const subscriptionCopy = {
     toastError: "Couldn't apply your choices. Try each store individually.",
   },
 
-  arbitrage: {
-    banner: {
-      heading: "We've noted a discrepancy",
-      body: "Your registered tax jurisdiction and your recent customer addresses don't match. Review and respond to keep your store's pricing tier.",
-      cta: 'Resolve',
-    },
-    appeal: {
-      heading: 'Resolve arbitrage flag',
-      intro:
-        "Tell us your primary billing jurisdiction. We review appeals within 5 business days. You keep full access while the review is open.",
-      jurisdictionLabel: 'Primary billing jurisdiction',
-      jurisdictionHelp:
-        'The country where your business is registered for tax purposes.',
-      justificationLabel: 'Additional context (optional)',
-      justificationHelp: 'Explain anything unusual about your customer distribution.',
-      uploadLabel: 'Supporting document (optional)',
-      uploadHelp:
-        'A registration certificate, tax filing, or similar. PDF or PNG, up to 5 MB.',
-      submitCta: 'Submit appeal',
-      toastSubmitted: "Appeal submitted. We'll review it within 5 business days.",
-      toastError: "Couldn't submit appeal. Please try again.",
-      status: {
-        pending:
-          "Appeal under review \u2014 we'll get back to you within 5 business days.",
-        resolved: 'Appeal resolved. Your jurisdiction has been updated.',
-        rejected:
-          'Appeal declined. A support message with details has been sent.',
-      },
-      errorNoOpenFlag:
-        'No open arbitrage flag found \u2014 this store may already be clear.',
-      uploadFileTooLarge: 'File must be under 5 MB.',
-      uploadInvalidType: 'Only PDF or PNG files are accepted.',
-    },
-  },
-
   taxId: {
     heading: 'Tax registration',
     intro:

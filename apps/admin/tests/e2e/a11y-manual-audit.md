@@ -158,14 +158,6 @@ Color-contrast rules are **disabled** in both axe tiers (jsdom and Playwright) b
 - [ ] **Submit gating** — Submit CTA `disabled` until checkbox checked; `aria-disabled` should also be set for screen readers.
 - [ ] **No focus trap** — Page-level form.
 
-### `/settings/arbitrage`
-
-- [ ] **Keyboard navigation** — Jurisdiction select → doc upload (optional) → submit.
-- [ ] **Focus indicator** — File input and select have moss ring.
-- [ ] **Form labels** — Jurisdiction select has `<label htmlFor>`. Doc upload has `<label htmlFor>`.
-- [ ] **AppealStatus** — Status tracker region uses `role="status"` or `aria-live="polite"`.
-- [ ] **No focus trap** — Page-level form.
-
 ### `/stores/close-before-downgrade`
 
 - [ ] **Keyboard navigation** — Store list rows → Close/Delete per-row buttons → download CSV link → confirm CTA reachable in order.
@@ -186,7 +178,6 @@ Color-contrast rules are **disabled** in both axe tiers (jsdom and Playwright) b
 | TrialBanner | PASS | Delegates to BannerShell |
 | FailedPaymentBanner | PASS | Delegates to BannerShell |
 | PaymentActionRequiredBanner | PASS | Delegates to BannerShell |
-| ArbitrageBanner | PASS | Delegates to BannerShell; CTA is an `<a>` with text label |
 | PlanBadge | PASS | `role="status" aria-label` on outer span; decorative middot has `aria-hidden="true"` |
 | SubscriptionStatusBadge | PASS | `role="status" aria-label` on outer span |
 | Money | PASS | Semantic `<span>` with formatted text |

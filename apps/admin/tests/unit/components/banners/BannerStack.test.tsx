@@ -2,18 +2,18 @@
  * BannerStack unit tests.
  *
  * Tests:
- *   1.  All four hooks return false → renders null (nothing).
+ *   1.  All three hooks return false → renders null (nothing).
  *   2.  Only trial active → renders TrialBanner, not the others.
  *   3.  Only past_due active → renders FailedPaymentBanner.
  *   4.  Trial AND past_due both active → renders FailedPaymentBanner only
  *       (past_due outranks trial).
- *   5.  All four active → renders PaymentActionRequiredBanner only
+ *   5.  All three active → renders PaymentActionRequiredBanner only
  *       (highest priority wins).
  *   6.  role="region" wrapper is present with aria-label="System notification"
  *       when a banner is active.
  *   7.  role="region" wrapper is absent when no banner is active (returns null).
  *
- * Strategy: mock the four isActive hooks and the four banner components at
+ * Strategy: mock the three isActive hooks and the three banner components at
  * the module boundary. The banner components are replaced with minimal stubs
  * so we verify WHICH component mounts without needing a QueryProvider.
  */
@@ -28,7 +28,6 @@ import { BannerStack } from '@/components/shell/banners/BannerStack'
 
 const mockIsPaymentActionRequired = vi.fn<[], boolean>(() => false)
 const mockIsFailedPayment = vi.fn<[], boolean>(() => false)
-const mockIsArbitrage = vi.fn<[], boolean>(() => false)
 const mockIsTrial = vi.fn<[], boolean>(() => false)
 
 vi.mock('@/components/shell/banners/PaymentActionRequiredBanner', () => ({
@@ -43,12 +42,6 @@ vi.mock('@/components/shell/banners/FailedPaymentBanner', () => ({
   useFailedPaymentBannerActive: (...args: unknown[]) =>
     mockIsFailedPayment(...(args as [])),
   FailedPaymentBanner: () => <div data-testid="failed-payment-banner" />,
-}))
-
-vi.mock('@/components/shell/banners/ArbitrageBanner', () => ({
-  useArbitrageBannerActive: (...args: unknown[]) =>
-    mockIsArbitrage(...(args as [])),
-  ArbitrageBanner: () => <div data-testid="arbitrage-banner" />,
 }))
 
 vi.mock('@/components/shell/banners/TrialBanner', () => ({
@@ -75,11 +68,10 @@ describe('BannerStack', () => {
     vi.clearAllMocks()
     mockIsPaymentActionRequired.mockReturnValue(false)
     mockIsFailedPayment.mockReturnValue(false)
-    mockIsArbitrage.mockReturnValue(false)
     mockIsTrial.mockReturnValue(false)
   })
 
-  it('renders nothing when all four hooks return false', () => {
+  it('renders nothing when all three hooks return false', () => {
     const { container } = renderStack()
     expect(container).toBeEmptyDOMElement()
   })
@@ -91,7 +83,6 @@ describe('BannerStack', () => {
 
     expect(screen.getByTestId('trial-banner')).toBeInTheDocument()
     expect(screen.queryByTestId('failed-payment-banner')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('arbitrage-banner')).not.toBeInTheDocument()
     expect(
       screen.queryByTestId('payment-action-required-banner'),
     ).not.toBeInTheDocument()
@@ -104,7 +95,6 @@ describe('BannerStack', () => {
 
     expect(screen.getByTestId('failed-payment-banner')).toBeInTheDocument()
     expect(screen.queryByTestId('trial-banner')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('arbitrage-banner')).not.toBeInTheDocument()
     expect(
       screen.queryByTestId('payment-action-required-banner'),
     ).not.toBeInTheDocument()
@@ -120,10 +110,9 @@ describe('BannerStack', () => {
     expect(screen.queryByTestId('trial-banner')).not.toBeInTheDocument()
   })
 
-  it('renders PaymentActionRequiredBanner when all four are active (highest priority wins)', () => {
+  it('renders PaymentActionRequiredBanner when all three are active (highest priority wins)', () => {
     mockIsPaymentActionRequired.mockReturnValue(true)
     mockIsFailedPayment.mockReturnValue(true)
-    mockIsArbitrage.mockReturnValue(true)
     mockIsTrial.mockReturnValue(true)
 
     renderStack()
@@ -132,7 +121,6 @@ describe('BannerStack', () => {
       screen.getByTestId('payment-action-required-banner'),
     ).toBeInTheDocument()
     expect(screen.queryByTestId('failed-payment-banner')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('arbitrage-banner')).not.toBeInTheDocument()
     expect(screen.queryByTestId('trial-banner')).not.toBeInTheDocument()
   })
 

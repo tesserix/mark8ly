@@ -59,7 +59,6 @@ function makePlan(overrides: Partial<CurrentPlan> = {}): CurrentPlan {
     periodStart: '2026-04-01T00:00:00Z',
     periodEnd: '2027-04-01T00:00:00Z',
     cancelAtPeriodEnd: false,
-    arbitrageFlag: false,
     billingCurrency: 'USD',
     addOns: [],
     trialEndsAt: null,

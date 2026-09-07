@@ -1214,7 +1214,12 @@ func main() {
 			if tenantDiscountSvc != nil {
 				trialSubscriber = trialSubscriber.WithTenantDiscount(tenantDiscountSvc)
 			}
-			trialBillingHandler = admin.NewTrialBillingHandler(trialSubscriber, log)
+			// The customer ensurer is what lets a merchant whose row was
+			// created at signup (#827) actually add a card: that row
+			// deliberately carries no Stripe customer, and trial.Subscribe
+			// refuses without one.
+			trialBillingHandler = admin.NewTrialBillingHandler(trialSubscriber, log).
+				WithCustomerEnsurer(subscriptionSvc)
 		}
 
 		// P10 — Promo-code engine (§7).

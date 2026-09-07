@@ -357,6 +357,19 @@ func (h *SubscriptionHandler) Bootstrap(c *gin.Context) {
 		return
 	}
 
+	// The row exists now, so the trial has started (#827) — that half is
+	// committed whatever happens next. Attaching the Stripe customer is the
+	// other half, and its error is surfaced rather than logged away: an
+	// unusable billing key is precisely the failure #827 found had been
+	// invisible for months. A retry of this endpoint is cheap, because
+	// both halves are idempotent.
+	withCustomer, err := h.svc.EnsureStripeCustomer(c.Request.Context(), tenantID, storeID, email, name)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	sub = withCustomer
+
 	if h.audit != nil {
 		h.audit.Emit(c, audit.Event{
 			Action:       "subscription.bootstrap",

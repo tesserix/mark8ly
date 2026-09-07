@@ -722,3 +722,81 @@ Zero break-glass accounts exist today, so the feature is not real until this run
 - [ ] **Step 3: End-to-end** — a correct password+TOTP returns 200 with `Set-Cookie`; the cookie is accepted by marketplace-api-admin (this is the §4 claim, proven against the live Istio policy rather than the manifest).
 - [ ] **Step 4: Negative** — wrong factor returns the uniform `invalid_credentials`; the lockout path still trips; the Slack alert and `severity=critical` audit event both fire.
 - [ ] **Step 5: Audit `session-exchange` callers** for any that assume a non-empty `access_token`, since break-glass sessions return empty strings there.
+
+---
+
+## Errata — verified against the code, 2026-09-07
+
+Before executing Task 1, every symbol this plan names was checked against
+`services/auth-bff` and `services/marketplace-api`. **Five of the plan's and
+the merged design spec's load-bearing claims are wrong.** They are recorded
+here rather than quietly worked around, because each one would have been
+discovered mid-implementation and patched by guesswork.
+
+### E1 — `CookieStore` does not exist
+
+The type is `session.Manager`, constructed by `NewManager(cfg Config)`, not
+`NewCookieStore(keyHex, ttl, secure)`. `services/auth-bff/internal/session/cookie.go:91`.
+
+### E2 — `Encode` already exists, unexported
+
+`func (m *Manager) encode(s Session) (string, error)` is at `cookie.go:222`,
+already factored out and already used by `MintWithDomain` (`:156`). Task 1 is
+therefore **export or wrap**, not extract. The plan's Step 3 body — which
+re-derives an extraction out of `Save` — describes work that was already done.
+
+`Save` does not exist either; the writers are `Mint` / `MintWithDomain`, and
+they take an `http.ResponseWriter`, not a `*gin.Context`.
+
+### E3 — `LoadFromValue` does not exist
+
+The readers are `Read(r *http.Request)` and the unexported `decode(encoded string)`.
+The round-trip test in Task 1 Step 1 cannot compile as written.
+
+### E4 — `Session` has no `AuthContext` field
+
+`Session` is `{UID, Email, TenantID, StoreID, IssuedAt, ExpiresAt}`
+(`cookie.go:41-53`). `IssuedAt`/`ExpiresAt` are `time.Time`, not the int64 the
+plan's test assumes (`if in.IssuedAt == 0`).
+
+This matters well beyond a compile error: **the allow-list is the spec's
+central safety control** — "it must never default to `staff`, a typo would
+silently mint a full staff session" — and there is no field for it to guard.
+Adding one is a change to the session cookie payload shared by every
+consumer, which is a design decision, not a task step.
+
+### E5 — the cited precedent does not exist
+
+The design spec justifies the allow-list as working "exactly as
+`IsKnownSessionCookie` guards `session-exchange` today". Neither
+`IsKnownSessionCookie` nor `session-exchange` appears anywhere in this
+repository, in Go or TypeScript.
+
+Relatedly, the spec "corrects" `session_issuer.go`'s own comment — which says
+the endpoint is mTLS-gated — toward "the `/internal` group's actual, working
+pattern is a Bearer service key plus rate limiting". That is also wrong. The
+real pattern is a shared **`X-Internal-Auth` header**, compared in constant
+time by `internalauth.Equal` (`internal/internalauth/internalauth.go:29`),
+applied **per route inside the handler**, not as group middleware, and there
+is no rate limiting on it. `cmd/server/main.go:425-431`.
+
+### E6 — the issuer interface cannot carry the design
+
+`SessionIssuer.Issue(ctx, tenantID, userID uuid.UUID, ttl)` passes no email,
+no tenant slug and no auth context, yet auth-bff's `Session` needs `UID` (a
+string identity key) and `Email`. A break-glass principal is synthetic, so
+what goes in `UID` is an open question with real consequences — this estate
+already has three identity keys in play, and login reads email while the API
+reads uid. Minting a session whose `UID` is a freshly-invented UUID needs to
+be checked against every consumer before it is written, not after.
+
+## Consequence
+
+Tasks 1–3 must be re-planned against the real API. Tasks 4–8 (OpenBao port,
+GCP client deletion, mounting, config, provisioning) were **not** re-verified
+in this pass and must be assumed to carry the same class of error until they
+are.
+
+The design's *intent* survives all six findings: mint a session in auth-bff
+for an already-authenticated principal, keep cookie crypto in auth-bff, port
+the secret store to OpenBao. Only its account of the code is unreliable.

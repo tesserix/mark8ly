@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -67,19 +68,36 @@ type BootstrapInput struct {
 	StoreID  uuid.UUID
 	Email    string
 	Name     string
+	// BillingCurrency is the store's ISO 4217 currency, lower-case, when the
+	// caller knows it — onboarding does. Left empty it stays NULL, which is
+	// what every reader already treats as "not known yet"; "" would be a
+	// third meaning nothing tests for.
+	BillingCurrency string
 }
 
-// Bootstrap idempotently initialises a store_subscriptions row.
+// Bootstrap idempotently initialises a store_subscriptions row: plan=trial,
+// status=signup. The status machine (P2) owns the signup → trialing
+// transition once the merchant confirms a plan.
 //
-// If a row already exists for the (tenant, store) pair it is returned as-is
-// (idempotent — safe to call from a retry). Otherwise a Stripe customer is
-// created and a new row is inserted with plan=trial, status=signup. The
-// status machine (P2) owns the signup → trialing transition once the
-// merchant confirms a plan.
+// IT MAKES NO STRIPE CALL. That is the fix for #827, and it is deliberate in
+// both directions:
 //
-// This exists because stores created before the subscription-v2 refactor
-// shipped have no row and GetSubscription returns 404. The admin UI calls
-// Bootstrap on that 404 to create the row on demand.
+//   - The row's created_at IS the trial clock (trial.EndsAt derives from it
+//     when trial_ends_at is NULL). Making a free trial depend on a payment
+//     provider being reachable is what turns a Stripe outage — or the
+//     mis-scoped key #696 describes — into a merchant with no trial at all.
+//   - Attaching a customer has its own failure mode, and folding it in here
+//     is what let a Stripe problem present as "the trial did not start"
+//     rather than as a Stripe problem. See EnsureStripeCustomer.
+//
+// A row with an empty stripe_customer_id is a state this codebase already
+// expects: the reconciler, hard-delete, the billing archive and the admin
+// payment-method lookup all guard it and degrade, and the PAID path refuses
+// it outright (planchange.go, "run bootstrap first"). That refusal is what
+// makes a customer-less trial row safe to create.
+//
+// Called at onboarding completion, which is what makes the trial start at
+// signup, and still by the admin billing page for a store that predates it.
 func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (*StoreSubscription, error) {
 	if in.TenantID == uuid.Nil {
 		return nil, apperrors.ValidationFailed("tenant_id", "tenant_id is required")
@@ -87,10 +105,6 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (*StoreSubsc
 	if in.StoreID == uuid.Nil {
 		return nil, apperrors.ValidationFailed("store_id", "store_id is required")
 	}
-	if s.stripe == nil {
-		return nil, fmt.Errorf("stripe client not configured")
-	}
-
 	// Idempotency — return the existing row if one is already in place.
 	existing, err := s.repo.GetByStoreID(ctx, s.db, in.TenantID, in.StoreID)
 	if err == nil {
@@ -100,34 +114,72 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (*StoreSubsc
 		return nil, err
 	}
 
-	email := in.Email
-	if email == "" {
-		// Stripe requires non-empty customer email for reliable dedup;
-		// fall back to a deterministic tenant-scoped placeholder so the
-		// customer record is still unique per tenant/store.
-		email = fmt.Sprintf("billing+%s@mark8ly.local", in.StoreID.String())
-	}
-	name := in.Name
-	if name == "" {
-		name = in.StoreID.String()
-	}
-
-	customerID, err := s.stripe.CreateCustomer(ctx, email, name)
-	if err != nil {
-		return nil, fmt.Errorf("bootstrap: create stripe customer: %w", err)
-	}
-
 	row := &StoreSubscription{
-		TenantID:         in.TenantID,
-		StoreID:          in.StoreID,
-		StripeCustomerID: customerID,
-		Plan:             PlanTrial,
-		Status:           StatusSignup,
+		TenantID: in.TenantID,
+		StoreID:  in.StoreID,
+		Plan:     PlanTrial,
+		Status:   StatusSignup,
+	}
+	if cur := strings.ToLower(strings.TrimSpace(in.BillingCurrency)); cur != "" {
+		row.BillingCurrency = &cur
 	}
 	if err := s.repo.Create(ctx, s.db, row); err != nil {
 		return nil, fmt.Errorf("bootstrap: create subscription row: %w", err)
 	}
 	return row, nil
+}
+
+// EnsureStripeCustomer attaches a Stripe customer to a subscription row that
+// has none, and returns the row either way. Idempotent: a row that already
+// carries a customer id is returned untouched and no customer is minted.
+//
+// Split out of Bootstrap by #827 so the two can fail independently. A Stripe
+// failure here is returned, never logged-and-swallowed: an unusable billing
+// key is the thing that must be visible, and #827 exists because a billing
+// precondition failed quietly for months.
+//
+// Callers: the admin bootstrap CTA (after Bootstrap, so the trial has started
+// even when this half fails) and the card-add path, which cannot create a
+// Stripe subscription without one.
+func (s *Service) EnsureStripeCustomer(ctx context.Context, tenantID, storeID uuid.UUID,
+	email, name string) (*StoreSubscription, error) {
+
+	sub, err := s.repo.GetByStoreID(ctx, s.db, tenantID, storeID)
+	if err != nil {
+		return nil, err
+	}
+	if sub.StripeCustomerID != "" {
+		return sub, nil
+	}
+	if s.stripe == nil {
+		return nil, fmt.Errorf("ensure stripe customer: stripe client not configured")
+	}
+
+	if email == "" {
+		// Stripe requires non-empty customer email for reliable dedup;
+		// fall back to a deterministic tenant-scoped placeholder so the
+		// customer record is still unique per tenant/store.
+		email = fmt.Sprintf("billing+%s@mark8ly.local", storeID.String())
+	}
+	if name == "" {
+		name = storeID.String()
+	}
+
+	customerID, err := s.stripe.CreateCustomer(ctx, email, name)
+	if err != nil {
+		return nil, fmt.Errorf("ensure stripe customer: create stripe customer: %w", err)
+	}
+
+	sub.StripeCustomerID = customerID
+	if err := s.repo.Update(ctx, s.db, sub); err != nil {
+		// The customer exists at Stripe but we did not record it. Saying so
+		// is the point: a retry mints a SECOND customer for this store, and
+		// whoever reads this line is the only one who can tell that the
+		// duplicate came from here.
+		return nil, fmt.Errorf("ensure stripe customer: stripe customer %s created but not recorded: %w",
+			customerID, err)
+	}
+	return sub, nil
 }
 
 // CheckoutInput holds the parameters for creating a checkout session.

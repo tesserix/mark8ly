@@ -141,6 +141,58 @@ type Store struct {
 	Status       string `json:"status"`
 }
 
+// EnsureSubscription gives a newly created store its subscription row, and
+// with it the start of its 90-day trial.
+//
+// Called from onboarding.Complete AFTER EnsureSelfStore, and the order is a
+// requirement rather than a preference: marketplace_api's
+// store_subscriptions.store_id is a foreign key onto its stores projection,
+// so the row this mirrors has to land first.
+//
+// Idempotent on store id. Best-effort like the two calls beside it — a
+// failure is logged and does not fail onboarding — but the consequence is
+// worth naming: a store with no subscription row has no trial clock at all
+// and is invisible to every billing cron until something else creates one
+// (mark8ly#827).
+func (c *VendorClient) EnsureSubscription(ctx context.Context, in EnsureSubscription) error {
+	body, err := json.Marshal(in)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/internal/stores/%s/ensure-subscription", c.baseURL, in.StoreID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.addInternalAuth(req)
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("marketplace-api ensure-subscription: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode >= 300 {
+		raw, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("marketplace-api ensure-subscription %d: %s", res.StatusCode, string(raw))
+	}
+	return nil
+}
+
+// EnsureSubscription is the request body for the call of the same name.
+// StoreID travels in the path and is not serialised.
+type EnsureSubscription struct {
+	StoreID  string `json:"-"`
+	TenantID string `json:"tenant_id"`
+	Email    string `json:"email,omitempty"`
+	Name     string `json:"name,omitempty"`
+	// Currency is the store's ISO 4217 billing currency. Sent because
+	// nothing supplies it to marketplace-api afterwards, and a subscription
+	// row without one cannot have its price resolved.
+	Currency string `json:"currency,omitempty"`
+}
+
 // EnsureSelfStore upserts the authoritative store row from platform_api
 // into marketplace_api's local stores projection. Idempotent and keyed
 // on store id — re-runs are safe and preserve any server-side fields

@@ -12,50 +12,52 @@ import { theme } from '@/lib/theme';
 // file; the assertions still fail if the condition never holds, they just get
 // enough time on a slow runner.
 configure({ asyncUtilTimeout: 5000 });
-import { signInWithGoogleNative } from '@/lib/social-auth';
-import { AuthCancelledError } from '@repo/mobile-shared/auth/errors';
 import { useAuthNoticeStore } from '@repo/mobile-shared/stores/auth-notice';
+import { ZitadelAuthError } from '@repo/mobile-shared/auth/zitadel-client';
 
+const mockPush = jest.fn();
+const mockReplace = jest.fn();
 const mockSignIn = jest.fn();
-const mockAuth: Record<string, unknown> = {};
+const mockSignInWithGoogle = jest.fn();
+const mockSignInWithApple = jest.fn();
 
-jest.mock('@repo/mobile-shared/auth/provider', () => ({
-  useAuth: () => mockAuth,
-}));
-
-jest.mock('@/lib/social-auth', () => ({
-  configureGoogleSignin: jest.fn(),
-  signInWithGoogleNative: jest.fn().mockResolvedValue('gtok'),
-  signInWithAppleNative: jest.fn().mockResolvedValue({ idToken: 'atok', rawNonce: '', fullName: null }),
-}));
-
-jest.mock('../components/auth/LinkAccountPrompt', () => ({
-  LinkAccountPrompt: ({ email }: { email: string }) => {
-    const { Text } = require('react-native');
-    return <Text testID="link-prompt">{`link:${email}`}</Text>;
+jest.mock('expo-router', () => ({
+  router: {
+    push: (...args: unknown[]) => mockPush(...args),
+    replace: (...args: unknown[]) => mockReplace(...args),
   },
 }));
 
-function mockUseAuth(overrides: Record<string, unknown> = {}) {
-  Object.assign(
-    mockAuth,
-    {
-      signIn: mockSignIn,
-      signInWithGoogle: jest.fn().mockResolvedValue({ status: 'signed-in' }),
-      signInWithApple: jest.fn().mockResolvedValue({ status: 'signed-in' }),
-      loading: false,
-    },
-    overrides,
-  );
-}
+// Zitadel is the only auth path this screen has (#786): sign-in posts our own
+// form to marketplace-api, and the two providers go through Zitadel's
+// IDP-intent flow. Nothing here touches an auth SDK.
+jest.mock('@repo/mobile-shared/auth/zitadel-signin', () => ({
+  createZitadelSignIn: () => ({
+    signIn: (...args: unknown[]) => mockSignIn(...args),
+    signInWithGoogle: (...args: unknown[]) => mockSignInWithGoogle(...args),
+    signInWithApple: (...args: unknown[]) => mockSignInWithApple(...args),
+  }),
+}));
+
+jest.mock('@repo/mobile-shared/config/env', () => ({
+  useEnvironment: () => ({ apiBaseUrl: 'https://api.mark8ly.test' }),
+}));
+
+jest.mock('@repo/mobile-shared/stores/tenant-store', () => ({
+  useTenantStore: (selector: (s: unknown) => unknown) => selector({ setTenantId: jest.fn() }),
+}));
+
+const SIGNED_IN = { kind: 'signed_in', email: 'merchant@store.com', tenantId: 't-1' };
 
 beforeEach(() => {
+  mockPush.mockReset();
+  mockReplace.mockReset();
   mockSignIn.mockReset();
-  mockSignIn.mockResolvedValue(undefined);
-  for (const key of Object.keys(mockAuth)) {
-    delete mockAuth[key];
-  }
-  mockUseAuth();
+  mockSignIn.mockResolvedValue(SIGNED_IN);
+  mockSignInWithGoogle.mockReset();
+  mockSignInWithGoogle.mockResolvedValue(SIGNED_IN);
+  mockSignInWithApple.mockReset();
+  mockSignInWithApple.mockResolvedValue(SIGNED_IN);
 });
 
 describe('LoginScreen', () => {
@@ -71,13 +73,20 @@ describe('LoginScreen', () => {
     fireEvent.changeText(getByLabelText('Password'), 'hunter2');
     fireEvent.press(getByLabelText('Sign in'));
     await waitFor(() =>
-      expect(mockSignIn).toHaveBeenCalledWith('merchant@store.com', 'hunter2'),
+      expect(mockSignIn).toHaveBeenCalledWith(
+        'merchant@store.com',
+        'hunter2',
+        expect.any(Function),
+      ),
     );
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)'));
   });
 
   it('shows mapped copy — never the raw message — when signIn rejects', async () => {
+    // The screen renders its own mapping of the server's stable CODE; the
+    // server's message must never reach the merchant.
     mockSignIn.mockRejectedValue(
-      Object.assign(new Error('INVALID_LOGIN_CREDENTIALS'), { code: 'auth/invalid-credential' }),
+      new ZitadelAuthError('invalid_credentials', 'INVALID_LOGIN_CREDENTIALS'),
     );
     const { getByLabelText, findByText, queryByText } = render(<LoginScreen />);
     fireEvent.press(getByLabelText('Sign in'));
@@ -87,8 +96,8 @@ describe('LoginScreen', () => {
 
   it('disables the button and shows "Signing in…" while a sign-in is in flight', async () => {
     let resolveSignIn: () => void = () => {};
-    const deferred = new Promise<void>((resolve) => {
-      resolveSignIn = resolve;
+    const deferred = new Promise((resolve) => {
+      resolveSignIn = () => resolve(SIGNED_IN);
     });
     mockSignIn.mockReturnValue(deferred);
 
@@ -101,7 +110,7 @@ describe('LoginScreen', () => {
     // press triggers a re-render, so a reference held from before it can read
     // stale props. That raced on CI (green locally, red on a slower runner)
     // while asserting the very state the re-render produces. The
-    // accessibilityLabel stays "Sign in" in both states (app/login.tsx:142).
+    // accessibilityLabel stays "Sign in" in both states.
     expect(getByLabelText('Sign in').props.accessibilityState?.disabled).toBe(true);
 
     resolveSignIn();
@@ -110,42 +119,28 @@ describe('LoginScreen', () => {
     await waitFor(() => expect(queryByText('Signing in…')).toBeNull());
   });
 
-  it('signs in with Google when the Google button is pressed', async () => {
-    const signInWithGoogle = jest.fn().mockResolvedValue({ status: 'signed-in' });
-    mockUseAuth({ signInWithGoogle });
+  it('signs in with Google through the Zitadel IDP flow', async () => {
     const { getByLabelText } = render(<LoginScreen />);
     fireEvent.press(getByLabelText('Continue with Google'));
-    await waitFor(() => expect(signInWithGoogle).toHaveBeenCalledWith('gtok'));
+    await waitFor(() =>
+      expect(mockSignInWithGoogle).toHaveBeenCalledWith(
+        expect.objectContaining({ redirectUrl: 'mark8ly-admin://auth/idp' }),
+        expect.any(Function),
+      ),
+    );
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)'));
   });
 
-  it('signs in with Apple when the Apple button is pressed', async () => {
-    const signInWithApple = jest.fn().mockResolvedValue({ status: 'signed-in' });
-    mockUseAuth({ signInWithApple });
+  it('signs in with Apple through the Zitadel IDP flow', async () => {
     const { getByLabelText } = render(<LoginScreen />);
     fireEvent.press(getByLabelText('Sign in with Apple'));
-    await waitFor(() => expect(signInWithApple).toHaveBeenCalledWith('atok', '', null));
-  });
-
-  it('opens the link prompt when Google sign-in needs linking', async () => {
-    const signInWithGoogle = jest.fn().mockResolvedValue({
-      status: 'needs-link',
-      email: 'merchant@store.com',
-      provider: 'google.com',
-      pendingCredential: { provider: 'google', idToken: 'gtok' },
-    });
-    mockUseAuth({ signInWithGoogle });
-    const { getByLabelText, findByTestId } = render(<LoginScreen />);
-    fireEvent.press(getByLabelText('Continue with Google'));
-    expect(await findByTestId('link-prompt')).toBeTruthy();
-  });
-
-  it('does not open the link prompt on a normal signed-in outcome', async () => {
-    const signInWithGoogle = jest.fn().mockResolvedValue({ status: 'signed-in' });
-    mockUseAuth({ signInWithGoogle });
-    const { getByLabelText, queryByTestId } = render(<LoginScreen />);
-    fireEvent.press(getByLabelText('Continue with Google'));
-    await waitFor(() => expect(signInWithGoogle).toHaveBeenCalled());
-    expect(queryByTestId('link-prompt')).toBeNull();
+    await waitFor(() =>
+      expect(mockSignInWithApple).toHaveBeenCalledWith(
+        expect.objectContaining({ redirectUrl: 'mark8ly-admin://auth/idp' }),
+        expect.any(Function),
+      ),
+    );
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)'));
   });
 });
 
@@ -301,16 +296,18 @@ describe('provider icon row', () => {
 
 describe('error copy', () => {
   it('shows NOTHING when the user cancels the Google sheet', async () => {
-    (signInWithGoogleNative as jest.Mock).mockRejectedValueOnce(new AuthCancelledError());
-    const { getByLabelText, queryByText } = render(<LoginScreen />);
+    mockSignInWithGoogle.mockRejectedValueOnce(new ZitadelAuthError('cancelled', ''));
+    const { getByLabelText, queryByRole, queryByText } = render(<LoginScreen />);
     fireEvent.press(getByLabelText('Continue with Google'));
-    await waitFor(() => expect(signInWithGoogleNative).toHaveBeenCalled());
-    expect(queryByText(/cancel/i)).toBeNull();
+    await waitFor(() => expect(mockSignInWithGoogle).toHaveBeenCalled());
+    expect(queryByRole('alert')).toBeNull();
     expect(queryByText(/something went wrong/i)).toBeNull();
   });
 
   it('never shows a raw native error string', async () => {
-    (signInWithGoogleNative as jest.Mock).mockRejectedValueOnce(
+    // An error that is not a ZitadelAuthError falls through to the shared
+    // mapper, which must never surface a native SDK string.
+    mockSignInWithGoogle.mockRejectedValueOnce(
       new Error('RequestUnknownException: AppleAuthenticationExceptions.swift:61'),
     );
     const { getByLabelText, findByText, queryByText } = render(<LoginScreen />);
@@ -348,32 +345,13 @@ describe('involuntary sign-out notice', () => {
   });
 });
 
-// Apple is offered on BOTH builds, and has been since #771 gave it a Zitadel
-// path of its own (handleAppleSignIn's isZitadelProvider branch).
-//
-// It was hidden under Zitadel before that, and not cosmetically: the handler
-// authenticated against Firebase and set the provider's `user`, which AuthGate
-// ignores under Zitadel (it reads zitadelSignedIn) and api-client ignores too
-// (it reads zitadelSession) — a silent bounce back to /login, #493's shape.
-//
 // Apple guideline 4.8 requires Sign in with Apple wherever another social
 // provider is offered, and Google is offered here, so this button being
-// present on a Zitadel build is a submission requirement, not a preference.
-describe('Apple button visibility by provider', () => {
-  afterEach(() => {
-    delete process.env.EXPO_PUBLIC_AUTH_PROVIDER;
-  });
-
-  it('is shown on a Zitadel build, where it now has a Zitadel path', () => {
-    process.env.EXPO_PUBLIC_AUTH_PROVIDER = 'zitadel';
+// present is a submission requirement, not a preference.
+describe('provider availability', () => {
+  it('offers both providers', () => {
     const { queryByTestId } = render(<LoginScreen />);
-    expect(queryByTestId('provider-apple')).not.toBeNull();
     expect(queryByTestId('provider-google')).not.toBeNull();
-  });
-
-  it('is still shown on a GIP build, where it works', () => {
-    delete process.env.EXPO_PUBLIC_AUTH_PROVIDER;
-    const { queryByTestId } = render(<LoginScreen />);
     expect(queryByTestId('provider-apple')).not.toBeNull();
   });
 });

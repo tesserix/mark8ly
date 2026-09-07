@@ -60,7 +60,6 @@ describe("MoreScreen", () => {
       "Marketing",
       "Notifications",
       "Account",
-      "Security",
       "Tesserix Support",
       "Privacy Policy",
       "Terms of Service",

@@ -10,7 +10,6 @@ import {
   Scale,
   ScrollText,
   Settings,
-  ShieldCheck,
   Ticket,
   UserRound,
   Users,
@@ -59,7 +58,6 @@ const SECTIONS: ReadonlyArray<{ title: string; items: readonly NavItem[] }> = [
       { key: "marketing", icon: Megaphone, label: "Marketing", a11y: "Marketing — coupons, campaigns, loyalty and more", href: "/(tabs)/more/marketing" },
       { key: "notifications", icon: Bell, label: "Notifications", a11y: "Notifications inbox", href: "/notifications", showUnread: true },
       { key: "account", icon: UserRound, label: "Account", a11y: "Account settings", href: "/(tabs)/more/account" },
-      { key: "security", icon: ShieldCheck, label: "Security", a11y: "Security and sign-in methods", href: "/(tabs)/more/security" },
     ],
   },
   {

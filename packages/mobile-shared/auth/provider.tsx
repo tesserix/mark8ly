@@ -2,15 +2,16 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { tokenStorage } from "./token-storage";
 import { zitadelSession } from "./zitadel-session";
-import { getEnv } from "../config/env";
-import type { AppleFullName, SocialSignInOutcome } from "./social-credentials";
-import type { FirebaseAuthTypes } from "@react-native-firebase/auth";
 
 /**
- * Loose user shape used by mobile screens — both the real Firebase user
- * and the Expo Go stub conform to this. We avoid importing
- * FirebaseAuthTypes here so the Firebase native module never has to load
- * inside Expo Go (which doesn't ship RNFBAppModule).
+ * Loose user shape used by mobile screens. Kept as a plain structural type
+ * rather than a provider SDK type so no native auth module has to load just
+ * to describe a signed-in person.
+ *
+ * On the Zitadel path this is ALWAYS null: sign-in happens through
+ * `zitadel-signin.ts` and the resulting bearer lives in `zitadel-session`,
+ * so there is no SDK holding a user object. Callers that need
+ * "is somebody signed in?" must read the session, not this field.
  */
 export interface AuthUser {
   uid: string;
@@ -22,85 +23,28 @@ interface AuthState {
   user: AuthUser | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: (idToken: string, accessToken?: string) => Promise<SocialSignInOutcome>;
-  signInWithApple: (
-    idToken: string,
-    rawNonce: string,
-    fullName?: AppleFullName | null,
-  ) => Promise<SocialSignInOutcome>;
   signOut: () => Promise<void>;
-  /** Returns the cached GIP id_token. Cheap, safe to call per request. */
+  /** Returns the cached bearer token. Cheap, safe to call per request. */
   getToken: () => Promise<string | null>;
   /**
-   * Forces GIP to mint a fresh id_token, refreshing custom claims and
-   * extending the expiry. Use after a 401 from the API before treating
-   * the session as terminated.
+   * Asks for the freshest token the backend can produce. Use after a 401
+   * from the API before treating the session as terminated.
    */
   refreshToken: () => Promise<string | null>;
-  completeLinkWithPassword: (
-    email: string,
-    password: string,
-    pending: FirebaseAuthTypes.AuthCredential,
-  ) => Promise<void>;
-  completeLinkWithGoogle: (
-    googleIdToken: string,
-    pending: FirebaseAuthTypes.AuthCredential,
-  ) => Promise<void>;
-  completeLinkWithApple: (
-    appleIdToken: string,
-    rawNonce: string,
-    pending: FirebaseAuthTypes.AuthCredential,
-  ) => Promise<void>;
-  existingSignInMethods: (email: string) => Promise<string[]>;
-  linkedProviderIds: () => Promise<string[]>;
-  linkGoogleToCurrentUser: (idToken: string) => Promise<void>;
-  linkAppleToCurrentUser: (idToken: string, rawNonce: string) => Promise<void>;
-  unlinkProvider: (providerId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
 
 interface AuthProviderProps {
-  /**
-   * GIP/Identity Platform tenant pool id. Optional — defaults to the value
-   * configured via `expo.extra.gipTenantId` (set in app.config.js). Pass
-   * explicitly only to override per-mount (e.g. in tests).
-   */
-  tenantId?: string;
   children: ReactNode;
 }
 
 interface AuthBackend {
   signIn: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: (idToken: string, accessToken?: string) => Promise<SocialSignInOutcome>;
-  signInWithApple: (
-    idToken: string,
-    rawNonce: string,
-    fullName?: AppleFullName | null,
-  ) => Promise<SocialSignInOutcome>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
   getIdTokenForced: () => Promise<string | null>;
   onAuthStateChanged: (cb: (user: AuthUser | null) => void) => () => void;
-  completeLinkWithPassword: (
-    email: string,
-    password: string,
-    pending: FirebaseAuthTypes.AuthCredential,
-  ) => Promise<void>;
-  completeLinkWithGoogle: (
-    googleIdToken: string,
-    pending: FirebaseAuthTypes.AuthCredential,
-  ) => Promise<void>;
-  completeLinkWithApple: (
-    appleIdToken: string,
-    rawNonce: string,
-    pending: FirebaseAuthTypes.AuthCredential,
-  ) => Promise<void>;
-  existingSignInMethods: (email: string) => Promise<string[]>;
-  linkedProviderIds: () => Promise<string[]>;
-  linkGoogleToCurrentUser: (idToken: string) => Promise<void>;
-  linkAppleToCurrentUser: (idToken: string, rawNonce: string) => Promise<void>;
-  unlinkProvider: (providerId: string) => Promise<void>;
 }
 
 /** True when running inside the public Expo Go shell (no custom native modules). */
@@ -109,24 +53,18 @@ function isExpoGo(): boolean {
 }
 
 /**
- * Force the demo (no-Firebase) backend outside Expo Go by setting
+ * Force the demo backend outside Expo Go by setting
  * EXPO_PUBLIC_AUTH_BACKEND=demo. This lets a native dev-client / simulator
- * build boot and render the login screen without a bundled
- * GoogleService-Info.plist — real GIP auth needs that plist and is wired
- * per app in a later phase. Defaults off, so production builds are unaffected.
+ * build boot and render the login screen without reaching a real auth
+ * server. Defaults off, so production builds are unaffected.
  */
 function isDemoAuthForced(): boolean {
   return process.env.EXPO_PUBLIC_AUTH_BACKEND === "demo";
 }
 
 /**
- * Demo backend used in Expo Go. Skips Firebase entirely so the UI can
- * render without RNFBAppModule. Starts signed out so the Login screen
- * shows on launch — exactly like the web admin — and any email/password
- * accepts and routes into the dashboard.
- *
- * Real GIP/Firebase auth lights up in dev-client and production builds
- * (eas build --profile uat / production), where RNFBAppModule is linked.
+ * Demo backend used in Expo Go and in simulator builds. Starts signed out so
+ * the Login screen shows on launch, and any email/password accepts.
  */
 function createDemoBackend(): AuthBackend {
   let active: AuthUser | null = null;
@@ -141,16 +79,6 @@ function createDemoBackend(): AuthBackend {
       };
       for (const cb of subs) cb(active);
     },
-    signInWithGoogle: async () => {
-      active = { uid: "expo-go-demo:google", email: "demo@mark8ly.com", displayName: "Demo Admin" };
-      for (const cb of subs) cb(active);
-      return { status: "signed-in" };
-    },
-    signInWithApple: async () => {
-      active = { uid: "expo-go-demo:apple", email: "demo@mark8ly.com", displayName: "Demo Admin" };
-      for (const cb of subs) cb(active);
-      return { status: "signed-in" };
-    },
     signOut: async () => {
       active = null;
       for (const cb of subs) cb(active);
@@ -162,64 +90,46 @@ function createDemoBackend(): AuthBackend {
       cb(active);
       return () => subs.delete(cb);
     },
-    completeLinkWithPassword: async () => {},
-    completeLinkWithGoogle: async () => {},
-    completeLinkWithApple: async () => {},
-    existingSignInMethods: async () => [],
-    linkedProviderIds: async () => ["password"],
-    linkGoogleToCurrentUser: async () => {},
-    linkAppleToCurrentUser: async () => {},
-    unlinkProvider: async () => {},
   };
 }
 
-function createFirebaseBackend(tenantId: string): AuthBackend {
-  // Lazy require so the static Firebase imports never resolve inside Expo Go.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createGIPAuth } = require("./gip") as typeof import("./gip");
-  const gip = createGIPAuth({ tenantId });
+/**
+ * The real backend (#786). Zitadel is now the only auth provider, and its
+ * sign-in is NOT an SDK call: `zitadel-signin.ts` posts our own form to
+ * marketplace-api and persists the returned bearer in `zitadel-session`.
+ * So this backend owns no user and mints no token — it only surfaces what
+ * that session already holds.
+ *
+ * `signIn` throws rather than silently doing nothing: a screen that calls it
+ * has not been wired to the Zitadel flow, and a no-op would look like a
+ * successful sign-in that never signs anybody in.
+ */
+function createZitadelBackend(): AuthBackend {
   return {
-    signIn: async (email, password) => {
-      await gip.signIn(email, password);
+    signIn: async () => {
+      throw new Error(
+        "Password sign-in is not routed through AuthProvider on the Zitadel path — use createZitadelSignIn().",
+      );
     },
-    signInWithGoogle: (idToken, accessToken) => gip.signInWithGoogle(idToken, accessToken),
-    signInWithApple: (idToken, rawNonce, fullName) =>
-      gip.signInWithApple(idToken, rawNonce, fullName),
-    signOut: () => gip.signOut(),
-    getIdToken: () => gip.getIdToken(),
-    getIdTokenForced: () => gip.getIdTokenForced(),
-    onAuthStateChanged: (cb) =>
-      gip.onAuthStateChanged((u) =>
-        cb(
-          u
-            ? {
-                uid: u.uid,
-                email: u.email,
-                displayName: u.displayName,
-              }
-            : null,
-        ),
-      ),
-    completeLinkWithPassword: (email, password, pending) =>
-      gip.completeLinkWithPassword(email, password, pending),
-    completeLinkWithGoogle: (googleIdToken, pending) =>
-      gip.completeLinkWithGoogle(googleIdToken, pending),
-    completeLinkWithApple: (appleIdToken, rawNonce, pending) =>
-      gip.completeLinkWithApple(appleIdToken, rawNonce, pending),
-    existingSignInMethods: (email) => gip.existingSignInMethods(email),
-    linkedProviderIds: () => gip.linkedProviderIds(),
-    linkGoogleToCurrentUser: (idToken) => gip.linkGoogleToCurrentUser(idToken),
-    linkAppleToCurrentUser: (idToken, rawNonce) => gip.linkAppleToCurrentUser(idToken, rawNonce),
-    unlinkProvider: (providerId) => gip.unlinkProvider(providerId),
+    signOut: async () => {
+      // The tokens live in SecureStore and are cleared by `signOut` below.
+    },
+    getIdToken: () => zitadelSession.accessTokenIfFresh(),
+    // There is no separate force-refresh: the persisted token is the only
+    // one there is, so a 401 retry re-reads it and, if it has lapsed,
+    // correctly gets null and terminates the session.
+    getIdTokenForced: () => zitadelSession.accessTokenIfFresh(),
+    onAuthStateChanged: (cb) => {
+      // Resolve immediately so `loading` clears; there is never a user here.
+      cb(null);
+      return () => {};
+    },
   };
 }
 
-export function AuthProvider({ tenantId, children }: AuthProviderProps) {
-  const resolvedTenantId = tenantId ?? getEnv().gipTenantId;
+export function AuthProvider({ children }: AuthProviderProps) {
   const [backend] = useState<AuthBackend>(() =>
-    isExpoGo() || isDemoAuthForced()
-      ? createDemoBackend()
-      : createFirebaseBackend(resolvedTenantId),
+    isExpoGo() || isDemoAuthForced() ? createDemoBackend() : createZitadelBackend(),
   );
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -236,24 +146,13 @@ export function AuthProvider({ tenantId, children }: AuthProviderProps) {
     await backend.signIn(email, password);
   };
 
-  const signInWithGoogle = (idToken: string, accessToken?: string) =>
-    backend.signInWithGoogle(idToken, accessToken);
-
-  const signInWithApple = (
-    idToken: string,
-    rawNonce: string,
-    fullName?: AppleFullName | null,
-  ) => backend.signInWithApple(idToken, rawNonce, fullName);
-
   const signOut = async () => {
     await tokenStorage.clearAll();
     // The Zitadel bearer tokens live in SecureStore, owned by this app rather
-    // than by a Firebase SDK, so `backend.signOut()` below cannot reach them.
-    // Without this, signing out of a Zitadel build left the tokens in place:
-    // AuthGate re-read a still-fresh token, decided the user was signed in and
-    // sent them straight back to the dashboard. Unconditional on purpose — on
-    // a GIP build the keys were never written and deleting them is a no-op, so
-    // there is no provider branch to keep in sync here.
+    // than by an auth SDK, so `backend.signOut()` below cannot reach them.
+    // Without this, signing out left the tokens in place: AuthGate re-read a
+    // still-fresh token, decided the user was signed in and sent them straight
+    // back to the dashboard.
     await zitadelSession.clear();
     await backend.signOut();
   };
@@ -261,55 +160,8 @@ export function AuthProvider({ tenantId, children }: AuthProviderProps) {
   const getToken = () => backend.getIdToken();
   const refreshToken = () => backend.getIdTokenForced();
 
-  const completeLinkWithPassword = (
-    email: string,
-    password: string,
-    pending: FirebaseAuthTypes.AuthCredential,
-  ) => backend.completeLinkWithPassword(email, password, pending);
-
-  const completeLinkWithGoogle = (
-    googleIdToken: string,
-    pending: FirebaseAuthTypes.AuthCredential,
-  ) => backend.completeLinkWithGoogle(googleIdToken, pending);
-
-  const completeLinkWithApple = (
-    appleIdToken: string,
-    rawNonce: string,
-    pending: FirebaseAuthTypes.AuthCredential,
-  ) => backend.completeLinkWithApple(appleIdToken, rawNonce, pending);
-
-  const existingSignInMethods = (email: string) => backend.existingSignInMethods(email);
-
-  const linkedProviderIds = () => backend.linkedProviderIds();
-
-  const linkGoogleToCurrentUser = (idToken: string) => backend.linkGoogleToCurrentUser(idToken);
-
-  const linkAppleToCurrentUser = (idToken: string, rawNonce: string) =>
-    backend.linkAppleToCurrentUser(idToken, rawNonce);
-
-  const unlinkProvider = (providerId: string) => backend.unlinkProvider(providerId);
-
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        signIn,
-        signInWithGoogle,
-        signInWithApple,
-        signOut,
-        getToken,
-        refreshToken,
-        completeLinkWithPassword,
-        completeLinkWithGoogle,
-        completeLinkWithApple,
-        existingSignInMethods,
-        linkedProviderIds,
-        linkGoogleToCurrentUser,
-        linkAppleToCurrentUser,
-        unlinkProvider,
-      }}
-    >
+    <AuthContext.Provider value={{ user, loading, signIn, signOut, getToken, refreshToken }}>
       {children}
     </AuthContext.Provider>
   );

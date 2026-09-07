@@ -559,48 +559,9 @@ export class PlatformApiError extends Error {
   }
 }
 
-interface TenantSummary {
-  id: string;
-  slug: string;
-  name: string;
-  owner_user_id: string;
-  owner_email: string;
-}
-
-/**
- * Looks up a workspace tenant by GIP UID. Used by the /login server
- * action to bridge a freshly minted GIP id_token to the workspace_tenant
- * field auth-bff /auth/auto-login requires.
- *
- * Throws on any non-2xx so the caller can map the error code to a
- * user-friendly message ("no store found for this account" on 404, etc).
- */
-export async function getTenantByOwner(uid: string): Promise<TenantSummary> {
-  const res = await fetch(
-    `${PLATFORM_API_URL}/api/v1/tenants/by-owner?uid=${encodeURIComponent(uid)}`,
-    { cache: "no-store" },
-  );
-  if (!res.ok) {
-    let body: { error?: string; message?: string } = {};
-    try {
-      body = await res.json();
-    } catch {
-      // ignore
-    }
-    throw new PlatformApiError(
-      res.status,
-      body.error ?? "platform_api_error",
-      body.message ?? `HTTP ${res.status}`,
-    );
-  }
-  const body = (await res.json()) as { data: TenantSummary };
-  return body.data;
-}
-
 // ─────────────────────────────────────────────────────────────────────
-// Password reset — branded flow owned by platform-api. Replaces the
-// direct GIP sendOobCode call so merchants never see the Firebase
-// default email or the auth action page URL.
+// Password reset — branded flow owned by platform-api, so merchants
+// never see a provider-default email or auth action page URL.
 // ─────────────────────────────────────────────────────────────────────
 
 export type RequestPasswordResetResult =

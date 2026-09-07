@@ -9,7 +9,6 @@
 import { redirect } from "next/navigation";
 
 import { onboarding } from "@/lib/api/platform-api";
-import { publicConfig } from "@/lib/config";
 import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
 import { SetPasswordForm } from "@/components/onboarding/SetPasswordForm";
 
@@ -53,13 +52,12 @@ export default async function SetPasswordPage({ searchParams }: PageProps) {
       step={3}
       eyebrow="Final step"
       title="Finish creating your account."
-      description="Your email is verified. Add your name and a password, or continue with Google, so we can open your admin dashboard."
+      description="Your email is verified. Add your name and a password so we can open your admin dashboard."
     >
       <SetPasswordForm
         sessionId={sessionId}
         email={email}
         businessName={businessName}
-        provider={publicConfig.authProvider}
       />
     </PostSubmitShell>
   );

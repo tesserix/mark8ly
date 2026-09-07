@@ -3,21 +3,15 @@
 // Server action for storefront customer sign-in.
 //
 // Customer auth skips auth-bff's merchant gauntlet entirely — auth-bff's
-// auto-login checks OpenFGA tenant membership which customers don't have.
+// merchant login checks OpenFGA tenant membership which customers don't have.
 // Instead we:
-//   1. Verify the credential — under GIP, the Identity Toolkit id_token
-//      (signature, project, tenant, expiry); under Zitadel, the login
-//      name + password via auth-bff's storefront-customer endpoint
-//      (see @/lib/auth/auth-bff-customer). This is the ONLY step that
-//      differs between providers — see the comment on AUTH_PROVIDER below.
+//   1. Verify the credential — the login name + password go to
+//      auth-bff's storefront-customer endpoint (see
+//      @/lib/auth/auth-bff-customer).
 //   2. Set an HMAC-signed `mp_customer_session` cookie.
 //   3. Ensure the customer profile exists in marketplace-api.
 
 import { headers } from "next/headers";
-import {
-  GIPTokenVerificationError,
-  verifyGIPIdToken,
-} from "@/lib/gip/verify-id-token";
 import {
   verifyCustomerCredential,
   verifyCustomerTotp,
@@ -25,19 +19,6 @@ import {
 import { sanitizeHost } from "@/lib/host";
 import { completeCustomerSignIn, resolveStore } from "@/lib/auth/customer-session";
 import type { CustomerSignInResult as Result } from "@/lib/auth/customer-sign-in-result";
-
-const GIP_PROJECT_ID = process.env.GIP_PROJECT_ID ?? "";
-const GIP_CUSTOMER_TENANT_ID = process.env.GIP_CUSTOMER_TENANT_ID ?? "";
-
-// Which identity provider verifies the credential in customerSignIn below.
-// Read defensively, matching apps/admin/lib/config.ts's publicConfig.authProvider
-// rule exactly: only the literal string "zitadel" switches the path — unset,
-// empty, or any other value (including "Zitadel" or "true") stays on GIP.
-// NEXT_PUBLIC_-prefixed (not server-only) because CustomerSignInForm, a client
-// component, must branch on the identical value to decide whether to call
-// Identity Toolkit from the browser at all.
-const AUTH_PROVIDER: "gip" | "zitadel" =
-  process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel" ? "zitadel" : "gip";
 
 // `Result` (aliased above from `CustomerSignInResult`) and the
 // `isTotpRequiredResult` guard for it live in
@@ -52,15 +33,13 @@ const AUTH_PROVIDER: "gip" | "zitadel" =
 
 interface CustomerSignInInput {
   storeSlug: string;
-  /** GIP path only: the verified Identity Toolkit id_token. */
-  idToken?: string;
   /** Deprecated: ignored. The trusted UID comes from the verified credential. */
   uid?: string;
   /** Deprecated: ignored. The trusted email comes from the verified credential. */
   email?: string;
-  /** Zitadel path only: the login name (email) collected by the form. */
+  /** The login name (email) collected by the form. */
   loginName?: string;
-  /** Zitadel path only: the password collected by the form. Never logged. */
+  /** The password collected by the form. Never logged. */
   password?: string;
 }
 
@@ -73,20 +52,6 @@ interface CustomerSignInInput {
  * shopper. The detail is logged server-side only.
  */
 function handleSignInError(err: unknown, logLabel: string): Result {
-  // GIPTokenVerificationError can only be thrown by customerSignIn's GIP
-  // branch (verifyGIPIdToken) — confirmCustomerTotp is Zitadel-only and
-  // never throws this. Kept in the shared helper anyway rather than
-  // split into two near-identical functions: one caller needing a case
-  // the other never hits isn't worth forking the error-mapping logic in
-  // two, and a stray GIPTokenVerificationError from confirmCustomerTotp
-  // (there shouldn't ever be one) still gets a sane, non-leaking message.
-  if (err instanceof GIPTokenVerificationError) {
-    return {
-      ok: false,
-      code: "invalid_token",
-      message: "Your sign-in session could not be verified. Please sign in again.",
-    };
-  }
   console.error(logLabel, err);
   return {
     ok: false,
@@ -122,12 +87,11 @@ export async function customerSignIn(
       };
     }
 
-    // The ONLY step that differs between providers: how the credential is
-    // verified and where {uid, email} come from. Everything below this
-    // block — cookie minting, domain scoping, profile/loyalty side
-    // effects — is identical on both paths.
+    // Verify the credential and derive {uid, email}. Everything below —
+    // cookie minting, domain scoping, profile/loyalty side effects — is
+    // independent of how it was verified.
     let verified: { uid: string; email: string };
-    if (AUTH_PROVIDER === "zitadel") {
+    {
       if (!input.loginName || !input.password) {
         return {
           ok: false,
@@ -205,12 +169,6 @@ export async function customerSignIn(
               "This account uses a sign-in method this storefront can't complete yet. Please contact support for help signing in.",
           };
       }
-    } else {
-      verified = await verifyGIPIdToken(
-        input.idToken ?? "",
-        GIP_PROJECT_ID,
-        GIP_CUSTOMER_TENANT_ID,
-      );
     }
 
     return await completeCustomerSignIn(store, cookieHost, input.storeSlug, verified);
@@ -230,10 +188,6 @@ export async function customerSignIn(
  * `PATCH /v2/sessions/{id}`) requires the instance login-client PAT that
  * only auth-bff holds — there is no pending-cookie mechanism to recover
  * these from the server side instead.
- *
- * Only reachable on the Zitadel path: under GIP, `verifyGIPIdToken` never
- * produces a `totp_required` outcome, so the client can never obtain a
- * sessionId/sessionToken to call this with.
  */
 export async function confirmCustomerTotp(input: {
   storeSlug: string;

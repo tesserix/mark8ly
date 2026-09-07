@@ -1,22 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-// #695: the reset action claimed an 8-character minimum on BOTH providers.
-// Zitadel's real policy is 12 + upper/lower/number/symbol, so an
-// 8-character password was rejected upstream and this action answered
-// "Password must be at least 8 characters." — telling the user to do
-// exactly what they had just done, with no way to discover the real rule.
-const configMock = vi.hoisted(() => ({
-  authProvider: "zitadel" as "gip" | "zitadel",
-}));
-vi.mock("@/lib/config", () => ({ publicConfig: configMock }));
-
+// #695: the reset action claimed an 8-character minimum. Zitadel's real
+// policy is 12 + upper/lower/number/symbol, so an 8-character password
+// was rejected upstream and this action answered "Password must be at
+// least 8 characters." — telling the user to do exactly what they had
+// just done, with no way to discover the real rule.
 const confirmPasswordReset = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api/platform-api", () => ({ confirmPasswordReset }));
 
 import { confirmPasswordResetAction } from "./actions";
 
 beforeEach(() => {
-  configMock.authProvider = "zitadel";
   confirmPasswordReset.mockReset();
   confirmPasswordReset.mockResolvedValue({ ok: true });
 });
@@ -45,15 +39,5 @@ describe("confirmPasswordResetAction — password policy", () => {
     const r = await confirmPasswordResetAction("code", "Not-A-Real-Password-1!");
     expect(r.ok).toBe(true);
     expect(confirmPasswordReset).toHaveBeenCalledWith("code", "Not-A-Real-Password-1!");
-  });
-
-  it("keeps GIP's 8-character rule when the flag is off", async () => {
-    configMock.authProvider = "gip";
-    const ok = await confirmPasswordResetAction("code", "Test123!");
-    expect(ok.ok).toBe(true);
-    const short = await confirmPasswordResetAction("code", "short");
-    expect(short.ok).toBe(false);
-    if (short.ok) return;
-    expect(short.message).toMatch(/at least 8 characters/i);
   });
 });

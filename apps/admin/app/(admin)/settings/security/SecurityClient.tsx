@@ -1,15 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import {
   LinkedProvidersPanel,
   type LinkedProvider,
 } from "@repo/ui/auth/linked-providers-panel";
-import { LinkProviderPrompt } from "@repo/ui/auth/link-provider-prompt";
-import { getGoogleCredential } from "@/lib/gip/google-gsi";
-import { signInWithGoogle, GIPError } from "@/lib/gip/signup";
-import { linkGoogleToInternalPassword } from "@/lib/gip/link";
-import { refreshProvidersAction } from "./actions";
 
 interface SecurityClientProps {
   initialProviders: LinkedProvider[];
@@ -20,80 +15,18 @@ export function SecurityClient({
   initialProviders,
   loadError,
 }: SecurityClientProps) {
-  const [providers, setProviders] =
-    useState<LinkedProvider[]>(initialProviders);
+  const [providers] = useState<LinkedProvider[]>(initialProviders);
   const [error, setError] = useState<string | null>(loadError);
-  const [pending, startTransition] = useTransition();
-  const [needConfirmation, setNeedConfirmation] = useState<{
-    email: string;
-    pendingIdpCredential: string;
-  } | null>(null);
-  const [linkPromptError, setLinkPromptError] = useState<string | null>(null);
 
-  function refresh() {
-    startTransition(async () => {
-      try {
-        const next = await refreshProvidersAction();
-        setProviders(next);
-        setError(null);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Could not refresh providers.",
-        );
-      }
-    });
-  }
-
+  // Linking a provider from this panel was a GIP-only flow (a GSI popup
+  // exchanged at Identity Toolkit). It has no Zitadel equivalent yet:
+  // Zitadel links an IDP through an auth-request-scoped intent, which
+  // this settings page cannot mint. Surface that plainly rather than
+  // pretending to start a flow.
   async function handleLinkGoogle() {
-    setError(null);
-    try {
-      const { credential } = await getGoogleCredential();
-      const result = await signInWithGoogle(credential);
-      if (result.kind === "needConfirmation") {
-        setNeedConfirmation({
-          email: result.email,
-          pendingIdpCredential: result.pendingIdpCredential,
-        });
-        return;
-      }
-      // Direct success — provider linked at GIP. Refresh the list.
-      refresh();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? `Could not link Google: ${err.message}`
-          : "Could not link Google.",
-      );
-    }
-  }
-
-  async function handleLinkConfirm(password: string) {
-    if (!needConfirmation) return;
-    setLinkPromptError(null);
-    try {
-      await linkGoogleToInternalPassword(
-        needConfirmation.email,
-        password,
-        needConfirmation.pendingIdpCredential,
-      );
-      setNeedConfirmation(null);
-      refresh();
-    } catch (err) {
-      if (err instanceof GIPError && err.code === "invalid_credentials") {
-        setLinkPromptError("That password is incorrect. Please try again.");
-        return;
-      }
-      setLinkPromptError(
-        err instanceof Error ? err.message : "Could not link Google.",
-      );
-    }
-  }
-
-  function handleLinkCancel() {
-    setNeedConfirmation(null);
-    setLinkPromptError(null);
+    setError(
+      "Adding a Google sign-in method from settings isn't available yet — sign in with Google from the sign-in screen instead.",
+    );
   }
 
   async function handleUnlink(_providerId: string): Promise<void> {
@@ -111,21 +44,11 @@ export function SecurityClient({
         onLinkGoogle={handleLinkGoogle}
         onUnlink={handleUnlink}
         variant="admin"
-        pending={pending}
       />
       {error && (
         <p role="alert" className="text-sm text-danger">
           {error}
         </p>
-      )}
-      {needConfirmation && (
-        <LinkProviderPrompt
-          email={needConfirmation.email}
-          variant="admin"
-          error={linkPromptError}
-          onConfirm={handleLinkConfirm}
-          onCancel={handleLinkCancel}
-        />
       )}
     </div>
   );

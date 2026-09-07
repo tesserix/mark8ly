@@ -15,20 +15,16 @@ import { Input } from "@tesserix/web";
 import { Field } from "@repo/ui/field";
 
 import { confirmPasswordResetAction } from "@/app/reset-password/actions";
-import { publicConfig } from "@/lib/config";
 import {
   PASSWORD_REQUIREMENTS_TEXT,
   validateNewPassword,
 } from "@/lib/auth/password-policy";
 import { signInHref } from "@/lib/auth/sign-in-href";
 
-// The 8-char floor is GIP's minimum and stays for that path. Zitadel's
-// real policy (12 + upper/lower/number/symbol) is layered on below via
-// superRefine, gated on the provider — mirroring how AcceptInviteForm
-// avoids tightening the shared GIP schema. #695: this form previously
-// claimed 8 on BOTH paths and then repeated that number when Zitadel
-// rejected an 8-character password, leaving the user no way forward.
-const isZitadel = publicConfig.authProvider === "zitadel";
+// Zitadel's real policy (12 + upper/lower/number/symbol) is layered on
+// below via superRefine. #695: this form previously claimed 8 and then
+// repeated that number when Zitadel rejected an 8-character password,
+// leaving the user no way forward.
 
 const schema = z
   .object({
@@ -39,7 +35,6 @@ const schema = z
     confirm: z.string().min(1, "Please confirm your password"),
   })
   .superRefine((v, ctx) => {
-    if (!isZitadel) return;
     const err = validateNewPassword(v.password);
     if (err) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: err, path: ["password"] });
@@ -160,9 +155,7 @@ export function ResetPasswordForm({ oobCode }: ResetPasswordFormProps) {
           Choose a new password.
         </h1>
         <p className="max-w-md text-[15px] leading-relaxed text-foreground-secondary">
-          {isZitadel
-            ? PASSWORD_REQUIREMENTS_TEXT
-            : "Use at least 8 characters. We recommend a passphrase you haven\u2019t used elsewhere."}
+          {PASSWORD_REQUIREMENTS_TEXT}
         </p>
       </div>
 

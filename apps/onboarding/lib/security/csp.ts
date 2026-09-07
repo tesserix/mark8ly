@@ -6,18 +6,18 @@
  * would be blocked. So there are two policies:
  *
  *   - buildCsp: nonce-based, no 'unsafe-inline'. Applied to the routes
- *     that handle credentials (signup, set-password, the Google
- *     trampoline), which are rendered per request.
+ *     that handle credentials (signup, set-password), which are rendered
+ *     per request.
  *   - buildStaticCsp: the marketing pages, which keep 'unsafe-inline'
  *     so they keep static generation.
  *
- * Neither uses 'strict-dynamic': the host allowlist has to stay
- * authoritative for the sign-in SDKs, which are injected at runtime by
- * lib/gip/google-gsi.ts.
+ * No third-party auth SDK is loaded any more: the Google Identity
+ * Services trampoline went with GIP, so accounts.google.com is not
+ * allowlisted anywhere below.
  */
 
 /** Route prefixes served with the nonce policy. */
-export const NONCE_PATH_PREFIXES = ["onboarding", "auth/google"] as const;
+export const NONCE_PATH_PREFIXES = ["onboarding"] as const;
 
 export function usesNonce(pathname: string): boolean {
   const p = pathname.replace(/^\/+/, "");
@@ -32,24 +32,18 @@ function devEval(env: string | undefined): string {
   return env === "development" ? " 'unsafe-eval'" : "";
 }
 
-// accounts.google.com hosts the GSI client script used by /auth/google
-// (the customer Google sign-in trampoline). No Apple SDK here — this app
-// only trampolines Google.
-const SCRIPT_HOSTS =
-  "https://accounts.google.com/gsi/client https://analytics.tesserix.app";
+const SCRIPT_HOSTS = "https://analytics.tesserix.app";
 
 function policy(scriptSrc: string): string {
   return [
     "default-src 'self'",
     scriptSrc,
-    "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
     "connect-src 'self' https: wss:",
     "frame-ancestors 'none'",
-    // GSI renders the button + One-Tap UI inside an iframe served from
-    // accounts.google.com/gsi/.
-    "frame-src 'self' https://accounts.google.com/gsi/",
+    "frame-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

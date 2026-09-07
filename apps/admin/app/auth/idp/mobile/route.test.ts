@@ -1,11 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const configMock = vi.hoisted(() => ({
-  authProvider: "zitadel" as "gip" | "zitadel",
-  zitadelIssuer: "https://auth.tesserix.app",
-}));
-vi.mock("@/lib/config", () => ({ publicConfig: configMock }));
-
 import { GET } from "./route";
 
 const CANONICAL_HOST = "admin.mark8ly.com";
@@ -22,23 +16,11 @@ function location(res: Response): URL {
   return new URL(loc as string);
 }
 
-beforeEach(() => {
-  configMock.authProvider = "zitadel";
-});
-
 afterEach(() => {
   vi.clearAllMocks();
 });
 
 describe("GET /auth/idp/mobile", () => {
-  it("404s under GIP — nothing can reach this route outside the Zitadel provider", async () => {
-    configMock.authProvider = "gip";
-
-    const res = await GET(makeRequest("?id=i1&token=t1"));
-
-    expect(res.status).toBe(404);
-  });
-
   // The whole reason this page exists: the authentication session in the
   // app only closes when the browser is sent to the custom scheme, and
   // auth-bff's allowlist can only ever return to an https host.

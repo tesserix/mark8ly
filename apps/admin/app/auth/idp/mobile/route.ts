@@ -44,7 +44,6 @@
 // exactly as it is.
 
 import { NextResponse } from "next/server";
-import { publicConfig } from "@/lib/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,12 +63,6 @@ const APP_CALLBACK = "mark8ly-admin://auth/idp";
 const FORWARDED = ["id", "token", "error", "error_description"] as const;
 
 export async function GET(req: Request): Promise<Response> {
-  // Same gate as the web finish route: under GIP there is no flow that
-  // could land a browser here.
-  if (publicConfig.authProvider !== "zitadel") {
-    return new NextResponse(null, { status: 404 });
-  }
-
   const incoming = new URL(req.url).searchParams;
   const params = new URLSearchParams();
   for (const key of FORWARDED) {

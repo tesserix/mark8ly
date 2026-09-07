@@ -7,17 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // email), so a test that stops at `expect(acceptInvitation).toHaveBeenCalled`
 // would not have caught it.
 
-vi.mock("next/headers", () => ({
-  cookies: async () => ({
-    set: vi.fn(),
-    getAll: () => [],
-  }),
-}));
-
-import {
-  acceptInvite,
-  acceptInviteWithZitadel,
-} from "./actions";
+import { acceptInviteWithZitadel } from "./actions";
 
 const PLATFORM = "http://localhost:8086";
 const ACCEPT_URL = `${PLATFORM}/api/v1/invitations/accept`;
@@ -61,7 +51,7 @@ afterEach(() => {
 });
 
 describe("acceptInviteWithZitadel", () => {
-  it("sends password + verified_email and no GIP uid or id_token", async () => {
+  it("sends password + verified_email and no uid or id_token", async () => {
     installFetch({
       [ACCEPT_URL]: () =>
         jsonResponse(200, { data: { tenant_id: "tenant-1", role: "staff" } }),
@@ -79,8 +69,8 @@ describe("acceptInviteWithZitadel", () => {
       signInUrl: "/login/authorize?returnUrl=%2Fdashboard",
     });
 
-    // Exactly one call, to platform-api's accept endpoint. Nothing to
-    // GIP's Identity Toolkit, nothing to auth-bff's /auth/auto-login.
+    // Exactly one call, to platform-api's accept endpoint — nothing to
+    // any identity provider, and nothing to auth-bff.
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe(ACCEPT_URL);
     expect(calls[0]!.body).toEqual({
@@ -173,41 +163,5 @@ describe("acceptInviteWithZitadel", () => {
     // invitee reads.
     expect(result.message).not.toMatch(/^HTTP /);
     expect(result.message).toMatch(/invitation link again/i);
-  });
-});
-
-describe("acceptInvite (GIP path, unchanged)", () => {
-  it("still sends token + uid + verified_email, and still auto-logs in against GIP", async () => {
-    installFetch({
-      [ACCEPT_URL]: () =>
-        jsonResponse(200, { data: { tenant_id: "tenant-1", role: "staff" } }),
-      "http://localhost:8087/auth/auto-login": () =>
-        jsonResponse(200, {
-          data: { uid: "gip-uid", email: "staff@example.com", tenant_id: "tenant-1" },
-        }),
-    });
-
-    const result = await acceptInvite({
-      token: "invite-token",
-      idToken: "gip-id-token",
-      uid: "gip-uid",
-      verifiedEmail: "staff@example.com",
-    });
-
-    expect(result).toEqual({ ok: true, tenantId: "tenant-1" });
-
-    expect(calls).toHaveLength(2);
-    expect(calls[0]!.url).toBe(ACCEPT_URL);
-    // Byte-identical to the pre-#679 payload: no password, no name fields.
-    expect(calls[0]!.body).toEqual({
-      token: "invite-token",
-      uid: "gip-uid",
-      verified_email: "staff@example.com",
-    });
-    expect(calls[1]!.url).toBe("http://localhost:8087/auth/auto-login");
-    expect(calls[1]!.body).toMatchObject({
-      id_token: "gip-id-token",
-      workspace_tenant: "tenant-1",
-    });
   });
 });

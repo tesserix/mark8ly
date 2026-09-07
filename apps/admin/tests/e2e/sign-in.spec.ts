@@ -19,7 +19,7 @@ import {
  *   4. Assert the new context lands on /dashboard with a session cookie.
  *
  * If this ever fails the returning-user funnel is broken — either the
- * tenant-by-owner lookup, the auto-login retry, or the cookie forwarding
+ * membership lookup, the Zitadel login call, or the cookie forwarding
  * has regressed.
  *
  * Google sign-in coverage is intentionally NOT in this spec. The Google

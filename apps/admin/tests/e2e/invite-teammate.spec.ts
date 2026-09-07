@@ -20,8 +20,8 @@ import {
  *   5. Open /accept-invite?token=… in a fresh browser context with
  *      no session cookie.
  *   6. Pick the "create new account" path, submit a password.
- *   7. Accept flow: accept endpoint writes the FGA tuple, auto-login
- *      mints the session cookie, lands on /dashboard of tenant A.
+ *   7. Accept flow: accept endpoint provisions the account and writes
+ *      the FGA tuple, then hands the browser to /login/authorize.
  *   8. Navigate to /settings/general — assert the Phase O read-only
  *      banner is visible (B is a viewer, not an editor).
  *

@@ -2,15 +2,14 @@
 
 // Server actions for the admin /login page.
 //
-// The client gathers GIP credentials (via signInWithPassword or
-// signInWithGoogle), then hands the resulting id_token + uid to signIn.
-// We look up the workspace tenant by uid, call auth-bff /auth/auto-login,
-// and forward the resulting Set-Cookie back to the browser response.
+// The client submits the login name + password to signInWithZitadel,
+// which looks up the workspace tenant, drives auth-bff's Zitadel login
+// endpoint, and forwards the resulting Set-Cookie back to the browser
+// response.
 
 import { cookies, headers } from "next/headers";
 
 import {
-  autoLogin,
   completeEmailOTPChallenge,
   resendEmailOTP,
   completeMFAChallenge,
@@ -27,7 +26,6 @@ import {
   type Membership,
 } from "@/lib/api/platform-api";
 import { platformInternalHeaders } from "@/lib/api/server/platformInternal";
-import { publicConfig } from "@/lib/config";
 import {
   mintZitadelTotpCode,
   verifyZitadelTotpCode,
@@ -91,11 +89,6 @@ function fail(err: unknown): { ok: false; code: string; message: string } {
   };
 }
 
-interface SignInInput {
-  idToken: string;
-  uid: string;
-}
-
 interface SignInSuccess {
   tenantId: string;
   // true when the user has more than one tenant and the UI should
@@ -153,11 +146,8 @@ interface SignInSuccess {
  * `demo-store` lands on the demo-store picker even though the
  * india-store subdomain is unambiguous.
  *
- * Shared by both the GIP (`signIn`) and Zitadel (`signInWithZitadel`)
- * paths so they cannot diverge on which tenant they pick. `identityKey`
- * is the GIP uid on the GIP path; on the Zitadel path there is no GIP
- * uid yet, so the caller passes the Zitadel login name (email), which
- * platform-api's membership lookup accepts identically.
+ * `identityKey` is the Zitadel login name (email), which platform-api's
+ * membership lookup accepts as an identity key.
  */
 async function resolveWorkspaceTenant(
   identityKey: string,
@@ -196,43 +186,11 @@ async function resolveWorkspaceTenant(
   return { ok: true, primary, multipleTenants };
 }
 
-export async function signIn(
-  input: SignInInput,
-): Promise<Result<SignInSuccess>> {
-  try {
-    const resolution = await resolveWorkspaceTenant(input.uid);
-    if (!resolution.ok) return resolution;
-    const { primary, multipleTenants } = resolution;
-
-    const result = await autoLogin({
-      idToken: input.idToken,
-      expectedTenantId: publicConfig.gipTenantId,
-      workspaceTenant: primary.tenant_id,
-    });
-
-    await applySetCookies(result.setCookies);
-
-    return {
-      ok: true,
-      data: {
-        tenantId: primary.tenant_id,
-        multipleTenants,
-        mfaRequired: result.mfaRequired,
-        emailOtpRequired: result.emailOtpRequired,
-      },
-    };
-  } catch (err) {
-    return fail(err);
-  }
-}
-
 /**
- * signInWithZitadel is the Zitadel-path counterpart of `signIn`: it
- * resolves the workspace tenant with the exact same helper (so the two
- * paths can never pick different tenants for the same account), submits
- * the login-name + password pair to auth-bff's Zitadel endpoint, and
- * maps whatever `LoginOutcome` comes back onto the same `SignInSuccess`
- * shape the login form already reads.
+ * signInWithZitadel resolves the workspace tenant, submits the
+ * login-name + password pair to auth-bff's Zitadel endpoint, and maps
+ * whatever `LoginOutcome` comes back onto the `SignInSuccess` shape the
+ * login form reads.
  *
  * User-Agent and X-Forwarded-For are read from the incoming request and
  * forwarded to auth-bff. This is load-bearing, not hygiene: auth-bff

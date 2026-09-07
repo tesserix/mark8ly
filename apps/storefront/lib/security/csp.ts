@@ -19,24 +19,24 @@ export function buildCsp(nonce: string, env = process.env.NODE_ENV): string {
   const devEval = env === "development" ? " 'unsafe-eval'" : "";
   return [
     "default-src 'self'",
-    // Storefronts trampoline to mark8ly.com/auth/google for customer
-    // Google sign-in, so GSI is not loaded here directly. The allowlist
-    // is kept in sync with admin + onboarding so any future inline use
-    // (e.g. one-tap on storefront) is unblocked. Razorpay
+    // Customer Google sign-in is a full-page redirect through Zitadel's
+    // IDP intent — no Google Identity Services script is loaded, here or
+    // anywhere else in the estate, so accounts.google.com is not
+    // allowlisted. Razorpay
     // are allowlisted by wildcard, per their own documented CSPs:
     // enumerating hosts does not work because the SDKs pull further
     // scripts at runtime that reading our source never reveals, and each
     // missed host is a silent prod-only breakage.
-    `script-src 'self' 'nonce-${nonce}'${devEval} https://accounts.google.com/gsi/client https://*.razorpay.com https://analytics.tesserix.app`,
+    `script-src 'self' 'nonce-${nonce}'${devEval} https://*.razorpay.com https://analytics.tesserix.app`,
     // Merchants inject branded CSS via <style> (sanitizeCss in app/layout.tsx).
-    "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
     "connect-src 'self' https: wss:",
     "frame-ancestors 'none'",
     // Razorpay renders its checkout modal (and the bank/UPI redirect
     // flows) in iframes from api.razorpay.com — allowing only the script
-    "frame-src 'self' https://accounts.google.com/gsi/ https://*.razorpay.com",
+    "frame-src 'self' https://*.razorpay.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

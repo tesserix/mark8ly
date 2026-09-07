@@ -18,15 +18,6 @@ export default async function CreateAccountPage() {
 
   const store = await fetchStoreBySlug(storeSlug).catch(() => null);
 
-  const gipConfig = {
-    apiKey:
-      process.env.GIP_WEB_API_KEY ??
-      process.env.NEXT_PUBLIC_GIP_API_KEY ??
-      "",
-    tenantId: process.env.GIP_CUSTOMER_TENANT_ID ?? "",
-    projectId: process.env.GIP_PROJECT_ID ?? "",
-  };
-
   const protocol = h.get("x-forwarded-proto") ?? "https";
   const origin = host ? `${protocol}://${host}` : "";
 
@@ -47,7 +38,6 @@ export default async function CreateAccountPage() {
           </p>
         </header>
         <CreateAccountForm
-          gipConfig={gipConfig}
           storeSlug={storeSlug}
           returnUrl={`${origin}/account`}
         />

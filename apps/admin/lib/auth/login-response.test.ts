@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseLoginResponse } from "./login-response";
 
 describe("parseLoginResponse", () => {
-  it("reads the nested auto-login success envelope", () => {
+  it("reads the nested success envelope", () => {
     expect(parseLoginResponse({ data: { uid: "u1", email: "a@b.test", tenant_id: "t1" } }))
       .toEqual({ kind: "complete", uid: "u1", email: "a@b.test", tenantId: "t1" });
   });

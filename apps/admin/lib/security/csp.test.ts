@@ -18,11 +18,18 @@ describe("buildCsp", () => {
     expect(scriptSrc).not.toContain("'unsafe-inline'");
   });
 
-  it("keeps the sign-in and analytics hosts as the CSP2 fallback", () => {
+  it("keeps the analytics host as the CSP2 fallback", () => {
     const scriptSrc = directives(buildCsp("abc123")).get("script-src")!;
-    expect(scriptSrc).toContain("https://accounts.google.com/gsi/client");
-    expect(scriptSrc).toContain("https://appleid.cdn-apple.com");
     expect(scriptSrc).toContain("https://analytics.tesserix.app");
+  });
+
+  it("no longer allowlists the retired GIP sign-in SDK hosts", () => {
+    const d = directives(buildCsp("abc123"));
+    expect(d.get("script-src")).not.toContain("accounts.google.com");
+    expect(d.get("script-src")).not.toContain("appleid.cdn-apple.com");
+    expect(d.get("style-src")).not.toContain("accounts.google.com");
+    expect(d.get("frame-src")).not.toContain("accounts.google.com");
+    expect(d.get("frame-src")).not.toContain("appleid.apple.com");
   });
 
   it("allows eval only in development, where Next compiles with it for HMR", () => {
@@ -34,10 +41,10 @@ describe("buildCsp", () => {
     expect(directives(buildCsp("n")).get("style-src")).toContain("'unsafe-inline'");
   });
 
-  it("denies framing and keeps the sign-in frame sources", () => {
+  it("denies framing", () => {
     const d = directives(buildCsp("n"));
     expect(d.get("frame-ancestors")).toBe("'none'");
-    expect(d.get("frame-src")).toContain("https://accounts.google.com/gsi/");
+    expect(d.get("frame-src")).toBe("'self'");
     expect(d.get("object-src")).toBe("'none'");
     expect(d.get("base-uri")).toBe("'self'");
   });

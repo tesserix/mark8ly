@@ -7,7 +7,6 @@ import { SignInForm } from "@/components/auth/SignInForm";
 import { sanitizeReturnUrl } from "@/lib/auth/sanitize-return-url";
 import { RECOVERY_AUTH_REQUEST_SENTINEL } from "@/lib/auth/google-sign-in-admin";
 import { ZITADEL_LOGIN_ERROR_COOKIE } from "@/lib/auth/zitadel-oidc";
-import { publicConfig } from "@/lib/config";
 
 export const metadata: Metadata = { title: "Sign in" };
 
@@ -35,11 +34,10 @@ interface PageProps {
  *
  * Hosted at the canonical `admin.mark8ly.com` host. Two paths to a
  * session:
- *   1. Email + password — Identity Toolkit signInWithPassword + the
- *      `signIn` server action which looks up workspace_tenant by GIP
- *      UID and calls auth-bff /auth/auto-login.
- *   2. Continue with Google — gsi/client popup, exchanged via Identity
- *      Toolkit signInWithIdp, then the same server action.
+ *   1. Email + password — the `signInWithZitadel` server action, driving
+ *      Zitadel's session API against this page's auth_request_id.
+ *   2. Continue with Google — a full-page bounce to the Google authUrl
+ *      auth-bff returns, landing back at /auth/idp/finish.
  *
  * The `returnUrl` query param is set by middleware on per-tenant
  * subdomains that bounce here for authentication. After sign-in the
@@ -50,8 +48,6 @@ export default async function LoginPage({ searchParams }: PageProps) {
   const { returnUrl, authRequest, error, challenge, multi } = await searchParams;
   const safeReturnUrl = sanitizeReturnUrl(returnUrl);
 
-  const isZitadel = publicConfig.authProvider === "zitadel";
-
   // The recovery sentinel is not an auth request — it is the marker
   // app/auth/idp/finish/route.ts sets to say "the one I had is spent,
   // mint a fresh one but keep my message". Treating it as a real id is
@@ -60,7 +56,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
   const needsFreshAuthRequest =
     !authRequest || authRequest === RECOVERY_AUTH_REQUEST_SENTINEL;
 
-  if (isZitadel && needsFreshAuthRequest) {
+  if (needsFreshAuthRequest) {
     // Zitadel's login-client model needs an auth_request_id, which
     // only exists after Zitadel's /authorize bounces the browser back
     // here with ?authRequest=. /login/authorize is a Route Handler
@@ -97,7 +93,6 @@ export default async function LoginPage({ searchParams }: PageProps) {
           <SignInForm
             returnUrl={safeReturnUrl}
             authRequestId={authRequest}
-            provider={publicConfig.authProvider}
             googleErrorCode={googleErrorCode || undefined}
             initialChallenge={challenge === "email_otp" ? "email_otp" : undefined}
             initialMultipleTenants={multi === "1"}

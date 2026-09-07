@@ -35,13 +35,14 @@ test("the static policy still needs unsafe-inline", () => {
 test("both policies allow the same external scripts", () => {
   const strict = directives(buildCsp("n", "sha256-x")).get("script-src")!;
   const relaxed = directives(buildStaticCsp()).get("script-src")!;
-  for (const host of [
-    "https://accounts.google.com/gsi/client",
-    "https://analytics.tesserix.app",
-  ]) {
+  for (const host of ["https://analytics.tesserix.app"]) {
     expect(strict, `strict policy must allow ${host}`).toContain(host);
     expect(relaxed, `static policy must allow ${host}`).toContain(host);
   }
+  // The GIP Google Identity Services trampoline is gone; nothing in this
+  // app loads a third-party auth SDK any more.
+  expect(strict).not.toContain("accounts.google.com");
+  expect(relaxed).not.toContain("accounts.google.com");
 });
 
 test("eval is allowed only in development", () => {
@@ -53,7 +54,6 @@ test("eval is allowed only in development", () => {
 test("the credential-handling routes get the nonce policy", () => {
   expect(usesNonce("/onboarding")).toBe(true);
   expect(usesNonce("/onboarding/set-password")).toBe(true);
-  expect(usesNonce("/auth/google")).toBe(true);
   expect(usesNonce("/about")).toBe(false);
   expect(usesNonce("/guides/getting-started")).toBe(false);
 });

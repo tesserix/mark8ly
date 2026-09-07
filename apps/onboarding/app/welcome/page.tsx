@@ -2,7 +2,6 @@ import { AppStoreBadges } from "@repo/ui/app-store-badges";
 
 import { PostSubmitShell } from "@/components/onboarding/PostSubmitShell";
 import { WelcomeCta } from "@/components/onboarding/WelcomeCta";
-import { publicConfig } from "@/lib/config";
 
 // Welcome page shown after successful onboarding.
 //
@@ -26,16 +25,11 @@ export const metadata = {
 };
 
 export default function WelcomePage() {
-  const signedIn = publicConfig.authProvider !== "zitadel";
   return (
     <PostSubmitShell
       eyebrow="Store ready"
       title="Your store is open."
-      description={
-        signedIn
-          ? "You\u2019re signed in. Step into the admin dashboard to add your first product, shape your storefront, and confirm your settings."
-          : "Sign in to the admin dashboard with the password you just chose to add your first product, shape your storefront, and confirm your settings."
-      }
+      description="Sign in to the admin dashboard with the password you just chose to add your first product, shape your storefront, and confirm your settings."
     >
       <div className="border-t border-border-subtle pt-10">
         {/* Head start — same 20% the admin checklist opens with, so the
@@ -56,7 +50,7 @@ export default function WelcomePage() {
           </p>
         </div>
 
-        <WelcomeCta signedIn={signedIn} />
+        <WelcomeCta />
 
         <dl className="mt-16 grid gap-10 border-t border-border-subtle pt-10 sm:grid-cols-2">
           <div>

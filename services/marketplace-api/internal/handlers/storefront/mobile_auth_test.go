@@ -58,7 +58,7 @@ func TestGIPBearerAuth_DevMode_DoesNotSetIdentityWithoutVerifier(t *testing.T) {
 	r.Use(storefront.GIPBearerAuth(true)) // devMode param now ignored
 	r.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"gip_uid": c.GetString("customer_gip_uid"),
+			"gip_uid": c.GetString("customer_uid"),
 			"email":   c.GetString("customer_email"),
 		})
 	})
@@ -96,7 +96,7 @@ func TestOptionalGIPBearerAuth_MissingToken_ContinuesAsGuest(t *testing.T) {
 	r := gin.New()
 	r.Use(storefront.OptionalGIPBearerAuth(true))
 	r.GET("/test", func(c *gin.Context) {
-		gipUID := c.GetString("customer_gip_uid")
+		gipUID := c.GetString("customer_uid")
 		c.JSON(200, gin.H{"has_auth": gipUID != ""})
 	})
 
@@ -116,7 +116,7 @@ func TestOptionalGIPBearerAuth_DevMode_DoesNotSetIdentityWithoutVerifier(t *test
 	r.Use(storefront.OptionalGIPBearerAuth(true)) // devMode param now ignored
 	r.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"gip_uid": c.GetString("customer_gip_uid"),
+			"gip_uid": c.GetString("customer_uid"),
 		})
 	})
 
@@ -166,7 +166,7 @@ func TestMobileCustomerAuth_ValidToken_SetsContext(t *testing.T) {
 	}))
 	r.GET("/test", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"gip_uid": c.GetString("customer_gip_uid"),
+			"gip_uid": c.GetString("customer_uid"),
 			"email":   c.GetString("customer_email"),
 		})
 	})

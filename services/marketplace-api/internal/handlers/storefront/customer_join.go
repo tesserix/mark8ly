@@ -25,7 +25,7 @@ import (
 )
 
 // joinRequest carries the optional display name the customer supplied on
-// the join screen. The identity (email + uid) is NEVER taken from the
+// the join screen. The identity (email) is NEVER taken from the
 // body — it comes from the verified session/bearer credential on the
 // context, so a caller cannot join a store on someone else's behalf.
 type joinRequest struct {
@@ -75,7 +75,6 @@ func (h *CustomerAccountHandler) Membership(c *gin.Context) {
 // who is already a member gets 200 and their existing profile back.
 func (h *CustomerAccountHandler) Join(c *gin.Context) {
 	email := c.GetString(CustomerIdentityEmailKey)
-	uid := c.GetString(CustomerIdentityUIDKey)
 	if email == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":   "unauthorized",
@@ -96,7 +95,6 @@ func (h *CustomerAccountHandler) Join(c *gin.Context) {
 	profile, err := h.customerSvc.JoinStore(c.Request.Context(), customer.JoinStoreInput{
 		StoreID:   storeID,
 		TenantID:  tenantID,
-		GipUID:    uid,
 		Email:     email,
 		FirstName: derefString(req.FirstName),
 		LastName:  derefString(req.LastName),

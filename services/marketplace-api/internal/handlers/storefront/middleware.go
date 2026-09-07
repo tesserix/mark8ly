@@ -98,7 +98,7 @@ func respondNotFound(c *gin.Context) {
 const (
 	CustomerProfileIDKey = "customer_profile_id"
 	CustomerEmailKey     = "customer_email"
-	CustomerGipUIDKey    = "customer_gip_uid"
+	CustomerUIDKey       = "customer_uid"
 	CustomerProfileKey   = "customer_profile"
 
 	// CustomerIdentityEmailKey / CustomerIdentityUIDKey carry the
@@ -129,7 +129,6 @@ type CustomerProfileService interface {
 // sessionClaims represents the decoded auth-bff session cookie payload.
 type sessionClaims struct {
 	UID       string `json:"uid"`
-	GipUID    string `json:"gip_uid"`
 	Email     string `json:"email"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
@@ -212,7 +211,7 @@ func OptionalCustomerAuth(secret string, customerSvc CustomerProfileService, log
 		// identity is trustworthy from here on — independently of whether
 		// it has a membership.
 		c.Set(CustomerIdentityEmailKey, claims.Email)
-		c.Set(CustomerIdentityUIDKey, claims.UIDOrGipUID())
+		c.Set(CustomerIdentityUIDKey, claims.IdentityUID())
 
 		profile, err := customerSvc.LookupProfile(c.Request.Context(), storeID, claims.Email)
 		if err != nil {
@@ -231,7 +230,7 @@ func OptionalCustomerAuth(secret string, customerSvc CustomerProfileService, log
 
 		c.Set(CustomerProfileIDKey, profile.ID.String())
 		c.Set(CustomerEmailKey, profile.Email)
-		c.Set(CustomerGipUIDKey, claims.GipUID)
+		c.Set(CustomerUIDKey, claims.IdentityUID())
 		c.Set(CustomerProfileKey, profile)
 
 		c.Next()
@@ -242,9 +241,15 @@ func OptionalCustomerAuth(secret string, customerSvc CustomerProfileService, log
 // verified customer identity. It deliberately does NOT require a
 // membership — it is the guard for the join endpoint, which exists
 // precisely for authenticated customers who have not joined yet.
+//
+// BOTH the email and the uid must be present. Since the gip_uid fallback
+// was removed (#793) a legacy cookie carrying only a gip_uid resolves to
+// an empty uid, and an empty identity must never be treated as
+// authenticated — it would otherwise be indistinguishable from any other
+// identity-less request. Such a customer is asked to sign in again.
 func RequireCustomerIdentity() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.GetString(CustomerIdentityEmailKey) == "" {
+		if c.GetString(CustomerIdentityEmailKey) == "" || c.GetString(CustomerIdentityUIDKey) == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, map[string]any{
 				"error":   "unauthorized",
 				"message": "Authentication required. Please sign in.",
@@ -298,18 +303,21 @@ func validateSessionCookie(cookie, secret string) (*sessionClaims, error) {
 		return nil, fmt.Errorf("malformed cookie: %w", err)
 	}
 
-	if claims.Email == "" || claims.UIDOrGipUID() == "" {
+	if claims.Email == "" || claims.IdentityUID() == "" {
 		return nil, errors.New("malformed cookie: missing identity")
 	}
 
 	return &claims, nil
 }
 
-func (s sessionClaims) UIDOrGipUID() string {
-	if s.UID != "" {
-		return s.UID
-	}
-	return s.GipUID
+// IdentityUID is the verified identity subject carried by the session
+// cookie: the Zitadel uid, and nothing else. There is deliberately no
+// fallback to a legacy gip_uid claim (#793) — a cookie that carries no
+// uid has no identity, and validateSessionCookie rejects it so the
+// customer re-authenticates. Falling back would risk resolving an empty
+// identity, which must never be allowed to match a stored row.
+func (s sessionClaims) IdentityUID() string {
+	return s.UID
 }
 
 func (s sessionClaims) MatchesStore(store *stores.Store) bool {

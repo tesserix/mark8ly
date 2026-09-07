@@ -339,7 +339,7 @@ func TestMobileSessionPathNeverCreatesMembership(t *testing.T) {
 	r.Use(func(c *gin.Context) {
 		c.Set("store", store)
 		// What a verified Bearer token leaves behind.
-		c.Set(CustomerGipUIDKey, "gip-uid-1")
+		c.Set(CustomerUIDKey, "gip-uid-1")
 		c.Set(CustomerEmailKey, "shopper@example.com")
 		c.Next()
 	})

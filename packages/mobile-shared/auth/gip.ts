@@ -96,7 +96,27 @@ export function createGIPAuth(config: GIPAuthConfig) {
       await tenantReady;
       return unlinkProvider(providerId);
     },
-    signOut: () => firebaseAuth.signOut(),
+    // Sign-out is IDEMPOTENT: signing out when nobody is signed in is a
+    // no-op, not a failure.
+    //
+    // On a Zitadel build no Firebase user is ever created, so calling
+    // firebaseAuth.signOut() rejects with `auth/no-current-user`. The
+    // provider's signOut has already cleared the tokens that actually hold
+    // the session by the time it gets here, so the person IS signed out --
+    // the rejection is pure noise that surfaces as a red-box console error in
+    // dev and an unhandled promise rejection in production, and it masks real
+    // sign-out failures by making every sign-out look broken.
+    signOut: async () => {
+      if (!firebaseAuth.currentUser) return;
+      try {
+        await firebaseAuth.signOut();
+      } catch (e) {
+        // Re-check rather than trusting the guard above: currentUser can be
+        // torn down between the check and the call. Any OTHER failure is a
+        // real one and must still propagate.
+        if ((e as { code?: string } | null)?.code !== 'auth/no-current-user') throw e;
+      }
+    },
     getIdToken: async (): Promise<string | null> => {
       const user = firebaseAuth.currentUser;
       if (!user) return null;

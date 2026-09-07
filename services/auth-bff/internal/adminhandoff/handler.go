@@ -133,11 +133,12 @@ func (h *Handler) mint(c *gin.Context) {
 
 	now := time.Now()
 	s := session.Session{
-		UID:      claims.UID,
-		Email:    claims.Email,
-		TenantID: claims.TenantID,
-		StoreID:  claims.StoreID,
-		IssuedAt: now,
+		UID:         claims.UID,
+		Email:       claims.Email,
+		TenantID:    claims.TenantID,
+		StoreID:     claims.StoreID,
+		IssuedAt:    now,
+		AuthContext: claims.AuthContext,
 		// Empty ExpiresAt → Manager applies its configured maxAge.
 	}
 	if err := h.cfg.Sessions.MintWithDomain(c.Writer, s, claims.TargetHost); err != nil {

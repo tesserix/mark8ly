@@ -17,12 +17,17 @@ FROM ghcr.io/tesserix/base-go-builder@sha256:1d52f1321953c29971c261ccc7cd212f2ab
 USER 0:0
 WORKDIR /src
 
+# go.mod/go.sum first (both modules) so `go mod download` layer-caches
+# independently of source changes. The local replace target only needs to
+# exist as a module — its own go.sum isn't consulted by the downloader.
 COPY services/platform-api/go.mod services/platform-api/go.sum ./services/platform-api/
+COPY packages/platformauth/go.mod packages/platformauth/go.sum ./packages/platformauth/
 WORKDIR /src/services/platform-api
 RUN go mod download
 
 WORKDIR /src
 COPY services/platform-api/ ./services/platform-api/
+COPY packages/platformauth/ ./packages/platformauth/
 
 WORKDIR /src/services/platform-api
 RUN go build -trimpath -ldflags="-s -w" -o /out/server           ./cmd/server \

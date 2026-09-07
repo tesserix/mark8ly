@@ -103,6 +103,9 @@ func (c *WinBackCron) offerFor(ctx context.Context, row *subscription.StoreSubsc
 			row.Plan, row.SubscriptionPeriod, row.PriceTier, derefString(row.BillingCurrency)),
 		Currency: derefString(row.BillingCurrency),
 		Actor:    "system:winback",
+		// Passed so validate answers what redeem would. The win-back code
+		// is discount-only, so this is inert today (#620).
+		Sub: row,
 	})
 	if err != nil {
 		c.logger.Info("lifecycle: win-back offer not available — sending without one",

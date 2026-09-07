@@ -6,6 +6,7 @@
  * enforces: state only what the response actually contains.
  */
 import { subscriptionCopy } from '@/lib/copy/subscription'
+import { formatBillingDate } from '@/lib/format/date'
 import { formatMinorUnits } from '@/lib/format/minorUnits'
 import type { ApplyPromoResponse } from '@/lib/api/subscription/schemas/promo'
 
@@ -46,16 +47,43 @@ function formatPercentBps(bps: number): string | null {
  * subscription's discounts and nothing re-bills the current period.
  */
 export function promoAppliedMessage(res: ApplyPromoResponse): string {
+  const trial = trialExtensionPhrase(res)
+
+  // A trial-extension-ONLY code carries no discount and no coupon (#620), so
+  // there is no price to quote and the discount sentences would all be
+  // false. The days ARE the whole offer.
+  if (trial !== null && res.percent_off_bps === 0 && !res.stripe_coupon_id) {
+    return copy.appliedTrialDaysOnly(res.trial_extension_days, trial)
+  }
+
+  const suffix =
+    trial === null ? '' : copy.appliedTrialDaysSuffix(res.trial_extension_days, trial)
+
   if (!res.currency) {
-    return copy.appliedNoPrice
+    return copy.appliedNoPrice + suffix
   }
 
   const price = formatMinorUnits(res.effective_minor, res.currency)
   const percentOff = formatPercentBps(res.percent_off_bps)
 
   if (percentOff !== null && res.max_duration_months > 0) {
-    return copy.appliedForMonths(percentOff, res.max_duration_months, price)
+    return copy.appliedForMonths(percentOff, res.max_duration_months, price) + suffix
   }
 
-  return copy.applied(price)
+  return copy.applied(price) + suffix
+}
+
+/**
+ * The formatted new trial end, or null when this response grants no trial
+ * days — or grants days without a date we can show.
+ *
+ * Both halves are required before anything is said. Days with no date would
+ * leave the merchant to guess when their trial now ends, and the one date
+ * they would guess (today + days) is the wrong one whenever an operator has
+ * already extended them. Silence beats a date we did not write.
+ */
+function trialExtensionPhrase(res: ApplyPromoResponse): string | null {
+  if (res.trial_extension_days <= 0) return null
+  const endsOn = formatBillingDate(res.trial_ends_at)
+  return endsOn === '' ? null : endsOn
 }

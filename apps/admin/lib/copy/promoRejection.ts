@@ -49,6 +49,8 @@ export function promoRejectionMessage(
       return copy.currencyNotCovered
     case 'unknown_discount_type':
       return copy.unknownDiscountType
+    case 'trial_not_extendable':
+      return copy.trialNotExtendable
   }
 }
 

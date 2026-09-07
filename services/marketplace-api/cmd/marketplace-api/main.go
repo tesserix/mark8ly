@@ -210,6 +210,17 @@ func (a *trialStripeAdapter) GetSubscription(ctx context.Context, id string) (*b
 	return billingstripe.GetSubscription(ctx, a.c, id)
 }
 
+// promoTrialStripe returns the trial updater for a billing client, keeping the
+// interface a TRUE nil when there is no client. Written once because both
+// promo.Service constructions need it and a copy that forgot the nil check
+// would panic inside an open transaction — see trial.NewExtender.
+func promoTrialStripe(c *billingstripe.Client) trial.StripeTrialUpdater {
+	if c == nil {
+		return nil
+	}
+	return &trialStripeAdapter{c: c}
+}
+
 func (a *trialStripeAdapter) UpdateTrialEnd(ctx context.Context, in billingstripe.UpdateTrialEndParams) (*billingstripe.Subscription, error) {
 	return billingstripe.UpdateTrialEnd(ctx, a.c, in)
 }
@@ -1219,7 +1230,16 @@ func main() {
 
 		// P10 — Promo-code engine (§7).
 		promoRepo := promo.NewRepository()
-		promoSvc := promo.NewService(conn, promoRepo, billingStripeClient, log)
+		promoSvc := promo.NewService(conn, promoRepo, billingStripeClient, log).
+			// A console-defined code may grant trial days as well as, or
+			// instead of, a discount (#620). Without this the extension is
+			// silently skipped and the merchant is told the code applied —
+			// so ApplyPromo refuses rather than degrades when it is absent.
+			//
+			// A TRUE nil interface when Stripe is unconfigured, for the
+			// reason trialStripe below documents at length: a typed nil
+			// makes `e.Stripe != nil` true and panics on first use.
+			WithTrialExtender(trial.NewExtender(promoTrialStripe(billingStripeClient)))
 		promoHandler := admin.NewPromoHandler(conn, promoSvc, subscriptionRepo, log).WithAudit(auditEmitter)
 
 		// P10 — 14-day cooling-off refund (§8).
@@ -2329,7 +2349,13 @@ func main() {
 	// so this service is constructed with a nil Stripe client on purpose.
 	// promo.Service.ValidateCode makes no Stripe call, and handing the cron a
 	// client it must not use would be an invitation to start using it.
-	winBackPromo := promo.NewService(conn, promo.NewRepository(), nil, log)
+	//
+	// It DOES get a trial extender, which is a different thing: ValidateCode
+	// never calls Extend, but it does refuse a trial-extension code that has
+	// no way to be delivered. Without one here, the win-back's validate
+	// would disagree with the redeem path about a code that carries days.
+	winBackPromo := promo.NewService(conn, promo.NewRepository(), nil, log).
+		WithTrialExtender(trial.NewExtender(promoTrialStripe(billingStripeClient)))
 
 	winBackCron := lifecycle.NewWinBackCron(conn, winBackEmailClient, log, nil).
 		WithSkipCounter(lifecycleSkipCounter{metrics.BillingEmailsSkippedTotal}).

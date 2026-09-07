@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -66,6 +67,14 @@ type applyPromoResponse struct {
 	// guess — the same rule the win-back email follows (#727).
 	PercentOffBps     int `json:"percent_off_bps"`
 	MaxDurationMonths int `json:"max_duration_months"`
+	// TrialExtensionDays and TrialEndsAt describe the trial days this code
+	// granted (#620). Both are omitted when it granted none — a
+	// discount-only code, which is most of them. TrialEndsAt is the date
+	// that was actually written, not one the client should re-derive: it is
+	// computed from the subscription's EFFECTIVE trial end, which may
+	// already carry an operator's extension the client cannot see.
+	TrialExtensionDays int        `json:"trial_extension_days,omitempty"`
+	TrialEndsAt        *time.Time `json:"trial_ends_at,omitempty"`
 }
 
 // applyPromoErrorResponse is the 422 body for a refused code.
@@ -133,6 +142,7 @@ func (h *PromoHandler) ApplyPromo(c *gin.Context) {
 		Currency:             stringVal(sub.BillingCurrency),
 		StripeSubscriptionID: stringVal(sub.StripeSubscriptionID),
 		Actor:                actor,
+		Sub:                  sub,
 	})
 
 	// Emit audit regardless of success/failure (§23.1).
@@ -170,6 +180,9 @@ func (h *PromoHandler) ApplyPromo(c *gin.Context) {
 		Currency:          stringVal(sub.BillingCurrency),
 		PercentOffBps:     out.PercentOffBps,
 		MaxDurationMonths: out.MaxDurationMonths,
+
+		TrialExtensionDays: out.TrialExtensionDays,
+		TrialEndsAt:        trialEndOrNil(out.TrialEndsAt),
 	})
 }
 
@@ -265,6 +278,16 @@ func (h *PromoHandler) CancelPromo(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// trialEndOrNil keeps a zero time out of the response. Serialising it would
+// send "0001-01-01T00:00:00Z", which a client renders as a real date and a
+// merchant reads as a trial that ended two millennia ago.
+func trialEndOrNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }
 
 func stringVal(s *string) string {

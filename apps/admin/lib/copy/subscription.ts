@@ -227,6 +227,8 @@ export const subscriptionCopy = {
         'We cannot apply this code to a subscription billed in your currency yet. Contact us with the code and we will apply the discount by hand.',
       unknownDiscountType:
         'Something is wrong with this code on our side \u2014 it is not set up correctly. Contact us with the code and we will fix it.',
+      trialNotExtendable:
+        'This code adds days to a free trial, and yours has already ended or converted to a paid plan. The code itself is fine \u2014 contact us and we will see what we can do.',
     },
 
     /**
@@ -252,6 +254,24 @@ export const subscriptionCopy = {
     /** Used when the server returned no currency, so no price can be quoted. */
     appliedNoPrice:
       'Code applied. The discount shows on your next invoice.',
+
+    /**
+     * Trial-extension confirmations (#620).
+     *
+     * The DATE comes from the response and is never recomputed here: the
+     * extension is applied to the subscription's effective trial end, which
+     * may already carry an operator's extension this client cannot see, so
+     * "today + N days" would show the merchant a date we did not write.
+     *
+     * `appliedTrialDaysOnly` is the whole sentence for a code that grants
+     * days and no discount \u2014 a shape the console mints deliberately, and
+     * one that needs no Stripe coupon at all.
+     */
+    appliedTrialDaysOnly: (days: number, endsOn: string) =>
+      `Code applied. Your trial is extended by ${days === 1 ? 'a day' : `${days} days`} and now ends on ${endsOn}.`,
+    /** Appended when a code grants days AND a discount. */
+    appliedTrialDaysSuffix: (days: number, endsOn: string) =>
+      ` Your trial is also extended by ${days === 1 ? 'a day' : `${days} days`}, to ${endsOn}.`,
 
     /** Non-refusal failures \u2014 the code was never judged. */
     networkError:

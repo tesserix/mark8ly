@@ -103,8 +103,9 @@ interface SubmitInput {
   countryCode: string;
   currencyCode: string;
   timezone: string;
-  // §5.1.1 — optional; persisted to draft so completeOnboarding can
-  // forward them to the backend tax-ID endpoint once the store exists.
+  // §5.1.1 — optional; persisted to the draft and forwarded by
+  // completeOnboarding, which is where it reaches marketplace-api and is
+  // stored against the subscription row (unvalidated).
   taxId?: string;
   // §620 — optional; persisted to the draft so completeOnboarding can hand it
   // to marketplace-api, which redeems it once the subscription row exists.
@@ -125,10 +126,14 @@ export async function submitOnboarding(
     // Persist the business fields into the session draft so the
     // /onboarding/set-password page (reached after the magic link click)
     // can read them server-side without depending on per-tab state.
-    // §5.1.1: include migration fast-path evidence in the draft so
-    // completeOnboarding can forward them to the tax-ID endpoint once
-    // the store row has been created.  Fields absent when "new store"
-    // is selected are simply omitted — the backend ignores them.
+    // §5.1.1: include the tax ID and the migration fast-path evidence.
+    // completeOnboarding forwards the tax ID to marketplace-api, which
+    // stores it against the subscription row once that row exists.
+    // Fields absent when "new store" is selected are simply omitted —
+    // the backend ignores them.
+    //
+    // The migration evidence is still draft-only: nothing reads whois_url
+    // or screenshot_url after this point.
     const draft: Record<string, unknown> = {
       business_name: input.businessName,
       slug: input.slug,
@@ -270,6 +275,10 @@ export async function completeOnboardingWithZitadel(
     // the earliest moment redemption is possible, since the ledger row needs
     // a subscription id and the trial extension needs a row to move (#620).
     const promoCode = draft.promo_code ?? "";
+    // Held in the draft since §5.1.1 and, until now, read by nothing.
+    // marketplace-api stores it against the subscription row with
+    // tax_id_validated left false; the tax service validates it later.
+    const taxId = draft.tax_id ?? "";
 
     if (!businessName || !slug || !countryCode || !currencyCode) {
       return {
@@ -298,6 +307,7 @@ export async function completeOnboardingWithZitadel(
       first_name: firstName,
       last_name: lastName,
       ...(promoCode ? { promo_code: promoCode } : {}),
+      ...(taxId ? { tax_id: taxId } : {}),
     });
 
     return {

@@ -270,3 +270,60 @@ func TestEnsureStripeCustomer_RefusesWithNoStripeConfigured(t *testing.T) {
 		t.Fatal("EnsureStripeCustomer succeeded with no Stripe client")
 	}
 }
+
+// The Tax ID has been collected on the onboarding form since §5.1.1 and
+// stored nowhere: reverse_charge_tax_id had no writer anywhere in the tree,
+// while the revalidation cron and the reverse-charge invoice annotation both
+// read it. Signup is the only point the value is known.
+func TestBootstrap_StoresTheTaxIDTheMerchantSupplied(t *testing.T) {
+	repo := &bootstrapRepo{}
+	svc := newSvc(repo, nil)
+
+	in := bootstrapInput()
+	in.TaxID = "GB123456789"
+	in.TaxIDCountry = "gb"
+
+	sub, err := svc.Bootstrap(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	if sub.ReverseChargeTaxID == nil || *sub.ReverseChargeTaxID != "GB123456789" {
+		t.Fatalf("ReverseChargeTaxID = %v, want GB123456789", sub.ReverseChargeTaxID)
+	}
+	if sub.TaxIDCountry == nil || *sub.TaxIDCountry != "GB" {
+		t.Fatalf("TaxIDCountry = %v, want GB (upper-case, CHAR(2))", sub.TaxIDCountry)
+	}
+	// The claim is unchecked, and must be recorded as unchecked. Both
+	// downstream consumers gate on this flag, so a true here would put an
+	// unverified id onto a reverse-charge invoice.
+	if sub.TaxIDValidated {
+		t.Error("an unvalidated tax id was recorded as validated")
+	}
+}
+
+// Half a tax id is worse than none: the validator dispatches on country and
+// the invoice annotation prints the pair, so a value with no country reads as
+// present and can never be used.
+func TestBootstrap_StoresNeitherHalfOfAnIncompleteTaxID(t *testing.T) {
+	for _, tc := range []struct{ name, id, country string }{
+		{"id with no country", "GB123456789", ""},
+		{"country with no id", "", "GB"},
+		{"malformed country", "GB123456789", "GBR"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newSvc(&bootstrapRepo{}, nil)
+			in := bootstrapInput()
+			in.TaxID = tc.id
+			in.TaxIDCountry = tc.country
+
+			sub, err := svc.Bootstrap(context.Background(), in)
+			if err != nil {
+				t.Fatalf("Bootstrap: %v", err)
+			}
+			if sub.ReverseChargeTaxID != nil || sub.TaxIDCountry != nil {
+				t.Errorf("stored a partial tax id: id=%v country=%v",
+					sub.ReverseChargeTaxID, sub.TaxIDCountry)
+			}
+		})
+	}
+}

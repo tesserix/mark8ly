@@ -260,7 +260,11 @@ type CompleteRequest struct {
 	// travels with completion rather than being redeemed earlier because
 	// redemption needs a subscription row, and that row is created as part of
 	// this call (mark8ly#620, mark8ly#827).
-	PromoCode    string `json:"promo_code"`
+	PromoCode string `json:"promo_code"`
+	// TaxID is what the merchant typed in onboarding's Tax ID field. Carried
+	// to marketplace-api, which stores it against the subscription row with
+	// tax_id_validated left false.
+	TaxID        string `json:"tax_id"`
 	CountryCode  string `json:"country_code"`
 	CurrencyCode string `json:"currency_code"`
 	Timezone     string `json:"timezone"`
@@ -496,6 +500,11 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 			// (mark8ly#620). A refused code does not fail this call: the
 			// outcome comes back in the response and is logged.
 			PromoCode: req.PromoCode,
+			// Unvalidated, and recorded as such on the far side. The tax
+			// service validates it later; this only stops the merchant's
+			// answer being thrown away.
+			TaxID:       req.TaxID,
+			CountryCode: st.CountryCode,
 		}); subErr != nil {
 			log.Printf("onboarding.Complete: ensure subscription for tenant %s store %s: %v — THIS STORE HAS NO TRIAL CLOCK",
 				t.ID, st.ID, subErr)

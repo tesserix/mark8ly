@@ -11,7 +11,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query'
 import {
-  bootstrapSubscription,
   getSubscription,
   listInvoices,
   openPortal,
@@ -40,28 +39,11 @@ export function useCurrentPlan(
   })
 }
 
-/**
- * Initialises the subscription row for a store that predates the v2.3
- * signup pipeline. On success seeds the ['subscription', storeId] cache
- * with the new row so the UI immediately swaps from the "not found" CTA
- * to the normal billing view.
- */
-export function useBootstrapSubscription(
-  storeId: string,
-): UseMutationResult<CurrentPlan, Error, void> {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: () => bootstrapSubscription(storeId),
-    onSuccess: (data) => {
-      queryClient.setQueryData<CurrentPlan>(['subscription', storeId], data)
-    },
-  })
-}
 
 /**
  * Fetches up to 25 most-recent invoices for the store's Stripe customer.
- * Pre-bootstrap stores resolve to an empty array (no Stripe customer yet).
+ * A store with no Stripe customer yet resolves to an empty array — since
+ * #827 a subscription row deliberately starts without one.
  */
 export function useInvoices(storeId: string): UseQueryResult<Invoice[], Error> {
   return useQuery({

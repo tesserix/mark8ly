@@ -160,6 +160,14 @@ type ensureSubscriptionRequest struct {
 	// PromoCode is what the merchant typed at onboarding, if anything (#620).
 	// Empty is the normal case.
 	PromoCode string `json:"promo_code"`
+	// TaxID is what the merchant typed in onboarding's Tax ID field,
+	// unvalidated. Its country comes from the store, so the caller sends only
+	// the id.
+	TaxID string `json:"tax_id"`
+	// CountryCode is the store's ISO 3166-1 alpha-2 country, used as the tax
+	// id's jurisdiction. Distinct from Currency: a store can bill in a
+	// currency other than its own country's.
+	CountryCode string `json:"country_code"`
 }
 
 func (h *InternalHandler) ensureSubscription(c *gin.Context) {
@@ -188,6 +196,8 @@ func (h *InternalHandler) ensureSubscription(c *gin.Context) {
 		Email:           req.Email,
 		Name:            req.Name,
 		BillingCurrency: req.Currency,
+		TaxID:           req.TaxID,
+		TaxIDCountry:    req.CountryCode,
 	})
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{

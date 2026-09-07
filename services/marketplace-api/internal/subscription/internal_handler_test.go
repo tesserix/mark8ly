@@ -384,3 +384,26 @@ func TestValidatePromoForSignup_RefusesWithoutTheInternalSecret(t *testing.T) {
 		t.Fatal("validated a code for a request that failed the guard")
 	}
 }
+
+// The Tax ID has to survive the hop, with the store's country as its
+// jurisdiction. Before this it was collected on the form and read by nobody.
+func TestEnsureSubscription_CarriesTheTaxIDAndItsCountry(t *testing.T) {
+	svc := &stubBootstrapper{}
+	rec := httptest.NewRecorder()
+	promoRouter(t, svc, nil).ServeHTTP(rec, ensureReq(t, uuid.New(), map[string]any{
+		"tenant_id":    uuid.New().String(),
+		"currency":     "gbp",
+		"country_code": "GB",
+		"tax_id":       "GB123456789",
+	}, testInternalSecret))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if len(svc.calls) != 1 {
+		t.Fatalf("Bootstrap called %d times, want 1", len(svc.calls))
+	}
+	if got := svc.calls[0]; got.TaxID != "GB123456789" || got.TaxIDCountry != "GB" {
+		t.Errorf("tax id = %q/%q, want GB123456789/GB", got.TaxID, got.TaxIDCountry)
+	}
+}

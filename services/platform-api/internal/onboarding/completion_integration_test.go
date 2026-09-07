@@ -681,3 +681,64 @@ func TestIntegration_Complete_NoPromoCodeStaysEmpty(t *testing.T) {
 		t.Errorf("PromoCode = %q, want empty", got)
 	}
 }
+
+// The Tax ID reaches marketplace-api, with the store's country as its
+// jurisdiction. Before this it was written to the onboarding draft and read by
+// nobody: platform-api had no tax_id anywhere, and marketplace-api's
+// reverse_charge_tax_id column had no writer at all.
+func TestIntegration_Complete_CarriesTheTaxID(t *testing.T) {
+	db := testdb.NewDB(t,
+		"outbox_events",
+		"verification_tokens",
+		"onboarding_sessions",
+		"tenants",
+	)
+
+	onboardingRepo := NewRepository(db)
+	fake := &fakeVendorClient{}
+	svc := NewService(Config{
+		DB: db, Repo: onboardingRepo, TenantRepo: tenant.NewRepository(db),
+		Sender: notification.NoopSender{}, EmailFrom: "noreply@test.local",
+		SupportEmail: "help@test.local", VendorClient: fake,
+	})
+
+	ctx := context.Background()
+	now := time.Now()
+	sess := &Session{
+		Email:           "tax-id@test.local",
+		Draft:           json.RawMessage(`{}`),
+		Status:          StatusInProgress,
+		EmailVerifiedAt: &now,
+	}
+	if err := onboardingRepo.Create(ctx, sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	if _, err := svc.Complete(ctx, CompleteRequest{
+		SessionID:    sess.ID,
+		BusinessName: "Tax ID Co",
+		Slug:         "tax-id-co",
+		OwnerUserID:  "gip-uid-tax-id",
+		OwnerEmail:   "tax-id@test.local",
+		TaxID:        "GB123456789",
+		CountryCode:  "GB",
+		CurrencyCode: "GBP",
+		Timezone:     "Europe/London",
+	}); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	if len(fake.subCalls) != 1 {
+		t.Fatalf("EnsureSubscription called %d times, want 1", len(fake.subCalls))
+	}
+	got := fake.subCalls[0]
+	if got.TaxID != "GB123456789" {
+		t.Errorf("TaxID = %q — the merchant filled the field and it was dropped", got.TaxID)
+	}
+	// The country is the tax id's jurisdiction and comes from the STORE, not
+	// from the currency: a store can bill in a currency other than its own
+	// country's, and the validator dispatches on country.
+	if got.CountryCode != "GB" {
+		t.Errorf("CountryCode = %q, want GB", got.CountryCode)
+	}
+}

@@ -13,7 +13,8 @@
  * address would let one merchant spend another's cap.
  *
  * Response 200: { stripe_coupon_id, effective_minor, currency,
- *                 percent_off_bps, max_duration_months }
+ *                 percent_off_bps, max_duration_months,
+ *                 trial_extension_days?, trial_ends_at? }
  * Response 422: { error: "promo_invalid_or_expired", message, reason }
  */
 import { z } from 'zod'
@@ -53,6 +54,20 @@ export const applyPromoResponseSchema = z.object({
   percent_off_bps: z.number().int().default(0),
   /** Months the discount runs for. 0 means the row states no bound — never "zero months". */
   max_duration_months: z.number().int().default(0),
+  /**
+   * Trial days this code granted (#620). Absent for a discount-only code,
+   * which is most of them.
+   */
+  trial_extension_days: z.number().int().default(0),
+  /**
+   * The trial end that was actually written, RFC 3339. Absent when the code
+   * granted no trial days.
+   *
+   * Never re-derive it as "today + trial_extension_days": the extension is
+   * applied to the subscription's EFFECTIVE trial end, which may already
+   * carry an extension an operator granted and this client cannot see.
+   */
+  trial_ends_at: z.string().optional(),
 })
 
 export type ApplyPromoResponse = z.infer<typeof applyPromoResponseSchema>
@@ -79,6 +94,7 @@ export const PROMO_REJECT_REASONS = [
   'below_absolute_floor',
   'currency_not_covered',
   'unknown_discount_type',
+  'trial_not_extendable',
 ] as const
 
 export type PromoRejectReason = (typeof PROMO_REJECT_REASONS)[number]

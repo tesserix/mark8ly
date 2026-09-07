@@ -43,6 +43,22 @@ const APPLIED_FIXTURE = {
   currency: 'usd',
   percent_off_bps: 2000,
   max_duration_months: 6,
+  trial_extension_days: 0,
+}
+
+/**
+ * A trial-extension-ONLY code (#620): no discount, no Stripe coupon, no
+ * price to quote. That shape is normal — the console mints no Coupon for a
+ * code that touches no Stripe object.
+ */
+const TRIAL_ONLY_FIXTURE = {
+  stripe_coupon_id: '',
+  effective_minor: 2900,
+  currency: 'usd',
+  percent_off_bps: 0,
+  max_duration_months: 0,
+  trial_extension_days: 14,
+  trial_ends_at: '2026-11-03T00:00:00Z',
 }
 
 function rejection(reason: string) {
@@ -184,6 +200,7 @@ describe('promoRejectionMessage', () => {
     'wrong_plan',
     'annual_only',
     'below_absolute_floor',
+    'trial_not_extendable',
   ] as const)('%s never claims the code is invalid or expired', (reason) => {
     const message = promoRejectionMessage(reason, CTX).toLowerCase()
     expect(message).not.toContain('invalid')
@@ -273,6 +290,49 @@ describe('promoAppliedMessage', () => {
     })
     expect(message).toContain('1,520')
     expect(message).not.toContain('15.20')
+  })
+
+  // #620. A trial-extension-only code has no discount and no price, so every
+  // discount sentence would be false. The days are the whole offer.
+  it('states the trial days and the new end date for an extension-only code', () => {
+    const message = promoAppliedMessage(TRIAL_ONLY_FIXTURE)
+    expect(message).toContain('14 days')
+    expect(message).toContain('3 November 2026')
+    expect(message).not.toContain('%')
+    expect(message).not.toContain('29.00')
+  })
+
+  it('states both when a code grants a discount AND trial days', () => {
+    const message = promoAppliedMessage({
+      ...APPLIED_FIXTURE,
+      trial_extension_days: 14,
+      trial_ends_at: '2026-11-03T00:00:00Z',
+    })
+    expect(message).toContain('20%')
+    expect(message).toContain('15.20')
+    expect(message).toContain('14 days')
+    expect(message).toContain('3 November 2026')
+  })
+
+  // The date is the server's, never re-derived. Without one there is nothing
+  // honest to say: "today + 14 days" is the wrong date for any merchant whose
+  // trial an operator has already extended.
+  it('says nothing about the trial when the response carries days but no date', () => {
+    const message = promoAppliedMessage({
+      ...TRIAL_ONLY_FIXTURE,
+      trial_ends_at: undefined,
+    })
+    expect(message).not.toContain('14 days')
+    expect(message).not.toContain('trial')
+  })
+
+  it('says a day, not 1 days', () => {
+    const message = promoAppliedMessage({
+      ...TRIAL_ONLY_FIXTURE,
+      trial_extension_days: 1,
+    })
+    expect(message).toContain('a day')
+    expect(message).not.toContain('1 days')
   })
 
   it('never claims the discount applies today', () => {

@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
+	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -38,6 +39,17 @@ type ApplyInput struct {
 	StripeSubscriptionID string
 	// Actor is the audit actor string ("user:<uuid>" or "system:…").
 	Actor string
+	// Sub is the store subscription this code is being applied to.
+	//
+	// Needed ONLY by a code that carries a trial extension, and needed in
+	// full rather than as a copied-out date: both "may this trial move" and
+	// "what does it move from" are properties of the row, and each has
+	// exactly one definition (trial.Extendable, trial.EndsAt). Passing
+	// scalars would put a second copy of each here.
+	//
+	// Nil is correct for a discount-only code. Nil with a trial-extension
+	// code is a call-site bug and fails closed — see ApplyPromo.
+	Sub *subscription.StoreSubscription
 }
 
 // ApplyOutput is returned by Service.ApplyPromo on success.
@@ -59,6 +71,17 @@ type ApplyOutput struct {
 	// MaxDurationMonths is how many months the discount runs for, or 0 when
 	// the row sets no bound. 0 is "unbounded", never "zero months".
 	MaxDurationMonths int
+	// TrialExtensionDays is the number of days this code adds to the trial,
+	// or 0 when it extends none. Set by terms(), so ValidateCode reports the
+	// same number ApplyPromo would grant — a client can state "+14 days"
+	// before the merchant commits.
+	TrialExtensionDays int
+	// TrialEndsAt is the trial end AFTER the extension was applied. Set by
+	// ApplyPromo alone and zero everywhere else, including ValidateCode:
+	// asking whether a code would be accepted grants no date, and reporting
+	// one would invite a client to display a trial end that was never
+	// written.
+	TrialEndsAt time.Time
 }
 
 // terms copies the describable parts of a promo row into an output. Kept in
@@ -77,6 +100,9 @@ func terms(out ApplyOutput, pc *PromoCode) ApplyOutput {
 	if pc.MaxDurationMonths != nil {
 		out.MaxDurationMonths = *pc.MaxDurationMonths
 	}
+	if pc.TrialExtensionDays != nil {
+		out.TrialExtensionDays = *pc.TrialExtensionDays
+	}
 	return out
 }
 
@@ -89,11 +115,20 @@ type CancelInput struct {
 	Actor                string
 }
 
+// TrialExtender is the subset of *trial.Extender this package needs. Declared
+// here rather than imported as a concrete type so a redemption can be tested
+// without a database, and so the dependency points inward.
+type TrialExtender interface {
+	Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID,
+		newEnd, now time.Time, callerIdemKey string) (trial.ExtendResult, error)
+}
+
 // Service is the promo-code application service.
 type Service struct {
 	db     *gorm.DB
 	repo   Repository
 	stripe *billingstripe.Client
+	trial  TrialExtender
 	logger *slog.Logger
 }
 
@@ -104,6 +139,20 @@ func NewService(db *gorm.DB, repo Repository, stripe *billingstripe.Client, logg
 		logger = slog.Default()
 	}
 	return &Service{db: db, repo: repo, stripe: stripe, logger: logger}
+}
+
+// WithTrialExtender wires the trial extender a trial-extension code needs
+// (#620) and returns s, so it can be chained onto NewService.
+//
+// Deliberately NOT a NewService parameter. A nil Stripe client is a supported
+// configuration — a code with no coupon simply attaches none — but a nil
+// extender is not: a code that promises days and silently grants none is the
+// exact defect #620 was opened for. Keeping it off the constructor means the
+// four existing call sites that pass no extender keep compiling, while
+// ApplyPromo refuses rather than degrades. See the trial branch there.
+func (s *Service) WithTrialExtender(e TrialExtender) *Service {
+	s.trial = e
+	return s
 }
 
 // ApplyPromo applies a promo code to a store subscription. Returns
@@ -165,6 +214,25 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 		return ApplyOutput{}, fmt.Errorf("promo: apply: check store redemption: %w", storeRedErr)
 	}
 
+	// 4b. Pre-flight the trial extension, BEFORE anything is written.
+	//
+	// The refusal has to happen here rather than at the Extend call below,
+	// because by then the ledger row exists and max_per_email is 1: a
+	// merchant refused after the row is written has spent their one
+	// redemption on nothing. Extend re-checks under its row lock, so this is
+	// the merchant's answer, not the guarantee.
+	extendDays, newTrialEnd, err := s.planTrialExtension(pc, in)
+	if err != nil {
+		if errors.Is(err, ErrInvalidOrExpired) {
+			if metrics.Subscription != nil {
+				metrics.Subscription.PromoAppliedTotal.
+					WithLabelValues(string(in.Plan), in.Currency, string(RejectReasonTrialNotExtendable)).Inc()
+			}
+			return ApplyOutput{RejectReason: RejectReasonTrialNotExtendable}, err
+		}
+		return ApplyOutput{}, err
+	}
+
 	// 5. Attach coupon in Stripe (if client available and the code has one).
 	//
 	// A console-defined code need not have a Stripe Coupon: a
@@ -195,6 +263,11 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 
 	// 6. Record redemption row.
 	red := &Redemption{
+		// Generated here rather than left to the column default, because
+		// the trial extension's idempotency key is derived from it (#620)
+		// and a key cannot be built from an id the database has not
+		// returned yet.
+		ID:             uuid.New(),
 		PromoCodeID:    pc.ID,
 		StoreID:        in.StoreID,
 		SubscriptionID: in.SubscriptionID,
@@ -212,6 +285,45 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 		return ApplyOutput{}, fmt.Errorf("promo: apply: record redemption: %w", err)
 	}
 
+	// 7. Extend the trial, keyed on the ledger row just written (#620).
+	//
+	// After the row, not before, so the key exists and a retry converges on
+	// the same Stripe idempotency key rather than extending twice.
+	appliedEnd := time.Time{}
+	if extendDays > 0 {
+		if _, err := s.trial.Extend(ctx, s.db, in.StoreID, newTrialEnd, time.Now().UTC(),
+			"promo_redeem:"+red.ID.String()); err != nil {
+
+			// The ONE failure that must not be undone. Stripe has already
+			// moved the merchant's billing date and only the local write
+			// failed; deleting the ledger row would erase the only local
+			// record that the redemption happened, and the retry it invites
+			// is refused by Extend anyway (ErrTrialEndNotAfterStripe). A
+			// human reconciles this — see trial.ErrStripeAppliedLocalWriteFailed.
+			if errors.Is(err, trial.ErrStripeAppliedLocalWriteFailed) {
+				s.logger.Error("promo: trial extension moved stripe but not the local row — redemption kept for reconciliation",
+					"store_id", in.StoreID, "promo_code_id", pc.ID,
+					"redemption_id", red.ID, "err", err)
+				return ApplyOutput{}, fmt.Errorf("promo: apply: extend trial: %w", err)
+			}
+
+			// Everything else: put the merchant back where they started, so
+			// the code is not spent on an extension that never happened.
+			if delErr := s.repo.DeleteRedemptionByStore(ctx, s.db, pc.ID, in.StoreID); delErr != nil {
+				s.logger.Error("promo: could not roll back redemption after a failed trial extension — the code is now spent",
+					"store_id", in.StoreID, "promo_code_id", pc.ID, "err", delErr)
+			}
+			if s.stripe != nil && in.StripeSubscriptionID != "" && couponID != "" {
+				_ = billingstripe.RemoveSubscriptionDiscount(ctx, s.stripe, in.StripeSubscriptionID, couponID)
+			}
+			return ApplyOutput{}, fmt.Errorf("promo: apply: extend trial: %w", err)
+		}
+		appliedEnd = newTrialEnd
+		s.logger.Info("promo: trial extended",
+			"store_id", in.StoreID, "promo_code_id", pc.ID,
+			"days", extendDays, "trial_ends_at", newTrialEnd)
+	}
+
 	if metrics.Subscription != nil {
 		metrics.Subscription.PromoAppliedTotal.
 			WithLabelValues(string(in.Plan), in.Currency, "applied").Inc()
@@ -221,7 +333,54 @@ func (s *Service) ApplyPromo(ctx context.Context, in ApplyInput) (ApplyOutput, e
 		PromoCodeID:    pc.ID,
 		StripeCouponID: couponID,
 		EffectiveMinor: result.EffectiveMinor,
+		TrialEndsAt:    appliedEnd,
 	}, pc), nil
+}
+
+// planTrialExtension answers "how many days does this code add, and to what
+// date", or explains why it cannot.
+//
+// It returns (0, zero, nil) for a code that extends no trial — the common
+// case, and the one every existing call site is in.
+//
+// The two failure kinds are deliberately different errors, because they are
+// different people's problems:
+//
+//   - ErrInvalidOrExpired: the merchant's subscription cannot take an
+//     extension (converted, not trialing, or already lapsed). A 422 with a
+//     reason, and their redemption is not spent.
+//   - anything else: WE are misconfigured — no extender wired, or a caller
+//     that did not pass the subscription. Reporting that as "invalid or
+//     expired" would tell a merchant holding a perfectly good code to stop
+//     trying, and would hide a wiring regression behind a merchant-facing
+//     refusal. It fails closed and loudly instead.
+func (s *Service) planTrialExtension(pc *PromoCode, in ApplyInput) (int, time.Time, error) {
+	if pc.TrialExtensionDays == nil || *pc.TrialExtensionDays <= 0 {
+		return 0, time.Time{}, nil
+	}
+	days := *pc.TrialExtensionDays
+
+	if s.trial == nil {
+		return 0, time.Time{}, fmt.Errorf(
+			"promo: code %s grants a %d-day trial extension but no trial extender is wired: %w",
+			pc.Code, days, ErrTrialExtensionUnavailable)
+	}
+	if in.Sub == nil {
+		return 0, time.Time{}, fmt.Errorf(
+			"promo: code %s grants a %d-day trial extension but the caller passed no subscription: %w",
+			pc.Code, days, ErrTrialExtensionUnavailable)
+	}
+
+	if err := trial.Extendable(*in.Sub, time.Now().UTC()); err != nil {
+		s.logger.Info("promo: trial-extension code refused — this trial cannot move",
+			"store_id", in.StoreID, "promo_code_id", pc.ID, "reason", err)
+		return 0, time.Time{}, ErrInvalidOrExpired
+	}
+
+	// The base is the EFFECTIVE end, never created_at + TrialDays. Extend
+	// takes an absolute date, so deriving it from the signup date would
+	// silently discard an extension an operator already granted (#620).
+	return days, trial.EndsAt(*in.Sub).AddDate(0, 0, days), nil
 }
 
 // CancelPromo removes this code's coupon from the Stripe subscription's
@@ -315,6 +474,17 @@ func (s *Service) ValidateCode(ctx context.Context, in ApplyInput) (ApplyOutput,
 	})
 	if !result.Accepted {
 		return ApplyOutput{RejectReason: result.RejectReason}, ErrInvalidOrExpired
+	}
+
+	// The same trial pre-flight ApplyPromo runs, for the same reason it is a
+	// pre-flight there: "would this be accepted" and "apply it" must give the
+	// same answer, or a caller states an offer the redeem path then refuses.
+	// It writes nothing here — planTrialExtension only reads.
+	if _, _, err := s.planTrialExtension(pc, in); err != nil {
+		if errors.Is(err, ErrInvalidOrExpired) {
+			return ApplyOutput{RejectReason: RejectReasonTrialNotExtendable}, err
+		}
+		return ApplyOutput{}, err
 	}
 
 	return terms(ApplyOutput{

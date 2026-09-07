@@ -104,6 +104,11 @@ func (s *Service) applySaveOfferDiscount(ctx context.Context, in Input, sub *sub
 		Currency:             derefString(sub.BillingCurrency),
 		StripeSubscriptionID: derefString(sub.StripeSubscriptionID),
 		Actor:                in.Actor,
+		// The save-offer code carries a discount, not trial days, so this
+		// changes nothing today. It is passed because promo decides that,
+		// not this call site: a code that grew a trial extension would
+		// otherwise fail closed here rather than be applied (#620).
+		Sub: sub,
 	}
 
 	if _, err := s.promo.ValidateForSaveOffer(ctx, applyIn); err != nil {

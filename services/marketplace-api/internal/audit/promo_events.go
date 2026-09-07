@@ -1,6 +1,8 @@
 package audit
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -15,6 +17,17 @@ type PromoApplied struct {
 	RejectReason string
 	// Accepted indicates whether the promo was successfully applied.
 	Accepted bool
+	// TrialExtensionDays and TrialEndsAt record a trial extension this code
+	// granted (#620), and are omitted from the metadata when it granted
+	// none.
+	//
+	// Recorded because the code alone does not say what changed: a promo can
+	// move a merchant's billing date, which is the same consequential write
+	// an operator extension emits its own audit row for. Without these, the
+	// only trace of a moved trial end is a code string whose definition
+	// lives in another system and can be edited after the fact.
+	TrialExtensionDays int
+	TrialEndsAt        time.Time
 }
 
 // EmitPromoApplied emits a subscription.promo_applied audit event.
@@ -28,6 +41,12 @@ func (e *Emitter) EmitPromoApplied(c *gin.Context, p PromoApplied) {
 	}
 	if p.RejectReason != "" {
 		md["reject_reason"] = p.RejectReason
+	}
+	if p.TrialExtensionDays > 0 {
+		md["trial_extension_days"] = p.TrialExtensionDays
+	}
+	if !p.TrialEndsAt.IsZero() {
+		md["trial_ends_at"] = p.TrialEndsAt.UTC().Format(time.RFC3339)
 	}
 
 	severity := SeverityInfo

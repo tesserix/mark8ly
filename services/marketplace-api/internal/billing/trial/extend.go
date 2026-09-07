@@ -204,6 +204,45 @@ func NewExtender(su StripeTrialUpdater) *Extender {
 	return &Extender{Stripe: su}
 }
 
+// Extendable reports whether sub's trial may be moved at now, returning the
+// same sentinel Extend refuses with, or nil when it may.
+//
+// THIS IS THE ONLY DEFINITION OF "can this trial move". Extend calls it
+// inside its row lock, where the answer is authoritative. A caller that must
+// refuse BEFORE writing anything of its own calls it on a row it has already
+// loaded — promo redemption does, so that a merchant whose trial cannot move
+// is refused without spending their one redemption (#620).
+//
+// A pre-flight answer is necessarily advisory: the row can convert between
+// the check and Extend's lock. That is why Extend re-checks rather than
+// trusting the caller. What this shares is the RULE, not the guarantee — a
+// second copy of the rule would drift, and the drift would show up as a
+// promo code accepted at the door and refused at the till.
+func Extendable(sub subscription.StoreSubscription, now time.Time) error {
+	// Order matters: `active` gets its own error even though it would
+	// also fail the trial-state check, because "already converted" is
+	// the acceptance criterion's own words and the console shows a
+	// different message for it.
+	switch {
+	case sub.Status == subscription.StatusActive:
+		return ErrAlreadyConverted
+	case sub.Status != subscription.StatusTrialing && sub.Status != subscription.StatusSignup:
+		return ErrNotTrialing
+	}
+
+	// A trial whose EFFECTIVE end has already passed but whose status is
+	// still `trialing` — the window between the end passing and the 00:15
+	// expiry cron sweeping it to `not_trialing` — must refuse the same way
+	// the post-cron state does. Using the SAME sentinel, ErrNotTrialing, is
+	// the point: the operator's answer must not depend on whether the cron
+	// happened to run yet. Reinstating an already-expired trial is out of
+	// scope (see the spec).
+	if !EndsAt(sub).After(now) {
+		return ErrNotTrialing
+	}
+	return nil
+}
+
 // Extend moves a trial's end date, refusing the states where doing so
 // would be wrong or would disagree with Stripe.
 //
@@ -239,26 +278,8 @@ func (e *Extender) Extend(ctx context.Context, db *gorm.DB, storeID uuid.UUID, n
 			return fmt.Errorf("trial: load subscription: %w", err)
 		}
 
-		// Order matters: `active` gets its own error even though it would
-		// also fail the trial-state check, because "already converted" is
-		// the acceptance criterion's own words and the console shows a
-		// different message for it.
-		switch {
-		case sub.Status == subscription.StatusActive:
-			return ErrAlreadyConverted
-		case sub.Status != subscription.StatusTrialing && sub.Status != subscription.StatusSignup:
-			return ErrNotTrialing
-		}
-
-		// A trial whose EFFECTIVE end has already passed but whose status
-		// is still `trialing` — the window between the end passing and the
-		// 00:15 expiry cron sweeping it to `not_trialing` — must refuse the
-		// same way the post-cron state does. Using the SAME sentinel,
-		// ErrNotTrialing, is the point: the operator's answer must not
-		// depend on whether the cron happened to run yet. Reinstating an
-		// already-expired trial is out of scope (see the spec).
-		if !EndsAt(sub).After(now) {
-			return ErrNotTrialing
+		if err := Extendable(sub, now); err != nil {
+			return err
 		}
 
 		// The EFFECTIVE end before the write — the derived date when the

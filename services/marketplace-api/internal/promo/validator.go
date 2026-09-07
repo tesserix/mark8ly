@@ -54,6 +54,16 @@ const (
 	// ingest from the console (#726). Rejecting is safer than applying no
 	// discount and calling it a success.
 	RejectReasonUnknownDiscountType ValidationRejectReason = "unknown_discount_type"
+	// RejectReasonTrialNotExtendable covers a code that grants a trial
+	// extension applied to a subscription whose trial cannot move — already
+	// converted, not trialing, or already lapsed. The rule is
+	// trial.Extendable's; this is only the name the promo audit trail gives
+	// its refusal (#620).
+	//
+	// It is NOT produced by Validate: it is a fact about the subscription
+	// rather than about the code, and Validate is given no subscription.
+	// Service.planTrialExtension sets it.
+	RejectReasonTrialNotExtendable ValidationRejectReason = "trial_not_extendable"
 )
 
 // ValidationResult is returned by Validate. On success Accepted is true and

@@ -111,6 +111,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/shipmentcancel"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/signup"
+	"github.com/mark8ly/marketplace-api/internal/sso"
 	"github.com/mark8ly/marketplace-api/internal/stockhold"
 	"github.com/mark8ly/marketplace-api/internal/storeidentity"
 	"github.com/mark8ly/marketplace-api/internal/stores"
@@ -574,6 +575,12 @@ func main() {
 	// process never mounts the admin group so these dependencies would go
 	// unused there.
 	var adminDeps admin.Deps
+	// ssoLoginHandler is declared at this outer scope for the same reason
+	// breakGlassLoginHandler below is: it is BUILT in the admin-mode block,
+	// where its dependencies live, and MOUNTED further down on the public
+	// group. Building it beside its deps and mounting it beside the other
+	// public routes is what keeps both halves readable (#820).
+	var ssoLoginHandler *public.SSOLoginHandler
 	// breakGlassLoginHandler and breakGlassRateLimiter are declared at this
 	// outer scope (not inside the admin-mode block below) because
 	// breakGlassRateLimiter must ALSO reach platformadmin.Deps.BreakGlassRateLimiter
@@ -1432,8 +1439,25 @@ func main() {
 			})
 		}
 
+		// P13 §12 — per-tenant SSO (#820). Both surfaces are constructed
+		// here or neither is: a merchant able to SAVE an IdP config that
+		// nobody can then sign in with is the "looks delivered, does
+		// nothing" state #820 was opened about.
+		ssoRepo := sso.NewRepository(conn)
+		ssoConfigHandler, ssoLogin := buildSSO(ssoDeps{
+			cfg:      cfg,
+			repo:     ssoRepo,
+			stores:   storesRepo,
+			platform: platformClient,
+			bao:      breakGlassBaoClient,
+			audit:    auditEmitter,
+			log:      log,
+		})
+		ssoLoginHandler = ssoLogin
+
 		adminDeps = admin.Deps{
 			BreakGlassLoginHandler:   breakGlassLoginHandler,
+			SSOConfigHandler:         ssoConfigHandler,
 			TenantGate:               adminTenantGateHandler,
 			ProductHandler:           productHandler,
 			CategoryHandler:          categoryHandler,
@@ -2559,6 +2583,7 @@ func main() {
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
 		public.RegisterPublic(r.Group("/api/v1"), public.PublicDeps{
+			SSOLoginHandler:           ssoLoginHandler,
 			DelhiveryWebhookHandler:   delhiveryWebhookHandler,
 			JournalSubscribeHandler:   journalSubscribeHandler,
 			JournalUnsubscribeHandler: journalUnsubscribeHandler,

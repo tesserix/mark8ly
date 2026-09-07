@@ -1,43 +1,38 @@
 package session
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
-	"net/url"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-// LinkedProvider is a single auth method bound to a GIP user.
+// LinkedProvider is a single sign-in method bound to a user.
+//
+// ProviderID is the vocabulary the linked-providers panel keys on —
+// "password", "google.com", "apple.com" — not a Zitadel enum and not a
+// raw IDP id, except when the deployment has not named that IDP (see
+// zitadellogin.providerIDForIDP: an unrecognised provider still renders
+// under its raw id rather than vanishing from a list the merchant uses
+// to audit account access).
 type LinkedProvider struct {
-	ProviderID string `json:"provider_id"`     // "password" or "google.com" or "facebook.com" etc.
-	Email      string `json:"email,omitempty"` // empty for password (mirrored to top-level email anyway)
+	ProviderID string `json:"provider_id"`     // "password" or "google.com" or "apple.com"
+	Email      string `json:"email,omitempty"` // empty when the provider asserted none
 }
 
 type providersResponse struct {
 	Providers []LinkedProvider `json:"providers"`
 }
 
-// gipLookupResponse mirrors the Identity Toolkit accounts:lookup response.
-type gipLookupResponse struct {
-	Users []struct {
-		Email            string `json:"email"`
-		PasswordHash     string `json:"passwordHash"`
-		ProviderUserInfo []struct {
-			ProviderID string `json:"providerId"`
-			Email      string `json:"email"`
-		} `json:"providerUserInfo"`
-	} `json:"users"`
-}
-
-// getMyProviders returns the linked providers for the current admin user.
-// Reads the m8_session cookie, extracts the GIP UID, calls Identity
-// Toolkit accounts:lookup against MP-Internal pool. Used by the
-// /settings/security page in the admin app.
+// getMyProviders returns the linked sign-in methods for the current
+// admin user, for the /settings/security page in the admin app.
+//
+// Reads the m8_session cookie for the user id and asks the configured
+// resolver — zitadellogin.Client.UserLinkedProviders in every real
+// deployment, bound in cmd/server/main.go. This handler holds no
+// identity-provider knowledge of its own, which is what let the GIP
+// Identity Toolkit accounts:lookup it used to make be swapped out
+// without the admin app changing: the response shape
+// ({"data":{"providers":[{"provider_id","email"}]}}) is unchanged.
 func (h *Handler) getMyProviders(c *gin.Context) {
 	s, err := h.mgr.Read(c.Request)
 	if err != nil || s == nil {
@@ -47,98 +42,35 @@ func (h *Handler) getMyProviders(c *gin.Context) {
 		})
 		return
 	}
-	if h.gipAPIKey == "" || h.gipInternalTenantID == "" {
+
+	// 503, never an empty list: "we cannot answer" and "you have no
+	// sign-in methods" must not look the same to the security page.
+	if h.providers == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error":   "gip_not_configured",
+			"error":   "not_configured",
 			"message": "providers lookup is not configured",
 		})
 		return
 	}
 
-	body := map[string]any{
-		"localId":  []string{s.UID},
-		"tenantId": h.gipInternalTenantID,
-	}
-	raw, err := json.Marshal(body)
+	found, err := h.providers.LinkedProviders(c.Request.Context(), s.UID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "internal_error",
-			"message": "failed to build lookup request",
-		})
-		return
-	}
-
-	apiURL := fmt.Sprintf(
-		"https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=%s",
-		url.QueryEscape(h.gipAPIKey),
-	)
-	req, err := http.NewRequestWithContext(c.Request.Context(), "POST", apiURL, bytes.NewReader(raw))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "internal_error",
-			"message": "failed to build lookup request",
-		})
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	res, err := client.Do(req)
-	if err != nil {
+		// The uid and the error only — a provider list is personal data
+		// and must not reach the log stream.
 		if h.logger != nil {
-			h.logger.Warn("providers lookup: gip unreachable", "err", err)
-		}
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error":   "gip_unreachable",
-			"message": "could not reach identity provider",
-		})
-		return
-	}
-	defer res.Body.Close()
-	respBody, err := io.ReadAll(res.Body)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error":   "gip_read_failed",
-			"message": "could not read identity provider response",
-		})
-		return
-	}
-	if res.StatusCode != http.StatusOK {
-		if h.logger != nil {
-			h.logger.Warn("providers lookup: gip returned non-200",
-				"status", res.StatusCode, "body", string(respBody))
+			h.logger.Info("providers lookup unavailable", "err", err, "user_id", s.UID)
 		}
 		c.JSON(http.StatusBadGateway, gin.H{
-			"error":   "gip_error",
-			"message": "identity provider returned an error",
+			"error":   "upstream_unavailable",
+			"message": "could not resolve linked providers",
 		})
 		return
 	}
 
-	var lookup gipLookupResponse
-	if err := json.Unmarshal(respBody, &lookup); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "parse_failed",
-			"message": "could not parse identity provider response",
-		})
-		return
+	// Non-nil so an account with no methods marshals as [] and not null
+	// — the consumer maps over it unconditionally.
+	if found == nil {
+		found = []LinkedProvider{}
 	}
-	if len(lookup.Users) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error":   "user_not_found",
-			"message": "no provider records for the current user",
-		})
-		return
-	}
-
-	user := lookup.Users[0]
-	providers := []LinkedProvider{}
-	if user.PasswordHash != "" {
-		providers = append(providers, LinkedProvider{ProviderID: "password", Email: user.Email})
-	}
-	for _, p := range user.ProviderUserInfo {
-		providers = append(providers, LinkedProvider{ProviderID: p.ProviderID, Email: p.Email})
-	}
-
-	c.JSON(http.StatusOK, gin.H{"data": providersResponse{Providers: providers}})
+	c.JSON(http.StatusOK, gin.H{"data": providersResponse{Providers: found}})
 }

@@ -38,9 +38,9 @@ type Handler struct {
 	audit    *audit.Client // optional — emits user.signed_out / user.mfa_completed
 	logger   *slog.Logger
 
-	// GIP REST credentials for /auth/me/providers (Phase 3).
-	gipAPIKey           string
-	gipInternalTenantID string
+	// Sign-in-method lookup behind /auth/me/providers. Provider-agnostic
+	// by design: the handler never learns which identity provider answers.
+	providers LinkedProvidersResolver
 }
 
 // NewHandler constructs a Handler over the given Manager.
@@ -76,11 +76,16 @@ func (h *Handler) WithAudit(c *audit.Client) *Handler {
 	return h
 }
 
-// WithGIPLookup wires GIP REST credentials for the providers endpoint.
-// Optional — when unset, /auth/me/providers returns 503.
-func (h *Handler) WithGIPLookup(apiKey, internalTenantID string) *Handler {
-	h.gipAPIKey = apiKey
-	h.gipInternalTenantID = internalTenantID
+// WithLinkedProviders wires the sign-in-method lookup behind
+// GET /auth/me/providers, the merchant admin's security page.
+//
+// Optional, and unset means that endpoint answers 503 rather than an
+// empty list — for the reason InternalUsersHandler.WithLinkedProviders
+// spells out: an empty "Linked sign-in methods" list reads to the
+// merchant as "my Google link was removed", so a deployment that cannot
+// answer must say so instead of answering wrongly.
+func (h *Handler) WithLinkedProviders(r LinkedProvidersResolver) *Handler {
+	h.providers = r
 	return h
 }
 

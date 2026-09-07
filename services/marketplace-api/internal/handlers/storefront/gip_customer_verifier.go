@@ -1,3 +1,11 @@
+// GIP-708 KEEP: this is LIVE storefront CUSTOMER authentication and it has no
+// Zitadel replacement anywhere in the codebase — the Zitadel migration (#524)
+// covered the merchant ADMIN path only, and marketplace-api-storefront does not
+// even set ZITADEL_ENABLED. Removing this during #708 removes a working
+// feature (mobile storefront customer support chat), it does not clean up dead
+// code. Needs a replacement decision first.
+// See docs/auth/2026-09-07-gip-removal-audit.md.
+//
 // Package storefront — gip_customer_verifier.go: production CustomerVerifier
 // backed by the Firebase Admin Auth client. Mirrors auth.GIPVerifier (used
 // by the admin mobile group) but projects the claims the storefront needs —

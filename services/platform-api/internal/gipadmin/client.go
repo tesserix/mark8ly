@@ -1,3 +1,9 @@
+// GIP-708 ORDER: this package is DELETE, but its sentinel errors
+// (ErrUserNotFound and friends) are reused ~20x by internal/zitadeladmin and
+// internal/auth/handler.go. Relocate the sentinels to a shared home FIRST or
+// deleting this package breaks the build in two other packages.
+// See docs/auth/2026-09-07-gip-removal-audit.md.
+//
 // Package gipadmin is a thin wrapper over the Google Identity Toolkit
 // admin REST API. It is used by platform-api to drive password reset
 // flows without exposing the default Firebase action handler UI to end

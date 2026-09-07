@@ -1,3 +1,10 @@
+// GIP-708 KEEP (data hazard, not dead code): the ENQUEUE side is already
+// skipped on the Zitadel path, so this handler looks unused — but
+// unregistering it makes any ALREADY-QUEUED gip.set_tenant_claim outbox rows
+// permanently unprocessable. The drainer treats an unregistered kind as
+// "still pending" and never errors, so the failure is silent and the rows rot.
+// Confirm the outbox is drained of this kind BEFORE removing (#708).
+// See docs/auth/2026-09-07-gip-removal-audit.md.
 package onboarding
 
 import (

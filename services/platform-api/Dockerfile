@@ -4,13 +4,27 @@
 #   * builder: base-go-builder (CGO_ENABLED=0 — static binaries)
 #   * runtime: base-distroless-static (no shell, ca-certs + tzdata,
 #              upstream gcr.io/distroless/static:nonroot)
+#
+# Build context MUST be the monorepo root (mark8ly#720). platform-api does
+# not import packages/platformauth yet — that lands in a follow-up — but its
+# Dockerfile is switched to the root context here too so that follow-up is a
+# pure code change, not another build-context migration. marketplace-api's
+# Dockerfile needs the root context now because its go.mod already holds
+# `replace github.com/mark8ly/platformauth => ../../packages/platformauth`,
+# a sibling module a services/platform-api-scoped context can't reach.
 
 FROM ghcr.io/tesserix/base-go-builder@sha256:1d52f1321953c29971c261ccc7cd212f2ab84008321b88113ccff88330dd7d1f AS build
 USER 0:0
 WORKDIR /src
-COPY go.mod go.sum ./
+
+COPY services/platform-api/go.mod services/platform-api/go.sum ./services/platform-api/
+WORKDIR /src/services/platform-api
 RUN go mod download
-COPY . .
+
+WORKDIR /src
+COPY services/platform-api/ ./services/platform-api/
+
+WORKDIR /src/services/platform-api
 RUN go build -trimpath -ldflags="-s -w" -o /out/server           ./cmd/server \
  && go build -trimpath -ldflags="-s -w" -o /out/migrate          ./cmd/migrate \
  && go build -trimpath -ldflags="-s -w" -o /out/seed             ./cmd/seed \

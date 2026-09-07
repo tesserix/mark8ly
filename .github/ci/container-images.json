@@ -2,7 +2,7 @@
   "include": [
     {
       "name": "mark8ly-platform-api",
-      "context": "services/platform-api",
+      "context": ".",
       "dockerfile": "services/platform-api/Dockerfile",
       "target": "server",
       "source_root": "services/platform-api",
@@ -26,7 +26,7 @@
     },
     {
       "name": "mark8ly-marketplace-api",
-      "context": "services/marketplace-api",
+      "context": ".",
       "dockerfile": "services/marketplace-api/Dockerfile",
       "target": "runtime",
       "source_root": "services/marketplace-api",

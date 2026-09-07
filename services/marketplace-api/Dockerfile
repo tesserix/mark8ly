@@ -7,16 +7,31 @@
 #              upstream gcr.io/distroless/static:nonroot)
 # Go's runtime handles SIGTERM so tini is unnecessary; K8s
 # securityContext overrides USER and binaries are mode 0755.
+#
+# Build context MUST be the monorepo root (mark8ly#720): marketplace-api's
+# go.mod holds `replace github.com/mark8ly/platformauth =>
+# ../../packages/platformauth`, a sibling module outside a
+# services/marketplace-api-scoped context. platform-api's Dockerfile follows
+# the same pattern for the same reason.
 
 # ─── builder ────────────────────────────────────────────────────────────
 FROM ghcr.io/tesserix/base-go-builder@sha256:1d52f1321953c29971c261ccc7cd212f2ab84008321b88113ccff88330dd7d1f AS builder
 USER 0:0
 WORKDIR /src
 
-COPY go.mod go.sum ./
+# go.mod/go.sum first (both modules) so `go mod download` layer-caches
+# independently of source changes. The local replace target only needs to
+# exist as a module — its own go.sum isn't consulted by the downloader.
+COPY services/marketplace-api/go.mod services/marketplace-api/go.sum ./services/marketplace-api/
+COPY packages/platformauth/go.mod packages/platformauth/go.sum ./packages/platformauth/
+WORKDIR /src/services/marketplace-api
 RUN go mod download
 
-COPY . .
+WORKDIR /src
+COPY services/marketplace-api/ ./services/marketplace-api/
+COPY packages/platformauth/ ./packages/platformauth/
+
+WORKDIR /src/services/marketplace-api
 RUN go build -trimpath -ldflags="-s -w" \
       -o /out/marketplace-api ./cmd/marketplace-api \
  && go build -trimpath -ldflags="-s -w" \

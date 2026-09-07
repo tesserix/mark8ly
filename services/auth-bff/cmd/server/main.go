@@ -431,6 +431,17 @@ func main() {
 	)
 	internalUsers.Register(internalGroup)
 
+	// POST /internal/mint-session lets marketplace-api ask auth-bff to
+	// mint a session cookie for a principal it has already authenticated
+	// (break-glass login today, SSO callback later). Cookie cryptography
+	// stays here — marketplace-api never signs a session cookie itself.
+	mintSession := session.NewMintSessionHandler(
+		sessions,
+		cfg.MarketplaceInternalAuthSecret,
+		log,
+	)
+	mintSession.Register(internalGroup)
+
 	if err := httpserver.Run(ctx, cfg.HTTPPort, r, log); err != nil {
 		log.Error("http server", "err", err)
 		panic(err)

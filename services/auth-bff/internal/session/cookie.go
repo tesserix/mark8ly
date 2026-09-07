@@ -176,22 +176,40 @@ func (m *Manager) MintWithDomain(w http.ResponseWriter, s Session, domainOverrid
 		return err
 	}
 
+	http.SetCookie(w, m.buildCookie(encoded, domainOverride))
+	return nil
+}
+
+// buildCookie constructs the *http.Cookie with the attributes every minted
+// session cookie shares (path, domain, max-age, HttpOnly, Secure,
+// SameSite=Lax). MintWithDomain and BuildSetCookieHeader both go through
+// this so the attribute list can't drift between the two callers.
+func (m *Manager) buildCookie(value, domainOverride string) *http.Cookie {
 	domain := m.domain
 	if domainOverride != "" {
 		domain = domainOverride
 	}
-
-	http.SetCookie(w, &http.Cookie{
+	return &http.Cookie{
 		Name:     m.cookieName,
-		Value:    encoded,
+		Value:    value,
 		Path:     "/",
 		Domain:   domain,
 		MaxAge:   int(m.maxAge.Seconds()),
 		HttpOnly: true,
 		Secure:   m.secure,
 		SameSite: http.SameSiteLaxMode, // auth-bug #4 fix: Lax not Strict
-	})
-	return nil
+	}
+}
+
+// BuildSetCookieHeader returns the full Set-Cookie header VALUE (not the
+// header name) for an already-encoded session value, using the same
+// attributes MintWithDomain writes. Used by callers that hand the cookie
+// back in a JSON response instead of writing it directly onto a
+// http.ResponseWriter — e.g. POST /internal/mint-session, whose caller
+// (marketplace-api) does `c.Writer.Header().Add("Set-Cookie", setCookie)`
+// with the string verbatim.
+func (m *Manager) BuildSetCookieHeader(value, domainOverride string) string {
+	return m.buildCookie(value, domainOverride).String()
 }
 
 // Read parses and validates the session cookie from a request. Returns

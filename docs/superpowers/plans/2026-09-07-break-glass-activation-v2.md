@@ -29,7 +29,17 @@ Every symbol below was read in the tree before being written down.
 spec's central safety control ("must never default to `staff`") and there is
 nothing for it to guard today. Added as
 `AuthContext string \`json:"auth_context,omitempty"\`` so existing cookies stay
-valid and decode with an empty value. Task 0 audits consumers before it lands.
+valid and decode with an empty value.
+
+> **Amended after the Task 0 audit.** Three call sites rebuild `Session` as a
+> fresh struct literal, copying named fields: `switchTenant`
+> (`auth-bff/internal/session/handler.go:483`), `switchStore` (`:538`) and
+> `adminhandoff` (`handler.go:135`). Adding the field without patching all
+> three ships a safety control that **any merchant strips by calling
+> `POST /auth/switch-store` once** — a control that would be trusted and be
+> wrong. All four changes land in one commit, with a test per site asserting
+> the value survives. This is the same shape as the mobile IDP provider being
+> pinned in three services where two hops dropped it invisibly.
 
 **D2 — the internal endpoint follows `X-Internal-Auth`.** Not Bearer, not
 mTLS. Both the code comment in `session_issuer.go` and the design spec's
@@ -39,12 +49,51 @@ for one endpoint would be a new thing to get wrong.
 
 **D3 — the synthetic principal keeps the id the code already derives.**
 `Session.UID` = `BreakGlassUserID(tenantID).String()`. It is stable per
-tenant, so audit trails join, and no new identity scheme is invented. Task 0
-checks what breaks when that UID has no user row.
+tenant, so audit trails join, and no new identity scheme is invented.
+
+> **Amended after the Task 0 audit: this is not safe on its own.** A UID with
+> no FGA tuple is refused by three authorization gates, and every admin
+> request passes at least one:
+>
+> - `apps/admin/middleware.ts:407-435` → platform-api `getMe`
+>   (`internal/tenant/handler.go:176-182`) answers 404 `no_role`, and the
+>   middleware redirects to login. **A correct break-glass login bounces back
+>   to `/login` in a loop, with nothing naming the cause.**
+> - `marketplace-api/internal/authz/middleware.go:41` `RequireTenantRelation`
+>   → 404 on every admin API route.
+> - auth-bff `switchTenant` (`handler.go:460`) and `adminhandoff` (`:113`)
+>   `CheckMembership` → 403. The `/pick-tenant` recovery surface is empty too,
+>   since it is driven by `listMyTenants(uid)`.
+>
+> **It passes in local dev and fails only in production**: `handler.go:171-174`
+> returns `role: owner` unconditionally when `fga == nil`. A green local login
+> is not evidence.
+>
+> One fix covers all three — an FGA tuple for `BreakGlassUserID(tenant)` on
+> that tenant. Tenant membership in this estate is a tuple, never a DB column,
+> so this is one additive write. It becomes **Task 5a**, and it gates Task 6.
 
 ---
 
-### Task 0 — consumer audit (NEW, and it gates everything)
+### Task 0 — consumer audit — **DONE**
+
+Report: `docs/superpowers/artifacts/2026-09-07-break-glass-session-consumer-audit.md`.
+21 consumers examined. Verdict: `AuthContext` safe to add (subject to D1's
+amendment); a non-resolving `UID` **not** safe (see D3's amendment, now Task 5a).
+
+It also voided one of the design spec's risks: §7's "a caller assumes
+`session-exchange` returns a non-empty access_token" describes a system that
+does not exist — `Session` has no token field at all (`cookie.go:41-53`), and
+the estate's only token exchange is the mobile bearer path in
+`zitadellogin/token_exchange.go`, which never touches the cookie. Delete that
+risk row rather than mitigating it.
+
+And it settled a Task 3 question: `SessionIssuer` passing no email is fine —
+every consumer treats `Email` as an optional attribution label with a fallback,
+and nothing looks a user up by it. `auth_context` is the only reason to widen
+the interface, because unlike email it must never be defaulted by the callee.
+
+<details><summary>Original brief</summary>
 
 Neither D1 nor D3 is safe until we know who reads a session and what they
 assume. This task writes no feature code.
@@ -66,6 +115,8 @@ a symbol that does not exist — this task is what that risk actually needed.
 **Do not proceed to Task 2 until this is done.** It is the one step that can
 turn "break-glass works" into "break-glass mints a session that half the
 estate rejects".
+
+</details>
 
 ### Task 1 — export the encoder in auth-bff
 
@@ -106,6 +157,22 @@ auth context. Either widen it or have `HTTPIssuer` supply
 `auth_context: "break_glass"` and a synthetic email itself. Widening is
 cleaner but touches the SSO caller too; decide with Task 0's findings in hand
 and record which was chosen and why.
+
+### Task 5a — grant the break-glass principal its tenant relation (NEW)
+
+Gates Task 6. Write an FGA tuple for `BreakGlassUserID(tenant)` on its tenant,
+so the three gates in D3 admit it. Decide and record **where**: at provisioning
+(`Bootstrapper`, alongside the secret and the row) or at login.
+
+Provisioning is the better default — it keeps the emergency path free of a new
+dependency, which is the whole point of break-glass and the constraint #404
+insists on. Doing it at login would mean an FGA write on the path that must
+work when everything else is broken.
+
+**Done when:** a provisioned break-glass principal gets past
+`apps/admin/middleware.ts` and `RequireTenantRelation` **against real FGA**.
+Not against a `nil` client — that returns `role: owner` unconditionally and
+proves nothing.
 
 ### Tasks 4–8 — carried over, spot-checked
 

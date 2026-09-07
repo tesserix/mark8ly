@@ -1096,3 +1096,93 @@ func (c *Client) LoginPolicyForOrg(ctx context.Context, orgID string) (LoginPoli
 func (c *Client) InstanceLoginPolicyForDisplay(ctx context.Context) (LoginPolicy, error) {
 	return c.loginPolicy(ctx)
 }
+
+// placeholderFamilyName is the family name CreateHumanUserWithIDPLink and
+// CreateHumanUserWithPassword write when the provider sent no name of its
+// own (see boundedProfileName). It is a Zitadel schema requirement — the
+// human profile rejects empty names — not something a person ever chose,
+// so UserDisplayName must not hand it back to a caller that is about to
+// present it as the account holder's name.
+const placeholderFamilyName = "User"
+
+// UserDisplayName returns the human name Zitadel holds for userID, or ""
+// when the account has no name a person actually supplied.
+//
+// "" is a real answer, not an error: an email/password merchant who
+// federated through a provider that sent no name claim genuinely has no
+// name here, and callers seed a blank rather than inventing one.
+//
+// Placeholder suppression is the reason this is not just a read of
+// profile.displayName. Every account this package creates is written with
+// a NON-EMPTY given/family pair, because Zitadel requires one: a missing
+// given_name claim becomes the email's local part and a missing
+// family_name claim becomes "User" (see boundedProfileName). Returning
+// Zitadel's displayName verbatim would therefore surface "alice User" as
+// the merchant's name — a fabrication, and worse than a blank because it
+// looks deliberate. Each half is dropped independently when it matches the
+// placeholder this package would have written, so a provider that sent
+// only one real half still yields that half.
+//
+// The trade: a merchant genuinely surnamed "User", or one whose given name
+// is byte-identical to their email's local part, loses that half. The
+// comparison is case-sensitive and exact precisely to keep that rare —
+// "Alice" never matches the local part "alice" — and the cost is a blank
+// field the merchant can fill in from Settings → Account.
+func (c *Client) UserDisplayName(ctx context.Context, userID string) (string, error) {
+	if userID == "" {
+		return "", fmt.Errorf("zitadellogin: UserDisplayName with an empty user id: %w", ErrUnavailable)
+	}
+	var wire struct {
+		User struct {
+			Human *struct {
+				Profile struct {
+					GivenName  string `json:"givenName"`
+					FamilyName string `json:"familyName"`
+				} `json:"profile"`
+				Email struct {
+					Email string `json:"email"`
+				} `json:"email"`
+			} `json:"human"`
+		} `json:"user"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/v2/users/"+url.PathEscape(userID), nil, &wire, ErrUserNotFound, withLogPath("/v2/users/{id}")); err != nil {
+		return "", err
+	}
+	// A machine user has no human profile at all. Nothing to seed, and
+	// nothing went wrong.
+	if wire.User.Human == nil {
+		return "", nil
+	}
+	return humanProfileName(
+		wire.User.Human.Profile.GivenName,
+		wire.User.Human.Profile.FamilyName,
+		wire.User.Human.Email.Email,
+	), nil
+}
+
+// humanProfileName joins the halves of a Zitadel human profile that a
+// person actually supplied, dropping each placeholder half. See
+// UserDisplayName's doc for why the placeholders exist and why the
+// comparison is exact.
+func humanProfileName(givenName, familyName, email string) string {
+	given := strings.TrimSpace(givenName)
+	family := strings.TrimSpace(familyName)
+
+	if given == emailLocalPart(email) {
+		given = ""
+	}
+	if family == placeholderFamilyName {
+		family = ""
+	}
+	return strings.TrimSpace(strings.TrimSpace(given) + " " + family)
+}
+
+// emailLocalPart returns the part of email before "@", or email itself
+// when there is no "@" — the exact shape boundedProfileName's callers
+// pass as the given-name fallback.
+func emailLocalPart(email string) string {
+	if i := strings.IndexByte(email, '@'); i > 0 {
+		return email[:i]
+	}
+	return email
+}

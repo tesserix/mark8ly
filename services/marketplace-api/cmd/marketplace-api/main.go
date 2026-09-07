@@ -68,6 +68,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/customerportal"
+	"github.com/mark8ly/marketplace-api/internal/displayname"
 	"github.com/mark8ly/marketplace-api/internal/domain"
 	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/emailevents"
@@ -77,7 +78,6 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/estateuserdir"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/gipkey"
-	"github.com/mark8ly/marketplace-api/internal/gipuser"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/handlers/internalsvc"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
@@ -1026,6 +1026,16 @@ func main() {
 		userProfileRepo := userprofile.NewRepository(conn)
 		accountHandler := admin.NewAccountHandler(userProfileRepo, cfg.AuthBFFURL, cfg.InternalAuthSecret, log)
 		accountHandler.SetUploader(uploader)
+		// First-seed of the merchant's display name (#790). Wired here,
+		// unconditionally, rather than inside a verifier-specific closure:
+		// /admin/account runs behind header-trust auth, so it is reached
+		// on every deployment regardless of which bearer verifier the
+		// mobile routes selected. Nil-safe by construction — an unset
+		// AUTH_BFF_URL or internal secret just means blank names, exactly
+		// as before this was wired at all.
+		accountHandler.SetDisplayNames(
+			displayname.NewAuthBFFLookup(cfg.AuthBFFURL, cfg.InternalAuthSecret, nil),
+		)
 
 		// Settings S2 — Custom Domains: domainSvc + domainsHandler hoisted
 		// above mode blocks so the storefront can also use the resolve endpoint.
@@ -1448,17 +1458,6 @@ func main() {
 		// Config.ValidateZitadel is checked unconditionally, so a
 		// missing value already panicked main() at boot, before this
 		// code could ever run misconfigured.
-		// Known gap: AccountHandler.SetGIPNames (the merchant display-name
-		// first-seed lookup, below) is wired only inside the GIP closure.
-		// A ZITADEL_ENABLED=true deployment never calls it, so
-		// /admin/account rows created under Zitadel seed with a blank
-		// display_name instead of the merchant's real Google name —
-		// exactly the "before it was wired at all" behaviour, not a
-		// regression, but Zitadel-mode merchants get it while GIP-mode
-		// merchants don't. There is no Zitadel-side equivalent of the
-		// Firebase Admin SDK lookup wired here today; closing this gap
-		// needs its own lookup (Zitadel's user API keyed by `sub`) rather
-		// than reusing gipuser.NewAdminSDKLookup.
 		tokenVerifier := selectMobileTokenVerifier(context.Background(), cfg, log,
 			func(ctx context.Context, issuer, audience string) (auth.TokenVerifier, error) {
 				return auth.NewZitadelVerifier(ctx, issuer, audience)
@@ -1476,16 +1475,6 @@ func main() {
 				authClient, err := firebaseApp.Auth(context.Background())
 				if err != nil {
 					return nil, fmt.Errorf("init firebase auth client: %w", err)
-				}
-				// Same Admin SDK client also backs the first-seed
-				// display-name lookup on /admin/account, so a
-				// merchant's real name lands in user_profiles
-				// without them typing it. Nil-safe: unset
-				// GIP_MERCHANT_TENANT_ID just means blank names.
-				if adminDeps.AccountHandler != nil {
-					adminDeps.AccountHandler.SetGIPNames(
-						gipuser.NewAdminSDKLookup(authClient, cfg.GIPMerchantTenantID),
-					)
 				}
 				return auth.NewGIPVerifier(authClient), nil
 			},

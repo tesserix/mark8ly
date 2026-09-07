@@ -9,7 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/mark8ly/marketplace-api/internal/gipuser"
+	"github.com/mark8ly/marketplace-api/internal/displayname"
 	"github.com/mark8ly/marketplace-api/internal/userprofile"
 )
 
@@ -100,14 +100,14 @@ func TestGetProfile_ExistingRow_MirrorsDriftedEmail(t *testing.T) {
 	}
 }
 
-// TestGetProfile_SeedsDisplayNameFromGIP is the guard for the Part A
-// behaviour: the very first read of a profile must pick the merchant's
-// name up out of the GIP account record. Removing the seed from
-// loadOrSeed makes this fail.
-func TestGetProfile_SeedsDisplayNameFromGIP(t *testing.T) {
+// TestGetProfile_SeedsDisplayNameFromProvider is the guard for the
+// first-seed behaviour: the very first read of a profile must pick the
+// merchant's name up out of the identity provider's account record.
+// Removing the seed from loadOrSeed makes this fail.
+func TestGetProfile_SeedsDisplayNameFromProvider(t *testing.T) {
 	store := userprofile.NewFakeStore()
 	h := NewAccountHandler(store, "", "", nil)
-	h.SetGIPNames(&gipuser.FakeLookup{Names: map[string]string{"uid-google": "  Jane Roe  "}})
+	h.SetDisplayNames(&displayname.FakeLookup{Names: map[string]string{"uid-google": "  Jane Roe  "}})
 
 	code, dto := getProfile(t, h, "uid-google", "jane@example.com")
 	if code != http.StatusOK {
@@ -121,15 +121,16 @@ func TestGetProfile_SeedsDisplayNameFromGIP(t *testing.T) {
 	}
 }
 
-// TestGetProfile_NoGIPName_SeedsBlank covers the population this feature
-// does NOT help: every email/password sign-up, whose GIP record has no
-// displayName at all. The profile must still be created, with a blank
-// name and a 200 — not an error, and not a name invented from the email.
-func TestGetProfile_NoGIPName_SeedsBlank(t *testing.T) {
+// TestGetProfile_NoProviderName_SeedsBlank covers the population this
+// feature does NOT help: every email/password sign-up, whose provider
+// record carries no name a person supplied. The profile must still be
+// created, with a blank name and a 200 — not an error, and emphatically
+// not a name invented from the email.
+func TestGetProfile_NoProviderName_SeedsBlank(t *testing.T) {
 	store := userprofile.NewFakeStore()
 	h := NewAccountHandler(store, "", "", nil)
 	// uid absent from Names → ("", nil): account exists, has no name.
-	h.SetGIPNames(&gipuser.FakeLookup{Names: map[string]string{}})
+	h.SetDisplayNames(&displayname.FakeLookup{Names: map[string]string{}})
 
 	code, dto := getProfile(t, h, "uid-password", "pat@example.com")
 	if code != http.StatusOK {
@@ -150,12 +151,13 @@ func TestGetProfile_NoGIPName_SeedsBlank(t *testing.T) {
 	}
 }
 
-// TestGetProfile_GIPLookupFails_StillCreatesProfile is the hard rule: a
-// name lookup failure must never stop a profile from being created.
-func TestGetProfile_GIPLookupFails_StillCreatesProfile(t *testing.T) {
+// TestGetProfile_LookupFails_StillCreatesProfile is the hard rule: a
+// name lookup failure must never stop a profile from being created, and
+// therefore never blocks a sign-in from landing on the admin dashboard.
+func TestGetProfile_LookupFails_StillCreatesProfile(t *testing.T) {
 	store := userprofile.NewFakeStore()
 	h := NewAccountHandler(store, "", "", nil)
-	h.SetGIPNames(&gipuser.FakeLookup{Err: errors.New("identitytoolkit: connection refused")})
+	h.SetDisplayNames(&displayname.FakeLookup{Err: errors.New("displayname: auth-bff returned 502")})
 
 	code, dto := getProfile(t, h, "uid-broken", "sam@example.com")
 	if code != http.StatusOK {
@@ -169,12 +171,12 @@ func TestGetProfile_GIPLookupFails_StillCreatesProfile(t *testing.T) {
 	}
 }
 
-// TestGetProfile_NoGIPLookupWired_SeedsBlank covers the deployment where
-// GIP_MERCHANT_TENANT_ID / the Admin SDK client is absent: unchanged
-// pre-existing behaviour, no panic on the nil lookup.
-func TestGetProfile_NoGIPLookupWired_SeedsBlank(t *testing.T) {
+// TestGetProfile_NoLookupWired_SeedsBlank covers the deployment where no
+// lookup is wired at all: unchanged pre-existing behaviour, no panic on
+// the nil lookup.
+func TestGetProfile_NoLookupWired_SeedsBlank(t *testing.T) {
 	store := userprofile.NewFakeStore()
-	h := NewAccountHandler(store, "", "", nil) // SetGIPNames never called
+	h := NewAccountHandler(store, "", "", nil) // SetDisplayNames never called
 
 	code, dto := getProfile(t, h, "uid-nolookup", "kim@example.com")
 	if code != http.StatusOK {
@@ -188,28 +190,30 @@ func TestGetProfile_NoGIPLookupWired_SeedsBlank(t *testing.T) {
 	}
 }
 
-// TestGetProfile_ExistingRow_SkipsGIPLookup proves the lookup is a
+// TestGetProfile_ExistingRow_SkipsLookup proves the lookup is a
 // first-seed cost and not a per-request one, and that it never
-// overwrites a name the merchant set by hand.
-func TestGetProfile_ExistingRow_SkipsGIPLookup(t *testing.T) {
+// overwrites a name the merchant set by hand. This is the same property
+// isAutoUpdate:false protects on the Zitadel side; the two must not
+// disagree.
+func TestGetProfile_ExistingRow_SkipsLookup(t *testing.T) {
 	store := userprofile.NewFakeStore()
 	store.Rows["uid-existing"] = userprofile.Profile{
 		UserID:      "uid-existing",
 		Email:       "ali@example.com",
 		DisplayName: "Ali Hand-Typed",
 	}
-	lookup := &gipuser.FakeLookup{Names: map[string]string{"uid-existing": "Ali From GIP"}}
+	lookup := &displayname.FakeLookup{Names: map[string]string{"uid-existing": "Ali From The Provider"}}
 	h := NewAccountHandler(store, "", "", nil)
-	h.SetGIPNames(lookup)
+	h.SetDisplayNames(lookup)
 
 	code, dto := getProfile(t, h, "uid-existing", "ali@example.com")
 	if code != http.StatusOK {
 		t.Fatalf("code=%d, want 200", code)
 	}
 	if dto.Name != "Ali Hand-Typed" {
-		t.Errorf("name=%q, want the stored name to win over GIP", dto.Name)
+		t.Errorf("name=%q, want the stored name to win over the provider", dto.Name)
 	}
 	if lookup.Calls != 0 {
-		t.Errorf("GIP lookup called %d times on an existing row, want 0", lookup.Calls)
+		t.Errorf("name lookup called %d times on an existing row, want 0", lookup.Calls)
 	}
 }

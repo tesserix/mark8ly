@@ -19,7 +19,7 @@ removes the feature:
 | Storefront **customer** token verification | `marketplace-api/internal/handlers/storefront/gip_customer_verifier.go` + `main.go:1755-1765` | Mobile storefront customer support chat stops authenticating. The Zitadel migration covered the ADMIN path only. |
 | Custom-domain browser-key allowlist | `marketplace-api/internal/gipkey` + `main.go:545-579` | A merchant's storefront sign-in stops working from their verified custom domain. Self-service feature. |
 | Tenant SAML/OIDC SSO | `marketplace-api/internal/sso/gip_client.go` | Enterprise tenant SSO provisioning disappears. May already be dark — nothing in `main.go` constructs it — confirm before deciding. |
-| Merchant display-name seeding | `marketplace-api/internal/gipuser` + `handlers/admin/account.go` (`SetGIPNames`) | Every merchant profile seeds blank. Already a known gap for Zitadel-mode merchants; removal makes it universal. |
+| ~~Merchant display-name seeding~~ **RESOLVED (#790)** | was `marketplace-api/internal/gipuser`; now `marketplace-api/internal/displayname` (`SetDisplayNames`) reading auth-bff's `GET /internal/users/:id/display-name`, backed by `zitadellogin.Client.UserDisplayName` | None. `internal/gipuser` is deleted. The seam is provider-neutral and wired unconditionally, so Zitadel-mode merchants now get the name too — closing the pre-existing gap rather than merely preserving it. |
 | Invite tenant-claim write | `platform-api/internal/gipadmin` + `cmd/server/provider_wiring.go` | No Zitadel equivalent exists. `requireGIPForTenantClaim` **panics** by design rather than let this be removed silently. |
 
 None of these are in #708's inventory. Each needs a **replacement decision**,

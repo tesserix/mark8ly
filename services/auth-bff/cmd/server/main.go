@@ -429,6 +429,14 @@ func main() {
 		cfg.MarketplaceInternalAuthSecret,
 		log,
 	)
+	// GET /internal/users/:id/display-name backs marketplace-api's
+	// first-seed of a merchant's admin display name (#790). Wired only
+	// when a Zitadel client exists; without one the endpoint answers with
+	// an empty name, which is exactly what a deployment holding no name
+	// for that user should say.
+	if zitadelClient != nil {
+		internalUsers = internalUsers.WithDisplayNames(zitadelClient)
+	}
 	internalUsers.Register(internalGroup)
 
 	// POST /internal/mint-session lets marketplace-api ask auth-bff to

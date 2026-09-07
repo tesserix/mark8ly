@@ -62,6 +62,29 @@ func AllStatuses() []SubscriptionStatus {
 type SubscriptionStatus string
 
 const (
+	// StatusSignup is where `Bootstrap` puts every new row, and it is a
+	// RESTING STATE, not a transient one. Documented rather than fixed, on
+	// purpose — tesserix-home#582's reasoning applied to this enum
+	// (mark8ly#803, decided 2026-09-07).
+	//
+	// Exactly one thing promotes it: the Stripe
+	// `checkout.session.completed` webhook (`internal/billing/dispatch/handlers.go`).
+	// A tenant who signs up and abandons checkout therefore stays here
+	// indefinitely — and nothing else observes them, because `ExpiryCron`
+	// selects `trialing` and the dunning ladder selects live statuses. Not
+	// trialing, so no trial machinery; not expired, so no retention path;
+	// not converted, so nothing bills them.
+	//
+	// WHY NOTHING WAS BUILT. Measured on 2026-09-07: `store_subscriptions`
+	// held ZERO rows, and Stripe is deliberately still on the test key
+	// (mark8ly#371, "not yet"), so no tenant can be stuck here yet. An
+	// expiry path or a chase path would be writer code exercised against
+	// zero rows — the failure this milestone already paid for once.
+	//
+	// WHAT REOPENS IT: real subscribers existing (following the live-key
+	// swap), or an abandonment rate worth chasing. The chase option
+	// additionally needs mark8ly#703, since no billing lifecycle email is
+	// sent today.
 	StatusSignup                SubscriptionStatus = "signup"
 	StatusTrialing              SubscriptionStatus = "trialing"
 	StatusActive                SubscriptionStatus = "active"

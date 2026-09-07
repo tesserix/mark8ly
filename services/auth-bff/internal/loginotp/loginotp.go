@@ -1,8 +1,9 @@
 // Package loginotp completes a sign-in that autologin left pending
 // because the device was unrecognised.
 //
-// The split matters for security: autologin proves who you are (GIP
-// token) and this package proves you control the account's inbox. A code
+// The split matters for security: autologin proves who you are (the
+// provider's credential check) and this package proves you control the
+// account's inbox. A code
 // on its own is never enough — every endpoint here requires the pending
 // cookie autologin wrote, so an attacker holding only a stolen code has
 // nothing to spend it on.

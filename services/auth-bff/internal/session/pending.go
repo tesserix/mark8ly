@@ -26,7 +26,7 @@ const PendingTTL = 5 * time.Minute
 
 // Pending is the payload encoded into the MFA-pending cookie. It
 // carries just enough to complete the challenge without re-running
-// the GIP token verification.
+// the provider's credential verification.
 type Pending struct {
 	UID       string    `json:"uid"`
 	Email     string    `json:"email"`

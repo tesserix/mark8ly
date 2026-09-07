@@ -12,7 +12,6 @@ func clearAll(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{
 		"ENV", "HTTP_PORT", "DATABASE_URL",
-		"GIP_PROJECT_ID",
 		"SESSION_COOKIE_NAME", "SESSION_COOKIE_DOMAIN", "SESSION_ENCRYPT_KEY",
 		"FGA_API_URL", "FGA_STORE_ID",
 		"ZITADEL_ENABLED", "ZITADEL_ISSUER", "ZITADEL_LOGIN_CLIENT_TOKEN",
@@ -27,7 +26,6 @@ func setRequiredEnv(t *testing.T) {
 	t.Helper()
 	clearAll(t)
 	t.Setenv("DATABASE_URL", "postgres://test/test")
-	t.Setenv("GIP_PROJECT_ID", "test-project")
 	t.Setenv("SESSION_ENCRYPT_KEY", "thirtytwo-bytes-for-testing-only")
 }
 
@@ -37,18 +35,11 @@ func TestLoad_ReadsRequiredFieldsFromEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.GIPProjectID != "test-project" {
-		t.Errorf("GIPProjectID = %q, want %q", cfg.GIPProjectID, "test-project")
+	if cfg.DatabaseURL != "postgres://test/test" {
+		t.Errorf("DatabaseURL = %q, want %q", cfg.DatabaseURL, "postgres://test/test")
 	}
-}
-
-func TestLoad_FailsWhenGIPProjectIDMissing(t *testing.T) {
-	setRequiredEnv(t)
-	os.Unsetenv("GIP_PROJECT_ID")
-
-	_, err := Load()
-	if err == nil {
-		t.Error("Load() should fail when GIP_PROJECT_ID is unset")
+	if cfg.SessionEncryptKey != "thirtytwo-bytes-for-testing-only" {
+		t.Errorf("SessionEncryptKey = %q, want the test key", cfg.SessionEncryptKey)
 	}
 }
 
@@ -87,7 +78,6 @@ func TestZitadelIsDisabledAndUnrequiredByDefault(t *testing.T) {
 	}
 	// Only the pre-existing required vars are set.
 	t.Setenv("DATABASE_URL", "postgres://x")
-	t.Setenv("GIP_PROJECT_ID", "p")
 	t.Setenv("SESSION_ENCRYPT_KEY", "thirtytwo-bytes-for-testing-only")
 
 	cfg, err := Load()

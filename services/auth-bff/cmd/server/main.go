@@ -1,8 +1,9 @@
 // Command server is the auth-bff HTTP entrypoint.
 //
-// Wires GIP verifier + OpenFGA client + session manager + autologin into
-// the HTTP server. The session manager and OpenFGA store ID are constructed
-// at startup; the schema version is asserted before the server binds.
+// Wires the OpenFGA client + session manager + the shared post-identity
+// login gauntlet into the HTTP server. The session manager and OpenFGA store
+// ID are constructed at startup; the schema version is asserted before the
+// server binds.
 package main
 
 import (
@@ -23,7 +24,6 @@ import (
 	"github.com/mark8ly/auth-bff/internal/autologin"
 	"github.com/mark8ly/auth-bff/internal/deviceguard"
 	"github.com/mark8ly/auth-bff/internal/emailotp"
-	"github.com/mark8ly/auth-bff/internal/gip"
 	"github.com/mark8ly/auth-bff/internal/loginotp"
 	"github.com/mark8ly/auth-bff/internal/notify"
 	"github.com/mark8ly/auth-bff/internal/observability"
@@ -206,15 +206,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// ─── GIP verifier ──────────────────────────────────────────────────
-	verifier, err := gip.New(ctx, gip.Config{
-		ProjectID: cfg.GIPProjectID,
-	})
-	if err != nil {
-		log.Error("gip: new verifier", "err", err)
-		panic(err)
-	}
-
 	// ─── OpenFGA client (store resolved lazily) ────────────────────────
 	// Resolution is deferred to first use so a boot that races openfga's
 	// startup degrades to 503-and-retry instead of killing authorization
@@ -322,9 +313,8 @@ func main() {
 		log.Warn("emailotp: disabled — set EMAIL_OTP_PEPPER and PLATFORM_API_URL to gate unrecognised devices")
 	}
 
-	// ─── Autologin ─────────────────────────────────────────────────────
+	// ─── Post-identity login gauntlet ──────────────────────────────────
 	autologinSvc := autologin.NewService(autologin.Config{
-		GIP:      verifier,
 		FGA:      fgaClient,
 		Sessions: sessions,
 		Registry: sessionRegistry,
@@ -334,8 +324,6 @@ func main() {
 		Audit:    auditClient,
 		Logger:   log,
 	})
-	autologinHandler := autologin.NewHandler(autologinSvc)
-
 	// ─── Zitadel login client (#524 phase 2) ────────────────────────────
 	// Constructed only when explicitly enabled AND fully configured; nil
 	// otherwise, so no route it backs is mounted. Refusing to boot on
@@ -350,7 +338,7 @@ func main() {
 	var zitadelClient *zitadellogin.Client
 	switch {
 	case !cfg.ZitadelEnabled:
-		log.Info("zitadel login disabled; GIP remains the auth provider")
+		log.Info("zitadel login disabled; no auth provider is wired")
 	default:
 		if err := cfg.ValidateZitadel(); err != nil {
 			// err names the missing variables, never their values.
@@ -423,7 +411,6 @@ func main() {
 	// trace context. No-op spans when the global provider is disabled.
 	r.Use(otelgin.Middleware(serviceName))
 	v1 := r.Group("/auth")
-	autologinHandler.Register(v1)
 	sessionHandler.Register(v1)
 	adminHandoffHandler.Register(v1)
 	if otpHandler != nil {

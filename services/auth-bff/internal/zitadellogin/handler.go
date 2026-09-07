@@ -32,10 +32,10 @@ type LoginContext struct {
 	Email    string
 	TenantID string
 	// UserAgent, IPAddress, Device and Country are best-effort client
-	// metadata, populated the same way autologin's own handler populates
-	// them for a GIP login (see Handler.loginContext below) so the two
-	// providers cannot silently diverge in what deviceguard, the email-OTP
-	// limiter, the session registry and audit events see.
+	// metadata (see Handler.loginContext below). They must be populated:
+	// deviceguard, the email-OTP limiter, the session registry and audit
+	// events all read them, and empty values collapse new-device
+	// detection for every login.
 	UserAgent string
 	IPAddress string
 	Device    string
@@ -327,8 +327,8 @@ func deviceFromUA(ua string) string {
 }
 
 // loginContext assembles the client metadata half of LoginContext from the
-// inbound request, the same way autologin's handler assembles autologin.
-// Request's Device/IPAddress/UserAgent/Country fields for a GIP login.
+// inbound request, filling the Device/IPAddress/UserAgent/Country fields the
+// shared gauntlet reads off autologin.Request.
 func (h *Handler) loginContext(r *http.Request, uid, email, tenantID string) LoginContext {
 	ua := r.UserAgent()
 	return LoginContext{
@@ -1169,9 +1169,7 @@ func (h *Handler) finishComplete(w http.ResponseWriter, r *http.Request, res Res
 	// A step-up (MFA or email-OTP) is still outstanding: the gauntlet minted
 	// only a pending cookie, not a real session. Answering with callback_url
 	// here would tell the browser the login finished when it did not — the
-	// exact defect this branch exists to prevent. Mirror the shape
-	// autologin's own GIP handler uses for the same two cases so the two
-	// providers answer identically.
+	// exact defect this branch exists to prevent.
 	if cr.MFARequired || cr.EmailOTPRequired {
 		out := map[string]any{
 			"uid":                factors.UserID,

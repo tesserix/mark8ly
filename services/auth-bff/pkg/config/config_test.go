@@ -12,9 +12,8 @@ func clearAll(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{
 		"ENV", "HTTP_PORT", "DATABASE_URL",
-		"GIP_PROJECT_ID", "GIP_PROJECT_NUMBER", "GIP_WEB_API_KEY",
-		"GIP_INTERNAL_TENANT_ID", "GIP_CUSTOMER_TENANT_ID", "GIP_PLATFORM_TENANT_ID",
-		"OAUTH_CLIENT_ID", "OAUTH_CLIENT_SECRET",
+		"GIP_PROJECT_ID", "GIP_WEB_API_KEY",
+		"GIP_INTERNAL_TENANT_ID",
 		"SESSION_COOKIE_NAME", "SESSION_COOKIE_DOMAIN", "SESSION_ENCRYPT_KEY",
 		"FGA_API_URL", "FGA_STORE_ID",
 		"ZITADEL_ENABLED", "ZITADEL_ISSUER", "ZITADEL_LOGIN_CLIENT_TOKEN",
@@ -30,11 +29,8 @@ func setRequiredEnv(t *testing.T) {
 	clearAll(t)
 	t.Setenv("DATABASE_URL", "postgres://test/test")
 	t.Setenv("GIP_PROJECT_ID", "test-project")
-	t.Setenv("GIP_PROJECT_NUMBER", "12345")
 	t.Setenv("GIP_WEB_API_KEY", "test-key")
 	t.Setenv("GIP_INTERNAL_TENANT_ID", "MP-Internal-test")
-	t.Setenv("OAUTH_CLIENT_ID", "test-client-id")
-	t.Setenv("OAUTH_CLIENT_SECRET", "test-client-secret")
 	t.Setenv("SESSION_ENCRYPT_KEY", "thirtytwo-bytes-for-testing-only")
 }
 
@@ -46,9 +42,6 @@ func TestLoad_ReadsRequiredFieldsFromEnv(t *testing.T) {
 	}
 	if cfg.GIPProjectID != "test-project" {
 		t.Errorf("GIPProjectID = %q, want %q", cfg.GIPProjectID, "test-project")
-	}
-	if cfg.OAuthClientSecret != "test-client-secret" {
-		t.Errorf("OAuthClientSecret = %q, want %q", cfg.OAuthClientSecret, "test-client-secret")
 	}
 }
 
@@ -98,11 +91,8 @@ func TestZitadelIsDisabledAndUnrequiredByDefault(t *testing.T) {
 	// Only the pre-existing required vars are set.
 	t.Setenv("DATABASE_URL", "postgres://x")
 	t.Setenv("GIP_PROJECT_ID", "p")
-	t.Setenv("GIP_PROJECT_NUMBER", "1")
 	t.Setenv("GIP_WEB_API_KEY", "k")
 	t.Setenv("GIP_INTERNAL_TENANT_ID", "t")
-	t.Setenv("OAUTH_CLIENT_ID", "c")
-	t.Setenv("OAUTH_CLIENT_SECRET", "s")
 	t.Setenv("SESSION_ENCRYPT_KEY", "thirtytwo-bytes-for-testing-only")
 
 	cfg, err := Load()

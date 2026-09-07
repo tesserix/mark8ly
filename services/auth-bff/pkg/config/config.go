@@ -22,15 +22,8 @@ type Config struct {
 
 	// Google Identity Platform
 	GIPProjectID        string `envconfig:"GIP_PROJECT_ID" required:"true"`
-	GIPProjectNumber    string `envconfig:"GIP_PROJECT_NUMBER" required:"true"`
 	GIPWebAPIKey        string `envconfig:"GIP_WEB_API_KEY" required:"true"`
 	GIPInternalTenantID string `envconfig:"GIP_INTERNAL_TENANT_ID" required:"true"` // staff/admin pool (e.g. MP-Internal-e986p)
-	GIPCustomerTenantID string `envconfig:"GIP_CUSTOMER_TENANT_ID"`                 // storefront end-user pool (later)
-	GIPPlatformTenantID string `envconfig:"GIP_PLATFORM_TENANT_ID"`                 // tesserix-home pool (later)
-
-	// OAuth client (for the OIDC redirect flow auth-bff orchestrates)
-	OAuthClientID     string `envconfig:"OAUTH_CLIENT_ID" required:"true"`
-	OAuthClientSecret string `envconfig:"OAUTH_CLIENT_SECRET" required:"true"`
 
 	// Cookie session
 	SessionCookieName   string `envconfig:"SESSION_COOKIE_NAME" default:"m8_session"`

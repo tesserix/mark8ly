@@ -90,6 +90,23 @@ export const onboarding = {
       },
     ),
 
+  /** Asks what a promo code would grant, WITHOUT redeeming it (#620).
+   *
+   *  Goes through platform-api rather than straight to marketplace-api:
+   *  marketplace-api's validate route is guarded by the shared internal
+   *  secret, which platform-api holds and this app does not. That is the
+   *  point — #620 calls an open validate endpoint "an oracle for guessing
+   *  valid codes", and routing it this way means no such endpoint exists. */
+  validatePromo: (code: string, email: string, currency: string) =>
+    request<{
+      valid: boolean;
+      trial_extension_days: number;
+      reject_reason: string;
+    }>("/api/v1/onboarding/promo/validate", {
+      method: "POST",
+      body: JSON.stringify({ code, email, currency }),
+    }),
+
   verifyCode: (sessionId: string, code: string) =>
     request<{ verified: boolean }>(
       `/api/v1/onboarding/sessions/${sessionId}/verification/verify`,
@@ -115,6 +132,11 @@ export const onboarding = {
       password?: string;
       first_name?: string;
       last_name?: string;
+      /** What the merchant typed in the promo field, if anything (#620).
+       *  Redeemed by marketplace-api immediately after it creates the
+       *  subscription row — the earliest moment redemption is possible,
+       *  since the ledger row needs a subscription id. */
+      promo_code?: string;
     },
   ) =>
     request<CompleteResult>(

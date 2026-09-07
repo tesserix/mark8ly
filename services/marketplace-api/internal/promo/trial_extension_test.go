@@ -45,6 +45,7 @@ func (e *stubExtender) Extend(_ context.Context, _ *gorm.DB, storeID uuid.UUID,
 // back — the difference between "try again" and "your code is spent".
 type trialRepo struct {
 	code           *promo.PromoCode
+	perEmail       int
 	created        []promo.Redemption
 	deletes        int
 	createErr      error
@@ -62,7 +63,7 @@ func (r *trialRepo) CountRedemptions(context.Context, *gorm.DB, uuid.UUID) (int,
 	return 0, nil
 }
 func (r *trialRepo) CountRedemptionsByEmail(context.Context, *gorm.DB, uuid.UUID, string) (int, error) {
-	return 0, nil
+	return r.perEmail, nil
 }
 func (r *trialRepo) GetRedemptionByStore(context.Context, *gorm.DB, uuid.UUID, uuid.UUID) (*promo.Redemption, error) {
 	if r.alreadyRedeems {

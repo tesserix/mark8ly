@@ -33,6 +33,9 @@ type VendorEnsurer interface {
 	// opens the admin Billing page, and never at all for one who does not
 	// (mark8ly#827).
 	EnsureSubscription(ctx context.Context, in marketplaceapi.EnsureSubscription) error
+	// ValidatePromoForSignup asks what a promo code would grant, without
+	// redeeming it (mark8ly#620).
+	ValidatePromoForSignup(ctx context.Context, code, email, currency string) (marketplaceapi.SignupPromoOffer, bool, error)
 }
 
 // Service is the business logic for the onboarding flow.
@@ -251,8 +254,13 @@ type CompleteRequest struct {
 	// FirstName / LastName populate the Zitadel profile. Optional —
 	// derived from the email local part when absent (Zitadel rejects an
 	// empty givenName/familyName).
-	FirstName    string `json:"first_name"`
-	LastName     string `json:"last_name"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	// PromoCode is what the merchant typed at onboarding, if anything. It
+	// travels with completion rather than being redeemed earlier because
+	// redemption needs a subscription row, and that row is created as part of
+	// this call (mark8ly#620, mark8ly#827).
+	PromoCode    string `json:"promo_code"`
 	CountryCode  string `json:"country_code"`
 	CurrencyCode string `json:"currency_code"`
 	Timezone     string `json:"timezone"`
@@ -484,6 +492,10 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 			Email:    req.OwnerEmail,
 			Name:     st.Name,
 			Currency: st.CurrencyCode,
+			// Redeemed on the far side, right after the row exists
+			// (mark8ly#620). A refused code does not fail this call: the
+			// outcome comes back in the response and is logged.
+			PromoCode: req.PromoCode,
 		}); subErr != nil {
 			log.Printf("onboarding.Complete: ensure subscription for tenant %s store %s: %v — THIS STORE HAS NO TRIAL CLOCK",
 				t.ID, st.ID, subErr)
@@ -495,6 +507,21 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 	}
 
 	return &CompleteResult{TenantID: t.ID, Slug: st.Slug}, nil
+}
+
+// ValidatePromo asks marketplace-api what a promo code would grant a merchant
+// who is signing up, without redeeming it (mark8ly#620).
+//
+// Returns (offer, valid, err). A refused code is (reason, false, nil) — not an
+// error: "your code will not work" is a successful answer. Only a failure to
+// ASK is an error, and the handler turns that into "we could not check that
+// code" rather than into "invalid", so a merchant holding a good code is never
+// told it is bad because a service was down.
+func (s *Service) ValidatePromo(ctx context.Context, code, email, currency string) (marketplaceapi.SignupPromoOffer, bool, error) {
+	if s.vendorClient == nil {
+		return marketplaceapi.SignupPromoOffer{}, false, fmt.Errorf("onboarding: no marketplace client configured")
+	}
+	return s.vendorClient.ValidatePromoForSignup(ctx, code, email, currency)
 }
 
 func (s *Service) sendWelcome(ctx context.Context, t *tenant.Tenant, st *store.Store, req CompleteRequest) error {

@@ -45,6 +45,12 @@ const (
 	// confirms nothing about a code they were not already holding. It is
 	// also the one refusal a merchant can act on, by asking an operator.
 	PublicReasonTrialNotExtendable PublicRejectReason = "trial_not_extendable"
+
+	// PublicReasonRedeemInBilling must reach the merchant: it is the one
+	// refusal that means "your code works, just not here". Collapsing it into
+	// invalid_or_expired would send someone holding a good code away from the
+	// field that would have taken it.
+	PublicReasonRedeemInBilling PublicRejectReason = "redeem_in_billing"
 )
 
 // PublicReasonFor maps an internal reason onto the one the client is told.
@@ -75,6 +81,8 @@ func PublicReasonFor(r ValidationRejectReason) PublicRejectReason {
 		return PublicReasonUnknownDiscount
 	case RejectReasonTrialNotExtendable:
 		return PublicReasonTrialNotExtendable
+	case RejectReasonRedeemInBilling:
+		return PublicReasonRedeemInBilling
 	default:
 		return PublicReasonInvalidOrExpired
 	}

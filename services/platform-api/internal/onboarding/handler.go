@@ -22,11 +22,15 @@ import (
 type Handler struct {
 	svc      *Service
 	verifSvc *verification.Service
+	// promoLimiter caps promo-code attempts per client IP. The promo route is
+	// unauthenticated like the rest of this group, and a code checker is a
+	// guessing surface by nature (mark8ly#620).
+	promoLimiter *PromoRateLimiter
 }
 
 // NewHandler constructs a Handler.
 func NewHandler(svc *Service, verifSvc *verification.Service) *Handler {
-	return &Handler{svc: svc, verifSvc: verifSvc}
+	return &Handler{svc: svc, verifSvc: verifSvc, promoLimiter: NewPromoRateLimiter()}
 }
 
 // Register mounts onboarding routes onto the given gin.RouterGroup.
@@ -42,7 +46,64 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 		// from the token's session_id.
 		o.POST("/verify-token", h.verifyAndMarkSession)
 		o.POST("/sessions/:id/complete", h.completeSession)
+		// Promo-code check for the onboarding field (mark8ly#620). Sits
+		// here, on the public wizard group, because the merchant typing the
+		// code has no credential of any kind yet — the same reason
+		// /sessions and /verify-token do.
+		o.POST("/promo/validate", h.validatePromo)
 	}
+}
+
+// promoValidateRequest is what the onboarding app sends as the merchant types.
+type promoValidateRequest struct {
+	Code string `json:"code" binding:"required"`
+	// Email is the address the per-email redemption cap counts against. It is
+	// the only abuse control available before a store exists.
+	Email    string `json:"email"`
+	Currency string `json:"currency"`
+}
+
+// validatePromo serves POST /api/v1/onboarding/promo/validate.
+//
+// It is a thin proxy onto marketplace-api's internal validate route. The hop
+// is the point: mark8ly#620 calls an open validate endpoint "an oracle for
+// guessing valid codes", and marketplace-api's route is guarded by the shared
+// internal secret, which this service holds and the onboarding app does not.
+// So there is no unauthenticated promo endpoint anywhere.
+//
+// This surface is itself unauthenticated, like every other route in this
+// group, and is rate limited by client IP for that reason.
+//
+// A refused code answers 200 with valid:false. It is a successful answer to a
+// question, and giving it a 4xx invites a caller to retry a settled result.
+func (h *Handler) validatePromo(c *gin.Context) {
+	if h.promoLimiter != nil && !h.promoLimiter.Allow(c.ClientIP()) {
+		respondError(c, apperrors.TooManyRequests("rate_limited",
+			"too many promo code attempts, please try again shortly"))
+		return
+	}
+
+	var req promoValidateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, apperrors.BadRequest("invalid_request", err.Error()))
+		return
+	}
+
+	offer, valid, err := h.svc.ValidatePromo(c.Request.Context(), req.Code, req.Email, req.Currency)
+	if err != nil {
+		// marketplace-api unreachable. Answering "invalid" would tell a
+		// merchant their good code is bad; say nothing about the code and
+		// let the field stay quiet.
+		respondError(c, apperrors.Internal("promo_check_failed",
+			"we could not check that code just now"))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"valid":                valid,
+		"trial_extension_days": offer.TrialExtensionDays,
+		"reject_reason":        offer.RejectReason,
+	}})
 }
 
 func (h *Handler) createSession(c *gin.Context) {

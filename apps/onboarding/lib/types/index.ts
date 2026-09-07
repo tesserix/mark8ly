@@ -46,6 +46,10 @@ export interface OnboardingDraft {
   timezone?: string;
   // §5.1.1 — optional tax-ID and migration fast-path evidence
   tax_id?: string;
+  // #620 — the promo code typed on the form. Held in the draft rather than
+  // redeemed at typing time because redemption needs a subscription row, and
+  // that row is not created until onboarding completes (#827).
+  promo_code?: string;
   migration_type?: MigrationEvidenceType;
   // Only present when migration_type === "migrating"
   whois_url?: string;

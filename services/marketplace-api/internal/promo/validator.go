@@ -64,6 +64,11 @@ const (
 	// rather than about the code, and Validate is given no subscription.
 	// Service.planTrialExtension sets it.
 	RejectReasonTrialNotExtendable ValidationRejectReason = "trial_not_extendable"
+	// RejectReasonRedeemInBilling covers a code whose benefit cannot be
+	// delivered at signup — one carrying a discount, which needs a Stripe
+	// subscription that does not exist yet (#620). The code is fine; only
+	// the moment is wrong. Set by the signup path, never by Validate.
+	RejectReasonRedeemInBilling ValidationRejectReason = "redeem_in_billing"
 )
 
 // ValidationResult is returned by Validate. On success Accepted is true and

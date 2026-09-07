@@ -163,7 +163,7 @@ func (h *BreakGlassLoginHandler) Login(c *gin.Context) {
 	// sessions so ops audit logs consistently tie the same actor to
 	// every break-glass login for a tenant.
 	userID := BreakGlassUserID(tenantID)
-	setCookie, err := h.deps.Sessions.Issue(ctx, tenantID, userID, BreakGlassSessionTTL)
+	setCookie, err := h.deps.Sessions.Issue(ctx, tenantID, userID, "break_glass", BreakGlassSessionTTL)
 	if err != nil {
 		h.logger().Error("break-glass: session issue failed", "err", err, "tenant", tenantID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "session_mint_failed"})

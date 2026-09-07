@@ -299,8 +299,10 @@ func (h *SSOLoginHandler) Callback(c *gin.Context) {
 		return
 	}
 
-	// Mint session cookie via auth-bff.
-	setCookie, err := h.Sessions.Issue(c.Request.Context(), tenantID, out.InternalUserID, SSOSessionTTL)
+	// Mint session cookie via auth-bff. auth_context is "staff" —
+	// matches the DefaultRole passed to JIT.Provision above; SSO login
+	// is always a staff/admin session, never a break-glass one.
+	setCookie, err := h.Sessions.Issue(c.Request.Context(), tenantID, out.InternalUserID, "staff", SSOSessionTTL)
 	if err != nil {
 		h.Logger.Error("sso_callback: session issue failed", "tenant_id", tenantID, "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "session_failed"})

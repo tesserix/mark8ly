@@ -828,3 +828,70 @@ func TestBillingTrials_IncludeStripeManagedReachesTheLister(t *testing.T) {
 			"every row states its kind; an omitted false is indistinguishable from an older server")
 	})
 }
+
+// The include_signup query parameter must reach the lister, and a signup
+// row's status must be legible on the wire. Both directions matter: a
+// handler that always passed true would widen a live contract, and one that
+// never passed it would leave the stuck-at-signup population invisible —
+// which is the defect this parameter exists to fix.
+func TestBillingTrials_IncludeSignupReachesTheLister(t *testing.T) {
+	dir := &stubBillingDirectory{names: map[string]string{}}
+
+	t.Run("with the flag", func(t *testing.T) {
+		rows := billingTrialsFixtureRows(billingTrialsFixtureAsOf)
+		rows[0].Status = "signup"
+		trials := &stubTrialLister{rows: rows, total: int64(len(rows))}
+
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials?include_signup=true", nil))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+		require.True(t, trials.gotOpts.IncludeSignup)
+		// Raw bytes: an operator acts on a signup row differently from a
+		// trialing one (chase checkout vs. about to lose access), so the
+		// status has to survive to the response, not just to the query.
+		require.Contains(t, rec.Body.String(), `"status":"signup"`)
+		require.Contains(t, rec.Body.String(), `"status":"trialing"`)
+	})
+
+	t.Run("without the flag the default is unchanged", func(t *testing.T) {
+		trials := &stubTrialLister{rows: nil, total: 0}
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.False(t, trials.gotOpts.IncludeSignup,
+			"the default must stay #285's shipped contract")
+	})
+
+	t.Run("anything other than true is false", func(t *testing.T) {
+		trials := &stubTrialLister{rows: nil, total: 0}
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials?include_signup=1", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.False(t, trials.gotOpts.IncludeSignup,
+			"a widening flag must require the exact value, never a truthy-looking one")
+	})
+
+	t.Run("the two flags are read independently", func(t *testing.T) {
+		trials := &stubTrialLister{rows: nil, total: 0}
+		rec := httptest.NewRecorder()
+		billingTrialsRouter(t, trials, dir).ServeHTTP(rec, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials?include_signup=true", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.True(t, trials.gotOpts.IncludeSignup)
+		require.False(t, trials.gotOpts.IncludeStripeManaged,
+			"asking for signup rows must not also opt into card-backed ones")
+
+		trials2 := &stubTrialLister{rows: nil, total: 0}
+		rec2 := httptest.NewRecorder()
+		billingTrialsRouter(t, trials2, dir).ServeHTTP(rec2, httptest.NewRequest(
+			http.MethodGet, "/admin/billing/trials?include_stripe_managed=true", nil))
+		require.Equal(t, http.StatusOK, rec2.Code)
+		require.True(t, trials2.gotOpts.IncludeStripeManaged)
+		require.False(t, trials2.gotOpts.IncludeSignup,
+			"asking for card-backed rows must not also opt into signup ones")
+	})
+}

@@ -239,3 +239,34 @@ func TestImagesAllowed_Trial_NoGrandfathering(t *testing.T) {
 	require.Equal(t, 50,
 		plangate.ImagesAllowed(subscription.PlanTrial, old, &changedAt))
 }
+
+// TestAllPlans_IsExactlyTheMatrixKeySet pins AllPlans to the matrix rather
+// than to a list of names. Publishing "the plans" from a hand-written list is
+// how a consumer ends up describing a matrix that no longer exists, so the
+// assertion checks membership against featureMatrix's own behaviour: every
+// plan AllPlans reports must have at least one non-Disabled cell (i.e. it is
+// really in the matrix), and PlanMarketplace — absent from the matrix by
+// design — must not appear.
+func TestAllPlans_IsExactlyTheMatrixKeySet(t *testing.T) {
+	plans := plangate.AllPlans()
+	require.Equal(t, []subscription.SubscriptionPlan{
+		subscription.PlanTrial,
+		subscription.PlanStarter,
+		subscription.PlanStudio,
+		subscription.PlanPro,
+	}, plans, "the matrix keys on four plans; update this when the matrix changes, not before")
+
+	for _, p := range plans {
+		anyEnabled := false
+		for _, f := range plangate.AllFeatures() {
+			if plangate.IsAllowed(p, f) {
+				anyEnabled = true
+				break
+			}
+		}
+		require.Truef(t, anyEnabled, "plan %s is reported by AllPlans but enables nothing — it is not really in the matrix", p)
+	}
+
+	require.NotContains(t, plans, subscription.PlanMarketplace,
+		"PlanMarketplace bypasses plangate; publishing it would report a plan on which nothing is enabled")
+}

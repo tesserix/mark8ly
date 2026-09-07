@@ -2596,6 +2596,11 @@ func main() {
 			subscription.NewService(subscription.ServiceConfig{
 				DB: conn, Repo: subscription.NewRepository(), Logger: log,
 			})).
+			// Promo redemption at signup (#620). Its promo.Service DOES need
+			// the trial extender — a code that grants days and cannot deliver
+			// them is refused, not silently ignored (#825).
+			WithPromo(signupPromoAdapter{svc: promo.NewService(conn, promo.NewRepository(), nil, log).
+				WithTrialExtender(trial.NewExtender(promoTrialStripe(billingStripeClient)))}).
 			RegisterRoutes(r.Group("/internal"), cfg.InternalAuthSecret)
 		// Otto escalation hook — slm-router POSTs
 		// /internal/v1/tickets/from-conversation when an AI chat is
@@ -2770,6 +2775,9 @@ func main() {
 				subscription.NewService(subscription.ServiceConfig{
 					DB: conn, Repo: subscription.NewRepository(), Logger: log,
 				})).
+				// See the mode-Both mount above.
+				WithPromo(signupPromoAdapter{svc: promo.NewService(conn, promo.NewRepository(), nil, log).
+					WithTrialExtender(trial.NewExtender(promoTrialStripe(billingStripeClient)))}).
 				RegisterRoutes(engine.Group("/internal"), cfg.InternalAuthSecret)
 			// slm-router escalation hook + the mark8ly-mcp
 			// create_support_ticket tool both POST /internal/v1/tickets/

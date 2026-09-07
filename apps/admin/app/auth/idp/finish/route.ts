@@ -46,12 +46,6 @@ const DEFAULT_DESTINATION = "/dashboard";
 const MULTI_TENANT_DESTINATION = "/pick-tenant";
 
 export async function GET(req: Request): Promise<Response> {
-  // This route only applies under the Zitadel provider — under GIP there
-  // is no flow that could ever land a browser here.
-  if (publicConfig.authProvider !== "zitadel") {
-    return new NextResponse(null, { status: 404 });
-  }
-
   const url = new URL(req.url);
   const intentId = url.searchParams.get("id");
   const intentToken = url.searchParams.get("token");

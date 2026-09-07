@@ -2,10 +2,10 @@
 
 // Returning-user sign-in for the admin app. Two paths:
 //
-//   1. Email + password — Identity Toolkit signInWithPassword via the GIP
-//      REST helper, then signIn server action.
-//   2. Continue with Google — gsi/client popup → Google credential →
-//      Identity Toolkit signInWithIdp → same signIn server action.
+//   1. Email + password — the signInWithZitadel server action, which
+//      drives Zitadel's session API against the page's auth_request_id.
+//   2. Continue with Google — a full-page navigation to the Google
+//      authUrl auth-bff hands back, returning at /auth/idp/finish.
 //
 // Both paths land at /dashboard on success (or /pick-tenant when the user
 // belongs to multiple stores).
@@ -19,16 +19,10 @@ import { z } from "zod";
 import { Input, AuthOtpStep } from "@tesserix/web";
 import { Field } from "@repo/ui/field";
 import { GoogleMark } from "@repo/ui/google-mark";
-import { AppleMark } from "@repo/ui/apple-mark";
 
-import { signInWithPassword, signInWithGoogle, signInWithApple, GIPError } from "@/lib/gip/signup";
-import { getGoogleCredential } from "@/lib/gip/google-gsi";
-import { getAppleCredential } from "@/lib/gip/apple-js";
-import { appleSignInEnabled, publicConfig } from "@/lib/config";
+import { publicConfig } from "@/lib/config";
 import { isTrustedZitadelHostedUrl, isTrustedCallbackUrl } from "@/lib/auth/zitadel-oidc";
-import { linkGoogleToInternalPassword } from "@/lib/gip/link";
 import {
-  signIn,
   signInWithZitadel,
   confirmZitadelTotp,
   confirmMFALogin,
@@ -38,7 +32,6 @@ import {
 import { startAdminGoogleSignIn } from "@/app/auth/idp/actions";
 import { messageForAdminGoogleError } from "@/lib/auth/google-sign-in-admin";
 import { prepareCrossDomainNavigation } from "@/lib/auth/cross-domain-handoff";
-import { LinkProviderPrompt } from "@repo/ui/auth/link-provider-prompt";
 
 const MARKETING_URL =
   process.env.NEXT_PUBLIC_MARKETING_URL ?? "http://localhost:4201";
@@ -65,21 +58,13 @@ interface SignInFormProps {
    * Zitadel's `auth_request_id`, present once `/login` has bounced
    * through Zitadel's `/authorize` and back (see
    * app/login/authorize/route.ts and app/auth/callback/route.ts).
-   * Unused under GIP. Wired into `signInWithZitadel` below.
+   * Wired into `signInWithZitadel` below.
    */
   authRequestId?: string;
-  /**
-   * Which identity provider backs this sign-in. Read defensively: only
-   * the exact literal `"zitadel"` switches this form onto the Zitadel
-   * path — anything else, including undefined, keeps today's GIP flow.
-   * Wired from `publicConfig` by `/login/page.tsx`.
-   */
-  provider?: string;
   /**
    * An outcome code from a completed (and rejected, or interrupted)
    * Google-through-Zitadel sign-in attempt — set by app/login/page.tsx
    * from `?error=` when app/auth/idp/finish/route.ts redirects back here.
-   * Unused under GIP, where Google never leaves this page at all.
    * Mapped to a truthful, distinct message via messageForAdminGoogleError
    * rather than rendered directly — this value is a fixed code, never an
    * internal error string.
@@ -111,13 +96,11 @@ interface SignInFormProps {
 export function SignInForm({
   returnUrl,
   authRequestId,
-  provider,
   googleErrorCode,
   initialChallenge,
   initialMultipleTenants,
 }: SignInFormProps = {}) {
   const router = useRouter();
-  const isZitadel = provider === "zitadel";
 
   // Full-page navigation when returnUrl crosses origins (the common
   // case: signing in at admin.mark8ly.com → bouncing to
@@ -146,12 +129,6 @@ export function SignInForm({
   );
   const [pending, startTransition] = useTransition();
   const [googlePending, setGooglePending] = useState(false);
-  const [applePending, setApplePending] = useState(false);
-  const [needConfirmation, setNeedConfirmation] = useState<{
-    email: string;
-    pendingIdpCredential: string;
-  } | null>(null);
-  const [linkPromptError, setLinkPromptError] = useState<string | null>(null);
 
   // MFA challenge state — when the signIn server action reports
   // mfaRequired, we switch the form to a 6-digit challenge instead
@@ -180,7 +157,7 @@ export function SignInForm({
   // `usermfa` gate above. Zitadel itself demands a verified
   // authenticator code before the auth request can complete, and hands
   // back a session id/token plus a server-signed tenant code that must
-  // ride unchanged into confirmZitadelTotp. Unreachable under GIP.
+  // ride unchanged into confirmZitadelTotp.
   const [zitadelTotpStep, setZitadelTotpStep] = useState(false);
   const [zitadelTotpCode, setZitadelTotpCode] = useState("");
   const [zitadelTotpPending, setZitadelTotpPending] = useState(false);
@@ -202,7 +179,7 @@ export function SignInForm({
     defaultValues: { email: "", password: "" },
   });
 
-  const disabled = pending || googlePending || applePending;
+  const disabled = pending || googlePending;
 
   // Shared by the Zitadel sign-in call and the Zitadel TOTP confirmation
   // below — both return the same `Result<SignInSuccess>` shape, so the
@@ -287,57 +264,13 @@ export function SignInForm({
     setSubmitError(null);
     const trimmedEmail = values.email.trim().toLowerCase();
 
-    if (isZitadel) {
-      startTransition(async () => {
-        const r = await signInWithZitadel({
-          email: trimmedEmail,
-          password: values.password,
-          authRequestId: authRequestId ?? "",
-        });
-        await afterZitadelResult(r);
-      });
-      return;
-    }
-
     startTransition(async () => {
-      let idToken = "";
-      let uid = "";
-      try {
-        const gip = await signInWithPassword(trimmedEmail, values.password);
-        idToken = gip.idToken;
-        uid = gip.uid;
-      } catch (err) {
-        if (err instanceof GIPError && err.code === "invalid_credentials") {
-          setError("password", {
-            type: "server",
-            message: "Email or password is incorrect",
-          });
-          return;
-        }
-        setSubmitError(
-          err instanceof Error ? `Sign-in failed: ${err.message}` : "Sign-in failed",
-        );
-        return;
-      }
-
-      const r = await signIn({ idToken, uid });
-      if (!r.ok) {
-        if (r.code === "tenant_not_found") {
-          setSubmitError(
-            "We couldn't find a store for this account. Did you finish onboarding?",
-          );
-        } else {
-          setSubmitError(r.message);
-        }
-        return;
-      }
-      if (r.data.mfaRequired || r.data.emailOtpRequired) {
-        setMfaMultipleTenants(r.data.multipleTenants);
-        setChallenge(r.data.mfaRequired ? "mfa" : "email_otp");
-        setMfaStep(true);
-        return;
-      }
-      await goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
+      const r = await signInWithZitadel({
+        email: trimmedEmail,
+        password: values.password,
+        authRequestId: authRequestId ?? "",
+      });
+      await afterZitadelResult(r);
     });
   }
 
@@ -366,63 +299,15 @@ export function SignInForm({
     setSubmitError(null);
   }
 
-  async function completeSignIn(idToken: string, uid: string) {
-    const r = await signIn({ idToken, uid });
-    if (!r.ok) {
-      setSubmitError(
-        r.code === "tenant_not_found"
-          ? "No store found for this Google account. Start a new store from the home page."
-          : r.message,
-      );
-      return;
-    }
-    if (r.data.mfaRequired || r.data.emailOtpRequired) {
-      setMfaMultipleTenants(r.data.multipleTenants);
-      setChallenge(r.data.mfaRequired ? "mfa" : "email_otp");
-      setMfaStep(true);
-      return;
-    }
-    await goToDestination(r.data.multipleTenants ? "/pick-tenant" : "/dashboard");
-  }
-
-  async function handleApple() {
-    setSubmitError(null);
-    setApplePending(true);
-    try {
-      const { idToken: appleToken, nonce } = await getAppleCredential();
-      const result = await signInWithApple(appleToken, nonce);
-      if (result.kind === "needConfirmation") {
-        // Same linking prompt as Google: GIP already has this email under
-        // another provider and wants proof before joining them.
-        setNeedConfirmation({
-          email: result.email,
-          pendingIdpCredential: result.pendingIdpCredential,
-        });
-        return;
-      }
-      await completeSignIn(result.idToken, result.uid);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "";
-      // Closing Apple's popup is a normal user action, not an error worth
-      // shouting about.
-      if (msg.includes("popup_closed") || msg.includes("user_cancelled")) {
-        return;
-      }
-      setSubmitError(msg ? `Apple sign-in failed: ${msg}` : "Apple sign-in failed");
-    } finally {
-      setApplePending(false);
-    }
-  }
-
   /**
-   * Under Zitadel there is no popup/credential exchange the way GIP has:
-   * this asks auth-bff (via startAdminGoogleSignIn) for a Google authUrl
-   * and does a full-page navigation there. The browser leaves this page
-   * entirely and comes back at app/auth/idp/finish/route.ts, which mints
-   * the session and redirects onward — there is nothing further for this
-   * function to do on success, unlike the GIP path below.
+   * There is no popup/credential exchange: this asks auth-bff (via
+   * startAdminGoogleSignIn) for a Google authUrl and does a full-page
+   * navigation there. The browser leaves this page entirely and comes
+   * back at app/auth/idp/finish/route.ts, which mints the session and
+   * redirects onward — there is nothing further for this function to do
+   * on success.
    */
-  async function handleGoogleZitadel() {
+  async function handleGoogle() {
     setSubmitError(null);
     setGooglePending(true);
     try {
@@ -440,66 +325,6 @@ export function SignInForm({
       setSubmitError("Google sign-in failed. Please try again.");
       setGooglePending(false);
     }
-  }
-
-  async function handleGoogle() {
-    if (isZitadel) {
-      await handleGoogleZitadel();
-      return;
-    }
-    setSubmitError(null);
-    setGooglePending(true);
-    try {
-      const { credential } = await getGoogleCredential();
-      const result = await signInWithGoogle(credential);
-      if (result.kind === "needConfirmation") {
-        setNeedConfirmation({
-          email: result.email,
-          pendingIdpCredential: result.pendingIdpCredential,
-        });
-        return;
-      }
-      await completeSignIn(result.idToken, result.uid);
-    } catch (err) {
-      setSubmitError(
-        err instanceof Error
-          ? `Google sign-in failed: ${err.message}`
-          : "Google sign-in failed",
-      );
-    } finally {
-      setGooglePending(false);
-    }
-  }
-
-  async function handleLinkConfirm(password: string) {
-    if (!needConfirmation) return;
-    setLinkPromptError(null);
-    try {
-      const linked = await linkGoogleToInternalPassword(
-        needConfirmation.email,
-        password,
-        needConfirmation.pendingIdpCredential,
-      );
-      setNeedConfirmation(null);
-      await completeSignIn(linked.idToken, linked.uid);
-    } catch (err) {
-      if (err instanceof GIPError && err.code === "invalid_credentials") {
-        setLinkPromptError("That password is incorrect. Please try again.");
-        return;
-      }
-      setLinkPromptError(
-        err instanceof Error
-          ? err.message
-          : "Could not link Google. Please try again.",
-      );
-    }
-  }
-
-  function handleLinkCancel() {
-    setNeedConfirmation(null);
-    setSubmitError(
-      "Linking cancelled. Sign in with email and password instead.",
-    );
   }
 
   async function handleMFA(e: React.FormEvent) {
@@ -732,10 +557,6 @@ export function SignInForm({
           {pending ? "Signing in…" : "Sign in"}
         </button>
 
-        {/* Google now authenticates through Zitadel's IDP-intent flow
-            under both providers, so this renders unconditionally. Apple
-            is out of scope for the Zitadel path in this phase and stays
-            GIP-only. */}
         <div className="relative py-1">
           <div className="absolute inset-0 flex items-center" aria-hidden="true">
             <div className="w-full border-t border-border-subtle" />
@@ -757,26 +578,6 @@ export function SignInForm({
           {googlePending ? "Opening Google…" : "Continue with Google"}
         </button>
 
-        {!isZitadel && (
-          <>
-            {/* Rendered only when a Services ID is configured. Apple treats
-                web as a separate client from the iOS app, so until that
-                exists the button would fail at Apple rather than in our
-                code. */}
-            {appleSignInEnabled && (
-              <button
-                type="button"
-                onClick={handleApple}
-                disabled={disabled}
-                className="mt-3 inline-flex h-11 w-full items-center justify-center gap-3 rounded-md border border-border bg-background-elevated px-6 text-sm font-medium text-foreground hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <AppleMark />
-                {applePending ? "Opening Apple…" : "Continue with Apple"}
-              </button>
-            )}
-          </>
-        )}
-
         <p className="text-center text-xs text-foreground-tertiary">
           Don&apos;t have a store yet?{" "}
           <a
@@ -789,15 +590,6 @@ export function SignInForm({
         </p>
       </form>
 
-      {needConfirmation && (
-        <LinkProviderPrompt
-          email={needConfirmation.email}
-          variant="admin"
-          error={linkPromptError}
-          onConfirm={handleLinkConfirm}
-          onCancel={handleLinkCancel}
-        />
-      )}
     </div>
   );
 }

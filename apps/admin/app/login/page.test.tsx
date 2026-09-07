@@ -1,10 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
-// Critical 1 fix (whole-branch review, phase 3a): page.tsx computed
-// `isZitadel` from publicConfig.authProvider but never passed it to
-// SignInForm, so the Zitadel path was unreachable regardless of the
-// flag. This pins that the resolved provider actually reaches the form.
+// Pins the /login page's redirect and prop wiring into SignInForm.
 
 vi.mock("@repo/ui/brand-bar", () => ({
   BrandBar: () => <div data-testid="brand-bar" />,
@@ -12,14 +9,12 @@ vi.mock("@repo/ui/brand-bar", () => ({
 
 vi.mock("@/components/auth/SignInForm", () => ({
   SignInForm: (props: {
-    provider?: string;
     googleErrorCode?: string;
     initialChallenge?: string;
     initialMultipleTenants?: boolean;
   }) => (
     <div
       data-testid="sign-in-form"
-      data-provider={props.provider ?? ""}
       data-google-error={props.googleErrorCode ?? ""}
       data-initial-challenge={props.initialChallenge ?? ""}
       data-initial-multi={props.initialMultipleTenants ? "1" : "0"}
@@ -51,9 +46,6 @@ vi.mock("@/lib/auth/sanitize-return-url", () => ({
   sanitizeReturnUrl: (v: string | null | undefined) => v ?? undefined,
 }));
 
-const configMock = vi.hoisted(() => ({ authProvider: "gip" as "gip" | "zitadel" }));
-vi.mock("@/lib/config", () => ({ publicConfig: configMock }));
-
 import LoginPage from "./page";
 import { beforeEach } from "vitest";
 
@@ -72,28 +64,6 @@ async function redirectDestination(
   return redirectMock.mock.calls[0]![0];
 }
 
-describe("LoginPage — provider wiring", () => {
-  it("passes provider=\"gip\" to SignInForm when the flag is unset", async () => {
-    configMock.authProvider = "gip";
-
-    const element = await LoginPage({ searchParams: Promise.resolve({}) });
-    render(element);
-
-    expect(screen.getByTestId("sign-in-form").dataset.provider).toBe("gip");
-  });
-
-  it("passes provider=\"zitadel\" to SignInForm once the flag selects it and an authRequest is present", async () => {
-    configMock.authProvider = "zitadel";
-
-    const element = await LoginPage({
-      searchParams: Promise.resolve({ authRequest: "V2_abc" }),
-    });
-    render(element);
-
-    expect(screen.getByTestId("sign-in-form").dataset.provider).toBe("zitadel");
-  });
-});
-
 // Production report: a failed Google attempt sent the merchant back to
 // /login carrying the auth request idp/complete had already SPENT, so the
 // "sign in with your email and password instead" advice ended in a raw
@@ -102,7 +72,6 @@ describe("LoginPage — provider wiring", () => {
 // has to give it its documented meaning.
 describe("LoginPage — recovery sentinel", () => {
   it("bounces a recovery arrival to /login/authorize for a FRESH auth request instead of rendering a dead one", async () => {
-    configMock.authProvider = "zitadel";
 
     const dest = await redirectDestination({
       authRequest: "recovery",
@@ -113,7 +82,6 @@ describe("LoginPage — recovery sentinel", () => {
   });
 
   it("preserves the error code across that bounce so the merchant still learns why Google failed", async () => {
-    configMock.authProvider = "zitadel";
 
     const dest = await redirectDestination({
       authRequest: "recovery",
@@ -124,7 +92,6 @@ describe("LoginPage — recovery sentinel", () => {
   });
 
   it("preserves returnUrl alongside the error", async () => {
-    configMock.authProvider = "zitadel";
 
     const dest = await redirectDestination({
       authRequest: "recovery",
@@ -138,7 +105,6 @@ describe("LoginPage — recovery sentinel", () => {
   });
 
   it("also carries the error when there is no authRequest at all", async () => {
-    configMock.authProvider = "zitadel";
 
     const dest = await redirectDestination({ error: "email_ambiguous" });
 
@@ -146,7 +112,6 @@ describe("LoginPage — recovery sentinel", () => {
   });
 
   it("renders the form (no bounce) once a real auth request has been minted", async () => {
-    configMock.authProvider = "zitadel";
 
     const element = await LoginPage({
       searchParams: Promise.resolve({ authRequest: "V2_fresh" }),
@@ -158,7 +123,6 @@ describe("LoginPage — recovery sentinel", () => {
   });
 
   it("reads the error back off the cookie that survived the Zitadel hop", async () => {
-    configMock.authProvider = "zitadel";
     loginErrorCookie.value = "no_admin_account";
 
     const element = await LoginPage({
@@ -170,7 +134,6 @@ describe("LoginPage — recovery sentinel", () => {
   });
 
   it("hands an unrecognised code to SignInForm as a code, never as rendered text — messageForAdminGoogleError maps it to the generic message", async () => {
-    configMock.authProvider = "zitadel";
 
     const element = await LoginPage({
       searchParams: Promise.resolve({
@@ -190,7 +153,6 @@ describe("LoginPage — recovery sentinel", () => {
 
 describe("LoginPage — email-OTP challenge arrival (#686)", () => {
   it("passes challenge=email_otp down to the form so it opens on the code step", async () => {
-    configMock.authProvider = "zitadel";
 
     const element = await LoginPage({
       searchParams: Promise.resolve({ authRequest: "ar-1", challenge: "email_otp" }),
@@ -201,7 +163,6 @@ describe("LoginPage — email-OTP challenge arrival (#686)", () => {
   });
 
   it("ignores any other challenge value — mfa/totp must never be openable from a query string", async () => {
-    configMock.authProvider = "zitadel";
 
     for (const challenge of ["mfa", "totp", "email_otp_but_not"]) {
       const element = await LoginPage({
@@ -214,7 +175,6 @@ describe("LoginPage — email-OTP challenge arrival (#686)", () => {
   });
 
   it("passes multi=1 through as initialMultipleTenants", async () => {
-    configMock.authProvider = "zitadel";
 
     const element = await LoginPage({
       searchParams: Promise.resolve({

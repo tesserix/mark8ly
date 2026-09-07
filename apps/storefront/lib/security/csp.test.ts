@@ -24,8 +24,14 @@ describe("buildCsp", () => {
     const scriptSrc = directives(buildCsp("n")).get("script-src")!;
     expect(scriptSrc).not.toContain("'strict-dynamic'");
     expect(scriptSrc).toContain("https://*.razorpay.com");
-    expect(scriptSrc).toContain("https://accounts.google.com/gsi/client");
     expect(scriptSrc).toContain("https://analytics.tesserix.app");
+  });
+
+  it("no longer allowlists the retired GIP sign-in SDK host", () => {
+    const d = directives(buildCsp("n"));
+    expect(d.get("script-src")).not.toContain("accounts.google.com");
+    expect(d.get("style-src")).not.toContain("accounts.google.com");
+    expect(d.get("frame-src")).not.toContain("accounts.google.com");
   });
 
   it("allows eval only in development, where Next compiles with it for HMR", () => {

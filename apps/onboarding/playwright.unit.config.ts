@@ -13,13 +13,6 @@ import { defineConfig } from "@playwright/test";
  * devDependency of this app; adding a second test framework would mean
  * touching the root lockfile.
  */
-// lib/config reads these once, at module-load time. The config file is
-// evaluated before any test module in every worker process, so this is the
-// only place the values are guaranteed to be in place early enough. They are
-// throwaway stand-ins — no fetch in these specs ever leaves the process.
-process.env.NEXT_PUBLIC_GIP_API_KEY ||= "test-api-key";
-process.env.NEXT_PUBLIC_GIP_TENANT_ID ||= "test-tenant";
-
 export default defineConfig({
   testDir: "./tests/unit",
   fullyParallel: false,

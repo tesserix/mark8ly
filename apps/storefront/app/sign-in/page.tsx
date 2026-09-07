@@ -27,10 +27,9 @@ function sanitizeNextPath(next: string | undefined): string {
 /**
  * /sign-in — customer sign-in page.
  *
- * Server component reads the store context + GIP config from env, then
- * hands everything to the client-side form. The form calls GIP
- * Identity Toolkit directly (browser → Google), gets an id_token, and
- * hands it to a server action that mints the session via auth-bff.
+ * Server component resolves the store context and hands it to the
+ * client-side form. The form posts the credentials to a server action,
+ * which mints the session via auth-bff.
  */
 export default async function SignInPage({
   searchParams,
@@ -53,15 +52,6 @@ export default async function SignInPage({
 
   const store = await fetchStoreBySlug(storeSlug).catch(() => null);
 
-  const gipConfig = {
-    apiKey:
-      process.env.GIP_WEB_API_KEY ??
-      process.env.NEXT_PUBLIC_GIP_API_KEY ??
-      "",
-    tenantId: process.env.GIP_CUSTOMER_TENANT_ID ?? "",
-    projectId: process.env.GIP_PROJECT_ID ?? "",
-  };
-
   const protocol = h.get("x-forwarded-proto") ?? "https";
   const origin = host ? `${protocol}://${host}` : "";
 
@@ -81,7 +71,6 @@ export default async function SignInPage({
           </p>
         </header>
         <CustomerSignInForm
-          gipConfig={gipConfig}
           storeSlug={storeSlug}
           returnUrl={`${origin}${safeNext}`}
           initialError={googleError}

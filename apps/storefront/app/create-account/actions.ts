@@ -2,16 +2,8 @@
 
 // Server actions for storefront customer account creation.
 //
-// GIP path (flag unset): UNCHANGED, byte-identical to before phase 6a
-// task 3. The browser calls Identity Toolkit's accounts:signUp directly
-// (components/auth/CreateAccountForm.tsx) and customerSignUp below still
-// just delegates to customerSignIn — by the time this runs the GIP
-// account already exists, so signing in and signing up are the same
-// operation once the account is there.
-//
-// Zitadel path (NEXT_PUBLIC_AUTH_PROVIDER === "zitadel"): a real two-step
-// sign-up, because an email/password account created against Zitadel
-// starts life UNVERIFIED (see services/auth-bff's customer_handler.go).
+// A real two-step sign-up, because an email/password account created
+// against Zitadel starts life UNVERIFIED (see services/auth-bff's customer_handler.go).
 // Why that verification step exists at all — and why it is not
 // decorative — matters for the copy this file returns: the storefront's
 // Google-through-Zitadel path (auth/idp/finish/route.ts) deliberately
@@ -41,7 +33,6 @@
 // functions the form uses accordingly live in
 // @/lib/auth/create-account-flow, not here.
 
-import { customerSignIn } from "@/app/sign-in/actions";
 import {
   AuthBffCustomerError,
   registerCustomerAccount,
@@ -62,48 +53,13 @@ import { sanitizeHost } from "@/lib/host";
 // compile time and are exempt from the async-only rule above.
 export type { RegisterCustomerResult };
 
-// Matches apps/storefront/app/sign-in/actions.ts's AUTH_PROVIDER rule
-// exactly — see that file's comment. registerCustomer/verifyCustomerEmail
-// below refuse to do anything under any other value, mirroring
-// app/auth/idp/finish/route.ts's flag guard (that route 404s outright;
-// these are server actions rather than a route, so they return a plain
-// failure result instead). This is defense in depth, not the fix for the
-// email-trust issue below — Next.js still registers both actions as
-// callable server actions regardless of this flag, and today the ONLY
-// thing standing between an unflagged storefront and a live register/
-// verify-email call is auth-bff's own ZITADEL_ENABLED gate. The guard
-// just means a storefront left on GIP never forwards a call it has no
-// business making, independent of what the backend happens to have
-// mounted.
-const AUTH_PROVIDER: "gip" | "zitadel" =
-  process.env.NEXT_PUBLIC_AUTH_PROVIDER === "zitadel" ? "zitadel" : "gip";
-
-const NOT_AVAILABLE_MESSAGE = "Account creation is not available right now. Please try again later.";
-
-interface CustomerSignUpInput {
-  idToken: string;
-  uid: string;
-  storeSlug: string;
-}
-
-/**
- * customerSignUp is the GIP-path action, called only when
- * NEXT_PUBLIC_AUTH_PROVIDER !== "zitadel". Delegates to the sign-in
- * action — the flow is identical once the GIP account exists. The
- * sign-in action sets the cookie and registers the customer profile in
- * marketplace-api. UNCHANGED from before phase 6a task 3.
- */
-export async function customerSignUp(input: CustomerSignUpInput): Promise<Result> {
-  return customerSignIn(input);
-}
-
 interface RegisterCustomerInput {
   email: string;
   password: string;
 }
 
 /**
- * registerCustomer is step 1 of the Zitadel sign-up flow: it creates the
+ * registerCustomer is step 1 of the sign-up flow: it creates the
  * (unverified) account and triggers auth-bff's verification email. It
  * mints no cookie under any outcome — there is nothing to mint a session
  * for until the address is verified.
@@ -111,9 +67,6 @@ interface RegisterCustomerInput {
 export async function registerCustomer(
   input: RegisterCustomerInput,
 ): Promise<RegisterCustomerResult> {
-  if (AUTH_PROVIDER !== "zitadel") {
-    return { ok: false, code: "not_available", message: NOT_AVAILABLE_MESSAGE };
-  }
   try {
     // Normalize ONCE, before this address goes anywhere — to auth-bff, into
     // the signed token, or (later, via completeCustomerSignIn) into the
@@ -200,9 +153,6 @@ interface VerifyCustomerEmailInput {
 export async function verifyCustomerEmail(
   input: VerifyCustomerEmailInput,
 ): Promise<Result> {
-  if (AUTH_PROVIDER !== "zitadel") {
-    return { ok: false, code: "not_available", message: NOT_AVAILABLE_MESSAGE };
-  }
   try {
     const h = await headers();
     const rawHost = h.get("x-forwarded-host") ?? h.get("host");

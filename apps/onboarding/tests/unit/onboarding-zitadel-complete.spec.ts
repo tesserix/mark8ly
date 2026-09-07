@@ -9,10 +9,7 @@ import { test, expect } from "@playwright/test";
 // neither would one that mocked the platform-api client module — the
 // mismatch lives in the JSON body.
 
-import {
-  completeOnboarding,
-  completeOnboardingWithZitadel,
-} from "../../app/onboarding/actions";
+import { completeOnboardingWithZitadel } from "../../app/onboarding/actions";
 
 interface RecordedCall {
   url: string;
@@ -52,7 +49,7 @@ const COMPLETE_BODY = {
 /**
  * Replaces global fetch with a router over exact URLs, recording every
  * request. Any URL without a handler fails the test from inside the
- * action — which is how "the Zitadel path must never call auth-bff" is
+ * action — which is how "completion must never call auth-bff" is
  * asserted below rather than merely hoped for.
  */
 function installFetch(
@@ -121,10 +118,10 @@ test("the Zitadel path lowercases the owner email it sends", async () => {
   expect(complete.body.owner_email).toBe("founder@example.test");
 });
 
-test("the Zitadel path never calls auth-bff auto-login", async () => {
-  // Only the two platform-api URLs are routed. auth-bff's /auth/auto-login
-  // verifies a GIP id_token; there is none on this path, and a call to it
-  // would throw here rather than silently 401ing in production.
+test("completion never calls auth-bff", async () => {
+  // Only the two platform-api URLs are routed, so any other call would
+  // throw here rather than silently failing in production. Onboarding
+  // mints no session at all — see completeOnboardingWithZitadel's doc.
   const calls = installFetch({
     [SESSION_URL]: () => ({ json: SESSION_BODY }),
     [COMPLETE_URL]: () => ({ json: COMPLETE_BODY }),
@@ -183,32 +180,4 @@ test("a password_policy rejection reaches the caller with its own code", async (
   // so the code has to survive the round trip intact.
   expect(result.code).toBe("password_policy");
   expect(result.message).toContain("12 characters");
-});
-
-test("the GIP path still sends owner_user_id and still calls auth-bff", async () => {
-  const MEMBERSHIPS_URL =
-    "http://localhost:8086/api/v1/users/me/tenants?uid=gip-uid-1";
-  const AUTO_LOGIN_URL = "http://localhost:8087/auth/auto-login";
-
-  const calls = installFetch({
-    [SESSION_URL]: () => ({ json: SESSION_BODY }),
-    [MEMBERSHIPS_URL]: () => ({ json: { data: [] } }),
-    [COMPLETE_URL]: () => ({ json: COMPLETE_BODY }),
-    [AUTO_LOGIN_URL]: () => ({ json: { data: {} } }),
-  });
-
-  const result = await completeOnboarding({
-    sessionId: SESSION_ID,
-    gipUid: "gip-uid-1",
-    gipIdToken: "gip-id-token",
-  });
-
-  expect(result.ok).toBe(true);
-
-  const complete = calls.find((c) => c.url === COMPLETE_URL)!;
-  expect(complete.body.owner_user_id).toBe("gip-uid-1");
-  // And nothing from the Zitadel path leaked into it.
-  expect(complete.body).not.toHaveProperty("password");
-  expect(complete.body).not.toHaveProperty("first_name");
-  expect(calls.some((c) => c.url === AUTO_LOGIN_URL)).toBe(true);
 });

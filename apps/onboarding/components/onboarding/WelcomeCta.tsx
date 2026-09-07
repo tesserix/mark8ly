@@ -27,15 +27,10 @@ const ADMIN_URL_TEMPLATE =
  * leaving the `{slug}` placeholder in place — the subdomain 404 will
  * make the problem obvious rather than silently leaking to localhost.
  */
-interface WelcomeCtaProps {
-  /** False on the Zitadel path, where no session was minted for the admin
-   *  origin and the merchant signs in there once. Only the button LABEL
-   *  changes — the destination is the same either way, and admin's own
-   *  middleware sends an unauthenticated visitor to its login page. */
-  signedIn?: boolean;
-}
-
-export function WelcomeCta({ signedIn = true }: WelcomeCtaProps) {
+// No session is minted for the admin origin during onboarding, so the
+// merchant signs in there once. admin's own middleware sends an
+// unauthenticated visitor to its login page.
+export function WelcomeCta() {
   const slug = useOnboardingStore((s) => s.slug);
   const adminUrl = resolveAdminUrl(ADMIN_URL_TEMPLATE, slug);
 
@@ -45,7 +40,7 @@ export function WelcomeCta({ signedIn = true }: WelcomeCtaProps) {
         href={adminUrl}
         className="inline-flex h-12 items-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover"
       >
-        {signedIn ? "Open admin dashboard" : "Sign in to your admin"}
+        Sign in to your admin
       </a>
       <Link href="/" className="btn-ghost">
         Back to home

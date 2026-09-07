@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const configMock = vi.hoisted(() => ({
-  authProvider: "zitadel" as "gip" | "zitadel",
   zitadelIssuer: "https://auth.tesserix.app",
 }));
 vi.mock("@/lib/config", () => ({ publicConfig: configMock }));
@@ -41,24 +40,11 @@ function wouldMiddleware404(location: string): boolean {
   return !isValidSlugReturnUrl(returnUrl) && !authRequest;
 }
 
-beforeEach(() => {
-  configMock.authProvider = "zitadel";
-});
-
 afterEach(() => {
   vi.clearAllMocks();
 });
 
 describe("GET /auth/idp/finish", () => {
-  it("404s under GIP — this route is unreachable outside the Zitadel provider", async () => {
-    configMock.authProvider = "gip";
-
-    const res = await GET(makeRequest("?id=i1&token=t1&auth_request_id=ar-1"));
-
-    expect(res.status).toBe(404);
-    expect(finishZitadelGoogleSignInMock).not.toHaveBeenCalled();
-  });
-
   it("redirects with google_sign_in_unavailable when Zitadel reports its own failure, without calling auth-bff", async () => {
     const res = await GET(
       makeRequest("?id=i1&error=access_denied&error_description=user+cancelled&auth_request_id=ar-1"),

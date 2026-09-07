@@ -6,7 +6,6 @@
 // public resetPassword endpoint on our behalf.
 
 import { confirmPasswordReset } from "@/lib/api/platform-api";
-import { publicConfig } from "@/lib/config";
 import { validateNewPassword } from "@/lib/auth/password-policy";
 
 export type ResetPasswordResult =
@@ -31,13 +30,8 @@ export async function confirmPasswordResetAction(
   // chars plus upper/lower/number/symbol; claiming 8 here produced the
   // dead end in #695 — the server rejected an 8-character password and
   // this action answered "must be at least 8 characters", i.e. telling
-  // the user to do what they had just done. GIP's own minimum is 8, so
-  // the old bound stays correct on that path.
-  const policyError = publicConfig.authProvider === "zitadel"
-    ? validateNewPassword(trimmedPassword)
-    : trimmedPassword.length < 8
-      ? "Password must be at least 8 characters."
-      : null;
+  // the user to do what they had just done.
+  const policyError = validateNewPassword(trimmedPassword);
   if (policyError) {
     return { ok: false, code: "weak_password", message: policyError };
   }

@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// customerSignIn's AUTH_PROVIDER flag is read once, at module-evaluation
-// time. To exercise both the GIP-default and the Zitadel branch in the
-// same file we reset the module registry and dynamically re-import
-// "./actions" per test, after setting process.env for that test — a
-// plain top-level import would freeze whichever value was set first.
+// "./actions" is dynamically re-imported per test after resetting the
+// module registry, so module-evaluation-time reads cannot leak state
+// between cases.
 
 const cookieStore: Record<string, string> = {};
 const cookiesSetSpy = vi.fn(
@@ -33,13 +31,6 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
-vi.mock("@/lib/gip/verify-id-token", async () => {
-  const actual = await vi.importActual<
-    typeof import("@/lib/gip/verify-id-token")
-  >("@/lib/gip/verify-id-token");
-  return { ...actual, verifyGIPIdToken: vi.fn() };
-});
-
 vi.mock("@/lib/auth/auth-bff-customer", async () => {
   const actual = await vi.importActual<
     typeof import("@/lib/auth/auth-bff-customer")
@@ -52,10 +43,6 @@ vi.mock("@/lib/api/server/platformInternal", () => ({
 }));
 
 import {
-  GIPTokenVerificationError,
-  verifyGIPIdToken,
-} from "@/lib/gip/verify-id-token";
-import {
   AuthBffCustomerError,
   verifyCustomerCredential,
   verifyCustomerTotp,
@@ -63,7 +50,6 @@ import {
 import { platformInternalFetch } from "@/lib/api/server/platformInternal";
 import { isTotpRequiredResult } from "@/lib/auth/customer-sign-in-result";
 
-const verifyGIPIdTokenMock = vi.mocked(verifyGIPIdToken);
 const verifyCustomerCredentialMock = vi.mocked(verifyCustomerCredential);
 const verifyCustomerTotpMock = vi.mocked(verifyCustomerTotp);
 const platformInternalFetchMock = vi.mocked(platformInternalFetch);
@@ -84,14 +70,11 @@ function decodeCookiePayload(cookieValue: string): Record<string, unknown> {
 
 beforeEach(() => {
   vi.resetModules();
-  delete process.env.NEXT_PUBLIC_AUTH_PROVIDER;
-
   headerMap = new Map([["host", HOST]]);
   for (const key of Object.keys(cookieStore)) delete cookieStore[key];
   cookiesSetSpy.mockClear();
   cookiesDeleteSpy.mockClear();
 
-  verifyGIPIdTokenMock.mockReset();
   verifyCustomerCredentialMock.mockReset();
   verifyCustomerTotpMock.mockReset();
 
@@ -114,89 +97,11 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  delete process.env.NEXT_PUBLIC_AUTH_PROVIDER;
   vi.clearAllMocks();
 });
 
-describe("customerSignIn — provider branch", () => {
-  it("flag unset: calls verifyGIPIdToken and not the Zitadel client", async () => {
-    verifyGIPIdTokenMock.mockResolvedValue({
-      uid: "u-gip",
-      email: "gip@example.com",
-      tenantId: "t",
-    });
-    const { customerSignIn } = await loadActions();
-
-    const result = await customerSignIn({
-      idToken: "id-token",
-      uid: "ignored",
-      storeSlug: "shop",
-    });
-
-    expect(result.ok).toBe(true);
-    expect(verifyGIPIdTokenMock).toHaveBeenCalledTimes(1);
-    expect(verifyCustomerCredentialMock).not.toHaveBeenCalled();
-  });
-
-  it('flag "zitadel": calls the Zitadel client and not verifyGIPIdToken', async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
-    verifyCustomerCredentialMock.mockResolvedValue({
-      kind: "complete",
-      uid: "u-zit",
-      email: "zit@example.com",
-    });
-    const { customerSignIn } = await loadActions();
-
-    const result = await customerSignIn({
-      loginName: "zit@example.com",
-      password: SUBMITTED_PASSWORD,
-      storeSlug: "shop",
-    });
-
-    expect(result.ok).toBe(true);
-    expect(verifyCustomerCredentialMock).toHaveBeenCalledTimes(1);
-    expect(verifyGIPIdTokenMock).not.toHaveBeenCalled();
-  });
-
-  it('an unrecognised flag value (e.g. "Zitadel") stays on the GIP path', async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "Zitadel"; // wrong case — must not match
-    verifyGIPIdTokenMock.mockResolvedValue({
-      uid: "u-gip",
-      email: "gip@example.com",
-      tenantId: "t",
-    });
-    const { customerSignIn } = await loadActions();
-
-    const result = await customerSignIn({
-      idToken: "id-token",
-      uid: "ignored",
-      storeSlug: "shop",
-    });
-
-    expect(result.ok).toBe(true);
-    expect(verifyGIPIdTokenMock).toHaveBeenCalledTimes(1);
-    expect(verifyCustomerCredentialMock).not.toHaveBeenCalled();
-  });
-});
-
 describe("customerSignIn — per-store cookie isolation (domain: cookieHost)", () => {
-  it("GIP path: the session cookie's domain equals the resolved request host", async () => {
-    verifyGIPIdTokenMock.mockResolvedValue({
-      uid: "u1",
-      email: "e1@example.com",
-      tenantId: "t",
-    });
-    const { customerSignIn } = await loadActions();
-
-    await customerSignIn({ idToken: "tok", uid: "ignored", storeSlug: "shop" });
-
-    expect(cookiesSetSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "mp_customer_session", domain: HOST }),
-    );
-  });
-
   it("Zitadel path: the session cookie's domain equals the resolved request host", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({
       kind: "complete",
       uid: "u2",
@@ -217,24 +122,7 @@ describe("customerSignIn — per-store cookie isolation (domain: cookieHost)", (
 });
 
 describe("customerSignIn — failed verification sets no cookie", () => {
-  it("GIP: a token verification failure sets no cookie", async () => {
-    verifyGIPIdTokenMock.mockRejectedValue(
-      new GIPTokenVerificationError("bad token"),
-    );
-    const { customerSignIn } = await loadActions();
-
-    const result = await customerSignIn({
-      idToken: "bad",
-      uid: "ignored",
-      storeSlug: "shop",
-    });
-
-    expect(result.ok).toBe(false);
-    expect(cookiesSetSpy).not.toHaveBeenCalled();
-  });
-
   it("Zitadel: a rejected credential sets no cookie", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({ kind: "rejected" });
     const { customerSignIn } = await loadActions();
 
@@ -249,7 +137,6 @@ describe("customerSignIn — failed verification sets no cookie", () => {
   });
 
   it("Zitadel: a totp_required outcome (uncollected by this form) sets no cookie", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({
       kind: "totp_required",
       sessionId: "s1",
@@ -270,7 +157,6 @@ describe("customerSignIn — failed verification sets no cookie", () => {
 
 describe("customerSignIn — truthful messages for outcomes other than a wrong credential", () => {
   it("a wrong password still produces the credential message (the useful signal isn't flattened away)", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({ kind: "rejected" });
     const { customerSignIn } = await loadActions();
 
@@ -292,7 +178,6 @@ describe("customerSignIn — truthful messages for outcomes other than a wrong c
     // after CreatePasswordSession already succeeded — so telling this
     // shopper "Email or password is incorrect" would be false, and no
     // amount of retrying the password fixes an unverified email.
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({ kind: "email_not_verified" });
     const { customerSignIn } = await loadActions();
 
@@ -311,7 +196,6 @@ describe("customerSignIn — truthful messages for outcomes other than a wrong c
   });
 
   it('a "totp_required" outcome does NOT say the password is incorrect, and has its own message', async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({
       kind: "totp_required",
       sessionId: "s1",
@@ -333,7 +217,6 @@ describe("customerSignIn — truthful messages for outcomes other than a wrong c
   });
 
   it('a "handoff" outcome does NOT say the password is incorrect, does not surface the handoff URL, and has its own message', async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({
       kind: "handoff",
       handoffUrl: "https://zitadel.example/ui/v2/login/login",
@@ -355,7 +238,6 @@ describe("customerSignIn — truthful messages for outcomes other than a wrong c
   });
 
   it("an AuthBffCustomerError produces a generic message with no internal detail", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockRejectedValue(
       new AuthBffCustomerError(503, "zitadel_unavailable"),
     );
@@ -380,29 +262,7 @@ describe("customerSignIn — truthful messages for outcomes other than a wrong c
 });
 
 describe("customerSignIn — uid/email come from the verification result", () => {
-  it("GIP: the session is built from verifyGIPIdToken's result, not client-supplied uid/email", async () => {
-    verifyGIPIdTokenMock.mockResolvedValue({
-      uid: "trusted-uid",
-      email: "trusted@example.com",
-      tenantId: "t",
-    });
-    const { customerSignIn } = await loadActions();
-
-    await customerSignIn({
-      idToken: "tok",
-      uid: "attacker-supplied-uid",
-      email: "attacker@evil.com",
-      storeSlug: "shop",
-    });
-
-    const setCall = cookiesSetSpy.mock.calls[0]![0] as { value: string };
-    const decoded = decodeCookiePayload(setCall.value);
-    expect(decoded.uid).toBe("trusted-uid");
-    expect(decoded.email).toBe("trusted@example.com");
-  });
-
   it("Zitadel: the session is built from verifyCustomerCredential's result, not client-supplied loginName", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({
       kind: "complete",
       uid: "trusted-zit-uid",
@@ -424,23 +284,7 @@ describe("customerSignIn — uid/email come from the verification result", () =>
 });
 
 describe("customerSignIn — profile and loyalty side effects", () => {
-  it("fire on the GIP path", async () => {
-    verifyGIPIdTokenMock.mockResolvedValue({
-      uid: "u1",
-      email: "e1@example.com",
-      tenantId: "t",
-    });
-    const { customerSignIn } = await loadActions();
-
-    await customerSignIn({ idToken: "tok", uid: "ignored", storeSlug: "shop" });
-
-    const paths = fetchSpy.mock.calls.map((c) => String(c[0]));
-    expect(paths.some((p) => p.includes("/account"))).toBe(true);
-    expect(paths.some((p) => p.includes("/loyalty/enroll"))).toBe(true);
-  });
-
   it("fire on the Zitadel path", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({
       kind: "complete",
       uid: "u2",
@@ -462,7 +306,6 @@ describe("customerSignIn — profile and loyalty side effects", () => {
 
 describe("customerSignIn — password never leaks", () => {
   it("a thrown verification error never carries the submitted password", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockRejectedValue(
       new Error(
         "auth-bff customer endpoint error: zitadel_unavailable (status 503)",
@@ -480,7 +323,6 @@ describe("customerSignIn — password never leaks", () => {
   });
 
   it("a rejected outcome's result value never carries the submitted password", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({ kind: "rejected" });
     const { customerSignIn } = await loadActions();
 
@@ -496,7 +338,6 @@ describe("customerSignIn — password never leaks", () => {
 
 describe("customerSignIn — totp_required carries the data the code-entry step needs", () => {
   it("hands back sessionId/sessionToken alongside the message", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerCredentialMock.mockResolvedValue({
       kind: "totp_required",
       sessionId: "s-abc",
@@ -517,59 +358,6 @@ describe("customerSignIn — totp_required carries the data the code-entry step 
     } else {
       throw new Error("expected a totp_required result");
     }
-  });
-});
-
-describe("confirmCustomerTotp — provider flag", () => {
-  it("with the flag unset, customerSignIn's GIP path never yields totp_required, so the UI never obtains a sessionId/sessionToken to call confirmCustomerTotp with", async () => {
-    // The GIP path (verifyGIPIdToken) has no notion of a TOTP step-up at
-    // all — it either resolves a uid/email or throws. There is no code
-    // path in customerSignIn under GIP that could ever produce
-    // sessionId/sessionToken for the client to hand to confirmCustomerTotp.
-    // This test exercises customerSignIn, not confirmCustomerTotp itself —
-    // see the next test for that.
-    verifyGIPIdTokenMock.mockResolvedValue({
-      uid: "u-gip",
-      email: "gip@example.com",
-      tenantId: "t",
-    });
-    const { customerSignIn } = await loadActions();
-
-    const result = await customerSignIn({
-      idToken: "id-token",
-      uid: "ignored",
-      storeSlug: "shop",
-    });
-
-    expect(result.ok).toBe(true);
-    expect(verifyCustomerCredentialMock).not.toHaveBeenCalled();
-  });
-
-  it("confirmCustomerTotp itself has no provider gate: with the flag unset it still calls verifyCustomerTotp and completes", async () => {
-    // confirmCustomerTotp never reads AUTH_PROVIDER — it is only
-    // unreachable from the UI under GIP because customerSignIn's GIP
-    // path can never hand it a sessionId/sessionToken (previous test).
-    // If confirmCustomerTotp ever grew an accidental flag check that
-    // short-circuited it under GIP, this is the test that would catch
-    // it — calling the action directly, bypassing the UI/customerSignIn
-    // gate entirely.
-    delete process.env.NEXT_PUBLIC_AUTH_PROVIDER;
-    verifyCustomerTotpMock.mockResolvedValue({
-      kind: "complete",
-      uid: "u-flag-unset",
-      email: "flag-unset@example.com",
-    });
-    const { confirmCustomerTotp } = await loadActions();
-
-    const result = await confirmCustomerTotp({
-      storeSlug: "shop",
-      sessionId: "s-1",
-      sessionToken: "tok-1",
-      code: "123456",
-    });
-
-    expect(result).toEqual({ ok: true });
-    expect(verifyCustomerTotpMock).toHaveBeenCalledTimes(1);
   });
 });
 

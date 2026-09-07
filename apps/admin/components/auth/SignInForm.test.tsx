@@ -2,50 +2,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-// Phase 3a — pins the provider branch this task adds to SignInForm:
-//   1. provider="zitadel" routes through signInWithZitadel, never GIP.
-//   2. provider unset (or anything else) keeps the GIP path — the
-//      safety property this whole phase depends on, expressed as a
-//      test rather than only a diff inspection.
-//   3. A totpRequired result renders the Zitadel TOTP screen and mints
+// Pins SignInForm's Zitadel flow:
+//   1. Submitting routes through signInWithZitadel.
+//   2. A totpRequired result renders the Zitadel TOTP screen and mints
 //      no session (no navigation).
-//   4. Google/Apple are hidden under Zitadel, present otherwise.
+//   3. Google is a full-page bounce through startAdminGoogleSignIn.
 
-const signInWithPassword = vi.fn();
-const signIn = vi.fn();
 const signInWithZitadel = vi.fn();
 const confirmZitadelTotp = vi.fn();
 const confirmEmailOTPLogin = vi.fn();
 const resendEmailOTPCode = vi.fn();
 const push = vi.fn();
 
-vi.mock("@/lib/gip/signup", () => ({
-  signInWithPassword: (...args: unknown[]) => signInWithPassword(...args),
-  signInWithGoogle: vi.fn(),
-  signInWithApple: vi.fn(),
-  GIPError: class GIPError extends Error {
-    code: string;
-    constructor(code: string) {
-      super(code);
-      this.code = code;
-    }
-  },
-}));
-
-vi.mock("@/lib/gip/google-gsi", () => ({
-  getGoogleCredential: vi.fn(),
-}));
-
-vi.mock("@/lib/gip/apple-js", () => ({
-  getAppleCredential: vi.fn(),
-}));
-
-vi.mock("@/lib/gip/link", () => ({
-  linkGoogleToInternalPassword: vi.fn(),
-}));
-
 vi.mock("@/app/login/actions", () => ({
-  signIn: (...args: unknown[]) => signIn(...args),
   signInWithZitadel: (...args: unknown[]) => signInWithZitadel(...args),
   confirmZitadelTotp: (...args: unknown[]) => confirmZitadelTotp(...args),
   confirmMFALogin: vi.fn(),
@@ -67,26 +36,15 @@ vi.mock("@/lib/auth/cross-domain-handoff", () => ({
 }));
 
 vi.mock("@/lib/config", () => ({
-  appleSignInEnabled: false,
   publicConfig: { zitadelIssuer: "https://auth.tesserix.app" },
 }));
 
 import { SignInForm } from "./SignInForm";
-import { signInWithGoogle } from "@/lib/gip/signup";
-import { getGoogleCredential } from "@/lib/gip/google-gsi";
-
-const signInWithGoogleMock = vi.mocked(signInWithGoogle);
-const getGoogleCredentialMock = vi.mocked(getGoogleCredential);
 
 const assign = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
-  signInWithPassword.mockResolvedValue({ idToken: "id-token", uid: "uid-1" });
-  signIn.mockResolvedValue({
-    ok: true,
-    data: { multipleTenants: false, mfaRequired: false, emailOtpRequired: false },
-  });
   assign.mockReset();
   Object.defineProperty(window, "location", {
     writable: true,
@@ -100,14 +58,14 @@ async function fillAndSubmit() {
   await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
 }
 
-describe("SignInForm — provider branch", () => {
-  it("with provider=zitadel, submits through signInWithZitadel and never touches GIP signInWithPassword", async () => {
+describe("SignInForm — password submit", () => {
+  it("submits through signInWithZitadel", async () => {
     signInWithZitadel.mockResolvedValue({
       ok: true,
       data: { multipleTenants: false, mfaRequired: false, emailOtpRequired: false },
     });
 
-    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    render(<SignInForm authRequestId="req-1" />);
     await fillAndSubmit();
 
     await waitFor(() => expect(signInWithZitadel).toHaveBeenCalledTimes(1));
@@ -116,25 +74,6 @@ describe("SignInForm — provider branch", () => {
       password: "correct-horse",
       authRequestId: "req-1",
     });
-    expect(signInWithPassword).not.toHaveBeenCalled();
-    expect(signIn).not.toHaveBeenCalled();
-  });
-
-  it("with provider unset, submits through the GIP path and never calls signInWithZitadel", async () => {
-    render(<SignInForm />);
-    await fillAndSubmit();
-
-    await waitFor(() => expect(signInWithPassword).toHaveBeenCalledTimes(1));
-    expect(signIn).toHaveBeenCalledWith({ idToken: "id-token", uid: "uid-1" });
-    expect(signInWithZitadel).not.toHaveBeenCalled();
-  });
-
-  it("with an unrecognised provider value, still submits through the GIP path", async () => {
-    render(<SignInForm provider="gip" />);
-    await fillAndSubmit();
-
-    await waitFor(() => expect(signInWithPassword).toHaveBeenCalledTimes(1));
-    expect(signInWithZitadel).not.toHaveBeenCalled();
   });
 
   it("a totpRequired result renders the TOTP screen and mints no session", async () => {
@@ -151,7 +90,7 @@ describe("SignInForm — provider branch", () => {
       },
     });
 
-    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    render(<SignInForm authRequestId="req-1" />);
     await fillAndSubmit();
 
     // The TOTP screen replaces the credential form.
@@ -165,8 +104,8 @@ describe("SignInForm — provider branch", () => {
     expect(confirmZitadelTotp).not.toHaveBeenCalled();
   });
 
-  it("shows Google but hides Apple when provider=zitadel", () => {
-    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+  it("shows Google and offers no Apple button — Apple was GIP-only", () => {
+    render(<SignInForm authRequestId="req-1" />);
     expect(
       screen.getByRole("button", { name: /continue with google/i }),
     ).toBeInTheDocument();
@@ -174,47 +113,27 @@ describe("SignInForm — provider branch", () => {
       screen.queryByRole("button", { name: /continue with apple/i }),
     ).not.toBeInTheDocument();
   });
-
-  it("shows the Google button when provider is not zitadel", () => {
-    render(<SignInForm />);
-    expect(
-      screen.getByRole("button", { name: /continue with google/i }),
-    ).toBeInTheDocument();
-  });
 });
 
 describe("SignInForm — Google through Zitadel", () => {
-  it("with provider=zitadel, clicking Google calls startAdminGoogleSignIn and navigates to the returned authUrl, never touching GIP's getGoogleCredential", async () => {
+  it("clicking Google calls startAdminGoogleSignIn and navigates to the returned authUrl", async () => {
     startAdminGoogleSignIn.mockResolvedValue({
       ok: true,
       authUrl: "https://zitadel.example/idp/authorize?intent=1",
     });
 
-    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    render(<SignInForm authRequestId="req-1" />);
     await userEvent.click(screen.getByRole("button", { name: /continue with google/i }));
 
     await waitFor(() => expect(startAdminGoogleSignIn).toHaveBeenCalledWith("req-1"));
     await waitFor(() =>
       expect(assign).toHaveBeenCalledWith("https://zitadel.example/idp/authorize?intent=1"),
     );
-    expect(signInWithGoogle).not.toHaveBeenCalled();
-  });
-
-  it("with provider unset, clicking Google never calls startAdminGoogleSignIn", async () => {
-    getGoogleCredentialMock.mockResolvedValue({ credential: "cred-1" });
-    signInWithGoogleMock.mockResolvedValue({ kind: "complete", idToken: "id-1", uid: "uid-1" });
-
-    render(<SignInForm />);
-    await userEvent.click(screen.getByRole("button", { name: /continue with google/i }));
-
-    await waitFor(() => expect(signInWithGoogleMock).toHaveBeenCalled());
-    expect(startAdminGoogleSignIn).not.toHaveBeenCalled();
   });
 
   it("renders a truthful, distinct message for a no_admin_account error and never suggests retrying", () => {
     render(
       <SignInForm
-        provider="zitadel"
         authRequestId="req-1"
         googleErrorCode="no_admin_account"
       />,
@@ -231,7 +150,7 @@ describe("SignInForm — Google through Zitadel", () => {
       message: "Google sign-in is temporarily unavailable. Please try again shortly.",
     });
 
-    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    render(<SignInForm authRequestId="req-1" />);
     await userEvent.click(screen.getByRole("button", { name: /continue with google/i }));
 
     await waitFor(() =>
@@ -253,7 +172,7 @@ describe("SignInForm — Zitadel callbackUrl handoff (Important 1)", () => {
       },
     });
 
-    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    render(<SignInForm authRequestId="req-1" />);
     await fillAndSubmit();
 
     await waitFor(() =>
@@ -270,7 +189,7 @@ describe("SignInForm — Zitadel callbackUrl handoff (Important 1)", () => {
       data: { multipleTenants: false, mfaRequired: false, emailOtpRequired: false },
     });
 
-    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    render(<SignInForm authRequestId="req-1" />);
     await fillAndSubmit();
 
     await waitFor(() => expect(push).toHaveBeenCalledWith("/dashboard"));
@@ -289,7 +208,7 @@ describe("SignInForm — Zitadel callbackUrl handoff (Important 1)", () => {
       },
     });
 
-    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    render(<SignInForm authRequestId="req-1" />);
     await fillAndSubmit();
 
     // Login still completes — the session is already valid, so a
@@ -312,7 +231,7 @@ describe("SignInForm — handoffUrl validation (Minor)", () => {
       },
     });
 
-    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    render(<SignInForm authRequestId="req-1" />);
     await fillAndSubmit();
 
     await waitFor(() =>
@@ -331,7 +250,7 @@ describe("SignInForm — handoffUrl validation (Minor)", () => {
       },
     });
 
-    render(<SignInForm provider="zitadel" authRequestId="req-1" />);
+    render(<SignInForm authRequestId="req-1" />);
     await fillAndSubmit();
 
     await waitFor(() => expect(signInWithZitadel).toHaveBeenCalledTimes(1));
@@ -345,7 +264,7 @@ describe("SignInForm — handoffUrl validation (Minor)", () => {
 // redirect, and there is no password submit to reach the step through.
 describe("SignInForm — email-OTP challenge arriving by redirect", () => {
   it("renders the code step on first paint, not the password form", () => {
-    render(<SignInForm provider="zitadel" authRequestId="ar-1" initialChallenge="email_otp" />);
+    render(<SignInForm authRequestId="ar-1" initialChallenge="email_otp" />);
 
     expect(screen.getByLabelText(/sign-in code/i)).toBeTruthy();
     expect(screen.queryByLabelText(/^password$/i)).toBeNull();
@@ -354,7 +273,7 @@ describe("SignInForm — email-OTP challenge arriving by redirect", () => {
   });
 
   it("keeps the password form when no initial challenge is supplied — the untouched default", () => {
-    render(<SignInForm provider="zitadel" authRequestId="ar-1" />);
+    render(<SignInForm authRequestId="ar-1" />);
 
     expect(screen.getByLabelText(/^password$/i)).toBeTruthy();
     expect(screen.queryByLabelText(/sign-in code/i)).toBeNull();
@@ -362,7 +281,7 @@ describe("SignInForm — email-OTP challenge arriving by redirect", () => {
 
   it("verifies through confirmEmailOTPLogin — the same resume path the password flow uses", async () => {
     confirmEmailOTPLogin.mockResolvedValue({ ok: true, data: { tenantId: "tenant-1" } });
-    render(<SignInForm provider="zitadel" authRequestId="ar-1" initialChallenge="email_otp" />);
+    render(<SignInForm authRequestId="ar-1" initialChallenge="email_otp" />);
 
     await userEvent.type(screen.getByLabelText(/sign-in code/i), "123456");
     await userEvent.click(screen.getByRole("button", { name: /verify and continue/i }));
@@ -377,8 +296,7 @@ describe("SignInForm — email-OTP challenge arriving by redirect", () => {
     confirmEmailOTPLogin.mockResolvedValue({ ok: true, data: { tenantId: "tenant-1" } });
     render(
       <SignInForm
-        provider="zitadel"
-        authRequestId="ar-1"
+                authRequestId="ar-1"
         initialChallenge="email_otp"
         initialMultipleTenants
       />,
@@ -392,7 +310,7 @@ describe("SignInForm — email-OTP challenge arriving by redirect", () => {
 
   it("offers the resend affordance the password email-OTP step has", async () => {
     resendEmailOTPCode.mockResolvedValue({ ok: true, data: null });
-    render(<SignInForm provider="zitadel" authRequestId="ar-1" initialChallenge="email_otp" />);
+    render(<SignInForm authRequestId="ar-1" initialChallenge="email_otp" />);
 
     await userEvent.click(screen.getByRole("button", { name: /send a new code/i }));
 
@@ -400,7 +318,7 @@ describe("SignInForm — email-OTP challenge arriving by redirect", () => {
   });
 
   it("re-enters through /login/authorize on cancel, because this page's auth request is already spent", async () => {
-    render(<SignInForm provider="zitadel" authRequestId="ar-1" initialChallenge="email_otp" />);
+    render(<SignInForm authRequestId="ar-1" initialChallenge="email_otp" />);
 
     await userEvent.click(screen.getByRole("button", { name: /use a different account/i }));
 
@@ -412,7 +330,7 @@ describe("SignInForm — email-OTP challenge arriving by redirect", () => {
       ok: true,
       data: { multipleTenants: false, mfaRequired: false, emailOtpRequired: true },
     });
-    render(<SignInForm provider="zitadel" authRequestId="ar-1" />);
+    render(<SignInForm authRequestId="ar-1" />);
 
     await fillAndSubmit();
     await waitFor(() => expect(screen.getByLabelText(/sign-in code/i)).toBeTruthy());

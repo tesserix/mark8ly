@@ -2,7 +2,7 @@
 
 // Server actions for the magic-link onboarding flow.
 //
-// Phase M restructure: the form no longer collects a password or GIP
+// Phase M restructure: the form no longer collects provider
 // credentials. The flow is now:
 //
 //   1. submitOnboarding(form)   → creates session + saves business draft +
@@ -14,26 +14,23 @@
 //                                 and returns its id. The verify page
 //                                 then redirects to /onboarding/set-password.
 //
-//   4. completeOnboarding(...)  → called from the set-password page after
-//                                 the user picks a password OR completes
-//                                 the Google popup. Reads the draft,
-//                                 calls platform-api complete (creates
-//                                 tenant + outbox FGA writes), calls
-//                                 auth-bff /auth/auto-login, forwards
-//                                 the session cookie to the browser.
+//   4. completeOnboardingWithZitadel(...)
+//                               → called from the set-password page once
+//                                 the merchant picks a password. Reads
+//                                 the draft and calls platform-api
+//                                 complete, which provisions the Zitadel
+//                                 user, the admin project grant and both
+//                                 FGA owner tuples.
 
-import { cookies } from "next/headers";
-
-import { onboarding, tenants, users, PlatformApiError } from "@/lib/api/platform-api";
-import { autoLogin as bffAutoLogin, AuthBffError } from "@/lib/auth/auth-bff";
-import { config, publicConfig } from "@/lib/config";
+import { onboarding, tenants, PlatformApiError } from "@/lib/api/platform-api";
+import { config } from "@/lib/config";
 
 type Result<T> =
   | { ok: true; data: T }
   | { ok: false; code: string; message: string };
 
 function fail(err: unknown): { ok: false; code: string; message: string } {
-  if (err instanceof PlatformApiError || err instanceof AuthBffError) {
+  if (err instanceof PlatformApiError) {
     return { ok: false, code: err.code, message: err.message };
   }
   return { ok: false, code: "unknown", message: String(err) };
@@ -121,7 +118,7 @@ export async function resendMagicLink(
 //
 // The verify landing page calls this on mount. It only marks the session
 // verified and returns the session id + email so the page can redirect
-// to /onboarding/set-password. Tenant creation + auto-login happen later
+// to /onboarding/set-password. Tenant creation happens later
 // in completeOnboarding, after the user has picked a credential.
 export async function verifyToken(
   token: string,
@@ -164,26 +161,20 @@ export async function verifyToken(
 
 // ─── completeOnboardingWithZitadel: set-password submit → tenant ───────
 //
-// The Zitadel-path counterpart of completeOnboarding (issue #685).
-// Three things it deliberately does NOT do:
+// Issue #685. Two things it deliberately does NOT do:
 //
-//   1. No GIP sign-up. Under Zitadel, platform-api's complete endpoint
-//      creates the merchant's account and the mark8ly-admin project
-//      grant, and writes BOTH FGA owner tuples. Creating a GIP user here
-//      is the bug, not the flow.
-//   2. No `owner_user_id`. The merchant has no provider account at this
+//   1. No `owner_user_id`. The merchant has no provider account at this
 //      point, so there is no id to send; platform-api no longer requires
-//      one when a provisioner is wired.
-//   3. No `autoLogin` / no id_token. auth-bff's /auth/auto-login verifies
-//      a GIP id_token and there is none on this path — see
-//      completeOnboardingWithZitadel's doc for what happens instead.
+//      one when a provisioner is wired. platform-api's complete endpoint
+//      creates the merchant's account and the mark8ly-admin project
+//      grant, and writes BOTH FGA owner tuples.
+//   2. No session mint. See this action's doc for what happens instead.
 //
-// It also skips completeOnboarding's `users.listMemberTenants(uid)`
-// pre-check, which has no uid to look up here. Nothing is lost: that
-// check is a UX affordance, and platform-api's own
-// ensureOwnerEmailAvailable — which runs on Complete, not only on
-// Create — is the enforcement point for "this email already owns a
-// store", backed by the tenants_owner_email_unique index.
+// There is no `users.listMemberTenants(uid)` pre-check, because there is
+// no uid to look up. Nothing is lost: that check was a UX affordance, and
+// platform-api's own ensureOwnerEmailAvailable — which runs on Complete,
+// not only on Create — is the enforcement point for "this email already
+// owns a store", backed by the tenants_owner_email_unique index.
 interface CompleteWithZitadelInput {
   sessionId: string;
   password: string;
@@ -272,140 +263,4 @@ function splitName(name: string): { firstName: string; lastName: string } {
     firstName: parts[0]!,
     lastName: parts.slice(1).join(" "),
   };
-}
-
-// ─── completeOnboarding: set-password submit → tenant + auto-login ─────
-//
-// Called from the /onboarding/set-password page once the user has either
-// (a) signed up with email + password via the GIP REST helper, or
-// (b) completed the "Continue with Google" popup via signInWithGoogle.
-// Both paths produce a fresh GIP id_token + uid + refreshToken; this
-// action takes those plus the session id and finishes the pipeline:
-//
-//   1. Read the persisted business draft + email from the session.
-//   2. Call platform-api complete — creates the tenant row + outbox FGA
-//      writes in one transaction.
-//   3. Call auth-bff /auth/auto-login (which retries the FGA check until
-//      the outbox drainer ships the membership tuple).
-//   4. Forward the resulting Set-Cookie to the browser response.
-interface CompleteInput {
-  sessionId: string;
-  gipUid: string;
-  gipIdToken: string;
-}
-
-export async function completeOnboarding(
-  input: CompleteInput,
-): Promise<Result<{ tenantId: string; slug: string }>> {
-  try {
-    const sess = await onboarding.getSession(input.sessionId);
-    const draft = sess.draft ?? {};
-    const businessName = draft.business_name ?? "";
-    const slug = draft.slug ?? "";
-    const countryCode = draft.country_code ?? "";
-    const currencyCode = draft.currency_code ?? "";
-    const timezone = draft.timezone ?? "UTC";
-
-    if (!businessName || !slug || !countryCode || !currencyCode) {
-      return {
-        ok: false,
-        code: "draft_incomplete",
-        message:
-          "We couldn't recover your store details. Please start onboarding again.",
-      };
-    }
-
-    const existingTenants = await users.listMemberTenants(input.gipUid);
-    if (existingTenants.length > 0) {
-      return {
-        ok: false,
-        code: "identity_already_has_store",
-        message:
-          "This admin identity is already connected to a store. Use a different email for a separate admin identity, or sign in to the existing account and add a store from Settings.",
-      };
-    }
-
-    const completion = await onboarding.complete(input.sessionId, {
-      business_name: businessName,
-      slug,
-      owner_user_id: input.gipUid,
-      owner_email: sess.email,
-      country_code: countryCode,
-      currency_code: currencyCode,
-      timezone,
-    });
-
-    const result = await bffAutoLogin({
-      idToken: input.gipIdToken,
-      expectedTenantId: publicConfig.gipTenantId,
-      workspaceTenant: completion.tenant_id,
-    });
-
-    if (result.setCookie) {
-      const parsed = parseSetCookie(result.setCookie);
-      if (parsed) {
-        const c = await cookies();
-        c.set({
-          name: parsed.name,
-          value: parsed.value,
-          path: parsed.path ?? "/",
-          domain: parsed.domain,
-          httpOnly: parsed.httpOnly,
-          secure: parsed.secure,
-          sameSite: "lax",
-          maxAge: parsed.maxAge,
-        });
-      }
-    }
-
-    return {
-      ok: true,
-      data: { tenantId: completion.tenant_id, slug: completion.slug },
-    };
-  } catch (err) {
-    return fail(err);
-  }
-}
-
-// parseSetCookie pulls the bits next/headers cookies().set() needs out of
-// a Set-Cookie header. Minimal parser — only the attributes auth-bff emits.
-function parseSetCookie(raw: string): {
-  name: string;
-  value: string;
-  path?: string;
-  domain?: string;
-  httpOnly: boolean;
-  secure: boolean;
-  maxAge?: number;
-} | null {
-  const parts = raw.split(";").map((p) => p.trim());
-  const [first, ...attrs] = parts;
-  if (!first || !first.includes("=")) return null;
-  const eq = first.indexOf("=");
-  const name = first.slice(0, eq);
-  const value = first.slice(eq + 1);
-
-  const out = {
-    name,
-    value,
-    httpOnly: false,
-    secure: false,
-  } as {
-    name: string;
-    value: string;
-    path?: string;
-    domain?: string;
-    httpOnly: boolean;
-    secure: boolean;
-    maxAge?: number;
-  };
-  for (const attr of attrs) {
-    const lower = attr.toLowerCase();
-    if (lower === "httponly") out.httpOnly = true;
-    else if (lower === "secure") out.secure = true;
-    else if (lower.startsWith("path=")) out.path = attr.slice(5);
-    else if (lower.startsWith("domain=")) out.domain = attr.slice(7);
-    else if (lower.startsWith("max-age=")) out.maxAge = parseInt(attr.slice(8), 10);
-  }
-  return out;
 }

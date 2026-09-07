@@ -32,13 +32,6 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
-vi.mock("@/lib/gip/verify-id-token", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/gip/verify-id-token")>(
-    "@/lib/gip/verify-id-token",
-  );
-  return { ...actual, verifyGIPIdToken: vi.fn() };
-});
-
 vi.mock("@/lib/auth/auth-bff-customer", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/auth-bff-customer")>(
     "@/lib/auth/auth-bff-customer",
@@ -56,7 +49,6 @@ vi.mock("@/lib/api/server/platformInternal", () => ({
   platformInternalFetch: vi.fn(),
 }));
 
-import { verifyGIPIdToken } from "@/lib/gip/verify-id-token";
 import {
   AuthBffCustomerError,
   registerCustomerAccount,
@@ -70,7 +62,6 @@ import { platformInternalFetch } from "@/lib/api/server/platformInternal";
 // not a stub of it.
 import { signPendingSignup } from "@/lib/auth/pending-signup-token";
 
-const verifyGIPIdTokenMock = vi.mocked(verifyGIPIdToken);
 const verifyCustomerCredentialMock = vi.mocked(verifyCustomerCredential);
 const registerCustomerAccountMock = vi.mocked(registerCustomerAccount);
 const verifyCustomerEmailCodeMock = vi.mocked(verifyCustomerEmailCode);
@@ -85,14 +76,12 @@ async function loadActions() {
 
 beforeEach(() => {
   vi.resetModules();
-  delete process.env.NEXT_PUBLIC_AUTH_PROVIDER;
 
   headerMap = new Map([["host", HOST]]);
   for (const key of Object.keys(cookieStore)) delete cookieStore[key];
   cookiesSetSpy.mockClear();
   cookiesDeleteSpy.mockClear();
 
-  verifyGIPIdTokenMock.mockReset();
   verifyCustomerCredentialMock.mockReset();
   registerCustomerAccountMock.mockReset();
   verifyCustomerEmailCodeMock.mockReset();
@@ -116,78 +105,11 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  delete process.env.NEXT_PUBLIC_AUTH_PROVIDER;
   vi.clearAllMocks();
 });
 
-describe("customerSignUp — unconditional delegation to customerSignIn", () => {
-  // customerSignUp itself never inspects NEXT_PUBLIC_AUTH_PROVIDER — it is
-  // a pure `return customerSignIn(input)` (see actions.ts). The flag
-  // branch a GIP-vs-Zitadel input shape needs lives entirely inside
-  // customerSignIn and is already covered end to end by
-  // app/sign-in/actions.zitadel.test.ts's "provider branch" describe
-  // block; duplicating that here (by flipping the flag against a
-  // GIP-shaped input) would just prove customerSignIn's branching, mis-
-  // titled as this file's. What IS this file's to prove: that phase 6a
-  // task 3 (adding registerCustomer/verifyCustomerEmail alongside this
-  // function) left the GIP call path — accounts:signUp -> customerSignUp
-  // -> customerSignIn -> cookie — completely untouched.
-  it("delegates to customerSignIn exactly as before, minting a cookie on success", async () => {
-    verifyGIPIdTokenMock.mockResolvedValue({
-      uid: "u-gip",
-      email: "gip@example.com",
-      tenantId: "t",
-    });
-    const { customerSignUp } = await loadActions();
-
-    const result = await customerSignUp({
-      idToken: "id-token",
-      uid: "ignored",
-      storeSlug: "shop",
-    });
-
-    expect(result.ok).toBe(true);
-    expect(verifyGIPIdTokenMock).toHaveBeenCalledTimes(1);
-    expect(registerCustomerAccountMock).not.toHaveBeenCalled();
-    expect(cookiesSetSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "mp_customer_session" }),
-    );
-  });
-
-  it("sets no cookie when the GIP token verification fails", async () => {
-    verifyGIPIdTokenMock.mockRejectedValue(new Error("bad token"));
-    const { customerSignUp } = await loadActions();
-
-    const result = await customerSignUp({
-      idToken: "bad",
-      uid: "ignored",
-      storeSlug: "shop",
-    });
-
-    expect(result.ok).toBe(false);
-    expect(cookiesSetSpy).not.toHaveBeenCalled();
-  });
-});
-
-describe("registerCustomer — provider guard", () => {
-  it("flag unset: refuses without calling auth-bff at all", async () => {
-    const { registerCustomer } = await loadActions();
-
-    const result = await registerCustomer({
-      email: "shopper@example.com",
-      password: SECRET_PASSWORD,
-    });
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe("not_available");
-    expect(registerCustomerAccountMock).not.toHaveBeenCalled();
-    expect(cookiesSetSpy).not.toHaveBeenCalled();
-  });
-});
-
-describe("registerCustomer — flag set", () => {
+describe("registerCustomer", () => {
   it("returns the trusted uid/email plus a signed pending-signup token on success", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     registerCustomerAccountMock.mockResolvedValue({
       kind: "created",
       uid: "u-new",
@@ -210,7 +132,6 @@ describe("registerCustomer — flag set", () => {
   });
 
   it("normalizes (trim + lowercase) the email before sending it to auth-bff and before signing the token", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     // auth-bff echoes back whatever it received — since registerCustomer
     // must send the normalized form, the mock's echo is normalized too.
     registerCustomerAccountMock.mockResolvedValue({
@@ -242,7 +163,6 @@ describe("registerCustomer — flag set", () => {
     ["verification_email_failed", /try/i],
     ["zitadel_unavailable", /temporarily/i],
   ])("maps %s to its own distinct, truthful message and sets no cookie", async (code, pattern) => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     registerCustomerAccountMock.mockResolvedValue({ kind: "failed", code });
     const { registerCustomer } = await loadActions();
 
@@ -260,7 +180,6 @@ describe("registerCustomer — flag set", () => {
   });
 
   it("email_taken and verification_email_failed render different messages (permanent vs. retriable)", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     const { registerCustomer } = await loadActions();
 
     registerCustomerAccountMock.mockResolvedValue({ kind: "failed", code: "email_taken" });
@@ -282,7 +201,6 @@ describe("registerCustomer — flag set", () => {
   });
 
   it("a transport failure (AuthBffCustomerError) returns zitadel_unavailable, not an unhandled throw", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     registerCustomerAccountMock.mockRejectedValue(new AuthBffCustomerError(0, "network_error"));
     const { registerCustomer } = await loadActions();
 
@@ -297,26 +215,7 @@ describe("registerCustomer — flag set", () => {
   });
 });
 
-describe("verifyCustomerEmail — provider guard", () => {
-  it("flag unset: refuses without calling auth-bff at all", async () => {
-    const { verifyCustomerEmail } = await loadActions();
-
-    const result = await verifyCustomerEmail({
-      uid: "u-new",
-      email: "shopper@example.com",
-      token: signPendingSignup("u-new", "shopper@example.com"),
-      code: SECRET_TEST_CODE,
-      storeSlug: "shop",
-    });
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe("not_available");
-    expect(verifyCustomerEmailCodeMock).not.toHaveBeenCalled();
-    expect(cookiesSetSpy).not.toHaveBeenCalled();
-  });
-});
-
-describe("verifyCustomerEmail — flag set", () => {
+describe("verifyCustomerEmail", () => {
   // A valid token for exactly this {uid, email} pair — as if it had come
   // straight out of a prior registerCustomer call for the same address.
   const validToken = signPendingSignup("u-new", "shopper@example.com");
@@ -329,7 +228,6 @@ describe("verifyCustomerEmail — flag set", () => {
   };
 
   it("mints the session cookie through completeCustomerSignIn on a verified outcome — the full register -> verify -> session flow", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     registerCustomerAccountMock.mockResolvedValue({
       kind: "created",
       uid: "u-new",
@@ -364,7 +262,6 @@ describe("verifyCustomerEmail — flag set", () => {
   });
 
   it("verifies against the token even when the email carried through the form is differently cased/padded than what was signed", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     // register normalized to "shopper@example.com" and signed THAT.
     const token = signPendingSignup("u-new", "shopper@example.com");
     verifyCustomerEmailCodeMock.mockResolvedValue({ kind: "verified" });
@@ -385,7 +282,6 @@ describe("verifyCustomerEmail — flag set", () => {
   });
 
   it("REJECTS a client-swapped email even with a genuinely correct code — the account-takeover this token exists to close", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     // Attacker registered attacker@example.com themselves and holds a
     // real uid + token for THAT address...
     const attackerToken = signPendingSignup("u-attacker", "attacker@example.com");
@@ -410,7 +306,6 @@ describe("verifyCustomerEmail — flag set", () => {
   });
 
   it("rejects a client-swapped uid the same way", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     const tokenForOtherUid = signPendingSignup("u-other", "shopper@example.com");
     verifyCustomerEmailCodeMock.mockResolvedValue({ kind: "verified" });
     const { verifyCustomerEmail } = await loadActions();
@@ -429,7 +324,6 @@ describe("verifyCustomerEmail — flag set", () => {
   });
 
   it("rejects a missing/garbage token outright", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     const { verifyCustomerEmail } = await loadActions();
 
     const result = await verifyCustomerEmail({
@@ -446,7 +340,6 @@ describe("verifyCustomerEmail — flag set", () => {
   });
 
   it("a wrong/expired code sets no cookie and returns invalid_verification_code with its own message", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerEmailCodeMock.mockResolvedValue({
       kind: "failed",
       code: "invalid_verification_code",
@@ -464,7 +357,6 @@ describe("verifyCustomerEmail — flag set", () => {
   });
 
   it("sets no cookie when the host cannot be validated", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     headerMap = new Map(); // no host header at all
     const { verifyCustomerEmail } = await loadActions();
 
@@ -476,7 +368,6 @@ describe("verifyCustomerEmail — flag set", () => {
   });
 
   it("sets no cookie when the store cannot be resolved", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     platformInternalFetchMock.mockResolvedValue({ ok: false, json: async () => ({}) } as Response);
     const { verifyCustomerEmail } = await loadActions();
 
@@ -487,7 +378,6 @@ describe("verifyCustomerEmail — flag set", () => {
   });
 
   it("a transport failure (AuthBffCustomerError) returns zitadel_unavailable and sets no cookie", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     verifyCustomerEmailCodeMock.mockRejectedValue(new AuthBffCustomerError(0, "network_error"));
     const { verifyCustomerEmail } = await loadActions();
 
@@ -499,7 +389,6 @@ describe("verifyCustomerEmail — flag set", () => {
   });
 
   it("never logs the verification code — exercises a path that actually logs (an AuthBffCustomerError), not just one that returns a value", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -526,7 +415,6 @@ describe("verifyCustomerEmail — flag set", () => {
   });
 
   it("never logs the code (or the token) on a tamper rejection either — that branch logs too", async () => {
-    process.env.NEXT_PUBLIC_AUTH_PROVIDER = "zitadel";
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { verifyCustomerEmail } = await loadActions();
 

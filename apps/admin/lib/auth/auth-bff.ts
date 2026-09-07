@@ -1,7 +1,7 @@
 // Server-side typed client for auth-bff. Used from server actions only.
 //
-// /auth/auto-login mints a session cookie which the caller is responsible
-// for forwarding to the browser via Next's response headers.
+// The login endpoints mint session cookies which the caller is
+// responsible for forwarding to the browser via Next's response headers.
 
 import { config } from "@/lib/config";
 import { parseLoginResponse, type LoginOutcome } from "./login-response";
@@ -41,39 +41,14 @@ export class AuthBffError extends Error {
   }
 }
 
-interface AutoLoginRequest {
-  idToken: string;
-  expectedTenantId: string;
-  workspaceTenant: string;
-}
-
-interface AutoLoginResult {
-  uid: string;
-  email: string;
-  tenant_id: string;
-  /** Every Set-Cookie header auth-bff emitted, as an array. auto-login
-   *  may send more than one (e.g. the m8_mfa_pending cookie plus a
-   *  clear for a stale session), and mfa-challenge always sends two
-   *  (the new m8_session + a clear for m8_mfa_pending). The caller
-   *  must forward ALL of them to the browser — `headers.get()` joins
-   *  them with commas and breaks the parser. */
-  setCookies: string[];
-  /** True when the user has MFA enrolled. The caller should NOT treat
-   *  this as a successful sign-in; it must collect the 6-digit code and
-   *  call completeMFAChallenge before authenticated requests work. */
-  mfaRequired: boolean;
-  /** True when the sign-in came from an unrecognised device and auth-bff
-   *  emailed a one-time code. Like mfaRequired this is NOT a completed
-   *  sign-in — auto-login minted only a PENDING cookie, so redirecting
-   *  now bounces the user straight back to /login with no error shown.
-   *  The caller must collect the code and call completeEmailOTPChallenge. */
-  emailOtpRequired: boolean;
-}
-
 interface MFAChallengeResult {
   uid: string;
   email: string;
   tenant_id: string;
+  /** Every Set-Cookie header auth-bff emitted, as an array. The
+   *  mfa-challenge endpoint always sends two (the new m8_session plus a
+   *  clear for m8_mfa_pending). The caller must forward ALL of them —
+   *  `headers.get()` joins them with commas and breaks the parser. */
   setCookies: string[];
 }
 
@@ -160,59 +135,10 @@ export async function switchTenant(
   return { setCookie };
 }
 
-export async function autoLogin(
-  req: AutoLoginRequest,
-): Promise<AutoLoginResult> {
-  const res = await fetch(`${base}/auth/auto-login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      id_token: req.idToken,
-      expected_tenant_id: req.expectedTenantId,
-      workspace_tenant: req.workspaceTenant,
-    }),
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    let body: { error?: string; message?: string } = {};
-    try {
-      body = await res.json();
-    } catch {
-      // ignore
-    }
-    throw new AuthBffError(
-      res.status,
-      body.error ?? "auth_bff_error",
-      body.message ?? `HTTP ${res.status}`,
-    );
-  }
-
-  const body = (await res.json()) as {
-    data: {
-      uid: string;
-      email: string;
-      tenant_id: string;
-      mfa_required?: boolean;
-      email_otp_required?: boolean;
-    };
-  };
-  const setCookies = readAllSetCookies(res);
-
-  return {
-    uid: body.data.uid,
-    email: body.data.email,
-    tenant_id: body.data.tenant_id,
-    setCookies,
-    mfaRequired: body.data.mfa_required === true,
-    emailOtpRequired: body.data.email_otp_required === true,
-  };
-}
-
 /**
  * completeEmailOTPChallenge finishes a sign-in that auth-bff challenged
  * with an emailed one-time code. The caller forwards the pending cookie
- * auto-login set, plus the 6-digit code from the email. On success
+ * the login step set, plus the 6-digit code from the email. On success
  * auth-bff mints the real session cookie and clears the pending one.
  */
 export async function completeEmailOTPChallenge(
@@ -287,7 +213,7 @@ function readAllSetCookies(res: Response): string[] {
 /**
  * completeMFAChallenge finishes a sign-in that required a second
  * factor. The caller must forward the m8_mfa_pending cookie the
- * browser received from auto-login via cookieHeader, plus the
+ * browser received from the login step via cookieHeader, plus the
  * 6-digit TOTP code the user typed. On success auth-bff returns the
  * full session cookie, which the caller forwards to the browser.
  */

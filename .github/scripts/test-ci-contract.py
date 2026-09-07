@@ -160,12 +160,15 @@ class ReusableCIContract(unittest.TestCase):
                     if line.startswith("FROM ghcr.io/tesserix/base-"):
                         self.assertRegex(line, r"@sha256:[0-9a-f]{64}\b")
 
-        next_apps = {
-            "onboarding": "REUSABLE_PUBLIC_BUILD_ARG_4",
-            "admin": "REUSABLE_PUBLIC_BUILD_ARG_4",
-            "storefront": "REUSABLE_PUBLIC_BUILD_ARG_5",
-        }
-        for app, google_slot in next_apps.items():
+        # NEXT_PUBLIC_GOOGLE_CLIENT_ID is deliberately NOT required any more
+        # (#708). It existed so GIP's Google Identity Services script had a
+        # browser client id to initialise with. Google sign-in is now a
+        # full-page redirect through Zitadel's IDP intent — the client id
+        # lives on the Zitadel IDP, server-side, and no browser bundle needs
+        # it. Requiring it here would force every app to keep baking a value
+        # nothing reads.
+        next_apps = ["onboarding", "admin", "storefront"]
+        for app in next_apps:
             contents = (ROOT / f"apps/{app}/Dockerfile").read_text()
             with self.subTest(app=app):
                 # PACKAGE_READ_TOKEN is deliberately NOT required. Every
@@ -193,9 +196,10 @@ class ReusableCIContract(unittest.TestCase):
                 # after the install step reported success.
                 self.assertIn("COPY --from=deps /src/apps ./apps", contents)
                 self.assertIn("ARG REUSABLE_BUILD_CACHE_FP", contents)
-                self.assertIn(
-                    f"NEXT_PUBLIC_GOOGLE_CLIENT_ID=${google_slot}", contents
-                )
+                # The GIP browser client id must NOT come back: it would be a
+                # dead value baked into the bundle, and its presence would
+                # imply a client-side Google flow that no longer exists.
+                self.assertNotIn("NEXT_PUBLIC_GOOGLE_CLIENT_ID", contents)
                 self.assertNotIn("id=NODE_AUTH_TOKEN", contents)
                 self.assertNotIn(
                     "id=NEXT_SERVER_ACTIONS_ENCRYPTION_KEY", contents

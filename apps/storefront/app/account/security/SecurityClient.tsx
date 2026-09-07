@@ -5,8 +5,6 @@ import {
   LinkedProvidersPanel,
   type LinkedProvider,
 } from "@repo/ui/auth/linked-providers-panel";
-import { isGoogleLinkOffered } from "@/lib/auth/provider";
-import { resolveGoogleSignInUrl } from "@/lib/auth/google-sign-in";
 
 interface SecurityClientProps {
   storeSlug: string;
@@ -16,14 +14,6 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
   const [providers, setProviders] = useState<LinkedProvider[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  // NOT isGoogleSignInOffered — that answers "is Google offered for
-  // sign-in/sign-up at all" (true on both providers). Linking an
-  // existing account needs an authenticated "link this provider to my
-  // account" backend endpoint that doesn't exist under Zitadel, so
-  // "Add Google" must be hidden there rather than left to silently
-  // switch the shopper to a different, self-registered account. See
-  // isGoogleLinkOffered's doc.
-  const canLinkGoogle = isGoogleLinkOffered();
 
   useEffect(() => {
     let cancelled = false;
@@ -56,19 +46,17 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
     };
   }, []);
 
+  // Linking an existing account to Google needs an authenticated "link
+  // this provider to my account" endpoint, which Zitadel does not give us
+  // today — auth-bff's customer IDP endpoint only self-registers or signs
+  // in. Offering the control would silently switch the shopper to a
+  // different, self-registered account, so it is not offered at all
+  // (canLinkGoogle={false} below). This handler is unreachable; it stays
+  // because the panel's prop is required.
   async function handleLinkGoogle(): Promise<void> {
-    if (typeof window === "undefined") return;
-    const result = await resolveGoogleSignInUrl({
-      storeSlug,
-      intent: "link",
-      dest: "/account/security",
-      origin: window.location.origin,
-    });
-    if (!result.ok) {
-      setError(result.message);
-      return;
-    }
-    window.location.assign(result.url);
+    setError(
+      "Adding a Google sign-in method isn't available yet — please contact support.",
+    );
   }
 
   async function handleUnlink(_providerId: string): Promise<void> {
@@ -84,9 +72,7 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
         Linked sign-in methods
       </h2>
       <p className="mt-1 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-70">
-        {canLinkGoogle
-          ? "Add Google to sign in faster. Removing a sign-in method requires contacting support for now."
-          : "Removing a sign-in method requires contacting support for now."}
+        Removing a sign-in method requires contacting support for now.
       </p>
 
       <div className="mt-5">
@@ -100,7 +86,7 @@ export function SecurityClient({ storeSlug }: SecurityClientProps) {
             onLinkGoogle={handleLinkGoogle}
             onUnlink={handleUnlink}
             variant="storefront"
-            canLinkGoogle={canLinkGoogle}
+            canLinkGoogle={false}
           />
         )}
         {error && (

@@ -2,7 +2,7 @@
  * Normalises every shape auth-bff returns on a login path into one union.
  *
  * Four shapes exist, for historical reasons rather than good ones:
- *   - /auth/auto-login success  -> { data: { uid, email, tenant_id, mfa_required?, email_otp_required? } }
+ *   - /auth/mfa/challenge success -> { data: { uid, email, tenant_id, mfa_required?, email_otp_required? } }
  *   - /auth/otp/verify success  -> { uid, tenant_id }            (top level, no data)
  *   - any error                 -> { error, message }            (flat)
  *   - /auth/zitadel/{login,totp,idp/finish} -> { totp_required, session_id, session_token } or
@@ -40,7 +40,7 @@ export class LoginResponseError extends Error {}
 
 /** True when `key` is exactly `true` at EITHER nesting level.
  *
- * auth-bff's envelopes are inconsistent by endpoint — /auth/auto-login nests under
+ * auth-bff's envelopes are inconsistent by endpoint — /auth/mfa/challenge nests under
  * `data`, /auth/otp/verify does not, and /auth/zitadel/login mixes both in one body.
  * Checking only the level we expect is what makes a nesting change silently complete
  * a login with a factor outstanding, which is the defect class this module exists to
@@ -91,7 +91,7 @@ export function parseLoginResponse(body: unknown): LoginOutcome {
 
   // A real completed Zitadel sign-in (password or Google) sends ONLY
   // callback_url — see the file header. An identity (uid/tenantId, from
-  // /auth/auto-login or /auth/otp/verify) is the other, older way this
+  // /auth/mfa/challenge or /auth/otp/verify) is the other, older way this
   // function recognises "complete". Either one alone is enough; a body
   // with NEITHER a step-up, an identity, NOR a callback_url carries no
   // information this function understands at all, and must still throw

@@ -48,8 +48,6 @@ const SUBSCRIPTION_FIXTURE = {
   cancel_at_period_end: false,
   stripe_subscription_id: 'sub_stripe_1',
   created_at: '2025-01-01T00:00:00Z',
-  arbitrage_flag: false,
-  latest_arbitrage_audit: null,
 }
 
 const PORTAL_FIXTURE = {
@@ -74,7 +72,6 @@ describe('getSubscription', () => {
     expect(plan.status).toBe('active')
     expect(plan.periodEnd).toBe('2027-04-01T00:00:00Z')
     expect(plan.cancelAtPeriodEnd).toBe(false)
-    expect(plan.arbitrageFlag).toBe(false)
     expect(plan.billingCurrency).toBe('USD') // safe default
     expect(plan.addOns).toEqual([])
   })

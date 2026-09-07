@@ -162,13 +162,6 @@ vi.mock('@/lib/api/subscription/hooks/useDunning', () => ({
   useCompleteActionUrl: vi.fn(() => ({ mutate: vi.fn() })),
 }))
 
-// -- Arbitrage hooks
-const mockUseArbitrageFlag = vi.fn()
-vi.mock('@/lib/api/subscription/hooks/useArbitrage', () => ({
-  useArbitrageFlag: (...args: unknown[]) => mockUseArbitrageFlag(...args),
-  useSubmitArbitrageAppeal: vi.fn(() => ({ mutate: vi.fn(), isPending: false, isSuccess: false })),
-}))
-
 // -- Cancellation hooks
 vi.mock('@/lib/api/subscription/hooks/useCancellation', () => ({
   useRevertCancellation: vi.fn(() => ({ mutate: vi.fn(), isPending: false, isError: false })),
@@ -228,7 +221,6 @@ import { BannerShell } from '@/components/shell/banners/BannerShell'
 import { TrialBanner } from '@/components/shell/banners/TrialBanner'
 import { FailedPaymentBanner } from '@/components/shell/banners/FailedPaymentBanner'
 import { PaymentActionRequiredBanner } from '@/components/shell/banners/PaymentActionRequiredBanner'
-import { ArbitrageBanner } from '@/components/shell/banners/ArbitrageBanner'
 
 import { Money } from '@repo/ui/subscription'
 import { PlanBadge } from '@repo/ui/subscription'
@@ -245,7 +237,6 @@ import type { CurrentPlan } from '@/lib/api/subscription/schemas/billing'
 import { ProContactForm } from '@/app/(admin)/settings/billing/pro-contact/ProContactForm'
 import { TaxIdForm } from '@/app/(admin)/settings/tax-id/TaxIdForm'
 import { AttestationForm } from '@/app/(admin)/settings/attestation/AttestationForm'
-import { AppealForm } from '@/app/(admin)/settings/arbitrage/AppealForm'
 import { CredentialUploadForm } from '@/app/(admin)/settings/billing/pro-app-purchase/CredentialUploadForm'
 import { CancelWizard } from '@/app/(admin)/settings/billing/cancel/CancelWizard'
 import { PlanChangeClient } from '@/app/(admin)/settings/billing/plan-change/PlanChangeClient'
@@ -434,39 +425,6 @@ describe('@a11y PaymentActionRequiredBanner', () => {
 })
 
 // ===========================================================================
-// Section 5 — ArbitrageBanner
-// ===========================================================================
-
-describe('@a11y ArbitrageBanner', () => {
-  beforeEach(() => vi.clearAllMocks())
-
-  it('flagged state — no serious/critical violations', async () => {
-    mockUseArbitrageFlag.mockReturnValue({
-      flagged: true,
-      isLoading: false,
-      firstFlaggedAt: new Date('2026-03-01T00:00:00Z'),
-      severity: 'high',
-      latestAudit: null,
-    })
-    const { container } = render(<ArbitrageBanner storeId="store-1" />)
-    await assertNoSeriousCritical(container)
-  })
-
-  it('not flagged (null render) — no violations', async () => {
-    mockUseArbitrageFlag.mockReturnValue({
-      flagged: false,
-      isLoading: false,
-      firstFlaggedAt: null,
-      severity: null,
-      latestAudit: null,
-    })
-    const { container } = render(<ArbitrageBanner storeId="store-1" />)
-    const results = await axe(container, AXE_CONFIG)
-    expect(results.violations).toHaveLength(0)
-  })
-})
-
-// ===========================================================================
 // Section 6 — Primitives (@repo/ui)
 // ===========================================================================
 
@@ -616,13 +574,6 @@ describe('@a11y TaxIdForm', () => {
 describe('@a11y AttestationForm', () => {
   it('unsigned state — no serious/critical violations', async () => {
     const { container } = render(<AttestationForm storeId="store-1" />)
-    await assertNoSeriousCritical(container)
-  })
-})
-
-describe('@a11y AppealForm', () => {
-  it('idle state — no serious/critical violations', async () => {
-    const { container } = render(<AppealForm storeId="store-1" />)
     await assertNoSeriousCritical(container)
   })
 })

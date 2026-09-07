@@ -52,7 +52,6 @@ const ROUTES = {
   proAppCredentials: `/admin/stores/${STORE_ID}/settings/billing/pro-app-purchase/credentials`,
   taxId: `/admin/stores/${STORE_ID}/settings/tax-id`,
   attestation: `/admin/stores/${STORE_ID}/settings/attestation`,
-  arbitrage: `/admin/stores/${STORE_ID}/settings/arbitrage`,
   closeBeforeDowngrade: `/admin/stores/${STORE_ID}/stores/close-before-downgrade?target=studio&billing=annual&over_by=2`,
 } as const
 
@@ -81,7 +80,6 @@ async function setupApiMocks(page: import('@playwright/test').Page) {
     add_ons: [],
     payment_method_brand: 'visa',
     payment_method_last4: '4242',
-    arbitrage_flag: false,
     app_lifecycle_status: null,
   }
 
@@ -121,21 +119,6 @@ async function setupApiMocks(page: import('@playwright/test').Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ data: null }),
-    })
-  })
-
-  await page.route('**/api/v1/admin/stores/*/arbitrage**', (route) => {
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: {
-          flagged: false,
-          first_flagged_at: null,
-          severity: null,
-          latest_audit: null,
-        },
-      }),
     })
   })
 
@@ -280,15 +263,6 @@ test('@a11y /settings/tax-id — zero serious/critical WCAG 2.1 AA violations', 
 test('@a11y /settings/attestation — zero serious/critical WCAG 2.1 AA violations', async ({ page }, testInfo) => {
   await setupApiMocks(page)
   await page.goto(ROUTES.attestation, { waitUntil: 'domcontentloaded' })
-  await page.waitForTimeout(500)
-
-  const result = await runAxeAudit(page, testInfo)
-  expect(result.pass, result.message).toBe(true)
-})
-
-test('@a11y /settings/arbitrage — zero serious/critical WCAG 2.1 AA violations', async ({ page }, testInfo) => {
-  await setupApiMocks(page)
-  await page.goto(ROUTES.arbitrage, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(500)
 
   const result = await runAxeAudit(page, testInfo)

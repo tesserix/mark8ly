@@ -107,7 +107,6 @@ function makePlan(overrides: Record<string, unknown> = {}) {
     periodStart: '2026-04-01T00:00:00Z',
     periodEnd: '2027-04-01T00:00:00Z',
     cancelAtPeriodEnd: false,
-    arbitrageFlag: false,
     billingCurrency: 'USD',
     addOns: [],
     createdAt: '2025-01-01T00:00:00Z',

@@ -5,8 +5,7 @@
  * active state. Priority order (highest first):
  *   1. PaymentActionRequired — time-sensitive 14-day window (§4.7)
  *   2. FailedPayment         — past_due dunning, read-only access
- *   3. Arbitrage             — open geo-pricing flag, 5-day SLA
- *   4. Trial                 — informational, positive state
+ *   3. Trial                 — informational, positive state
  *
  * Each banner component already returns null for its own inactive state.
  * BannerStack adds the priority gate so only the highest-ranking active
@@ -23,11 +22,9 @@
 import * as React from 'react'
 import { usePaymentActionRequiredBannerActive } from './PaymentActionRequiredBanner'
 import { useFailedPaymentBannerActive } from './FailedPaymentBanner'
-import { useArbitrageBannerActive } from './ArbitrageBanner'
 import { useTrialBannerActive } from './TrialBanner'
 import { PaymentActionRequiredBanner } from './PaymentActionRequiredBanner'
 import { FailedPaymentBanner } from './FailedPaymentBanner'
-import { ArbitrageBanner } from './ArbitrageBanner'
 import { TrialBanner } from './TrialBanner'
 
 // ---------------------------------------------------------------------------
@@ -41,7 +38,6 @@ interface BannerStackProps {
 type BannerKey =
   | 'payment_action_required'
   | 'failed_payment'
-  | 'arbitrage'
   | 'trial'
   | null
 
@@ -52,16 +48,14 @@ type BannerKey =
 export function BannerStack({ storeId }: BannerStackProps) {
   const isPaymentActionRequired = usePaymentActionRequiredBannerActive(storeId)
   const isFailedPayment = useFailedPaymentBannerActive(storeId)
-  const isArbitrage = useArbitrageBannerActive(storeId)
   const isTrial = useTrialBannerActive(storeId)
 
   const activeBanner = React.useMemo<BannerKey>(() => {
     if (isPaymentActionRequired) return 'payment_action_required'
     if (isFailedPayment) return 'failed_payment'
-    if (isArbitrage) return 'arbitrage'
     if (isTrial) return 'trial'
     return null
-  }, [isPaymentActionRequired, isFailedPayment, isArbitrage, isTrial])
+  }, [isPaymentActionRequired, isFailedPayment, isTrial])
 
   if (activeBanner === null) return null
 
@@ -72,9 +66,6 @@ export function BannerStack({ storeId }: BannerStackProps) {
       )}
       {activeBanner === 'failed_payment' && (
         <FailedPaymentBanner storeId={storeId} />
-      )}
-      {activeBanner === 'arbitrage' && (
-        <ArbitrageBanner storeId={storeId} />
       )}
       {activeBanner === 'trial' && (
         <TrialBanner storeId={storeId} />

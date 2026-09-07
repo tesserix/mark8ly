@@ -35,7 +35,6 @@ interface SubscriptionPayload {
   status: SubscriptionStatus;
   current_period_end: string;
   billing_currency: string;
-  arbitrage_flag: boolean;
   tax_id: string | null;
   white_label_app_addon: boolean;
   trial_ends_at: string | null;
@@ -54,7 +53,6 @@ function baseSubscription(overrides: Partial<SubscriptionPayload> = {}): Subscri
     status: "active",
     current_period_end: "2026-05-18T00:00:00Z",
     billing_currency: "USD",
-    arbitrage_flag: false,
     tax_id: null,
     white_label_app_addon: false,
     trial_ends_at: null,
@@ -150,26 +148,6 @@ export async function mockPaymentActionRequired(
           status: "payment_action_required",
           payment_action_deadline: deadline,
           hosted_invoice_url: "https://invoice.stripe.com/test-action-required",
-        }),
-      }),
-    });
-  });
-}
-
-// Subscription with arbitrage_flag=true — triggers ArbitrageBanner.
-export async function mockArbitrageFlag(
-  page: Page,
-  severity: "material" | "immaterial" = "material",
-): Promise<void> {
-  await page.route(SUBSCRIPTION_ROUTE, (route) => {
-    void route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        data: baseSubscription({
-          arbitrage_flag: true,
-          // severity surfaces in the payload for the appeal form
-          ...(severity === "material" ? {} : {}),
         }),
       }),
     });

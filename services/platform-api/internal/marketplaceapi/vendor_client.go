@@ -191,6 +191,64 @@ type EnsureSubscription struct {
 	// nothing supplies it to marketplace-api afterwards, and a subscription
 	// row without one cannot have its price resolved.
 	Currency string `json:"currency,omitempty"`
+	// PromoCode is what the merchant typed at onboarding, if anything
+	// (mark8ly#620). Redeemed on the far side, immediately after the row is
+	// created — the earliest moment redemption is possible at all.
+	PromoCode string `json:"promo_code,omitempty"`
+}
+
+// SignupPromoOffer is what a promo code granted, or why it was refused.
+// RejectReason is already the public reason; it is safe to show a merchant.
+type SignupPromoOffer struct {
+	TrialExtensionDays int    `json:"trial_extension_days"`
+	RejectReason       string `json:"reject_reason"`
+}
+
+// ValidatePromoForSignup asks what a code would grant a merchant who is
+// signing up, WITHOUT redeeming it.
+//
+// This is why marketplace-api's validate route is on /internal rather than
+// exposed publicly: mark8ly#620 calls an open validate endpoint "an oracle for
+// guessing valid codes", and routing it through platform-api — which already
+// holds the shared secret — means no such endpoint has to exist.
+func (c *VendorClient) ValidatePromoForSignup(ctx context.Context, code, email, currency string) (SignupPromoOffer, bool, error) {
+	var out SignupPromoOffer
+
+	body, err := json.Marshal(map[string]string{
+		"code": code, "email": email, "currency": currency,
+	})
+	if err != nil {
+		return out, false, err
+	}
+	url := fmt.Sprintf("%s/internal/promo/validate-for-signup", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return out, false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.addInternalAuth(req)
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return out, false, fmt.Errorf("marketplace-api validate-promo: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode >= 300 {
+		raw, _ := io.ReadAll(res.Body)
+		return out, false, fmt.Errorf("marketplace-api validate-promo %d: %s", res.StatusCode, string(raw))
+	}
+
+	var envelope struct {
+		Data struct {
+			Valid bool `json:"valid"`
+			SignupPromoOffer
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&envelope); err != nil {
+		return out, false, fmt.Errorf("marketplace-api validate-promo: decode: %w", err)
+	}
+	return envelope.Data.SignupPromoOffer, envelope.Data.Valid, nil
 }
 
 // EnsureSelfStore upserts the authoritative store row from platform_api

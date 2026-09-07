@@ -42,6 +42,9 @@ func Unauthorized(code, msg string) *AppError {
 	return New(http.StatusUnauthorized, code, msg)
 }
 func Forbidden(code, msg string) *AppError { return New(http.StatusForbidden, code, msg) }
+func TooManyRequests(code, msg string) *AppError {
+	return New(http.StatusTooManyRequests, code, msg)
+}
 
 // As is a convenience to extract an *AppError from any error.
 func As(err error) (*AppError, bool) {

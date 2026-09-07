@@ -318,10 +318,11 @@ func TestIntegration_Complete_DuplicateSlugRollsBackEverything(t *testing.T) {
 // ─── fakeVendorClient ────────────────────────────────────────────────────────
 
 type fakeVendorClient struct {
-	calls      []struct{ tenantID, name, slug string }
-	storeCalls []marketplaceapi.Store
-	subCalls   []marketplaceapi.EnsureSubscription
-	err        error
+	calls       []struct{ tenantID, name, slug string }
+	storeCalls  []marketplaceapi.Store
+	subCalls    []marketplaceapi.EnsureSubscription
+	promoChecks []string
+	err         error
 }
 
 // EnsureSubscription starts the store's trial (mark8ly#827). Recorded so a
@@ -330,6 +331,14 @@ type fakeVendorClient struct {
 func (f *fakeVendorClient) EnsureSubscription(_ context.Context, in marketplaceapi.EnsureSubscription) error {
 	f.subCalls = append(f.subCalls, in)
 	return f.err
+}
+
+// ValidatePromoForSignup is never reached from Complete — the code is redeemed
+// on the far side of EnsureSubscription, not validated again here — so this
+// exists to satisfy the interface and records the call in case that changes.
+func (f *fakeVendorClient) ValidatePromoForSignup(_ context.Context, code, email, currency string) (marketplaceapi.SignupPromoOffer, bool, error) {
+	f.promoChecks = append(f.promoChecks, code)
+	return marketplaceapi.SignupPromoOffer{}, false, nil
 }
 
 // EnsureSelfStore mirrors the platform-api store row into marketplace-api.
@@ -556,5 +565,119 @@ func TestIntegration_Complete_StartsTheTrial(t *testing.T) {
 	if fake.storeCalls[0].ID != got.StoreID {
 		t.Errorf("store mirrored = %q but subscription attached to %q",
 			fake.storeCalls[0].ID, got.StoreID)
+	}
+}
+
+// The promo code has to reach marketplace-api, because that is where it can be
+// redeemed: the ledger row needs a subscription id and the trial extension
+// needs a row to move, and both come into existence inside EnsureSubscription
+// (mark8ly#620, mark8ly#827).
+func TestIntegration_Complete_CarriesThePromoCode(t *testing.T) {
+	db := testdb.NewDB(t,
+		"outbox_events",
+		"verification_tokens",
+		"onboarding_sessions",
+		"tenants",
+	)
+
+	onboardingRepo := NewRepository(db)
+	fake := &fakeVendorClient{}
+	svc := NewService(Config{
+		DB:           db,
+		Repo:         onboardingRepo,
+		TenantRepo:   tenant.NewRepository(db),
+		Sender:       notification.NoopSender{},
+		EmailFrom:    "noreply@test.local",
+		SupportEmail: "help@test.local",
+		VendorClient: fake,
+	})
+
+	ctx := context.Background()
+	now := time.Now()
+	sess := &Session{
+		Email:           "promo-carry@test.local",
+		Draft:           json.RawMessage(`{}`),
+		Status:          StatusInProgress,
+		EmailVerifiedAt: &now,
+	}
+	if err := onboardingRepo.Create(ctx, sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	if _, err := svc.Complete(ctx, CompleteRequest{
+		SessionID:    sess.ID,
+		BusinessName: "Promo Carry Co",
+		Slug:         "promo-carry-co",
+		OwnerUserID:  "gip-uid-promo-carry",
+		OwnerEmail:   "promo-carry@test.local",
+		PromoCode:    "STAYLONGER",
+		CountryCode:  "AU",
+		CurrencyCode: "AUD",
+		Timezone:     "Australia/Sydney",
+	}); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	if len(fake.subCalls) != 1 {
+		t.Fatalf("EnsureSubscription called %d times, want 1", len(fake.subCalls))
+	}
+	if got := fake.subCalls[0].PromoCode; got != "STAYLONGER" {
+		t.Errorf("PromoCode = %q, want STAYLONGER — the merchant typed a code and it was dropped", got)
+	}
+	// The email travels too: it is what the per-email redemption cap counts
+	// against, and it is the only abuse control available at signup.
+	if fake.subCalls[0].Email != "promo-carry@test.local" {
+		t.Errorf("Email = %q — the per-email cap cannot be enforced without it", fake.subCalls[0].Email)
+	}
+}
+
+// A merchant who types nothing must not have an empty code forwarded as though
+// they had — the far side treats "" as "no code", but only if it arrives empty.
+func TestIntegration_Complete_NoPromoCodeStaysEmpty(t *testing.T) {
+	db := testdb.NewDB(t,
+		"outbox_events",
+		"verification_tokens",
+		"onboarding_sessions",
+		"tenants",
+	)
+
+	onboardingRepo := NewRepository(db)
+	fake := &fakeVendorClient{}
+	svc := NewService(Config{
+		DB: db, Repo: onboardingRepo, TenantRepo: tenant.NewRepository(db),
+		Sender: notification.NoopSender{}, EmailFrom: "noreply@test.local",
+		SupportEmail: "help@test.local", VendorClient: fake,
+	})
+
+	ctx := context.Background()
+	now := time.Now()
+	sess := &Session{
+		Email:           "no-promo@test.local",
+		Draft:           json.RawMessage(`{}`),
+		Status:          StatusInProgress,
+		EmailVerifiedAt: &now,
+	}
+	if err := onboardingRepo.Create(ctx, sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	if _, err := svc.Complete(ctx, CompleteRequest{
+		SessionID:    sess.ID,
+		BusinessName: "No Promo Co",
+		Slug:         "no-promo-co",
+		OwnerUserID:  "gip-uid-no-promo",
+		OwnerEmail:   "no-promo@test.local",
+		CountryCode:  "US",
+		CurrencyCode: "USD",
+		Timezone:     "America/New_York",
+	}); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	if len(fake.subCalls) != 1 {
+		t.Fatalf("EnsureSubscription called %d times, want 1", len(fake.subCalls))
+	}
+	if got := fake.subCalls[0].PromoCode; got != "" {
+		t.Errorf("PromoCode = %q, want empty", got)
 	}
 }

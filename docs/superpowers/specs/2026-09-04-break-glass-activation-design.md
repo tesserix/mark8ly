@@ -1,11 +1,38 @@
 # Break-glass activation — design
 
-**Status:** proposed
+**Status:** accepted, with §5.1 corrected — see the correction block below
 **Issues:** closes #642 (turn it on), unblocks #404 (write operations)
 **Supersedes the unfinished parts of:** `docs/superpowers/plans/2026-04-18-p13-sso-break-glass.md`
 
 **Goal:** make the break-glass emergency admin login reachable, and mount the
 per-tenant SSO login routes that share its one missing dependency.
+
+
+> ## Correction (2026-09-07)
+>
+> §5.1's account of auth-bff is wrong, and so is the footnote in which it
+> "corrects" `session_issuer.go`'s own comment. Verified in the tree:
+>
+> - There is no `CookieStore`, no `Save`, no `LoadFromValue`. The type is
+>   `session.Manager`; the writers are `Mint` / `MintWithDomain`; the readers
+>   are `Read` / `decode`. An **`encode` method already exists**
+>   (`cookie.go:222`), so §5.1's "extract the encrypt step" describes work
+>   already done.
+> - The `/internal` group is **not** "a Bearer service key plus rate
+>   limiting". It is a shared **`X-Internal-Auth`** header compared by
+>   `internalauth.Equal` (sha256, constant time), applied per route inside the
+>   handler, with no rate limiting. `cmd/server/main.go:425`,
+>   `internal/session/internal_users.go:69`.
+> - `IsKnownSessionCookie` and `session-exchange`, cited as the precedent the
+>   `auth_context` allow-list follows, **do not exist anywhere in this
+>   repository** — Go or TypeScript. The allow-list is still right; it simply
+>   has no precedent, and `Session` has no `auth_context` field for it to
+>   guard. Adding one is a change to the shared cookie payload.
+>
+> The design's intent is unaffected: mint the session in auth-bff, keep cookie
+> cryptography there, port the secret store to OpenBao. Only its account of
+> the existing code was unreliable. The executable version is
+> `plans/2026-09-07-break-glass-activation-v2.md`.
 
 ---
 

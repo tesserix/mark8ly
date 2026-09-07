@@ -16,7 +16,8 @@ removes the feature:
 
 | Capability | Where | Consequence of a naive removal |
 |---|---|---|
-| Storefront **customer** token verification | `marketplace-api/internal/handlers/storefront/gip_customer_verifier.go` + `main.go:1755-1765` | Mobile storefront customer support chat stops authenticating. The Zitadel migration covered the ADMIN path only. |
+| ~~Storefront **customer** token verification~~ **RESOLVED (#787)** | was `marketplace-api/internal/handlers/storefront/gip_customer_verifier.go` + its `main.go` wiring | None, and deliberately no replacement. `RegisterMobileStorefrontSupport` was the only mount, and its only client was the single-tenant storefront mobile app — never shipped, zero traffic across both engines, and itself deleted in #792. Shipping an untested Zitadel verifier with no caller is worse than removing it, so #792 rebuilds these routes and their auth together. `GIPProjectID` and the Firebase app it built are gone from marketplace-api. |
+| ~~Customer linked-providers view~~ **RESOLVED (#787)** | was `apps/storefront/app/api/account/providers/route.ts` calling Identity Toolkit `accounts:lookup` with `GIP_WEB_API_KEY`; now that route calls auth-bff's `GET /internal/users/:id/providers`, backed by `zitadellogin.Client.UserLinkedProviders` | None. The route's response shape is unchanged, so `SecurityClient.tsx` and `LinkedProvidersPanel` needed no edit. Zitadel `PASSWORD` maps to `password`; an `IDP` method is resolved through `POST /v2/users/{id}/links/_search` and the link's `idpId` matched against `ZITADEL_GOOGLE_IDP_ID` / `ZITADEL_APPLE_IDP_ID` to yield `google.com` / `apple.com`. |
 | Custom-domain browser-key allowlist | `marketplace-api/internal/gipkey` + `main.go:545-579` | A merchant's storefront sign-in stops working from their verified custom domain. Self-service feature. |
 | Tenant SAML/OIDC SSO | `marketplace-api/internal/sso/gip_client.go` | Enterprise tenant SSO provisioning disappears. May already be dark — nothing in `main.go` constructs it — confirm before deciding. |
 | ~~Merchant display-name seeding~~ **RESOLVED (#790)** | was `marketplace-api/internal/gipuser`; now `marketplace-api/internal/displayname` (`SetDisplayNames`) reading auth-bff's `GET /internal/users/:id/display-name`, backed by `zitadellogin.Client.UserDisplayName` | None. `internal/gipuser` is deleted. The seam is provider-neutral and wired unconditionally, so Zitadel-mode merchants now get the name too — closing the pre-existing gap rather than merely preserving it. |
@@ -136,7 +137,9 @@ this wrong both ways, and that is the single most useful output of this audit.
   `GIP_INTERNAL_TENANT_ID`, `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`. Backwards
   = CrashLoopBackOff on the auth gateway.
 - **Grep every reader**, not just `Validate()`. `GIPProjectID` in
-  marketplace-api alone gates three independent features.
+  marketplace-api gated three independent features; #786 and #787 removed the
+  last of them, so `GIP_PROJECT_ID` is now unread by marketplace-api code and
+  its chart values (admin + storefront) can follow in a separate PR.
 - `gip_bearer.go`'s collapse must land in the **same PR** as
   `mobile_routes.go`'s flag removal and `main.go`'s call site — they share one
   boolean contract. A partial edit leaves either zero tenant-id writers (mobile

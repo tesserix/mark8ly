@@ -1186,3 +1186,150 @@ func emailLocalPart(email string) string {
 	}
 	return email
 }
+
+// LinkedProvider is one sign-in method a user can authenticate with,
+// projected into the wire vocabulary the storefront and admin "Linked
+// sign-in methods" panels already key on
+// (packages/ui/src/auth/linked-providers-panel.tsx).
+//
+// ProviderID is "password", "google.com", "apple.com", or — for a
+// federated link whose IDP id is not one of the two the deployment knows
+// by name — the raw Zitadel IDP id. Email is the address to show beneath
+// the label, and may be empty.
+type LinkedProvider struct {
+	ProviderID string
+	Email      string
+}
+
+// Provider ids the linked-providers panel understands. These are the GIP
+// names on purpose: the panel and its consumers were written against
+// Identity Toolkit's providerUserInfo[].providerId and continue to key on
+// "google.com" to decide whether to offer "Add Google". Renaming them
+// here would be a UI change disguised as an auth change.
+const (
+	ProviderPassword = "password"
+	ProviderGoogle   = "google.com"
+	ProviderApple    = "apple.com"
+)
+
+// UserLinkedProviders lists the sign-in methods Zitadel holds for userID,
+// in the shape the linked-providers panel consumes.
+//
+// googleIDPID and appleIDPID are the deployment's configured Zitadel IDP
+// ids (ZITADEL_GOOGLE_IDP_ID / ZITADEL_APPLE_IDP_ID). They are parameters
+// rather than client state because the Client is provider-agnostic — the
+// handler already holds these values for the idp/start flow.
+//
+// Two upstream reads, because neither endpoint alone answers the
+// question:
+//
+//   - GET /v2/users/{id}/authentication_methods says WHICH KINDS of
+//     method are enrolled (PASSWORD, IDP, TOTP, PASSKEY, …) but not which
+//     identity provider an IDP link points at.
+//   - POST /v2/users/{id}/links/_search names the IDPs but says nothing
+//     about a password.
+//
+// Only PASSWORD and IDP are projected. TOTP, U2F, OTP_SMS and OTP_EMAIL
+// are second factors, not sign-in providers, and Identity Toolkit never
+// reported them here either — surfacing them would put "TOTP" in a list
+// headed "Linked sign-in methods" and offer the customer an Unlink button
+// for their second factor.
+//
+// A user with no methods at all returns an empty slice and no error: that
+// is a real answer about a real account, not a failure.
+func (c *Client) UserLinkedProviders(ctx context.Context, userID, googleIDPID, appleIDPID string) ([]LinkedProvider, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("zitadellogin: UserLinkedProviders with an empty user id: %w", ErrUnavailable)
+	}
+
+	methods, err := c.EnrolledMethodTypes(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	var hasPassword, hasIDP bool
+	for _, m := range methods {
+		// Zitadel has returned both the bare enum value ("PASSWORD") and
+		// the fully-qualified form ("AUTHENTICATION_METHOD_TYPE_PASSWORD")
+		// across versions. Suffix-match so a version bump does not
+		// silently empty this list.
+		switch {
+		case strings.HasSuffix(m, "PASSWORD"):
+			hasPassword = true
+		case strings.HasSuffix(m, "IDP"):
+			hasIDP = true
+		}
+	}
+
+	providers := make([]LinkedProvider, 0, 2)
+	if hasPassword {
+		// The account email, not a per-link one: this is the address the
+		// password is used with. A read failure here is not fatal — the
+		// panel shows the label without a sub-line.
+		email, err := c.UserEmail(ctx, userID)
+		if err != nil {
+			email = ""
+		}
+		providers = append(providers, LinkedProvider{ProviderID: ProviderPassword, Email: email})
+	}
+	if !hasIDP {
+		return providers, nil
+	}
+
+	links, err := c.userIDPLinks(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range links {
+		providers = append(providers, LinkedProvider{
+			ProviderID: providerIDForIDP(l.IDPID, googleIDPID, appleIDPID),
+			// Zitadel stores the external account's userName on the
+			// link, which for both Google and Apple is the email the
+			// provider asserted — the same value Identity Toolkit
+			// returned as providerUserInfo[].email.
+			Email: l.UserName,
+		})
+	}
+	return providers, nil
+}
+
+// providerIDForIDP maps a Zitadel IDP id to the panel's provider name,
+// falling back to the raw id when the deployment has not named it. The
+// fallback is deliberate: an unknown provider still renders (the panel
+// labels an unrecognised id with the id itself) rather than vanishing
+// from a list the customer uses to audit account access.
+func providerIDForIDP(idpID, googleIDPID, appleIDPID string) string {
+	switch {
+	case googleIDPID != "" && idpID == googleIDPID:
+		return ProviderGoogle
+	case appleIDPID != "" && idpID == appleIDPID:
+		return ProviderApple
+	default:
+		return idpID
+	}
+}
+
+// idpLink is one federated identity attached to a Zitadel user.
+type idpLink struct {
+	IDPID    string
+	UserName string
+}
+
+// userIDPLinks reads POST /v2/users/{id}/links/_search — the same
+// endpoint LinkIDPToUser's doc records as the way a link is confirmed.
+func (c *Client) userIDPLinks(ctx context.Context, userID string) ([]idpLink, error) {
+	var wire struct {
+		Result []struct {
+			IDPID    string `json:"idpId"`
+			UserName string `json:"userName"`
+		} `json:"result"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v2/users/"+url.PathEscape(userID)+"/links/_search", map[string]any{}, &wire, ErrUserNotFound, withLogPath("/v2/users/{id}/links/_search")); err != nil {
+		return nil, err
+	}
+	out := make([]idpLink, 0, len(wire.Result))
+	for _, r := range wire.Result {
+		out = append(out, idpLink{IDPID: r.IDPID, UserName: r.UserName})
+	}
+	return out, nil
+}

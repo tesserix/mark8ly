@@ -22,7 +22,6 @@ import (
 
 	secretmanagerclient "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/storage"
-	firebase "firebase.google.com/go/v4"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1413,10 +1412,15 @@ func main() {
 	// pull, the admin platform-support bridge (#119), and the storefront
 	// support bridge (#118).
 	ottoChatClient := ottoclient.New(cfg.OttoURL, cfg.OttoInternalAuth)
-	// Mobile storefront support chat (#118) — populated in the storefront
-	// wiring block, mounted in the per-mode registration below.
-	var storefrontSupportHandler *storefront.MobileSupportHandler
-	var storefrontCustomerVerifier storefront.CustomerVerifier
+	// Mobile storefront support chat (#118) is UNWIRED. Its customer auth
+	// was a GIP ID-token verifier (storefront.GIPCustomerVerifier), deleted
+	// with the rest of the GIP surface in #787. No Zitadel replacement was
+	// built on purpose: the only client of
+	// /api/v1/mobile/storefront/stores/:storeSlug/support was the
+	// single-tenant storefront mobile app, which never shipped and was
+	// itself deleted in #792 — there is nothing to test a new verifier
+	// against. #792 rebuilds these routes, and their auth, when a
+	// storefront app exists again.
 
 	// Mobile admin deps — Bearer auth for external mobile clients.
 	var mobileDeps admin.MobileDeps
@@ -1679,21 +1683,6 @@ func main() {
 			WithNotifier(notificationSvc).
 			WithAudit(auditEmitter).
 			WithOtto(ottoChatClient)
-
-		// Mobile support chat (#118) — customer→merchant, bridges to otto.
-		// Mounted standalone below (the full mobile storefront route group
-		// isn't wired yet). The customer verifier reuses the GIP project to
-		// validate the app's Firebase ID tokens.
-		storefrontSupportHandler = storefront.NewMobileSupportHandler(ottoChatClient, cfg.OttoWSPublicBase, log)
-		if cfg.GIPProjectID != "" {
-			if fbApp, err := firebase.NewApp(context.Background(), &firebase.Config{ProjectID: cfg.GIPProjectID}); err != nil {
-				log.Error("mobile support: firebase init failed", "error", err)
-			} else if fbAuth, err := fbApp.Auth(context.Background()); err != nil {
-				log.Error("mobile support: firebase auth init failed", "error", err)
-			} else {
-				storefrontCustomerVerifier = storefront.NewGIPCustomerVerifier(fbAuth)
-			}
-		}
 
 		// P11 — Customer portal (GDPR order-history + erasure §15.4).
 		customerPortalHandler := customerportal.NewHandler(conn, log)
@@ -2497,7 +2486,6 @@ func main() {
 			PriceCatalog:            newServingCatalogResolver(cfg, log),
 		})
 		storefront.RegisterStorefront(r.Group("/api/v1"), storefrontDeps)
-		storefront.RegisterMobileStorefrontSupport(r.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
 		public.RegisterPublic(r.Group("/api/v1"), public.PublicDeps{
 			DelhiveryWebhookHandler:   delhiveryWebhookHandler,
 			JournalSubscribeHandler:   journalSubscribeHandler,
@@ -2747,7 +2735,6 @@ func main() {
 		}
 		if m == mode.Storefront {
 			storefront.RegisterStorefront(engine.Group("/api/v1"), storefrontDeps)
-			storefront.RegisterMobileStorefrontSupport(engine.Group("/api/v1"), storefrontSupportHandler, storefrontDeps.SlugCache, storefrontCustomerVerifier)
 			// Custom-domain takeover — storefront middleware queries
 			// this on every slug-host request to decide whether to 301
 			// to the merchant's verified custom domain.

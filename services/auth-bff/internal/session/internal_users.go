@@ -34,6 +34,31 @@ type DisplayNameResolver interface {
 	UserDisplayName(ctx context.Context, userID string) (string, error)
 }
 
+// LinkedProvidersResolver lists a user's sign-in methods.
+//
+// The identity-provider ids that turn a federated link into "google.com"
+// rather than a raw Zitadel id are deployment config, so they are bound
+// by whoever constructs the resolver (see cmd/server/main.go) rather than
+// travelling through this handler. That keeps this package free of any
+// dependency on the Zitadel client.
+//
+// A user with no methods returns an empty slice and no error. The element
+// type is the same LinkedProvider providers_handler.go already defines,
+// so both the merchant and customer surfaces answer in one vocabulary:
+// "password", "google.com", "apple.com" — the names
+// packages/ui/src/auth/linked-providers-panel.tsx keys on.
+type LinkedProvidersResolver interface {
+	LinkedProviders(ctx context.Context, userID string) ([]LinkedProvider, error)
+}
+
+// LinkedProvidersFunc adapts a plain function to LinkedProvidersResolver.
+type LinkedProvidersFunc func(ctx context.Context, userID string) ([]LinkedProvider, error)
+
+// LinkedProviders implements LinkedProvidersResolver.
+func (f LinkedProvidersFunc) LinkedProviders(ctx context.Context, userID string) ([]LinkedProvider, error) {
+	return f(ctx, userID)
+}
+
 // InternalUsersHandler exposes service-to-service endpoints that
 // marketplace-api calls when the merchant asks to "reset my profile".
 // Guarded by a shared X-Internal-Auth header — never mounted on a
@@ -42,6 +67,7 @@ type InternalUsersHandler struct {
 	sessions     UserEraser
 	mfa          MFAEraser
 	displayNames DisplayNameResolver
+	providers    LinkedProvidersResolver
 	secret       string
 	logger       *slog.Logger
 }
@@ -75,10 +101,23 @@ func (h *InternalUsersHandler) WithDisplayNames(r DisplayNameResolver) *Internal
 	return h
 }
 
+// WithLinkedProviders wires the sign-in-method lookup that backs
+// GET /internal/users/:id/providers. Optional, and unset means the
+// endpoint answers 503 rather than an empty list: unlike a display name,
+// "no providers" is not a safe blank. A customer reading their security
+// page would see an empty "Linked sign-in methods" list and conclude
+// their Google link had been removed, so a deployment that cannot answer
+// must say so instead of answering wrongly.
+func (h *InternalUsersHandler) WithLinkedProviders(r LinkedProvidersResolver) *InternalUsersHandler {
+	h.providers = r
+	return h
+}
+
 // Register mounts the internal user endpoints onto the given router group.
 func (h *InternalUsersHandler) Register(r *gin.RouterGroup) {
 	r.DELETE("/users/:id", h.deleteUser)
 	r.GET("/users/:id/display-name", h.displayName)
+	r.GET("/users/:id/providers", h.linkedProviders)
 }
 
 // displayName handles GET /internal/users/:id/display-name.
@@ -127,6 +166,60 @@ func (h *InternalUsersHandler) displayName(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{"user_id": userID, "display_name": name},
 	})
+}
+
+// linkedProviders handles GET /internal/users/:id/providers.
+//
+// The storefront's /api/account/providers route calls this to render a
+// customer's "Linked sign-in methods" panel (#787). It replaces a direct
+// Identity Toolkit accounts:lookup the storefront pod used to make; the
+// Zitadel credential that answers it lives only here, which is why this
+// is a service-to-service hop rather than the storefront reading Zitadel
+// itself.
+//
+// The response shape is byte-for-byte the one the storefront route
+// already returned, so the browser-side consumer needed no change.
+func (h *InternalUsersHandler) linkedProviders(c *gin.Context) {
+	if !h.authorize(c) {
+		return
+	}
+	userID := c.Param("id")
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "invalid_id",
+			"message": "user id is required",
+		})
+		return
+	}
+
+	if h.providers == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "not_configured",
+			"message": "linked provider lookup is not configured",
+		})
+		return
+	}
+
+	found, err := h.providers.LinkedProviders(c.Request.Context(), userID)
+	if err != nil {
+		// The uid and the error only. A provider list is personal data
+		// and must not reach the log stream.
+		if h.logger != nil {
+			h.logger.Info("internal users: linked providers unavailable", "err", err, "user_id", userID)
+		}
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":   "upstream_unavailable",
+			"message": "could not resolve linked providers",
+		})
+		return
+	}
+
+	// Non-nil so an account with no methods marshals as [] and not null
+	// — the consumer maps over it unconditionally.
+	if found == nil {
+		found = []LinkedProvider{}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": providersResponse{Providers: found}})
 }
 
 // authorize enforces the shared-secret guard every route in this handler

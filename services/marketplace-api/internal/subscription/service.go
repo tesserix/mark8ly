@@ -73,6 +73,22 @@ type BootstrapInput struct {
 	// what every reader already treats as "not known yet"; "" would be a
 	// third meaning nothing tests for.
 	BillingCurrency string
+	// TaxID and TaxIDCountry are what the merchant typed in onboarding's Tax
+	// ID field, unvalidated.
+	//
+	// Stored here because nothing else ever stored them. The field has been
+	// on the form since §5.1.1 and was written to the onboarding draft and
+	// read by nobody; reverse_charge_tax_id had no writer anywhere in the
+	// tree, while the revalidation cron and the reverse-charge invoice
+	// annotation both READ it. This closes that gap at the only point the
+	// value is known.
+	//
+	// tax_id_validated stays false — its default. Both downstream consumers
+	// gate on it (invoice_finalized.go, revalidation/cron.go), so an
+	// unvalidated id changes no behaviour until the tax service validates it.
+	// Recording an unchecked claim as checked is the one thing that would.
+	TaxID        string
+	TaxIDCountry string
 }
 
 // Bootstrap idempotently initialises a store_subscriptions row: plan=trial,
@@ -122,6 +138,16 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (*StoreSubsc
 	}
 	if cur := strings.ToLower(strings.TrimSpace(in.BillingCurrency)); cur != "" {
 		row.BillingCurrency = &cur
+	}
+	// Both or neither: a tax id without its country cannot be validated (the
+	// validator dispatches on country) and cannot be rendered on a
+	// reverse-charge invoice, which prints the pair. Storing half of it would
+	// leave a value that reads as present and can never be used.
+	taxID := strings.TrimSpace(in.TaxID)
+	taxCountry := strings.ToUpper(strings.TrimSpace(in.TaxIDCountry))
+	if taxID != "" && len(taxCountry) == 2 {
+		row.ReverseChargeTaxID = &taxID
+		row.TaxIDCountry = &taxCountry
 	}
 	if err := s.repo.Create(ctx, s.db, row); err != nil {
 		return nil, fmt.Errorf("bootstrap: create subscription row: %w", err)

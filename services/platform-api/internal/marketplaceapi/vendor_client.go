@@ -195,6 +195,14 @@ type EnsureSubscription struct {
 	// (mark8ly#620). Redeemed on the far side, immediately after the row is
 	// created — the earliest moment redemption is possible at all.
 	PromoCode string `json:"promo_code,omitempty"`
+	// TaxID is what the merchant typed in onboarding's Tax ID field,
+	// unvalidated. Sent because signup is the only point it is known:
+	// marketplace-api's reverse_charge_tax_id column had no writer anywhere,
+	// while its revalidation cron and reverse-charge invoice annotation both
+	// read it (mark8ly#620 follow-up).
+	TaxID string `json:"tax_id,omitempty"`
+	// CountryCode is the store's country, the tax id's jurisdiction.
+	CountryCode string `json:"country_code,omitempty"`
 }
 
 // SignupPromoOffer is what a promo code granted, or why it was refused.

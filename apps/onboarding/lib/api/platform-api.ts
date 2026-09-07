@@ -137,6 +137,14 @@ export const onboarding = {
        *  subscription row — the earliest moment redemption is possible,
        *  since the ledger row needs a subscription id. */
       promo_code?: string;
+      /** The Tax ID the merchant typed on the form, unvalidated.
+       *
+       *  Sent because signup is the only point it is known. It was written
+       *  to the session draft from §5.1.1 onward and read by nobody:
+       *  platform-api had no `tax_id` at all, and marketplace-api's
+       *  reverse_charge_tax_id column had no writer anywhere in the tree
+       *  while two consumers read it. */
+      tax_id?: string;
     },
   ) =>
     request<CompleteResult>(

@@ -94,6 +94,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/authz/... \
 	    ./internal/billing/appaddon/... \
 	    ./internal/billing/attestations/... \
+	    ./internal/billing/consolepromo/... \
 	    ./internal/billing/dispatch/... \
 	    ./internal/billing/migration/... \
 	    ./internal/billing/tax/... \

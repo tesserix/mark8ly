@@ -346,3 +346,189 @@ func TestCountExpiring_UnaffectedByStripeManagedRows(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(1), n, "trials_expiring counts trials that EXPIRE; a card-backed trial converts")
 }
+
+// seedSignupRow inserts a `signup` subscription whose trial has never been
+// extended, so its effective end comes from the null-trial_ends_at branch:
+// created_at + TrialDays. That is the population Bootstrap creates and the
+// checkout webhook never moved on — see trial.ListOptions.IncludeSignup.
+func seedSignupRow(t *testing.T, db *gorm.DB, trialEndsAt time.Time, opts func(*subscription.StoreSubscription)) subscription.StoreSubscription {
+	t.Helper()
+
+	return seedExpiringRow(t, db, trialEndsAt, func(r *subscription.StoreSubscription) {
+		r.Status = subscription.StatusSignup
+		if opts != nil {
+			opts(r)
+		}
+	})
+}
+
+// The default must be unchanged: a tenant still at `signup` is not
+// "expiring". This is the contract #285 already ships, and the zero
+// ListOptions value must keep it byte-for-byte.
+func TestListExpiring_DefaultExcludesSignup(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+
+	seedSignupRow(t, db, expiringAsOf.Add(3*24*time.Hour), nil)
+	trialing := seedExpiringRow(t, db, expiringAsOf.Add(4*24*time.Hour), nil)
+
+	rows, total, err := trial.ListExpiring(context.Background(), db,
+		expiringAsOf, trial.DefaultExpiryWindow, 1, 10, trial.ListOptions{})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total, "the signup row must not appear by default")
+	require.Len(t, rows, 1)
+	require.Equal(t, trialing.StoreID.String(), rows[0].StoreID)
+	require.Equal(t, string(subscription.StatusTrialing), rows[0].Status)
+}
+
+// With the flag, BOTH appear and Status is what tells them apart — an
+// operator chases a `signup` tenant to complete checkout, but a `trialing`
+// one is about to lose access. Two rows of different kinds in one fixture:
+// one kind cannot prove a filter.
+func TestListExpiring_IncludeSignup_ReturnsBothLabelledByStatus(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+
+	signup := seedSignupRow(t, db, expiringAsOf.Add(3*24*time.Hour), nil)
+	trialing := seedExpiringRow(t, db, expiringAsOf.Add(4*24*time.Hour), nil)
+
+	rows, total, err := trial.ListExpiring(context.Background(), db,
+		expiringAsOf, trial.DefaultExpiryWindow, 1, 10, trial.ListOptions{IncludeSignup: true})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, rows, 2)
+
+	byStore := map[string]trial.ExpiringRow{}
+	for _, r := range rows {
+		byStore[r.StoreID] = r
+	}
+	require.Equal(t, string(subscription.StatusSignup), byStore[signup.StoreID.String()].Status)
+	require.Equal(t, string(subscription.StatusTrialing), byStore[trialing.StoreID.String()].Status)
+}
+
+// The two options are independent, and all four combinations are
+// meaningful. One fixture holds a row of each kind — trialing/signup ×
+// card-less/card-backed — so a combination that admits one axis by
+// accident when widening the other is caught.
+//
+// IncludeSignup alone must not drag a card-backed row in, and
+// IncludeStripeManaged alone must not drag a signup row in.
+func TestListExpiring_SignupAndStripeManagedCompose(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+
+	cardSub := "sub_compose_trialing"
+	signupCardSub := "sub_compose_signup"
+
+	trialingCardless := seedExpiringRow(t, db, expiringAsOf.Add(1*24*time.Hour), nil)
+	trialingCarded := seedExpiringRow(t, db, expiringAsOf.Add(2*24*time.Hour),
+		func(r *subscription.StoreSubscription) { r.StripeSubscriptionID = &cardSub })
+	signupCardless := seedSignupRow(t, db, expiringAsOf.Add(3*24*time.Hour), nil)
+	signupCarded := seedSignupRow(t, db, expiringAsOf.Add(4*24*time.Hour),
+		func(r *subscription.StoreSubscription) { r.StripeSubscriptionID = &signupCardSub })
+
+	cases := []struct {
+		name string
+		opts trial.ListOptions
+		want []string
+	}{
+		{
+			name: "zero value: trialing and card-less only",
+			opts: trial.ListOptions{},
+			want: []string{trialingCardless.StoreID.String()},
+		},
+		{
+			name: "IncludeStripeManaged alone drops the card filter only",
+			opts: trial.ListOptions{IncludeStripeManaged: true},
+			want: []string{trialingCardless.StoreID.String(), trialingCarded.StoreID.String()},
+		},
+		{
+			name: "IncludeSignup alone widens the status set only",
+			opts: trial.ListOptions{IncludeSignup: true},
+			want: []string{trialingCardless.StoreID.String(), signupCardless.StoreID.String()},
+		},
+		{
+			name: "both widen both axes",
+			opts: trial.ListOptions{IncludeSignup: true, IncludeStripeManaged: true},
+			want: []string{
+				trialingCardless.StoreID.String(), trialingCarded.StoreID.String(),
+				signupCardless.StoreID.String(), signupCarded.StoreID.String(),
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, total, err := trial.ListExpiring(context.Background(), db,
+				expiringAsOf, trial.DefaultExpiryWindow, 1, 10, tc.opts)
+			require.NoError(t, err)
+			require.Equal(t, int64(len(tc.want)), total)
+
+			got := make([]string, 0, len(rows))
+			for _, r := range rows {
+				got = append(got, r.StoreID)
+			}
+			require.ElementsMatch(t, tc.want, got)
+		})
+	}
+}
+
+// A signup row has no trial_ends_at, so its effective end comes from
+// created_at + TrialDays — the same fallback EndsAt applies. It must sort
+// against a trialing row's EXPLICIT trial_ends_at on that effective date,
+// not on created_at and not after every extended row.
+//
+// The extended trialing row is seeded with a created_at far outside the
+// window on purpose: if the ordering (or the window predicate) read
+// created_at rather than the effective end, this row would sort first, or
+// vanish from the page entirely.
+func TestListExpiring_SignupRowSortsOnItsDerivedEnd(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+
+	extendedEnd := expiringAsOf.Add(2 * 24 * time.Hour)
+	extended := seedExpiringRow(t, db, expiringAsOf.Add(300*24*time.Hour),
+		func(r *subscription.StoreSubscription) {
+			r.CreatedAt = expiringAsOf.Add(-200 * 24 * time.Hour)
+			r.TrialEndsAt = &extendedEnd
+		})
+	signupEarly := seedSignupRow(t, db, expiringAsOf.Add(1*24*time.Hour), nil)
+	signupLate := seedSignupRow(t, db, expiringAsOf.Add(5*24*time.Hour), nil)
+
+	rows, total, err := trial.ListExpiring(context.Background(), db,
+		expiringAsOf, trial.DefaultExpiryWindow, 1, 10, trial.ListOptions{IncludeSignup: true})
+	require.NoError(t, err)
+	require.Equal(t, int64(3), total)
+	require.Len(t, rows, 3)
+
+	require.Equal(t, signupEarly.StoreID.String(), rows[0].StoreID, "day 1, derived from created_at + TrialDays")
+	require.Equal(t, extended.StoreID.String(), rows[1].StoreID, "day 2, from an explicit trial_ends_at")
+	require.Equal(t, signupLate.StoreID.String(), rows[2].StoreID, "day 5, derived")
+
+	// The derived end is also what the row REPORTS, not created_at.
+	require.True(t, expiringAsOf.Add(1*24*time.Hour).Equal(rows[0].TrialEndsAt),
+		"want %s, got %s", expiringAsOf.Add(1*24*time.Hour), rows[0].TrialEndsAt)
+}
+
+// THE assertion that matters most. CountExpiring backs /admin/kpis's
+// trials_expiring, which the console shares with this list "so the two
+// cannot report different numbers for the same word". A `signup` row will
+// NOT expire — expiry_cron selects status = 'trialing' only — so widening
+// the list must leave the counter exactly where it was. CountExpiring takes
+// no ListOptions at all, and this proves the flag cannot reach it by any
+// other route either.
+func TestCountExpiring_UnmovedByIncludeSignup(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+
+	seedSignupRow(t, db, expiringAsOf.Add(3*24*time.Hour), nil)
+	seedExpiringRow(t, db, expiringAsOf.Add(4*24*time.Hour), nil)
+
+	n, err := trial.CountExpiring(context.Background(), db, expiringAsOf, trial.DefaultExpiryWindow)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), n,
+		"trials_expiring counts trials that EXPIRE; a signup row never reaches the expiry cron")
+
+	// The same fixture, listed with the flag, returns two. The counter and
+	// the list are ALLOWED to differ here — that is the point — but only
+	// because the list was asked an explicitly different question.
+	_, total, err := trial.ListExpiring(context.Background(), db,
+		expiringAsOf, trial.DefaultExpiryWindow, 1, 10, trial.ListOptions{IncludeSignup: true})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+}

@@ -50,6 +50,23 @@ type ListOptions struct {
 	// them extendable, and an endpoint the console cannot discover a store
 	// id for is unreachable in practice.
 	IncludeStripeManaged bool
+
+	// IncludeSignup adds trials whose status is still `signup`: a tenant on
+	// a trial plan that never completed Stripe checkout. subscription
+	// Service.Bootstrap creates every subscription that way, and the only
+	// writer of signup -> trialing in this service is the
+	// checkout.session.completed webhook handler (internal/billing/dispatch),
+	// so a tenant that never checks out stays at `signup` indefinitely and
+	// is invisible to this list under every window.
+	//
+	// Off by default, and — like IncludeStripeManaged — not reachable from
+	// CountExpiring at all, because a `signup` row's trial end is NOTIONAL.
+	// ExpiryCron selects status = 'trialing', so nothing will act on that
+	// date: the row is not queued to expire, and this list showing it must
+	// not be read as the expiry machinery watching it. It is listed so an
+	// operator can chase the tenant to complete checkout, which is a
+	// different action from an expiring trial's.
+	IncludeSignup bool
 }
 
 // expiringScope narrows to trials that will actually EXPIRE, in the window
@@ -67,27 +84,50 @@ type ListOptions struct {
 // The window's brackets and the index-preserving two-branch predicate both
 // live in EndsBetweenScope — see endsat.go.
 func expiringScope(db *gorm.DB, asOf time.Time, window time.Duration) *gorm.DB {
-	return trialingInWindowScope(db, asOf, window).Where("stripe_subscription_id IS NULL")
+	return trialingInWindowScope(db, asOf, window, false).Where("stripe_subscription_id IS NULL")
 }
 
-// trialingInWindowScope is expiringScope without the card filter: status is
-// trialing and the effective end lies in the window.
-func trialingInWindowScope(db *gorm.DB, asOf time.Time, window time.Duration) *gorm.DB {
-	return EndsBetweenScope(
-		db.Model(&subscription.StoreSubscription{}).
-			Where("status = ?", subscription.StatusTrialing),
-		asOf, asOf.Add(window),
-	)
-}
-
-// listScope is the scope ListExpiring queries against: expiringScope by
-// default (#285's shipped contract), or trialingInWindowScope when the
-// caller opts into seeing Stripe-managed (card-backed) trials too (#358).
-func listScope(db *gorm.DB, asOf time.Time, window time.Duration, opts ListOptions) *gorm.DB {
-	if opts.IncludeStripeManaged {
-		return trialingInWindowScope(db, asOf, window)
+// trialingInWindowScope is expiringScope without the card filter: the status
+// matches and the effective end lies in the window.
+//
+// includeSignup widens the status set from `trialing` alone to `trialing` or
+// `signup`. Only ListExpiring ever passes true — expiringScope, and so
+// CountExpiring, always passes false — see ListOptions.IncludeSignup for why
+// a signup row must not reach the KPI. The false branch builds the same
+// single-status predicate it always has, unchanged.
+func trialingInWindowScope(db *gorm.DB, asOf time.Time, window time.Duration, includeSignup bool) *gorm.DB {
+	scoped := db.Model(&subscription.StoreSubscription{})
+	if includeSignup {
+		scoped = scoped.Where("status IN ?", []subscription.SubscriptionStatus{
+			subscription.StatusTrialing, subscription.StatusSignup,
+		})
+	} else {
+		scoped = scoped.Where("status = ?", subscription.StatusTrialing)
 	}
-	return expiringScope(db, asOf, window)
+	return EndsBetweenScope(scoped, asOf, asOf.Add(window))
+}
+
+// listScope is the scope ListExpiring queries against. The two options widen
+// two independent dimensions — which statuses, and whether card-backed rows
+// count — so all four combinations are reachable and each means something:
+//
+//   - zero value: expiringScope, #285's shipped contract. Trialing, card-less.
+//   - IncludeStripeManaged: drops the card filter only (#358). Still trialing.
+//   - IncludeSignup: adds `signup` only. A card-backed signup row stays out.
+//   - both: trialing or signup, card-backed or not.
+//
+// The zero value delegates to expiringScope rather than rebuilding the same
+// predicate, so the default this list serves and the scope CountExpiring
+// counts cannot drift apart.
+func listScope(db *gorm.DB, asOf time.Time, window time.Duration, opts ListOptions) *gorm.DB {
+	if !opts.IncludeSignup && !opts.IncludeStripeManaged {
+		return expiringScope(db, asOf, window)
+	}
+	scoped := trialingInWindowScope(db, asOf, window, opts.IncludeSignup)
+	if !opts.IncludeStripeManaged {
+		scoped = scoped.Where("stripe_subscription_id IS NULL")
+	}
+	return scoped
 }
 
 // CountExpiring counts trials that will expire in the window (asOf,

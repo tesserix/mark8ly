@@ -70,7 +70,13 @@ func main() {
 	if err != nil {
 		log.Error("reconciliation-cron: run failed", "err", err)
 		// Drain audit queue before exit.
-		drainCtx, drainCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// audit.WriteTimeout PLUS head-room, not a bare 5s. `Stop` is
+		// best-effort and returns on this deadline logging "in-flight events
+		// may be lost"; a budget EQUAL to the write timeout leaves no margin,
+		// because Stop's clock starts here while the write began earlier. This
+		// process exits straight after, so a dropped row is dropped for good.
+		// mark8ly#804.
+		drainCtx, drainCancel := context.WithTimeout(context.Background(), audit.WriteTimeout+time.Second)
 		defer drainCancel()
 		auditEmitter.Stop(drainCtx)
 		os.Exit(1)
@@ -79,7 +85,13 @@ func main() {
 	log.Info("reconciliation-cron: done", "drift_count", driftCount)
 
 	// Drain the async audit queue before the process exits.
-	drainCtx, drainCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// audit.WriteTimeout PLUS head-room, not a bare 5s. `Stop` is
+	// best-effort and returns on this deadline logging "in-flight events
+	// may be lost"; a budget EQUAL to the write timeout leaves no margin,
+	// because Stop's clock starts here while the write began earlier. This
+	// process exits straight after, so a dropped row is dropped for good.
+	// mark8ly#804.
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), audit.WriteTimeout+time.Second)
 	defer drainCancel()
 	auditEmitter.Stop(drainCtx)
 }

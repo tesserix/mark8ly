@@ -37,7 +37,7 @@ func TestEmitStateTransition_WritesCanonicalEvent(t *testing.T) {
 	})
 
 	// Drain queue.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), drainBudget)
 	defer cancel()
 	em.Stop(ctx)
 
@@ -79,7 +79,7 @@ func TestEmitStateTransition_TerminalStatesGetWarning(t *testing.T) {
 		Actor:    "system:cron:retention",
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), drainBudget)
 	defer cancel()
 	em.Stop(ctx)
 
@@ -114,7 +114,7 @@ func TestEmitPlanChange_WritesCanonicalEvent(t *testing.T) {
 		EffectiveAt: time.Now(),
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), drainBudget)
 	defer cancel()
 	em.Stop(ctx)
 
@@ -154,7 +154,7 @@ func TestEmitPlanChange_BlockedOverQuota_SeverityWarning(t *testing.T) {
 		Reason:     "store_count=3 > starter_limit=2",
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), drainBudget)
 	defer cancel()
 	em.Stop(ctx)
 

@@ -105,7 +105,13 @@ func main() {
 }
 
 func drain(e *audit.Emitter) {
-	drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// audit.WriteTimeout PLUS head-room, not a bare 5s. `Stop` is
+	// best-effort and returns on this deadline logging "in-flight events
+	// may be lost"; a budget EQUAL to the write timeout leaves no margin,
+	// because Stop's clock starts here while the write began earlier. This
+	// process exits straight after, so a dropped row is dropped for good.
+	// mark8ly#804.
+	drainCtx, cancel := context.WithTimeout(context.Background(), audit.WriteTimeout+time.Second)
 	defer cancel()
 	e.Stop(drainCtx)
 }

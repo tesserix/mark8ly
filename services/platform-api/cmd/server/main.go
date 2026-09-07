@@ -29,6 +29,7 @@ import (
 	"github.com/mark8ly/platform-api/internal/audit"
 	"github.com/mark8ly/platform-api/internal/auth"
 	"github.com/mark8ly/platform-api/internal/authz"
+	"github.com/mark8ly/platform-api/internal/emailtemplates"
 	"github.com/mark8ly/platform-api/internal/estate"
 	"github.com/mark8ly/platform-api/internal/estateuser"
 	"github.com/mark8ly/platform-api/internal/invitation"
@@ -352,6 +353,15 @@ func main() {
 		Logger:  log,
 		Secret:  cfg.PlatformAdminSecret,
 		Emitter: auditClient,
+		// mark8ly#720 Task 5: the auth/onboarding half of the email
+		// template registry. EmailTemplateRegistry wraps the SAME
+		// templateLoader the real send path (notification.NewHandler,
+		// below) reads, so an operator's edit is visible to actual sends
+		// immediately, not just to this surface's own preview — see
+		// emailtemplates.Registry's doc comment.
+		EmailTemplates:          emailtemplates.NewStore(conn),
+		EmailTemplateRegistry:   emailtemplates.NewRegistry(templateLoader),
+		EmailTemplateTestSender: emailtemplates.NewNotificationTestSender(sender, cfg.EmailFrom),
 	})
 
 	v1 := r.Group("/api/v1")

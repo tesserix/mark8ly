@@ -15,17 +15,16 @@ import (
 const BcryptCost = 12
 
 // Bootstrapper provisions exactly one break-glass account per tenant.
-// Secret Manager is written FIRST so a DB failure never leaves the
+// The secret store is written FIRST so a DB failure never leaves the
 // password_hash referencing a non-existent blob.
 type Bootstrapper struct {
-	repo      *Repository
-	secrets   *SecretManager
-	projectID string
+	repo    *Repository
+	secrets *SecretManager
 }
 
 // NewBootstrapper returns a Bootstrapper.
-func NewBootstrapper(repo *Repository, secrets *SecretManager, projectID string) *Bootstrapper {
-	return &Bootstrapper{repo: repo, secrets: secrets, projectID: projectID}
+func NewBootstrapper(repo *Repository, secrets *SecretManager) *Bootstrapper {
+	return &Bootstrapper{repo: repo, secrets: secrets}
 }
 
 // Provision creates the break-glass account for tenantID. Idempotent:
@@ -34,15 +33,14 @@ func NewBootstrapper(repo *Repository, secrets *SecretManager, projectID string)
 //
 // The order is deliberate:
 //  1. Generate password + TOTP + bcrypt(password).
-//  2. Write Blob to Secret Manager at SecretPathFor(projectID, tenantID).
+//  2. Write Blob to OpenBao at BaoSecretPathFor(tenantID).
 //  3. INSERT row. On PK conflict → ErrAlreadyProvisioned (safe: the
-//     existing row was provisioned by someone else; Secret Manager
+//     existing row was provisioned by someone else; the secret store
 //     gets a new version that the existing hash won't validate, but
 //     that only affects a duplicate re-provision, not the live row).
 //
 // If step 2 fails the DB is untouched; if step 3 fails we've left an
-// orphan Secret Manager version — benign, and a follow-up rotate fixes
-// it.
+// orphan secret version — benign, and a follow-up rotate fixes it.
 func (b *Bootstrapper) Provision(ctx context.Context, tenantID uuid.UUID) error {
 	if tenantID == uuid.Nil {
 		return fmt.Errorf("%w: tenant_id required", ErrInvalidCredentials)
@@ -69,7 +67,7 @@ func (b *Bootstrapper) Provision(ctx context.Context, tenantID uuid.UUID) error 
 		return fmt.Errorf("bcrypt: %w", err)
 	}
 
-	secretPath := SecretPathFor(b.projectID, tenantID.String())
+	secretPath := BaoSecretPathFor(tenantID.String())
 	if err := b.secrets.Upsert(ctx, secretPath, Blob{
 		Password:    pw,
 		TOTPSecret:  totpSecret,

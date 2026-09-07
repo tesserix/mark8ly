@@ -40,7 +40,7 @@ func TestIntegration_ClearLockout_RemovesDBRowAndResetsRateLimiterSoALockedIPCan
 	ipKey := breakglass.HMACKey("shared-hmac-key-for-this-test")
 
 	tenantID := uuid.New()
-	boot := breakglass.NewBootstrapper(repo, secrets, "test-project")
+	boot := breakglass.NewBootstrapper(repo, secrets)
 	require.NoError(t, boot.Provision(context.Background(), tenantID))
 
 	loginHandler := admin.NewBreakGlassLoginHandler(admin.BreakGlassDeps{
@@ -134,7 +134,7 @@ func TestIntegration_ClearLockout_ResetsInMemoryCounterNotJustTheDBRow(t *testin
 	ipKey := breakglass.HMACKey("shared-hmac-key-for-this-test-2")
 
 	tenantID := uuid.New()
-	boot := breakglass.NewBootstrapper(repo, secrets, "test-project")
+	boot := breakglass.NewBootstrapper(repo, secrets)
 	require.NoError(t, boot.Provision(context.Background(), tenantID))
 
 	loginHandler := admin.NewBreakGlassLoginHandler(admin.BreakGlassDeps{

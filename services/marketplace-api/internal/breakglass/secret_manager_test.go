@@ -46,8 +46,3 @@ func TestSecretManager_Fetch_RejectsBlobMissingFields(t *testing.T) {
 	_, err := sm.Fetch(context.Background(), "/bad")
 	require.Error(t, err)
 }
-
-func TestSecretPathFor_Format(t *testing.T) {
-	path := SecretPathFor("tesserix-prod", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
-	require.Equal(t, "/projects/tesserix-prod/secrets/break-glass-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", path)
-}

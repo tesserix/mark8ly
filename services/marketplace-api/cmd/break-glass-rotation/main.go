@@ -19,23 +19,32 @@ import (
 	"os"
 	"time"
 
-	secretmanager "cloud.google.com/go/secretmanager/apiv1"
-
 	"github.com/mark8ly/marketplace-api/internal/audit"
+	"github.com/mark8ly/marketplace-api/internal/bao"
 	"github.com/mark8ly/marketplace-api/internal/breakglass"
+	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
+	"github.com/mark8ly/marketplace-api/pkg/config"
 	"github.com/mark8ly/marketplace-api/pkg/db"
 )
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		log.Error("break-glass-rotation: DATABASE_URL not set")
+	// LoadCarrierSecretJob reads only DATABASE_URL / SHIPPING_SECRET_STORE /
+	// OPENBAO_ADDR / OPENBAO_ROLE / OPENBAO_KV_MOUNT / encryption fields —
+	// NOT the full config.Load(), which requires MARKETPLACE_FGA_API_URL
+	// unconditionally and, outside ENV=dev, secrets this job never touches.
+	// It's the same loader cmd/refund-sweep-cron uses, and the OpenBao
+	// client it configures is the same production credential store
+	// break-glass secrets now live in (mark8ly#621 retired GCP Secret
+	// Manager; that backend and this job's use of it are gone as of #642).
+	cfg, err := config.LoadCarrierSecretJob()
+	if err != nil {
+		log.Error("break-glass-rotation: config load failed", "err", err)
 		os.Exit(1)
 	}
 
-	conn, err := db.Open(databaseURL)
+	conn, err := db.Open(cfg.DatabaseURL)
 	if err != nil {
 		log.Error("break-glass-rotation: db open failed", "err", err)
 		os.Exit(1)
@@ -44,15 +53,18 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	smClient, err := secretmanager.NewClient(ctx)
+	baoClient, err := bao.New(bao.Config{
+		Address:        cfg.OpenBaoAddr,
+		Mount:          cfg.OpenBaoKVMount,
+		KubernetesRole: cfg.OpenBaoRole,
+	})
 	if err != nil {
-		log.Error("break-glass-rotation: secret manager client init failed", "err", err)
+		log.Error("break-glass-rotation: openbao client init failed", "err", err)
 		os.Exit(1)
 	}
-	defer smClient.Close()
 
 	repo := breakglass.NewRepository(conn)
-	secrets := breakglass.NewSecretManager(breakglass.NewGCPSecretClient(smClient))
+	secrets := breakglass.NewSecretManager(breakglass.NewBaoSecretClient(carriersecrets.NewBaoClient(baoClient)))
 
 	// Audit emitter — fire-and-forget. nil is safe downstream.
 	auditRepo := audit.NewRepository()

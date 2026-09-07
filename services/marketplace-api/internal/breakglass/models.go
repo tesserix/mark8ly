@@ -1,10 +1,11 @@
 // Package breakglass implements §12.4 emergency local admin accounts
 // for Pro+SSO tenants. One account per tenant, dual-factor login
-// (password + mandatory TOTP), credentials live in GCP Secret Manager
-// at `/projects/tesserix-prod/secrets/break-glass-{tenant_id}`. DB
-// stores only bcrypt(password) + a secret-path pointer. Login triggers
-// an immediate 24h rotation; a daily cron also rotates anything older
-// than 90 days.
+// (password + mandatory TOTP), credentials live in OpenBao at
+// BaoSecretPathFor(tenant_id) (kv/mark8ly/marketplace-api/break-glass/
+// {tenant_id}) — GCP Secret Manager was retired for this package in
+// mark8ly#621/#642. DB stores only bcrypt(password) + a secret-path
+// pointer. Login triggers an immediate 24h rotation; a daily cron also
+// rotates anything older than 90 days.
 package breakglass
 
 import (

@@ -25,7 +25,7 @@ func TestIntegration_RotateOne_DoesNotReEnableADisabledAccount(t *testing.T) {
 	rotator := breakglass.NewRotator(repo, secrets, nil, nil)
 
 	tenantID := uuid.New()
-	boot := breakglass.NewBootstrapper(repo, secrets, "test-project")
+	boot := breakglass.NewBootstrapper(repo, secrets)
 	require.NoError(t, boot.Provision(context.Background(), tenantID))
 
 	require.NoError(t, repo.Disable(context.Background(), tenantID, "suspected compromise"))

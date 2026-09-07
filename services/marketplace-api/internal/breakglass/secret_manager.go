@@ -8,19 +8,19 @@ import (
 	"time"
 )
 
-// Blob is the decrypted payload stored in GCP Secret Manager under
-// /projects/tesserix-prod/secrets/break-glass-{tenant_id}. The TOTP
-// secret NEVER leaves this blob; only `bcrypt(Password)` lands in the
-// DB row.
+// Blob is the decrypted payload stored in OpenBao under
+// BaoSecretPathFor(tenant_id) (kv/mark8ly/marketplace-api/break-glass/
+// {tenant_id}). The TOTP secret NEVER leaves this blob; only
+// `bcrypt(Password)` lands in the DB row.
 type Blob struct {
 	Password    string    `json:"password"`
 	TOTPSecret  string    `json:"totp_secret"`
 	GeneratedAt time.Time `json:"generated_at"`
 }
 
-// SecretClient is the minimal Secret Manager surface this package
-// needs. Production implementations wrap
-// cloud.google.com/go/secretmanager/apiv1.Client; tests swap in a
+// SecretClient is the minimal secret-backend surface this package
+// needs. The production implementation is BaoSecretClient, wrapping
+// OpenBao (see bao_secret_client.go); tests swap in a
 // FakeSecretClient.
 type SecretClient interface {
 	// AddVersion writes a new version of the secret at `path`. Payload
@@ -75,15 +75,9 @@ func (s *SecretManager) Fetch(ctx context.Context, path string) (*Blob, error) {
 	return &b, nil
 }
 
-// SecretPathFor returns the canonical Secret Manager resource path
-// for a tenant's break-glass blob under `projectID`.
-func SecretPathFor(projectID, tenantID string) string {
-	return fmt.Sprintf("/projects/%s/secrets/break-glass-%s", projectID, tenantID)
-}
-
 // FakeSecretClient is an in-memory SecretClient for unit tests.
-// Versions beyond the latest are discarded — the real GCP API keeps
-// history, but this package only ever reads `latest`, so replaying
+// Versions beyond the latest are discarded — the real OpenBao KV v2 API
+// keeps history, but this package only ever reads `latest`, so replaying
 // that surface is enough.
 type FakeSecretClient struct {
 	data map[string][]byte

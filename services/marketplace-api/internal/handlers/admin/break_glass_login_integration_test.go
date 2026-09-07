@@ -39,7 +39,7 @@ func (alwaysFailSecretClient) AccessLatest(context.Context, string) ([]byte, err
 // TOTP secret so a test can build a genuine login request.
 func provisionAccount(t *testing.T, repo *breakglass.Repository, secrets *breakglass.SecretManager, tenantID uuid.UUID) (password, totpSecret string) {
 	t.Helper()
-	boot := breakglass.NewBootstrapper(repo, secrets, "test-project")
+	boot := breakglass.NewBootstrapper(repo, secrets)
 	require.NoError(t, boot.Provision(context.Background(), tenantID))
 
 	acc, err := repo.GetByTenant(context.Background(), tenantID)

@@ -1,0 +1,16 @@
+-- Drops tenant_sso_configs.gip_provider_id (#793).
+--
+-- The column recorded the GIP-side SAML/OIDC provider id, used as an
+-- idempotency key when the GIP provisioning client uploaded a tenant's SSO
+-- config. That client was deleted in #789 after it was shown to be
+-- unreachable: nothing constructed it, and both the admin and public SSO
+-- route groups were gated on handlers main.go never populated.
+--
+-- Safe to drop rather than migrate: tenant_sso_configs held ZERO rows in
+-- production when this was written, so no identifier is being discarded.
+--
+-- The TABLE deliberately stays. internal/sso's provider-agnostic half
+-- (SAML/OIDC parsing, attribute mapping, JIT provisioning) was kept in #789
+-- precisely so tenant SSO can be rebuilt on Zitadel without starting over,
+-- and internal/tenantpurge still covers the table for tenant deletion.
+ALTER TABLE tenant_sso_configs DROP COLUMN IF EXISTS gip_provider_id;

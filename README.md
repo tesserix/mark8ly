@@ -26,8 +26,7 @@ mark8ly/
 │   ├── admin/               Next.js 16 tenant admin dashboard (port 4202)
 │   ├── storefront/          Next.js 16 customer storefront (port 4203)
 │   ├── onboarding/          Next.js 16 marketing + onboarding wizard (port 4201)
-│   ├── mobile-admin/        (stub) future Expo admin
-│   └── storefront-mobile/   (stub) future Expo storefront
+│   └── mobile-admin/        (stub) future Expo admin
 ├── services/
 │   ├── auth-bff/            Go — HttpOnly session cookies, CSRF, WS tickets
 │   ├── platform-api/        Go — tenants, users, onboarding, settings, FGA bootstrap

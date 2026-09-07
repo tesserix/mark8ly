@@ -38,6 +38,13 @@ const (
 	PublicReasonBelowFloor         PublicRejectReason = "below_absolute_floor"
 	PublicReasonCurrencyNotCovered PublicRejectReason = "currency_not_covered"
 	PublicReasonUnknownDiscount    PublicRejectReason = "unknown_discount_type"
+
+	// PublicReasonTrialNotExtendable is safe to disclose for the reason
+	// given above: it is a fact about the caller's OWN subscription — their
+	// trial has ended, or they are already a paying customer — and it
+	// confirms nothing about a code they were not already holding. It is
+	// also the one refusal a merchant can act on, by asking an operator.
+	PublicReasonTrialNotExtendable PublicRejectReason = "trial_not_extendable"
 )
 
 // PublicReasonFor maps an internal reason onto the one the client is told.
@@ -66,6 +73,8 @@ func PublicReasonFor(r ValidationRejectReason) PublicRejectReason {
 		return PublicReasonCurrencyNotCovered
 	case RejectReasonUnknownDiscountType:
 		return PublicReasonUnknownDiscount
+	case RejectReasonTrialNotExtendable:
+		return PublicReasonTrialNotExtendable
 	default:
 		return PublicReasonInvalidOrExpired
 	}

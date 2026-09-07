@@ -28,3 +28,13 @@ var ErrCurrencyNotCovered = errors.New("promo: currency not covered by floor tab
 // ErrProAppRefund indicates a Pro+App setup fee refund was requested, which
 // is never refundable per §8.
 var ErrProAppRefund = errors.New("refund: Pro+App setup fee is not refundable")
+
+// ErrTrialExtensionUnavailable is returned when a code that grants a trial
+// extension cannot be honoured for a reason that is OURS, not the merchant's:
+// no trial extender wired, or a caller that passed no subscription.
+//
+// Deliberately NOT ErrInvalidOrExpired. That error tells a merchant their code
+// is no good, which would be a lie here and would also bury a wiring
+// regression behind a routine 422 — the same "looks delivered, does nothing"
+// shape #620 exists to remove.
+var ErrTrialExtensionUnavailable = errors.New("promo: trial extension cannot be delivered")

@@ -58,7 +58,7 @@ type MobileDeps struct {
 // So there is no customer bearer verifier in this service at all today.
 // This function's "Authenticated routes" group chains requireAuth :=
 // GIPBearerAuth(deps.DevMode) — the scaffold guard in mobile_auth.go that
-// never sets CustomerGipUIDKey itself — with no MobileCustomerAuth in the
+// never sets CustomerUIDKey itself — with no MobileCustomerAuth in the
 // chain to set it. mobileCustomerProfileMW then finds no identity and
 // treats the caller as a guest, so RequireCustomerAuth has nothing to
 // authorize and 401s every request in the authed group. Wiring this
@@ -251,9 +251,9 @@ func RegisterMobileStorefront(router *gin.RouterGroup, deps MobileDeps) {
 // docs/superpowers/specs/2026-09-05-customer-store-membership-design.md.
 func mobileCustomerProfileMW(customerSvc CustomerProfileService, logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		gipUID := c.GetString(CustomerGipUIDKey)
+		uid := c.GetString(CustomerUIDKey)
 		email := c.GetString(CustomerEmailKey)
-		if gipUID == "" || email == "" {
+		if uid == "" || email == "" {
 			// No auth context — continue as guest.
 			c.Next()
 			return
@@ -277,7 +277,7 @@ func mobileCustomerProfileMW(customerSvc CustomerProfileService, logger *slog.Lo
 		}
 
 		c.Set(CustomerIdentityEmailKey, email)
-		c.Set(CustomerIdentityUIDKey, gipUID)
+		c.Set(CustomerIdentityUIDKey, uid)
 
 		profile, err := customerSvc.LookupProfile(c.Request.Context(), storeID, email)
 		if err != nil {
@@ -294,7 +294,7 @@ func mobileCustomerProfileMW(customerSvc CustomerProfileService, logger *slog.Lo
 
 		c.Set(CustomerProfileIDKey, profile.ID.String())
 		c.Set(CustomerEmailKey, profile.Email)
-		c.Set(CustomerGipUIDKey, gipUID)
+		c.Set(CustomerUIDKey, uid)
 		c.Set(CustomerProfileKey, profile)
 		c.Next()
 	}

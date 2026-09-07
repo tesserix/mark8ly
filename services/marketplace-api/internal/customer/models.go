@@ -25,7 +25,6 @@ type CustomerProfile struct {
 	ID             uuid.UUID      `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
 	TenantID       uuid.UUID      `gorm:"column:tenant_id;type:uuid;not null"`
 	StoreID        uuid.UUID      `gorm:"column:store_id;type:uuid;not null"`
-	GipUID         *string        `gorm:"column:gip_uid;type:varchar(200)"`
 	Email          string         `gorm:"column:email;type:varchar(300);not null"`
 	FirstName      *string        `gorm:"column:first_name;type:varchar(200)"`
 	LastName       *string        `gorm:"column:last_name;type:varchar(200)"`

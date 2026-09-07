@@ -19,7 +19,6 @@ import (
 type JoinStoreInput struct {
 	StoreID   uuid.UUID
 	TenantID  uuid.UUID
-	GipUID    string
 	Email     string
 	FirstName string
 	LastName  string
@@ -80,9 +79,9 @@ func (s *Service) LookupProfile(ctx context.Context, storeID uuid.UUID, email st
 // explicit join (the storefront /account/join endpoint and the mobile
 // /account/register endpoint), never from a session or browsing path.
 //
-// Uses INSERT ON CONFLICT (store_id, email) DO UPDATE SET gip_uid = EXCLUDED.gip_uid
+// Uses INSERT ON CONFLICT (store_id, email) DO UPDATE SET updated_at
 // so a double-submitted join is safe. The conflict branch deliberately
-// touches only gip_uid/updated_at, so re-joining can never reset status,
+// touches only updated_at, so re-joining can never reset status,
 // block_reason, tags, or notes; a blocked membership is additionally
 // refused up front with ErrBlocked rather than relying on that.
 //
@@ -108,7 +107,6 @@ func (s *Service) JoinStore(ctx context.Context, input JoinStoreInput, c *gin.Co
 	profile := &CustomerProfile{
 		TenantID:  input.TenantID,
 		StoreID:   input.StoreID,
-		GipUID:    nilIfEmpty(input.GipUID),
 		Email:     email,
 		FirstName: nilIfEmpty(input.FirstName),
 		LastName:  nilIfEmpty(input.LastName),

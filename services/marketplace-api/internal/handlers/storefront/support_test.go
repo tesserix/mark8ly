@@ -28,7 +28,7 @@ func newSupportTestRig(t *testing.T, otto http.HandlerFunc) (*gin.Engine, func()
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("store", &stores.Store{ID: "store-1", TenantID: "tenant-1", Status: stores.StatusActive})
-		c.Set(CustomerGipUIDKey, "gip-abc")
+		c.Set(CustomerUIDKey, "gip-abc")
 		c.Set(CustomerEmailKey, "buyer@example.com")
 		c.Next()
 	})

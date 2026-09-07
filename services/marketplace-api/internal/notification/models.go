@@ -39,9 +39,10 @@ type Notification struct {
 	// PROFILE ID (customer_profiles.id) for the customer notification bell.
 	// NULL = store/staff notification.
 	//
-	// NOT customer_profiles.gip_uid. Both are opaque strings in the same
-	// conceptual role, so the distinction is easy to lose: a GIP UID pasted
-	// into the /admin/notifications recipient_user_id filter matches nothing
+	// NOT an IdP subject (Zitadel uid, or the legacy customer_profiles.gip_uid
+	// this service no longer reads or writes — #793). Both are opaque strings
+	// in the same conceptual role, so the distinction is easy to lose: an IdP
+	// uid pasted into the /admin/notifications recipient_user_id filter matches nothing
 	// and returns an empty 200, which on a governance surface is
 	// indistinguishable from "this customer was never notified" (#350).
 	RecipientUserID *string          `gorm:"column:recipient_user_id;type:varchar(255)"`

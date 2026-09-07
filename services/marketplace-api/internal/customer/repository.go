@@ -18,7 +18,7 @@ var ErrNotFound = errors.New("customer: not found")
 
 // Repository is the data-access interface for customer profiles and addresses.
 type Repository interface {
-	// UpsertProfile inserts a profile or updates gip_uid+updated_at on conflict(store_id, email).
+	// UpsertProfile inserts a profile or bumps updated_at on conflict(store_id, email).
 	UpsertProfile(ctx context.Context, p *CustomerProfile) (*CustomerProfile, error)
 
 	// GetProfileByEmail returns the membership row for (store_id, email),
@@ -26,9 +26,6 @@ type Repository interface {
 	// the read half of the membership model: every session-path caller
 	// uses it, and none of them may fall back to creating a row.
 	GetProfileByEmail(ctx context.Context, storeID uuid.UUID, email string) (*CustomerProfile, error)
-
-	// GetProfileByGipUID returns the profile for (store_id, gip_uid). ErrNotFound on miss.
-	GetProfileByGipUID(ctx context.Context, storeID uuid.UUID, gipUID string) (*CustomerProfile, error)
 
 	// GetProfileByID returns a profile by primary key. ErrNotFound on miss.
 	GetProfileByID(ctx context.Context, profileID uuid.UUID) (*CustomerProfile, error)
@@ -89,8 +86,8 @@ type gormRepo struct {
 func NewRepository(db *gorm.DB) Repository { return &gormRepo{db: db} }
 
 func (r *gormRepo) UpsertProfile(ctx context.Context, p *CustomerProfile) (*CustomerProfile, error) {
-	// On conflict we only refresh gip_uid (in case the IdP rotated it)
-	// and updated_at. We deliberately do NOT touch first_name / last_name
+	// On conflict we only bump updated_at. We deliberately do NOT touch
+	// first_name / last_name
 	// here — those are owned by the customer via the storefront /account
 	// PATCH. Including them in DoUpdates caused every subsequent login
 	// to clobber saved edits with whatever (usually empty) values the
@@ -98,7 +95,7 @@ func (r *gormRepo) UpsertProfile(ctx context.Context, p *CustomerProfile) (*Cust
 	err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "store_id"}, {Name: "email"}},
-			DoUpdates: clause.AssignmentColumns([]string{"gip_uid", "updated_at"}),
+			DoUpdates: clause.AssignmentColumns([]string{"updated_at"}),
 		}).
 		Create(p).Error
 	if err != nil {
@@ -130,20 +127,6 @@ func (r *gormRepo) GetProfileByEmail(ctx context.Context, storeID uuid.UUID, ema
 	}
 	if err != nil {
 		return nil, fmt.Errorf("customer: get by email: %w", err)
-	}
-	return &p, nil
-}
-
-func (r *gormRepo) GetProfileByGipUID(ctx context.Context, storeID uuid.UUID, gipUID string) (*CustomerProfile, error) {
-	var p CustomerProfile
-	err := r.db.WithContext(ctx).
-		Where("store_id = ? AND gip_uid = ?", storeID, gipUID).
-		First(&p).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("customer: get by gip_uid: %w", err)
 	}
 	return &p, nil
 }

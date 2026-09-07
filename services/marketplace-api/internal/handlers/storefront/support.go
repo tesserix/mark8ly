@@ -47,7 +47,7 @@ func storefrontResolver(c *gin.Context) (ottoclient.ForwardScope, ottoclient.For
 	}
 	return ottoclient.ForwardScope{TenantID: s.TenantID, StoreID: s.ID},
 		ottoclient.ForwardIdentity{
-			UserID:    c.GetString(CustomerGipUIDKey),
+			UserID:    c.GetString(CustomerUIDKey),
 			UserEmail: c.GetString(CustomerEmailKey),
 		},
 		true

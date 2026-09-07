@@ -35,7 +35,7 @@ func GIPBearerAuth(_ bool) gin.HandlerFunc {
 		// MUST be chained after this one. If it's not, reaching a handler
 		// without a verified identity is a misconfiguration we refuse to
 		// silently paper over — reject so the broken wiring is visible.
-		if _, exists := c.Get(CustomerGipUIDKey); !exists {
+		if _, exists := c.Get(CustomerUIDKey); !exists {
 			// No upstream verifier has set identity; fail closed.
 			// (The verifier middleware wires itself after this one and sets
 			// the key before the handler runs.)
@@ -68,9 +68,9 @@ func OptionalGIPBearerAuth(_ bool) gin.HandlerFunc {
 // to validate tokens AND resolve customer profiles. It bridges the GIP token
 // to the same customer context keys used by the cookie-based web storefront.
 type CustomerVerifier interface {
-	// VerifyCustomerToken validates a GIP ID token and returns the customer's
-	// GIP UID and email. Returns an error if the token is invalid.
-	VerifyCustomerToken(idToken string) (gipUID, email string, err error)
+	// VerifyCustomerToken validates an ID token and returns the customer's
+	// identity UID and email. Returns an error if the token is invalid.
+	VerifyCustomerToken(idToken string) (uid, email string, err error)
 }
 
 // MobileCustomerAuth validates Bearer tokens via a CustomerVerifier and sets
@@ -89,13 +89,13 @@ func MobileCustomerAuth(verifier CustomerVerifier) gin.HandlerFunc {
 			return
 		}
 
-		gipUID, email, err := verifier.VerifyCustomerToken(idToken)
+		uid, email, err := verifier.VerifyCustomerToken(idToken)
 		if err != nil {
 			abortUnauthorized(c, "invalid or expired token")
 			return
 		}
 
-		c.Set(CustomerGipUIDKey, gipUID)
+		c.Set(CustomerUIDKey, uid)
 		c.Set(CustomerEmailKey, email)
 		c.Next()
 	}
@@ -117,14 +117,14 @@ func OptionalMobileCustomerAuth(verifier CustomerVerifier) gin.HandlerFunc {
 			return
 		}
 
-		gipUID, email, err := verifier.VerifyCustomerToken(idToken)
+		uid, email, err := verifier.VerifyCustomerToken(idToken)
 		if err != nil {
 			// Invalid token on optional auth — continue as guest.
 			c.Next()
 			return
 		}
 
-		c.Set(CustomerGipUIDKey, gipUID)
+		c.Set(CustomerUIDKey, uid)
 		c.Set(CustomerEmailKey, email)
 		c.Next()
 	}

@@ -162,9 +162,9 @@ type registerRequest struct {
 // the context, never from the body. See customer_join.go's header for why
 // nothing else on this surface may create a membership.
 func (h *CustomerAccountHandler) Register(c *gin.Context) {
-	gipUID := c.GetString(CustomerIdentityUIDKey)
+	uid := c.GetString(CustomerIdentityUIDKey)
 	email := c.GetString(CustomerIdentityEmailKey)
-	if gipUID == "" || email == "" {
+	if uid == "" || email == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":   "unauthorized",
 			"message": "Authentication required",
@@ -207,7 +207,6 @@ func (h *CustomerAccountHandler) Register(c *gin.Context) {
 	profile, err := h.customerSvc.JoinStore(c.Request.Context(), customer.JoinStoreInput{
 		StoreID:   storeID,
 		TenantID:  tenantID,
-		GipUID:    gipUID,
 		Email:     email,
 		FirstName: firstName,
 		LastName:  lastName,

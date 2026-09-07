@@ -15,6 +15,24 @@ import (
 	"gorm.io/gorm"
 )
 
+// WriteTimeout bounds every audit insert this package performs on its own
+// connection — the background worker's write() and the synchronous
+// EmitSync. Both deliberately substitute a fresh context.Background() for
+// the caller's, so that a client disconnecting mid-request cannot cancel
+// the record of what it did; something then has to stop a slow database
+// pinning the worker forever, and this is that bound. EmitTx is the one
+// insert NOT bounded by it: that one runs inside the caller's transaction
+// and must share the caller's cancellation, by design.
+//
+// It is a named constant rather than a literal at each site because the
+// two sites are one fact, not two: an insert's budget. Two literals drift.
+//
+// It is EXPORTED for callers, not merely for tests. Choosing a deadline
+// for Stop requires knowing how long an in-flight write may still be
+// running, because Stop's budget is measured against exactly this number
+// — see Stop, and pass it at least this much.
+const WriteTimeout = 5 * time.Second
+
 // Event is the input to Emitter.Emit. Required fields are validated by
 // the emitter; a missing tenant causes the event to be dropped with a
 // warning rather than written as a tenant-unscoped row. Store is optional
@@ -185,7 +203,7 @@ func (e *Emitter) EmitSync(c *gin.Context, ev Event) error {
 	// Use a fresh background context with a timeout rather than the
 	// request's — matching write(). A client disconnecting mid-purge must
 	// not cancel the record of what was destroyed.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), WriteTimeout)
 	defer cancel()
 	if err := e.repo.Create(ctx, e.db, entry); err != nil {
 		return fmt.Errorf("audit.EmitSync: insert: %w", err)
@@ -206,10 +224,11 @@ func (e *Emitter) EmitSync(c *gin.Context, ev Event) error {
 // transaction to join, and Emit everywhere else.
 //
 // ctx is the CALLER's, and this deliberately contradicts both neighbours.
-// write() and EmitSync each substitute a fresh context.Background() with a
-// 5s timeout so a disconnecting client cannot cancel the record. That is
-// right for them — their write outlives the request by design — and wrong
-// here: this insert runs inside someone else's transaction and must share
+// write() and EmitSync each substitute a fresh context.Background()
+// bounded by WriteTimeout so a disconnecting client cannot cancel the
+// record. That is right for them — their write outlives the request by
+// design — and wrong here: this insert runs inside someone else's
+// transaction and must share
 // that transaction's cancellation. Do not "fix" it back to
 // context.Background(); TestEmitTx_UsesTheCallersContext pins it.
 //
@@ -253,6 +272,24 @@ func (e *Emitter) EmitTx(ctx context.Context, tx *gorm.DB, c *gin.Context, ev Ev
 // Stop signals workers to drain the queue and exit. Safe to call once;
 // further Emit calls after Stop will block briefly until workers exit
 // then drop. Intended to be called from main on shutdown signal.
+//
+// The drain is BEST-EFFORT, bounded by ctx and not by the queue emptying.
+// Stop returns when every worker has exited OR when ctx expires, whichever
+// happens first; on expiry it logs a warning and returns with events still
+// unwritten. It does not promise the queue is drained, and never has.
+//
+// THE TRAP, because it is not the obvious one: a worker's insert runs on
+// its own context bounded by WriteTimeout, which is entirely independent
+// of ctx. So a caller whose deadline is SHORTER than WriteTimeout can have
+// ctx expire while a perfectly healthy insert is still in flight — nothing
+// is failing, the row simply has not landed yet. Stop returns, the warning
+// says events "may be lost", and the caller cannot tell that case apart
+// from a real failure. (The insert itself is not cancelled — the worker
+// goroutine carries on — but a process that exits, or a caller that reads
+// the row back straight away, sees the event as lost either way.)
+//
+// So: give ctx at least WriteTimeout. mark8ly#804 was a test that gave 2s
+// and then read the row back, and lost that race under a loaded database.
 func (e *Emitter) Stop(ctx context.Context) {
 	if e == nil {
 		return
@@ -291,10 +328,12 @@ func (e *Emitter) worker() {
 }
 
 func (e *Emitter) write(entry Entry) {
-	// Use a fresh background context with a short timeout so a slow DB
+	// Use a fresh background context bounded by WriteTimeout so a slow DB
 	// can't pin the worker indefinitely. Audit writes are ephemeral —
-	// dropping one on timeout is preferable to backing up the queue.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// dropping one on timeout is preferable to backing up the queue. This
+	// context is independent of any ctx passed to Stop, which is why Stop
+	// documents WriteTimeout as the floor for its own deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), WriteTimeout)
 	defer cancel()
 	if err := e.repo.Create(ctx, e.db, &entry); err != nil {
 		e.logger.Error("audit.Emitter: insert failed",

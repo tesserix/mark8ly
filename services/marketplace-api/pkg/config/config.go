@@ -67,12 +67,6 @@ type Config struct {
 	// session cookies. When empty, OptionalCustomerAuth always yields
 	// guest context — fine for local dev without auth-bff.
 	CustomerSessionSecret string `envconfig:"CUSTOMER_SESSION_SECRET" default:""`
-	// GIPProjectID is the Google Identity Platform project ID. Mobile
-	// ADMIN no longer uses it (#786 collapsed that group onto Zitadel);
-	// it still gates the storefront customer verifier (#787). When
-	// empty, that verifier stays disabled — fine for dev environments
-	// without it.
-	GIPProjectID string `envconfig:"GIP_PROJECT_ID" default:""`
 
 	// S1 — auth-bff URL for MFA/session proxying.
 	AuthBFFURL string `envconfig:"AUTH_BFF_URL" default:""`

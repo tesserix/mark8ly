@@ -47,22 +47,26 @@ type MobileDeps struct {
 }
 
 // RegisterMobileStorefront mounts the mobile storefront routes on the given
-// router group. Chain: StoreContext → handler. Auth via GIP Bearer token
-// instead of X-Storefront-Key.
+// router group. Chain: StoreContext → handler.
 //
 // Caution for whoever wires this in: it is defined but never called from
-// main.go today. Only RegisterMobileStorefrontSupport (see
-// gip_customer_verifier.go) is mounted, and that function chains the real
-// verifier-backed MobileCustomerAuth. This function's "Authenticated
-// routes" group below instead chains requireAuth := GIPBearerAuth(deps.
-// DevMode) — the scaffold guard in mobile_auth.go that never sets
-// CustomerGipUIDKey itself — with no MobileCustomerAuth in the chain to
-// set it. mobileCustomerProfileMW then finds no identity and treats the
-// caller as a guest, so RequireCustomerAuth has nothing to authorize and
-// 401s every request in the authed group. Wiring this as-is, without
-// inserting a verifier-backed auth middleware ahead of requireAuth, would
-// break every authenticated mobile storefront endpoint (checkout, orders,
-// account, wishlist, reviews, loyalty, push tokens, notify-me, support).
+// main.go, and NOTHING in this package is mounted there any more —
+// RegisterMobileStorefrontSupport, the one standalone mount, went with the
+// GIP customer verifier in #787 because its only client (the single-tenant
+// storefront mobile app) never shipped and was itself deleted in #792.
+//
+// So there is no customer bearer verifier in this service at all today.
+// This function's "Authenticated routes" group chains requireAuth :=
+// GIPBearerAuth(deps.DevMode) — the scaffold guard in mobile_auth.go that
+// never sets CustomerGipUIDKey itself — with no MobileCustomerAuth in the
+// chain to set it. mobileCustomerProfileMW then finds no identity and
+// treats the caller as a guest, so RequireCustomerAuth has nothing to
+// authorize and 401s every request in the authed group. Wiring this
+// as-is, without first building a Zitadel-backed CustomerVerifier and
+// inserting MobileCustomerAuth ahead of requireAuth, would break every
+// authenticated mobile storefront endpoint (checkout, orders, account,
+// wishlist, reviews, loyalty, push tokens, notify-me, support). That
+// verifier is #792's job.
 func RegisterMobileStorefront(router *gin.RouterGroup, deps MobileDeps) {
 	storeMW := StoreContext(deps.SlugCache)
 

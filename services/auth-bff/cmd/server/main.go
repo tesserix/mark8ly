@@ -436,6 +436,25 @@ func main() {
 	// for that user should say.
 	if zitadelClient != nil {
 		internalUsers = internalUsers.WithDisplayNames(zitadelClient)
+		// GET /internal/users/:id/providers backs the storefront's
+		// "Linked sign-in methods" panel (#787), which previously read
+		// Identity Toolkit from the storefront pod. The Google/Apple IDP
+		// ids are bound here because they are deployment config: they
+		// are what turns a Zitadel IDP link into the "google.com" name
+		// the panel keys on.
+		internalUsers = internalUsers.WithLinkedProviders(
+			session.LinkedProvidersFunc(func(ctx context.Context, userID string) ([]session.LinkedProvider, error) {
+				found, err := zitadelClient.UserLinkedProviders(ctx, userID, cfg.ZitadelGoogleIDPID, cfg.ZitadelAppleIDPID)
+				if err != nil {
+					return nil, err
+				}
+				out := make([]session.LinkedProvider, 0, len(found))
+				for _, p := range found {
+					out = append(out, session.LinkedProvider{ProviderID: p.ProviderID, Email: p.Email})
+				}
+				return out, nil
+			}),
+		)
 	}
 	internalUsers.Register(internalGroup)
 

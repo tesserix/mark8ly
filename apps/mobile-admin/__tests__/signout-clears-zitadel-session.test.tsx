@@ -1,7 +1,7 @@
 // Signing out must actually sign the user out on a Zitadel build.
 //
 // The Zitadel bearer tokens live in SecureStore, owned by this app rather than
-// by the Firebase SDK, so `backend.signOut()` cannot reach them. Without an
+// by an auth SDK, so `backend.signOut()` cannot reach them. Without an
 // explicit clear, "Sign Out" wiped the tenant/store ids and left the tokens
 // behind: AuthGate re-read a still-fresh access token, concluded the user was
 // signed in, and replaced /login with the dashboard. The 401 sign-out path
@@ -14,8 +14,8 @@ import { zitadelSession } from "@repo/mobile-shared/auth/zitadel-session";
 import { tokenStorage } from "@repo/mobile-shared/auth/token-storage";
 
 // expo-constants pulls in `expo/virtual/env`, which does not resolve under
-// jest. Reporting Expo Go also selects the demo backend, keeping Firebase out
-// of a test that is only about the provider's own sign-out.
+// jest. Reporting Expo Go also selects the demo backend, which is what this
+// test wants: the clear under test lives in the provider, above the backend.
 jest.mock("expo-constants", () => ({
   __esModule: true,
   default: { executionEnvironment: "storeClient", expoConfig: { extra: {} } },
@@ -38,8 +38,6 @@ jest.mock("expo-secure-store", () => {
 
 const mem = (jest.requireMock("expo-secure-store") as { __mem: Record<string, string> }).__mem;
 
-// The demo backend keeps Firebase out of this test entirely; the clear under
-// test lives in the provider, above whichever backend is in use.
 beforeEach(() => {
   process.env.EXPO_PUBLIC_AUTH_BACKEND = "demo";
   for (const k of Object.keys(mem)) delete mem[k];
@@ -61,7 +59,7 @@ it("clears the persisted Zitadel tokens, not just the tenant ids", async () => {
   await tokenStorage.setTenantId("t-1");
 
   render(
-    <AuthProvider tenantId="MP-Internal-test">
+    <AuthProvider>
       <SignOutOnMount />
     </AuthProvider>,
   );

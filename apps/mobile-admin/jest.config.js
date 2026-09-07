@@ -7,13 +7,11 @@
 // moduleNameMapper here forces every `react-native` (and subpath) import
 // back to apps/mobile-admin/node_modules/react-native.
 // Same hoisting issue as react-native above, but for @react-native-firebase:
-// packages/mobile-shared has no local node_modules, so its imports of
-// @react-native-firebase/auth resolve to the hoisted ROOT copy (pinned to an
-// older major version by another app in the workspace) instead of this app's
-// local copy. That mismatched, un-mocked module then tries to init native
-// modules and blows up under jest. Force both packages back to this app's
-// local install so jest.mock("@react-native-firebase/auth", ...) in tests
-// actually intercepts the module the source code imports.
+// the monorepo root hoists an older major (pinned by another app in the
+// workspace), and that mismatched module tries to init native modules and
+// blows up under jest. Force it back to this app's local install. Only
+// /app remains — it is the push-notification dependency; the auth package
+// is no longer imported anywhere (#786).
 // Same class of bug again, but for `react`: `zustand` exists ONLY at the
 // monorepo root (packages/mobile-shared has no node_modules at all), and the
 // root's React (19.2.5) is a different physical copy than this app's local
@@ -56,8 +54,6 @@ module.exports = {
   moduleNameMapper: {
     '^react-native$': '<rootDir>/node_modules/react-native',
     '^react-native/(.*)$': '<rootDir>/node_modules/react-native/$1',
-    '^@react-native-firebase/auth$': '<rootDir>/node_modules/@react-native-firebase/auth',
-    '^@react-native-firebase/auth/(.*)$': '<rootDir>/node_modules/@react-native-firebase/auth/$1',
     '^@react-native-firebase/app$': '<rootDir>/node_modules/@react-native-firebase/app',
     '^@react-native-firebase/app/(.*)$': '<rootDir>/node_modules/@react-native-firebase/app/$1',
     '^react$': '<rootDir>/node_modules/react',

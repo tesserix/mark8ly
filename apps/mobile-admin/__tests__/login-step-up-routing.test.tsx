@@ -23,28 +23,12 @@ jest.mock('@repo/mobile-shared/auth/zitadel-signin', () => ({
   createZitadelSignIn: () => ({ signIn: mockSignIn }),
 }));
 
-jest.mock('@repo/mobile-shared/auth/provider', () => ({
-  useAuth: () => ({ signIn: jest.fn(), signInWithGoogle: jest.fn(), signInWithApple: jest.fn() }),
-}));
-
 jest.mock('@repo/mobile-shared/config/env', () => ({
   useEnvironment: () => ({ apiBaseUrl: 'https://api.mark8ly.test' }),
 }));
 
 jest.mock('@repo/mobile-shared/stores/tenant-store', () => ({
   useTenantStore: (selector: (s: unknown) => unknown) => selector({ setTenantId: jest.fn() }),
-}));
-
-jest.mock('@/lib/auth-provider', () => ({ isZitadelProvider: () => true }));
-
-jest.mock('@/lib/social-auth', () => ({
-  configureGoogleSignin: jest.fn(),
-  signInWithGoogleNative: jest.fn(),
-  signInWithAppleNative: jest.fn(),
-}));
-
-jest.mock('../components/auth/LinkAccountPrompt', () => ({
-  LinkAccountPrompt: () => null,
 }));
 
 beforeEach(() => {

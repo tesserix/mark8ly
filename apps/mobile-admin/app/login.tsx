@@ -8,15 +8,11 @@ import {
   View,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { useAuth } from '@repo/mobile-shared/auth/provider';
 import { authErrorMessage } from '@repo/mobile-shared/auth/errors';
-import type { SocialSignInOutcome } from '@repo/mobile-shared/auth/social-credentials';
 import { useAuthNoticeStore, type AuthNotice } from '@repo/mobile-shared/stores/auth-notice';
-import { configureGoogleSignin, signInWithAppleNative, signInWithGoogleNative } from '@/lib/social-auth';
 import { theme } from '@/lib/theme';
 import { AuthScreen } from '@/components/ui/AuthScreen';
 import { IconButton } from '@/components/ui/IconButton';
-import { LinkAccountPrompt } from '../components/auth/LinkAccountPrompt';
 import { Text } from '../components/ui/Text';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -24,9 +20,6 @@ import { useTenantStore } from '@repo/mobile-shared/stores/tenant-store';
 import { useEnvironment } from '@repo/mobile-shared/config/env';
 import { createZitadelSignIn, type SignInOutcome } from '@repo/mobile-shared/auth/zitadel-signin';
 import { ZitadelAuthError, type IdpProvider } from '@repo/mobile-shared/auth/zitadel-client';
-import { isZitadelProvider } from '@/lib/auth-provider';
-
-const DEMO_AUTH = process.env.EXPO_PUBLIC_AUTH_BACKEND === 'demo';
 
 // Shown when an error can't be mapped to specific copy, so a sign-in failure
 // never leaves the form silent. `authErrorMessage` returns null ONLY for a
@@ -49,8 +42,6 @@ const TERMS_URL = 'https://mark8ly.com/terms';
  * scheme itself is registered in app.config.js — the two must match.
  */
 const IDP_REDIRECT_URL = 'mark8ly-admin://auth/idp';
-
-type LinkTarget = Extract<SocialSignInOutcome, { status: 'needs-link' }>;
 
 const NOTICE_COPY: Record<AuthNotice, string> = {
   'access-denied': "That account doesn't have access to a Mark8ly admin account.",
@@ -132,14 +123,12 @@ function AppleMark({ size = PROVIDER_MARK }: { size?: number }) {
 }
 
 export default function LoginScreen() {
-  const { signIn, signInWithGoogle, signInWithApple } = useAuth();
   const env = useEnvironment();
   const setTenantId = useTenantStore((s) => s.setTenantId);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [linkTarget, setLinkTarget] = useState<LinkTarget | null>(null);
   const notice = useAuthNoticeStore((s) => s.notice);
   const clearNotice = useAuthNoticeStore((s) => s.clearNotice);
 
@@ -154,18 +143,14 @@ export default function LoginScreen() {
     setError(null);
     setSubmitting(true);
     try {
-      if (isZitadelProvider()) {
-        // Our own form, posted to marketplace-api rather than to Zitadel's
-        // hosted login. A fresh install is always an unrecognised device,
-        // so the usual answer here is a challenge, not a session.
-        const out = await createZitadelSignIn(env.apiBaseUrl).signIn(email, password, setTenantId);
-        if (routeStepUp(out)) return;
-        router.replace('/(tabs)');
-        return;
-      }
-      await signIn(email, password);
+      // Our own form, posted to marketplace-api rather than to Zitadel's
+      // hosted login. A fresh install is always an unrecognised device,
+      // so the usual answer here is a challenge, not a session.
+      const out = await createZitadelSignIn(env.apiBaseUrl).signIn(email, password, setTenantId);
+      if (routeStepUp(out)) return;
+      router.replace('/(tabs)');
     } catch (e: unknown) {
-      if (isZitadelProvider() && e instanceof ZitadelAuthError) {
+      if (e instanceof ZitadelAuthError) {
         // Mapped from the server's stable code. `no_store` is a real,
         // actionable state — the account exists but has no store — and
         // `auth_unavailable` must never read as a wrong password.
@@ -221,7 +206,7 @@ export default function LoginScreen() {
    * about which sign-in failed (#771).
    *
    * Returns null for a deliberate cancellation, matching
-   * `authErrorMessage`'s own "stay silent" contract on the GIP path.
+   * `authErrorMessage`'s own "stay silent" contract.
    */
   function zitadelErrorMessage(e: ZitadelAuthError, attempted: IdpProvider | null): string | null {
     const providerName = attempted === 'apple' ? 'Apple' : 'Google';
@@ -272,34 +257,22 @@ export default function LoginScreen() {
     setError(null);
     setSubmitting(true);
     try {
-      if (isZitadelProvider()) {
-        // Zitadel's IDP-intent flow, not the Firebase SDK: the browser
-        // round trip is what proves the Google identity, and the app
-        // never sees a Google token at all. Mirrors handleSignIn's branch
-        // above, including routing a step-up to the same /otp screen.
-        const out = await createZitadelSignIn(env.apiBaseUrl).signInWithGoogle(
-          {
-            redirectUrl: IDP_REDIRECT_URL,
-            openAuthSession: (authUrl, redirectUrl) =>
-              WebBrowser.openAuthSessionAsync(authUrl, redirectUrl),
-          },
-          setTenantId,
-        );
-        if (routeStepUp(out)) return;
-        router.replace('/(tabs)');
-        return;
-      }
-      let outcome: SocialSignInOutcome;
-      if (DEMO_AUTH) {
-        outcome = await signInWithGoogle('demo-google-token');
-      } else {
-        configureGoogleSignin();
-        const idToken = await signInWithGoogleNative();
-        outcome = await signInWithGoogle(idToken);
-      }
-      if (outcome.status === 'needs-link') setLinkTarget(outcome);
+      // Zitadel's IDP-intent flow: the browser round trip is what proves
+      // the Google identity, and the app never sees a Google token at all.
+      // Mirrors handleSignIn above, including routing a step-up to the
+      // same /otp screen.
+      const out = await createZitadelSignIn(env.apiBaseUrl).signInWithGoogle(
+        {
+          redirectUrl: IDP_REDIRECT_URL,
+          openAuthSession: (authUrl, redirectUrl) =>
+            WebBrowser.openAuthSessionAsync(authUrl, redirectUrl),
+        },
+        setTenantId,
+      );
+      if (routeStepUp(out)) return;
+      router.replace('/(tabs)');
     } catch (e: unknown) {
-      if (isZitadelProvider() && e instanceof ZitadelAuthError) {
+      if (e instanceof ZitadelAuthError) {
         const msg = zitadelErrorMessage(e, 'google');
         if (msg !== null) setError(msg);
         return;
@@ -319,33 +292,22 @@ export default function LoginScreen() {
     setError(null);
     setSubmitting(true);
     try {
-      if (isZitadelProvider()) {
-        // Zitadel's IDP-intent flow, not expo-apple-authentication: the
-        // browser round trip is what proves the Apple identity, and the app
-        // never sees an Apple token at all. Mirrors handleGoogleSignIn's
-        // branch, including routing a step-up to the same screens (#771).
-        const out = await createZitadelSignIn(env.apiBaseUrl).signInWithApple(
-          {
-            redirectUrl: IDP_REDIRECT_URL,
-            openAuthSession: (authUrl, redirectUrl) =>
-              WebBrowser.openAuthSessionAsync(authUrl, redirectUrl),
-          },
-          setTenantId,
-        );
-        if (routeStepUp(out)) return;
-        router.replace('/(tabs)');
-        return;
-      }
-      let outcome: SocialSignInOutcome;
-      if (DEMO_AUTH) {
-        outcome = await signInWithApple('demo-apple-token', '', null);
-      } else {
-        const { idToken, rawNonce, fullName } = await signInWithAppleNative();
-        outcome = await signInWithApple(idToken, rawNonce, fullName);
-      }
-      if (outcome.status === 'needs-link') setLinkTarget(outcome);
+      // Zitadel's IDP-intent flow, not expo-apple-authentication: the
+      // browser round trip is what proves the Apple identity, and the app
+      // never sees an Apple token at all. Mirrors handleGoogleSignIn,
+      // including routing a step-up to the same screens (#771).
+      const out = await createZitadelSignIn(env.apiBaseUrl).signInWithApple(
+        {
+          redirectUrl: IDP_REDIRECT_URL,
+          openAuthSession: (authUrl, redirectUrl) =>
+            WebBrowser.openAuthSessionAsync(authUrl, redirectUrl),
+        },
+        setTenantId,
+      );
+      if (routeStepUp(out)) return;
+      router.replace('/(tabs)');
     } catch (e: unknown) {
-      if (isZitadelProvider() && e instanceof ZitadelAuthError) {
+      if (e instanceof ZitadelAuthError) {
         const msg = zitadelErrorMessage(e, 'apple');
         if (msg !== null) setError(msg);
         return;
@@ -468,17 +430,6 @@ export default function LoginScreen() {
           </IconButton>
         ) : null}
       </View>
-
-      {linkTarget ? (
-        <LinkAccountPrompt
-          visible
-          email={linkTarget.email}
-          provider={linkTarget.provider}
-          pendingCredential={linkTarget.pendingCredential}
-          onCancel={() => setLinkTarget(null)}
-          onLinked={() => setLinkTarget(null)}
-        />
-      ) : null}
 
       <View className="mt-8 flex-row items-center justify-center gap-3">
         <Pressable

@@ -1,11 +1,10 @@
 /**
- * The Apple button on a Zitadel build (#771).
+ * The Apple button's Zitadel sign-in path (#771).
  *
- * Before this, handleAppleSignIn had no Zitadel branch: it authenticated
- * against Firebase and set the provider's `user`, which AuthGate ignores
- * under Zitadel (it reads zitadelSignedIn) and api-client ignores too (it
- * reads zitadelSession) — a silent bounce back to /login. The button was
- * hidden for exactly that reason; these tests are what let it come back.
+ * It used to authenticate against Firebase and set the provider's `user`,
+ * which AuthGate ignores (it reads zitadelSignedIn) and api-client ignores
+ * too (it reads zitadelSession) — a silent bounce back to /login. The button
+ * was hidden for exactly that reason; these tests are what let it come back.
  */
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import LoginScreen from '../app/login';
@@ -14,7 +13,6 @@ import { ZitadelAuthError } from '@repo/mobile-shared/auth/zitadel-client';
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 const mockSignInWithApple = jest.fn();
-const mockNativeApple = jest.fn();
 
 jest.mock('expo-router', () => ({
   router: {
@@ -27,10 +25,6 @@ jest.mock('@repo/mobile-shared/auth/zitadel-signin', () => ({
   createZitadelSignIn: () => ({ signInWithApple: mockSignInWithApple }),
 }));
 
-jest.mock('@repo/mobile-shared/auth/provider', () => ({
-  useAuth: () => ({ signIn: jest.fn(), signInWithGoogle: jest.fn(), signInWithApple: jest.fn() }),
-}));
-
 jest.mock('@repo/mobile-shared/config/env', () => ({
   useEnvironment: () => ({ apiBaseUrl: 'https://api.mark8ly.test' }),
 }));
@@ -39,23 +33,10 @@ jest.mock('@repo/mobile-shared/stores/tenant-store', () => ({
   useTenantStore: (selector: (s: unknown) => unknown) => selector({ setTenantId: jest.fn() }),
 }));
 
-jest.mock('@/lib/auth-provider', () => ({ isZitadelProvider: () => true }));
-
-jest.mock('@/lib/social-auth', () => ({
-  configureGoogleSignin: jest.fn(),
-  signInWithGoogleNative: jest.fn(),
-  signInWithAppleNative: (...args: unknown[]) => mockNativeApple(...args),
-}));
-
-jest.mock('../components/auth/LinkAccountPrompt', () => ({
-  LinkAccountPrompt: () => null,
-}));
-
 beforeEach(() => {
   mockPush.mockReset();
   mockReplace.mockReset();
   mockSignInWithApple.mockReset();
-  mockNativeApple.mockReset();
 });
 
 function pressApple() {
@@ -70,8 +51,6 @@ it('signs in through Zitadel, never the native Apple sheet', async () => {
   pressApple();
 
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/(tabs)'));
-  // The Firebase path is what left the app half-signed-in; it must not run.
-  expect(mockNativeApple).not.toHaveBeenCalled();
   expect(mockSignInWithApple).toHaveBeenCalledWith(
     expect.objectContaining({ redirectUrl: 'mark8ly-admin://auth/idp' }),
     expect.any(Function),

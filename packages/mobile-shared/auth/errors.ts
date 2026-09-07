@@ -1,8 +1,9 @@
-// Firebase-free error types for the auth layer. Kept separate from
-// `link.ts` (which does a value import of `@react-native-firebase/auth`)
-// so app-layer code that only needs to catch `LastSignInMethodError` never
-// pulls the native module chain into its import graph — important for
-// expo-router route files, which are required at boot even in Expo Go.
+// SDK-free error types and user-facing copy for the auth layer.
+//
+// The `auth/*` codes mapped below are historical GIP codes. They are kept
+// because the mapper is defensive by design — it must never surface a raw
+// SDK string — and because `authErrorMessage` is still the fallback for any
+// error the Zitadel path does not raise as a `ZitadelAuthError`.
 
 /** Thrown when unlinking would remove the user's only remaining sign-in method. */
 export class LastSignInMethodError extends Error {

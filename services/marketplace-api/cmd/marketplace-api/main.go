@@ -38,6 +38,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authbffclient"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/bao"
 	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
 	appcredspkg "github.com/mark8ly/marketplace-api/internal/billing/appcreds"
 	"github.com/mark8ly/marketplace-api/internal/billing/dispatch"
@@ -563,6 +564,15 @@ func main() {
 	// process never mounts the admin group so these dependencies would go
 	// unused there.
 	var adminDeps admin.Deps
+	// breakGlassLoginHandler and breakGlassRateLimiter are declared at this
+	// outer scope (not inside the admin-mode block below) because
+	// breakGlassRateLimiter must ALSO reach platformadmin.Deps.BreakGlassRateLimiter
+	// further down: the login path and the clear-lockout write path
+	// (#404, currently unmounted — see BreakGlassRotator/BreakGlassWriter
+	// below) share ONE in-memory *breakglass.LoginRateLimiter instance,
+	// never two. See the construction site (admin-mode block) for why.
+	var breakGlassLoginHandler *admin.BreakGlassLoginHandler
+	var breakGlassRateLimiter *breakglass.LoginRateLimiter
 	// delhiveryWebhookHandler is constructed in the admin wiring branch
 	// (where shipmentsHandler, apiKeyEncryptor and carrierSecretStore
 	// are built) but mounted below inside the engine switch, so declare
@@ -1349,7 +1359,61 @@ func main() {
 			adminTenantGateHandler = tenantGate.RequireActiveTenant()
 		}
 
+		// P13 §12.4 — break-glass emergency login (#642). Zero break-glass
+		// accounts exist anywhere in this estate until cmd/break-glass-provision
+		// is run per tenant, but the LOGIN ROUTE itself has never been
+		// constructed here at all — NewBreakGlassLoginHandler was called
+		// only in tests, so the route in admin/routes.go stayed permanently
+		// unmounted (deps.BreakGlassLoginHandler == nil) regardless.
+		//
+		// OpenBao client construction mirrors cmd/break-glass-provision's
+		// exactly (bao.New -> carriersecrets.NewBaoClient ->
+		// breakglass.NewBaoSecretClient) rather than reaching into
+		// carrierSecretStore above, which exposes no accessor to the
+		// *bao.Client it may hold internally. bao.New does not authenticate
+		// at construction — that happens lazily on first use — so this is
+		// safe to build unconditionally even when ShippingSecretStore is
+		// "inline" and nothing else in this process talks to OpenBao.
+		breakGlassIPHMACKey := breakglass.HMACKey(cfg.BreakGlassIPHMACKey)
+		breakGlassBaoClient, err := bao.New(bao.Config{
+			Address:        cfg.OpenBaoAddr,
+			Mount:          cfg.OpenBaoKVMount,
+			KubernetesRole: cfg.OpenBaoRole,
+		})
+		if err != nil {
+			log.Error("break-glass: openbao client init failed — /admin/break-glass/login stays unmounted", "err", err)
+		} else {
+			breakGlassRepo := breakglass.NewRepository(conn)
+			breakGlassSecrets := breakglass.NewSecretManager(
+				breakglass.NewBaoSecretClient(carriersecrets.NewBaoClient(breakGlassBaoClient)))
+			breakGlassAudit := breakglass.NewAuditEmitter(auditEmitter, breakGlassIPHMACKey)
+			var breakGlassSlack *breakglass.SlackClient
+			if cfg.BreakGlassSlackWebhookURL != "" {
+				breakGlassSlack = breakglass.NewSlackClient(cfg.BreakGlassSlackWebhookURL, breakglass.SlackChannel)
+			}
+			// SHARED with platformadmin.Deps.BreakGlassRateLimiter below —
+			// exactly ONE *breakglass.LoginRateLimiter for both the login
+			// path (records failures, resets on success) and the
+			// clear-lockout write path (resets the same in-memory bucket
+			// alongside the durable DB lock). Two separate instances here
+			// would mean clear-lockout resets a map nobody reads: the
+			// durable lockout row clears, the operator sees success, and
+			// the in-memory limiter keeps refusing the IP (#642).
+			breakGlassRateLimiter = breakglass.NewLoginRateLimiter()
+			breakGlassLoginHandler = admin.NewBreakGlassLoginHandler(admin.BreakGlassDeps{
+				Repo:        breakGlassRepo,
+				Secrets:     breakGlassSecrets,
+				Audit:       breakGlassAudit,
+				Slack:       breakGlassSlack,
+				RateLimiter: breakGlassRateLimiter,
+				IPHMACKey:   breakGlassIPHMACKey,
+				Sessions:    authbffclient.NewSessionIssuer(cfg.AuthBFFURL, cfg.InternalAuthSecret, nil),
+				Logger:      log,
+			})
+		}
+
 		adminDeps = admin.Deps{
+			BreakGlassLoginHandler:   breakGlassLoginHandler,
 			TenantGate:               adminTenantGateHandler,
 			ProductHandler:           productHandler,
 			CategoryHandler:          categoryHandler,
@@ -2480,6 +2544,8 @@ func main() {
 			EstateUsers:             estateUsersClient,
 			EmailSends:              platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
 			BreakGlass:              platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),
+			BreakGlassRateLimiter:   breakGlassRateLimiter,
+			BreakGlassIPHMACKey:     breakglass.HMACKey(cfg.BreakGlassIPHMACKey),
 			EmailTemplates:          templateStore,
 			EmailTemplateRegistry:   templateLoader,
 			EmailTemplateTestSender: templateTestSender,
@@ -2633,6 +2699,8 @@ func main() {
 				EstateUsers:             estateUsersClient,
 				EmailSends:              platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
 				BreakGlass:              platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),
+				BreakGlassRateLimiter:   breakGlassRateLimiter,
+				BreakGlassIPHMACKey:     breakglass.HMACKey(cfg.BreakGlassIPHMACKey),
 				EmailTemplates:          templateStore,
 				EmailTemplateRegistry:   templateLoader,
 				EmailTemplateTestSender: templateTestSender,

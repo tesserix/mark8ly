@@ -82,7 +82,7 @@ func (h *BreakGlassLoginHandler) Login(c *gin.Context) {
 		// Degrade to the in-memory limiter rather than choosing one extreme.
 		// It is per-pod and resets on deploy, but it is the signal still
 		// available, and it refuses exactly the IPs that have earned it.
-		recent := h.deps.RateLimiter.Count(rlKey(ipHash))
+		recent := h.deps.RateLimiter.Count(breakglass.LoginRateLimitKey(ipHash))
 		locked = degradedLockDecision(recent)
 		h.logger().Error("break-glass: lockout lookup failed; degraded to the in-memory limiter",
 			"err", err, "recent_failures", recent, "treated_as_locked", locked)
@@ -189,7 +189,7 @@ func (h *BreakGlassLoginHandler) Login(c *gin.Context) {
 		}()
 	}
 
-	h.deps.RateLimiter.Reset(rlKey(ipHash))
+	h.deps.RateLimiter.Reset(breakglass.LoginRateLimitKey(ipHash))
 
 	c.JSON(http.StatusOK, gin.H{"session_ttl_seconds": int(BreakGlassSessionTTL.Seconds())})
 }
@@ -199,7 +199,7 @@ func (h *BreakGlassLoginHandler) Login(c *gin.Context) {
 // event. Slack is also pinged so on-call sees the attempt in real
 // time.
 func (h *BreakGlassLoginHandler) recordFailure(c *gin.Context, ipHash []byte, tenantID uuid.UUID, reason string) {
-	count := h.deps.RateLimiter.RecordFailure(rlKey(ipHash))
+	count := h.deps.RateLimiter.RecordFailure(breakglass.LoginRateLimitKey(ipHash))
 
 	if count >= breakglass.LoginMaxFailures {
 		var tidPtr *uuid.UUID
@@ -233,16 +233,6 @@ func (h *BreakGlassLoginHandler) logger() *slog.Logger {
 		return h.deps.Logger
 	}
 	return slog.Default()
-}
-
-// rlKey shapes the rate-limit bucket key. Keeping it tiny (hex first
-// 16 bytes of ip_hash) avoids memory bloat across many concurrent IPs.
-func rlKey(ipHash []byte) string {
-	n := len(ipHash)
-	if n > 16 {
-		n = 16
-	}
-	return string(ipHash[:n])
 }
 
 // breakGlassNamespace is a fixed UUIDv5 namespace for synthesising

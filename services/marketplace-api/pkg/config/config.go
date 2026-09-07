@@ -69,18 +69,10 @@ type Config struct {
 	CustomerSessionSecret string `envconfig:"CUSTOMER_SESSION_SECRET" default:""`
 	// GIPProjectID is the Google Identity Platform project ID. Mobile
 	// ADMIN no longer uses it (#786 collapsed that group onto Zitadel);
-	// it still gates the storefront customer verifier (#787) and the
-	// custom-domain browser-key allowlist (#788). When empty, both of
-	// those stay disabled — fine for dev environments without them.
+	// it still gates the storefront customer verifier (#787). When
+	// empty, that verifier stays disabled — fine for dev environments
+	// without it.
 	GIPProjectID string `envconfig:"GIP_PROJECT_ID" default:""`
-	// GIPWebAPIKeyResource is the full Google API Keys v2 resource name
-	// of the browser API key used by storefront sign-in (e.g.
-	// "projects/849928263410/locations/global/keys/2457e3a0-..."). When
-	// set, the custom-domain service patches this key's HTTP-referrer
-	// allowlist on verify and Remove, so a new merchant domain is
-	// self-served end-to-end. Empty disables the integration — gipkey
-	// falls back to a Noop client and no GCP API call is made.
-	GIPWebAPIKeyResource string `envconfig:"GIP_WEB_API_KEY_RESOURCE_NAME" default:""`
 
 	// S1 — auth-bff URL for MFA/session proxying.
 	AuthBFFURL string `envconfig:"AUTH_BFF_URL" default:""`

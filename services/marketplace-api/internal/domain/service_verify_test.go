@@ -13,30 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// spyGIPKey captures calls so the test can assert the domain.Service
-// fired the right method with the right FQDN.
-type spyGIPKey struct {
-	mu      sync.Mutex
-	added   []string
-	removed []string
-	addErr  error
-	rmErr   error
-}
-
-func (s *spyGIPKey) AddDomain(_ context.Context, d string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.added = append(s.added, d)
-	return s.addErr
-}
-
-func (s *spyGIPKey) RemoveDomain(_ context.Context, d string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.removed = append(s.removed, d)
-	return s.rmErr
-}
-
 // memRepo is the in-memory Repository used by these tests. It is the
 // minimum surface that markVerified / Remove touch — Update and
 // Delete. The rest panics so an accidental call is loud rather than
@@ -100,96 +76,72 @@ func newSilentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func newTestService(t *testing.T, repo Repository, spy *spyGIPKey) *Service {
+func newTestService(t *testing.T, repo Repository) *Service {
 	t.Helper()
 	return NewService(ServiceConfig{
 		// DB is unused when the repo doesn't read from it.
 		DB:     nil,
 		Repo:   repo,
-		GIPKey: spy,
 		Logger: newSilentLogger(),
 	})
 }
 
-func TestMarkVerified_FiresGIPKeyAddDomain(t *testing.T) {
-	t.Parallel()
-
-	d := &CustomDomain{
+func newTestDomain(status DomainStatus, ssl SSLStatus) *CustomDomain {
+	return &CustomDomain{
 		ID:        uuid.New(),
 		TenantID:  uuid.New(),
 		StoreID:   uuid.New(),
 		Domain:    "primasyss.com",
 		DNSMethod: DNSMethodManual,
-		Status:    DomainStatusVerifying,
-		SSLStatus: SSLStatusPending,
+		Status:    status,
+		SSLStatus: ssl,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
-	}
-	repo := newMemRepo(d)
-	spy := &spyGIPKey{}
-	svc := newTestService(t, repo, spy)
-
-	if _, err := svc.markVerified(context.Background(), d); err != nil {
-		t.Fatalf("markVerified: %v", err)
-	}
-	spy.mu.Lock()
-	defer spy.mu.Unlock()
-	if len(spy.added) != 1 || spy.added[0] != "primasyss.com" {
-		t.Fatalf("AddDomain calls = %v, want [primasyss.com]", spy.added)
 	}
 }
 
-func TestMarkVerified_GIPKeyFailureDoesNotFailVerify(t *testing.T) {
+func TestMarkVerified_ActivatesAndPersists(t *testing.T) {
 	t.Parallel()
 
-	d := &CustomDomain{
-		ID:        uuid.New(),
-		TenantID:  uuid.New(),
-		StoreID:   uuid.New(),
-		Domain:    "primasyss.com",
-		DNSMethod: DNSMethodManual,
-		Status:    DomainStatusVerifying,
-		SSLStatus: SSLStatusPending,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
+	d := newTestDomain(DomainStatusVerifying, SSLStatusPending)
 	repo := newMemRepo(d)
-	spy := &spyGIPKey{addErr: errors.New("quota exceeded")}
-	svc := newTestService(t, repo, spy)
+	svc := newTestService(t, repo)
 
 	out, err := svc.markVerified(context.Background(), d)
 	if err != nil {
-		t.Fatalf("markVerified must not fail on gipkey error, got: %v", err)
+		t.Fatalf("markVerified: %v", err)
 	}
 	if out.Status != DomainStatusActive {
 		t.Fatalf("status = %s, want active", out.Status)
 	}
+	if out.VerifiedAt == nil {
+		t.Fatal("VerifiedAt not stamped")
+	}
+	if out.SSLStatus != SSLStatusPending {
+		t.Fatalf("ssl status = %s, want pending", out.SSLStatus)
+	}
+
+	// The transition must be durable, not just mutated in memory.
+	stored, err := repo.GetByID(context.Background(), nil, d.StoreID, d.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if stored.Status != DomainStatusActive || stored.VerifiedAt == nil {
+		t.Fatalf("stored row not verified: %+v", stored)
+	}
 }
 
-func TestRemove_FiresGIPKeyRemoveDomain(t *testing.T) {
+func TestRemove_DeletesRow(t *testing.T) {
 	t.Parallel()
 
-	d := &CustomDomain{
-		ID:        uuid.New(),
-		TenantID:  uuid.New(),
-		StoreID:   uuid.New(),
-		Domain:    "primasyss.com",
-		DNSMethod: DNSMethodManual,
-		Status:    DomainStatusActive,
-		SSLStatus: SSLStatusActive,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
+	d := newTestDomain(DomainStatusActive, SSLStatusActive)
 	repo := newMemRepo(d)
-	spy := &spyGIPKey{}
-	svc := newTestService(t, repo, spy)
+	svc := newTestService(t, repo)
 
 	if err := svc.Remove(context.Background(), d.StoreID, d.ID); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	spy.mu.Lock()
-	defer spy.mu.Unlock()
-	if len(spy.removed) != 1 || spy.removed[0] != "primasyss.com" {
-		t.Fatalf("RemoveDomain calls = %v, want [primasyss.com]", spy.removed)
+	if _, err := repo.GetByID(context.Background(), nil, d.StoreID, d.ID); err == nil {
+		t.Fatal("row still present after Remove")
 	}
 }

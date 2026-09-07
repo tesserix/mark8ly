@@ -76,7 +76,6 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/estatecounts"
 	"github.com/mark8ly/marketplace-api/internal/estateuserdir"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
-	"github.com/mark8ly/marketplace-api/internal/gipkey"
 	"github.com/mark8ly/marketplace-api/internal/handlers/admin"
 	"github.com/mark8ly/marketplace-api/internal/handlers/internalsvc"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
@@ -541,29 +540,6 @@ func main() {
 	// payment carrier credentials, just scoped to a different bucket.
 	domainSecretStore := domainSecretsAdapter{inner: carrierSecretStore}
 
-	// GIP browser-key allowlist syncer — only wired when the operator
-	// has provisioned the API key's resource name into env, otherwise
-	// the domain service uses the Noop client and the GCP call is
-	// skipped (correct posture for local dev + UAT). A construction
-	// failure must not exit the process — the rest of marketplace-api
-	// is unaffected, and the manual fallback (operator edits the key
-	// in the GCP console) still works.
-	var gipKeyClient gipkey.Client = gipkey.Noop{}
-	if cfg.GIPWebAPIKeyResource != "" {
-		gipCtx, gipCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		gc, err := gipkey.New(gipCtx, cfg.GIPWebAPIKeyResource, log)
-		gipCancel()
-		if err != nil {
-			log.Error("gipkey: client construction failed — custom domain allowlist sync disabled",
-				"err", err, "resource", cfg.GIPWebAPIKeyResource)
-		} else {
-			gipKeyClient = gc
-			log.Info("gipkey: client wired", "resource", cfg.GIPWebAPIKeyResource)
-		}
-	} else {
-		log.Info("gipkey: GIP_WEB_API_KEY_RESOURCE_NAME not set — custom domain allowlist sync disabled (noop)")
-	}
-
 	domainSvc := domain.NewService(domain.ServiceConfig{
 		DB:          conn,
 		Repo:        domainRepo,
@@ -574,7 +550,6 @@ func main() {
 		// there is nothing extra to deploy; rotating it re-issues every
 		// outstanding domain token.
 		ChallengeSecret: cfg.EncryptionKey,
-		GIPKey:          gipKeyClient,
 		Logger:          log,
 	})
 	domainStoresRepo := stores.NewRepository(conn)

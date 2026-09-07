@@ -95,48 +95,23 @@ type Config struct {
 	// is populated, matching marketplace-api's platformadmin surface.
 	PlatformAdminSecret string `envconfig:"PLATFORM_API_PLATFORM_ADMIN_SECRET" default:""`
 
-	// GIP (Google Identity Platform) admin settings used by the
-	// password-reset flow. ProjectID + TenantID are required in prod.
-	// If project, tenant and a usable key are not all present,
-	// platform-api skips wiring the password-reset handler (dev
-	// convenience — local dev without real GIP).
-	GIPProjectID string `envconfig:"GIP_PROJECT_ID"`
-	GIPTenantID  string `envconfig:"GIP_TENANT_ID"`
-
-	// GIPWebAPIKey is the PUBLIC Firebase Web API key — the same value the
-	// admin browser bundle embeds. Browser keys carry an HTTP-referrer
-	// restriction, and a server sends no Referer, so GIP answers
-	// "Requests from referer <empty> are blocked" (403) to anything this
-	// service calls with it. Kept only as a fallback so a deployment that
-	// has not yet been given a server key behaves exactly as before.
-	GIPWebAPIKey string `envconfig:"GIP_WEB_API_KEY"`
-
-	// GIPServerAPIKey is a key with NO referrer restriction, for
-	// server-to-server GIP calls. Prefer it over GIPWebAPIKey; see
-	// GIPKey below. Relaxing the web key instead is not an option —
-	// it is public by construction.
-	GIPServerAPIKey string `envconfig:"GIP_SERVER_API_KEY"`
-
 	// Zitadel (#524 phase 5). All optional and unread unless
 	// ZitadelEnabled is set — mirrors services/auth-bff/pkg/config's
-	// ZITADEL_ENABLED shape. GIP remains the default provider for the
-	// three account operations (password-reset send/confirm, delete)
-	// until this flag flips.
+	// ZITADEL_ENABLED shape.
 	//
-	// EnsureTenantClaim (the tenant_id custom claim written on invite
-	// accept and read by onboarding) is DELIBERATELY NOT gated by this
-	// flag — it always runs against GIP via the gipAdmin client built
-	// from GIPProjectID/GIPTenantID/GIPKey() above, independent of
-	// ZitadelEnabled. See cmd/server/provider_wiring.go.
+	// Since #791 retired the GIP admin client there is no alternative
+	// provider left: with this flag off, platform-api simply does not
+	// wire the password-reset endpoints or the merchant teardown route.
+	// Production has run with it true since the #524 cutover.
 	//
 	// Deployment ordering: ZitadelIssuer, ZitadelLoginClientToken, and
 	// ZitadelOrgID must all be set — and land whitespace-clean, per the
 	// TrimSpace-on-assignment note in Load() below — BEFORE ZitadelEnabled
 	// is flipped to true. ValidateZitadel enforces this at startup (it
-	// panics rather than falling back to GIP silently), but the flag
-	// itself defaults to false, so merging this config change alone
-	// changes nothing; only a deliberate, later flip of ZITADEL_ENABLED
-	// activates the Zitadel path.
+	// panics rather than degrading silently), but the flag itself
+	// defaults to false, so merging a config change alone changes
+	// nothing; only a deliberate flip of ZITADEL_ENABLED activates the
+	// Zitadel path.
 	ZitadelEnabled          bool   `envconfig:"ZITADEL_ENABLED" default:"false"`
 	ZitadelIssuer           string `envconfig:"ZITADEL_ISSUER"`
 	ZitadelLoginClientToken string `envconfig:"ZITADEL_LOGIN_CLIENT_TOKEN"`
@@ -166,19 +141,6 @@ type Config struct {
 	// no deployment has to set it; it is configurable only so a future
 	// role split does not require a code change to roll out.
 	ZitadelStaffRoleKey string `envconfig:"ZITADEL_STAFF_ROLE_KEY" default:"mark8ly.staff"`
-}
-
-// GIPKey returns the API key to use for server-side GIP calls: the
-// server key when configured, otherwise the public web key.
-//
-// The fallback exists so this change can ship before the server key does.
-// It is not a permanent arrangement — a web key will keep failing
-// referrer-restricted admin operations like resetPassword.
-func (c *Config) GIPKey() string {
-	if c.GIPServerAPIKey != "" {
-		return c.GIPServerAPIKey
-	}
-	return c.GIPWebAPIKey
 }
 
 // Load reads .env (if present) and binds environment variables into Config.

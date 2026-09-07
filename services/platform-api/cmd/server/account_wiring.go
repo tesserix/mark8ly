@@ -14,7 +14,8 @@ import (
 // gipAccountDeleter mirrors internal/account's unexported gipDeleter
 // interface. It exists so this package can hold a TRUE nil interface value
 // when no delete-account provider is configured, and so it is satisfied
-// equally by *gipadmin.AdminClient and *zitadeladmin.Client (#524 phase 5).
+// equally by *zitadeladmin.Client (#524 phase 5). Named for the GIP
+// client it originally mirrored, which #791 deleted.
 // See newAccountService and selectAccountProviders.
 type gipAccountDeleter interface {
 	DeleteAccount(ctx context.Context, uid string) error
@@ -33,13 +34,13 @@ type gipAccountDeleter interface {
 // (gipAccountDeleter/the package-local mirror of internal/account's
 // unexported gipDeleter). Since #524 phase 5 task 3, the caller —
 // selectAccountProviders — is the place that performs the typed-nil guard:
-// it only ever assigns a concrete, non-nil client (gipAdmin OR a
-// *zitadeladmin.Client) into the interface it returns, or leaves it a true
-// nil interface when no provider is configured. newAccountService trusts
+// it only ever assigns a concrete, non-nil *zitadeladmin.Client into the
+// interface it returns, or leaves it a true nil interface when Zitadel is
+// not enabled. newAccountService trusts
 // that and passes gip straight through.
 //
-// Do NOT reintroduce the trap here by accepting a concrete
-// *gipadmin.AdminClient again and assigning it unconditionally — see
+// Do NOT reintroduce the trap here by accepting a concrete provider
+// pointer again and assigning it unconditionally — see
 // selectAccountProviders' doc (provider_wiring.go) and
 // TestSelectAccountProviders_FlagUnset_NilGIPStaysGenuinelyNil for why: a
 // nil *AdminClient assigned straight into an interface is a NON-NIL

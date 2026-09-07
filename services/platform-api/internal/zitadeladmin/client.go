@@ -6,19 +6,20 @@
 // docs/superpowers/specs/2026-09-03-zitadel-migration-design.md for the
 // mapping this package implements.
 //
-// # Errors are gipadmin's sentinels, not new ones
+// # Errors are idperr's shared sentinels, not new ones
 //
 // internal/auth/handler.go and internal/auth/service.go already branch with
-// errors.Is against gipadmin.ErrUserNotFound, ErrInvalidOobCode,
+// errors.Is against idperr.ErrUserNotFound, ErrInvalidOobCode,
 // ErrWeakPassword, ErrUnauthenticated, ErrTooManyAttempts and ErrUnavailable.
-// This package returns those SAME sentinel values (imported directly from
-// gipadmin, not redeclared) rather than inventing a parallel set — the
-// alternative would silently break every errors.Is check downstream the
-// moment this provider is selected: a rate limit would read as a generic
-// 500, a weak password would read as a server error, and so on, with no
-// compiler or test signal pointing at why. Depending on gipadmin here for
-// its sentinels only, not its behaviour, is deliberate: gipadmin itself is
-// untouched by this package.
+// This package returns those SAME sentinel values (imported from
+// internal/idperr, not redeclared) rather than inventing a parallel set —
+// the alternative would silently break every errors.Is check downstream: a
+// rate limit would read as a generic 500, a weak password would read as a
+// server error, and so on, with no compiler or test signal pointing at why.
+//
+// Those sentinels lived in internal/gipadmin until #791 retired it; they
+// were relocated to a leaf package precisely so a provider client never has
+// to import another provider to describe a failure.
 //
 // # Request/response conventions
 //
@@ -97,7 +98,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 )
 
 const (
@@ -186,7 +187,7 @@ func withLogPath(label string) requestOption {
 }
 
 // do performs one HTTP round trip and maps a non-2xx response to one of
-// gipadmin's sentinel errors via classifyError. out may be nil when the
+// idperr's sentinel errors via classifyError. out may be nil when the
 // caller doesn't need the response body decoded.
 func (c *Client) do(ctx context.Context, method, path string, body, out any, scopeToOrg bool, opts ...requestOption) error {
 	ro := requestOptions{logPath: path}
@@ -215,7 +216,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any, sco
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return fmt.Errorf("zitadeladmin: %s %s: %v: %w", method, logPath, err, gipadmin.ErrUnavailable)
+		return fmt.Errorf("zitadeladmin: %s %s: %v: %w", method, logPath, err, idperr.ErrUnavailable)
 	}
 	defer resp.Body.Close()
 
@@ -238,7 +239,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any, sco
 		return nil
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxSuccessBodyBytes)).Decode(out); err != nil {
-		return fmt.Errorf("zitadeladmin: decode %s %s: %v: %w", method, logPath, err, gipadmin.ErrUnavailable)
+		return fmt.Errorf("zitadeladmin: decode %s %s: %v: %w", method, logPath, err, idperr.ErrUnavailable)
 	}
 	return nil
 }
@@ -254,7 +255,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any, sco
 // all you have is the sentinel.
 //
 // Error() reproduces byte-for-byte the string do() used to build with
-// fmt.Errorf, and Unwrap returns the same gipadmin sentinel, so every
+// fmt.Errorf, and Unwrap returns the same idperr sentinel, so every
 // existing errors.Is check downstream (internal/auth/handler.go and
 // service.go branch on six of them) keeps behaving identically.
 type apiError struct {
@@ -314,7 +315,7 @@ func readZitadelErrorID(body []byte) string {
 }
 
 // zitadelErrorIDSentinels maps a Zitadel error's stable details[0].id to
-// the gipadmin sentinel it means, for ids VERIFIED live on 2026-09-04
+// the idperr sentinel it means, for ids VERIFIED live on 2026-09-04
 // against the TESSERIX instance (see this file's package doc). This is
 // the PRIMARY mapping — classifyError only falls back to HTTP status +
 // message-substring matching when the id is absent or not in this table.
@@ -332,10 +333,10 @@ func readZitadelErrorID(body []byte) string {
 // therefore maps to ErrUnavailable (a server-side request-shape bug on our
 // end, not a bad code), never to ErrInvalidOobCode.
 var zitadelErrorIDSentinels = map[string]error{
-	"COMMAND-SAF4f": gipadmin.ErrUserNotFound,   // "User could not be found" (404, code 5)
-	"COMMAND-2M9fs": gipadmin.ErrInvalidOobCode, // "Code not found" (400, code 9)
-	"COMMAND-G8dh3": gipadmin.ErrUnavailable,    // "Password not found" (400, code 9) -- malformed request, NOT an invalid code
-	"DOMAIN-HuJf6":  gipadmin.ErrWeakPassword,   // "Password is too short" (400, code 3)
+	"COMMAND-SAF4f": idperr.ErrUserNotFound,   // "User could not be found" (404, code 5)
+	"COMMAND-2M9fs": idperr.ErrInvalidOobCode, // "Code not found" (400, code 9)
+	"COMMAND-G8dh3": idperr.ErrUnavailable,    // "Password not found" (400, code 9) -- malformed request, NOT an invalid code
+	"DOMAIN-HuJf6":  idperr.ErrWeakPassword,   // "Password is too short" (400, code 3)
 
 	// The five password-complexity ids POST /v2/users/human returns, each
 	// PROBED live on 2026-09-05 (see password_policy.go, which additionally
@@ -347,15 +348,15 @@ var zitadelErrorIDSentinels = map[string]error{
 	//
 	// COMMA-HuJf6 is NOT DOMAIN-HuJf6 above. Same suffix, different Zitadel
 	// command, matched whole — never by suffix.
-	"COMMA-HuJf6": gipadmin.ErrWeakPassword, // too short
-	"COMMA-VoaRj": gipadmin.ErrWeakPassword, // no uppercase
-	"COMMA-co3Xw": gipadmin.ErrWeakPassword, // no lowercase
-	"COMMA-ZBv4H": gipadmin.ErrWeakPassword, // no number
-	"COMMA-ZDLwA": gipadmin.ErrWeakPassword, // no symbol
+	"COMMA-HuJf6": idperr.ErrWeakPassword, // too short
+	"COMMA-VoaRj": idperr.ErrWeakPassword, // no uppercase
+	"COMMA-co3Xw": idperr.ErrWeakPassword, // no lowercase
+	"COMMA-ZBv4H": idperr.ErrWeakPassword, // no number
+	"COMMA-ZDLwA": idperr.ErrWeakPassword, // no symbol
 }
 
 // classifyError maps an HTTP status + Zitadel error body to one of
-// gipadmin's sentinels. id (from readZitadelErrorID) is checked first
+// idperr's sentinels. id (from readZitadelErrorID) is checked first
 // against zitadelErrorIDSentinels; it is the reliable signal because it is
 // stable and distinguishes cases the message text alone cannot (see that
 // map's doc). When id is absent or not one seen live, this falls back to
@@ -378,16 +379,16 @@ func classifyError(status int, body []byte, id string) error {
 
 	switch status {
 	case http.StatusNotFound:
-		return gipadmin.ErrUserNotFound
+		return idperr.ErrUserNotFound
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return gipadmin.ErrUnauthenticated
+		return idperr.ErrUnauthenticated
 	case http.StatusTooManyRequests:
-		return gipadmin.ErrTooManyAttempts
+		return idperr.ErrTooManyAttempts
 	case http.StatusBadRequest:
 		switch {
 		case strings.Contains(msg, "password") &&
 			(strings.Contains(msg, "weak") || strings.Contains(msg, "polic") || strings.Contains(msg, "complexity")):
-			return gipadmin.ErrWeakPassword
+			return idperr.ErrWeakPassword
 		case strings.Contains(msg, "code") && !strings.Contains(msg, "password") &&
 			(strings.Contains(msg, "invalid") || strings.Contains(msg, "expired") || strings.Contains(msg, "not found")):
 			// "not found" is included for the real observed message ("Code
@@ -395,12 +396,12 @@ func classifyError(status int, body []byte, id string) error {
 			// COMMAND-G8dh3 case ("Password not found") must never match
 			// here. This is now a SAFETY NET behind the id table above,
 			// not the primary signal.
-			return gipadmin.ErrInvalidOobCode
+			return idperr.ErrInvalidOobCode
 		default:
-			return gipadmin.ErrUnavailable
+			return idperr.ErrUnavailable
 		}
 	default:
-		return gipadmin.ErrUnavailable
+		return idperr.ErrUnavailable
 	}
 }
 
@@ -438,18 +439,18 @@ func encodeCompositeCode(userID, code string) string {
 }
 
 // decodeCompositeCode reverses encodeCompositeCode. Any failure — bad
-// base64, bad JSON, or a missing field — maps to gipadmin.ErrInvalidOobCode:
+// base64, bad JSON, or a missing field — maps to idperr.ErrInvalidOobCode:
 // from the caller's perspective a malformed reset code and an
 // expired/redeemed one are the same outcome, "this link doesn't work,
 // request a new one," and handler.go already renders that as 410 Gone.
 func decodeCompositeCode(s string) (userID, code string, err error) {
 	raw, decErr := base64.RawURLEncoding.DecodeString(s)
 	if decErr != nil {
-		return "", "", fmt.Errorf("zitadeladmin: decode reset code: %w", gipadmin.ErrInvalidOobCode)
+		return "", "", fmt.Errorf("zitadeladmin: decode reset code: %w", idperr.ErrInvalidOobCode)
 	}
 	var cc compositeCode
 	if jsonErr := json.Unmarshal(raw, &cc); jsonErr != nil || cc.UserID == "" || cc.Code == "" {
-		return "", "", fmt.Errorf("zitadeladmin: malformed reset code: %w", gipadmin.ErrInvalidOobCode)
+		return "", "", fmt.Errorf("zitadeladmin: malformed reset code: %w", idperr.ErrInvalidOobCode)
 	}
 	return cc.UserID, cc.Code, nil
 }
@@ -457,9 +458,9 @@ func decodeCompositeCode(s string) (userID, code string, err error) {
 // resolveUserIDByEmail searches for a Zitadel user by email, scoped to
 // Config.OrgID, and returns exactly the sole matching user id.
 //
-// Zero matches maps to gipadmin.ErrUserNotFound: RequestPasswordReset in
+// Zero matches maps to idperr.ErrUserNotFound: RequestPasswordReset in
 // internal/auth/service.go already does
-// `errors.Is(err, gipadmin.ErrUserNotFound)` to suppress account
+// `errors.Is(err, idperr.ErrUserNotFound)` to suppress account
 // enumeration, and this keeps that behaviour working unchanged with this
 // provider swapped in.
 //
@@ -470,7 +471,7 @@ func decodeCompositeCode(s string) (userID, code string, err error) {
 // decision this function must not make on a caller's behalf — mirrors
 // zitadellogin.FindUserByVerifiedEmail's ErrAmbiguousEmailMatch for the
 // identical reason. See ErrAmbiguousEmail's doc for why it is not one of
-// gipadmin's sentinels.
+// idperr's sentinels.
 //
 // Matching requires BOTH a case-insensitive email match AND
 // human.email.isVerified — the same pair zitadellogin.FindUserByVerifiedEmail
@@ -513,7 +514,7 @@ func (c *Client) resolveUserIDByEmail(ctx context.Context, email string) (string
 	}
 	switch len(matches) {
 	case 0:
-		return "", gipadmin.ErrUserNotFound
+		return "", idperr.ErrUserNotFound
 	case 1:
 		return matches[0], nil
 	default:
@@ -562,7 +563,7 @@ func (c *Client) SendPasswordResetOobCode(ctx context.Context, email string) (st
 		return "", err
 	}
 	if wire.VerificationCode == "" {
-		return "", fmt.Errorf("zitadeladmin: password_reset 2xx without a verificationCode: %w", gipadmin.ErrUnavailable)
+		return "", fmt.Errorf("zitadeladmin: password_reset 2xx without a verificationCode: %w", idperr.ErrUnavailable)
 	}
 	return encodeCompositeCode(userID, wire.VerificationCode), nil
 }
@@ -570,7 +571,7 @@ func (c *Client) SendPasswordResetOobCode(ctx context.Context, email string) (st
 // ResetPassword decodes oobCode back into the user id + verification code
 // SendPasswordResetOobCode packed together, then submits the new password
 // to Zitadel. A malformed oobCode never reaches the network — it maps
-// straight to gipadmin.ErrInvalidOobCode, same as a code Zitadel itself
+// straight to idperr.ErrInvalidOobCode, same as a code Zitadel itself
 // rejects as invalid or expired.
 func (c *Client) ResetPassword(ctx context.Context, oobCode, newPassword string) error {
 	userID, code, err := decodeCompositeCode(strings.TrimSpace(oobCode))
@@ -586,8 +587,8 @@ func (c *Client) ResetPassword(ctx context.Context, oobCode, newPassword string)
 }
 
 // DeleteAccount removes the Zitadel user identified by uid. Idempotent:
-// gipadmin.ErrUserNotFound (a 404) is treated as success, mirroring
-// gipadmin.AdminClient.DeleteAccount's own doc — account deletion is
+// idperr.ErrUserNotFound (a 404) is treated as success, mirroring
+// the retired GIP client's DeleteAccount doc — account deletion is
 // retried and the user may already be gone.
 func (c *Client) DeleteAccount(ctx context.Context, uid string) error {
 	if uid == "" {
@@ -595,7 +596,7 @@ func (c *Client) DeleteAccount(ctx context.Context, uid string) error {
 	}
 	path := fmt.Sprintf("/v2/users/%s", url.PathEscape(uid))
 	err := c.do(ctx, http.MethodDelete, path, nil, nil, false, withLogPath("/v2/users/{id}"))
-	if errors.Is(err, gipadmin.ErrUserNotFound) {
+	if errors.Is(err, idperr.ErrUserNotFound) {
 		return nil
 	}
 	return err

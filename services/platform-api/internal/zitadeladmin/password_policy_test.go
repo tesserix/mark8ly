@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 )
 
 // policyBody builds the error envelope POST /v2/users/human returns for a
@@ -56,8 +56,8 @@ func TestPasswordPolicy_EachIDMapsToItsOwnRule(t *testing.T) {
 			}
 			// The coarse sentinel must still match, or internal/auth's
 			// existing ErrWeakPassword branches stop firing.
-			if !errors.Is(err, gipadmin.ErrWeakPassword) {
-				t.Errorf("err = %v, must also match gipadmin.ErrWeakPassword", err)
+			if !errors.Is(err, idperr.ErrWeakPassword) {
+				t.Errorf("err = %v, must also match idperr.ErrWeakPassword", err)
 			}
 
 			var v interface {
@@ -115,22 +115,22 @@ func TestPasswordPolicy_SuffixCollisionDoesNotCrossMap(t *testing.T) {
 			t.Fatalf("DOMAIN-HuJf6 was classified as rule %q via suffix matching", rule)
 		}
 		// It keeps its long-standing coarse meaning.
-		if !errors.Is(err, gipadmin.ErrWeakPassword) {
-			t.Errorf("err = %v, want gipadmin.ErrWeakPassword", err)
+		if !errors.Is(err, idperr.ErrWeakPassword) {
+			t.Errorf("err = %v, want idperr.ErrWeakPassword", err)
 		}
 	})
 
 	t.Run("COMMA-HuJf6 does not answer to the DOMAIN sentinel path", func(t *testing.T) {
 		// Both map to ErrWeakPassword by design; what must differ is that
 		// only the COMMA id carries a rule classification.
-		got := asPasswordPolicyError(&apiError{id: "DOMAIN-HuJf6", sentinel: gipadmin.ErrWeakPassword})
+		got := asPasswordPolicyError(&apiError{id: "DOMAIN-HuJf6", sentinel: idperr.ErrWeakPassword})
 		var v interface {
 			PasswordPolicyRule() (string, string)
 		}
 		if errors.As(got, &v) {
 			t.Fatal("asPasswordPolicyError classified DOMAIN-HuJf6")
 		}
-		got = asPasswordPolicyError(&apiError{id: "COMMA-HuJf6", sentinel: gipadmin.ErrWeakPassword})
+		got = asPasswordPolicyError(&apiError{id: "COMMA-HuJf6", sentinel: idperr.ErrWeakPassword})
 		if !errors.As(got, &v) {
 			t.Fatal("asPasswordPolicyError did not classify COMMA-HuJf6")
 		}
@@ -143,7 +143,7 @@ func TestPasswordPolicy_SuffixCollisionDoesNotCrossMap(t *testing.T) {
 // converted into a user-facing password complaint.
 func TestPasswordPolicy_UnrelatedErrorsPassThroughUnchanged(t *testing.T) {
 	for _, id := range []string{"", "V3-DKcYh", "COMMAND-SAF4f", "COMMA-notreal"} {
-		in := &apiError{id: id, sentinel: gipadmin.ErrUnavailable}
+		in := &apiError{id: id, sentinel: idperr.ErrUnavailable}
 		if got := asPasswordPolicyError(in); got != error(in) {
 			t.Errorf("asPasswordPolicyError(id=%q) rewrapped an unrelated error: %v", id, got)
 		}

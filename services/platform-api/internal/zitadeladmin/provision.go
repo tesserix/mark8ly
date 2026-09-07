@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 )
 
 // This file holds the PROVISIONING half of the Zitadel admin client:
@@ -39,7 +39,7 @@ import (
 // already exists in the org. VERIFIED live: it arrives as an HTTP 409
 // whose grpc code is 6 (AlreadyExists).
 //
-// classifyError maps that 409 to gipadmin.ErrUnavailable (its default
+// classifyError maps that 409 to idperr.ErrUnavailable (its default
 // branch — "a wrong guess here reads as something it is not"), which
 // is the right default for the account operations but useless here:
 // "already exists" is the single most common outcome of re-accepting
@@ -52,7 +52,7 @@ const zitadelErrIDUserAlreadyExists = "V3-DKcYh"
 // cmd/server) need the same email -> user id resolution the password
 // reset path uses, with the same guarantees: scoped to Config.OrgID,
 // requires a VERIFIED email, refuses an ambiguous match rather than
-// picking one (ErrAmbiguousEmail), and returns gipadmin.ErrUserNotFound
+// picking one (ErrAmbiguousEmail), and returns idperr.ErrUserNotFound
 // on zero matches.
 func (c *Client) ResolveUserIDByEmail(ctx context.Context, email string) (string, error) {
 	email = strings.TrimSpace(email)
@@ -144,7 +144,7 @@ func (c *Client) EnsureHumanUser(ctx context.Context, in HumanUser) (string, err
 	err := c.do(ctx, http.MethodPost, "/v2/users/human", body, &wire, false, withLogPath("/v2/users/human"))
 	if err == nil {
 		if wire.UserID == "" {
-			return "", fmt.Errorf("zitadeladmin: create human user returned 2xx without a userId: %w", gipadmin.ErrUnavailable)
+			return "", fmt.Errorf("zitadeladmin: create human user returned 2xx without a userId: %w", idperr.ErrUnavailable)
 		}
 		return wire.UserID, nil
 	}
@@ -281,7 +281,7 @@ func (p *StaffProvisioner) ProvisionStaff(ctx context.Context, email, firstName,
 	switch {
 	case err == nil:
 		// Existing account — password intentionally unused.
-	case errors.Is(err, gipadmin.ErrUserNotFound):
+	case errors.Is(err, idperr.ErrUserNotFound):
 		userID, err = p.client.EnsureHumanUser(ctx, HumanUser{
 			Email:     email,
 			FirstName: firstName,

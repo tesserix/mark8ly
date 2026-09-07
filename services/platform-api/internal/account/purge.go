@@ -102,7 +102,7 @@ const PurgeBackstopDelay = 30 * time.Second
 // "May be nil" means a TRUE nil interface, and that is a property of the
 // WIRING, not of this file: s.fga is authz.Client, an interface all the
 // way up through main, and s.gip is only ever assigned from a NON-nil
-// *gipadmin.AdminClient — see newAccountService in
+// concrete provider client — see newAccountService in
 // cmd/server/account_wiring.go and its test. Handing NewService a nil
 // concrete pointer directly would produce a non-nil interface holding a
 // nil pointer; cleanupAfterTeardown's `!= nil` guards would pass, and the

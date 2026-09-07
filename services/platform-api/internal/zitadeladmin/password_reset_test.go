@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 )
 
 // TestSendPasswordResetOobCode_HappyPath drives the full email->id->code
@@ -78,7 +78,7 @@ func TestSendPasswordResetOobCode_UnknownEmailMapsToUserNotFound(t *testing.T) {
 	})
 
 	_, err := c.SendPasswordResetOobCode(context.Background(), "nobody@example.com")
-	if !errors.Is(err, gipadmin.ErrUserNotFound) {
+	if !errors.Is(err, idperr.ErrUserNotFound) {
 		t.Fatalf("err = %v, want ErrUserNotFound", err)
 	}
 }
@@ -121,7 +121,7 @@ func TestResetPassword_MalformedCodeNeverHitsNetwork(t *testing.T) {
 	})
 
 	err := c.ResetPassword(context.Background(), "not-a-real-code", "correct horse battery staple")
-	if !errors.Is(err, gipadmin.ErrInvalidOobCode) {
+	if !errors.Is(err, idperr.ErrInvalidOobCode) {
 		t.Fatalf("err = %v, want ErrInvalidOobCode", err)
 	}
 	if called {
@@ -137,7 +137,7 @@ func TestResetPassword_UpstreamInvalidCodeMapsToSentinel(t *testing.T) {
 
 	oobCode := encodeCompositeCode("user-42", "stale-code")
 	err := c.ResetPassword(context.Background(), oobCode, "correct horse battery staple")
-	if !errors.Is(err, gipadmin.ErrInvalidOobCode) {
+	if !errors.Is(err, idperr.ErrInvalidOobCode) {
 		t.Fatalf("err = %v, want ErrInvalidOobCode", err)
 	}
 }
@@ -150,7 +150,7 @@ func TestResetPassword_UpstreamWeakPasswordMapsToSentinel(t *testing.T) {
 
 	oobCode := encodeCompositeCode("user-42", "code-abc")
 	err := c.ResetPassword(context.Background(), oobCode, "weak")
-	if !errors.Is(err, gipadmin.ErrWeakPassword) {
+	if !errors.Is(err, idperr.ErrWeakPassword) {
 		t.Fatalf("err = %v, want ErrWeakPassword", err)
 	}
 }

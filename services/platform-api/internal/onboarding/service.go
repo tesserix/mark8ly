@@ -433,27 +433,6 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		}); err != nil {
 			return err
 		}
-		// Stamp the owner's tenant_id GIP custom claim. marketplace-api's
-		// mobile auth resolves the caller's tenant from this claim alone,
-		// so without it the owner authenticates but every mobile API call
-		// is refused — which the app renders as a login bounce loop. Rides
-		// the same transaction/outbox as the FGA tuple so it is retried
-		// until it lands rather than silently locking the owner out.
-		//
-		// Skipped on the Zitadel path: ownerUserID is a Zitadel user id
-		// there and EnsureTenantClaim writes a GIP custom claim keyed by
-		// GIP uid. The call would resolve nothing, fail, and be retried by
-		// the drainer forever. The GIP path is untouched. (Mobile admin is
-		// on the same GIP bearer path and is a separate cutover — see
-		// cmd/server/provider_wiring.go's requireGIPForTenantClaim.)
-		if s.provisioner == nil {
-			if err := outbox.Enqueue(tx, GIPClaimOutboxKind, gipClaimPayload{
-				UserID:   ownerUserID,
-				TenantID: t.ID,
-			}); err != nil {
-				return err
-			}
-		}
 		return nil
 	})
 	if err != nil {

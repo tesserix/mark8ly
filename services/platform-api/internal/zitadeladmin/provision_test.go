@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 )
 
 // The handlers below are TRIPWIRES: an unexpected path, method or body
@@ -153,7 +153,7 @@ func TestEnsureHumanUser_OtherErrorDoesNotResolve(t *testing.T) {
 		_, _ = w.Write(zitadelError("DOMAIN-HuJf6", "Password is too short", 3))
 	})
 
-	if _, err := c.EnsureHumanUser(context.Background(), newUser()); !errors.Is(err, gipadmin.ErrWeakPassword) {
+	if _, err := c.EnsureHumanUser(context.Background(), newUser()); !errors.Is(err, idperr.ErrWeakPassword) {
 		t.Fatalf("err = %v, want ErrWeakPassword", err)
 	}
 }

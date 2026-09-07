@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 )
 
 func searchResponse(entries ...map[string]any) []byte {
@@ -72,7 +72,7 @@ func TestResolveUserIDByEmail_NotFound(t *testing.T) {
 	})
 
 	_, err := c.resolveUserIDByEmail(context.Background(), "nobody@example.com")
-	if !errors.Is(err, gipadmin.ErrUserNotFound) {
+	if !errors.Is(err, idperr.ErrUserNotFound) {
 		t.Fatalf("err = %v, want ErrUserNotFound", err)
 	}
 }
@@ -84,7 +84,7 @@ func TestResolveUserIDByEmail_UnverifiedEmailDoesNotMatch(t *testing.T) {
 	})
 
 	_, err := c.resolveUserIDByEmail(context.Background(), "merchant@example.com")
-	if !errors.Is(err, gipadmin.ErrUserNotFound) {
+	if !errors.Is(err, idperr.ErrUserNotFound) {
 		t.Fatalf("err = %v, want ErrUserNotFound for an unverified-email match", err)
 	}
 }
@@ -104,13 +104,13 @@ func TestResolveUserIDByEmail_AmbiguousRefuses(t *testing.T) {
 	if !errors.Is(err, ErrAmbiguousEmail) {
 		t.Fatalf("err = %v, want ErrAmbiguousEmail", err)
 	}
-	// Ambiguity is NOT one of gipadmin's sentinels: it must fall through
+	// Ambiguity is NOT one of idperr's sentinels: it must fall through
 	// internal/auth/handler.go's switch to the generic 500 default rather
 	// than being reported as "not found" (false) or "unavailable"
 	// (misdirecting anyone reading the log).
 	for _, sentinel := range []error{
-		gipadmin.ErrUserNotFound, gipadmin.ErrInvalidOobCode, gipadmin.ErrWeakPassword,
-		gipadmin.ErrUnauthenticated, gipadmin.ErrTooManyAttempts, gipadmin.ErrUnavailable,
+		idperr.ErrUserNotFound, idperr.ErrInvalidOobCode, idperr.ErrWeakPassword,
+		idperr.ErrUnauthenticated, idperr.ErrTooManyAttempts, idperr.ErrUnavailable,
 	} {
 		if errors.Is(err, sentinel) {
 			t.Errorf("ambiguous-match error unexpectedly matches sentinel %v", sentinel)

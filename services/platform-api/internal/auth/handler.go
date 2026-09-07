@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 )
 
 // Handler is the HTTP entry point for the password-reset flow.
@@ -66,14 +66,14 @@ func (h *Handler) request(c *gin.Context) {
 		// so the admin can show a friendly retry message. Everything
 		// else is a server-side error.
 		switch {
-		case errors.Is(err, gipadmin.ErrTooManyAttempts):
+		case errors.Is(err, idperr.ErrTooManyAttempts):
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error":   "too_many_attempts",
 				"message": "Too many attempts, please try again shortly.",
 			})
 			return
-		case errors.Is(err, gipadmin.ErrUnavailable),
-			errors.Is(err, gipadmin.ErrUnauthenticated):
+		case errors.Is(err, idperr.ErrUnavailable),
+			errors.Is(err, idperr.ErrUnauthenticated):
 			if h.logger != nil {
 				h.logger.Error("auth: password reset upstream failure",
 					"err", err, "email", email)
@@ -117,19 +117,19 @@ func (h *Handler) confirm(c *gin.Context) {
 
 	if err := h.svc.ConfirmPasswordReset(c.Request.Context(), body.OobCode, body.NewPassword); err != nil {
 		switch {
-		case errors.Is(err, gipadmin.ErrInvalidOobCode):
+		case errors.Is(err, idperr.ErrInvalidOobCode):
 			c.JSON(http.StatusGone, gin.H{
 				"error":   "invalid_oob_code",
 				"message": "This reset link is invalid or has expired. Request a new one from the forgot-password page.",
 			})
 			return
-		case errors.Is(err, gipadmin.ErrWeakPassword):
+		case errors.Is(err, idperr.ErrWeakPassword):
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":   "weak_password",
 				"message": "Please choose a stronger password — at least 8 characters.",
 			})
 			return
-		case errors.Is(err, gipadmin.ErrUnavailable):
+		case errors.Is(err, idperr.ErrUnavailable):
 			if h.logger != nil {
 				h.logger.Error("auth: reset confirm upstream failure", "err", err)
 			}

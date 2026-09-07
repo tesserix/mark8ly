@@ -59,8 +59,7 @@ func TestAccept_Zitadel_ProvisionsAndWritesBothIdentityKeys(t *testing.T) {
 	repo := &fakeRepo{inv: pendingInvitation()}
 	fga := authz.NewFake()
 	prov := &fakeProvisioner{t: t, wantEmail: "staff@example.com", returnUID: "zid-1"}
-	claims := &fakeClaimSetter{}
-	svc := NewService(Config{Repo: repo, FGA: fga, Provisioner: prov, Claims: claims})
+	svc := NewService(Config{Repo: repo, FGA: fga, Provisioner: prov})
 
 	res, err := svc.Accept(context.Background(), zitadelAcceptInput())
 	if err != nil {
@@ -86,11 +85,6 @@ func TestAccept_Zitadel_ProvisionsAndWritesBothIdentityKeys(t *testing.T) {
 	// The Zitadel uid, not the (absent) caller uid, is what gets recorded.
 	if repo.acceptedUID != "zid-1" {
 		t.Errorf("acceptedUID = %q, want the Zitadel uid zid-1", repo.acceptedUID)
-	}
-	// EnsureTenantClaim writes a GIP claim keyed by GIP uid; there is no
-	// GIP uid on this path, so calling it would only log a failure.
-	if claims.calls != 0 {
-		t.Errorf("EnsureTenantClaim called %d times on the Zitadel path, want 0", claims.calls)
 	}
 }
 
@@ -190,13 +184,13 @@ func TestAccept_Zitadel_DerivesProfileNamesFromEmail(t *testing.T) {
 // --- The GIP path must be untouched -----------------------------------
 
 // TestAccept_GIP_UnchangedSingleUIDTuple pins flag-off behaviour: one
-// tuple, keyed by the caller-supplied GIP uid, and the tenant claim
-// still stamped. No email-keyed tuple appears.
+// tuple, keyed by the caller-supplied uid. No email-keyed tuple appears.
+// The tenant_id custom-claim write that used to accompany it was retired
+// in #791 — nothing reads that claim any more.
 func TestAccept_GIP_UnchangedSingleUIDTuple(t *testing.T) {
 	repo := &fakeRepo{inv: pendingInvitation()}
 	fga := authz.NewFake()
-	claims := &fakeClaimSetter{}
-	svc := NewService(Config{Repo: repo, FGA: fga, Claims: claims})
+	svc := NewService(Config{Repo: repo, FGA: fga})
 
 	if _, err := svc.Accept(context.Background(), acceptInput()); err != nil {
 		t.Fatalf("Accept: %v", err)
@@ -209,9 +203,6 @@ func TestAccept_GIP_UnchangedSingleUIDTuple(t *testing.T) {
 	}
 	if fga.WriteCallCount() != 1 {
 		t.Errorf("%d FGA writes, want exactly 1 on the GIP path", fga.WriteCallCount())
-	}
-	if claims.calls != 1 || claims.uid != "uid-staff" {
-		t.Errorf("EnsureTenantClaim called %d times with uid %q, want 1 with uid-staff", claims.calls, claims.uid)
 	}
 	if repo.acceptedUID != "uid-staff" {
 		t.Errorf("acceptedUID = %q, want uid-staff", repo.acceptedUID)

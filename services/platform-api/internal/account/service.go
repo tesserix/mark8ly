@@ -39,9 +39,9 @@ import (
 	apperrors "github.com/mark8ly/platform-api/pkg/errors"
 )
 
-// gipDeleter is the subset of gipadmin.AdminClient the service needs.
-// Defined locally so *gipadmin.AdminClient satisfies it without this
-// package importing gipadmin, and so tests can supply a trivial fake.
+// gipDeleter is the subset of the identity-provider client the service
+// needs. Defined locally so *zitadeladmin.Client satisfies it without this
+// package importing it, and so tests can supply a trivial fake.
 type gipDeleter interface {
 	DeleteAccount(ctx context.Context, uid string) error
 }

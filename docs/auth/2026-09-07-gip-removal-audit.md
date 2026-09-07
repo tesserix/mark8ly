@@ -20,7 +20,7 @@ removes the feature:
 | Custom-domain browser-key allowlist | `marketplace-api/internal/gipkey` + `main.go:545-579` | A merchant's storefront sign-in stops working from their verified custom domain. Self-service feature. |
 | Tenant SAML/OIDC SSO | `marketplace-api/internal/sso/gip_client.go` | Enterprise tenant SSO provisioning disappears. May already be dark — nothing in `main.go` constructs it — confirm before deciding. |
 | ~~Merchant display-name seeding~~ **RESOLVED (#790)** | was `marketplace-api/internal/gipuser`; now `marketplace-api/internal/displayname` (`SetDisplayNames`) reading auth-bff's `GET /internal/users/:id/display-name`, backed by `zitadellogin.Client.UserDisplayName` | None. `internal/gipuser` is deleted. The seam is provider-neutral and wired unconditionally, so Zitadel-mode merchants now get the name too — closing the pre-existing gap rather than merely preserving it. |
-| Invite tenant-claim write | `platform-api/internal/gipadmin` + `cmd/server/provider_wiring.go` | No Zitadel equivalent exists. `requireGIPForTenantClaim` **panics** by design rather than let this be removed silently. |
+| ~~Invite tenant-claim write~~ **RESOLVED (#791)** | was `platform-api/internal/gipadmin` + `cmd/server/provider_wiring.go` | None. No replacement was needed: #786/#800 removed the last reader of the `tenant_id` claim from marketplace-api, and the `gip.set_tenant_claim` outbox was verified drained in production (5 rows, all `completed`, newest 2026-07-31) before the write was retired. `internal/gipadmin` is deleted along with `requireGIPForTenantClaim`, `newTenantClaimSetter` and `cmd/backfill-gip-claims`; its sentinel errors moved to `internal/idperr`. |
 
 None of these are in #708's inventory. Each needs a **replacement decision**,
 not a deletion.
@@ -45,7 +45,7 @@ They need their own migration phase. #708 cannot touch them.
 |---|---|
 | `marketplace-api-admin` | `ZITADEL_ENABLED=true`; `ZITADEL_DUAL_ISSUER` **was `true`, set to `false` 2026-09-07** (tesserix-k8s#1041) — GIP tokens are no longer accepted |
 | `marketplace-api-storefront` | **no `ZITADEL_ENABLED`** — customer path still GIP |
-| `platform-api` | `ZITADEL_ENABLED=true`, still holds `GIP_PROJECT_ID` + `GIP_TENANT_ID` |
+| `platform-api` | `ZITADEL_ENABLED=true`. `GIP_PROJECT_ID`/`GIP_TENANT_ID`/`GIP_WEB_API_KEY`/`GIP_SERVER_API_KEY` became unread in code with #791; the chart values follow in a separate PR, per the code-first ordering rule below |
 
 Dual-issuer has since been turned OFF (#785), which is what unblocked the
 admin-path collapse. The paragraph below describes the state that blocked it,
@@ -80,9 +80,10 @@ this wrong both ways, and that is the single most useful output of this audit.
 - **`auth-bff/internal/autologin/service.go`** — saturated with "gip" strings,
   but `completeLogin` is shared and Zitadel's `CompleteForProvider` calls it.
   Only `AutoLogin` + the `gip` field go.
-- **`platform-api/internal/gipadmin`'s sentinel errors** (`ErrUserNotFound`, …)
-  are reused ~20× by `zitadeladmin` and `internal/auth/handler.go`. Relocate
-  them **before** deleting the package or the build breaks.
+- ~~**`platform-api/internal/gipadmin`'s sentinel errors**~~ **DONE (#791)**:
+  relocated to the leaf package `platform-api/internal/idperr` (messages
+  re-prefixed `idp:`) before the package was deleted, exactly as this warned.
+  `zitadeladmin` and `internal/auth` now import `idperr`.
 - **All of `marketplace-api/internal/whitelabel/**`** plus
   `subscription/app_lifecycle.go` and migrations `000048`/`000076`. This is a
   *third* meaning of "firebase": GCP **project lifecycle** teardown for a
@@ -110,11 +111,13 @@ this wrong both ways, and that is the single most useful output of this audit.
 
 ## Three hazards that fail silently
 
-1. **The outbox rots without erroring.** Unregistering
-   `platform-api/internal/onboarding/gip_claim_handler.go` makes any
-   already-queued `gip.set_tenant_claim` rows permanently unprocessable — the
-   drainer treats an unregistered kind as "still pending" and never alarms.
-   Drain and confirm empty first.
+1. ~~**The outbox rots without erroring.**~~ **CLOSED (#791)**: the hazard was
+   real, and was closed by measurement rather than by code — production held 5
+   `gip.set_tenant_claim` rows, all `completed`, newest 2026-07-31, and zero
+   not-completed. `gip_claim_handler.go` and the enqueue in
+   `onboarding/service.go` are both gone. The integration tests now assert by
+   the LITERAL kind string that no such row is ever enqueued again, since the
+   constant no longer exists.
 2. **`gip.ts` is `require()`d lazily** inside `provider.tsx`'s
    `createFirebaseBackend` (to keep Firebase out of Expo Go). Deleting it
    without removing that call site fails **only at runtime on a device** —
@@ -157,8 +160,9 @@ migration. Suggested split:
    `isZitadelProvider` branches, `gip.ts` and the Firebase backend. Gated on
    turning **dual-issuer off**.
 3. **Feature replacements** (one issue each, each needs a decision): storefront
-   customer verification; custom-domain key allowlist; tenant SSO; display-name
-   seeding; invite tenant-claim.
+   customer verification; custom-domain key allowlist; tenant SSO;
+   ~~display-name seeding~~ (#790); ~~invite tenant-claim~~ (#791 — no
+   replacement needed, see the table above).
 4. **Storefront/customer cutover**: `marketplace-api-storefront`'s
    `ZITADEL_ENABLED`, plus `apps/mobile-storefront` and `apps/storefront-mobile`
    migrations.

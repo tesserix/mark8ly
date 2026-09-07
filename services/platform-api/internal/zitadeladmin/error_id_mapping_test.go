@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 )
 
 // TestErrorIDMapping_VerifiedLiveIDs proves classifyError keys off the
@@ -26,19 +26,19 @@ func TestErrorIDMapping_VerifiedLiveIDs(t *testing.T) {
 			name:   "COMMAND-SAF4f user not found",
 			status: http.StatusNotFound,
 			body:   `{"code":5,"message":"User could not be found","details":[{"@type":"...","id":"COMMAND-SAF4f"}]}`,
-			want:   gipadmin.ErrUserNotFound,
+			want:   idperr.ErrUserNotFound,
 		},
 		{
 			name:   "COMMAND-2M9fs wrong or expired verification code",
 			status: http.StatusBadRequest,
 			body:   `{"code":9,"message":"Code not found","details":[{"@type":"...","id":"COMMAND-2M9fs"}]}`,
-			want:   gipadmin.ErrInvalidOobCode,
+			want:   idperr.ErrInvalidOobCode,
 		},
 		{
 			name:   "COMMAND-G8dh3 missing password field is NOT an invalid code",
 			status: http.StatusBadRequest,
 			body:   `{"code":9,"message":"Password not found","details":[{"@type":"...","id":"COMMAND-G8dh3"}]}`,
-			want:   gipadmin.ErrUnavailable,
+			want:   idperr.ErrUnavailable,
 		},
 		{
 			// Different id prefix ("DOMAIN-" not "COMMAND-") and a message
@@ -49,7 +49,7 @@ func TestErrorIDMapping_VerifiedLiveIDs(t *testing.T) {
 			name:   "DOMAIN-HuJf6 too-short password maps to ErrWeakPassword",
 			status: http.StatusBadRequest,
 			body:   `{"code":3,"message":"Password is too short","details":[{"@type":"...","id":"DOMAIN-HuJf6"}]}`,
-			want:   gipadmin.ErrWeakPassword,
+			want:   idperr.ErrWeakPassword,
 		},
 	}
 
@@ -72,10 +72,10 @@ func TestErrorIDMapping_CommandG8dh3NeverMapsToInvalidOobCode(t *testing.T) {
 	body := []byte(`{"code":9,"message":"Password not found","details":[{"id":"COMMAND-G8dh3"}]}`)
 	id := readZitadelErrorID(body)
 	got := classifyError(http.StatusBadRequest, body, id)
-	if errors.Is(got, gipadmin.ErrInvalidOobCode) {
+	if errors.Is(got, idperr.ErrInvalidOobCode) {
 		t.Fatalf("classifyError = %v, must not match ErrInvalidOobCode", got)
 	}
-	if !errors.Is(got, gipadmin.ErrUnavailable) {
+	if !errors.Is(got, idperr.ErrUnavailable) {
 		t.Fatalf("classifyError = %v, want ErrUnavailable", got)
 	}
 }
@@ -91,7 +91,7 @@ func TestErrorIDMapping_EndToEndThroughResetPassword(t *testing.T) {
 			_, _ = w.Write([]byte(`{"code":9,"message":"Code not found","details":[{"id":"COMMAND-2M9fs"}]}`))
 		})
 		err := c.ResetPassword(context.Background(), encodeCompositeCode("user-1", "wrong-code"), "correct horse battery staple")
-		if !errors.Is(err, gipadmin.ErrInvalidOobCode) {
+		if !errors.Is(err, idperr.ErrInvalidOobCode) {
 			t.Fatalf("err = %v, want ErrInvalidOobCode", err)
 		}
 	})
@@ -102,10 +102,10 @@ func TestErrorIDMapping_EndToEndThroughResetPassword(t *testing.T) {
 			_, _ = w.Write([]byte(`{"code":9,"message":"Password not found","details":[{"id":"COMMAND-G8dh3"}]}`))
 		})
 		err := c.ResetPassword(context.Background(), encodeCompositeCode("user-1", "code"), "correct horse battery staple")
-		if errors.Is(err, gipadmin.ErrInvalidOobCode) {
+		if errors.Is(err, idperr.ErrInvalidOobCode) {
 			t.Fatalf("err = %v, must not match ErrInvalidOobCode", err)
 		}
-		if !errors.Is(err, gipadmin.ErrUnavailable) {
+		if !errors.Is(err, idperr.ErrUnavailable) {
 			t.Fatalf("err = %v, want ErrUnavailable", err)
 		}
 	})
@@ -116,7 +116,7 @@ func TestErrorIDMapping_EndToEndThroughResetPassword(t *testing.T) {
 			_, _ = w.Write([]byte(`{"code":3,"message":"Password is too short","details":[{"id":"DOMAIN-HuJf6"}]}`))
 		})
 		err := c.ResetPassword(context.Background(), encodeCompositeCode("user-1", "code"), "a")
-		if !errors.Is(err, gipadmin.ErrWeakPassword) {
+		if !errors.Is(err, idperr.ErrWeakPassword) {
 			t.Fatalf("err = %v, want ErrWeakPassword", err)
 		}
 	})

@@ -43,7 +43,7 @@ type TenantMembershipChecker interface {
 
 // TenantFromRequest returns gin middleware, mounted after bearer auth,
 // that reads the caller's stated tenant from ActingTenantHeader and, only
-// if FGA confirms the caller (user_id, set by GIPBearerAuth) is a member
+// if FGA confirms the caller (user_id, set by BearerAuth) is a member
 // of that tenant, sets tenant_id on the gin context.
 //
 // It NEVER aborts. A missing header, a non-member, or an FGA error all

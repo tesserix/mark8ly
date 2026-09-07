@@ -9,7 +9,7 @@ import (
 )
 
 // TestRequireBoundTenant_BlocksEmptyTenant is the fail-closed half of the
-// login-bounce fix. GIPBearerAuth deliberately admits a validly-signed token
+// login-bounce fix. BearerAuth deliberately admits a validly-signed token
 // with no tenant_id; without this guard, routes that lack an explicit
 // RequireTenantRelation (platform-support, push-tokens) would become
 // reachable by a user with no tenant, carrying an empty tenant scope.

@@ -67,9 +67,11 @@ type Config struct {
 	// session cookies. When empty, OptionalCustomerAuth always yields
 	// guest context — fine for local dev without auth-bff.
 	CustomerSessionSecret string `envconfig:"CUSTOMER_SESSION_SECRET" default:""`
-	// GIPProjectID is the Google Identity Platform project ID used to verify
-	// mobile Bearer tokens. When empty, GIPBearerAuth rejects all requests —
-	// fine for dev environments that don't use mobile auth.
+	// GIPProjectID is the Google Identity Platform project ID. Mobile
+	// ADMIN no longer uses it (#786 collapsed that group onto Zitadel);
+	// it still gates the storefront customer verifier (#787) and the
+	// custom-domain browser-key allowlist (#788). When empty, both of
+	// those stay disabled — fine for dev environments without them.
 	GIPProjectID string `envconfig:"GIP_PROJECT_ID" default:""`
 	// GIPWebAPIKeyResource is the full Google API Keys v2 resource name
 	// of the browser API key used by storefront sign-in (e.g.
@@ -320,11 +322,12 @@ type Config struct {
 
 	// Zitadel bearer verifier for mobile admin routes (#524 phase 4).
 	// Mirrors auth-bff's ZITADEL_ENABLED shape: an explicit boolean,
-	// defaulting to false so an unconfigured deployment keeps using the
-	// incumbent GIP verifier byte-for-byte. When enabled, ValidateZitadel
-	// requires both ZitadelIssuer and ZitadelAdminProjectID — see that
-	// method's doc comment for why both are mandatory rather than
-	// defaulted.
+	// defaulting to false. Since #786 removed the GIP verifier it is a
+	// kill switch, not a chooser: false leaves the mobile admin group
+	// unmounted entirely, because there is no second issuer left to serve
+	// it. When enabled, ValidateZitadel requires both ZitadelIssuer and
+	// ZitadelAdminProjectID — see that method's doc comment for why both
+	// are mandatory rather than defaulted.
 	ZitadelEnabled bool `envconfig:"ZITADEL_ENABLED" default:"false"`
 	// ZitadelIssuer is the Zitadel instance's OIDC issuer, used to
 	// discover its JWKS for bearer-token verification. All mark8ly
@@ -336,24 +339,6 @@ type Config struct {
 	// credential. Already deployed on other services as
 	// "389070376568619523".
 	ZitadelAdminProjectID string `envconfig:"ZITADEL_ADMIN_PROJECT_ID" default:""`
-	// ZitadelDualIssuer accepts mobile-admin bearer tokens from BOTH
-	// Zitadel and GIP for the duration of the migration (#686).
-	//
-	// ZitadelEnabled alone is an atomic switch: it changes the verifier
-	// AND the tenancy source together, so the moment it flips, every
-	// already-installed mobile app stops working. Store-distributed apps
-	// cannot be force-updated, so that is a flag day with no drain window.
-	// This flag turns the cutover into a rollout instead.
-	//
-	// Defaults to false, so an existing deployment behaves byte-for-byte
-	// as it does today and this can land k8s-first — the ordering that
-	// matters, because ADDING required config code-first fails pods at
-	// boot (only removal is code-first).
-	//
-	// Requires ZitadelEnabled; ignored on its own, because with Zitadel
-	// off there is only one issuer to accept and the composite would wrap
-	// a single verifier to no effect.
-	ZitadelDualIssuer bool `envconfig:"ZITADEL_DUAL_ISSUER" default:"false"`
 
 	// --- Merchant device push (mobile-admin) ---
 	// PushEventsTopic is the Pub/Sub topic merchant notifications are

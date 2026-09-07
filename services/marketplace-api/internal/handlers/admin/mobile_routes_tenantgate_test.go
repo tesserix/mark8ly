@@ -112,11 +112,10 @@ func TestRegisterAdminMobile_SuspendedTenantRefusedOnNonStoreRoute(t *testing.T)
 				c.Next()
 			},
 		},
-		ZitadelEnabled: true,
-		TokenVerifier:  &auth.FakeVerifier{UserID: "user-1"},
-		// In ZitadelEnabled mode, tenant_id comes from TenantFromRequest's
-		// FGA membership check against the caller-stated
-		// X-Acting-Tenant-Id header below, not from the token.
+		TokenVerifier: &auth.FakeVerifier{UserID: "user-1"},
+		// tenant_id comes from TenantFromRequest's FGA membership check
+		// against the caller-stated X-Acting-Tenant-Id header below —
+		// since #786 that is the only source there is.
 		TenantMembershipChecker: fga,
 	})
 
@@ -128,45 +127,5 @@ func TestRegisterAdminMobile_SuspendedTenantRefusedOnNonStoreRoute(t *testing.T)
 
 	require.Equal(t, http.StatusForbidden, rec.Code,
 		"a suspended tenant must be refused on the mobile route, exactly as on the web admin table")
-	require.Contains(t, rec.Body.String(), "tenant_suspended")
-}
-
-// TestRegisterAdminMobile_GIPMode_SuspendedTenantRefusedOnNonStoreRoute is
-// the same F1 regression, but for the ZitadelEnabled=false / GIP
-// configuration (today's production default), where tenant_id comes from
-// the token claim rather than an acting-tenant header. TenantGate must
-// refuse a suspended tenant here too — the flag-gated tenancy source
-// change (blocking-fix round) must not have quietly disabled this guard
-// for the mode almost every deployment actually runs in.
-func TestRegisterAdminMobile_GIPMode_SuspendedTenantRefusedOnNonStoreRoute(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-
-	gate := tenantgate.New(&stubTenantLookup{status: "suspended"}, nil, time.Minute)
-
-	fga := authz.NewFakeClient()
-	fga.Grant("user-1", authz.RoleStaff, "tenant-1")
-
-	RegisterAdminMobile(r.Group("/api/v1"), MobileDeps{
-		Deps: Deps{
-			StoresHandler:   NewStoresHandler(&stubStoresRepo{}, nil),
-			AuthzMiddleware: authz.NewMiddleware(fga, nil),
-			TenantGate:      gate.RequireActiveTenant(),
-			StoresMiddleware: func(c *gin.Context) {
-				c.Next()
-			},
-		},
-		// ZitadelEnabled omitted (false, the default): tenant_id must
-		// come from the token claim, with no header involved at all.
-		TokenVerifier: &auth.FakeVerifier{UserID: "user-1", TenantID: "tenant-1"},
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/mobile/admin/stores", nil)
-	req.Header.Set("Authorization", "Bearer fake")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusForbidden, rec.Code,
-		"a suspended tenant must be refused on the mobile route in GIP mode too")
 	require.Contains(t, rec.Body.String(), "tenant_suspended")
 }

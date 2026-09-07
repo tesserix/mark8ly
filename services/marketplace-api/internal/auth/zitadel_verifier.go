@@ -25,11 +25,10 @@ import (
 // script and a new runtime dependency on a shared instance). Tenancy is
 // instead supplied by a separate FGA-backed middleware
 // (TenantFromRequest). So Verify always returns an empty TenantID — this
-// is deliberate, not a gap to fill in later. Callers additionally MUST
-// wire GIPBearerAuth with setTenantFromClaim=false whenever this verifier
-// is selected (ZITADEL_ENABLED=true), so this empty value is never even
-// the thing that decides "tenant_id" is unset — TenantFromRequest is the
-// only writer in that mode.
+// is deliberate, not a gap to fill in later. auth.BearerAuth reinforces
+// it unconditionally (#786): it never writes "tenant_id" from any token's
+// claims, so this empty value is never even the thing that decides
+// "tenant_id" is unset — TenantFromRequest is the only writer.
 type ZitadelVerifier struct {
 	verifier *gooidc.IDTokenVerifier
 }

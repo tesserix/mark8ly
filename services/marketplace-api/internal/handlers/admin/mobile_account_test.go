@@ -12,7 +12,7 @@ import (
 )
 
 // withIdentity injects the tenant_id + user_id context keys that
-// GIPBearerAuth sets on the mobile path, so handler tests don't need the
+// BearerAuth sets on the mobile path, so handler tests don't need the
 // real middleware.
 func withIdentity(userID, tenantID string) gin.HandlerFunc {
 	return func(c *gin.Context) {

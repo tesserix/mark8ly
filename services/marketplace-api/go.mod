@@ -18,6 +18,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/lib/pq v1.12.3
+	github.com/mark8ly/platformauth v0.0.0-00010101000000-000000000000
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/mr-tron/base58 v1.3.0
 	github.com/openbao/openbao/api/v2 v2.6.0
@@ -171,3 +172,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace github.com/mark8ly/platformauth => ../../packages/platformauth

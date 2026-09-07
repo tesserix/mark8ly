@@ -1,4 +1,4 @@
-package platformadmin
+package platformauth
 
 import (
 	"bytes"
@@ -430,10 +430,10 @@ func isWrite(method string) bool {
 // for the console team, whose whole job is to be unambiguous.
 func parseTimestamp(ts string) (time.Time, error) {
 	if ts == "" {
-		return time.Time{}, errors.New("platformadmin: timestamp is empty")
+		return time.Time{}, errors.New("platformauth: timestamp is empty")
 	}
 	if ts[0] == '+' || ts[0] == '-' {
-		return time.Time{}, errors.New("platformadmin: timestamp must be an unsigned decimal integer")
+		return time.Time{}, errors.New("platformauth: timestamp must be an unsigned decimal integer")
 	}
 	secs, err := strconv.ParseInt(ts, 10, 64)
 	if err != nil {

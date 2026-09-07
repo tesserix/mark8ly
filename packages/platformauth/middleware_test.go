@@ -1,4 +1,4 @@
-package platformadmin_test
+package platformauth_test
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
+	"github.com/mark8ly/platformauth"
 )
 
 const testSecret = "test-platform-secret"
@@ -43,12 +43,12 @@ func (m *memNonces) Claim(_ context.Context, nonce string, expiresAt time.Time) 
 	return true, nil
 }
 
-func newRouter(t *testing.T, secret string, nonces platformadmin.NonceStore) *gin.Engine {
+func newRouter(t *testing.T, secret string, nonces platformauth.NonceStore) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	r.Use(platformadmin.RequirePlatformAuth(platformadmin.AuthConfig{
+	r.Use(platformauth.RequirePlatformAuth(platformauth.AuthConfig{
 		Secret:     secret,
 		NonceStore: nonces,
 		Now:        func() time.Time { return fixedNow },
@@ -63,10 +63,10 @@ func newRouter(t *testing.T, secret string, nonces platformadmin.NonceStore) *gi
 	return r
 }
 
-type reqOpt func(*platformadmin.SignatureInput)
+type reqOpt func(*platformauth.SignatureInput)
 
-func withoutOperator(in *platformadmin.SignatureInput)   { in.Operator = "" }
-func withoutCapability(in *platformadmin.SignatureInput) { in.Capability = "" }
+func withoutOperator(in *platformauth.SignatureInput)   { in.Operator = "" }
+func withoutCapability(in *platformauth.SignatureInput) { in.Capability = "" }
 
 func signedRequest(t *testing.T, method, target string, body []byte, opts ...reqOpt) *http.Request {
 	t.Helper()
@@ -78,7 +78,7 @@ func signedRequest(t *testing.T, method, target string, body []byte, opts ...req
 	parsed, err := url.Parse(target)
 	require.NoError(t, err)
 
-	in := platformadmin.SignatureInput{
+	in := platformauth.SignatureInput{
 		Method:     method,
 		Path:       parsed.Path,
 		RawQuery:   parsed.RawQuery,
@@ -92,7 +92,7 @@ func signedRequest(t *testing.T, method, target string, body []byte, opts ...req
 		o(&in)
 	}
 
-	sig, err := platformadmin.Sign(testSecret, in)
+	sig, err := platformauth.Sign(testSecret, in)
 	require.NoError(t, err)
 
 	var rdr *bytes.Reader
@@ -102,14 +102,14 @@ func signedRequest(t *testing.T, method, target string, body []byte, opts ...req
 		rdr = bytes.NewReader(body)
 	}
 	req := httptest.NewRequest(method, target, rdr)
-	req.Header.Set(platformadmin.HeaderTimestamp, in.Timestamp)
-	req.Header.Set(platformadmin.HeaderNonce, in.Nonce)
-	req.Header.Set(platformadmin.HeaderSignature, sig)
+	req.Header.Set(platformauth.HeaderTimestamp, in.Timestamp)
+	req.Header.Set(platformauth.HeaderNonce, in.Nonce)
+	req.Header.Set(platformauth.HeaderSignature, sig)
 	if in.Operator != "" {
-		req.Header.Set(platformadmin.HeaderOperator, in.Operator)
+		req.Header.Set(platformauth.HeaderOperator, in.Operator)
 	}
 	if in.Capability != "" {
-		req.Header.Set(platformadmin.HeaderCapability, in.Capability)
+		req.Header.Set(platformauth.HeaderCapability, in.Capability)
 	}
 	return req
 }
@@ -200,16 +200,16 @@ func TestStaleTimestampIsRefusedWithOpaqueCode(t *testing.T) {
 
 	req := signedRequest(t, http.MethodGet, "/admin/ping", nil)
 	// Re-sign with a timestamp well outside the +/-300s window.
-	in := platformadmin.SignatureInput{
+	in := platformauth.SignatureInput{
 		Method: http.MethodGet, Path: "/admin/ping",
 		Timestamp: "1755000000", Nonce: uuid.NewString(),
 		Operator: "op_7f3a", Capability: "audit.read",
 	}
-	sig, err := platformadmin.Sign(testSecret, in)
+	sig, err := platformauth.Sign(testSecret, in)
 	require.NoError(t, err)
-	req.Header.Set(platformadmin.HeaderTimestamp, in.Timestamp)
-	req.Header.Set(platformadmin.HeaderNonce, in.Nonce)
-	req.Header.Set(platformadmin.HeaderSignature, sig)
+	req.Header.Set(platformauth.HeaderTimestamp, in.Timestamp)
+	req.Header.Set(platformauth.HeaderNonce, in.Nonce)
+	req.Header.Set(platformauth.HeaderSignature, sig)
 
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -237,7 +237,7 @@ func TestReplayedRequestIsRefused(t *testing.T) {
 func TestBodyIsReadableDownstream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.Use(platformadmin.RequirePlatformAuth(platformadmin.AuthConfig{
+	r.Use(platformauth.RequirePlatformAuth(platformauth.AuthConfig{
 		Secret: testSecret, NonceStore: newMemNonces(),
 		Now: func() time.Time { return fixedNow },
 	}))
@@ -266,7 +266,7 @@ func TestNonceTTLAnchoredToSignedTimestamp(t *testing.T) {
 
 	// Future-dated relative to fixedNow, but still inside the +/-5min window.
 	futureTS := fixedNow.Add(4 * time.Minute)
-	in := platformadmin.SignatureInput{
+	in := platformauth.SignatureInput{
 		Method:     http.MethodGet,
 		Path:       "/admin/ping",
 		Timestamp:  strconv.FormatInt(futureTS.Unix(), 10),
@@ -274,15 +274,15 @@ func TestNonceTTLAnchoredToSignedTimestamp(t *testing.T) {
 		Operator:   "op_7f3a",
 		Capability: "audit.read",
 	}
-	sig, err := platformadmin.Sign(testSecret, in)
+	sig, err := platformauth.Sign(testSecret, in)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/ping", nil)
-	req.Header.Set(platformadmin.HeaderTimestamp, in.Timestamp)
-	req.Header.Set(platformadmin.HeaderNonce, in.Nonce)
-	req.Header.Set(platformadmin.HeaderSignature, sig)
-	req.Header.Set(platformadmin.HeaderOperator, in.Operator)
-	req.Header.Set(platformadmin.HeaderCapability, in.Capability)
+	req.Header.Set(platformauth.HeaderTimestamp, in.Timestamp)
+	req.Header.Set(platformauth.HeaderNonce, in.Nonce)
+	req.Header.Set(platformauth.HeaderSignature, sig)
+	req.Header.Set(platformauth.HeaderOperator, in.Operator)
+	req.Header.Set(platformauth.HeaderCapability, in.Capability)
 
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -318,7 +318,7 @@ func TestLowercaseWriteMethodStillRequiresOperator(t *testing.T) {
 func TestTimestampWithLeadingSignIsRejected(t *testing.T) {
 	r := newRouter(t, testSecret, newMemNonces())
 
-	in := platformadmin.SignatureInput{
+	in := platformauth.SignatureInput{
 		Method:     http.MethodGet,
 		Path:       "/admin/ping",
 		Timestamp:  "+1755859200",
@@ -326,15 +326,15 @@ func TestTimestampWithLeadingSignIsRejected(t *testing.T) {
 		Operator:   "op_7f3a",
 		Capability: "audit.read",
 	}
-	sig, err := platformadmin.Sign(testSecret, in)
+	sig, err := platformauth.Sign(testSecret, in)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/ping", nil)
-	req.Header.Set(platformadmin.HeaderTimestamp, in.Timestamp)
-	req.Header.Set(platformadmin.HeaderNonce, in.Nonce)
-	req.Header.Set(platformadmin.HeaderSignature, sig)
-	req.Header.Set(platformadmin.HeaderOperator, in.Operator)
-	req.Header.Set(platformadmin.HeaderCapability, in.Capability)
+	req.Header.Set(platformauth.HeaderTimestamp, in.Timestamp)
+	req.Header.Set(platformauth.HeaderNonce, in.Nonce)
+	req.Header.Set(platformauth.HeaderSignature, sig)
+	req.Header.Set(platformauth.HeaderOperator, in.Operator)
+	req.Header.Set(platformauth.HeaderCapability, in.Capability)
 
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -351,7 +351,7 @@ func TestOversizedOperatorIsRefused(t *testing.T) {
 	r := newRouter(t, testSecret, newMemNonces())
 	tooLong := strings.Repeat("a", 257)
 
-	req := signedRequest(t, http.MethodGet, "/admin/ping", nil, func(in *platformadmin.SignatureInput) {
+	req := signedRequest(t, http.MethodGet, "/admin/ping", nil, func(in *platformauth.SignatureInput) {
 		in.Operator = tooLong
 	})
 
@@ -371,23 +371,23 @@ func TestAllUnauthenticatedBodiesAreByteIdentical(t *testing.T) {
 	newRouter(t, testSecret, newMemNonces()).ServeHTTP(missingRec,
 		httptest.NewRequest(http.MethodGet, "/admin/ping", nil))
 
-	staleIn := platformadmin.SignatureInput{
+	staleIn := platformauth.SignatureInput{
 		Method: http.MethodGet, Path: "/admin/ping",
 		Timestamp: "1755000000", Nonce: uuid.NewString(),
 		Operator: "op_7f3a", Capability: "audit.read",
 	}
-	staleSig, err := platformadmin.Sign(testSecret, staleIn)
+	staleSig, err := platformauth.Sign(testSecret, staleIn)
 	require.NoError(t, err)
 	staleReq := httptest.NewRequest(http.MethodGet, "/admin/ping", nil)
-	staleReq.Header.Set(platformadmin.HeaderTimestamp, staleIn.Timestamp)
-	staleReq.Header.Set(platformadmin.HeaderNonce, staleIn.Nonce)
-	staleReq.Header.Set(platformadmin.HeaderSignature, staleSig)
+	staleReq.Header.Set(platformauth.HeaderTimestamp, staleIn.Timestamp)
+	staleReq.Header.Set(platformauth.HeaderNonce, staleIn.Nonce)
+	staleReq.Header.Set(platformauth.HeaderSignature, staleSig)
 	staleRec := httptest.NewRecorder()
 	newRouter(t, testSecret, newMemNonces()).ServeHTTP(staleRec, staleReq)
 
 	oversizedRec := httptest.NewRecorder()
 	newRouter(t, testSecret, newMemNonces()).ServeHTTP(oversizedRec,
-		signedRequest(t, http.MethodGet, "/admin/ping", nil, func(in *platformadmin.SignatureInput) {
+		signedRequest(t, http.MethodGet, "/admin/ping", nil, func(in *platformauth.SignatureInput) {
 			in.Operator = strings.Repeat("a", 257)
 		}))
 
@@ -411,7 +411,7 @@ func TestAllUnauthenticatedBodiesAreByteIdentical(t *testing.T) {
 
 // withCapability overrides the signed capability value.
 func withCapability(v string) reqOpt {
-	return func(in *platformadmin.SignatureInput) { in.Capability = v }
+	return func(in *platformauth.SignatureInput) { in.Capability = v }
 }
 
 // Capability PRESENCE is enforced; capability VALUE is not — pending #333.
@@ -432,7 +432,7 @@ func withCapability(v string) reqOpt {
 // fills in RequiredWriteCapabilities' values rather than writing the gate
 // from scratch.
 func TestWriteCapabilityValueIsRecordedButNotEnforced(t *testing.T) {
-	require.False(t, platformadmin.CapabilityValueChecked,
+	require.False(t, platformauth.CapabilityValueChecked,
 		"value enforcement is off pending #333; if this is now on, the second half of this test and the note in middleware.go both need updating")
 
 	r := newRouter(t, testSecret, newMemNonces())
@@ -470,7 +470,7 @@ func newRouterWithCapabilityConfig(t *testing.T, checked *bool, required map[str
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	r.Use(platformadmin.RequirePlatformAuth(platformadmin.AuthConfig{
+	r.Use(platformauth.RequirePlatformAuth(platformauth.AuthConfig{
 		Secret:               testSecret,
 		NonceStore:           newMemNonces(),
 		Now:                  func() time.Time { return fixedNow },
@@ -489,7 +489,7 @@ func newRouterWithCapabilityConfig(t *testing.T, checked *bool, required map[str
 // RequirePlatformAuth broke or CapabilityValueChecked itself changed; both
 // are shipping-blocking for #364.
 func TestAuthConfigCapabilityCheckedNilDefaultsToProductionOff(t *testing.T) {
-	require.False(t, platformadmin.CapabilityValueChecked,
+	require.False(t, platformauth.CapabilityValueChecked,
 		"production default must be off; #364 must not flip this")
 
 	r := newRouterWithCapabilityConfig(t, nil, nil)
@@ -505,7 +505,7 @@ func TestAuthConfigCapabilityCheckedNilDefaultsToProductionOff(t *testing.T) {
 // capability equals the declared required value -> admitted.
 func TestCapabilityCheckedOnAdmitsMatchingCapability(t *testing.T) {
 	required := map[string]string{
-		platformadmin.CapabilityKey(http.MethodPost, "/admin/ping"): "billing.trial.extend",
+		platformauth.CapabilityKey(http.MethodPost, "/admin/ping"): "billing.trial.extend",
 	}
 	r := newRouterWithCapabilityConfig(t, boolPtr(true), required)
 	body := []byte(`{"x":1}`)
@@ -522,7 +522,7 @@ func TestCapabilityCheckedOnAdmitsMatchingCapability(t *testing.T) {
 // distinguishable from the "this route declared nothing" cell below.
 func TestCapabilityCheckedOnRefusesMismatchedCapability(t *testing.T) {
 	required := map[string]string{
-		platformadmin.CapabilityKey(http.MethodPost, "/admin/ping"): "billing.trial.extend",
+		platformauth.CapabilityKey(http.MethodPost, "/admin/ping"): "billing.trial.extend",
 	}
 	r := newRouterWithCapabilityConfig(t, boolPtr(true), required)
 	body := []byte(`{"x":1}`)
@@ -562,7 +562,7 @@ func newRouterWithReadCapabilityConfig(t *testing.T, required map[string]string)
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	r.Use(platformadmin.RequirePlatformAuth(platformadmin.AuthConfig{
+	r.Use(platformauth.RequirePlatformAuth(platformauth.AuthConfig{
 		Secret:           testSecret,
 		NonceStore:       newMemNonces(),
 		Now:              func() time.Time { return fixedNow },
@@ -582,7 +582,7 @@ func newRouterWithReadCapabilityConfig(t *testing.T, required map[string]string)
 // capability, is admitted.
 func TestDeclaredReadWithExactCapabilityIsAdmitted(t *testing.T) {
 	required := map[string]string{
-		platformadmin.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
+		platformauth.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
 	}
 	r := newRouterWithReadCapabilityConfig(t, required)
 
@@ -598,7 +598,7 @@ func TestDeclaredReadWithExactCapabilityIsAdmitted(t *testing.T) {
 // implication between capabilities (#275).
 func TestDeclaredReadWithWrongCapabilityIsRefused(t *testing.T) {
 	required := map[string]string{
-		platformadmin.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
+		platformauth.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
 	}
 	r := newRouterWithReadCapabilityConfig(t, required)
 
@@ -614,7 +614,7 @@ func TestDeclaredReadWithWrongCapabilityIsRefused(t *testing.T) {
 // 401 capability_required — not silently admitted.
 func TestDeclaredReadWithNoCapabilityHeaderIsRefused(t *testing.T) {
 	required := map[string]string{
-		platformadmin.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
+		platformauth.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
 	}
 	r := newRouterWithReadCapabilityConfig(t, required)
 
@@ -630,7 +630,7 @@ func TestDeclaredReadWithNoCapabilityHeaderIsRefused(t *testing.T) {
 // branch's ordering.
 func TestDeclaredReadWithCapabilityButNoOperatorIsRefused(t *testing.T) {
 	required := map[string]string{
-		platformadmin.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
+		platformauth.CapabilityKey(http.MethodGet, "/admin/ping"): "rotate-credentials",
 	}
 	r := newRouterWithReadCapabilityConfig(t, required)
 
@@ -668,10 +668,10 @@ func TestUndeclaredReadRouteWithNoCapabilityAtAllStillSucceeds(t *testing.T) {
 // the kind of silent scope creep #364's write-map coverage test guards
 // against on the write side.
 func TestRequiredReadCapabilitiesHasExactlyTheBreakGlassEntry(t *testing.T) {
-	require.Len(t, platformadmin.RequiredReadCapabilities, 1)
+	require.Len(t, platformauth.RequiredReadCapabilities, 1)
 
-	key := platformadmin.CapabilityKey(http.MethodGet, "/api/v1/platform/admin/break-glass")
-	required, declared := platformadmin.RequiredReadCapabilities[key]
+	key := platformauth.CapabilityKey(http.MethodGet, "/api/v1/platform/admin/break-glass")
+	required, declared := platformauth.RequiredReadCapabilities[key]
 	require.True(t, declared, "break-glass GET route must be declared in RequiredReadCapabilities")
 	require.Equal(t, "rotate-credentials", required)
 }
@@ -685,7 +685,7 @@ func TestRequiredReadCapabilitiesHasExactlyTheBreakGlassEntry(t *testing.T) {
 func TestAuthConfigRequiredReadCapsNilDefaultsToProductionMap(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.Use(platformadmin.RequirePlatformAuth(platformadmin.AuthConfig{
+	r.Use(platformauth.RequirePlatformAuth(platformauth.AuthConfig{
 		Secret:     testSecret,
 		NonceStore: newMemNonces(),
 		Now:        func() time.Time { return fixedNow },

@@ -1,6 +1,7 @@
 go 1.26.6
 
 use (
+	./packages/platformauth
 	./services/auth-bff
 	./services/marketplace-api
 	./services/otto

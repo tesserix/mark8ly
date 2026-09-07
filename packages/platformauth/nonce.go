@@ -1,4 +1,4 @@
-package platformadmin
+package platformauth
 
 import (
 	"context"
@@ -39,7 +39,7 @@ func NewNonceStore(db *gorm.DB) NonceStore { return &gormNonceStore{db: db} }
 func (s *gormNonceStore) Claim(ctx context.Context, nonce string, expiresAt time.Time) (bool, error) {
 	parsed, err := uuid.Parse(nonce)
 	if err != nil {
-		return false, fmt.Errorf("platformadmin: nonce must be a uuid: %w", err)
+		return false, fmt.Errorf("platformauth: nonce must be a uuid: %w", err)
 	}
 
 	// ON CONFLICT DO NOTHING makes the unique constraint itself the replay
@@ -49,7 +49,7 @@ func (s *gormNonceStore) Claim(ctx context.Context, nonce string, expiresAt time
 		Create(&Nonce{Nonce: parsed, ExpiresAt: expiresAt})
 
 	if res.Error != nil {
-		return false, fmt.Errorf("platformadmin: claim nonce: %w", res.Error)
+		return false, fmt.Errorf("platformauth: claim nonce: %w", res.Error)
 	}
 	return res.RowsAffected == 1, nil
 }

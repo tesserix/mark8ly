@@ -143,7 +143,16 @@ func TestTransition_EmitsAuditEvent(t *testing.T) {
 	}))
 
 	// Drain the async queue before asserting.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	//
+	// The budget DERIVES from the write it is waiting on, and must not be a
+	// bare number again (mark8ly#804). `Stop` is best-effort: it waits for the
+	// workers or the caller's deadline, whichever comes first, and on the
+	// deadline it logs "in-flight events may be lost" and returns. A budget
+	// shorter than `audit.WriteTimeout` therefore lets a perfectly healthy
+	// write still be in flight when `Stop` gives up, and the read below finds
+	// nothing — a flake with no bug behind it. The spare second is head-room:
+	// `Stop`'s clock starts here, while the write it waits on began earlier.
+	ctx, cancel := context.WithTimeout(context.Background(), audit.WriteTimeout+time.Second)
 	defer cancel()
 	em.Stop(ctx)
 

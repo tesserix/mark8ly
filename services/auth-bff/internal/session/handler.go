@@ -481,11 +481,12 @@ func (h *Handler) switchTenant(c *gin.Context) {
 	// store" and the admin resolves a new default on next render.
 	now := time.Now()
 	next := Session{
-		UID:       existing.UID,
-		Email:     existing.Email,
-		TenantID:  req.TenantID,
-		IssuedAt:  now,
-		ExpiresAt: existing.ExpiresAt,
+		UID:         existing.UID,
+		Email:       existing.Email,
+		TenantID:    req.TenantID,
+		IssuedAt:    now,
+		ExpiresAt:   existing.ExpiresAt,
+		AuthContext: existing.AuthContext,
 	}
 	if err := h.mgr.Mint(c.Writer, next); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -536,12 +537,13 @@ func (h *Handler) switchStore(c *gin.Context) {
 
 	now := time.Now()
 	next := Session{
-		UID:       existing.UID,
-		Email:     existing.Email,
-		TenantID:  existing.TenantID,
-		StoreID:   req.StoreID,
-		IssuedAt:  now,
-		ExpiresAt: existing.ExpiresAt,
+		UID:         existing.UID,
+		Email:       existing.Email,
+		TenantID:    existing.TenantID,
+		StoreID:     req.StoreID,
+		IssuedAt:    now,
+		ExpiresAt:   existing.ExpiresAt,
+		AuthContext: existing.AuthContext,
 	}
 	if err := h.mgr.Mint(c.Writer, next); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{

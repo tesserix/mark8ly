@@ -44,6 +44,11 @@ type Claims struct {
 	StoreID    string `json:"store_id,omitempty"`
 	TargetHost string `json:"target_host"`
 	Exp        int64  `json:"exp"` // Unix epoch seconds
+	// AuthContext mirrors session.Session.AuthContext — carried across
+	// the cross-TLD handoff so a break-glass (or any non-default)
+	// session doesn't lose its marker mid-hop. Empty on codes minted
+	// before this field existed; omitempty keeps those decoding.
+	AuthContext string `json:"auth_context,omitempty"`
 }
 
 // Errors returned by Verify. Callers map these to HTTP status codes.

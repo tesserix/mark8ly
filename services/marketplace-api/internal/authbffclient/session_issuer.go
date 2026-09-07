@@ -3,11 +3,15 @@
 // contract by which break-glass login + SSO callback routes ask
 // auth-bff to mint the standard Mark8ly session cookie.
 //
-// The production implementation is expected to POST to an
-// internal-only auth-bff endpoint (mTLS-gated) and return the raw
-// Set-Cookie header value for marketplace-api to pass through to the
-// caller. Cookie cryptography stays owned by auth-bff — marketplace-api
-// must NEVER sign session cookies itself.
+// The production implementation POSTs to auth-bff's internal-only
+// POST /internal/mint-session endpoint, authenticated with the shared
+// X-Internal-Auth header (internalauth.Equal on the auth-bff side) —
+// NOT mTLS. See docs/superpowers/plans/2026-09-07-break-glass-activation-v2.md,
+// D2: mTLS was never real for this endpoint; the header is the pattern
+// that already exists and works for every other /internal route.
+// It returns the raw Set-Cookie header value for marketplace-api to
+// pass through to the caller. Cookie cryptography stays owned by
+// auth-bff — marketplace-api must NEVER sign session cookies itself.
 package authbffclient
 
 import (
@@ -28,11 +32,25 @@ var ErrIssuerUnavailable = errors.New("authbffclient: session issuer not configu
 // with a TTL and returns the full Set-Cookie header value, ready to
 // hand to c.Writer.Header().Add("Set-Cookie", ...).
 //
+// authContext is one of auth-bff's allow-listed values ("staff",
+// "customer", "break_glass") and is passed by the CALLER, never
+// defaulted here. This is the interface-widening decision recorded in
+// the v2 plan (Task 3): the Task 0 consumer audit found a missing
+// email is safe (every consumer treats it as an optional attribution
+// label with a fallback), but auth_context is not — it is the one
+// safety control the mint-session endpoint exists to enforce, and a
+// callee-supplied default would silently defeat it for whichever
+// caller forgot to think about it. Widening also means the SSO
+// callback (internal/handlers/public/sso_login.go) and break-glass
+// login (internal/handlers/admin/break_glass_login.go) both say what
+// they are minting explicitly, in one interface, rather than one of
+// them being hidden inside HTTPIssuer's implementation.
+//
 // Implementations MUST be safe for concurrent use from request
 // goroutines — marketplace-api treats issuance as a synchronous,
 // request-scoped call.
 type SessionIssuer interface {
-	Issue(ctx context.Context, tenantID, userID uuid.UUID, ttl time.Duration) (setCookie string, err error)
+	Issue(ctx context.Context, tenantID, userID uuid.UUID, authContext string, ttl time.Duration) (setCookie string, err error)
 }
 
 // NoopIssuer is a safe-by-default stub returned when no real issuer
@@ -42,7 +60,7 @@ type SessionIssuer interface {
 type NoopIssuer struct{}
 
 // Issue always returns ErrIssuerUnavailable — by design.
-func (NoopIssuer) Issue(_ context.Context, _, _ uuid.UUID, _ time.Duration) (string, error) {
+func (NoopIssuer) Issue(_ context.Context, _, _ uuid.UUID, _ string, _ time.Duration) (string, error) {
 	return "", ErrIssuerUnavailable
 }
 
@@ -55,7 +73,7 @@ type StaticIssuer struct {
 }
 
 // Issue returns the pre-configured Cookie / Err.
-func (s StaticIssuer) Issue(_ context.Context, tenantID, userID uuid.UUID, ttl time.Duration) (string, error) {
+func (s StaticIssuer) Issue(_ context.Context, tenantID, userID uuid.UUID, _ string, ttl time.Duration) (string, error) {
 	if s.Err != nil {
 		return "", s.Err
 	}

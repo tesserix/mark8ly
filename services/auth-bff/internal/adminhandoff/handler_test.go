@@ -184,6 +184,31 @@ func TestMint_RejectsCanonicalTargetHost(t *testing.T) {
 	}
 }
 
+// TestMint_PreservesAuthContext is the regression test for the third
+// rebuild site D1's amendment names: the cross-TLD handoff must not
+// silently drop AuthContext off the Session it mints.
+func TestMint_PreservesAuthContext(t *testing.T) {
+	minter := &fakeMinter{}
+	h := adminhandoff.NewHandler(adminhandoff.Config{
+		HMACKey:  testKey,
+		FGA:      &fakeFGA{allow: true},
+		Sessions: minter,
+	})
+
+	c := handlerClaims()
+	c.AuthContext = "break_glass"
+	w := postCode(t, makeRouter(h), mintCode(t, c, testKey))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200, body=%s", w.Code, w.Body.String())
+	}
+	if !minter.called {
+		t.Fatal("minter was not called")
+	}
+	if minter.gotS.AuthContext != "break_glass" {
+		t.Errorf("AuthContext = %q, want %q — adminhandoff dropped it", minter.gotS.AuthContext, "break_glass")
+	}
+}
+
 func TestMint_RejectsFGAError(t *testing.T) {
 	fga := &fakeFGA{err: errors.New("boom")}
 	h := adminhandoff.NewHandler(adminhandoff.Config{

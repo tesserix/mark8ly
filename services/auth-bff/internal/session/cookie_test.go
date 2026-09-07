@@ -1,6 +1,9 @@
 package session
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -70,6 +73,20 @@ func TestNewManager_AcceptsAES128_192_256(t *testing.T) {
 	}
 }
 
+// encryptForTest AES-GCM encrypts arbitrary raw JSON the same way encode
+// does, without going through json.Marshal(Session{...}) — used to
+// simulate a cookie shaped by an older version of Session that never
+// had an auth_context field at all.
+func encryptForTest(t *testing.T, m *Manager, plaintextJSON string) string {
+	t.Helper()
+	nonce := make([]byte, m.gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		t.Fatalf("nonce: %v", err)
+	}
+	ciphertext := m.gcm.Seal(nonce, nonce, []byte(plaintextJSON), nil)
+	return base64.RawURLEncoding.EncodeToString(ciphertext)
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Round-trip
 // ─────────────────────────────────────────────────────────────────────────
@@ -108,6 +125,55 @@ func TestMintAndRead_RoundTrip(t *testing.T) {
 	}
 	if got.TenantID != original.TenantID {
 		t.Errorf("TenantID = %q, want %q", got.TenantID, original.TenantID)
+	}
+}
+
+// TestEncodeSession_RoundTripsAuthContext exercises the exported
+// EncodeSession -> decode path directly (not LoadFromValue — it does
+// not exist) and asserts AuthContext survives the round trip.
+func TestEncodeSession_RoundTripsAuthContext(t *testing.T) {
+	m := newTestManager(t)
+
+	original := Session{
+		UID:         "user-123",
+		TenantID:    "tenant-1",
+		AuthContext: "break_glass",
+	}
+	encoded, err := m.EncodeSession(original)
+	if err != nil {
+		t.Fatalf("EncodeSession: %v", err)
+	}
+
+	got, err := m.decode(encoded)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.AuthContext != "break_glass" {
+		t.Errorf("AuthContext = %q, want %q", got.AuthContext, "break_glass")
+	}
+}
+
+// TestDecode_OldShapedCookieDefaultsAuthContextEmpty proves backward
+// compatibility: a cookie encoded before AuthContext existed (plain
+// JSON with no auth_context key) still decodes, with AuthContext =="".
+func TestDecode_OldShapedCookieDefaultsAuthContextEmpty(t *testing.T) {
+	m := newTestManager(t)
+
+	// Simulate a pre-AuthContext cookie by encrypting JSON with the
+	// field entirely absent, the way json.Marshal(Session{...}) would
+	// have produced before this field existed.
+	oldShaped := `{"uid":"user-123","email":"u@example.com","tenant_id":"tenant-1","iat":"2026-01-01T00:00:00Z","exp":"2099-01-01T00:00:00Z"}`
+	encoded := encryptForTest(t, m, oldShaped)
+
+	got, err := m.decode(encoded)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.AuthContext != "" {
+		t.Errorf("AuthContext = %q, want empty on old-shaped cookie", got.AuthContext)
+	}
+	if got.UID != "user-123" {
+		t.Errorf("UID = %q, want user-123", got.UID)
 	}
 }
 

@@ -50,6 +50,13 @@ type Session struct {
 	StoreID   string    `json:"store_id,omitempty"`
 	IssuedAt  time.Time `json:"iat"`
 	ExpiresAt time.Time `json:"exp"`
+	// AuthContext discriminates how this session was established —
+	// e.g. "staff", "customer", "break_glass". Empty on cookies minted
+	// before this field existed (`omitempty` keeps those decoding), and
+	// must never be defaulted by a reader: an unset AuthContext must
+	// stay unset, not silently become "staff". See docs/superpowers/plans/
+	// 2026-09-07-break-glass-activation-v2.md decision D1.
+	AuthContext string `json:"auth_context,omitempty"`
 }
 
 // IsExpired returns true if the session is past its exp.
@@ -138,11 +145,18 @@ func (m *Manager) Mint(w http.ResponseWriter, s Session) error {
 // hop. domainOverride must be a host the caller has authority for —
 // validation lives in the calling handler, not here.
 //
-// Empty domainOverride falls through to the manager's configured domain
-// (the canonical .mark8ly.com path).
-func (m *Manager) MintWithDomain(w http.ResponseWriter, s Session, domainOverride string) error {
+// EncodeSession stamps IssuedAt/ExpiresAt exactly the way MintWithDomain
+// does (only when zero, using one `now`), validates that UID is
+// non-empty, and returns the encrypted cookie value — without writing
+// it anywhere. MintWithDomain is built on top of this so there is a
+// single path that stamps and encodes a Session.
+//
+// This exists for callers that need a cookie VALUE without an
+// http.ResponseWriter — e.g. an internal endpoint that hands the value
+// back in a JSON response for another service to Set-Cookie.
+func (m *Manager) EncodeSession(s Session) (string, error) {
 	if s.UID == "" {
-		return errors.New("session: UID is required")
+		return "", errors.New("session: UID is required")
 	}
 	now := time.Now()
 	if s.IssuedAt.IsZero() {
@@ -151,28 +165,51 @@ func (m *Manager) MintWithDomain(w http.ResponseWriter, s Session, domainOverrid
 	if s.ExpiresAt.IsZero() {
 		s.ExpiresAt = now.Add(m.maxAge)
 	}
+	return m.encode(s)
+}
 
-	encoded, err := m.encode(s)
+// Empty domainOverride falls through to the manager's configured domain
+// (the canonical .mark8ly.com path).
+func (m *Manager) MintWithDomain(w http.ResponseWriter, s Session, domainOverride string) error {
+	encoded, err := m.EncodeSession(s)
 	if err != nil {
 		return err
 	}
 
+	http.SetCookie(w, m.buildCookie(encoded, domainOverride))
+	return nil
+}
+
+// buildCookie constructs the *http.Cookie with the attributes every minted
+// session cookie shares (path, domain, max-age, HttpOnly, Secure,
+// SameSite=Lax). MintWithDomain and BuildSetCookieHeader both go through
+// this so the attribute list can't drift between the two callers.
+func (m *Manager) buildCookie(value, domainOverride string) *http.Cookie {
 	domain := m.domain
 	if domainOverride != "" {
 		domain = domainOverride
 	}
-
-	http.SetCookie(w, &http.Cookie{
+	return &http.Cookie{
 		Name:     m.cookieName,
-		Value:    encoded,
+		Value:    value,
 		Path:     "/",
 		Domain:   domain,
 		MaxAge:   int(m.maxAge.Seconds()),
 		HttpOnly: true,
 		Secure:   m.secure,
 		SameSite: http.SameSiteLaxMode, // auth-bug #4 fix: Lax not Strict
-	})
-	return nil
+	}
+}
+
+// BuildSetCookieHeader returns the full Set-Cookie header VALUE (not the
+// header name) for an already-encoded session value, using the same
+// attributes MintWithDomain writes. Used by callers that hand the cookie
+// back in a JSON response instead of writing it directly onto a
+// http.ResponseWriter — e.g. POST /internal/mint-session, whose caller
+// (marketplace-api) does `c.Writer.Header().Add("Set-Cookie", setCookie)`
+// with the string verbatim.
+func (m *Manager) BuildSetCookieHeader(value, domainOverride string) string {
+	return m.buildCookie(value, domainOverride).String()
 }
 
 // Read parses and validates the session cookie from a request. Returns

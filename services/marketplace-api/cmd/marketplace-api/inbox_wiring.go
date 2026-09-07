@@ -11,7 +11,7 @@ import (
 )
 
 // newInboxAggregator assembles the GET /admin/inbox aggregator (#280) from
-// whichever of its five queues this process can actually reach.
+// whichever of its four queues this process can actually reach.
 //
 // Each provider is registered only when its dependency exists, for the same
 // reason platformadmin.Deps guards its optional fields: a provider holding a
@@ -32,7 +32,6 @@ func newInboxAggregator(db *gorm.DB, funnel inbox.SessionLister, idleThresholdHo
 			inbox.NewSEAReviewProvider(db, nil),
 			inbox.NewMigrationFastPathProvider(db),
 			inbox.NewErasureProvider(db),
-			inbox.NewArbitrageProvider(db),
 		)
 	}
 

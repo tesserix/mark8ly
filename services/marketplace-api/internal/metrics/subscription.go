@@ -27,16 +27,8 @@ type SubscriptionCollectors struct {
 	StripeWebhookProcessingDuration *prometheus.HistogramVec
 
 	// StripeWebhookFailedTotal counts Stripe webhook handler failures.
-	// Labels: event_type, reason ("cas_conflict"|"invalid_transition"|"db"|"stripe_api"|"arbitrage_record"|"unknown").
-	// "arbitrage_record" is emitted at the call site rather than by
-	// Dispatch()'s classifier — that failure is non-fatal and never returned.
+	// Labels: event_type, reason ("cas_conflict"|"invalid_transition"|"db"|"stripe_api"|"unknown").
 	StripeWebhookFailedTotal *prometheus.CounterVec
-
-	// SubscriptionArbitrageFlaggedTotal counts subscriptions flagged for
-	// arbitrage. Labels: reason ("ppp_developed_signal"|"false_positive_cleared"|
-	// "tenant_mismatch"). "tenant_mismatch" is a refused write, not a flag —
-	// it means a caller passed a tenant that does not own the subscription.
-	SubscriptionArbitrageFlaggedTotal *prometheus.CounterVec
 
 	// PromoAppliedTotal counts promo code applications. Labels: plan, currency,
 	// outcome ("applied"|"below_floor"|"expired"|"not_found"|"max_redemptions"|"max_per_email"|"plan_mismatch"|"annual_only"|"unknown").
@@ -98,15 +90,6 @@ func NewSubscriptionCollectors(reg prometheus.Registerer) *SubscriptionCollector
 			[]string{"event_type", "reason"},
 		),
 
-		SubscriptionArbitrageFlaggedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Namespace: "mark8ly",
-				Name:      "subscription_arbitrage_flagged_total",
-				Help:      "Count of subscriptions flagged for arbitrage. P8 populates this counter.",
-			},
-			[]string{"reason"},
-		),
-
 		PromoAppliedTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: "mark8ly",
@@ -139,7 +122,6 @@ func NewSubscriptionCollectors(reg prometheus.Registerer) *SubscriptionCollector
 		c.SubscriptionActiveCountByPlan,
 		c.StripeWebhookProcessingDuration,
 		c.StripeWebhookFailedTotal,
-		c.SubscriptionArbitrageFlaggedTotal,
 		c.PromoAppliedTotal,
 		c.RefundIssuedTotal,
 		c.BillingArchiveCreatedTotal,

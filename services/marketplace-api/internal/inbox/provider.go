@@ -7,7 +7,6 @@ const (
 	KindSEAManualReview   = "sea_manual_review"
 	KindMigrationFastPath = "migration_fast_path"
 	KindErasureRequest    = "erasure_request"
-	KindArbitrageAppeal   = "arbitrage_appeal"
 	KindOnboardingStalled = "onboarding_stalled"
 )
 
@@ -28,7 +27,6 @@ type Provider interface {
 var (
 	_ Provider = (*SEAReviewProvider)(nil)
 	_ Provider = (*ErasureProvider)(nil)
-	_ Provider = (*ArbitrageProvider)(nil)
 	_ Provider = (*MigrationFastPathProvider)(nil)
 	_ Provider = (*OnboardingProvider)(nil)
 

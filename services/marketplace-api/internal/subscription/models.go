@@ -156,7 +156,6 @@ type StoreSubscription struct {
 
 	// v2.3 — add-on + flags
 	HasWhiteLabelAppAddOn bool                 `gorm:"column:has_white_label_app_add_on;not null;default:false"`
-	ArbitrageFlag         bool                 `gorm:"column:arbitrage_flag;not null;default:false"`
 	AppLifecycleStatus    *WhiteLabelAppStatus `gorm:"column:app_lifecycle_status;type:varchar(30)"`
 
 	// v2.3 P4 — billing period + pending-downgrade orchestration (§4.4, §4.5, §4.5.1).

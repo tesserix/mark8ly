@@ -10,7 +10,6 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/billing/appaddon"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
@@ -41,9 +40,8 @@ func chain(handlers ...Handler) Handler {
 
 // Dispatcher routes incoming webhook events to registered per-type handlers.
 type Dispatcher struct {
-	emitter  *audit.Emitter
-	recorder *arbitrage.Recorder // nil-safe: arbitrage check is skipped when nil
-	emailCl  email.Client        // nil-safe: trial-billed confirmation email is skipped when nil
+	emitter *audit.Emitter
+	emailCl email.Client // nil-safe: trial-billed confirmation email is skipped when nil
 	// db is a NON-transactional handle, deliberately separate from the tx
 	// passed to Dispatch. The trial-billed claim is taken at drain time,
 	// after the webhook transaction has committed (see sendTrialBilled), so
@@ -96,14 +94,6 @@ func New(em *audit.Emitter) *Dispatcher {
 	d.handlers["customer.subscription.deleted"] = d.handleSubscriptionDeleted
 	d.handlers["invoice.payment_failed"] = d.handleInvoicePaymentFailed
 	d.handlers["invoice.payment_action_required"] = d.handleInvoicePaymentActionRequired
-	return d
-}
-
-// WithRecorder attaches an arbitrage.Recorder to the Dispatcher so that
-// checkout.session.completed events trigger the geo-pricing triangulation
-// check per spec §18.8. Recorder may be nil (skips the check).
-func (d *Dispatcher) WithRecorder(r *arbitrage.Recorder) *Dispatcher {
-	d.recorder = r
 	return d
 }
 

@@ -36,7 +36,6 @@ func TestStoreSubscription_V23ColumnsRoundTrip(t *testing.T) {
 		BillingCurrency:       strPtr("GBP"),
 		PriceTier:             subscription.PriceTierDeveloped,
 		HasWhiteLabelAppAddOn: false,
-		ArbitrageFlag:         false,
 		TaxIDNameMatch:        subscription.TaxIDNameMatchMatched,
 	}
 	require.NoError(t, db.Create(&sub).Error)

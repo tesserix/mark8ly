@@ -439,7 +439,7 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 	// customer_segments, campaigns (-> campaign_recipients),
 	// gift_cards (-> gift_card_transactions), loyalty_programs,
 	// customer_profiles (-> customer_addresses), custom_domains,
-	// store_subscriptions (-> subscription_arbitrage_audit),
+	// store_subscriptions,
 	// notification_preferences, tickets (-> ticket_replies), store_branding.
 	// All of these CASCADE directly or transitively from stores(id) — see
 	// task-1-report.md for the per-table citation — so no explicit steps

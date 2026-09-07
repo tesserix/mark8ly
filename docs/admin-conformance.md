@@ -130,14 +130,14 @@ Two consequences worth knowing before trusting a green run:
 "inbox": { "slaKinds": ["sea_manual_review"] }
 ```
 
-`sea_manual_review` is the only one of mark8ly's five inbox kinds that carries
+`sea_manual_review` is the only one of mark8ly's four inbox kinds that carries
 a real SLA. It reads `sea_manual_review_queue`, whose type comment
 (`services/marketplace-api/internal/inbox/sea_review.go:10-15`) states that
 any row entering the queue immediately pauses the 14-day validation clock on
 the associated subscription, under a 5-business-day SLA (`SLADueAt`, read
 into `due` at `sea_review.go:72` and assigned to `DueAt: &due` at
-`sea_review.go:79`). The other four kinds — `arbitrage_appeal`,
-`migration_fast_path`, `onboarding_stalled`, and `erasure_request`
+`sea_review.go:79`). The other three kinds — `migration_fast_path`,
+`onboarding_stalled`, and `erasure_request`
 (`services/marketplace-api/internal/inbox/provider.go:6-11`) — never set
 `DueAt`.
 
@@ -161,7 +161,7 @@ omission is a refusal, not a gap — *"GDPR's 30-day window is real, but the
 table has no due column and deriving a statutory deadline in a read endpoint
 would be inventing policy in the wrong place."* `slaDeclared: false` would
 have understated a real, subscription-clock-pausing SLA on the one kind that
-has one. Neither boolean was honest for a queue that merges five kinds with
+has one. Neither boolean was honest for a queue that merges four kinds with
 only one of them time-bound — a per-kind declaration is what the queue
 actually needed.
 

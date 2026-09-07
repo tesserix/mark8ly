@@ -103,7 +103,6 @@ func TestPackageLevelSubscription_NotNil(t *testing.T) {
 	assert.NotNil(t, metrics.Subscription.SubscriptionActiveCountByPlan)
 	assert.NotNil(t, metrics.Subscription.StripeWebhookProcessingDuration)
 	assert.NotNil(t, metrics.Subscription.StripeWebhookFailedTotal)
-	assert.NotNil(t, metrics.Subscription.SubscriptionArbitrageFlaggedTotal)
 	assert.NotNil(t, metrics.Subscription.PromoAppliedTotal)
 	assert.NotNil(t, metrics.Subscription.RefundIssuedTotal)
 	assert.NotNil(t, metrics.Subscription.BillingArchiveCreatedTotal)

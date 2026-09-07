@@ -1,3 +1,11 @@
+// GIP-708 KEEP: despite the file name, NOTHING here is GIP-specific.
+// GIPBearerAuth is the provider-agnostic bearer middleware that the ZITADEL
+// path already uses today — it verifies whatever TokenVerifier it is handed.
+// Deleting this file during the GIP removal (#708) breaks 100% of
+// mobile-admin authentication, Zitadel included. Rename it; do not remove it.
+// The only GIP-shaped thing here is the setTenantFromClaim parameter, which
+// becomes permanently false once GIP is gone. See
+// docs/auth/2026-09-07-gip-removal-audit.md.
 package auth
 
 import (

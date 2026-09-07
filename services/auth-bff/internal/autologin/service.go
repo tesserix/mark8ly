@@ -16,6 +16,11 @@
 // outbox drainer hasn't shipped the FGA write yet, the autologin call won't
 // hand back a session before the tuple is visible. The user will see a
 // 1-2 second delay at worst, never a "tenant not found" error.
+// GIP-708 SPLIT: this file is full of the string "gip" but must NOT be deleted
+// wholesale. completeLogin is SHARED — Zitadel's CompleteForProvider calls it,
+// so removing the file takes out the live Zitadel login gauntlet. Only
+// AutoLogin and the gip field are GIP-only.
+// See docs/auth/2026-09-07-gip-removal-audit.md.
 package autologin
 
 import (

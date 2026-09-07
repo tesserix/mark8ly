@@ -195,9 +195,25 @@ design are sound. Detail:
    required config is a **k8s-first** change: env lands before the code that
    reads it, or the service crash-loops. Grep every reader, not just `Validate()`.
 8. **Provision + verify end to end.** Zero accounts exist. Prove the route is
-   **absent before and present after** — a GET on a POST-only route answers
-   405 when mounted and 404 when not, which distinguishes the two without
-   attempting a login.
+   **absent before and present after**.
+
+   > **Do NOT use the 405-vs-404 probe.** #642's evidence block and this
+   > plan's earlier draft both claim "a GET on a POST-only route returns 405
+   > when mounted and 404 when not". That is false in this estate:
+   > `HandleMethodNotAllowed` is never set in **any** service, so gin's
+   > default of `false` applies and a GET on a *mounted* POST-only route also
+   > returns 404. The probe cannot distinguish the two states.
+   >
+   > #642's conclusion was right for an unrelated reason —
+   > `NewBreakGlassLoginHandler` is constructed only in tests — but anyone
+   > re-running that probe after mounting will see 404, conclude the mount
+   > failed, and go hunting a bug that is not there.
+   >
+   > Prove mounting instead by comparing a bare router against one with
+   > `Register()` called, both driven through `router.ServeHTTP` — the shape
+   > Task 2 used (`TestMintSession_RouteIsMountedOnInternalGroup`). Against a
+   > running pod, POST with a deliberately invalid body: an unmounted route
+   > 404s, a mounted one answers its own validation or auth error.
 
 These five were not re-verified symbol by symbol the way Tasks 0–3 were.
 Treat their detail as probable, not established, and check before executing

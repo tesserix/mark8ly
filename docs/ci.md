@@ -10,7 +10,7 @@ after the central contract is accepted.
 The `CI` workflow runs for pull requests, pushes to `main`, and manual
 rebuilds. Its stable final check is `CI / CI gate`.
 
-- Four Go modules call `go-ci.yml` in parallel.
+- Five Go modules call `go-ci.yml` in parallel.
 - The root npm workspace calls `nextjs-ci.yml` once.
 - Secret scanning calls `secret-scan.yml`.
 - Pull requests build and scan all seven images with `container-ci.yml`.

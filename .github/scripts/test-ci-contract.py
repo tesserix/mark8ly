@@ -22,7 +22,16 @@ class ReusableCIContract(unittest.TestCase):
             if line.strip() and not line.lstrip().startswith("#")
         ]
 
-        self.assertLessEqual(len(meaningful), 180)
+        # The caller stays thin: product policy only, everything else lives in
+        # tesserix-workflows. Raised 180 -> 181 for the fifth Go module
+        # (packages/platformauth, #720). Bump deliberately, one module at a
+        # time — the cap is meant to make growth argue for itself.
+        #
+        # Do NOT buy headroom here by writing a matrix entry as a single-line
+        # flow mapping: prettier expands it to five lines (`npm run
+        # format:check` covers .github/**/*.yml) and the caller fails CI for
+        # formatting instead.
+        self.assertLessEqual(len(meaningful), 181)
         self.assertNotIn("secrets: inherit", workflow)
         self.assertNotIn("continue-on-error", workflow)
         self.assertFalse(

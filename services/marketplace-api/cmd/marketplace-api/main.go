@@ -2843,7 +2843,15 @@ func main() {
 		}
 	}
 	if auditEmitter != nil {
-		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// audit.WriteTimeout PLUS head-room, not a bare 5s that happens to
+		// match it. `Stop` is best-effort: it waits for the workers or this
+		// deadline, whichever comes first, and on the deadline it logs
+		// "in-flight events may be lost" and returns. A budget EQUAL to the
+		// write timeout leaves no margin — Stop's clock starts here, while the
+		// write it is waiting on began earlier and may legitimately consume
+		// its full budget — so a healthy write can still be in flight when
+		// this expires and the row is dropped on shutdown. mark8ly#804.
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), audit.WriteTimeout+time.Second)
 		auditEmitter.Stop(stopCtx)
 		stopCancel()
 		log.Info("audit emitter stopped")

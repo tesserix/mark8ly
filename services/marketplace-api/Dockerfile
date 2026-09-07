@@ -15,7 +15,7 @@
 # the same pattern for the same reason.
 
 # ─── builder ────────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-go-builder@sha256:1d52f1321953c29971c261ccc7cd212f2ab84008321b88113ccff88330dd7d1f AS builder
+FROM ghcr.io/tesserix/base-go-builder@sha256:196c74ed0c05329dbe72c4277b7c983ab32c31279769e09bee9c9539e89e2b4a AS builder
 USER 0:0
 WORKDIR /src
 
@@ -47,7 +47,7 @@ RUN go build -trimpath -ldflags="-s -w" \
 
 # ─── migrate ────────────────────────────────────────────────────────────
 # Standalone image used by the K8s Job pattern.
-FROM ghcr.io/tesserix/base-distroless-static@sha256:db09c7f5c9fde6eb1217a323d6e0158ba6339123859cb8ffc113320352a99598 AS migrate
+FROM ghcr.io/tesserix/base-distroless-static@sha256:2fea7cf18950a0c9e6a08d0260643003d05eb43e66e09ec4d06562e3b71024e8 AS migrate
 COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
 CMD ["/usr/local/bin/migrate"]
 
@@ -62,7 +62,7 @@ CMD ["/usr/local/bin/migrate"]
 # webhook-delivery-prune-cron prunes webhook_deliveries (OUTBOUND merchant
 # webhooks). It is NOT internal/webhookprune, which prunes webhook_events
 # (the inbound provider log) in-process inside marketplace-api.
-FROM ghcr.io/tesserix/base-distroless-static@sha256:db09c7f5c9fde6eb1217a323d6e0158ba6339123859cb8ffc113320352a99598 AS runtime
+FROM ghcr.io/tesserix/base-distroless-static@sha256:2fea7cf18950a0c9e6a08d0260643003d05eb43e66e09ec4d06562e3b71024e8 AS runtime
 COPY --from=builder --chown=10001:10001 /out/marketplace-api /usr/local/bin/marketplace-api
 COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
 COPY --from=builder --chown=10001:10001 /out/refund-sweep-cron /usr/local/bin/refund-sweep-cron

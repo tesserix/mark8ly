@@ -21,7 +21,7 @@
 # To onboard a new merchant:
 #   1. cp -r branding/example branding/<slug>
 #   2. Edit branding/<slug>/config.json (name, bundle id, colors,
-#      defaultStoreSlug, gipTenantId, easProjectId).
+#      defaultStoreSlug, easProjectId).
 #   3. Drop merchant assets into branding/<slug>/assets/
 #      (icon.png, adaptive-icon.png, splash.png).
 #   4. Run this script.

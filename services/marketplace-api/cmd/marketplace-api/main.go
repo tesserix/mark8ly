@@ -33,7 +33,6 @@ import (
 
 	marketplaceapi "github.com/mark8ly/marketplace-api"
 	"github.com/mark8ly/marketplace-api/internal/apikeys"
-	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authbffclient"
@@ -1099,7 +1098,7 @@ func main() {
 			Stripe: stripeAdapter,
 			Logger: log,
 		})
-		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, log).WithDB(conn).WithStripe(billingStripeClient)
+		subscriptionHandler := admin.NewSubscriptionHandler(subscriptionSvc, log).WithStripe(billingStripeClient)
 
 		// P4 Subscription plan change (upgrade/downgrade) — requires Stripe + stores repo.
 		var changePlanHandler *admin.ChangePlanHandler
@@ -1265,10 +1264,6 @@ func main() {
 			WithEmail(billingEmailClient, migrationRecipient,
 				migrationSentCounter{metrics.BillingEmailsSentTotal},
 				migrationSkipCounter{metrics.BillingEmailsSkippedTotal})
-
-		// P8 — Arbitrage appeal handler (§18.8.1).
-		arbitrageAppealSvc := arbitrage.NewAppealService(conn, arbitrage.NoOpPublisher{}, arbitrage.NopPIILogger{})
-		arbitrageAppealHandler := admin.NewArbitrageAppealHandler(arbitrageAppealSvc)
 
 		// P7 — tax-ID validation pipeline (§19). Registry holds 13 country
 		// validators; NZ is flag-gated until counsel sign-off (§20.3). The
@@ -1445,7 +1440,6 @@ func main() {
 			RefundHandler:            refundHandler,
 			ChangePlanHandler:        changePlanHandler,
 			CancelHandler:            cancelHandler,
-			ArbitrageAppealHandler:   arbitrageAppealHandler,
 			TrialBillingHandler:      trialBillingHandler,
 			MigrationFastPathHandler: migrationHandler,
 			TaxHandler:               taxHandler,
@@ -2022,26 +2016,6 @@ func main() {
 		// and every warning is recorded as unattributed rather than dropped.
 		dispatcher.WithChargeGetter(billingStripeClient)
 
-		// P8 §18.8: wire arbitrage recorder into the checkout webhook handler.
-		// KeyLoader + Hasher use Secret Manager when ARBITRAGE_HMAC_SECRET_PATH
-		// is set; omit gracefully in local dev (recorder stays nil → no-op).
-		if secretPath := os.Getenv("ARBITRAGE_HMAC_SECRET_PATH"); secretPath != "" {
-			smCtx, smCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			smClient, smErr := secretmanagerclient.NewClient(smCtx)
-			smCancel()
-			if smErr != nil {
-				log.Warn("arbitrage: secret manager client failed — arbitrage check disabled", "err", smErr)
-			} else {
-				keySrc := &arbitrage.SecretManagerSource{Client: smClient, SecretPath: secretPath}
-				keyLoader := arbitrage.NewKeyLoader(keySrc, 5*time.Minute)
-				hasher := arbitrage.NewHasher(keyLoader)
-				recorder := arbitrage.NewRecorder(conn, hasher, &arbitragePrometheusCounter{})
-				dispatcher.WithRecorder(recorder)
-				log.Info("arbitrage: triangulation recorder wired", "secret_path", secretPath)
-			}
-		} else {
-			log.Warn("ARBITRAGE_HMAC_SECRET_PATH not set — arbitrage triangulation disabled")
-		}
 		webhookH := webhooks.NewStripeHandler(webhooks.StripeHandlerConfig{
 			DB:     conn,
 			Secret: cfg.StripeBillingWebhookSecret,
@@ -2974,37 +2948,6 @@ func (a domainSecretsAdapter) Get(ctx context.Context, reference string) (string
 
 func (a domainSecretsAdapter) Destroy(ctx context.Context, reference string) error {
 	return a.inner.Destroy(ctx, reference)
-}
-
-// arbitragePrometheusCounter bridges arbitrage.Counter to the P17 Prometheus
-// singleton (metrics.Subscription.SubscriptionArbitrageFlaggedTotal).
-type arbitragePrometheusCounter struct{}
-
-func (c *arbitragePrometheusCounter) IncArbitrageFlagged() {
-	if metrics.Subscription != nil {
-		metrics.Subscription.SubscriptionArbitrageFlaggedTotal.
-			WithLabelValues("ppp_developed_signal").Inc()
-	}
-}
-
-// IncArbitrageTenantMismatch records a refused audit write where the caller's
-// tenant does not own the subscription (#423). Distinct reason label so P17
-// can alert on it independently — it is a bug or a probe, never routine.
-func (c *arbitragePrometheusCounter) IncArbitrageTenantMismatch() {
-	if metrics.Subscription != nil {
-		metrics.Subscription.SubscriptionArbitrageFlaggedTotal.
-			WithLabelValues("tenant_mismatch").Inc()
-	}
-}
-
-func (c *arbitragePrometheusCounter) IncArbitrageFalsePositiveCleared() {
-	// P17 dashboard reads the arbitrage_flagged counter; false-positive-cleared
-	// is a separate counter that P17 alert rules reference. Emit on the same
-	// registry under a distinct reason label.
-	if metrics.Subscription != nil {
-		metrics.Subscription.SubscriptionArbitrageFlaggedTotal.
-			WithLabelValues("false_positive_cleared").Inc()
-	}
 }
 
 // tenantDiscountApplier converts a possibly-nil *tenantdiscount.Service into a

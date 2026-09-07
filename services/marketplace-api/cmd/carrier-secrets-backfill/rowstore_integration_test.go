@@ -11,8 +11,8 @@
 // Postgres.
 //
 // Gated on TEST_DATABASE_URL, matching this service's established
-// integration-test convention (see pkg/testdb and internal/arbitrage's
-// openIntegrationDB). Missing it skips loudly rather than passing silently.
+// integration-test convention (see pkg/testdb). Missing it skips loudly
+// rather than passing silently.
 package main
 
 import (

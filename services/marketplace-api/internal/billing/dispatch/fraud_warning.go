@@ -214,11 +214,17 @@ func (d *Dispatcher) attributeFraudWarning(ctx context.Context, tx *gorm.DB, p f
 // no audit row was written either, so the strongest fraud signal Stripe gives
 // us reached nothing at all.
 //
-// It writes no columns. In particular it does NOT set arbitrage_flag: that is
-// the other half of #704 and is deliberately deferred until the operator
-// appeals queue (tesserix-home#144) exists, because arbitrage_flag is visible
-// to the merchant on their own subscription response and flagging someone who
-// can see it with no review path is worse than not flagging.
+// It writes no columns, and there is no longer a column for it to write.
+// #704's other half — geo-pricing arbitrage detection — was retired in
+// migration 000135: arbitrage_flag could never be set to true by any code
+// path, because the only caller of the recorder hard-codes IPCountry: "" (a
+// Stripe webhook carries no CF-IPCountry header) and the evaluator never
+// flagged without one. The table, the flag column, the cron, the appeal flow
+// and the inbox kind went with it.
+//
+// So a fraud warning is recorded as an EVENT — audit row plus metric — and
+// deliberately not as a state on the subscription. That was always the more
+// defensible half of #704, and it is now the only half.
 //
 // It is a method (not the free function it used to be) purely so it can reach
 // d.emitter and d.charges, exactly as handleChargeRefunded became one.

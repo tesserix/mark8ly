@@ -55,7 +55,6 @@ var webOnlySubtrees = map[string]string{
 	"/stores/:storeId/abandoned-carts":          "no mobile screen — cart recovery is a desktop marketing workflow",
 	"/stores/:storeId/api-keys":                 "developer API key management — secrets are shown once and copy/pasted into a terminal; deliberately desktop-only",
 	"/stores/:storeId/app-credentials":          "white-label app signing certificate upload — file uploads from a laptop only",
-	"/stores/:storeId/arbitrage-appeal":         "geo-pricing appeal — a long-form billing dispute form, web-only by design",
 	"/stores/:storeId/billing":                  "trial card-add — payment card entry stays on web (PCI surface)",
 	"/stores/:storeId/csv-imports":              "bulk CSV import — file picker + error-report download, web-only by design",
 	"/stores/:storeId/dashboard/metrics":        "analytics tabs — no mobile analytics screen yet; the mobile Home uses GET /dashboard only",

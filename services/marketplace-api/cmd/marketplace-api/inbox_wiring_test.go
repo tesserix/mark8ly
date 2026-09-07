@@ -57,7 +57,7 @@ func TestNewInboxAggregatorOmitsOnboardingWhenClientIsNil(t *testing.T) {
 		"a nil database must not register the DB-backed providers")
 }
 
-// The five kinds the handler advertises in its unknown_kind error must all be
+// The four kinds the handler advertises in its unknown_kind error must all be
 // registered when the dependencies exist, or the error message promises
 // filters that answer "unknown kind".
 func TestNewInboxAggregatorCoversEveryAdvertisedKind(t *testing.T) {
@@ -68,7 +68,6 @@ func TestNewInboxAggregatorCoversEveryAdvertisedKind(t *testing.T) {
 		inbox.KindSEAManualReview,
 		inbox.KindMigrationFastPath,
 		inbox.KindErasureRequest,
-		inbox.KindArbitrageAppeal,
 		inbox.KindOnboardingStalled,
 	} {
 		require.Truef(t, kindIsRegistered(t, agg, kind),

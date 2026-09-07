@@ -11,108 +11,11 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/mark8ly/marketplace-api/internal/arbitrage"
 	"github.com/mark8ly/marketplace-api/internal/email"
-	"github.com/mark8ly/marketplace-api/internal/metrics"
 	"github.com/mark8ly/marketplace-api/internal/postcommit"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 )
-
-// arbitrageFailureReason is the stripe_webhook_failed_total reason label used
-// when the arbitrage recorder fails on a checkout event. The failure is
-// non-fatal to the webhook, so it never reaches Dispatch()'s classifier and has
-// to be counted at the call site (#423).
-const arbitrageFailureReason = "arbitrage_record"
-
-// arbitrageFailureEventType is the event_type label for the counter above.
-// Only checkout.session.completed drives the recorder today.
-const arbitrageFailureEventType = "checkout.session.completed"
-
-// reportArbitrageFailure logs and counts a non-fatal arbitrage recorder
-// failure. Dispatch() only classifies errors a handler RETURNS, and this one is
-// deliberately swallowed, so the counter has to be incremented here or the
-// failure is invisible (#423).
-//
-// Note for whoever picks up #438: today this branch is unreachable in
-// production, because checkout.session.completed carries no IP country and
-// arbitrage.Evaluate never flags without one. It is still wired — and tested —
-// so that moving the recorder call somewhere with an IP signal does not
-// silently reintroduce the swallow.
-func reportArbitrageFailure(sub subscription.StoreSubscription, recErr error) {
-	slog.Default().Error("dispatch: arbitrage record failed (non-fatal)",
-		"event_type", arbitrageFailureEventType,
-		"subscription_id", sub.ID.String(),
-		"tenant_id", sub.TenantID.String(),
-		"store_id", sub.StoreID.String(),
-		"err", recErr.Error())
-	if metrics.Subscription != nil {
-		metrics.Subscription.StripeWebhookFailedTotal.
-			WithLabelValues(arbitrageFailureEventType, arbitrageFailureReason).Inc()
-	}
-}
-
-// recordArbitrage hands the arbitrage recorder call to the request's
-// post-commit collector so it runs AFTER the webhook's advisory-lock
-// transaction commits, instead of inside it.
-//
-// Why it cannot run inline (#438). The caller is inside
-// subscription.WithAdvisoryLock, and handleCheckoutSessionCompleted has
-// already run `UPDATE store_subscriptions ... WHERE stripe_customer_id = ?`
-// on tx, which holds a FOR NO KEY UPDATE row lock on the subscription row for
-// the rest of the transaction. The recorder writes on its own *gorm.DB — the
-// pool handle, a DIFFERENT connection — and its step 3 is
-// `UPDATE store_subscriptions ... SET arbitrage_flag = true` on that same row.
-// The recorder's connection blocks on the uncommitted row lock while the
-// transaction that holds it is blocked in Go waiting for the recorder to
-// return. Postgres sees one waiter and one idle-in-transaction session: no
-// cycle, so deadlock_timeout never fires, and no lock_timeout or
-// statement_timeout is configured. The webhook hangs indefinitely.
-//
-// This is latent today only because the call site hard-codes IPCountry: "" and
-// arbitrage.Evaluate never flags without an IP country, so the recorder's
-// writes are never reached. The first caller to supply a real IP country arms
-// the stall. Deferring the call removes the overlap regardless.
-//
-// Passing the caller's tx into the recorder would also remove the overlap, but
-// it would put the audit row back inside the webhook transaction — undoing
-// #423/#442, which deliberately moved it out so a failed flag toggle cannot
-// destroy the fraud record.
-//
-// Semantics are otherwise unchanged: a recorder failure stays NON-FATAL to the
-// webhook and still goes through reportArbitrageFailure so it is logged and
-// counted (#423).
-func (d *Dispatcher) recordArbitrage(ctx context.Context, sub subscription.StoreSubscription, in arbitrage.RecordInput) {
-	// runCtx is the context the collector hands us at drain time (request
-	// cancellation stripped, own timeout applied) — never the captured one.
-	record := func(runCtx context.Context) error {
-		if recErr := d.recorder.RecordIfFlagged(runCtx, in); recErr != nil {
-			// Swallowed on purpose: the arbitrage write must not block the
-			// subscription lifecycle or trigger a Stripe redelivery that
-			// re-fires every other side effect. Silence is what was wrong
-			// before (#423), so it is logged and counted instead.
-			reportArbitrageFailure(sub, recErr)
-		}
-		return nil
-	}
-
-	if postcommit.Add(ctx, record) {
-		return
-	}
-
-	// No collector in ctx — a caller that did not opt in (tests, or a future
-	// entry point that forgot postcommit.WithDeferredSends). Run inline
-	// rather than dropping the fraud signal, but say so loudly: a call site
-	// that silently reverts to the inline path is exactly how the stall
-	// above comes back, and it looks perfectly healthy in the logs while
-	// doing it.
-	slog.Default().Warn("dispatch: no post-commit collector in context; recording arbitrage INLINE, inside the webhook transaction — the caller of Dispatch is missing postcommit.WithDeferredSends (#438)",
-		"store_id", sub.StoreID.String(),
-		"tenant_id", sub.TenantID.String(),
-		"subscription_id", sub.ID.String())
-
-	_ = record(ctx)
-}
 
 // handleCheckoutSessionCompleted routes checkout.session.completed through
 // two stages:
@@ -137,22 +40,6 @@ func (d *Dispatcher) handleCheckoutSessionCompleted(ctx context.Context, tx *gor
 					Plan   string `json:"plan"`
 					Period string `json:"period"`
 				} `json:"metadata"`
-				// P8: geo-pricing arbitrage signals (§18.8).
-				// card_country extracted from payment_method_details.card.country;
-				// billing_country from customer_details.address.country.
-				// ip_country is unavailable at webhook time (Stripe push, not
-				// browser request) — the evaluator will produce ReasonIPUnknown
-				// and will not flag on card alone per spec.
-				CustomerDetails struct {
-					Address struct {
-						Country string `json:"country"`
-					} `json:"address"`
-				} `json:"customer_details"`
-				PaymentMethodDetails struct {
-					Card struct {
-						Country string `json:"country"`
-					} `json:"card"`
-				} `json:"payment_method_details"`
 			} `json:"object"`
 		} `json:"data"`
 	}
@@ -188,23 +75,6 @@ func (d *Dispatcher) handleCheckoutSessionCompleted(ctx context.Context, tx *gor
 	if err := tx.WithContext(ctx).Where("stripe_customer_id = ?", obj.Customer).First(&sub).Error; err != nil {
 		return fmt.Errorf("dispatch: reload after update: %w", err)
 	}
-	// P8 §18.8: triangulation check — flag-only, never short-circuits checkout.
-	// ip_country is unavailable at webhook time (Stripe push has no CF-IPCountry
-	// header), so the evaluator returns ReasonIPUnknown and does not flag on
-	// card alone — preventing false positives for travelers/dual-citizens.
-	if d.recorder != nil {
-		d.recordArbitrage(ctx, sub, arbitrage.RecordInput{
-			SubscriptionID: sub.ID,
-			TenantID:       sub.TenantID,
-			StoreID:        sub.StoreID,
-			PriceTier:      sub.PriceTier,
-			CardCountry:    obj.PaymentMethodDetails.Card.Country,
-			BillingCountry: obj.CustomerDetails.Address.Country,
-			IPCountry:      "", // unknown at webhook time — evaluated as "??"
-			RawIP:          "", // no raw IP at webhook time
-		})
-	}
-
 	if sub.Status != subscription.StatusSignup {
 		// Already past signup (replay or out-of-order event). No transition needed.
 		return nil

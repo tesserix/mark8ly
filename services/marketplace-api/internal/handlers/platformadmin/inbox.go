@@ -20,7 +20,6 @@ var validInboxKinds = []string{
 	inbox.KindSEAManualReview,
 	inbox.KindMigrationFastPath,
 	inbox.KindErasureRequest,
-	inbox.KindArbitrageAppeal,
 	inbox.KindOnboardingStalled,
 }
 

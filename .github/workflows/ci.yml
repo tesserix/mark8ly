@@ -31,7 +31,7 @@ jobs:
         working-directory: services/marketplace-api
         run: |
           offenders=$(grep -RlE '"cloud\.google\.com/go/secretmanager' internal cmd --include='*.go' 2>/dev/null \
-            | grep -vE '^(internal/billing/appcreds|internal/arbitrage|internal/breakglass|internal/carriersecrets|cmd/arbitrage-rotator|cmd/break-glass-rotation|cmd/marketplace-api/main\.go)' \
+            | grep -vE '^(internal/billing/appcreds|internal/breakglass|internal/carriersecrets|cmd/break-glass-rotation|cmd/marketplace-api/main\.go)' \
             || true)
           if [[ -n "$offenders" ]]; then
             printf 'Secret Manager import outside the approved choke point:\n%s\n' "$offenders"

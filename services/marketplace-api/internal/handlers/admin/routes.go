@@ -54,9 +54,7 @@ type Deps struct {
 	PromoHandler  *PromoHandler
 	RefundHandler *RefundHandler
 	// P11 — merchant-initiated cancellation + save-offer (§15).
-	CancelHandler *cancel.Handler
-	// P8 — geo-pricing arbitrage appeal (§18.8.1).
-	ArbitrageAppealHandler   *ArbitrageAppealHandler
+	CancelHandler            *cancel.Handler
 	MigrationFastPathHandler *migration.Handler
 	// P7 — tax-ID submit + US/CA attestation (§19.3, §19.3.1).
 	TaxHandler *TaxHandler
@@ -818,11 +816,6 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 						deps.CancelHandler.Cancel)
 				}
 			}
-		}
-
-		// P8 — Geo-pricing arbitrage appeal (§18.8.1).
-		if deps.ArbitrageAppealHandler != nil {
-			RegisterArbitrageAppeal(storeRoute, deps.ArbitrageAppealHandler, deps.AuthzMiddleware)
 		}
 
 		// P7 — tax-ID submit + US/CA attestation (§19.3, §19.3.1). The tax

@@ -1,26 +1,17 @@
-// Package autologin issues a session cookie for a user who just completed
-// onboarding, without forcing them through a separate sign-in step.
+// Package autologin runs everything that stands between a verified identity
+// and a minted session cookie: OpenFGA tenant membership (with retry), the
+// MFA gate, new-device evaluation, the email-OTP step-up, session minting,
+// the session registry row and the audit event.
 //
-// The flow:
+// It is deliberately provider-agnostic. Zitadel — currently the only auth
+// provider — authenticates the user by its own means and then calls
+// CompleteForProvider, so the post-identity gauntlet has exactly one
+// implementation.
 //
-//  1. apps/onboarding completes a session via platform-api → tenant + user exist
-//  2. Frontend redirects to /auth/auto-login with a tenant_id and id_token
-//  3. auto-login handler:
-//     a. Verifies the id_token via GIP (multi-tenant aware)
-//     b. CheckMembership against OpenFGA — IS THE TUPLE THERE YET?
-//     c. If yes: mint session cookie, return success
-//     d. If no:  retry CheckMembership with backoff up to ~2 seconds
-//     e. After retry budget: return 503, frontend can retry the call
-//
-// Step (b)+(d) is the auth-bug #2 fix on the auth-bff side. Even if the
-// outbox drainer hasn't shipped the FGA write yet, the autologin call won't
-// hand back a session before the tuple is visible. The user will see a
-// 1-2 second delay at worst, never a "tenant not found" error.
-// GIP-708 SPLIT: this file is full of the string "gip" but must NOT be deleted
-// wholesale. completeLogin is SHARED — Zitadel's CompleteForProvider calls it,
-// so removing the file takes out the live Zitadel login gauntlet. Only
-// AutoLogin and the gip field are GIP-only.
-// See docs/auth/2026-09-07-gip-removal-audit.md.
+// The membership check retries because the outbox drainer in platform-api
+// ships the FGA tuple a moment after the onboarding completion DB tx commits.
+// Without retry, a login straight after onboarding races the drainer and
+// loses ~10% of the time, surfacing as "tenant not found".
 package autologin
 
 import (
@@ -34,7 +25,6 @@ import (
 	"github.com/mark8ly/auth-bff/internal/audit"
 	"github.com/mark8ly/auth-bff/internal/authz"
 	"github.com/mark8ly/auth-bff/internal/deviceguard"
-	"github.com/mark8ly/auth-bff/internal/gip"
 	"github.com/mark8ly/auth-bff/internal/session"
 	"github.com/mark8ly/auth-bff/internal/usersessions"
 	"github.com/mark8ly/auth-bff/internal/zitadellogin"
@@ -61,7 +51,6 @@ type ChallengeIssuer interface {
 
 // Service is the autologin business logic.
 type Service struct {
-	gip      gip.Verifier
 	fga      authz.Client
 	sessions *session.Manager
 	registry *usersessions.Repository
@@ -86,16 +75,15 @@ type RetryPolicy struct {
 
 // Config holds Service dependencies.
 type Config struct {
-	GIP      gip.Verifier
 	FGA      authz.Client
 	Sessions *session.Manager
 	// Registry is the side-table of active sessions. Optional — when
-	// nil, the autologin path still mints JWT cookies normally and the
+	// nil, the login path still mints JWT cookies normally and the
 	// admin "Active sessions" UI just stays empty.
 	Registry *usersessions.Repository
 	// MFA is the TOTP enrolment checker. Optional — when nil, every
 	// login skips the challenge step (pre-MFA behaviour). When wired,
-	// AutoLogin short-circuits to MintPending + MFARequired whenever
+	// a login short-circuits to MintPending + MFARequired whenever
 	// the user has a verified enrolment on file.
 	MFA MFAStatusChecker
 	// Devices raises new-device security alerts. Optional — when nil,
@@ -124,7 +112,6 @@ func NewService(cfg Config) *Service {
 		p.MaxBackoff = 500 * time.Millisecond
 	}
 	return &Service{
-		gip:      cfg.GIP,
 		fga:      cfg.FGA,
 		sessions: cfg.Sessions,
 		registry: cfg.Registry,
@@ -137,11 +124,10 @@ func NewService(cfg Config) *Service {
 	}
 }
 
-// Request is the input to AutoLogin.
+// Request carries the login's workspace and client metadata into the shared
+// gauntlet.
 type Request struct {
-	IDToken          string // Firebase/GIP ID token from the frontend
-	ExpectedTenantID string // The GIP tenant pool we expect (e.g. MP-Internal-...)
-	WorkspaceTenant  string // The Mark8ly tenant UUID the user is logging into
+	WorkspaceTenant string // The Mark8ly tenant UUID the user is logging into
 	// Client metadata captured for the sessions UI. Best-effort — when
 	// any field is empty, the row shows a sensible placeholder ("Browser").
 	Device    string
@@ -151,7 +137,7 @@ type Request struct {
 	Country string
 }
 
-// Result is what AutoLogin returns on success.
+// Result is what a completed login returns on success.
 type Result struct {
 	UID      string
 	Email    string
@@ -169,8 +155,6 @@ type Result struct {
 
 // Errors. Each maps to a specific HTTP response in the handler.
 var (
-	ErrTokenInvalid    = errors.New("autologin: token invalid")
-	ErrTenantMismatch  = errors.New("autologin: token tenant pool does not match")
 	ErrNotMember       = errors.New("autologin: user is not a member of the tenant")
 	ErrFGAUnreachable  = errors.New("autologin: openfga is unreachable")
 	ErrSessionMintFail = errors.New("autologin: failed to mint session")
@@ -183,21 +167,21 @@ var (
 
 // Identity is the outcome of authenticating a user, independent of which
 // provider did it. Everything downstream of this type — membership, MFA,
-// device and OTP gating, session minting — is provider-agnostic and shared
-// between the GIP and Zitadel paths.
+// device and OTP gating, session minting — is provider-agnostic.
 type Identity struct {
 	UID      string
 	Email    string
 	TenantID string
 	// Provider labels the audit event's "method" field with who actually
-	// authenticated this login. Empty means GIP/AutoLogin's own default
-	// ("auto_login") applies; CompleteForProvider sets this explicitly so a
-	// Zitadel login is not misattributed to GIP in the audit trail.
+	// authenticated this login. CompleteForProvider always sets it; the
+	// empty case only falls back to a default label so an audit event can
+	// never be written with no method at all.
 	Provider string
 }
 
 // auditMethod returns the audit event's "method" label for id, defaulting to
-// "auto_login" (the GIP path's historical value) when no provider is set.
+// "auto_login" — the label this service has always written — when a caller
+// leaves Provider unset.
 func auditMethod(id Identity) string {
 	if id.Provider == "" {
 		return "auto_login"
@@ -205,45 +189,19 @@ func auditMethod(id Identity) string {
 	return id.Provider
 }
 
-// AutoLogin verifies the ID token, confirms tenant membership (with retry
-// to close the auth-bug #2 race window), mints a session cookie onto the
-// response, and returns the result.
-func (s *Service) AutoLogin(ctx context.Context, w http.ResponseWriter, req Request) (*Result, error) {
-	if req.IDToken == "" || req.ExpectedTenantID == "" || req.WorkspaceTenant == "" {
-		return nil, ErrTokenInvalid
-	}
-
-	// Step 1: verify the ID token (GIP signature, expiry, audience, tenant claim).
-	tok, err := s.gip.VerifyToken(ctx, req.IDToken, req.ExpectedTenantID)
-	if err != nil {
-		switch {
-		case errors.Is(err, gip.ErrTenantMismatch):
-			return nil, ErrTenantMismatch
-		default:
-			return nil, fmt.Errorf("%w: %s", ErrTokenInvalid, err)
-		}
-	}
-
-	return s.completeLogin(ctx, w, Identity{
-		UID:      tok.UID,
-		Email:    tok.Email,
-		TenantID: tok.TenantID,
-	}, req)
-}
-
-// CompleteForProvider is the exported entry point for a provider other than
-// GIP — currently Zitadel — that has already established a verified identity
-// by its own means (password + sufficiency checks) and just needs to run the
-// shared gauntlet: FGA membership, the MFA gate, deviceguard, the email-OTP
-// step-up, session minting.
+// CompleteForProvider is the exported entry point for an auth provider —
+// currently Zitadel — that has already established a verified identity by its
+// own means (password + sufficiency checks) and just needs to run the shared
+// gauntlet: FGA membership, the MFA gate, deviceguard, the email-OTP step-up,
+// session minting.
 //
 // It is a thin wrapper around completeLogin so that gauntlet has exactly one
 // implementation regardless of which provider authenticated the user, and it
 // maps zitadellogin.LoginContext onto Request field-for-field so UserAgent,
-// IPAddress, Device and Country reach completeLogin exactly as they do on the
-// GIP path. Passing these empty is not an option: deviceguard fingerprints
-// the user agent, and Fingerprint("") is a constant every user would share —
-// silently collapsing new-device detection for every Zitadel login.
+// IPAddress, Device and Country reach completeLogin intact. Passing these
+// empty is not an option: deviceguard fingerprints the user agent, and
+// Fingerprint("") is a constant every user would share — silently collapsing
+// new-device detection for every login.
 func (s *Service) CompleteForProvider(ctx context.Context, w http.ResponseWriter, lc zitadellogin.LoginContext) (zitadellogin.CompleteResult, error) {
 	res, err := s.completeLogin(ctx, w, Identity{
 		UID:      lc.UID,
@@ -271,10 +229,10 @@ func (s *Service) CompleteForProvider(ctx context.Context, w http.ResponseWriter
 // new-device evaluation, the email-OTP step-up, then the session cookie,
 // registry row and audit event.
 //
-// It is deliberately provider-agnostic. A Zitadel login that has satisfied its
-// own credential and factor checks arrives here with the same Identity a
-// verified GIP token produces, and is subject to exactly the same gates — so
-// the two providers cannot drift apart in what they enforce after login.
+// It is deliberately provider-agnostic: any provider that has satisfied its
+// own credential and factor checks arrives here with an Identity and is
+// subject to exactly the same gates, so providers cannot drift apart in what
+// they enforce after login.
 func (s *Service) completeLogin(ctx context.Context, w http.ResponseWriter, id Identity, req Request) (*Result, error) {
 	// Step 2: check FGA membership with retry. THE BUG-FIX LOOP.
 	if err := s.checkMembershipWithRetry(ctx, id.UID, req.WorkspaceTenant); err != nil {
@@ -285,7 +243,7 @@ func (s *Service) completeLogin(ctx context.Context, w http.ResponseWriter, id I
 	// enrolment must complete a second factor before they see a real
 	// session cookie. We write a short-lived pending cookie carrying
 	// just enough context to finish the challenge without re-verifying
-	// the GIP token, and flag MFARequired on the result so the handler
+	// the credential, and flag MFARequired on the result so the handler
 	// can respond with the right HTTP shape.
 	if s.mfa != nil {
 		enabled, err := s.mfa.IsEnabled(ctx, id.UID)
@@ -420,9 +378,9 @@ func (s *Service) completeLogin(ctx context.Context, w http.ResponseWriter, id I
 //
 // The outbox drainer in platform-api ships the FGA tuple a moment after the
 // onboarding completion DB tx commits. There's a tiny window (typically
-// 0-200ms) between commit and tuple visibility. Without retry, the autologin
-// call races the drainer and loses ~10% of the time, causing "tenant not
-// found" right after onboarding.
+// 0-200ms) between commit and tuple visibility. Without retry, the login
+// races the drainer and loses ~10% of the time, causing "tenant not found"
+// right after onboarding.
 //
 // With retry: the call waits up to MaxAttempts × backoff for the tuple to
 // appear. Total budget is ~2 seconds in the default policy. If the tuple

@@ -10,8 +10,9 @@ import (
 
 	"github.com/mark8ly/auth-bff/internal/authz"
 	"github.com/mark8ly/auth-bff/internal/deviceguard"
-	"github.com/mark8ly/auth-bff/internal/gip"
+	"github.com/mark8ly/auth-bff/internal/emailotp"
 	"github.com/mark8ly/auth-bff/internal/session"
+	"github.com/mark8ly/auth-bff/internal/zitadellogin"
 )
 
 // stubDevices reports a fixed new/known verdict.
@@ -57,26 +58,24 @@ func newOTPService(t *testing.T, devices DeviceEvaluator, issuer ChallengeIssuer
 	if err != nil {
 		t.Fatalf("session manager: %v", err)
 	}
-	gipFake := gip.NewFakeVerifier()
-	gipFake.Add("good-token", gip.VerifiedToken{UID: "user-1", Email: "u@e.com", TenantID: "MP-Internal-test"})
 	fgaFake := authz.NewFake()
 	fgaFake.SetMembership("user-1", "tenant-uuid-1")
 
 	return NewService(Config{
-		GIP: gipFake, FGA: fgaFake, Sessions: sm, Policy: fastPolicy,
+		FGA: fgaFake, Sessions: sm, Policy: fastPolicy,
 		Devices: devices, EmailOTP: issuer,
 	})
 }
 
-func loginReq() Request {
-	return Request{
-		IDToken:          "good-token",
-		ExpectedTenantID: "MP-Internal-test",
-		WorkspaceTenant:  "tenant-uuid-1",
-		UserAgent:        "Mozilla/5.0 (Macintosh) Chrome/128",
-		Device:           "Chrome on macOS",
-		IPAddress:        "203.0.113.9",
-		Country:          "IN",
+func loginCtx() zitadellogin.LoginContext {
+	return zitadellogin.LoginContext{
+		UID:       "user-1",
+		Email:     "u@e.com",
+		TenantID:  "tenant-uuid-1",
+		UserAgent: "Mozilla/5.0 (Macintosh) Chrome/128",
+		Device:    "Chrome on macOS",
+		IPAddress: "203.0.113.9",
+		Country:   "IN",
 	}
 }
 
@@ -89,17 +88,17 @@ func cookieNames(t *testing.T, w *httptest.ResponseRecorder) map[string]string {
 	return out
 }
 
-// TestAutoLogin_NewDevice_RequiresOTP is the core of the feature: an
+// TestCompleteForProvider_NewDevice_RequiresOTP is the core of the feature: an
 // unrecognised device gets a pending cookie and a mailed code, never a
 // live session.
-func TestAutoLogin_NewDevice_RequiresOTP(t *testing.T) {
+func TestCompleteForProvider_NewDevice_RequiresOTP(t *testing.T) {
 	issuer := &stubIssuer{}
 	svc := newOTPService(t, &stubDevices{isNew: true}, issuer)
 	w := httptest.NewRecorder()
 
-	res, err := svc.AutoLogin(context.Background(), w, loginReq())
+	res, err := svc.CompleteForProvider(context.Background(), w, loginCtx())
 	if err != nil {
-		t.Fatalf("AutoLogin: %v", err)
+		t.Fatalf("CompleteForProvider: %v", err)
 	}
 	if !res.EmailOTPRequired {
 		t.Error("EmailOTPRequired = false, want true for an unrecognised device")
@@ -120,15 +119,15 @@ func TestAutoLogin_NewDevice_RequiresOTP(t *testing.T) {
 	}
 }
 
-// TestAutoLogin_KnownDevice_SkipsOTP keeps the common case one step.
-func TestAutoLogin_KnownDevice_SkipsOTP(t *testing.T) {
+// TestCompleteForProvider_KnownDevice_SkipsOTP keeps the common case one step.
+func TestCompleteForProvider_KnownDevice_SkipsOTP(t *testing.T) {
 	issuer := &stubIssuer{}
 	svc := newOTPService(t, &stubDevices{isNew: false}, issuer)
 	w := httptest.NewRecorder()
 
-	res, err := svc.AutoLogin(context.Background(), w, loginReq())
+	res, err := svc.CompleteForProvider(context.Background(), w, loginCtx())
 	if err != nil {
-		t.Fatalf("AutoLogin: %v", err)
+		t.Fatalf("CompleteForProvider: %v", err)
 	}
 	if res.EmailOTPRequired {
 		t.Error("EmailOTPRequired = true, want false for a known device")
@@ -141,15 +140,15 @@ func TestAutoLogin_KnownDevice_SkipsOTP(t *testing.T) {
 	}
 }
 
-// TestAutoLogin_NoIssuer_SkipsOTP preserves the pre-feature behaviour so
+// TestCompleteForProvider_NoIssuer_SkipsOTP preserves the pre-feature behaviour so
 // an unconfigured environment still logs people in.
-func TestAutoLogin_NoIssuer_SkipsOTP(t *testing.T) {
+func TestCompleteForProvider_NoIssuer_SkipsOTP(t *testing.T) {
 	svc := newOTPService(t, &stubDevices{isNew: true}, nil)
 	w := httptest.NewRecorder()
 
-	res, err := svc.AutoLogin(context.Background(), w, loginReq())
+	res, err := svc.CompleteForProvider(context.Background(), w, loginCtx())
 	if err != nil {
-		t.Fatalf("AutoLogin: %v", err)
+		t.Fatalf("CompleteForProvider: %v", err)
 	}
 	if res.EmailOTPRequired {
 		t.Error("EmailOTPRequired = true with no issuer wired")
@@ -159,16 +158,16 @@ func TestAutoLogin_NoIssuer_SkipsOTP(t *testing.T) {
 	}
 }
 
-// TestAutoLogin_IssuerFailure_FailsClosed asserts we do not fall through
+// TestCompleteForProvider_IssuerFailure_FailsClosed asserts we do not fall through
 // to a live session when the code could not be sent. Falling open here
 // would mean an attacker who can break the mail path bypasses the gate
 // entirely.
-func TestAutoLogin_IssuerFailure_FailsClosed(t *testing.T) {
+func TestCompleteForProvider_IssuerFailure_FailsClosed(t *testing.T) {
 	issuer := &stubIssuer{err: errors.New("resend down")}
 	svc := newOTPService(t, &stubDevices{isNew: true}, issuer)
 	w := httptest.NewRecorder()
 
-	_, err := svc.AutoLogin(context.Background(), w, loginReq())
+	_, err := svc.CompleteForProvider(context.Background(), w, loginCtx())
 	if err == nil {
 		t.Fatal("expected an error when the challenge could not be sent")
 	}
@@ -180,30 +179,30 @@ func TestAutoLogin_IssuerFailure_FailsClosed(t *testing.T) {
 	}
 }
 
-// TestAutoLogin_DeviceCheckFailure_RequiresOTP asserts an unreadable
+// TestCompleteForProvider_DeviceCheckFailure_RequiresOTP asserts an unreadable
 // device history is treated as "new device" rather than waved through.
-func TestAutoLogin_DeviceCheckFailure_RequiresOTP(t *testing.T) {
+func TestCompleteForProvider_DeviceCheckFailure_RequiresOTP(t *testing.T) {
 	issuer := &stubIssuer{}
 	svc := newOTPService(t, &stubDevices{isNew: true, err: errors.New("db down")}, issuer)
 	w := httptest.NewRecorder()
 
-	res, err := svc.AutoLogin(context.Background(), w, loginReq())
+	res, err := svc.CompleteForProvider(context.Background(), w, loginCtx())
 	if err != nil {
-		t.Fatalf("AutoLogin: %v", err)
+		t.Fatalf("CompleteForProvider: %v", err)
 	}
 	if !res.EmailOTPRequired {
 		t.Error("a failed device lookup must fall back to challenging")
 	}
 }
 
-// TestAutoLogin_PendingCarriesFingerprint asserts the pending cookie has
+// TestCompleteForProvider_PendingCarriesFingerprint asserts the pending cookie has
 // what the verify step needs to record the device as known.
-func TestAutoLogin_PendingCarriesFingerprint(t *testing.T) {
+func TestCompleteForProvider_PendingCarriesFingerprint(t *testing.T) {
 	svc := newOTPService(t, &stubDevices{isNew: true}, &stubIssuer{})
 	w := httptest.NewRecorder()
 
-	if _, err := svc.AutoLogin(context.Background(), w, loginReq()); err != nil {
-		t.Fatalf("AutoLogin: %v", err)
+	if _, err := svc.CompleteForProvider(context.Background(), w, loginCtx()); err != nil {
+		t.Fatalf("CompleteForProvider: %v", err)
 	}
 
 	sm, err := session.NewManager(session.Config{
@@ -238,10 +237,10 @@ func TestAutoLogin_PendingCarriesFingerprint(t *testing.T) {
 	}
 }
 
-// TestAutoLogin_MFATakesPriority: a user with TOTP enrolled gets the TOTP
+// TestCompleteForProvider_MFATakesPriority: a user with TOTP enrolled gets the TOTP
 // challenge, not an emailed code. Two challenges for one login would be
 // noise, and TOTP is the stronger factor.
-func TestAutoLogin_MFATakesPriority(t *testing.T) {
+func TestCompleteForProvider_MFATakesPriority(t *testing.T) {
 	issuer := &stubIssuer{}
 	sm, err := session.NewManager(session.Config{
 		CookieName: "m8_test", Domain: "localhost", Secure: false, EncryptKey: testKey,
@@ -249,22 +248,20 @@ func TestAutoLogin_MFATakesPriority(t *testing.T) {
 	if err != nil {
 		t.Fatalf("session manager: %v", err)
 	}
-	gipFake := gip.NewFakeVerifier()
-	gipFake.Add("good-token", gip.VerifiedToken{UID: "user-1", Email: "u@e.com", TenantID: "MP-Internal-test"})
 	fgaFake := authz.NewFake()
 	fgaFake.SetMembership("user-1", "tenant-uuid-1")
 
 	svc := NewService(Config{
-		GIP: gipFake, FGA: fgaFake, Sessions: sm, Policy: fastPolicy,
+		FGA: fgaFake, Sessions: sm, Policy: fastPolicy,
 		MFA:      stubMFA{enabled: true},
 		Devices:  &stubDevices{isNew: true},
 		EmailOTP: issuer,
 	})
 	w := httptest.NewRecorder()
 
-	res, err := svc.AutoLogin(context.Background(), w, loginReq())
+	res, err := svc.CompleteForProvider(context.Background(), w, loginCtx())
 	if err != nil {
-		t.Fatalf("AutoLogin: %v", err)
+		t.Fatalf("CompleteForProvider: %v", err)
 	}
 	if !res.MFARequired {
 		t.Error("MFARequired = false, want true")
@@ -281,19 +278,39 @@ type stubMFA struct{ enabled bool }
 
 func (s stubMFA) IsEnabled(_ context.Context, _ string) (bool, error) { return s.enabled, nil }
 
-// TestAutoLogin_AlertStillSentOnChallenge: the sign-in attempt itself is
+// TestCompleteForProvider_AlertStillSentOnChallenge: the sign-in attempt itself is
 // what the account holder needs to hear about, so the device alert must
 // not wait on the code being verified.
-func TestAutoLogin_AlertStillSentOnChallenge(t *testing.T) {
+func TestCompleteForProvider_AlertStillSentOnChallenge(t *testing.T) {
 	devices := &stubDevices{isNew: true}
 	svc := newOTPService(t, devices, &stubIssuer{})
 	w := httptest.NewRecorder()
 
-	if _, err := svc.AutoLogin(context.Background(), w, loginReq()); err != nil {
-		t.Fatalf("AutoLogin: %v", err)
+	if _, err := svc.CompleteForProvider(context.Background(), w, loginCtx()); err != nil {
+		t.Fatalf("CompleteForProvider: %v", err)
 	}
 	if devices.calls != 1 {
 		t.Errorf("deviceguard called %d times, want 1 (it owns alert dispatch)", devices.calls)
+	}
+}
+
+// TestCompleteForProvider_RateLimitSurvivesWrap is the narrow error-chain
+// property the shared gauntlet must hold: errors.Is has to see through the
+// ErrChallengeSendFail wrap down to the emailotp sentinel, so a caller can
+// still tell "we could not send" from "you asked too often".
+func TestCompleteForProvider_RateLimitSurvivesWrap(t *testing.T) {
+	issuer := &stubIssuer{err: emailotp.ErrRateLimited}
+	svc := newOTPService(t, &stubDevices{isNew: true}, issuer)
+
+	_, err := svc.CompleteForProvider(context.Background(), httptest.NewRecorder(), loginCtx())
+	if err == nil {
+		t.Fatal("expected an error when the challenge is rate limited")
+	}
+	if !errors.Is(err, ErrChallengeSendFail) {
+		t.Error("errors.Is(err, ErrChallengeSendFail) = false")
+	}
+	if !errors.Is(err, emailotp.ErrRateLimited) {
+		t.Error("errors.Is(err, emailotp.ErrRateLimited) = false")
 	}
 }
 

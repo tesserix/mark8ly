@@ -20,14 +20,6 @@ type Config struct {
 	HTTPPort    int    `envconfig:"HTTP_PORT" default:"8080"`
 	DatabaseURL string `envconfig:"DATABASE_URL" required:"true"`
 
-	// Google Identity Platform. Only the project id survives: it scopes
-	// the ID-token verifier the /auth/autologin path still uses. The web
-	// API key and internal tenant pool went with the Identity Toolkit
-	// accounts:lookup behind /auth/me/providers, which now reads Zitadel
-	// (#708). GIP_WEB_API_KEY / GIP_INTERNAL_TENANT_ID are droppable
-	// from the chart once this deploys.
-	GIPProjectID string `envconfig:"GIP_PROJECT_ID" required:"true"`
-
 	// Cookie session
 	SessionCookieName   string `envconfig:"SESSION_COOKIE_NAME" default:"m8_session"`
 	SessionCookieDomain string `envconfig:"SESSION_COOKIE_DOMAIN" default:".mark8ly.local"`
@@ -66,8 +58,9 @@ type Config struct {
 	// Must be at least 16 bytes. Empty disables the email-OTP gate.
 	EmailOTPPepper string `envconfig:"EMAIL_OTP_PEPPER"`
 
-	// Zitadel (#524 phase 2). All optional and unread unless ZitadelEnabled is
-	// set: GIP remains the live provider until the phase 6 cutover.
+	// Zitadel (#524 phase 2). All optional and unread unless ZitadelEnabled
+	// is set — but Zitadel is now the only auth provider, so a deployment
+	// with it disabled mounts no login route at all.
 	ZitadelEnabled             bool   `envconfig:"ZITADEL_ENABLED" default:"false"`
 	ZitadelIssuer              string `envconfig:"ZITADEL_ISSUER"`
 	ZitadelLoginClientToken    string `envconfig:"ZITADEL_LOGIN_CLIENT_TOKEN"`

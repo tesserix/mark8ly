@@ -2,7 +2,7 @@
 //
 // This binary intentionally does NOT load the full server config — it only
 // needs DATABASE_URL. Loading the full config would force the migrate
-// container to have GIP/OAuth env vars even though it never touches them.
+// container to have OAuth env vars even though it never touches them.
 package main
 
 import (

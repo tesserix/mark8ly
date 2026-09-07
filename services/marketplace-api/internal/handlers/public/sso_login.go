@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"sync"
 	"time"
 
@@ -32,12 +33,35 @@ const adminHomeRedirect = "/admin"
 // ---------------------------------------------------------------------------
 
 // TenantResolver looks up a tenant UUID from its URL slug.
-// The production implementation queries the tenants table; tests supply a stub.
 //
-// TODO(wiring): wire against internal/tenants or the tenant-service HTTP
-// client once the canonical tenant-lookup path is settled.
+// The production implementation is StoreSlugTenantResolver
+// (sso_tenant_resolver.go), which goes through the stores projection — this
+// service has no tenants table, and a store slug identifies its tenant.
 type TenantResolver interface {
 	ByTenantSlug(ctx context.Context, slug string) (uuid.UUID, error)
+}
+
+// SSOConfigLoader reads a tenant's SSO configuration. *sso.Repository
+// satisfies it.
+//
+// An interface rather than the concrete repository so the branches that depend
+// on a LOADED config can be tested without a database. Before #820 this field
+// was a *sso.Repository, so every test could only reach the paths that fail
+// BEFORE the config is read — which is why the SAML branch could return an
+// empty 200 with a full test suite passing.
+type SSOConfigLoader interface {
+	GetByTenant(ctx context.Context, tenantID uuid.UUID) (*sso.Config, error)
+}
+
+// OIDCRelyingParties supplies the relying party for a tenant's config.
+// *sso.RelyingPartyCache satisfies it.
+//
+// Replaces the `map[string]*sso.OIDCRelyingParty` this handler used to hold.
+// A map has to be built somewhere, and the only somewhere was startup — which
+// makes every customer's IdP a boot dependency of this service and excludes
+// any tenant who configures SSO afterwards. See sso/rp_cache.go.
+type OIDCRelyingParties interface {
+	For(ctx context.Context, cfg *sso.Config) (*sso.OIDCRelyingParty, error)
 }
 
 // StateCache stores (state, nonce, tenantID) triples for the OIDC
@@ -103,10 +127,10 @@ func (c *MemStateCache) Get(state string) (string, uuid.UUID, error) {
 //	POST /sso/:tenantSlug/callback  — handle IdP response
 //	POST /sso/:tenantSlug/logout    — clear session + optional SLO
 type SSOLoginHandler struct {
-	Repo           *sso.Repository
+	Repo           SSOConfigLoader
 	JIT            JITProvisioner
 	Sessions       authbffclient.SessionIssuer
-	OIDCRPs        map[string]*sso.OIDCRelyingParty // keyed by tenantID.String()
+	OIDCRPs        OIDCRelyingParties
 	StateCache     StateCache
 	Audit          *audit.Emitter
 	TenantResolver TenantResolver
@@ -123,10 +147,10 @@ type JITProvisioner interface {
 // OIDCRPs and Sessions must be set before serving requests; nil values
 // cause the affected provider path to return 503.
 func NewSSOLoginHandler(
-	repo *sso.Repository,
+	repo SSOConfigLoader,
 	jit JITProvisioner,
 	sessions authbffclient.SessionIssuer,
-	oidcRPs map[string]*sso.OIDCRelyingParty,
+	oidcRPs OIDCRelyingParties,
 	stateCache StateCache,
 	auditEmitter *audit.Emitter,
 	tenantResolver TenantResolver,
@@ -137,6 +161,17 @@ func NewSSOLoginHandler(
 	}
 	if stateCache == nil {
 		stateCache = NewMemStateCache()
+	}
+	// A TYPED nil — a nil *sso.Repository assigned into the interface — is
+	// normalised to a true nil rather than left to panic at first use. Both
+	// read as "no repository configured" to a human, but only one of them
+	// does to Go: an interface holding a nil pointer is itself non-nil, so
+	// the `h.Repo == nil` guard below would pass and the first method call
+	// would panic inside an unauthenticated route (the #288 shape).
+	if repo != nil {
+		if v := reflect.ValueOf(repo); v.Kind() == reflect.Ptr && v.IsNil() {
+			repo = nil
+		}
 	}
 	return &SSOLoginHandler{
 		Repo:           repo,
@@ -176,12 +211,17 @@ func (h *SSOLoginHandler) Login(c *gin.Context) {
 }
 
 func (h *SSOLoginHandler) loginOIDC(c *gin.Context, tenantID uuid.UUID, cfg *sso.Config) {
-	rp := h.oidcRP(tenantID)
-	if rp == nil {
-		h.Logger.Error("sso_login: OIDC RP not configured", "tenant_id", tenantID)
+	rp, err := h.oidcRP(c.Request.Context(), cfg)
+	if err != nil {
+		// 503, not 500: the tenant's configuration or their IdP is the
+		// problem, and both are recoverable without a code change. The
+		// message stays generic — the cause is in the log, because it can
+		// name the customer's issuer URL and their secret path.
+		h.Logger.Error("sso_login: could not build the OIDC relying party",
+			"tenant_id", tenantID, "err", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "provider_not_ready",
-			"message": "OIDC provider is not yet initialised for this tenant",
+			"message": "single sign-on is not available for this tenant right now",
 		})
 		return
 	}
@@ -207,16 +247,24 @@ func (h *SSOLoginHandler) loginOIDC(c *gin.Context, tenantID uuid.UUID, cfg *sso
 	c.Redirect(http.StatusFound, authURL)
 }
 
-func (h *SSOLoginHandler) loginSAML(_ *gin.Context, _ uuid.UUID, _ *sso.Config) {
-	// SAML login initiation via crewjam samlsp.Middleware.HandleStartAuthFlow
-	// requires the SP middleware to be registered as an http.Handler.
-	// The full SAML SP wiring (loading the per-tenant middleware at startup and
-	// routing through it) is deferred — this stub returns a redirect placeholder
-	// so the test for "SAML login → 302 with SAMLRequest param" can be satisfied
-	// once the SP map is populated.
-	//
-	// TODO(wiring): look up h.SAMLSPs[tenantID.String()].HandleStartAuthFlow(w, r)
-	// once per-tenant SAML SP middleware initialisation is implemented.
+// loginSAML refuses, explicitly.
+//
+// SAML login initiation needs crewjam's samlsp.Middleware registered as an
+// http.Handler per tenant, and that SP wiring does not exist. Until it does,
+// there is nothing to send the browser to.
+//
+// It answers 501, matching what Callback already answers for the SAML branch.
+// Before #820 this function had an empty body, so a SAML tenant got 200 with
+// no content — which a browser renders as a blank page and a monitor records
+// as a successful login. An unimplemented path must fail like one; the two
+// SAML branches now agree, and neither can be mistaken for working.
+func (h *SSOLoginHandler) loginSAML(c *gin.Context, tenantID uuid.UUID, _ *sso.Config) {
+	h.Logger.Warn("sso_login: SAML login attempted but the SP is not implemented",
+		"tenant_id", tenantID)
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"error":   "saml_not_implemented",
+		"message": "SAML sign-in is not available; this tenant should be configured for OIDC",
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +290,7 @@ func (h *SSOLoginHandler) Callback(c *gin.Context) {
 	switch cfg.Provider {
 	case sso.ProviderOIDC:
 		var err error
-		claims, externalUserID, err = h.exchangeOIDC(c, tenantID)
+		claims, externalUserID, err = h.exchangeOIDC(c, tenantID, cfg)
 		if err != nil {
 			h.Logger.Warn("sso_callback: OIDC exchange failed", "tenant_id", tenantID, "err", err)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "auth_failed", "message": err.Error()})
@@ -329,7 +377,7 @@ func (h *SSOLoginHandler) Callback(c *gin.Context) {
 	c.Redirect(http.StatusFound, adminHomeRedirect)
 }
 
-func (h *SSOLoginHandler) exchangeOIDC(c *gin.Context, tenantID uuid.UUID) (claims map[string]any, sub string, err error) {
+func (h *SSOLoginHandler) exchangeOIDC(c *gin.Context, tenantID uuid.UUID, cfg *sso.Config) (claims map[string]any, sub string, err error) {
 	state := c.PostForm("state")
 	code := c.PostForm("code")
 
@@ -345,9 +393,9 @@ func (h *SSOLoginHandler) exchangeOIDC(c *gin.Context, tenantID uuid.UUID) (clai
 		return nil, "", fmt.Errorf("state tenant mismatch")
 	}
 
-	rp := h.oidcRP(tenantID)
-	if rp == nil {
-		return nil, "", fmt.Errorf("OIDC RP not configured for tenant")
+	rp, err := h.oidcRP(c.Request.Context(), cfg)
+	if err != nil {
+		return nil, "", fmt.Errorf("OIDC relying party unavailable: %w", err)
 	}
 
 	claimsMap, err := rp.Exchange(c.Request.Context(), code, expectedNonce)
@@ -414,6 +462,21 @@ func (h *SSOLoginHandler) Logout(c *gin.Context) {
 // loadConfig resolves tenantID from slug and loads its SSO config.
 // Returns (tenantID, config, true) on success; writes HTTP error and
 // returns (Nil, nil, false) on failure.
+// ssoNotFound is the ONE answer this route gives for every "you cannot sign in
+// here" case: unknown slug, no config, and config present but disabled.
+//
+// One function rather than three identical literals, because the property
+// being protected is that they are indistinguishable, and three copies of a
+// string is how they stop being. The route is unauthenticated, so any
+// difference between them enumerates tenants — and SSO being a Pro-tier
+// feature, enumerates paying customers.
+func ssoNotFound(c *gin.Context) {
+	c.JSON(http.StatusNotFound, gin.H{
+		"error":   "not_found",
+		"message": "no SSO configuration for this tenant",
+	})
+}
+
 func (h *SSOLoginHandler) loadConfig(c *gin.Context, slug string) (uuid.UUID, *sso.Config, bool) {
 	if h.TenantResolver == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "not_configured"})
@@ -423,10 +486,7 @@ func (h *SSOLoginHandler) loadConfig(c *gin.Context, slug string) (uuid.UUID, *s
 	tenantID, err := h.TenantResolver.ByTenantSlug(c.Request.Context(), slug)
 	if err != nil {
 		if errors.Is(err, ErrTenantNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error":   "not_found",
-				"message": "no SSO configuration for this tenant",
-			})
+			ssoNotFound(c)
 		} else {
 			h.Logger.Error("sso_login: tenant lookup failed", "slug", slug, "err", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
@@ -442,10 +502,7 @@ func (h *SSOLoginHandler) loadConfig(c *gin.Context, slug string) (uuid.UUID, *s
 	cfg, err := h.Repo.GetByTenant(c.Request.Context(), tenantID)
 	if err != nil {
 		if errors.Is(err, sso.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error":   "not_found",
-				"message": "no SSO configuration for this tenant",
-			})
+			ssoNotFound(c)
 		} else {
 			h.Logger.Error("sso_login: config load failed", "tenant_id", tenantID, "err", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})
@@ -454,10 +511,16 @@ func (h *SSOLoginHandler) loadConfig(c *gin.Context, slug string) (uuid.UUID, *s
 	}
 
 	if !cfg.Enabled {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error":   "not_found",
-			"message": "SSO is not enabled for this tenant",
-		})
+		// The SAME body as an unknown tenant and a missing config, not a
+		// more specific one.
+		//
+		// This route is unauthenticated. A distinguishable "SSO is not enabled
+		// for this tenant" tells anyone who asks that the tenant exists AND
+		// has an IdP configured — and since SSO is gated on the Pro tier, that
+		// also reports which customers are on Pro. The two neighbouring
+		// branches were already careful to say the same thing as each other;
+		// this one was not folded in with them.
+		ssoNotFound(c)
 		return uuid.Nil, nil, false
 	}
 
@@ -465,11 +528,14 @@ func (h *SSOLoginHandler) loadConfig(c *gin.Context, slug string) (uuid.UUID, *s
 }
 
 // oidcRP fetches the OIDC relying party for a tenant, or nil if absent.
-func (h *SSOLoginHandler) oidcRP(tenantID uuid.UUID) *sso.OIDCRelyingParty {
+// oidcRP returns the relying party for cfg's tenant, or an error explaining
+// why there is none. The error is for the LOG, never for the response: it can
+// name a customer's issuer and the shape of their secret store.
+func (h *SSOLoginHandler) oidcRP(ctx context.Context, cfg *sso.Config) (*sso.OIDCRelyingParty, error) {
 	if h.OIDCRPs == nil {
-		return nil
+		return nil, fmt.Errorf("sso: no relying-party source configured")
 	}
-	return h.OIDCRPs[tenantID.String()]
+	return h.OIDCRPs.For(ctx, cfg)
 }
 
 // clearSessionCookie instructs the browser to expire the Mark8ly session

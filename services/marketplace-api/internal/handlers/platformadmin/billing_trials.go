@@ -145,10 +145,20 @@ func (h *BillingTrialsHandler) list(c *gin.Context) {
 	// different question and an explicit one.
 	includeStripeManaged := c.Query("include_stripe_managed") == "true"
 
+	// Default false for the same reason, and a separate question again:
+	// a `signup` tenant is on a trial plan but never completed checkout, so
+	// it will never expire and never convert. It is listed only when asked
+	// for — see trial.ListOptions.IncludeSignup, which also explains why the
+	// trial_ends_at such a row reports is notional.
+	includeSignup := c.Query("include_signup") == "true"
+
 	ctx := c.Request.Context()
 	asOf := h.now()
 
-	rows, total, err := h.trials.ListExpiring(ctx, h.db, asOf, window, page, limit, trial.ListOptions{IncludeStripeManaged: includeStripeManaged})
+	rows, total, err := h.trials.ListExpiring(ctx, h.db, asOf, window, page, limit, trial.ListOptions{
+		IncludeStripeManaged: includeStripeManaged,
+		IncludeSignup:        includeSignup,
+	})
 	if err != nil {
 		h.respondErr(c, err)
 		return

@@ -28,6 +28,11 @@ import (
 type VendorEnsurer interface {
 	EnsureSelfVendor(ctx context.Context, tenantID, name, slug string) (*marketplaceapi.Vendor, error)
 	EnsureSelfStore(ctx context.Context, s marketplaceapi.Store) (*marketplaceapi.Store, error)
+	// EnsureSubscription starts the store's trial. Without it the 90-day
+	// clock does not begin at signup — it begins whenever a merchant first
+	// opens the admin Billing page, and never at all for one who does not
+	// (mark8ly#827).
+	EnsureSubscription(ctx context.Context, in marketplaceapi.EnsureSubscription) error
 }
 
 // Service is the business logic for the onboarding flow.
@@ -462,6 +467,26 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 			Status:       string(store.StatusActive),
 		}); sErr != nil {
 			log.Printf("onboarding.Complete: ensure self-store for tenant %s store %s: %v", t.ID, st.ID, sErr)
+		}
+
+		// Start the trial. AFTER EnsureSelfStore, because marketplace-api's
+		// store_subscriptions.store_id is an FK onto the projection that
+		// call creates.
+		//
+		// Same best-effort policy, and the same caveat as the store mirror:
+		// onboarding must not fail over it. But this one is worth a louder
+		// log line — a store with no subscription row has no trial, no
+		// expiry and no presence in any billing cron, which is the state
+		// mark8ly#827 found every store had been in.
+		if subErr := s.vendorClient.EnsureSubscription(ctx, marketplaceapi.EnsureSubscription{
+			StoreID:  st.ID,
+			TenantID: t.ID,
+			Email:    req.OwnerEmail,
+			Name:     st.Name,
+			Currency: st.CurrencyCode,
+		}); subErr != nil {
+			log.Printf("onboarding.Complete: ensure subscription for tenant %s store %s: %v — THIS STORE HAS NO TRIAL CLOCK",
+				t.ID, st.ID, subErr)
 		}
 	}
 

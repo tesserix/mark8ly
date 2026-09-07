@@ -320,7 +320,16 @@ func TestIntegration_Complete_DuplicateSlugRollsBackEverything(t *testing.T) {
 type fakeVendorClient struct {
 	calls      []struct{ tenantID, name, slug string }
 	storeCalls []marketplaceapi.Store
+	subCalls   []marketplaceapi.EnsureSubscription
 	err        error
+}
+
+// EnsureSubscription starts the store's trial (mark8ly#827). Recorded so a
+// test can assert both that it happens and that it happens AFTER the store
+// mirror — marketplace-api's FK depends on that order.
+func (f *fakeVendorClient) EnsureSubscription(_ context.Context, in marketplaceapi.EnsureSubscription) error {
+	f.subCalls = append(f.subCalls, in)
+	return f.err
 }
 
 // EnsureSelfStore mirrors the platform-api store row into marketplace-api.
@@ -470,5 +479,82 @@ func TestIntegration_Complete_SwallowsVendorError(t *testing.T) {
 	// Tenant row must exist despite vendor error.
 	if _, err := tenantRepo.GetByID(ctx, res.TenantID); err != nil {
 		t.Errorf("tenant row missing after swallowed vendor error: %v", err)
+	}
+}
+
+// The trial has to start at signup. Before mark8ly#827 nothing here created a
+// subscription row, so the 90-day clock began whenever the merchant first
+// opened the admin Billing page — and never, for one who did not.
+func TestIntegration_Complete_StartsTheTrial(t *testing.T) {
+	db := testdb.NewDB(t,
+		"outbox_events",
+		"verification_tokens",
+		"onboarding_sessions",
+		"tenants",
+	)
+
+	onboardingRepo := NewRepository(db)
+	fake := &fakeVendorClient{}
+	svc := NewService(Config{
+		DB:           db,
+		Repo:         onboardingRepo,
+		TenantRepo:   tenant.NewRepository(db),
+		Sender:       notification.NoopSender{},
+		EmailFrom:    "noreply@test.local",
+		SupportEmail: "help@test.local",
+		VendorClient: fake,
+	})
+
+	ctx := context.Background()
+	now := time.Now()
+	sess := &Session{
+		Email:           "trial-start@test.local",
+		Draft:           json.RawMessage(`{}`),
+		Status:          StatusInProgress,
+		EmailVerifiedAt: &now,
+	}
+	if err := onboardingRepo.Create(ctx, sess); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	res, err := svc.Complete(ctx, CompleteRequest{
+		SessionID:    sess.ID,
+		BusinessName: "Trial Start Co",
+		Slug:         "trial-start-co",
+		OwnerUserID:  "gip-uid-trial-start",
+		OwnerEmail:   "trial-start@test.local",
+		CountryCode:  "AU",
+		CurrencyCode: "AUD",
+		Timezone:     "Australia/Sydney",
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	if len(fake.subCalls) != 1 {
+		t.Fatalf("EnsureSubscription called %d times, want 1 — onboarding completed without starting a trial",
+			len(fake.subCalls))
+	}
+	got := fake.subCalls[0]
+	if got.TenantID != res.TenantID {
+		t.Errorf("tenant = %q, want %q", got.TenantID, res.TenantID)
+	}
+	if got.StoreID == "" {
+		t.Error("no store id — the callback cannot find the row it must attach to")
+	}
+	if got.Currency != "AUD" {
+		t.Errorf("currency = %q, want AUD — nothing supplies it to marketplace-api afterwards", got.Currency)
+	}
+
+	// store_subscriptions.store_id is an FK onto the stores projection
+	// EnsureSelfStore creates, so this ordering is a requirement rather than
+	// a preference. Asserted here because a reordering would still pass
+	// every other test in this file and fail only against a real database.
+	if len(fake.storeCalls) != 1 {
+		t.Fatalf("EnsureSelfStore called %d times, want 1", len(fake.storeCalls))
+	}
+	if fake.storeCalls[0].ID != got.StoreID {
+		t.Errorf("store mirrored = %q but subscription attached to %q",
+			fake.storeCalls[0].ID, got.StoreID)
 	}
 }

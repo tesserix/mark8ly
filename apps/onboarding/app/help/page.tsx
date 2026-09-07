@@ -110,7 +110,7 @@ const CATEGORIES: ReadonlyArray<FaqCategory> = [
       {
         question: "What's the difference between Starter, Studio, and Pro?",
         answer:
-          "All three include unlimited products and orders. Starter covers up to 2 stores. Studio adds up to 5 stores, custom CSS and fonts, a read-only API, and a 12-month audit log. Pro adds up to 10 stores, a full read/write API, SSO, and priority support.",
+          "All three include unlimited products and orders. Starter covers up to 2 stores. Studio adds up to 5 stores, custom CSS and fonts, a read-only API, and a 12-month audit log. Pro adds up to 10 stores, a full read/write API, and priority support.",
       },
     ],
   },

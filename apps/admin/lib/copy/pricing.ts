@@ -123,7 +123,6 @@ export const pricingCopy = {
         'Unlimited images',
         'Full read/write API',
         '100 webhook endpoints',
-        'SSO (SAML / OIDC)',
         'Priority support (4h response)',
         'Forever audit retention',
       ],

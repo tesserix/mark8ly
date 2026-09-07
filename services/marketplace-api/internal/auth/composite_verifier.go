@@ -66,7 +66,7 @@ func NewCompositeVerifier(verifiers []NamedVerifier, onVerified func(issuer stri
 // the last: the first entry is the primary issuer, so its error is the
 // one that describes the expected failure, and surfacing the last would
 // report a legacy issuer's complaint about a token never meant for it.
-// The caller (GIPBearerAuth) turns any error into an identical 401
+// The caller (BearerAuth) turns any error into an identical 401
 // regardless, so this only affects what an operator reads in a log.
 //
 // A failed verification records NO issuer: attributing a rejected token

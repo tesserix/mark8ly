@@ -62,8 +62,6 @@ func loginRouter(t *testing.T, lister TenantLister, backend MobileLoginBackend) 
 			AuthzMiddleware:  authz.NewMiddleware(authz.NewFakeClient(), nil),
 			StoresMiddleware: func(c *gin.Context) { c.Next() },
 		},
-		ZitadelEnabled: true,
-		DualIssuer:     true,
 		// RegisterAdminMobile disables the whole group without a verifier,
 		// so the login route needs one mounted even though it does not use
 		// it — signing in would be pointless with no authenticated route.

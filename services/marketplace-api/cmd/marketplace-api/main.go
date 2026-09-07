@@ -13,7 +13,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -1448,35 +1447,17 @@ func main() {
 	var mobileDeps admin.MobileDeps
 	var pubsubPushHandler gin.HandlerFunc
 	if m == mode.Admin || m == mode.Both {
-		// Bearer verifier for mobile admin routes (#524 phase 4):
-		// Zitadel when ZITADEL_ENABLED=true, otherwise the incumbent
-		// GIP/Firebase verifier — selectMobileTokenVerifier never falls
-		// back from one to the other, so a misconfigured or unreachable
-		// Zitadel disables mobile admin routes rather than quietly
-		// running them on GIP. cfg.ZitadelEnabled=true here always
-		// carries a non-empty issuer + audience: config.Load's
-		// Config.ValidateZitadel is checked unconditionally, so a
-		// missing value already panicked main() at boot, before this
-		// code could ever run misconfigured.
+		// Bearer verifier for mobile admin routes. Zitadel is the only
+		// issuer since #786 — the GIP/Firebase verifier is gone, so a
+		// misconfigured or unreachable Zitadel disables mobile admin
+		// routes rather than quietly running them on a legacy path.
+		// cfg.ZitadelEnabled=true here always carries a non-empty issuer
+		// + audience: config.Load's Config.ValidateZitadel is checked
+		// unconditionally, so a missing value already panicked main() at
+		// boot, before this code could ever run misconfigured.
 		tokenVerifier := selectMobileTokenVerifier(context.Background(), cfg, log,
 			func(ctx context.Context, issuer, audience string) (auth.TokenVerifier, error) {
 				return auth.NewZitadelVerifier(ctx, issuer, audience)
-			},
-			func() (auth.TokenVerifier, error) {
-				if cfg.GIPProjectID == "" {
-					return nil, nil
-				}
-				firebaseApp, err := firebase.NewApp(context.Background(), &firebase.Config{
-					ProjectID: cfg.GIPProjectID,
-				})
-				if err != nil {
-					return nil, fmt.Errorf("init firebase app: %w", err)
-				}
-				authClient, err := firebaseApp.Auth(context.Background())
-				if err != nil {
-					return nil, fmt.Errorf("init firebase auth client: %w", err)
-				}
-				return auth.NewGIPVerifier(authClient), nil
 			},
 		)
 		pushRepo := push.NewRepository(conn)
@@ -1542,29 +1523,14 @@ func main() {
 			PlatformSupportHandler: admin.NewPlatformSupportHandler(ottoChatClient, cfg.OttoWSPublicBase, log),
 			TeamHandler:            teamHandler,
 			MobileAccountHandler:   mobileAccountHandler,
-			// #524 phase 4 (blocking-fix round) — MUST be the exact same
-			// flag that selected tokenVerifier above. RegisterAdminMobile
-			// uses it to decide the single source of tenancy: FGA-validated
-			// X-Acting-Tenant-Id when true, the GIP custom claim when
-			// false. Passing anything other than cfg.ZitadelEnabled here
-			// would let a claim-based and an FGA-based tenant write
-			// compete (if both true) or would 404 every mobile-admin
-			// request on GIP (if TenantFromRequest ran with no client-side
-			// header support to feed it).
-			ZitadelEnabled: cfg.ZitadelEnabled,
-			// Dual-issuer relaxes the "exactly one tenancy writer" rule
-			// above into an ORDERING rule instead: both writers run, and
-			// the FGA-validated one runs second so it can only ever
-			// overwrite an unvalidated claim, never the reverse. See
-			// MobileDeps.DualIssuer.
-			DualIssuer:       cfg.ZitadelEnabled && cfg.ZitadelDualIssuer,
-			MyTenantsHandler: myTenantsHandler,
-			LoginHandler:     mobileLoginHandler,
-			IDPHandler:       mobileIDPHandler,
+			MyTenantsHandler:       myTenantsHandler,
+			LoginHandler:           mobileLoginHandler,
+			IDPHandler:             mobileIDPHandler,
 			// Resolves X-Acting-Tenant-Id via the same FGA client the rest
-			// of the admin surface already checks permissions against, for
-			// bearer tokens (Zitadel) that carry no tenant_id claim at
-			// all. Only consulted when ZitadelEnabled is true.
+			// of the admin surface already checks permissions against.
+			// Since #786 this is the ONLY source of tenancy on the mobile
+			// admin group: Zitadel tokens carry no tenant_id claim, and
+			// auth.BearerAuth ignores one if a token ever did.
 			TenantMembershipChecker: fgaClient,
 			TenantMembershipLogger:  log,
 		}

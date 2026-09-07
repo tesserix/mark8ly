@@ -60,10 +60,8 @@ func idpRouter(t *testing.T, lister TenantLister, backend MobileIDPBackend) *gin
 			AuthzMiddleware:  authz.NewMiddleware(authz.NewFakeClient(), nil),
 			StoresMiddleware: func(c *gin.Context) { c.Next() },
 		},
-		ZitadelEnabled: true,
-		DualIssuer:     true,
-		TokenVerifier:  &auth.FakeVerifier{UserID: "unused"},
-		IDPHandler:     NewMobileIDPHandler(lister, backend, testIDPReturnURL, nil),
+		TokenVerifier: &auth.FakeVerifier{UserID: "unused"},
+		IDPHandler:    NewMobileIDPHandler(lister, backend, testIDPReturnURL, nil),
 	})
 	return r
 }

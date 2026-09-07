@@ -45,8 +45,6 @@ func TestMobileMyTenants_IsReachableWithoutABoundTenant(t *testing.T) {
 			AuthzMiddleware:  authz.NewMiddleware(authz.NewFakeClient(), nil),
 			StoresMiddleware: func(c *gin.Context) { c.Next() },
 		},
-		ZitadelEnabled: true,
-		DualIssuer:     true,
 		// No tenant claim, and NO X-Acting-Tenant-Id on the request:
 		// exactly the state a client is in immediately after signing in.
 		TokenVerifier:           &auth.FakeVerifier{UserID: "389396765696066342"},
@@ -86,8 +84,6 @@ func TestMobileMyTenants_StillRequiresAValidToken(t *testing.T) {
 			AuthzMiddleware:  authz.NewMiddleware(authz.NewFakeClient(), nil),
 			StoresMiddleware: func(c *gin.Context) { c.Next() },
 		},
-		ZitadelEnabled:   true,
-		DualIssuer:       true,
 		TokenVerifier:    &auth.FakeVerifier{Err: auth.ErrInvalidToken},
 		MyTenantsHandler: NewMobileMyTenantsHandler(&fakeTenantLister{}, nil),
 	})
@@ -111,8 +107,6 @@ func TestMobileMyTenants_ZeroTenantsIsAnEmptyList(t *testing.T) {
 			AuthzMiddleware:  authz.NewMiddleware(authz.NewFakeClient(), nil),
 			StoresMiddleware: func(c *gin.Context) { c.Next() },
 		},
-		ZitadelEnabled:   true,
-		DualIssuer:       true,
 		TokenVerifier:    &auth.FakeVerifier{UserID: "u-new"},
 		MyTenantsHandler: NewMobileMyTenantsHandler(&fakeTenantLister{result: nil}, nil),
 	})
@@ -138,8 +132,6 @@ func TestMobileMyTenants_PlatformFailureIsNotAnEmptyList(t *testing.T) {
 			AuthzMiddleware:  authz.NewMiddleware(authz.NewFakeClient(), nil),
 			StoresMiddleware: func(c *gin.Context) { c.Next() },
 		},
-		ZitadelEnabled:   true,
-		DualIssuer:       true,
 		TokenVerifier:    &auth.FakeVerifier{UserID: "u-1"},
 		MyTenantsHandler: NewMobileMyTenantsHandler(&fakeTenantLister{err: errors.New("platform down")}, nil),
 	})

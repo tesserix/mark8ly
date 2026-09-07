@@ -12,7 +12,7 @@ import (
 // or care about any token claim; it only checks that a tenant was bound and
 // validated.
 //
-// This is the companion to GIPBearerAuth's deliberate decision to NOT reject
+// This is the companion to BearerAuth's deliberate decision to NOT reject
 // a token whose caller has no bound tenant yet. That change fixed a login
 // bounce loop (a 401 made the mobile client tear down a perfectly valid
 // session and redirect to /login), but on its own it would fail OPEN:

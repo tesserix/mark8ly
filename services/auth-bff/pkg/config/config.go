@@ -20,10 +20,13 @@ type Config struct {
 	HTTPPort    int    `envconfig:"HTTP_PORT" default:"8080"`
 	DatabaseURL string `envconfig:"DATABASE_URL" required:"true"`
 
-	// Google Identity Platform
-	GIPProjectID        string `envconfig:"GIP_PROJECT_ID" required:"true"`
-	GIPWebAPIKey        string `envconfig:"GIP_WEB_API_KEY" required:"true"`
-	GIPInternalTenantID string `envconfig:"GIP_INTERNAL_TENANT_ID" required:"true"` // staff/admin pool (e.g. MP-Internal-e986p)
+	// Google Identity Platform. Only the project id survives: it scopes
+	// the ID-token verifier the /auth/autologin path still uses. The web
+	// API key and internal tenant pool went with the Identity Toolkit
+	// accounts:lookup behind /auth/me/providers, which now reads Zitadel
+	// (#708). GIP_WEB_API_KEY / GIP_INTERNAL_TENANT_ID are droppable
+	// from the chart once this deploys.
+	GIPProjectID string `envconfig:"GIP_PROJECT_ID" required:"true"`
 
 	// Cookie session
 	SessionCookieName   string `envconfig:"SESSION_COOKIE_NAME" default:"m8_session"`

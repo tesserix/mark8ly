@@ -373,12 +373,35 @@ func main() {
 		}
 	}
 
+	// ─── Linked sign-in methods ────────────────────────────────────────
+	// One resolver, two surfaces: the merchant's own
+	// GET /auth/me/providers and marketplace-api's service-to-service
+	// GET /internal/users/:id/providers. The Google/Apple IDP ids are
+	// bound here because they are deployment config: they are what turns
+	// a Zitadel IDP link into the "google.com" name the panel keys on.
+	// Nil when no Zitadel client exists, which makes both endpoints
+	// answer 503 rather than an empty (and so actively wrong) list.
+	var linkedProviders session.LinkedProvidersResolver
+	if zitadelClient != nil {
+		linkedProviders = session.LinkedProvidersFunc(func(ctx context.Context, userID string) ([]session.LinkedProvider, error) {
+			found, err := zitadelClient.UserLinkedProviders(ctx, userID, cfg.ZitadelGoogleIDPID, cfg.ZitadelAppleIDPID)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]session.LinkedProvider, 0, len(found))
+			for _, p := range found {
+				out = append(out, session.LinkedProvider{ProviderID: p.ProviderID, Email: p.Email})
+			}
+			return out, nil
+		})
+	}
+
 	// ─── Session introspection + logout ────────────────────────────────
 	sessionHandler := session.NewHandler(sessions, fgaClient).
 		WithRegistry(sessionRegistry, log).
 		WithMFA(mfaSvc).
 		WithAudit(auditClient).
-		WithGIPLookup(cfg.GIPWebAPIKey, cfg.GIPInternalTenantID)
+		WithLinkedProviders(linkedProviders)
 
 	// ─── Cross-TLD admin handoff ───────────────────────────────────────
 	// Mints a session cookie scoped to a custom admin domain
@@ -436,25 +459,13 @@ func main() {
 	// for that user should say.
 	if zitadelClient != nil {
 		internalUsers = internalUsers.WithDisplayNames(zitadelClient)
-		// GET /internal/users/:id/providers backs the storefront's
-		// "Linked sign-in methods" panel (#787), which previously read
-		// Identity Toolkit from the storefront pod. The Google/Apple IDP
-		// ids are bound here because they are deployment config: they
-		// are what turns a Zitadel IDP link into the "google.com" name
-		// the panel keys on.
-		internalUsers = internalUsers.WithLinkedProviders(
-			session.LinkedProvidersFunc(func(ctx context.Context, userID string) ([]session.LinkedProvider, error) {
-				found, err := zitadelClient.UserLinkedProviders(ctx, userID, cfg.ZitadelGoogleIDPID, cfg.ZitadelAppleIDPID)
-				if err != nil {
-					return nil, err
-				}
-				out := make([]session.LinkedProvider, 0, len(found))
-				for _, p := range found {
-					out = append(out, session.LinkedProvider{ProviderID: p.ProviderID, Email: p.Email})
-				}
-				return out, nil
-			}),
-		)
+	}
+	// GET /internal/users/:id/providers backs the storefront's "Linked
+	// sign-in methods" panel (#787), which previously read Identity
+	// Toolkit from the storefront pod. Shares the resolver built above
+	// with the merchant surface so both answer in one vocabulary.
+	if linkedProviders != nil {
+		internalUsers = internalUsers.WithLinkedProviders(linkedProviders)
 	}
 	internalUsers.Register(internalGroup)
 

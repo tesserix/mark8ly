@@ -132,28 +132,22 @@ func TestIntegration_Complete_TenantAndOutboxCommitAtomically(t *testing.T) {
 		t.Errorf("payload.TenantID = %q, want %q", payload.TenantID, res.TenantID)
 	}
 
-	// ─── Step 3b: GIP claim outbox row exists, pending ─────────────────
-	var claimEv outbox.Event
-	if err := db.Where("kind = ?", GIPClaimOutboxKind).First(&claimEv).Error; err != nil {
-		t.Fatalf("gip claim outbox row missing: %v", err)
+	// ─── Step 3b: the retired GIP tenant-claim row is NOT enqueued ─────
+	// #791 removed the gip.set_tenant_claim write. Asserted by literal
+	// kind rather than a constant precisely because the constant is gone:
+	// this fails if the enqueue is ever reintroduced.
+	var retiredClaimRows int64
+	if err := db.Model(&outbox.Event{}).Where("kind = ?", "gip.set_tenant_claim").Count(&retiredClaimRows).Error; err != nil {
+		t.Fatal(err)
 	}
-	if claimEv.Status != outbox.StatusPending {
-		t.Errorf("gip claim outbox row Status = %q, want pending", claimEv.Status)
-	}
-	var claimPayload gipClaimPayload
-	if err := json.Unmarshal(claimEv.Payload, &claimPayload); err != nil {
-		t.Fatalf("unmarshal gip claim payload: %v", err)
-	}
-	if claimPayload.UserID != "gip-uid-completion" || claimPayload.TenantID != res.TenantID {
-		t.Errorf("gip claim payload = %+v, want uid gip-uid-completion tenant %s", claimPayload, res.TenantID)
+	if retiredClaimRows != 0 {
+		t.Errorf("gip.set_tenant_claim outbox rows = %d, want 0 — the GIP claim write was retired in #791", retiredClaimRows)
 	}
 
 	// ─── Step 4 + 5: drainer ticks, outbox completes, FGA has tuple ────
 	fake := authz.NewFake()
-	claimSetter := &recordingClaimSetter{}
 	d := outbox.NewDrainer(db, slog.New(slog.NewTextHandler(io.Discard, nil)), outbox.Config{})
 	d.Register(FGAOutboxKind, NewFGAOutboxHandler(fake))
-	d.Register(GIPClaimOutboxKind, NewGIPClaimOutboxHandler(claimSetter))
 
 	if err := d.Tick(ctx); err != nil {
 		t.Fatalf("drainer tick: %v", err)
@@ -172,28 +166,6 @@ func TestIntegration_Complete_TenantAndOutboxCommitAtomically(t *testing.T) {
 		t.Error("FGA ownership tuple was NOT written after drainer tick")
 	}
 
-	// ─── Step 6: claim event drained and the claim setter invoked ──────
-	if err := db.Where("kind = ?", GIPClaimOutboxKind).First(&claimEv).Error; err != nil {
-		t.Fatal(err)
-	}
-	if claimEv.Status != outbox.StatusCompleted {
-		t.Errorf("after drain: gip claim outbox Status = %q, want completed", claimEv.Status)
-	}
-	if len(claimSetter.calls) != 1 ||
-		claimSetter.calls[0].uid != "gip-uid-completion" ||
-		claimSetter.calls[0].tenantID != res.TenantID {
-		t.Errorf("claim setter calls = %+v, want one call for gip-uid-completion/%s", claimSetter.calls, res.TenantID)
-	}
-}
-
-// recordingClaimSetter records EnsureTenantClaim invocations.
-type recordingClaimSetter struct {
-	calls []struct{ uid, tenantID string }
-}
-
-func (r *recordingClaimSetter) EnsureTenantClaim(_ context.Context, uid, tenantID string) error {
-	r.calls = append(r.calls, struct{ uid, tenantID string }{uid, tenantID})
-	return nil
 }
 
 // TestIntegration_Complete_RejectsUnverifiedSession ensures completion

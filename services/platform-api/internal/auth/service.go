@@ -1,22 +1,27 @@
 // Package auth owns the platform-api side of the merchant password
-// flows. Sign-in itself is handled by auth-bff + GIP directly; this
-// package exists to move the password-reset email out of GIP (plain
-// text + exposed Firebase action URL) and into our own branded flow.
+// flows. Sign-in itself is handled by auth-bff against the identity
+// provider; this package exists to move the password-reset email out of
+// the provider's own default handler (plain text + an exposed vendor
+// action URL) and into our branded flow.
 //
 // The flow is:
 //  1. Admin app POSTs to /internal/auth/password-reset/request with
 //     an email.
-//  2. Service asks the GIP admin API for an oob code with
-//     returnOobLink=true (so GIP does not send its own email).
+//  2. Service asks the configured PasswordResetProvider to mint a reset
+//     code WITHOUT the provider sending its own email.
 //  3. Service renders the password_reset HTML/text template with a
 //     link to {admin}/reset-password?oobCode=... and dispatches via
 //     the shared SendGrid sender.
 //  4. User clicks the link, lands in the admin app, types a new
 //     password, and the admin POSTs to /internal/auth/password-reset/
 //     confirm with the oob code and new password.
-//  5. Service calls the public resetPassword Identity Toolkit endpoint
-//     with the oob code and new password. The oob code itself is
-//     proof-of-possession, so no admin token is required for confirm.
+//  5. Service hands the code and new password back to the provider. The
+//     code itself is proof-of-possession, so no admin token is required
+//     for confirm.
+//
+// The provider is *zitadeladmin.Client (#791 retired the GIP one). The
+// interface below is the whole contract; this package never names a
+// vendor.
 package auth
 
 import (
@@ -26,35 +31,33 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 	"github.com/mark8ly/platform-api/internal/notification"
 )
 
-// PasswordResetProvider is the subset of gipadmin.AdminClient the
-// password-reset flow needs: mint a reset code, then redeem one. Defined
-// as an interface — rather than depending on the concrete
-// *gipadmin.AdminClient type here — so a later provider (e.g. Zitadel,
-// #524 Phase 5) can satisfy the same contract without this package
-// changing.
+// PasswordResetProvider is the two-call contract the password-reset flow
+// needs from an identity provider: mint a reset code, then redeem one.
+// Defined as an interface — rather than naming a concrete client — so the
+// provider can be swapped without this package changing. It was, in #791:
+// the GIP client that originally satisfied it is gone and
+// *zitadeladmin.Client satisfies it unchanged.
 //
-// Construct the interface value ONLY when a real, non-nil client
-// exists — never assign a possibly-nil *gipadmin.AdminClient straight
-// into Config.Admin. Doing so would produce a non-nil interface value
-// wrapping a nil pointer (the "typed nil" trap documented in
-// cmd/server/account_wiring.go): every method below unconditionally
-// dereferences the client's config, so a caller's `!= nil` guard would
-// be defeated and the eventual call would panic. cmd/server/main.go
-// already follows the safe pattern: it only calls auth.NewService
-// inside the branch where gipadmin.New succeeded, so Admin here is
-// always a genuine, non-nil client.
+// Construct the interface value ONLY when a real, non-nil client exists —
+// never assign a possibly-nil concrete pointer straight into Config.Admin.
+// Doing so would produce a non-nil interface value wrapping a nil pointer
+// (the "typed nil" trap documented in cmd/server/account_wiring.go): every
+// method below unconditionally dereferences the client, so a caller's
+// `!= nil` guard would be defeated and the eventual call would panic.
+// cmd/server/provider_wiring.go's selectAccountProviders is the single
+// place that performs that guard; cmd/server/main.go only calls
+// auth.NewService when it returned a genuine, non-nil provider.
+//
+// Implementations classify their upstream failures into internal/idperr's
+// sentinels, which handler.go maps to HTTP statuses.
 type PasswordResetProvider interface {
 	SendPasswordResetOobCode(ctx context.Context, email string) (string, error)
 	ResetPassword(ctx context.Context, oobCode, newPassword string) error
 }
-
-// Compile-time proof that *gipadmin.AdminClient satisfies
-// PasswordResetProvider unchanged — this task adds no behaviour to it.
-var _ PasswordResetProvider = (*gipadmin.AdminClient)(nil)
 
 // Config bundles the dependencies and tunables for Service.
 type Config struct {
@@ -98,7 +101,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	if err != nil {
 		// Suppress enumeration: if the account doesn't exist, pretend
 		// success. Everything else is a real outage.
-		if errors.Is(err, gipadmin.ErrUserNotFound) {
+		if errors.Is(err, idperr.ErrUserNotFound) {
 			if s.cfg.Logger != nil {
 				s.cfg.Logger.Info("auth: password reset requested for unknown email",
 					"email", email)
@@ -143,7 +146,7 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, oobCode, newPassword
 		return fmt.Errorf("auth: oob_code is required")
 	}
 	if len(newPassword) < 8 {
-		return gipadmin.ErrWeakPassword
+		return idperr.ErrWeakPassword
 	}
 	return s.cfg.Admin.ResetPassword(ctx, oobCode, newPassword)
 }

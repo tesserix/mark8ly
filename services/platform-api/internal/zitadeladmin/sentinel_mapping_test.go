@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 )
 
 // TestSentinelMapping_MatchesHandlerContract is the test that proves the
@@ -14,7 +14,7 @@ import (
 // branches on with errors.Is (ErrUserNotFound, ErrInvalidOobCode,
 // ErrWeakPassword, ErrUnauthenticated, ErrTooManyAttempts, ErrUnavailable)
 // is reachable through this package's own error paths, asserted against
-// the SAME gipadmin.Err* values handler.go checks — not a locally
+// the SAME idperr.Err* values handler.go checks — not a locally
 // redeclared lookalike.
 //
 // These bodies deliberately carry NO details[0].id, exercising
@@ -33,7 +33,7 @@ func TestSentinelMapping_MatchesHandlerContract(t *testing.T) {
 			name:   "too many attempts on password reset request",
 			status: http.StatusTooManyRequests,
 			body:   `{"code":8,"message":"rate limit exceeded"}`,
-			want:   gipadmin.ErrTooManyAttempts,
+			want:   idperr.ErrTooManyAttempts,
 			via: func(c *Client) error {
 				_, err := c.SendPasswordResetOobCode(context.Background(), "merchant@example.com")
 				return err
@@ -43,7 +43,7 @@ func TestSentinelMapping_MatchesHandlerContract(t *testing.T) {
 			name:   "unauthenticated on password reset request (401)",
 			status: http.StatusUnauthorized,
 			body:   `{"code":16,"message":"invalid PAT"}`,
-			want:   gipadmin.ErrUnauthenticated,
+			want:   idperr.ErrUnauthenticated,
 			via: func(c *Client) error {
 				_, err := c.SendPasswordResetOobCode(context.Background(), "merchant@example.com")
 				return err
@@ -53,7 +53,7 @@ func TestSentinelMapping_MatchesHandlerContract(t *testing.T) {
 			name:   "unauthenticated on password reset request (403)",
 			status: http.StatusForbidden,
 			body:   `{"code":7,"message":"permission denied"}`,
-			want:   gipadmin.ErrUnauthenticated,
+			want:   idperr.ErrUnauthenticated,
 			via: func(c *Client) error {
 				_, err := c.SendPasswordResetOobCode(context.Background(), "merchant@example.com")
 				return err
@@ -63,7 +63,7 @@ func TestSentinelMapping_MatchesHandlerContract(t *testing.T) {
 			name:   "unavailable on 5xx during password reset request",
 			status: http.StatusBadGateway,
 			body:   `{"code":14,"message":"upstream failure"}`,
-			want:   gipadmin.ErrUnavailable,
+			want:   idperr.ErrUnavailable,
 			via: func(c *Client) error {
 				_, err := c.SendPasswordResetOobCode(context.Background(), "merchant@example.com")
 				return err
@@ -73,7 +73,7 @@ func TestSentinelMapping_MatchesHandlerContract(t *testing.T) {
 			name:   "invalid code on confirm",
 			status: http.StatusBadRequest,
 			body:   `{"code":3,"message":"the verification code is invalid or expired"}`,
-			want:   gipadmin.ErrInvalidOobCode,
+			want:   idperr.ErrInvalidOobCode,
 			via: func(c *Client) error {
 				return c.ResetPassword(context.Background(), encodeCompositeCode("user-1", "code"), "correct horse battery staple")
 			},
@@ -82,7 +82,7 @@ func TestSentinelMapping_MatchesHandlerContract(t *testing.T) {
 			name:   "weak password on confirm",
 			status: http.StatusBadRequest,
 			body:   `{"code":3,"message":"password fails the complexity policy"}`,
-			want:   gipadmin.ErrWeakPassword,
+			want:   idperr.ErrWeakPassword,
 			via: func(c *Client) error {
 				return c.ResetPassword(context.Background(), encodeCompositeCode("user-1", "code"), "weak")
 			},
@@ -139,10 +139,10 @@ func TestUpstreamUnavailable_DoesNotSurfaceAsCredentialError(t *testing.T) {
 	})
 
 	err := c.ResetPassword(context.Background(), encodeCompositeCode("user-1", "code"), "correct horse battery staple")
-	if !errors.Is(err, gipadmin.ErrUnavailable) {
+	if !errors.Is(err, idperr.ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
-	if errors.Is(err, gipadmin.ErrInvalidOobCode) || errors.Is(err, gipadmin.ErrWeakPassword) {
+	if errors.Is(err, idperr.ErrInvalidOobCode) || errors.Is(err, idperr.ErrWeakPassword) {
 		t.Fatalf("err = %v must not also match a credential sentinel", err)
 	}
 }
@@ -157,7 +157,7 @@ func TestNetworkFailureMapsToUnavailable(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	derr := c.DeleteAccount(context.Background(), "user-1")
-	if !errors.Is(derr, gipadmin.ErrUnavailable) {
+	if !errors.Is(derr, idperr.ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", derr)
 	}
 }

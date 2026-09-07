@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"log"
 	"strings"
 	"time"
 
@@ -36,18 +35,7 @@ type Service struct {
 	expiry      time.Duration
 	recorder    TokenRecorder
 	audit       *audit.Client // optional — emits staff lifecycle events
-	claims      TenantClaimSetter
 	provisioner StaffProvisioner
-}
-
-// TenantClaimSetter writes the tenant_id custom claim onto a GIP user.
-// Satisfied by gipadmin.AdminClient (EnsureTenantClaim). Optional — nil
-// skips claim writes (dev without GIP credentials). The claim is what
-// marketplace-api's mobile bearer auth resolves the tenant from; web
-// admin resolves membership via FGA and never reads it, which is why a
-// failure here degrades mobile only.
-type TenantClaimSetter interface {
-	EnsureTenantClaim(ctx context.Context, uid, tenantID string) error
 }
 
 // StaffProvisioner makes an invited teammate a usable sign-in identity
@@ -103,8 +91,6 @@ type Config struct {
 	// Audit posts cross-service audit events to marketplace-api.
 	// Optional — empty client makes every emit a no-op.
 	Audit *audit.Client
-	// Claims writes the GIP tenant_id custom claim on accept. Optional.
-	Claims TenantClaimSetter
 	// Provisioner creates the invitee's identity-provider account and
 	// project grant on accept. Nil on the GIP path — see
 	// StaffProvisioner's doc.
@@ -128,7 +114,6 @@ func NewService(cfg Config) *Service {
 		expiry:      cfg.Expiry,
 		recorder:    cfg.Recorder,
 		audit:       cfg.Audit,
-		claims:      cfg.Claims,
 		provisioner: cfg.Provisioner,
 	}
 }
@@ -521,22 +506,6 @@ func (s *Service) Accept(ctx context.Context, in AcceptInput) (*AcceptResult, er
 		return nil, err
 	}
 
-	// Stamp the GIP tenant_id claim so the invitee can use the mobile
-	// admin app, which resolves the tenant from the token claim alone.
-	// Best-effort: the FGA tuple written above is what web admin needs,
-	// so a failure here logs (mobile shows its "No store yet" empty
-	// state until the claim lands — e.g. via the backfill CLI) rather
-	// than failing the accept.
-	//
-	// Skipped on the Zitadel path: uid is a Zitadel user id there, and
-	// EnsureTenantClaim writes a GIP custom claim keyed by GIP uid. The
-	// call would resolve nothing, fail, and log a misleading line every
-	// time. The GIP path is untouched.
-	if s.claims != nil && s.provisioner == nil {
-		if err := s.claims.EnsureTenantClaim(ctx, uid, inv.TenantID); err != nil {
-			log.Printf("invitation.Accept: ensure tenant claim for uid %s tenant %s: %v", uid, inv.TenantID, err)
-		}
-	}
 	storeIDForEvent := ""
 	if inv.StoreID != nil {
 		storeIDForEvent = *inv.StoreID

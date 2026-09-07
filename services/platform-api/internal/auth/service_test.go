@@ -7,8 +7,9 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 	"github.com/mark8ly/platform-api/internal/notification"
+	"github.com/mark8ly/platform-api/internal/zitadeladmin"
 )
 
 // fakeProvider is an in-memory double for PasswordResetProvider.
@@ -55,7 +56,7 @@ func newTestService(admin PasswordResetProvider) *Service {
 // TestPasswordResetProvider_GuardedConstructionStaysGenuinelyNil is the
 // regression test for the incident documented in
 // cmd/server/account_wiring.go: assigning a possibly-nil concrete
-// *gipadmin.AdminClient into an interface produces a NON-NIL interface
+// *zitadeladmin.Client into an interface produces a NON-NIL interface
 // value wrapping a nil pointer, so a `!= nil` guard is defeated and a
 // later call panics on the nil receiver.
 //
@@ -65,17 +66,17 @@ func newTestService(admin PasswordResetProvider) *Service {
 // genuinely nil when no real client exists, so a `!= nil` guard sees it
 // as absent and nothing ever calls through it.
 //
-// MUTATION: assign the nil *gipadmin.AdminClient straight into the
+// MUTATION: assign the nil *zitadeladmin.Client straight into the
 // interface-typed variable (skip the "admin != nil" guard) and this test
 // fails, because "naive" would then also report != nil.
 func TestPasswordResetProvider_GuardedConstructionStaysGenuinelyNil(t *testing.T) {
-	var admin *gipadmin.AdminClient // nil concrete pointer — "unconfigured" case
+	var admin *zitadeladmin.Client // nil concrete pointer — "unconfigured" case
 
-	// The WRONG way: demonstrates the trap. A nil *gipadmin.AdminClient
+	// The WRONG way: demonstrates the trap. A nil *zitadeladmin.Client
 	// assigned directly into the interface is NOT a nil interface.
 	var naive PasswordResetProvider = admin
 	if naive == nil {
-		t.Fatal("sanity check failed: assigning a nil *AdminClient into an interface " +
+		t.Fatal("sanity check failed: assigning a nil *zitadeladmin.Client into an interface " +
 			"was expected to produce a non-nil interface (the well-known typed-nil trap) " +
 			"— if this now reports nil, the language/runtime assumption behind the guarded " +
 			"pattern below no longer holds")
@@ -102,9 +103,9 @@ func TestPasswordResetProvider_GuardedConstructionStaysGenuinelyNil(t *testing.T
 
 // TestNewService_AdminSetOnlyWhenRealClientExists documents that Config.Admin
 // must be populated with a genuinely non-nil PasswordResetProvider — never a
-// possibly-nil *gipadmin.AdminClient assigned straight through — mirroring
+// possibly-nil *zitadeladmin.Client assigned straight through — mirroring
 // how cmd/server/main.go only calls auth.NewService inside the branch where
-// gipadmin.New succeeded.
+// selectAccountProviders returned a real client.
 func TestNewService_AdminSetOnlyWhenRealClientExists(t *testing.T) {
 	fake := &fakeProvider{sendCode: "oob-abc"}
 	svc := newTestService(fake)
@@ -120,7 +121,7 @@ func TestNewService_AdminSetOnlyWhenRealClientExists(t *testing.T) {
 // --- Existing behaviour, unchanged --------------------------------------
 
 func TestRequestPasswordReset_UnknownEmailSuppressesEnumeration(t *testing.T) {
-	fake := &fakeProvider{sendErr: gipadmin.ErrUserNotFound}
+	fake := &fakeProvider{sendErr: idperr.ErrUserNotFound}
 	svc := newTestService(fake)
 
 	if err := svc.RequestPasswordReset(context.Background(), "nobody@example.com"); err != nil {
@@ -167,7 +168,7 @@ func TestConfirmPasswordReset_WeakPasswordRejectedBeforeProvider(t *testing.T) {
 	svc := newTestService(fake)
 
 	err := svc.ConfirmPasswordReset(context.Background(), "oob-xyz", "short")
-	if !errors.Is(err, gipadmin.ErrWeakPassword) {
+	if !errors.Is(err, idperr.ErrWeakPassword) {
 		t.Fatalf("err = %v, want ErrWeakPassword", err)
 	}
 	if fake.resetOob != "" {

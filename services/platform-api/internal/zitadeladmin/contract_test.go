@@ -8,7 +8,7 @@ import (
 )
 
 // passwordResetProviderShape mirrors internal/auth.PasswordResetProvider's
-// method set. Redeclared locally, following gipadmin's own
+// method set. Redeclared locally, following the retired GIP client's own
 // password_reset_provider_test.go convention, rather than importing
 // internal/auth directly: this proves *Client's methods are reachable
 // through dynamic dispatch, which is the property that actually matters,

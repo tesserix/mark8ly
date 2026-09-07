@@ -46,7 +46,7 @@ const (
 
 // The five password-complexity sentinels, one per rule the live policy
 // enforces. A caller branches on these with errors.Is; each one is also
-// reachable as gipadmin.ErrWeakPassword (see policyError.Unwrap) so the
+// reachable as idperr.ErrWeakPassword (see policyError.Unwrap) so the
 // existing coarse checks in internal/auth keep working unchanged.
 var (
 	ErrPasswordTooShort    = errors.New("zitadeladmin: password is shorter than the policy minimum")
@@ -115,7 +115,7 @@ var zitadelPasswordPolicyIDs = map[string]passwordPolicyRule{
 // for another (a credential in Cloud Logging).
 //
 // Unwrap returns BOTH the transport error (whose own chain ends at
-// gipadmin.ErrWeakPassword, see zitadelErrorIDSentinels) and the
+// idperr.ErrWeakPassword, see zitadelErrorIDSentinels) and the
 // rule-specific sentinel, so errors.Is matches either granularity.
 type policyError struct {
 	errorID string

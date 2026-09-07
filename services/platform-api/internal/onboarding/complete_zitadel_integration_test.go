@@ -112,15 +112,16 @@ func TestIntegration_Complete_ZitadelWritesBothOwnerTuples(t *testing.T) {
 		t.Errorf("tenant.OwnerUserID = %q, want zitadel-user-685", tn.OwnerUserID)
 	}
 
-	// The GIP tenant_id claim is a GIP-only concept keyed by GIP uid.
-	// Under Zitadel it would resolve nothing and be retried forever, so
-	// no row must be enqueued at all.
+	// The GIP tenant_id claim write was retired entirely in #791 — it was
+	// already skipped on this path, and nothing reads the claim any more.
+	// Asserted by literal kind because the constant is gone: this fails if
+	// the enqueue is ever reintroduced.
 	var claimCount int64
-	if err := db.Model(&outbox.Event{}).Where("kind = ?", GIPClaimOutboxKind).Count(&claimCount).Error; err != nil {
+	if err := db.Model(&outbox.Event{}).Where("kind = ?", "gip.set_tenant_claim").Count(&claimCount).Error; err != nil {
 		t.Fatal(err)
 	}
 	if claimCount != 0 {
-		t.Errorf("GIP claim outbox rows = %d, want 0 on the Zitadel path", claimCount)
+		t.Errorf("gip.set_tenant_claim outbox rows = %d, want 0 — retired in #791", claimCount)
 	}
 
 	fake := authz.NewFake()

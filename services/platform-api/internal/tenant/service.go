@@ -130,11 +130,19 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Tenant, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
-// GetByOwnerUserID returns the tenant owned by the given GIP UID.
+// GetByOwnerUserID returns the tenant owned by the given identity-provider
+// user id.
 //
-// Used by the returning-user sign-in flow: after Identity Toolkit hands
-// us a fresh id_token, the server action looks up which Mark8ly tenant
-// the UID owns so it can call auth-bff /auth/auto-login with a concrete
+// tenants.owner_user_id holds whichever provider minted the account:
+// historically a GIP uid, and a Zitadel user id for every tenant created
+// since the #524 cutover (onboarding.Complete writes the Zitadel id when
+// ZITADEL_ENABLED is set). Treat the value as an OPAQUE provider id —
+// nothing here may assume its shape, and #791 removed the last code that
+// did.
+//
+// Used by the returning-user sign-in flow: after the provider hands us a
+// fresh id_token, the server action looks up which Mark8ly tenant the uid
+// owns so it can call auth-bff /auth/auto-login with a concrete
 // workspace_tenant.
 func (s *Service) GetByOwnerUserID(ctx context.Context, uid string) (*Tenant, error) {
 	uid = strings.TrimSpace(uid)

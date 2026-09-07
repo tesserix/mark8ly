@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mark8ly/platform-api/internal/gipadmin"
+	"github.com/mark8ly/platform-api/internal/idperr"
 )
 
 func TestDeleteAccount_SucceedsOn200(t *testing.T) {
@@ -51,7 +51,7 @@ func TestDeleteAccount_UnavailableSurfacesAsUnavailable(t *testing.T) {
 		_, _ = w.Write([]byte(`{"code":14,"message":"backend unavailable"}`))
 	})
 	err := c.DeleteAccount(context.Background(), "user-1")
-	if !errors.Is(err, gipadmin.ErrUnavailable) {
+	if !errors.Is(err, idperr.ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
 }

@@ -21,7 +21,7 @@ func ssoRouterForRole(t *testing.T, role authz.Role, userID, tenantID string) *g
 	fga.Grant(userID, role, tenantID)
 	r := gin.New()
 	RegisterAdmin(r.Group("/"), Deps{
-		SSOConfigHandler: NewSSOConfigHandler(nil, nil, nil, nil),
+		SSOConfigHandler: NewSSOConfigHandler(nil, nil, nil),
 		AuthzMiddleware:  authz.NewMiddleware(fga, nil),
 	})
 	return r

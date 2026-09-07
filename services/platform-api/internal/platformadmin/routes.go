@@ -6,10 +6,12 @@
 // platformadmin) is built on — rather than reimplementing any of the
 // signing scheme here.
 //
-// This package intentionally starts small: a single conformance/health
-// read route proving the auth chain works end to end. Task 5 adds the
-// email-template routes; this file's Register and Deps are shaped so that
-// task only has to add fields and a mount guard, not restructure this one.
+// This package started small: a single conformance/health read route
+// proving the auth chain works end to end. Task 5 (mark8ly#720) adds the
+// email-template routes — welcome, email_verification, invitation,
+// password_reset, login_otp, new_device_login — mirroring the shape
+// marketplace-api's own platformadmin surface already serves for its half
+// of the same registry (orderdoc_*, giftcard_delivery, the billing keys).
 package platformadmin
 
 import (
@@ -19,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/platform-api/internal/audit"
+	"github.com/mark8ly/platform-api/internal/emailtemplates"
 	"github.com/mark8ly/platformauth"
 )
 
@@ -46,15 +49,38 @@ type Deps struct {
 
 	// Emitter is platform-api's existing fire-and-forget audit client
 	// (internal/audit.Client), which posts events to marketplace-api's
-	// /internal/audit-events ingest. It is not read by Register today —
-	// no write route exists on this surface yet — but it is plumbed
-	// through here so a future write route (Task 5) has an audit path to
-	// gate on immediately, matching marketplace-api's discipline: a write
-	// endpoint that cannot be attributed to an operator must not mount
-	// (see Deps.Emitter's doc comment in marketplace-api's routes.go). A
-	// nil Emitter must gate any future write route's mounting the same
-	// way; it does not gate the read route this task adds.
+	// /internal/audit-events ingest. It does NOT gate the email-template
+	// write below, even though the surface's general rule is "a write
+	// that cannot be attributed to an operator must not mount" — see the
+	// EmailTemplates/EmailTemplateRegistry doc comment below for why
+	// Emitter specifically cannot carry that attribution for this route,
+	// which is the same reason marketplace-api's own routes.go declines
+	// to require an Emitter for its email-templates PUT. It remains
+	// plumbed through here for whatever future write route on this
+	// surface deals in tenant-scoped changes, where it DOES apply.
 	Emitter *audit.Client
+
+	// EmailTemplates, EmailTemplateRegistry and EmailTemplateTestSender
+	// together serve /admin/email-templates (mark8ly#720 Task 5) — the
+	// auth/onboarding half of the registry (welcome, email_verification,
+	// invitation, password_reset, login_otp, new_device_login).
+	//
+	// Both EmailTemplates and EmailTemplateRegistry must be non-nil for any
+	// route to mount, matching marketplace-api's pairing: the registry is
+	// the only source for the fixed six-key list this handler treats as
+	// "registered" (see emailtemplates.Registry.RegisteredKeys), so
+	// mounting the read without it would report an incomplete list without
+	// looking incomplete.
+	//
+	// EmailTemplateTestSender may be nil: the test-send route still mounts
+	// and answers 503 not_configured. In production it never actually is
+	// nil, because internal/notification.NewFromConfig never returns a nil
+	// Sender (it falls back to a LogSender in dev) — see
+	// emailtemplates.NewNotificationTestSender's doc comment for what that
+	// means for a test-send in an environment with no provider key.
+	EmailTemplates          EmailTemplateStore
+	EmailTemplateRegistry   EmailTemplateRegistry
+	EmailTemplateTestSender emailtemplates.TestSender
 }
 
 // Register mounts the platform console's surface behind
@@ -89,4 +115,32 @@ func Register(g *gin.RouterGroup, deps Deps) {
 	// and a nil DB degrades its answer rather than failing to mount — see
 	// health.go.
 	NewHealthHandler(deps.DB, deps.Logger).Register(group)
+
+	if deps.EmailTemplates != nil && deps.EmailTemplateRegistry != nil {
+		// The PUT mounts only with a DB, exactly matching
+		// marketplace-api's EmailTemplates gate (services/marketplace-api/
+		// internal/handlers/platformadmin/routes.go) and for the SAME
+		// reason, not the surface's general Emitter rule:
+		//
+		// audit.Client.Emit requires a non-empty TenantID and no-ops with a
+		// logged warning otherwise (internal/audit/client.go) — the same
+		// constraint marketplace-api's audit_logs table enforces with a
+		// NOT NULL column. An email template key is estate-wide, so there
+		// is no tenant to supply either way. Requiring Emitter here would
+		// gate this route on a dependency that, once past the gate, could
+		// never actually attribute the write — a guard that guards
+		// nothing, which is worse than an honest one.
+		//
+		// What actually attributes the write is the revision row
+		// emailtemplates.Store.Upsert inserts on the SAME transaction as
+		// the change (migration 0018): a failed insert rolls the change
+		// back. That needs a database, so the database is the gate.
+		NewEmailTemplatesHandler(
+			deps.EmailTemplates, deps.EmailTemplateRegistry,
+			deps.EmailTemplateTestSender, deps.DB != nil, deps.DB, deps.Logger,
+		).Register(group)
+		if deps.DB == nil && deps.Logger != nil {
+			deps.Logger.Warn("platformadmin: email template write route not mounted — DB is required to record the change against an operator")
+		}
+	}
 }

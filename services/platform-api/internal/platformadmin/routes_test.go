@@ -93,6 +93,23 @@ func TestNegativeControl(t *testing.T) {
 			"the real, mounted route must reject an unsigned request with 401")
 	})
 
+	// mark8ly#720 Task 5: the same proof, extended to the email-template
+	// GET this task adds. This subtest uses its own router — built with
+	// EmailTemplates/EmailTemplateRegistry wired via
+	// emailTemplatesTestRouter (email_templates_test.go) — because plain
+	// r above has neither, so the route wouldn't mount at all and this
+	// would 404 for the wrong reason (unmounted, not unauthenticated),
+	// which is exactly the ambiguity this whole test exists to rule out.
+	t.Run("email templates route unsigned answers 401, not 404", func(t *testing.T) {
+		er := emailTemplatesTestRouter(t, testSecret, newMemNonces())
+		req := httptest.NewRequest(http.MethodGet, platformadmin.MountPrefix+"/admin/email-templates", nil)
+		w := httptest.NewRecorder()
+		er.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusUnauthorized, w.Code,
+			"the email-templates route must reject an unsigned request with 401")
+	})
+
 	t.Run("made-up path under the same prefix answers 404", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, platformadmin.MountPrefix+"/admin/this-route-does-not-exist", nil)
 		w := httptest.NewRecorder()

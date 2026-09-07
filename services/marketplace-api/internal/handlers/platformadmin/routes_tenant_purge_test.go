@@ -253,7 +253,7 @@ func TestRegister_BothTenantRouteTreesCoexistOnOneEngine(t *testing.T) {
 		// the wildcard collision in production; see routes.go's Register
 		// doc comment.
 		admin.RegisterAdmin(r.Group("/api/v1"), admin.Deps{
-			SSOConfigHandler: admin.NewSSOConfigHandler(nil, nil, nil, nil),
+			SSOConfigHandler: admin.NewSSOConfigHandler(nil, nil, nil),
 			AuthzMiddleware:  authz.NewMiddleware(authz.NewFakeClient(), nil),
 		})
 

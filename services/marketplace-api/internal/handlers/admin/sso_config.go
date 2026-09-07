@@ -27,17 +27,16 @@ import (
 //     only Pro+ tenants reach these handlers.
 type SSOConfigHandler struct {
 	Repo   *sso.Repository
-	GIP    *sso.GIPClient
 	Audit  *audit.Emitter
 	Logger *slog.Logger
 }
 
-// NewSSOConfigHandler constructs the handler. GIP and Audit may be nil (tests).
-func NewSSOConfigHandler(repo *sso.Repository, gip *sso.GIPClient, auditEmitter *audit.Emitter, logger *slog.Logger) *SSOConfigHandler {
+// NewSSOConfigHandler constructs the handler. Audit may be nil (tests).
+func NewSSOConfigHandler(repo *sso.Repository, auditEmitter *audit.Emitter, logger *slog.Logger) *SSOConfigHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &SSOConfigHandler{Repo: repo, GIP: gip, Audit: auditEmitter, Logger: logger}
+	return &SSOConfigHandler{Repo: repo, Audit: auditEmitter, Logger: logger}
 }
 
 // ssoUpsertRequest is the JSON body accepted by Upsert.
@@ -96,26 +95,6 @@ func (h *SSOConfigHandler) Upsert(c *gin.Context) {
 		return
 	}
 
-	// Best-effort GIP upload — failure does NOT roll back the DB write.
-	// The merchant can retry by calling Upsert again.
-	if h.GIP != nil {
-		if gipErr := h.uploadToGIP(c, tenantID, cfg); gipErr != nil {
-			h.Logger.Warn("sso_config: GIP upload failed (best-effort)",
-				"tenant_id", tenantID, "provider", cfg.Provider, "err", gipErr)
-			if h.Audit != nil {
-				h.Audit.Emit(c, audit.Event{
-					Action:       "sso.gip_upload.failed",
-					ResourceType: "sso_config",
-					ResourceID:   tenantID.String(),
-					Status:       audit.StatusFailure,
-					Severity:     audit.SeverityWarning,
-					Metadata:     map[string]any{"provider": string(cfg.Provider), "error": gipErr.Error()},
-					TenantID:     tenantID,
-				})
-			}
-		}
-	}
-
 	if h.Audit != nil {
 		h.Audit.Emit(c, audit.Event{
 			Action:       "sso.config.upserted",
@@ -165,7 +144,6 @@ func (h *SSOConfigHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	// Load config first so we know the provider for GIP cleanup.
 	cfg, err := h.Repo.GetByTenant(c.Request.Context(), tenantID)
 	if err != nil {
 		if err == sso.ErrNotFound {
@@ -187,14 +165,6 @@ func (h *SSOConfigHandler) Delete(c *gin.Context) {
 		h.Logger.Error("sso_config: delete failed", "tenant_id", tenantID, "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "message": "failed to delete SSO config"})
 		return
-	}
-
-	// Best-effort GIP cleanup.
-	if h.GIP != nil {
-		if gipErr := h.GIP.Delete(c.Request.Context(), tenantID, provider); gipErr != nil {
-			h.Logger.Warn("sso_config: GIP delete failed (best-effort)",
-				"tenant_id", tenantID, "provider", provider, "err", gipErr)
-		}
 	}
 
 	if h.Audit != nil {
@@ -270,31 +240,6 @@ func (h *SSOConfigHandler) requirePathTenantMatch(c *gin.Context) (uuid.UUID, bo
 	}
 
 	return pathTenant, true
-}
-
-// uploadToGIP pushes the config to GIP depending on provider type.
-func (h *SSOConfigHandler) uploadToGIP(c *gin.Context, tenantID uuid.UUID, cfg *sso.Config) error {
-	ctx := c.Request.Context()
-	switch cfg.Provider {
-	case sso.ProviderSAML:
-		payload := sso.SAMLProviderPayload{
-			IDPEntityID: stringMetaVal(cfg.Metadata, sso.SAMLKeyIDPEntityID),
-			IDPACSURL:   stringMetaVal(cfg.Metadata, sso.SAMLKeyIDPACSURL),
-			IDPCertPEM:  stringMetaVal(cfg.Metadata, sso.SAMLKeyIDPCertPEM),
-			DisplayName: "SAML SSO",
-		}
-		return h.GIP.UploadSAMLProvider(ctx, tenantID, payload)
-	case sso.ProviderOIDC:
-		payload := sso.OIDCProviderPayload{
-			Issuer:      stringMetaVal(cfg.Metadata, sso.OIDCKeyIssuer),
-			ClientID:    stringMetaVal(cfg.Metadata, sso.OIDCKeyClientID),
-			DisplayName: "OIDC SSO",
-			// ClientSecret intentionally omitted — it must come from Secret
-			// Manager at auth time, not stored in metadata.
-		}
-		return h.GIP.UploadOIDCProvider(ctx, tenantID, payload)
-	}
-	return nil
 }
 
 // redactConfig returns a copy of the config with sensitive fields removed so

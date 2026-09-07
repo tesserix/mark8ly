@@ -61,7 +61,7 @@ func TestSSOConfig_CrossTenantRead_Rejected(t *testing.T) {
 	tenantB := uuid.New()
 
 	// Handler wired with nil repo — the tenant-match check fires before any DB call.
-	h := NewSSOConfigHandler(nil, nil, nil, nil)
+	h := NewSSOConfigHandler(nil, nil, nil)
 
 	// Auth as tenant B, request tenant A's config.
 	router := newSSOTestRouter(h, tenantB)
@@ -73,7 +73,7 @@ func TestSSOConfig_CrossTenantUpsert_Rejected(t *testing.T) {
 	tenantA := uuid.New()
 	tenantB := uuid.New()
 
-	h := NewSSOConfigHandler(nil, nil, nil, nil)
+	h := NewSSOConfigHandler(nil, nil, nil)
 	router := newSSOTestRouter(h, tenantB)
 
 	body := map[string]any{
@@ -89,7 +89,7 @@ func TestSSOConfig_CrossTenantDelete_Rejected(t *testing.T) {
 	tenantA := uuid.New()
 	tenantB := uuid.New()
 
-	h := NewSSOConfigHandler(nil, nil, nil, nil)
+	h := NewSSOConfigHandler(nil, nil, nil)
 	router := newSSOTestRouter(h, tenantB)
 
 	w := doJSON(router, http.MethodDelete, "/admin/tenants/"+tenantA.String()+"/sso/config", nil)
@@ -102,7 +102,7 @@ func TestSSOConfig_CrossTenantDelete_Rejected(t *testing.T) {
 
 func TestSSOConfig_InvalidAttrMapping_Returns400(t *testing.T) {
 	tenantID := uuid.New()
-	h := NewSSOConfigHandler(nil, nil, nil, nil)
+	h := NewSSOConfigHandler(nil, nil, nil)
 	router := newSSOTestRouter(h, tenantID)
 
 	// attr_mapping value doesn't start with "claims." — must be rejected.
@@ -128,7 +128,7 @@ func TestSSOConfig_InvalidAttrMapping_Returns400(t *testing.T) {
 
 func TestSSOConfig_MissingRequiredMetadata_Returns400(t *testing.T) {
 	tenantID := uuid.New()
-	h := NewSSOConfigHandler(nil, nil, nil, nil)
+	h := NewSSOConfigHandler(nil, nil, nil)
 	router := newSSOTestRouter(h, tenantID)
 
 	// SAML config missing idp_cert_pem.
@@ -147,7 +147,7 @@ func TestSSOConfig_MissingRequiredMetadata_Returns400(t *testing.T) {
 
 func TestSSOConfig_InvalidProvider_Returns400(t *testing.T) {
 	tenantID := uuid.New()
-	h := NewSSOConfigHandler(nil, nil, nil, nil)
+	h := NewSSOConfigHandler(nil, nil, nil)
 	router := newSSOTestRouter(h, tenantID)
 
 	body := map[string]any{
@@ -161,7 +161,7 @@ func TestSSOConfig_InvalidProvider_Returns400(t *testing.T) {
 
 func TestSSOConfig_InvalidTenantIDInPath_Returns400(t *testing.T) {
 	tenantID := uuid.New()
-	h := NewSSOConfigHandler(nil, nil, nil, nil)
+	h := NewSSOConfigHandler(nil, nil, nil)
 
 	r := gin.New()
 	r.Use(func(c *gin.Context) {

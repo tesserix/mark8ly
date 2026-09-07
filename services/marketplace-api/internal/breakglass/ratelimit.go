@@ -67,6 +67,30 @@ func (l *LoginRateLimiter) Reset(key string) {
 	delete(l.attempts, key)
 }
 
+// LoginRateLimitKey shapes a LoginRateLimiter bucket key from an
+// ip_hash. THE single source of truth for this shape — both
+// internal/handlers/admin (the login path, which records failures and
+// resets on success) and internal/handlers/platformadmin (the
+// clear-lockout write path, which resets the same bucket) call this
+// directly rather than each keeping their own copy. Before this
+// existed, the two packages each defined a byte-for-byte identical
+// private function with a prose comment promising they'd stay in sync
+// — a promise nothing enforced. A key shaped differently in one place
+// than the other means clear-lockout resets a bucket the login path
+// never reads: the durable DB lockout clears, the operator sees
+// success, and the in-memory limiter silently keeps refusing the IP.
+//
+// Keeping only the first 16 bytes of ip_hash avoids memory bloat across
+// many concurrent IPs; 16 bytes of a HMAC-SHA256 output is still
+// effectively collision-free for this purpose.
+func LoginRateLimitKey(ipHash []byte) string {
+	n := len(ipHash)
+	if n > 16 {
+		n = 16
+	}
+	return string(ipHash[:n])
+}
+
 // Count returns the current in-window failure count for key. Useful
 // for tests; production code should use RecordFailure's return value.
 func (l *LoginRateLimiter) Count(key string) int {

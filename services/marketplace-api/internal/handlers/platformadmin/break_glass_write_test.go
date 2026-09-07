@@ -246,7 +246,7 @@ func TestBreakGlassWrite_ClearLockout_ResetsTheRateLimiterWithTheLoginPathKeySha
 	ipHash := breakglass.HMACIPHash(key, "198.51.100.9")
 	wantKey := string(ipHash[:16])
 	require.Equal(t, []string{wantKey}, limiter.resetOn,
-		"the rate limiter must be Reset with the same key shape the login handler's rlKey computes")
+		"the rate limiter must be Reset with the same key shape breakglass.LoginRateLimitKey computes")
 }
 
 func TestBreakGlassWrite_ClearLockout_NilRateLimiterDoesNotPanic(t *testing.T) {

@@ -151,8 +151,17 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 	// the recovery path, it MUST work when the subscription is
 	// expired / store_closed / pending_hard_delete. Rate-limit + dual-
 	// factor verification live inside the handler itself.
+	//
+	// Gated on FeatureSSO (Pro+ only) — break-glass exists to recover
+	// admin access when a tenant's SSO config is broken, so a tenant that
+	// never had SSO gets the same 403 the SSO config endpoints give.
+	// RequireBreakGlassFeature (not plangate.RequireFeatureByTenant) runs
+	// here because there is deliberately no auth middleware upstream to
+	// have set tenant_id on the context — see that function's doc.
 	if deps.BreakGlassLoginHandler != nil {
-		router.POST("/admin/break-glass/login", deps.BreakGlassLoginHandler.Login)
+		router.POST("/admin/break-glass/login",
+			RequireBreakGlassFeature(deps.PlanResolver, plangate.FeatureSSO, deps.APIKeysLogger),
+			deps.BreakGlassLoginHandler.Login)
 	}
 
 	// P13 §12 — SSO config. Tenant-wide, Pro-gated, outside /stores/:storeId.

@@ -110,21 +110,6 @@ func (h *BreakGlassWriteHandler) Register(g *gin.RouterGroup) {
 	g.POST("/admin/break-glass/clear-lockout", h.clearLockout)
 }
 
-// breakGlassRLKey MUST stay byte-identical to rlKey in
-// internal/handlers/admin/break_glass_login.go: both shape the same
-// LoginRateLimiter bucket key from an ip_hash, and the login path resets
-// that bucket on a successful login. A key that shapes the hash
-// differently here would mean clear-lockout resets a bucket the login
-// path never reads, leaving the in-memory limiter stuck even though the
-// durable DB lock was cleared.
-func breakGlassRLKey(ipHash []byte) string {
-	n := len(ipHash)
-	if n > 16 {
-		n = 16
-	}
-	return string(ipHash[:n])
-}
-
 func (h *BreakGlassWriteHandler) parseTenantID(c *gin.Context) (uuid.UUID, bool) {
 	id, err := uuid.Parse(strings.TrimSpace(c.Param("tenantId")))
 	if err != nil {
@@ -341,7 +326,7 @@ func (h *BreakGlassWriteHandler) clearLockout(c *gin.Context) {
 	// counter would be untouched by this call. That is current luck, not
 	// design (#404).
 	if h.rateLimiter != nil {
-		h.rateLimiter.Reset(breakGlassRLKey(ipHash))
+		h.rateLimiter.Reset(breakglass.LoginRateLimitKey(ipHash))
 	} else {
 		h.logger.Warn("break-glass: clear-lockout has no rate limiter wired; only the durable DB lock was cleared")
 	}

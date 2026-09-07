@@ -306,6 +306,22 @@ type Config struct {
 	// on the first merchant credential save. Unused otherwise.
 	OpenBaoKVMount string `envconfig:"OPENBAO_KV_MOUNT" default:"kv"`
 
+	// BreakGlassIPHMACKey fingerprints caller IPs before they hit the
+	// break-glass audit log or the break_glass_lockouts table (§12.4) —
+	// raw IPs must never be persisted. Empty is a safe (if weaker)
+	// default: breakglass.HMACIPHash still runs with an empty key rather
+	// than panicking, so an unset value degrades to a deterministic but
+	// guessable hash instead of crash-looping the service. Set via
+	// ExternalSecret in production, same pattern as InternalAuthSecret.
+	BreakGlassIPHMACKey string `envconfig:"BREAK_GLASS_IP_HMAC_KEY" default:""`
+	// BreakGlassSlackWebhookURL posts a #security-alerts notice on every
+	// break-glass login attempt (success and failure). Empty leaves
+	// Slack unwired — the login/audit/lockout path works exactly the
+	// same without it, since breakglass.SlackClient is a best-effort
+	// post-use hook (BreakGlassLoginHandler nil-checks it), not a
+	// dependency the login itself needs.
+	BreakGlassSlackWebhookURL string `envconfig:"BREAK_GLASS_SLACK_WEBHOOK_URL" default:""`
+
 	// Zitadel bearer verifier for mobile admin routes (#524 phase 4).
 	// Mirrors auth-bff's ZITADEL_ENABLED shape: an explicit boolean,
 	// defaulting to false. Since #786 removed the GIP verifier it is a

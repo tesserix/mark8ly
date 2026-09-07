@@ -32,16 +32,16 @@ type breakGlassTenantIDPeek struct {
 }
 
 // RequireBreakGlassFeature returns middleware that 403s a break-glass login
-// attempt for a tenant whose plan doesn't include feature, mirroring
-// plangate.RequireFeatureByTenant's response shape.
+// attempt for a tenant whose plan doesn't meet minPlan, mirroring
+// plangate.RequirePlan's response shape.
 //
-// It cannot reuse RequireFeatureByTenant as-is: that function reads
-// tenant_id off the Gin context, which is only ever set by upstream auth
-// middleware — and POST /admin/break-glass/login deliberately runs with
-// NONE. This is the recovery path; requiring a working auth pipeline to
-// reach it would defeat the point. The tenant id it needs instead travels
-// in the JSON body (breakGlassLoginRequest.TenantID), exactly like every
-// other input to this handler.
+// It cannot reuse RequirePlan as-is: that function reads tenant_id off the
+// Gin context, which is only ever set by upstream auth middleware — and
+// POST /admin/break-glass/login deliberately runs with NONE. This is the
+// recovery path; requiring a working auth pipeline to reach it would defeat
+// the point. The tenant id it needs instead travels in the JSON body
+// (breakGlassLoginRequest.TenantID), exactly like every other input to this
+// handler.
 //
 // So this middleware peeks the body: reads it fully, restores
 // c.Request.Body so the handler's own c.ShouldBindJSON still sees the full
@@ -55,7 +55,7 @@ type breakGlassTenantIDPeek struct {
 // shape must never reveal which check failed. Duplicating that rejection
 // here, with a differently-shaped error, would break that invariant for
 // exactly the requests this middleware runs on.
-func RequireBreakGlassFeature(resolver breakGlassPlanResolver, feature plangate.Feature, logger *slog.Logger) gin.HandlerFunc {
+func RequireBreakGlassFeature(resolver breakGlassPlanResolver, minPlan plangate.Plan, logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tenantID, ok := peekBreakGlassTenantID(c)
 		if !ok {
@@ -64,14 +64,12 @@ func RequireBreakGlassFeature(resolver breakGlassPlanResolver, feature plangate.
 		}
 
 		plan := resolver.ResolveByTenant(c.Request.Context(), tenantID)
-		if !plangate.IsAllowed(plan, feature) {
-			minPlan := plangate.MinPlanForFeature(feature)
+		if !plangate.PlanAtLeast(plan, minPlan) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error":    "plan_required",
 				"message":  fmt.Sprintf("This feature requires the %s plan or higher", minPlan),
 				"required": string(minPlan),
 				"current":  string(plan),
-				"feature":  string(feature),
 			})
 			c.Abort()
 			return

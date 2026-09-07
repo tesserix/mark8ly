@@ -1,13 +1,12 @@
 // Package auth — Zitadel token verifier.
 //
 // ZitadelVerifier verifies Zitadel-issued bearer access tokens (JWTs) using
-// github.com/coreos/go-oidc/v3, the same OIDC library already used by
-// internal/sso/oidc.go for the SSO relying-party flow. That package
-// discovers the IDP's JWKS via /.well-known/openid-configuration and hands
-// back an *oidc.IDTokenVerifier that performs full RS256 signature
-// verification against the fetched keys, plus issuer and expiry checks —
-// exactly what's needed here, and exactly what this codebase already
-// trusts elsewhere. There is no hand-rolled JWT parsing in this file.
+// github.com/coreos/go-oidc/v3. That package discovers the IDP's JWKS via
+// /.well-known/openid-configuration and hands back an *oidc.IDTokenVerifier
+// that performs full RS256 signature verification against the fetched keys,
+// plus issuer and expiry checks — exactly what's needed here, and exactly
+// what this codebase already trusts elsewhere. There is no hand-rolled JWT
+// parsing in this file.
 package auth
 
 import (

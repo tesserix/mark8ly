@@ -51,7 +51,6 @@ import (
 // route-by-route (that half-mirrored state is exactly how both bugs happened).
 var webOnlySubtrees = map[string]string{
 	"/break-glass":                              "emergency recovery login — deliberately web-only; the flow is a browser link from a support email",
-	"/tenants/:tenantId/sso":                    "enterprise SSO config (Pro-gated, tenant-wide) — configured once from a desktop, no mobile UI planned",
 	"/stores/:storeId/abandoned-carts":          "no mobile screen — cart recovery is a desktop marketing workflow",
 	"/stores/:storeId/api-keys":                 "developer API key management — secrets are shown once and copy/pasted into a terminal; deliberately desktop-only",
 	"/stores/:storeId/app-credentials":          "white-label app signing certificate upload — file uploads from a laptop only",

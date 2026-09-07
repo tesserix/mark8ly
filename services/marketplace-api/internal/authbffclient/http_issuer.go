@@ -19,9 +19,8 @@ import (
 const internalAuthHeader = "X-Internal-Auth"
 
 // defaultHTTPIssuerTimeout bounds a single mint-session call. Issuance
-// happens synchronously inside a request handler (break-glass login,
-// SSO callback) — a hung auth-bff must not hang the caller's request
-// forever.
+// happens synchronously inside a request handler (break-glass login) —
+// a hung auth-bff must not hang the caller's request forever.
 const defaultHTTPIssuerTimeout = 5 * time.Second
 
 // HTTPIssuer is the production SessionIssuer. It POSTs to auth-bff's
@@ -63,8 +62,8 @@ func NewHTTPIssuerWithClient(baseURL, secret string, httpClient *http.Client) *H
 // fails loudly with ErrIssuerUnavailable instead of a misconfigured
 // deploy silently serving an unauthenticated route. InternalAuthSecret
 // is already required outside dev (pkg/config Validate), and AuthBFFURL
-// is optional there — so a break-glass/SSO deploy without AuthBFFURL
-// set is a valid, if degraded, state: those routes 500 instead of
+// is optional there — so a break-glass deploy without AuthBFFURL set
+// is a valid, if degraded, state: those routes 500 instead of
 // crash-looping the whole service.
 func NewSessionIssuer(baseURL, secret string, httpClient *http.Client) SessionIssuer {
 	if baseURL == "" || secret == "" {

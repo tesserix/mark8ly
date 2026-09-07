@@ -19,7 +19,7 @@ removes the feature:
 | ~~Storefront **customer** token verification~~ **RESOLVED (#787)** | was `marketplace-api/internal/handlers/storefront/gip_customer_verifier.go` + its `main.go` wiring | None, and deliberately no replacement. `RegisterMobileStorefrontSupport` was the only mount, and its only client was the single-tenant storefront mobile app — never shipped, zero traffic across both engines, and itself deleted in #792. Shipping an untested Zitadel verifier with no caller is worse than removing it, so #792 rebuilds these routes and their auth together. `GIPProjectID` and the Firebase app it built are gone from marketplace-api. |
 | ~~Customer linked-providers view~~ **RESOLVED (#787)** | was `apps/storefront/app/api/account/providers/route.ts` calling Identity Toolkit `accounts:lookup` with `GIP_WEB_API_KEY`; now that route calls auth-bff's `GET /internal/users/:id/providers`, backed by `zitadellogin.Client.UserLinkedProviders` | None. The route's response shape is unchanged, so `SecurityClient.tsx` and `LinkedProvidersPanel` needed no edit. Zitadel `PASSWORD` maps to `password`; an `IDP` method is resolved through `POST /v2/users/{id}/links/_search` and the link's `idpId` matched against `ZITADEL_GOOGLE_IDP_ID` / `ZITADEL_APPLE_IDP_ID` to yield `google.com` / `apple.com`. |
 | Custom-domain browser-key allowlist | `marketplace-api/internal/gipkey` + `main.go:545-579` | A merchant's storefront sign-in stops working from their verified custom domain. Self-service feature. |
-| Tenant SAML/OIDC SSO | `marketplace-api/internal/sso/gip_client.go` | Enterprise tenant SSO provisioning disappears. May already be dark — nothing in `main.go` constructs it — confirm before deciding. |
+| ~~Tenant SAML/OIDC SSO~~ **RESOLVED (#820)** | was `marketplace-api/internal/sso` + the admin/public SSO handlers | None. It was already dark exactly as suspected here: `gip_client.go` was gone before this audit ran (deleted in #789), and neither `NewSSOConfigHandler` nor `NewSSOLoginHandler` was ever called from `main.go`. Retired outright rather than rewritten — the whole implementation was GIP-based with no Zitadel replacement, so finishing it would have meant a rewrite from scratch, not a wiring fix. `tenant_sso_configs` / `tenant_sso_user_mappings` held zero rows and are dropped by migration 000136. |
 | ~~Merchant display-name seeding~~ **RESOLVED (#790)** | was `marketplace-api/internal/gipuser`; now `marketplace-api/internal/displayname` (`SetDisplayNames`) reading auth-bff's `GET /internal/users/:id/display-name`, backed by `zitadellogin.Client.UserDisplayName` | None. `internal/gipuser` is deleted. The seam is provider-neutral and wired unconditionally, so Zitadel-mode merchants now get the name too — closing the pre-existing gap rather than merely preserving it. |
 | ~~Invite tenant-claim write~~ **RESOLVED (#791)** | was `platform-api/internal/gipadmin` + `cmd/server/provider_wiring.go` | None. No replacement was needed: #786/#800 removed the last reader of the `tenant_id` claim from marketplace-api, and the `gip.set_tenant_claim` outbox was verified drained in production (5 rows, all `completed`, newest 2026-07-31) before the write was retired. `internal/gipadmin` is deleted along with `requireGIPForTenantClaim`, `newTenantClaimSetter` and `cmd/backfill-gip-claims`; its sentinel errors moved to `internal/idperr`. |
 
@@ -163,15 +163,17 @@ migration. Suggested split:
    `isZitadelProvider` branches, `gip.ts` and the Firebase backend. Gated on
    turning **dual-issuer off**.
 3. **Feature replacements** (one issue each, each needs a decision): storefront
-   customer verification; custom-domain key allowlist; tenant SSO;
-   ~~display-name seeding~~ (#790); ~~invite tenant-claim~~ (#791 — no
-   replacement needed, see the table above).
+   customer verification; custom-domain key allowlist; ~~tenant SSO~~ (#820 —
+   retired outright, no replacement); ~~display-name seeding~~ (#790);
+   ~~invite tenant-claim~~ (#791 — no replacement needed, see the table
+   above).
 4. **Storefront/customer cutover**: `marketplace-api-storefront`'s
    `ZITADEL_ENABLED`, plus `apps/mobile-storefront` and `apps/storefront-mobile`
    migrations.
-5. **Schema and pools, last**: `customer_profiles.gip_uid` (+ migration 000084),
-   `tenant_sso_configs.gip_provider_id`, and finally the GCP tenant pools —
-   human-approved, irreversible.
+5. **Schema and pools, last**: `customer_profiles.gip_uid` (+ migration 000084)
+   and finally the GCP tenant pools — human-approved, irreversible.
+   `tenant_sso_configs.gip_provider_id` no longer applies: #820 dropped both
+   SSO tables outright (migration 000136) rather than migrating them.
 
 Steps 1 and 2 are the only ones that are cleanup. Steps 3 and 4 are migration
 work that has not been scoped anywhere yet.

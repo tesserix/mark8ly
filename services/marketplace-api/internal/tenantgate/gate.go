@@ -2,17 +2,16 @@
 // refuses ALL admin traffic for a suspended tenant (#287).
 //
 // StoreMiddleware (internal/stores) already refuses a suspended tenant on
-// /admin/stores/:storeId, but that group is one of FIVE admin route groups
-// (four web + the mobile group, internal/handlers/admin/mobile_routes.go,
+// /admin/stores/:storeId, but that group is one of FOUR admin route groups
+// (three web + the mobile group, internal/handlers/admin/mobile_routes.go,
 // which was missed in the original design and fixed under F1/#287). The
-// other four — /admin, /admin/account, the SSO group
-// /admin/tenants/:tenantId, and the mobile group's non-store-scoped routes
-// (platform-support, account, /mobile/admin/stores) — are tenant-scoped,
-// not store-scoped, so StoreMiddleware never runs on them. A suspended
-// tenant with an existing session (or a tenant with zero stores) would
-// otherwise keep full access to those groups until the session expired.
-// This package closes that gap at the tenant level, independent of any
-// specific store.
+// other three — /admin, /admin/account, and the mobile group's
+// non-store-scoped routes (platform-support, account,
+// /mobile/admin/stores) — are tenant-scoped, not store-scoped, so
+// StoreMiddleware never runs on them. A suspended tenant with an existing
+// session (or a tenant with zero stores) would otherwise keep full access
+// to those groups until the session expired. This package closes that gap
+// at the tenant level, independent of any specific store.
 //
 // Deliberately NOT modelled on internal/subscription/readonly: that
 // middleware allowlists billing/tax/recovery routes because a read-only

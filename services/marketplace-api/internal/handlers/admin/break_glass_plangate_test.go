@@ -37,7 +37,7 @@ func breakGlassGateRouter(resolver *fakePlanResolver) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.POST("/admin/break-glass/login",
-		admin.RequireBreakGlassFeature(resolver, plangate.FeatureSSO, nil),
+		admin.RequireBreakGlassFeature(resolver, subscription.PlanPro, nil),
 		func(c *gin.Context) {
 			// Stand-in for BreakGlassLoginHandler.Login: proves the body
 			// the gate peeked is STILL fully readable downstream.
@@ -53,11 +53,11 @@ func readAll(c *gin.Context) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-// TestRequireBreakGlassFeature_RefusesTenantWithoutFeature pins the plan
-// brief's Task 6 gate: a tenant on a plan below FeatureSSO's minimum gets
-// the SAME 403 the SSO config endpoints give, even though break-glass
-// login runs with no upstream auth middleware to have set tenant_id on
-// the Gin context — the tenant id here comes from the request body.
+// TestRequireBreakGlassFeature_RefusesTenantWithoutFeature pins the
+// re-gate from mark8ly#820: a tenant on a plan below Pro gets a 403, even
+// though break-glass login runs with no upstream auth middleware to have
+// set tenant_id on the Gin context — the tenant id here comes from the
+// request body.
 func TestRequireBreakGlassFeature_RefusesTenantWithoutFeature(t *testing.T) {
 	tenantID := uuid.New()
 	resolver := &fakePlanResolver{plan: subscription.PlanStudio} // below Pro

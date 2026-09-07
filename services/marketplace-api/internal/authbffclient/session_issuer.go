@@ -1,7 +1,7 @@
 // Package authbffclient exposes the narrow surface marketplace-api
 // uses to talk to auth-bff. Today that's the SessionIssuer — the
-// contract by which break-glass login + SSO callback routes ask
-// auth-bff to mint the standard Mark8ly session cookie.
+// contract by which break-glass login asks auth-bff to mint the
+// standard Mark8ly session cookie.
 //
 // The production implementation POSTs to auth-bff's internal-only
 // POST /internal/mint-session endpoint, authenticated with the shared
@@ -40,11 +40,11 @@ var ErrIssuerUnavailable = errors.New("authbffclient: session issuer not configu
 // label with a fallback), but auth_context is not — it is the one
 // safety control the mint-session endpoint exists to enforce, and a
 // callee-supplied default would silently defeat it for whichever
-// caller forgot to think about it. Widening also means the SSO
-// callback (internal/handlers/public/sso_login.go) and break-glass
-// login (internal/handlers/admin/break_glass_login.go) both say what
-// they are minting explicitly, in one interface, rather than one of
-// them being hidden inside HTTPIssuer's implementation.
+// caller forgot to think about it. Widening also means break-glass
+// login (internal/handlers/admin/break_glass_login.go) — this
+// interface's one remaining consumer since per-tenant SSO was retired
+// (mark8ly#820) — says what it is minting explicitly, rather than it
+// being hidden inside HTTPIssuer's implementation.
 //
 // Implementations MUST be safe for concurrent use from request
 // goroutines — marketplace-api treats issuance as a synchronous,

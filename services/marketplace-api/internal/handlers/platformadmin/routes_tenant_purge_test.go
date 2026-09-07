@@ -227,9 +227,9 @@ func TestRegister_BogusSiblingUnderTenantsStays404(t *testing.T) {
 
 // TestRegister_BothTenantRouteTreesCoexistOnOneEngine asserts only that the
 // merchant admin tree and the platformadmin tree can both be registered on
-// ONE gin engine at their CURRENT, production prefixes
-// (/api/v1/admin/tenants/:tenantId/... and /api/v1/platform/admin/tenants/
-// :id/...) without panicking.
+// ONE gin engine at their production prefixes
+// (/api/v1/admin/... and /api/v1/platform/admin/tenants/:id/...) without
+// panicking.
 //
 // It does NOT and CANNOT detect a wildcard-name collision (Trap 2): the two
 // trees mount at SIBLING prefixes, so they never share a route node, and no
@@ -240,6 +240,13 @@ func TestRegister_BogusSiblingUnderTenantsStays404(t *testing.T) {
 // false. See TestRegister_SharingTheMerchantPrefixPanicsAtRouterBuild below
 // for the test that actually exercises the collision, by putting both trees
 // on the SAME prefix.
+//
+// The merchant admin tree no longer registers anything under
+// /admin/tenants/:tenantId/... itself (that was SSO config, retired by
+// mark8ly#820) — this test still builds the full RegisterAdmin tree
+// alongside platformadmin as a general sanity check that the two route
+// tables coexist on one engine, and as a live example for the collision
+// guard below.
 func TestRegister_BothTenantRouteTreesCoexistOnOneEngine(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -253,8 +260,7 @@ func TestRegister_BothTenantRouteTreesCoexistOnOneEngine(t *testing.T) {
 		// the wildcard collision in production; see routes.go's Register
 		// doc comment.
 		admin.RegisterAdmin(r.Group("/api/v1"), admin.Deps{
-			SSOConfigHandler: admin.NewSSOConfigHandler(nil, nil, nil),
-			AuthzMiddleware:  authz.NewMiddleware(authz.NewFakeClient(), nil),
+			AuthzMiddleware: authz.NewMiddleware(authz.NewFakeClient(), nil),
 		})
 
 		platformadmin.Register(r.Group("/api/v1/platform"), fullPurgeDeps(t))
@@ -262,21 +268,22 @@ func TestRegister_BothTenantRouteTreesCoexistOnOneEngine(t *testing.T) {
 }
 
 // TestRegister_SharingTheMerchantPrefixPanicsAtRouterBuild pins the actual
-// Trap 2 hazard: the merchant tree registers /admin/tenants/:tenantId/...
-// and this surface uses :id at the same path position. Two DIFFERENT
-// wildcard names at one path position make gin panic at ROUTER BUILD TIME
-// — the service fails to start, and no request-level test catches it.
+// Trap 2 hazard: were the merchant tree to register something at
+// /admin/tenants/:tenantId/... again (it doesn't today — that was SSO
+// config, retired by mark8ly#820) while this surface uses :id at the same
+// path position, two DIFFERENT wildcard names at one path position make gin
+// panic at ROUTER BUILD TIME — the service fails to start, and no
+// request-level test catches it.
 //
 // This test pins WHY the two surfaces mount at sibling prefixes in
 // production: put them on the SAME prefix and the router refuses to
 // build. routes.go's Register doc comment says not to "tidy" the prefixes
 // back together onto /api/v1/admin; this is that warning made executable.
 //
-// A bare stub route stands in for the merchant admin tree's
+// A bare stub route stands in for a hypothetical merchant-admin-tree
 // /admin/tenants/:tenantId registration — the collision is a property of
 // gin's router, not of any particular handler behind the route, so a stub
-// proves it exactly as well as the real admin.RegisterAdmin tree and keeps
-// the test cheap.
+// proves it exactly as well as a real route would and keeps the test cheap.
 func TestRegister_SharingTheMerchantPrefixPanicsAtRouterBuild(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -284,11 +291,10 @@ func TestRegister_SharingTheMerchantPrefixPanicsAtRouterBuild(t *testing.T) {
 		r := gin.New()
 		g := r.Group("/api/v1")
 
-		// Stands in for the merchant admin tree's
-		// /admin/tenants/:tenantId/... group (internal/handlers/admin/
-		// routes.go's ssoTenant), claiming the :tenantId wildcard at this
-		// path position.
-		g.GET("/admin/tenants/:tenantId/sso/config", func(c *gin.Context) {})
+		// Stands in for a hypothetical merchant-admin-tree
+		// /admin/tenants/:tenantId/... registration, claiming the
+		// :tenantId wildcard at this path position.
+		g.GET("/admin/tenants/:tenantId/config", func(c *gin.Context) {})
 
 		// purgeOnlyDeps, NOT fullPurgeDeps: fullPurgeDeps also wires
 		// TenantLifecycle, whose routes use :id at this SAME path position.

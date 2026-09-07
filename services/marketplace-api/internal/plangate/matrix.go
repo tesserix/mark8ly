@@ -55,7 +55,6 @@ const (
 	FeatureGiftCards       Feature = "gift_cards"
 	FeatureReadAPI         Feature = "read_api"
 	FeatureFullAPI         Feature = "full_read_write_api"
-	FeatureSSO             Feature = "sso"
 	FeatureUptimeSLA       Feature = "uptime_sla"
 
 	// Support.
@@ -99,7 +98,6 @@ var allFeatures = []Feature{
 	FeatureGiftCards,
 	FeatureReadAPI,
 	FeatureFullAPI,
-	FeatureSSO,
 	FeatureUptimeSLA,
 	FeatureStandardEmailSupport,
 	FeaturePriorityEmailSupport,
@@ -194,7 +192,6 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		// on any tier; FeatureFullAPI (write) remains Pro-only.
 		FeatureReadAPI:   1,
 		FeatureFullAPI:   Disabled,
-		FeatureSSO:       Disabled,
 		FeatureUptimeSLA: Disabled,
 
 		FeatureStandardEmailSupport: 1,
@@ -234,7 +231,6 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		// trade-off (the read API stops being a Studio differentiator).
 		FeatureReadAPI:   1,
 		FeatureFullAPI:   Disabled,
-		FeatureSSO:       Disabled,
 		FeatureUptimeSLA: Disabled,
 
 		FeatureStandardEmailSupport: 1,
@@ -265,7 +261,6 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		FeatureGiftCards:       1,
 		FeatureReadAPI:         1,
 		FeatureFullAPI:         Disabled,
-		FeatureSSO:             Disabled,
 		FeatureUptimeSLA:       Disabled,
 
 		FeatureStandardEmailSupport: 1,
@@ -300,7 +295,6 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		FeatureGiftCards:       1,
 		FeatureReadAPI:         1,
 		FeatureFullAPI:         1,
-		FeatureSSO:             1,
 		FeatureUptimeSLA:       Disabled, // add-on only (Pro + App)
 
 		// §9: Pro drops standard support in favor of priority. CSM is add-on only.

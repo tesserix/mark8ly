@@ -351,10 +351,8 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 	// CASCADEs from customer_loyalties (000011) and needs no explicit step.
 	// ------------------------------------------------------------------
 	steps = append(steps,
-		tenantScoped("tenant_sso_user_mappings", tenantID), // 000071: tenant_id (PK part)
-		tenantScoped("tenant_sso_configs", tenantID),       // 000070: tenant_id (PK)
-		tenantScoped("storefront_push_tokens", tenantID),   // 000022: tenant_id
-		tenantScoped("admin_push_tokens", tenantID),        // 000021: tenant_id, store_id
+		tenantScoped("storefront_push_tokens", tenantID), // 000022: tenant_id
+		tenantScoped("admin_push_tokens", tenantID),      // 000021: tenant_id, store_id
 		// break_glass_lockouts links a tenant to an HMAC'd client IP, which
 		// is pseudonymous personal data, so it goes with the tenant (#469).
 		//

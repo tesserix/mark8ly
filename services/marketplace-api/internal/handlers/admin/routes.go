@@ -16,6 +16,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/handlers/internalsvc"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/ratelimit"
+	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/cancel"
 )
 
@@ -66,9 +67,6 @@ type Deps struct {
 	// pattern used for TaxHandler / APIKeysHandler above.
 	AppCredentialsHandler *AppCredentialsHandler
 	AppAddOnHandler       *appaddon.Handler
-	// P13 — per-tenant SSO configuration (§12, Pro-gated). Mounted outside
-	// the store-scoped group because SSO config is tenant-wide, not per-store.
-	SSOConfigHandler *SSOConfigHandler
 	// P13 — break-glass emergency admin login (§12.4). Mounted OUTSIDE
 	// the store-scoped + RequireActive group: this is the recovery
 	// path, it must survive read-only / store_closed states.
@@ -83,7 +81,7 @@ type Deps struct {
 	PagesHandler           *PagesHandler
 	// Outbound webhooks (#562 task 7) — merchant-managed subscriptions,
 	// test sends and delivery replay. Available on every plan, so
-	// deliberately not gated behind PlanResolver like SSO above.
+	// deliberately not gated behind PlanResolver.
 	WebhooksHandler          *WebhooksHandler
 	PlanResolver             *plangate.PlanResolver
 	StoresMiddleware         gin.HandlerFunc // from stores.StoreMiddleware
@@ -150,38 +148,21 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 	// expired / store_closed / pending_hard_delete. Rate-limit + dual-
 	// factor verification live inside the handler itself.
 	//
-	// Gated on FeatureSSO (Pro+ only) — break-glass exists to recover
-	// admin access when a tenant's SSO config is broken, so a tenant that
-	// never had SSO gets the same 403 the SSO config endpoints give.
-	// RequireBreakGlassFeature (not plangate.RequireFeatureByTenant) runs
-	// here because there is deliberately no auth middleware upstream to
-	// have set tenant_id on the context — see that function's doc.
+	// Gated at PlanPro (mark8ly#820): this used to key on FeatureSSO —
+	// break-glass existed to recover admin access when a tenant's SSO
+	// config was broken. Per-tenant SSO was retired (its implementation
+	// was GIP-based and never wired; auth moved to Zitadel, #524), which
+	// left this gate stranded on a feature flag that no longer exists.
+	// FeatureSSO was enabled ONLY on PlanPro, so gating directly on that
+	// plan tier is behaviour-neutral — the same tenants that could reach
+	// this route before still can. RequireBreakGlassFeature (not
+	// plangate.RequireFeatureByTenant) runs here because there is
+	// deliberately no auth middleware upstream to have set tenant_id on
+	// the context — see that function's doc.
 	if deps.BreakGlassLoginHandler != nil {
 		router.POST("/admin/break-glass/login",
-			RequireBreakGlassFeature(deps.PlanResolver, plangate.FeatureSSO, deps.APIKeysLogger),
+			RequireBreakGlassFeature(deps.PlanResolver, subscription.PlanPro, deps.APIKeysLogger),
 			deps.BreakGlassLoginHandler.Login)
-	}
-
-	// P13 §12 — SSO config. Tenant-wide, Pro-gated, outside /stores/:storeId.
-	// RequireFeatureByTenant resolves the plan from the tenant's highest active
-	// store subscription rather than a specific store.
-	if deps.SSOConfigHandler != nil {
-		// Authz runs before the plan gate so a non-member learns nothing
-		// about the tenant's subscription. Writes are owner-only: the IdP
-		// config decides who can authenticate into the whole tenant.
-		ssoTenant := router.Group("/admin/tenants/:tenantId", tenantMW...)
-		ssoRead := ssoTenant.Group("",
-			deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
-			plangate.RequireFeatureByTenant(deps.PlanResolver, plangate.FeatureSSO, deps.APIKeysLogger),
-		)
-		ssoWrite := ssoTenant.Group("",
-			deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
-			plangate.RequireFeatureByTenant(deps.PlanResolver, plangate.FeatureSSO, deps.APIKeysLogger),
-		)
-		ssoRead.GET("/sso/config", deps.SSOConfigHandler.Get)
-		ssoWrite.POST("/sso/config", deps.SSOConfigHandler.Upsert)
-		ssoWrite.DELETE("/sso/config", deps.SSOConfigHandler.Delete)
-		ssoWrite.POST("/sso/test", deps.SSOConfigHandler.Test)
 	}
 
 	// Tenant-wide admin routes — outside of /stores/:storeId because they

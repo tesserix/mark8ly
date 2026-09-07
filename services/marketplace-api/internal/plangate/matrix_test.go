@@ -43,11 +43,6 @@ func TestMatrix_CustomCodeInjection_ProOnly(t *testing.T) {
 	require.True(t, plangate.IsAllowed(subscription.PlanPro, plangate.FeatureCustomCodeInjection))
 }
 
-func TestMatrix_SSO_ProOnly(t *testing.T) {
-	require.False(t, plangate.IsAllowed(subscription.PlanStudio, plangate.FeatureSSO))
-	require.True(t, plangate.IsAllowed(subscription.PlanPro, plangate.FeatureSSO))
-}
-
 // TestMatrix_ReadAPI_EveryPlan pins the #585 decision, now extended to
 // Trial. Outbound webhooks are available on every plan and carry a
 // notify-and-fetch payload (event + aggregate id only), so EVERY plan that
@@ -145,7 +140,7 @@ func TestAllFeatureLimits_EveryFeaturePresentForEveryPlan(t *testing.T) {
 // feature list stays aligned with the spec §9 count. Bumping the count
 // should be deliberate — update this assertion when a new Feature lands.
 func TestAllFeatures_IncludesAllConstants(t *testing.T) {
-	require.Equal(t, 26, len(plangate.AllFeatures()),
+	require.Equal(t, 25, len(plangate.AllFeatures()),
 		"expected 25 feature constants per §9 — update this count if new ones are added")
 }
 

@@ -284,11 +284,12 @@ type TenantGateInvalidator interface {
 //     it ever reaches this package. See docs/architecture.md, "Gateway JWT
 //     gate (istio-ingress)", for the full writeup. This is invisible
 //     locally and in CI since Istio isn't part of either.
-//  2. The router. The merchant admin tree already registers
-//     /admin/tenants/:tenantId/... under a wildcard name that a later
-//     platform endpoint would collide with under a different wildcard name
-//     at the same path position — gin panics at router build time when
-//     that happens.
+//  2. The router. A merchant admin route under /admin/tenants/:tenantId/...
+//     (there is none today — that was SSO config, retired by mark8ly#820)
+//     would claim a wildcard name at the same path position a platform
+//     endpoint uses — gin panics at router build time if two different
+//     wildcard names ever land at the same position. Keeping the prefixes
+//     separate avoids that hazard regardless of what either tree mounts.
 //
 // Do not "tidy" this back onto /api/v1/admin.
 func Register(g *gin.RouterGroup, deps Deps) {

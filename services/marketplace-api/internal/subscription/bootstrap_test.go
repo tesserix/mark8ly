@@ -122,8 +122,11 @@ func TestBootstrap_CreatesTheRowWithNoStripeClientAtAll(t *testing.T) {
 	if sub.Plan != subscription.PlanTrial {
 		t.Errorf("plan = %q, want trial", sub.Plan)
 	}
-	if sub.Status != subscription.StatusSignup {
-		t.Errorf("status = %q, want signup", sub.Status)
+	// trialing, not signup (#827). signup is a resting state that ExpiryCron
+	// does not select, so a row created there has a trial_ends_at nothing
+	// ever acts on — the clock starts and never rings.
+	if sub.Status != subscription.StatusTrialing {
+		t.Errorf("status = %q, want trialing", sub.Status)
 	}
 	if sub.StripeCustomerID != "" {
 		t.Errorf("StripeCustomerID = %q, want empty — Bootstrap must not mint one", sub.StripeCustomerID)
@@ -325,5 +328,24 @@ func TestBootstrap_StoresNeitherHalfOfAnIncompleteTaxID(t *testing.T) {
 					sub.ReverseChargeTaxID, sub.TaxIDCountry)
 			}
 		})
+	}
+}
+
+// The specific regression: a row created in signup is invisible to
+// ExpiryCron, which selects trialing. Four production stores sat in exactly
+// that state after #827's backfill, two of them weeks past their trial end
+// and swept by nothing.
+func TestBootstrap_CreatesARowTheExpiryCronCanSee(t *testing.T) {
+	svc := newSvc(&bootstrapRepo{}, nil)
+
+	sub, err := svc.Bootstrap(context.Background(), bootstrapInput())
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	if sub.Status == subscription.StatusSignup {
+		t.Fatal("created in signup — ExpiryCron selects trialing, so this trial would never end")
+	}
+	if sub.Status != subscription.StatusTrialing {
+		t.Fatalf("status = %q, want trialing", sub.Status)
 	}
 }

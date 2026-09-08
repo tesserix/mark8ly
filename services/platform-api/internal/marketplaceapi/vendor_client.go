@@ -139,6 +139,11 @@ type Store struct {
 	CurrencyCode string `json:"currency_code"`
 	Timezone     string `json:"timezone"`
 	Status       string `json:"status"`
+	// CreatedAt is when this store row was created here. Mirrored because
+	// marketplace-api dates a backfilled trial from it and had no way to know
+	// it (mark8ly#827) — its projection carried only synced_at, which moves
+	// on every upsert.
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
 
 // EnsureSubscription gives a newly created store its subscription row, and

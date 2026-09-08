@@ -477,6 +477,7 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 			CurrencyCode: st.CurrencyCode,
 			Timezone:     st.Timezone,
 			Status:       string(store.StatusActive),
+			CreatedAt:    &st.CreatedAt,
 		}); sErr != nil {
 			log.Printf("onboarding.Complete: ensure self-store for tenant %s store %s: %v", t.ID, st.ID, sErr)
 		}

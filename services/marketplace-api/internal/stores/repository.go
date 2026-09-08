@@ -162,14 +162,37 @@ func (r *gormRepository) GetProductsWatermark(ctx context.Context, storeID strin
 // Upsert writes the row keyed on primary key id. On conflict it replaces
 // every non-pk column and bumps synced_at. Caller is responsible for
 // setting SyncedAt to time.Now() before calling.
+// storeUpsertAssignments is the ON CONFLICT SET list for the projection.
+//
+// Every column is taken from the incoming row EXCEPT created_at, which is
+// COALESCEd against the existing value. That asymmetry is deliberate (#827):
+//
+//   - A caller running a build older than migration 136 sends no created_at.
+//     A plain assignment would overwrite a date this projection already knew
+//     with NULL, and the trial backfill would then have nothing to date from.
+//   - A row mirrored BEFORE 136 holds NULL and must be able to learn its real
+//     creation time from the next upsert.
+//
+// COALESCE(excluded, existing) is the only rule that satisfies both: it fills
+// a gap and never creates one. platform_api is the source of truth and a
+// store's creation time does not change, so preferring the incoming value
+// when present loses nothing.
+func storeUpsertAssignments() clause.Set {
+	sets := clause.AssignmentColumns([]string{
+		"tenant_id", "slug", "name", "country_code",
+		"currency_code", "timezone", "status", "synced_at",
+	})
+	return append(sets, clause.Assignment{
+		Column: clause.Column{Name: "created_at"},
+		Value:  gorm.Expr("COALESCE(EXCLUDED.created_at, stores.created_at)"),
+	})
+}
+
 func (r *gormRepository) Upsert(ctx context.Context, s *Store) error {
 	if err := r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{
-				"tenant_id", "slug", "name", "country_code",
-				"currency_code", "timezone", "status", "synced_at",
-			}),
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: storeUpsertAssignments(),
 		}).
 		Create(s).Error; err != nil {
 		return fmt.Errorf("stores: upsert: %w", err)

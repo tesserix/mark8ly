@@ -73,8 +73,22 @@ $ curl -fsS "http://localhost:8086/api/v1/locations/countries" | jq '.data | len
 
 ## Result
 
-Run twice for reproducibility (identical outcome both times — same specs, same
-counts):
+Run three times total, all under the same conditions (CI unset so
+`retries: 0`, same `BASE_URL=http://localhost:4201 API_URL=http://localhost:8086`,
+same running stack throughout, no code touched between runs). Every run produced
+a full raw transcript (`/tmp/onboarding-e2e.txt`, `/tmp/onboarding-e2e-run2.txt`,
+`/tmp/onboarding-e2e-run3.txt` respectively). Diffing the "N failed" / "N passed"
+block across all three transcript files byte-for-byte confirms they are
+identical — same 10 failing specs in the same order, same summary line, in every
+run:
+
+- **run 1**: `10 failed` / `6 passed (3.5m)`
+- **run 2**: `10 failed` / `6 passed (3.5m)`
+- **run 3** (added after code review flagged that run 2's evidence wasn't
+  reproduced in this document): `10 failed` / `6 passed (3.5m)`
+
+Verbatim failing-list + summary, common to all three runs (`diff` shows zero
+difference between run 1, run 2, and run 3's blocks):
 
 ```
 10 failed
@@ -91,8 +105,11 @@ counts):
 6 passed (3.5m)
 ```
 
+No run disagreed with any other — no per-spec delta to report.
+
 **`ONBOARDING_PASS_COUNT = 6`** — the number of tests that passed, taken verbatim
-from Playwright's summary line, both runs.
+from Playwright's summary line, confirmed identical across three separately
+logged runs (not two, and not from memory).
 
 Note: five specs walk the magic-link flow via `GET
 /api/v1/test/verification/latest` (mounted because `ENV: dev` on platform-api, so

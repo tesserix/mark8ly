@@ -151,6 +151,11 @@ func (h *BillingTrialsHandler) list(c *gin.Context) {
 	// for — see trial.ListOptions.IncludeSignup, which also explains why the
 	// trial_ends_at such a row reports is notional.
 	includeSignup := c.Query("include_signup") == "true"
+	// include_ended turns this from a work queue into a census: trials whose
+	// end has already passed come back too, reporting negative days_remaining.
+	// Off by default so the shipped question — "which trials expire this
+	// week" — is unchanged for every existing caller.
+	includeEnded := c.Query("include_ended") == "true"
 
 	ctx := c.Request.Context()
 	asOf := h.now()
@@ -158,6 +163,7 @@ func (h *BillingTrialsHandler) list(c *gin.Context) {
 	rows, total, err := h.trials.ListExpiring(ctx, h.db, asOf, window, page, limit, trial.ListOptions{
 		IncludeStripeManaged: includeStripeManaged,
 		IncludeSignup:        includeSignup,
+		IncludeEnded:         includeEnded,
 	})
 	if err != nil {
 		h.respondErr(c, err)
@@ -272,14 +278,26 @@ func toTrialRow(r trial.ExpiringRow, names map[string]string, asOf time.Time, pc
 // the same trial. The two surfaces must agree on this number, so they share
 // the exact same arithmetic: floor(hours/24), bumped to 1 only when
 // 0 < hours < 24, floored at zero.
+// daysRemaining is signed: a trial whose end has passed reports a NEGATIVE
+// number of days, and the console renders that as "ended".
+//
+// It used to clamp negatives to zero. That was harmless while the only caller
+// was a forward window — nothing overdue could reach it — and it silently
+// destroyed the answer the moment include_ended existed: a trial that ended
+// six weeks ago would have reported 0, which reads as "today" (#827).
+//
+// A defensive clamp on a value that cannot be negative is a clamp nobody
+// re-examines when the precondition changes.
 func daysRemaining(trialEndsAt, asOf time.Time) int {
 	hoursLeft := trialEndsAt.Sub(asOf).Hours()
 	days := int(hoursLeft / 24)
 	if hoursLeft > 0 && hoursLeft < 24 {
 		days = 1
 	}
-	if days < 0 {
-		days = 0
+	// Symmetrically to the < 24h case above: an end inside the last day
+	// reports -1 rather than 0, so "ended" and "today" stay distinguishable.
+	if hoursLeft < 0 && hoursLeft > -24 {
+		days = -1
 	}
 	return days
 }

@@ -66,7 +66,31 @@ type ListOptions struct {
 	// not be read as the expiry machinery watching it. It is listed so an
 	// operator can chase the tenant to complete checkout, which is a
 	// different action from an expiring trial's.
+	//
+	// NOTE (#827): Bootstrap no longer creates rows in `signup` — it creates
+	// `trialing`, precisely because a signup row's trial end is notional and
+	// nothing acts on it. This option therefore reaches only rows written
+	// before that change, or ones a future writer puts there.
 	IncludeSignup bool
+
+	// IncludeEnded drops the window's LOWER bound, so trials whose effective
+	// end has already passed are returned alongside those still to come.
+	//
+	// Off by default: the question this endpoint answers by default is "which
+	// trials expire this week" — a work queue, and a queue full of trials
+	// that ended months ago is not one.
+	//
+	// It exists because an ended-but-still-trialing row was invisible
+	// everywhere. A forward window cannot show one at ANY width, and that
+	// state is the most diagnostic there is: ExpiryCron selects exactly these
+	// rows, so a trial still `trialing` days after its end means the cron is
+	// not running. Two production stores sat that way and no screen could
+	// show it.
+	//
+	// Like the other two, it is unreachable from CountExpiring — the KPI
+	// counts what is ABOUT to expire, and an overdue trial is a different
+	// number that must not be folded into it.
+	IncludeEnded bool
 }
 
 // expiringScope narrows to trials that will actually EXPIRE, in the window
@@ -96,6 +120,19 @@ func expiringScope(db *gorm.DB, asOf time.Time, window time.Duration) *gorm.DB {
 // a signup row must not reach the KPI. The false branch builds the same
 // single-status predicate it always has, unchanged.
 func trialingInWindowScope(db *gorm.DB, asOf time.Time, window time.Duration, includeSignup bool) *gorm.DB {
+	return trialingScope(db, asOf, window, includeSignup, false)
+}
+
+// trialingScope is trialingInWindowScope with the lower bound made optional.
+//
+// includeEnded swaps EndsBetweenScope's (asOf, asOf+window] for
+// EndedBeforeScope's "< asOf+window": same upper bound, no floor. Both are the
+// index-preserving two-branch predicates in endsat.go, so neither loses the
+// partial index. The brackets differ only at the horizon itself, where a trial
+// ending exactly at asOf+window is included by one and not the other — an edge
+// immaterial to a list an operator reads, and not worth a third scope to
+// reconcile.
+func trialingScope(db *gorm.DB, asOf time.Time, window time.Duration, includeSignup, includeEnded bool) *gorm.DB {
 	scoped := db.Model(&subscription.StoreSubscription{})
 	if includeSignup {
 		scoped = scoped.Where("status IN ?", []subscription.SubscriptionStatus{
@@ -103,6 +140,9 @@ func trialingInWindowScope(db *gorm.DB, asOf time.Time, window time.Duration, in
 		})
 	} else {
 		scoped = scoped.Where("status = ?", subscription.StatusTrialing)
+	}
+	if includeEnded {
+		return EndedBeforeScope(scoped, asOf.Add(window))
 	}
 	return EndsBetweenScope(scoped, asOf, asOf.Add(window))
 }
@@ -120,10 +160,10 @@ func trialingInWindowScope(db *gorm.DB, asOf time.Time, window time.Duration, in
 // predicate, so the default this list serves and the scope CountExpiring
 // counts cannot drift apart.
 func listScope(db *gorm.DB, asOf time.Time, window time.Duration, opts ListOptions) *gorm.DB {
-	if !opts.IncludeSignup && !opts.IncludeStripeManaged {
+	if !opts.IncludeSignup && !opts.IncludeStripeManaged && !opts.IncludeEnded {
 		return expiringScope(db, asOf, window)
 	}
-	scoped := trialingInWindowScope(db, asOf, window, opts.IncludeSignup)
+	scoped := trialingScope(db, asOf, window, opts.IncludeSignup, opts.IncludeEnded)
 	if !opts.IncludeStripeManaged {
 		scoped = scoped.Where("stripe_subscription_id IS NULL")
 	}

@@ -675,7 +675,14 @@ func TestBillingTrialsDaysRemainingUsesQueryInstantNotWallClock(t *testing.T) {
 // TestBillingTrialsDaysRemainingFloorsAtZero covers daysRemaining's d <= 0
 // branch: a trial ending at or before asOf must report 0, never a negative
 // number.
-func TestBillingTrialsDaysRemainingFloorsAtZero(t *testing.T) {
+// Renamed and inverted by #827. It previously asserted the floor —
+// "trial ended before asOf must floor at 0, not negative" — which was
+// harmless while a forward window meant nothing overdue could reach the
+// formatter, and became wrong the moment include_ended could.
+//
+// days_remaining is now signed. A trial that ended six weeks ago reporting 0
+// reads as "today" in every consumer, which is the opposite of the truth.
+func TestBillingTrialsDaysRemainingIsSigned(t *testing.T) {
 	asOf := billingTrialsFixtureAsOf
 	rows := []trial.ExpiringRow{
 		{TenantID: "t-1", StoreID: "s-1", TrialEndsAt: asOf, Plan: "trial", Period: "monthly", Status: "trialing"},
@@ -697,8 +704,11 @@ func TestBillingTrialsDaysRemainingFloorsAtZero(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Len(t, body.Data, 2)
-	require.Equal(t, 0, body.Data[0].DaysRemaining, "trial ending exactly at asOf must report 0, not negative")
-	require.Equal(t, 0, body.Data[1].DaysRemaining, "trial ended before asOf must floor at 0, not negative")
+	// Exactly at asOf is still 0: it ends now, it has not ended.
+	require.Equal(t, 0, body.Data[0].DaysRemaining, "a trial ending exactly at asOf must report 0")
+	// Two hours past is -1, not 0. Consumers render 0 as "today" and negatives
+	// as "ended", and those are different facts.
+	require.Equal(t, -1, body.Data[1].DaysRemaining, "an ended trial must report negative days, not 0")
 }
 
 // sharedTrialsFixture implements both platformadmin.TrialLister (for the
@@ -894,4 +904,39 @@ func TestBillingTrials_IncludeSignupReachesTheLister(t *testing.T) {
 		require.False(t, trials2.gotOpts.IncludeSignup,
 			"asking for card-backed rows must not also opt into signup ones")
 	})
+}
+
+// The census the console needs: include_ended returns trials whose end has
+// already passed, which no width of forward window can reach.
+func TestBillingTrials_IncludeEndedIsOptInAndReachesOverdueTrials(t *testing.T) {
+	asOf := billingTrialsFixtureAsOf
+	rows := []trial.ExpiringRow{
+		{TenantID: "t-1", StoreID: "s-1", TrialEndsAt: asOf.AddDate(0, 0, -42), Plan: "trial", Period: "monthly", Status: "trialing"},
+	}
+
+	// Off by default — the shipped question is unchanged for existing callers.
+	plain := &stubTrialLister{rows: rows, total: 1}
+	rec := httptest.NewRecorder()
+	billingTrialsRouter(t, plain, &stubBillingDirectory{}).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/billing/trials", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.False(t, plain.gotOpts.IncludeEnded, "include_ended defaulted on")
+
+	// On when asked for.
+	asked := &stubTrialLister{rows: rows, total: 1}
+	rec = httptest.NewRecorder()
+	billingTrialsRouter(t, asked, &stubBillingDirectory{}).ServeHTTP(rec, httptest.NewRequest(
+		http.MethodGet, "/admin/billing/trials?include_ended=true", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.True(t, asked.gotOpts.IncludeEnded)
+
+	var body struct {
+		Data []struct {
+			DaysRemaining int `json:"days_remaining"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+	require.Equal(t, -42, body.Data[0].DaysRemaining,
+		"an overdue trial must report how long ago it ended")
 }

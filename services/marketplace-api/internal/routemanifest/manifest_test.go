@@ -1038,6 +1038,7 @@ func TestMainMountsEveryFrontendFacingSurface(t *testing.T) {
 
 	requireRegistrarNamingConventionHolds(t, w)
 	requireNonRouteCallsTakeNoGroup(t, w)
+	requireExemptMountsAreNotFrontendFacing(t, w)
 	requireResolvablePrefixes(t, w, built)
 
 	// --- Direction 2b: routes registered straight onto a router ---
@@ -1158,6 +1159,66 @@ func requireNonRouteCallsTakeNoGroup(t *testing.T, w mainWiring) {
 				"call really is route-free and should not be receiving a group. Move it to "+
 				"buildSurfaces (and regenerate: %s) or to mountsOutsideManifest.",
 			m.Where, name, m.Prefix, routemanifest.UpdateCommand)
+	}
+}
+
+// envGatedTestPrefix is the one mount under the frontend-facing API root that
+// may legitimately be exempt: /api/v1/test is wired only when
+// MARKETPLACE_API_ENABLE_TEST_ROUTES is set and is never enabled in a
+// deployed environment, so no shipped frontend can reach it.
+const envGatedTestPrefix = "/api/v1/test"
+
+// requireExemptMountsAreNotFrontendFacing cross-checks mountsOutsideManifest
+// the way requireNonRouteCallsTakeNoGroup cross-checks nonRouteRegisterCalls.
+//
+// It closes the same one-line bypass. Moving admin.RegisterAdmin into
+// mountsOutsideManifest with the plausible reason "merchant admin subtree — no
+// frontend caller" and dropping its buildSurfaces entry regenerated cleanly,
+// took the manifest to 5 surfaces / 213 routes (-190), and left `go vet` and
+// `go test ./...` at exit 0. Nothing noticed: the "no registrar in two lists"
+// check passes once the surface is gone, and the frontend guard only scans
+// /internal, so it never saw that apps/admin calls /api/v1/admin/* heavily.
+//
+// The claim an entry here makes is "no frontend calls what this mounts". The
+// datum that contradicts it — already computed, never consulted — is the
+// mount PREFIX. Every genuine exemption mounts on the cluster-internal
+// surface, the root group, or the env-gated test prefix. An exemption
+// mounting under /api/v1 proper is contradictory on its face.
+//
+// TWO LIMITS, stated because this is a partial check and must not read as a
+// total one:
+//
+//  1. It does not prove no frontend calls a route. An exemption mounting at
+//     /internal whose routes a frontend calls is caught by
+//     TestFrontendInternalRoutesAreDeclared; one on the root group is not
+//     caught at all.
+//  2. It reads w.Mounts, so it is EVIDENCE, NOT PROOF — exactly like
+//     requireNonRouteCallsTakeNoGroup. An exemption whose group arrives in a
+//     shape the resolver does not recognise is absent from w.Mounts and skips
+//     this check entirely. Verified: an entry here plus
+//     `rgCopyA := r.RouterGroup; admin.RegisterAdmin(&rgCopyA, …)` gives 213
+//     routes at exit 0. Both cross-checks share that hole; see the gap list.
+func requireExemptMountsAreNotFrontendFacing(t *testing.T, w mainWiring) {
+	t.Helper()
+	for name := range mountsOutsideManifest {
+		m, isMount := w.Mounts[name]
+		if !isMount {
+			continue // takes the engine, or a group shape the resolver cannot see — see limit 2
+		}
+		if m.Prefix == envGatedTestPrefix {
+			continue
+		}
+		underAPIRoot := m.Prefix == apiPrefix || strings.HasPrefix(m.Prefix, apiPrefix+"/")
+		require.Falsef(t, underAPIRoot,
+			"%s: %s is exempted in mountsOutsideManifest, but it mounts at %q — under the "+
+				"frontend-facing API root %q.\n\n"+
+				"An exemption claims no frontend calls what it mounts, and a subtree on the "+
+				"public API root contradicts that on its face. This is the one-line bypass "+
+				"this check exists for: moving a real surface here with a plausible reason "+
+				"silently drops it from the manifest.\n\n"+
+				"Put it in buildSurfaces and regenerate (%s). If it genuinely has no frontend "+
+				"caller, it does not belong on %q.",
+			m.Where, name, m.Prefix, apiPrefix, routemanifest.UpdateCommand, apiPrefix)
 	}
 }
 

@@ -53,7 +53,14 @@ var skipDirs = map[string]bool{
 	"coverage": true, ".turbo": true, "playwright-report": true, "test-results": true,
 }
 
-var sourceExts = map[string]bool{".ts": true, ".tsx": true, ".js": true, ".jsx": true, ".mjs": true}
+// sourceExts are the frontend source extensions scanned. .mts/.cts/.cjs were
+// missing until round 5 and are included now: nothing in apps/* uses them
+// today, but an omitted extension is a directory this scanner silently does
+// not cover.
+var sourceExts = map[string]bool{
+	".ts": true, ".tsx": true, ".mts": true, ".cts": true,
+	".js": true, ".jsx": true, ".mjs": true, ".cjs": true,
+}
 
 // testFileSuffixes are excluded from the scan. A mocked path in a unit or e2e
 // spec is not a live caller, and treating it as one gets the direction of
@@ -148,7 +155,18 @@ func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesSc
 		for _, m := range baseIdentDecl.FindAllStringSubmatch(string(raw), -1) {
 			baseSet[m[1]] = true
 		}
-		files = append(files, scanned{rel: rel, lines: strings.Split(string(raw), "\n")})
+		// Comments are stripped PER PHYSICAL LINE, before joining, and the
+		// order matters in both directions. Stripping the JOINED text instead
+		// would let a comment line ending in "+" fold in front of a real
+		// reference and delete it — trading one blind spot for a worse one.
+		// Stripping per line also fixes the same-line case
+		// (`/* eslint-disable */ return fetch(...)`) that a per-physical-line
+		// PREFIX heuristic could never fix.
+		lines := strings.Split(string(raw), "\n")
+		for i := range lines {
+			lines[i] = stripComments(lines[i])
+		}
+		files = append(files, scanned{rel: rel, lines: lines})
 		return nil
 	})
 	require.NoError(t, err, "walking %s", root)
@@ -511,14 +529,65 @@ func scanConcatPath(rest string) (raw, normalised string, ok bool) {
 	return rawB.String(), normB.String(), true
 }
 
+// stripComments removes comment text so a commented-out reference is neither
+// counted as a live caller nor able to silence the residual backstop.
+//
+// It replaces a prefix heuristic that asked whether a TRIMMED line STARTED
+// with "//", "*" or "/*". That was the backstop sharing the scanner's blind
+// spot — the property this file's own comments call the worst a backstop can
+// have — in two ways, both observed:
+//
+//   - `/* eslint-disable-next-line */ return fetch(BASE.concat("/internal/x"))`
+//     starts with "/*", so the whole line was skipped. Exit 0.
+//   - a comment line ending in "+" folds into the next line under
+//     joinLogicalLines, putting "//" at the front of a logical line that
+//     contains a real reference.
+//
+// Stripping rather than skipping fixes both, and it is strictly better than
+// applying the heuristic per physical line, which cannot help when the
+// comment and the call share one line.
+//
+// "//" is only treated as a comment when not preceded by ":", so a "https://"
+// inside a string is left alone. That is a heuristic, not a tokenizer: a "//"
+// inside a string literal that is not part of a URL scheme would truncate the
+// rest of the line. The failure direction is a missed reference, which the
+// residual check cannot then see either — recorded in the gap list.
+func stripComments(text string) string {
+	// Block comments first, including an unterminated one.
+	for {
+		i := strings.Index(text, "/*")
+		if i < 0 {
+			break
+		}
+		rest := text[i+2:]
+		j := strings.Index(rest, "*/")
+		if j < 0 {
+			text = text[:i]
+			break
+		}
+		text = text[:i] + " " + rest[j+2:]
+	}
+	// Then a line comment, skipping "://".
+	for from := 0; ; {
+		i := strings.Index(text[from:], "//")
+		if i < 0 {
+			break
+		}
+		i += from
+		if i > 0 && text[i-1] == ':' {
+			from = i + 2
+			continue
+		}
+		text = text[:i]
+		break
+	}
+	return text
+}
+
 // mentionsInternalPath reports whether a line names one of the marketplace-api
 // base identifiers alongside an /internal path, ignoring comment lines. It is
 // the trigger for the residual check: such a line MUST yield a reference.
 func mentionsInternalPath(line string, bases []string) bool {
-	trimmed := strings.TrimSpace(line)
-	if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "*") || strings.HasPrefix(trimmed, "/*") {
-		return false
-	}
 	if !strings.Contains(line, "/internal") {
 		return false
 	}

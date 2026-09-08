@@ -18,9 +18,10 @@
 //
 // An earlier version of this comment claimed day 60 worked via
 // `edits.tracks.update` "flipping state to unpublished". There is no such
-// status — TrackRelease.status is one of `draft`, `inProgress`, `halted`,
-// `completed` — and `edits.tracks.update` only manages releases within a
-// track. The `applications` resource has exactly one method, `dataSafety`.
+// status — TrackRelease.status is one of `statusUnspecified`, `draft`,
+// `inProgress`, `halted` or `completed` — and `edits.tracks.update` only
+// manages releases within a track. The `applications` resource has
+// exactly one method, `dataSafety`.
 // The false mechanism is why nobody noticed day 60 was unbuildable.
 //
 // Auth is service-account OAuth2 (RS256 JWT → token exchange) via
@@ -104,17 +105,20 @@ var ErrUnauthorized = errors.New("googleplay: Google rejected the service-accoun
 var ErrUnpublishNotSupported = errors.New(
 	"googleplay: unpublishing a Play listing has no Android Publisher API; it requires a Play Console action")
 
-// ErrNotWired is retained only so callers written against the previous
-// stub keep compiling. Nothing returns it any more: BlockDownloads is
-// implemented, and PullApp returns ErrUnpublishNotSupported, which names a
-// permanent constraint rather than pending work.
-//
-// Deprecated: match on ErrUnauthorized or ErrUnpublishNotSupported.
-var ErrNotWired = errors.New("googleplay: android publisher integration not yet wired")
-
-// Release statuses from TrackRelease.status. Only these four are valid;
-// `unpublished` does not exist (see the package doc).
+// Release statuses from TrackRelease.status. These five are the whole
+// enum; `unpublished` is not among them (see the package doc). The
+// package deliberately has no ErrNotWired: day 30 is implemented and day
+// 60 is impossible, so nothing here is pending work.
+// firebase.ErrNotWired still exists and DOES mean pending work — keeping
+// a same-named error here would make the two indistinguishable at a
+// glance, which is how the two false comments this change removes
+// survived in the first place.
 const (
+	// releaseStatusUnspecified carries no information about whether the
+	// release is being served, so BlockDownloads refuses it rather than
+	// guessing. See haltServingReleases.
+	releaseStatusUnspecified = "statusUnspecified"
+
 	releaseStatusDraft      = "draft"
 	releaseStatusInProgress = "inProgress"
 	releaseStatusHalted     = "halted"
@@ -221,6 +225,9 @@ func New(cfg Config) (*Client, error) {
 // abandoned and nil is returned. Committing an unchanged edit would be a
 // pointless write against the merchant's account, and erroring would make
 // the second tick of a retried teardown fail.
+//
+// A release whose status this code does not recognise is an ERROR, not a
+// quiet pass-through: see haltServingReleases.
 func (c *Client) BlockDownloads(ctx context.Context, packageName string) (err error) {
 	if packageName == "" {
 		return errors.New("googleplay: packageName is required")
@@ -256,7 +263,11 @@ func (c *Client) BlockDownloads(ctx context.Context, packageName string) (err er
 		return classify("edits.tracks.get("+productionTrack+")", packageName, err)
 	}
 
-	halted, changed := haltServingReleases(track)
+	halted, changed, err := haltServingReleases(track)
+	if err != nil {
+		// The deferred delete above still abandons the edit.
+		return err
+	}
 	if !changed {
 		return nil
 	}
@@ -293,21 +304,46 @@ func (c *Client) PullApp(_ context.Context, packageName string) error {
 // `halted` is already the target, so both are copied through untouched:
 // re-halting is what makes this method idempotent, and un-drafting a
 // release the merchant staged but never shipped is not day 30's business.
-func haltServingReleases(track *androidpublisher.Track) (*androidpublisher.Track, bool) {
+//
+// AN UNRECOGNISED STATUS IS AN ERROR. Copying it through would leave
+// `changed` false, which makes BlockDownloads abandon the edit and return
+// nil — and the advancer then writes `downloads_blocked` for an app that
+// may still be serving. A step reporting success it never performed is
+// the exact defect #702 exists to remove, so this refuses instead.
+// `statusUnspecified` is refused for the same reason rather than assumed
+// harmless: it says nothing about whether APKs are being served.
+func haltServingReleases(track *androidpublisher.Track) (*androidpublisher.Track, bool, error) {
 	out := &androidpublisher.Track{Track: track.Track}
 	changed := false
-	for _, rel := range track.Releases {
+	for i, rel := range track.Releases {
 		next := *rel
 		switch rel.Status {
 		case releaseStatusInProgress, releaseStatusCompleted:
 			next.Status = releaseStatusHalted
+			// countryTargeting is documented as settable only for
+			// inProgress releases in the production track, so leaving it
+			// on a now-halted release can fail the update on that field
+			// alone — which would break precisely the geo-staged rollout
+			// this branch claims to handle. Clearing it widens nothing: a
+			// halted release serves nowhere by definition.
+			next.CountryTargeting = nil
 			changed = true
 		case releaseStatusDraft, releaseStatusHalted:
 			// Already not serving.
+		case releaseStatusUnspecified:
+			return nil, false, fmt.Errorf(
+				"googleplay: production release %d (%q) reports status %q, which does not say whether "+
+					"its APKs are served; refusing to report a halt that may not have happened",
+				i, rel.Name, rel.Status)
+		default:
+			return nil, false, fmt.Errorf(
+				"googleplay: production release %d (%q) has unrecognised status %q; refusing to report "+
+					"a halt that may not have happened",
+				i, rel.Name, rel.Status)
 		}
 		out.Releases = append(out.Releases, &next)
 	}
-	return out, changed
+	return out, changed, nil
 }
 
 // service builds an authenticated Android Publisher client for one call.

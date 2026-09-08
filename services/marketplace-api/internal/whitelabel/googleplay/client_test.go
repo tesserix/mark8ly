@@ -608,9 +608,13 @@ func TestPullApp_ReportsThatUnpublishingHasNoAPI(t *testing.T) {
 	}
 }
 
-// The failure is permanent, so it must not be reported as pending work —
-// a caller matching ErrNotWired would read it as "wire it later".
-func TestPullApp_IsNotReportedAsUnwiredWork(t *testing.T) {
+// The constraint is PERMANENT, and it must not read as pending work.
+// firebase.ErrNotWired one package over means the opposite — "an
+// implementation is coming" — and a reader who takes this for that waits
+// for a follow-up PR that can never be written. So the error is
+// ErrUnpublishNotSupported and its text says what stands in the way, with
+// no "not yet"/"not wired" wording anywhere in it.
+func TestPullApp_ReportsAPermanentConstraintNotPendingWork(t *testing.T) {
 	cli, err := googleplay.New(googleplay.Config{
 		CredsFetcher: func(context.Context) (googleplay.Credentials, error) {
 			return googleplay.Credentials{}, nil
@@ -619,8 +623,90 @@ func TestPullApp_IsNotReportedAsUnwiredWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if got := cli.PullApp(context.Background(), "com.example.store"); errors.Is(got, googleplay.ErrNotWired) {
-		t.Errorf("err = %v, must not wrap ErrNotWired: the constraint is permanent, not pending", got)
+
+	got := cli.PullApp(context.Background(), "com.example.store")
+	if !errors.Is(got, googleplay.ErrUnpublishNotSupported) {
+		t.Fatalf("err = %v, want wraps ErrUnpublishNotSupported", got)
+	}
+	msg := strings.ToLower(got.Error())
+	for _, pending := range []string{"not yet", "not wired", "yet to be", "follow-up", "todo"} {
+		if strings.Contains(msg, pending) {
+			t.Errorf("err = %q contains %q, which reads as pending work", got, pending)
+		}
+	}
+}
+
+// ─── an unrecognised status must not pass for a halt ─────────────────
+
+// Copying an unknown status through would leave nothing changed, which
+// makes BlockDownloads abandon the edit and return nil — and the advancer
+// then writes downloads_blocked for an app that may still be serving.
+// That is a step reporting success it never performed.
+func TestBlockDownloads_UnrecognisedReleaseStatus_FailsInsteadOfReportingSuccess(t *testing.T) {
+	tests := []struct {
+		name   string
+		status string
+	}{
+		{"a status this code has never seen", "someFutureStatus"},
+		// statusUnspecified is the enum's fifth value. It says nothing
+		// about whether APKs are served, so it cannot be assumed harmless.
+		{"statusUnspecified", "statusUnspecified"},
+		{"empty status", ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ps := &playServer{releases: []map[string]any{
+				release(tc.status, map[string]any{"name": "41 (1.4.1)"}),
+			}}
+			srv := ps.start(t)
+
+			err := newClient(t, srv).BlockDownloads(context.Background(), "com.example.store")
+			if err == nil {
+				t.Fatal("BlockDownloads = nil; an unhaltable release must not report success")
+			}
+			if !strings.Contains(err.Error(), tc.status) {
+				t.Errorf("err = %v, want it to name the offending status %q", err, tc.status)
+			}
+			if len(ps.trackUpdates) != 0 {
+				t.Errorf("nothing should be written to the track; got %v", ps.trackUpdates)
+			}
+			if containsCall(ps.recorded(), "edits.commit") {
+				t.Errorf("the edit must not be committed; calls = %v", ps.recorded())
+			}
+			if !containsCall(ps.recorded(), "edits.delete") {
+				t.Errorf("the edit leaked; calls = %v", ps.recorded())
+			}
+		})
+	}
+}
+
+// A geo-staged rollout is a case the inProgress branch claims to handle.
+// countryTargeting is documented as settable only for inProgress
+// production releases, so round-tripping it onto a now-halted release can
+// fail the update on that field alone. Clearing it widens nothing — a
+// halted release serves nowhere.
+func TestBlockDownloads_ClearsCountryTargetingWhenHaltingAGeoStagedRollout(t *testing.T) {
+	ps := &playServer{releases: []map[string]any{
+		release("inProgress", map[string]any{
+			"userFraction":     0.25,
+			"countryTargeting": map[string]any{"countries": []string{"US", "CA"}},
+		}),
+	}}
+	srv := ps.start(t)
+
+	if err := newClient(t, srv).BlockDownloads(context.Background(), "com.example.store"); err != nil {
+		t.Fatalf("BlockDownloads: %v", err)
+	}
+	if len(ps.trackUpdates) != 1 {
+		t.Fatalf("track updates = %d, want 1", len(ps.trackUpdates))
+	}
+	rel := firstRelease(t, ps.trackUpdates[0])
+	if rel["status"] != "halted" {
+		t.Errorf("status = %v, want halted", rel["status"])
+	}
+	if _, present := rel["countryTargeting"]; present {
+		t.Errorf("countryTargeting survived onto a halted release: %#v", rel)
 	}
 }
 
@@ -663,6 +749,19 @@ func statusesIn(t *testing.T, body map[string]any) []string {
 // merchant's key" versus "retry next tick".
 func isUnauthorized(err error) bool {
 	return errors.Is(err, googleplay.ErrUnauthorized)
+}
+
+func firstRelease(t *testing.T, body map[string]any) map[string]any {
+	t.Helper()
+	raw, ok := body["releases"].([]any)
+	if !ok || len(raw) == 0 {
+		t.Fatalf("update body has no releases: %#v", body)
+	}
+	rel, ok := raw[0].(map[string]any)
+	if !ok {
+		t.Fatalf("release is not an object: %#v", raw[0])
+	}
+	return rel
 }
 
 func containsCall(calls []string, prefix string) bool {

@@ -239,11 +239,19 @@ func (c *ProAppCancelledConsumer) appendCoverageNote(ctx context.Context, ev Pro
 // WHY THIS EXISTS RATHER THAN A PLACEHOLDER IDENTIFIER: the advancer
 // guards both of its Google calls with `if r.GooglePackage != ""`
 // (advancer.go), and GooglePackage is empty by design — there is no
-// source for it and the Play client is an unimplemented stub. So Play is
-// never attempted, never errors, and never logs: the row would advance
-// all the way to credentials_purged having said nothing whatsoever about
-// Google, which is the same "we report a teardown we never performed"
-// failure this whole path exists to prevent, one level down.
+// source for it. So Play is never attempted, never errors, and never
+// logs: the row would advance all the way to credentials_purged having
+// said nothing whatsoever about Google, which is the same "we report a
+// teardown we never performed" failure this whole path exists to prevent,
+// one level down.
+//
+// TWO SEPARATE REASONS, both stated in the note. The Play client is NOT a
+// stub any more — day 30 halts the production track for real — so the
+// missing package identifier is the only thing stopping day 30. Day 60 is
+// stopped by something no code can lift: unpublishing a Play listing has
+// no Android Publisher API (googleplay.ErrUnpublishNotSupported) and
+// needs a human in the Play Console. A note that named only the stub
+// would be false today AND would hide the permanent half.
 //
 // Filling GooglePackage with a placeholder to make the guard fire would
 // be worse: it trades a silent skip for a row asserting an identifier
@@ -258,12 +266,18 @@ func teardownCoverage(ev ProAppCancelledEvent) string {
 	}
 
 	if ev.GooglePackage != "" {
-		parts = append(parts, fmt.Sprintf("google_play=will_attempt(package=%s)", ev.GooglePackage))
+		// Day 30 only. Naming the halt and the un-pullable listing here is
+		// what stops a reader in ninety days from taking "will_attempt" for
+		// "the listing came down".
+		parts = append(parts, fmt.Sprintf(
+			"google_play=will_attempt(package=%s, day-30 download halt only; day-60 unpublish has no "+
+				"Android Publisher API and requires a manual Play Console action)", ev.GooglePackage))
 	} else {
 		parts = append(parts, "google_play=NOT_ATTEMPTED(no package identifier is discoverable at cancel time, "+
-			"and the Play client is an unimplemented stub returning ErrNotWired; "+
-			"the advancer's day-30 and day-60 Google calls are guarded on google_package "+
-			"and will not run for this row — the merchant's Play listing, if any, stays live)")
+			"so the advancer's day-30 and day-60 Google calls, both guarded on google_package, "+
+			"will not run for this row; and even with a package, day 60 could never complete — "+
+			"unpublishing a Play listing has no Android Publisher API and requires a manual "+
+			"Play Console action — the merchant's Play listing, if any, stays live)")
 	}
 
 	if ev.FirebaseProjectID != "" {

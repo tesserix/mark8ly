@@ -7,6 +7,11 @@
 //   - CredentialAccessed spikes indicate either a CI/CD rebuild cycle or a
 //     credential-dump attempt; alert when the 1m rate exceeds the median
 //     over 24h by a wide margin.
+//   - LifecycleStepSkipped is the ONLY signal that a teardown step did not
+//     happen. LifecycleTransition increments identically whether or not the
+//     third-party call succeeded, so without this counter a Play or Firebase
+//     outage across the whole cohort is invisible to alerting and shows up
+//     only as reason text inside white_label_app_lifecycle rows.
 package metrics
 
 import "github.com/prometheus/client_golang/prometheus"
@@ -39,13 +44,33 @@ var (
 		},
 		[]string{"type"},
 	)
+
+	// LifecycleStepSkipped counts teardown steps the advancer recorded as
+	// NOT performed while still advancing the row. Labels:
+	//   surface — "google_play" | "firebase"
+	//   step    — "block_downloads" | "block_downloads_day60_retry" |
+	//             "pull_app" | "archive_project"
+	//
+	// Both labels are closed sets; do NOT add tenant_id or store_id.
+	//
+	// `pull_app` on google_play is expected to be non-zero forever, not a
+	// fault: unpublishing a Play listing has no API. Alert on the OTHERS
+	// rising, and on a step_skipped rate that tracks the transition rate
+	// (which means the surface is failing for every row, not one).
+	LifecycleStepSkipped = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "white_label_app_lifecycle_step_skipped_total",
+			Help: "Count of white-label teardown steps recorded as not performed, labeled by surface/step.",
+		},
+		[]string{"surface", "step"},
+	)
 )
 
 // MustRegister registers the white-label collectors into the supplied
 // Prometheus registry. Main calls this once at startup; tests can pass a
 // dedicated registry to isolate assertions.
 func MustRegister(reg prometheus.Registerer) {
-	reg.MustRegister(LifecycleTransition, CredentialAccessed)
+	reg.MustRegister(LifecycleTransition, CredentialAccessed, LifecycleStepSkipped)
 }
 
 func init() {
@@ -54,5 +79,5 @@ func init() {
 	// via MustRegister; they will get the "already registered" panic if
 	// they also touch the default — the standard testing idiom is to call
 	// prometheus.Unregister() after; see internal/metrics/registry.go.
-	prometheus.MustRegister(LifecycleTransition, CredentialAccessed)
+	prometheus.MustRegister(LifecycleTransition, CredentialAccessed, LifecycleStepSkipped)
 }

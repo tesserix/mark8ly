@@ -157,10 +157,21 @@ const (
 // sorted "METHOD PATH" strings, dropping the cluster-internal path space for
 // every surface that does not itself live there.
 //
-// It fails rather than returning an empty list when a registrar mounts
-// nothing in scope: an empty surface would reconcile cleanly against an
-// empty declaration and the guard would pass while seeing nothing, which is
-// the vacuous-pass hazard every route test in this service warns about.
+// It deliberately does NOT fail on an empty result, and that is a correction
+// rather than an omission. It used to, and the first sabotage against the
+// single-route internal surface proved the check was in the wrong place:
+// deleting that route emptied the surface, the emptiness check fired FIRST,
+// and the guard went red saying "its Deps wiring is incomplete" — sending
+// whoever deleted the route to debug a test helper instead of telling them a
+// frontend calls it. A guard that fails for the wrong reason reads exactly
+// like one that works.
+//
+// The vacuous-pass hazard is real, so the check moved rather than
+// disappearing, to the two places where an empty surface is genuinely
+// indistinguishable from a broken harness: writing the manifest (never write
+// an empty surface) and asserting against it (a surface empty on BOTH sides
+// is seeing nothing). Everything else is a route diff, and gets a route
+// diff's message.
 func collect(t *testing.T, name string, register func(*gin.RouterGroup), mount string, internal internalPolicy) []string {
 	t.Helper()
 
@@ -175,11 +186,15 @@ func collect(t *testing.T, name string, register func(*gin.RouterGroup), mount s
 		out = append(out, r.Method+" "+r.Path)
 	}
 	sort.Strings(out)
-
-	require.NotEmptyf(t, out, "surface %q mounted no in-scope routes — its Deps wiring is "+
-		"incomplete, and every assertion against it would pass vacuously", name)
+	_ = name // named for the caller's benefit; emptiness is judged by the caller
 	return out
 }
+
+// wiringMessage is the failure for a surface that is seeing nothing at all.
+// Shared so the write path and the assert path cannot describe it differently.
+const wiringMessage = "surface %q mounted no in-scope routes and declares none — its Deps " +
+	"wiring is incomplete (an interface field left nil unmounts every route it gates), " +
+	"so every assertion against it would pass vacuously"
 
 func isInternal(path string) bool {
 	for _, p := range internalPrefixes {
@@ -217,6 +232,15 @@ func TestRouteManifestMatchesMountedRoutes(t *testing.T) {
 	built := buildSurfaces(t)
 
 	if *update {
+		// Checked before writing, not after: an empty surface written into the
+		// manifest is a blind spot that then reconciles cleanly forever.
+		for _, s := range built {
+			require.NotEmptyf(t, s.Routes,
+				"refusing to write route-manifest.json: surface %q mounted no in-scope "+
+					"routes, so regenerating would erase whatever it used to declare and "+
+					"the guard would pass against nothing. Fix the Deps wiring in this "+
+					"package first.", s.Name)
+		}
 		require.NoError(t, routemanifest.Save(path, routemanifest.Doc{Surfaces: built}))
 		t.Logf("wrote %s (%d surfaces, %d routes)", path, len(built), countRoutes(built))
 		return
@@ -243,6 +267,13 @@ func TestRouteManifestMatchesMountedRoutes(t *testing.T) {
 		delete(declared, mounted.Name)
 
 		missing, extra := routemanifest.Diff(s.Routes, mounted.Routes)
+
+		// A surface empty on BOTH sides is the only case a route diff cannot
+		// describe, because there is no route to name. Every other emptiness
+		// shows up below as a full set of missing or extra routes, with the
+		// message that actually tells the reader what happened.
+		require.Falsef(t, len(mounted.Routes) == 0 && len(s.Routes) == 0,
+			wiringMessage, mounted.Name)
 
 		require.Emptyf(t, missing,
 			"DECLARED BUT NOT MOUNTED on surface %q: %v\n\n"+

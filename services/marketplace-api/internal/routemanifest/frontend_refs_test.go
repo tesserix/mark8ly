@@ -64,19 +64,17 @@ var sourceExts = map[string]bool{".ts": true, ".tsx": true, ".js": true, ".jsx":
 // identifier imported from a lib module keeps its name at the use site.
 var baseIdentDecl = regexp.MustCompile(`(?s)(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=[^;]{0,200}?process\.env\.(?:NEXT_PUBLIC_)?MARKETPLACE_API_URL`)
 
-// interpolation matches a `${...}` substitution with no nested braces, which
-// covers every reference in apps/* today (`${encodeURIComponent(slug)}`,
-// `${tenantID}`). A nested-brace substitution would simply not match, and the
-// reference would be reported as unparsed rather than silently skipped — see
-// the trailing check in extractInternalRefs.
-var interpolation = regexp.MustCompile(`\$\{[^{}]*\}`)
+// paramSegment is what an interpolated segment becomes once normalised, so a
+// written path can be compared against a gin route template.
+const paramSegment = ":param"
 
 // internalRef is one frontend call site pointing at marketplace-api /internal.
 type internalRef struct {
-	File string // repo-relative
-	Line int
-	Raw  string // the path exactly as written
-	Path string // normalised: `${...}` -> ":param", query string dropped
+	File   string // repo-relative
+	Line   int
+	Raw    string // the path exactly as written
+	Path   string // normalised: `${...}` -> ":param", query string dropped
+	Parsed bool   // false when an interpolation never closed — an extractor bug
 }
 
 // extractInternalRefs walks the whole of apps/ and returns every reference to
@@ -146,9 +144,10 @@ func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesSc
 				if idx < 0 {
 					continue
 				}
-				raw := pathFrom(line[idx+len(needle)-len("/internal"):])
+				raw, norm, ok := scanRefPath(line[idx+len(needle)-len("/internal"):])
 				refs = append(refs, internalRef{
-					File: f.rel, Line: i + 1, Raw: raw, Path: normaliseRefPath(raw),
+					File: f.rel, Line: i + 1, Raw: raw,
+					Path: trimQuery(norm), Parsed: ok,
 				})
 			}
 		}
@@ -162,20 +161,60 @@ func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesSc
 	return refs, len(files), bases
 }
 
-// pathFrom reads the URL path out of the remainder of a template literal,
-// stopping at the closing backtick/quote or at whitespace.
-func pathFrom(rest string) string {
-	end := strings.IndexAny(rest, "`\"'\n\t ,)")
-	if end >= 0 {
-		rest = rest[:end]
+// scanRefPath reads the URL path out of the remainder of a template literal,
+// returning it both as written and normalised for comparison.
+//
+// It tracks `${...}` nesting instead of stopping at the first terminator
+// character, and that is a correction, not caution. The first version split
+// on a fixed character set that included ")", so
+// `/internal/store-active-domain/${encodeURIComponent(slug)}` truncated at
+// the ")" inside the interpolation to
+// `/internal/store-active-domain/${encodeURIComponent(slug`. The test still
+// PASSED, because gin's own `:slug` segment matches anything — so the
+// mangled segment compared equal by accident. A path with a segment AFTER a
+// function-call interpolation would have lost every trailing segment and
+// failed for a reason that had nothing to do with the manifest.
+//
+// ok is false when an interpolation never closes, so a path the extractor
+// cannot read is reported as an extractor bug rather than silently compared
+// in a mangled form.
+func scanRefPath(rest string) (raw, normalised string, ok bool) {
+	var rawB, normB strings.Builder
+	for i := 0; i < len(rest); {
+		if strings.HasPrefix(rest[i:], "${") {
+			depth, j := 0, i
+			for ; j < len(rest); j++ {
+				switch rest[j] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+					if depth == 0 {
+						j++
+						goto closed
+					}
+				}
+			}
+			return rawB.String(), normB.String(), false // unterminated
+		closed:
+			rawB.WriteString(rest[i:j])
+			normB.WriteString(paramSegment)
+			i = j
+			continue
+		}
+		if strings.ContainsRune("`\"'\n\r\t ,)", rune(rest[i])) {
+			break
+		}
+		rawB.WriteByte(rest[i])
+		normB.WriteByte(rest[i])
+		i++
 	}
-	return rest
+	return rawB.String(), normB.String(), true
 }
 
-// normaliseRefPath turns a written path into a gin-comparable one: each
-// `${...}` becomes a single ":param" segment, and any query string is dropped.
-func normaliseRefPath(raw string) string {
-	p := interpolation.ReplaceAllString(raw, ":param")
+// trimQuery drops a query string or fragment and any trailing slash, so
+// `/internal/tenants/:param/me?uid=:param` compares as a path.
+func trimQuery(p string) string {
 	if i := strings.IndexAny(p, "?#"); i >= 0 {
 		p = p[:i]
 	}
@@ -268,9 +307,22 @@ func TestFrontendInternalRoutesAreDeclared(t *testing.T) {
 	}
 
 	for _, ref := range refs {
-		require.Containsf(t, ref.Raw, "${", "reference %s:%d (%q) has no interpolation — "+
-			"pathFrom probably truncated it; fix the extractor rather than the manifest",
-			ref.File, ref.Line, ref.Raw)
+		// The extractor's own correctness, asserted before its output is
+		// trusted. A half-read path compares against gin templates whose
+		// params match anything, so a truncated segment can pass by accident
+		// — which is exactly what the first version of scanRefPath did.
+		require.Truef(t, ref.Parsed,
+			"could not read the path at %s:%d: an interpolation never closes in %q. "+
+				"Fix scanRefPath — do not adjust the manifest to suit a path the "+
+				"extractor cannot read.", ref.File, ref.Line, ref.Raw)
+		require.NotContainsf(t, ref.Path, "$",
+			"normalised path %q from %s:%d still contains an interpolation, so it was "+
+				"only partly read. Fix scanRefPath, not the manifest.",
+			ref.Path, ref.File, ref.Line)
+		require.NotContainsf(t, ref.Path, "(",
+			"normalised path %q from %s:%d contains a bare \"(\", which means an "+
+				"interpolation was split across it. Fix scanRefPath, not the manifest.",
+			ref.Path, ref.File, ref.Line)
 
 		matched := false
 		for _, path := range declared {

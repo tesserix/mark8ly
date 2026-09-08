@@ -44,9 +44,25 @@ test("dev-min does not depend on dev-secrets", () => {
 // The Makefile passes -f explicitly, so an override that exists (e.g. to
 // drop postgres's host port on a machine where 5432 is already taken) is
 // silently inert unless the Makefile also references it (#858).
+//
+// Two things must both hold, or a partial revert slips through undetected:
+// COMPOSE_OVERRIDE must actually be defined from $(wildcard ...), and the
+// COMPOSE variable itself (not just some other line, and not just the file
+// as a whole) must reference it. A naive `mk.split("\n").find(l =>
+// l.startsWith("COMPOSE"))` matches "COMPOSE_OVERRIDE := ..." first, and a
+// bare `expect(mk).toMatch(...)` over the whole file is satisfied by the
+// explanatory comment alone — neither would catch someone reverting just
+// the `-f $(COMPOSE_OVERRIDE)` clause from the COMPOSE line while leaving
+// the comment and COMPOSE_OVERRIDE variable in place.
 test("the Makefile's COMPOSE variable references docker-compose.override.yml", () => {
   const mk = readFileSync(join(root, "Makefile"), "utf8");
-  const composeLine = mk.split("\n").find((l) => l.startsWith("COMPOSE"));
+  const lines = mk.split("\n");
+
+  const overrideVarLine = lines.find((l) => /^COMPOSE_OVERRIDE\s*:?=/.test(l));
+  expect(overrideVarLine, "Makefile has no COMPOSE_OVERRIDE variable").toBeTruthy();
+  expect(overrideVarLine).toMatch(/\$\(wildcard/);
+
+  const composeLine = lines.find((l) => /^COMPOSE\s*:?=/.test(l));
   expect(composeLine, "Makefile has no COMPOSE variable").toBeTruthy();
-  expect(mk).toMatch(/docker-compose\.override\.yml/);
+  expect(composeLine).toMatch(/\$\(COMPOSE_OVERRIDE\)/);
 });

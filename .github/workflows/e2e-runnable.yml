@@ -55,12 +55,28 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: "24"
+          # Matches the `node_version: "22"` the Next.js job in ci.yml passes
+          # to tesserix-workflows/nextjs-ci.yml. This job runs `next build`
+          # on the same app that job builds, so a different major here would
+          # mean the build verified by CI and the build these e2e tests run
+          # against were produced by different toolchains. Move both or
+          # neither.
+          node-version: "22"
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
       - name: Install Playwright Chromium
         working-directory: apps/admin
         run: npx playwright install --with-deps chromium
+      - name: Build admin
+        working-directory: apps/admin
+        # Its own step, NOT playwright's `webServer.command`. A cold Next 16
+        # admin build on ubuntu-latest routinely exceeds three minutes, so
+        # building inside webServer under its timeout reds the job on the
+        # build clock rather than on anything the spec asserts. Here a build
+        # failure is also its own log line instead of a webServer timeout
+        # that says nothing about the cause. playwright.ci.config.ts's
+        # webServer now runs `npm run start` only, and serves this output.
+        run: npm run build
       - name: Run pricing.spec.ts and verify the exact pass count
         working-directory: apps/admin
         # Verified locally by actually running the suite against a real
@@ -116,3 +132,15 @@ jobs:
             fail=1
           fi
           exit $fail
+      - name: Upload failure artifacts
+        # playwright.ci.config.ts captures trace, screenshot and video on
+        # failure. Without this step they were written into the runner and
+        # thrown away with it — produced and discarded, which reads like
+        # evidence exists when none is reachable.
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: admin-pricing-e2e-failure
+          path: apps/admin/test-results/
+          if-no-files-found: ignore
+          retention-days: 7

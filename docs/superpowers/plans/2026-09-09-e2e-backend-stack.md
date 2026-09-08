@@ -145,6 +145,7 @@ git commit -m "docs(e2e): record the measured onboarding suite baseline against 
 
 **Files:**
 - Create: `apps/onboarding/tests/unit/dev-stack-config.spec.ts`
+- Modify: `infra/dev/docker-compose.yml` (build context and migrate/seed invocation — see Step 0)
 - Modify: `infra/dev/load-secrets.sh`
 - Modify: `apps/onboarding/playwright.config.ts:1-14` (stale header comment)
 - Modify: `Makefile:16-20`
@@ -154,6 +155,52 @@ git commit -m "docs(e2e): record the measured onboarding suite baseline against 
 **Interfaces:**
 - Consumes: the Task 1 finding that the Tier-B services boot with no secrets.
 - Produces: `make dev-min`, a target that brings up postgres + OpenFGA + platform-api with no GCP dependency.
+
+- [ ] **Step 0: Fix the two tracked compose defects Task 1 uncovered**
+
+Task 1 could only bring the stack up by patching an *untracked* override, so
+the tracked file still cannot build `platform-api`. Task 3's CI job runs
+`make dev-min` against the tracked file, so without this it fails every time.
+Both defects were verified directly against the Dockerfile:
+
+1. **Wrong build context.** `services/platform-api/Dockerfile:23-30` copies
+   `services/platform-api/` and `packages/platformauth/` — paths relative to
+   the **repo root** — but all three `platform-api*` services set
+   `context: ../../services/platform-api`. Change each to:
+
+```yaml
+    build:
+      context: ../..
+      dockerfile: services/platform-api/Dockerfile
+      target: migrate     # (or: seed / server, per service)
+```
+
+2. **`command:` replaces the binary.** The `migrate` and `seed` stages declare
+   `CMD ["/migrate"]` / `CMD ["/seed"]` with no `ENTRYPOINT`
+   (`services/platform-api/Dockerfile:53,57`). Compose's `command: ["up"]`
+   therefore *replaces* `/migrate` rather than passing it an argument, so the
+   container tries to execute `up`. Change the migrate service to:
+
+```yaml
+    command: ["/migrate", "up"]
+```
+
+Add a comment above it recording why, so nobody "simplifies" it back:
+
+```yaml
+    # Full argv: the migrate stage sets CMD with no ENTRYPOINT, so a bare
+    # ["up"] replaces the binary instead of being passed to it.
+```
+
+Verify with a clean build before moving on:
+
+```bash
+cd infra/dev && docker compose build platform-api-migrate platform-api-seed platform-api
+```
+
+Expected: all three build. If you still need an override file to get the
+stack up after this step, the fix is incomplete — say so rather than
+re-adding the workaround.
 
 - [ ] **Step 1: Write the failing test**
 

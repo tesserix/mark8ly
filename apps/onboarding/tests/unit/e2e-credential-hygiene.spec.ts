@@ -102,6 +102,40 @@ test("no e2e spec documents a credential inline in its run instructions", () => 
   }
 });
 
+test("every config that globs tests/e2e/** also globs tests/operator/**", () => {
+  // Third instance of one specific mistake: a config or ignore-file names
+  // tests/e2e and its twin tests/operator is forgotten. It happened to
+  // .gitignore (#844 — a leaked production session, see the tests above),
+  // then to two vitest configs that let Playwright specs moved to
+  // tests/operator/ get collected by vitest and crash the whole suite
+  // (mark8ly#834's e2e-triage follow-up). Both times the fix was symmetric:
+  // whatever excludes/ignores tests/e2e/** must do the same for
+  // tests/operator/**, in the same file.
+  //
+  // `git grep -F` only searches tracked files, so this naturally skips
+  // node_modules and build output without an explicit exclude list.
+  const withE2eGlob = execFileSync(
+    "git",
+    ["grep", "-l", "-F", "tests/e2e/**"],
+    { cwd: REPO_ROOT, encoding: "utf8" },
+  )
+    .split("\n")
+    .filter(Boolean);
+
+  for (const file of withE2eGlob) {
+    const src = readFileSync(path.join(REPO_ROOT, file), "utf8");
+    expect(
+      src.includes("tests/operator/**"),
+      `${file} globs "tests/e2e/**" (to exclude or ignore it) without a ` +
+        `matching "tests/operator/**" glob in the same file. Playwright ` +
+        `specs live under tests/operator/ too (mark8ly#834 moved them ` +
+        `there), so anything that excludes/ignores one tree must exclude/ ` +
+        `ignore the other, or tests/operator content leaks into whatever ` +
+        `this file's tool collects.`,
+    ).toBe(true);
+  }
+});
+
 test("no captured browser session or run artifact is committed under tests/e2e", () => {
   // Literal paths, one per app. A `*` in a git pathspec does NOT cross a
   // `/` — `git ls-files -- "apps/*/tests/e2e/.state/"` returns nothing even

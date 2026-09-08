@@ -113,8 +113,21 @@ export const pricingCopy = {
    * services/marketplace-api/internal/plangate/matrix.go, confirm it is
    * enabled for that plan, and confirm a real handler enforces it. A
    * numeric limit must be a number the code enforces, not one invented
-   * here. This page is public and indexed — pricing-copy.test.ts pins the
-   * counts against the matrix so a divergence fails the build.
+   * here.
+   *
+   * This page is public and indexed, and
+   * `tests/unit/lib/copy/pricing-copy.test.ts` now pins these bullets
+   * against `matrix.go` so a divergence fails the build.
+   *
+   * That sentence used to be here and was NOT true: the file it named did
+   * not exist, and nothing on this side compared a bullet to the matrix.
+   * It is recorded rather than quietly corrected because of what it cost —
+   * three defects reached this public page while the comment told reviewers
+   * CI was watching: #413 (prices billing would not charge), #564 (the
+   * invented caps and SLA above) and #838 ("SSO (SAML / OIDC)" against a
+   * route that answers 501). Each was found by a person reading the file.
+   * If the guard is ever removed, delete this paragraph with it rather than
+   * leaving the claim behind again.
    */
   plans: [
     {

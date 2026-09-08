@@ -52,7 +52,22 @@ func Validate(cfg *Config) error {
 			}
 		}
 	case ProviderOIDC:
-		for _, k := range []string{OIDCKeyIssuer, OIDCKeyClientID, OIDCKeyDiscoveryURL} {
+		// These three are what a login actually needs, which is not what this
+		// list used to hold (mark8ly#820).
+		//
+		// It required discovery_url, which NOTHING reads: BuildOIDCRelyingParty
+		// discovers from the issuer, per the OIDC spec's well-known path. And
+		// it did not require client_secret_ref, without which no relying party
+		// can be built at all.
+		//
+		// So a config could save cleanly, pass the Test endpoint, and then fail
+		// every login with "provider_not_ready" — while the one field the
+		// merchant was forced to supply was ignored. Corrected while there are
+		// zero configs in existence and it costs nothing.
+		//
+		// discovery_url is still ACCEPTED and still stored; it is simply no
+		// longer demanded for a config that does not need it.
+		for _, k := range []string{OIDCKeyIssuer, OIDCKeyClientID, OIDCKeyClientSecretRef} {
 			if _, ok := nonEmpty(cfg.Metadata, k); !ok {
 				return fmt.Errorf("%w: oidc.%s required", ErrInvalidMetadata, k)
 			}

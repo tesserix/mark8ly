@@ -96,5 +96,12 @@ func buildSSO(d ssoDeps) (*admin.SSOConfigHandler, *public.SSOLoginHandler) {
 		d.log,
 	)
 
-	return admin.NewSSOConfigHandler(d.repo, d.audit, d.log), login
+	// The config handler gets the SAME cache the login path uses, so
+	// "Test connection" exercises the exact object a login would build —
+	// discovery against the tenant's issuer and the client secret out of
+	// OpenBao — rather than re-running the validation that just accepted the
+	// save. It invalidates before testing, so it tests the config as edited.
+	config := admin.NewSSOConfigHandler(d.repo, d.audit, d.log).WithRelyingParties(rps)
+
+	return config, login
 }

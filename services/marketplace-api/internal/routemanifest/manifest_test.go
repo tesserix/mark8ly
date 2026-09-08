@@ -233,6 +233,15 @@ func TestRouteManifestMatchesMountedRoutes(t *testing.T) {
 	if *update {
 		// Checked before writing, not after: an empty surface written into the
 		// manifest is a blind spot that then reconciles cleanly forever.
+		//
+		// The LIMIT of this check, stated plainly so nobody infers more from
+		// it than it does: it only fires when a surface reaches ZERO routes.
+		// Deleting ONE route from a multi-route surface regenerates
+		// successfully and leaves the suite green — by design, since a
+		// regenerable manifest must let intended deletions through. What
+		// catches that is the MANIFEST DIFF in code review: -1 line in
+		// route-manifest.json is the review signal, and there is no
+		// mechanism here that makes it fail instead.
 		for _, s := range built {
 			require.NotEmptyf(t, s.Routes,
 				"refusing to write route-manifest.json: surface %q mounted no in-scope "+

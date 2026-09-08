@@ -188,44 +188,13 @@ func describeApps(apps []apple.App) string {
 // Connect client per tenant, authenticated with that tenant's stored .p8
 // key, issuer id and key id.
 //
-// Credentials are fetched inside the CredsFetcher closure — that is, per
-// API call, not once at factory time — so a key rotated or revoked
-// between the factory call and the request is picked up, and so every
-// read goes through appcreds' audit + metrics choke point.
+// The client itself is built by newAppleClient (client_factory.go), which
+// the advancer's teardown factory shares, so the read path and the write
+// path cannot drift in how they load credentials. Only the audit actor
+// differs — discoveryActor here, teardownActor there.
 func NewAppleListerFactory(creds CredentialLoader) AppleListerFactory {
 	return func(_ context.Context, tenantID, storeID uuid.UUID) (AppleLister, error) {
-		if creds == nil {
-			return nil, errors.New("lifecycle/discovery: appcreds service is nil")
-		}
-		client, err := apple.New(apple.Config{
-			CredsFetcher: func(ctx context.Context) (apple.Credentials, error) {
-				load := func(ct appcreds.CredType) ([]byte, error) {
-					return creds.Load(ctx, appcreds.LoadInput{
-						TenantID: tenantID,
-						StoreID:  storeID,
-						CredType: ct,
-						Actor:    discoveryActor,
-					})
-				}
-				p8, err := load(appcreds.CredTypeAppleP8)
-				if err != nil {
-					return apple.Credentials{}, fmt.Errorf("load %s: %w", appcreds.CredTypeAppleP8, err)
-				}
-				issuer, err := load(appcreds.CredTypeAppleIssuerID)
-				if err != nil {
-					return apple.Credentials{}, fmt.Errorf("load %s: %w", appcreds.CredTypeAppleIssuerID, err)
-				}
-				keyID, err := load(appcreds.CredTypeAppleKeyID)
-				if err != nil {
-					return apple.Credentials{}, fmt.Errorf("load %s: %w", appcreds.CredTypeAppleKeyID, err)
-				}
-				return apple.Credentials{
-					P8:       p8,
-					IssuerID: strings.TrimSpace(string(issuer)),
-					KeyID:    strings.TrimSpace(string(keyID)),
-				}, nil
-			},
-		})
+		client, err := newAppleClient(creds, tenantID, storeID, discoveryActor)
 		if err != nil {
 			// Return an untyped nil: a typed-nil *Client behind a
 			// non-nil AppleLister interface would pass a `!= nil`

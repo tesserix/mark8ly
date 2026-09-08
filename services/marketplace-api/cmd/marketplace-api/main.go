@@ -134,9 +134,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/webhook/ssrfguard"
 	"github.com/mark8ly/marketplace-api/internal/webhookevents"
 	"github.com/mark8ly/marketplace-api/internal/webhookprune"
-	wlapple "github.com/mark8ly/marketplace-api/internal/whitelabel/apple"
 	wlfirebase "github.com/mark8ly/marketplace-api/internal/whitelabel/firebase"
-	wlgoogleplay "github.com/mark8ly/marketplace-api/internal/whitelabel/googleplay"
 	wllifecycle "github.com/mark8ly/marketplace-api/internal/whitelabel/lifecycle"
 	"github.com/mark8ly/marketplace-api/internal/wishlist"
 	"github.com/mark8ly/marketplace-api/pkg/config"
@@ -2330,10 +2328,9 @@ func main() {
 			WithDiscovery(&wllifecycle.Discovery{
 				// A REAL App Store Connect client, built per tenant from
 				// that tenant's stored credentials — a FakeClient here
-				// would see zero apps and refuse every teardown. Note
-				// the asymmetry with the advancer below, which is still
-				// wired to wlapple.NewFakeClient(): discovery reads for
-				// real, the day-30/60 writes do not yet.
+				// would see zero apps and refuse every teardown. The
+				// advancer below is wired the same way, so the day-30/60
+				// writes reach Apple for real too.
 				Apple:  wllifecycle.NewAppleListerFactory(wlAppCredsSvc),
 				Creds:  wlAppCredsSvc,
 				Logger: log,
@@ -2452,11 +2449,19 @@ func main() {
 	// for dev so `make dev` boots without GCP auth. Every read/write/
 	// delete emits an audit event + increments a Prometheus counter.
 	//
-	// Apple/Google/Firebase clients: wired as FakeClient today — real
-	// integrations return ErrNotWired until the respective API SDKs are
-	// fleshed out in a follow-up. The lifecycle advancer tolerates
-	// ErrNotWired (logged, swallowed) so day-30/60/90 actions can land
-	// progressively as each integration matures.
+	// Apple/Google/Firebase clients: all three are the REAL
+	// implementations. Fakes here would have been worse than nothing —
+	// apple.FakeClient's BlockDownloads/PullApp succeed without calling
+	// Apple, and firebase.FakeClient.ArchiveProject returns a nil error
+	// by default, so the advancer would write downloads_blocked, pulled
+	// and firebase_archived into the append-only lifecycle table for a
+	// teardown that touched nothing (#702 T3). Play and Firebase are
+	// still stubs, but their stubs return ErrNotWired, which the advancer
+	// logs — an honest "not done" instead of a silent success.
+	//
+	// Apple and Google are wired as per-tenant FACTORIES: their
+	// credentials are per-tenant and the advancer walks a multi-tenant
+	// cohort, so there is no single client that can serve it.
 	//
 	// The lifecycle cron registers on the shared trialScheduler so it
 	// shares the same thread pool and shutdown semantics as P5/P6/P11
@@ -2466,14 +2471,11 @@ func main() {
 	// MODE=storefront it's nil and we skip the lifecycle cron — the
 	// storefront pod has no business running the teardown advancer.
 	if wlAppCredsSvc != nil {
-		wlAppleCli := wlapple.NewFakeClient()
-		wlGoogleCli := wlgoogleplay.NewFakeClient()
-		wlFirebaseCli := wlfirebase.NewFakeClient()
 		wlAdvancer := wllifecycle.NewAdvancer(wllifecycle.Config{
 			DB:       conn,
-			Apple:    wlAppleCli,
-			Google:   wlGoogleCli,
-			Firebase: wlFirebaseCli,
+			Apple:    wllifecycle.NewAppleTeardownFactory(wlAppCredsSvc),
+			Google:   wllifecycle.NewGoogleTeardownFactory(wlAppCredsSvc),
+			Firebase: wlfirebase.New(),
 			Creds:    wlAppCredsSvc,
 			Clock:    time.Now,
 			Logger:   log,

@@ -12,9 +12,9 @@ import { join } from "path";
  *
  * Run:
  *   FULL_FLOW=1 \
- *   STOREFRONT_BASE_URL=https://india-store.mark8ly.com \
- *   CUSTOMER_EMAIL=admtesserix@gmail.com \
- *   CUSTOMER_PASSWORD=Test@123 \
+ *   STOREFRONT_BASE_URL=<storefront host> \
+ *   CUSTOMER_EMAIL=<customer email> \
+ *   CUSTOMER_PASSWORD=<customer password> \
  *   npx playwright test storefront-journey.spec.ts
  */
 

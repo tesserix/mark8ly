@@ -9,14 +9,19 @@ import { join } from "node:path";
  *   Create category → Create product → Campaign → Coupon →
  *   Gift card → Loyalty → Final state write
  *
+ * Every value below is supplied by the caller and has no default. The spec
+ * drives a real admin account against a real host and writes real records, so
+ * there is no safe value to fall back to: an omitted variable skips the step
+ * rather than guessing one.
+ *
  * Run:
  *   FULL_FLOW=1 \
- *   ADMIN_BASE_URL=https://india-store-admin.mark8ly.com \
- *   ADMIN_EMAIL=mahesh.sangawar@gmail.com \
- *   ADMIN_PASSWORD=Admin@1234 \
- *   RAZORPAY_KEY_ID=rzp_test_ScTk767S4x9Ym3 \
- *   RAZORPAY_KEY_SECRET=QUu4J3TmgW9EqyTOshfbdiYd \
- *   DELHIVERY_API_KEY=b8e0aedff3aa94e217cb7484ffd70747bf9833b9 \
+ *   ADMIN_BASE_URL=<admin host> \
+ *   ADMIN_EMAIL=<admin email> \
+ *   ADMIN_PASSWORD=<admin password> \
+ *   RAZORPAY_KEY_ID=<razorpay key id> \
+ *   RAZORPAY_KEY_SECRET=<razorpay key secret> \
+ *   DELHIVERY_API_KEY=<delhivery api key> \
  *   npx playwright test admin-setup.spec.ts
  */
 
@@ -25,16 +30,12 @@ import { join } from "node:path";
 /* ------------------------------------------------------------------ */
 
 const SHOULD_RUN = process.env.FULL_FLOW === "1";
-const ADMIN_URL =
-  process.env.ADMIN_BASE_URL ?? "https://india-store-admin.mark8ly.com";
-const EMAIL = process.env.ADMIN_EMAIL ?? "mahesh.sangawar@gmail.com";
-const PASSWORD = process.env.ADMIN_PASSWORD ?? "Admin@1234";
-const RAZORPAY_KEY_ID =
-  process.env.RAZORPAY_KEY_ID ?? "rzp_test_ScTk767S4x9Ym3";
-const RAZORPAY_KEY_SECRET =
-  process.env.RAZORPAY_KEY_SECRET ?? "QUu4J3TmgW9EqyTOshfbdiYd";
-const DELHIVERY_API_KEY =
-  process.env.DELHIVERY_API_KEY ?? "b8e0aedff3aa94e217cb7484ffd70747bf9833b9";
+const ADMIN_URL = process.env.ADMIN_BASE_URL ?? "";
+const EMAIL = process.env.ADMIN_EMAIL ?? "";
+const PASSWORD = process.env.ADMIN_PASSWORD ?? "";
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID ?? "";
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET ?? "";
+const DELHIVERY_API_KEY = process.env.DELHIVERY_API_KEY ?? "";
 
 const SUFFIX = Date.now().toString(36);
 const STATE_DIR = join(__dirname, ".state");
@@ -87,6 +88,13 @@ function screenshotPath(name: string): string {
 
 test.describe("admin setup: full configuration flow", () => {
   test.skip(!SHOULD_RUN, "set FULL_FLOW=1 to run");
+  // Sign-in is step 1 and every later step depends on its session, so a
+  // missing host or credential skips the suite rather than opening a browser
+  // at about:blank and failing eight steps later on a selector.
+  test.skip(
+    !ADMIN_URL || !EMAIL || !PASSWORD,
+    "set ADMIN_BASE_URL, ADMIN_EMAIL and ADMIN_PASSWORD to run",
+  );
   test.describe.configure({ mode: "serial" });
 
   /* ---- 1. Admin sign-in ----------------------------------------- */
@@ -189,6 +197,13 @@ test.describe("admin setup: full configuration flow", () => {
 
   /* ---- 3. Settings -> Payments -> Razorpay ---------------------- */
   test("3. settings — payments — configure Razorpay", async ({ browser }) => {
+    // Without a key the confirmation assertion below degrades to
+    // `text=${"".slice(0, 8)}`, an empty selector that matches every node —
+    // so the step would report success having configured nothing.
+    test.skip(
+      !RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET,
+      "RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not set",
+    );
     test.setTimeout(30_000);
 
     const ctx = await browser.newContext({
@@ -275,6 +290,7 @@ test.describe("admin setup: full configuration flow", () => {
 
   /* ---- 4. Settings -> Shipping -> Delhivery --------------------- */
   test("4. settings — shipping — configure Delhivery", async ({ browser }) => {
+    test.skip(!DELHIVERY_API_KEY, "DELHIVERY_API_KEY not set");
     test.setTimeout(30_000);
 
     const ctx = await browser.newContext({

@@ -44,6 +44,27 @@ This task produces a **measurement recorded in the repo**, not product code.
 
 `make dev` depends on `dev-secrets`, which runs `infra/dev/load-secrets.sh` — a script that pulls only `GIP_*` and `NEXT_PUBLIC_GIP_*` values from GCP Secret Manager. GIP was removed on 2026-09-08, so those feed nothing. Bypass it for this measurement rather than fixing it yet (Task 2 fixes it):
 
+**Host port 5432 is very likely already taken** by a local postgres — it was
+on the machine this plan was written on. The compose file publishes
+`5432:5432`, so the stack will fail to bind. Nothing in this task needs
+postgres from the host (platform-api reaches it container-internally at
+`postgres:5432`), so drop the publish rather than stopping anyone's database.
+Create `infra/dev/docker-compose.override.yml`, which compose picks up
+automatically. It is **not** currently gitignored (verified: `git check-ignore`
+does not match it), so add `infra/dev/docker-compose.override.yml` to
+`.gitignore` in the same step — it is a per-developer file and committing it
+would publish one machine's port layout to everyone:
+
+```yaml
+# Local-only: do not publish postgres on the host. 5432 is commonly taken,
+# and no service in the Tier-B stack is reached from the host on that port.
+services:
+  postgres:
+    ports: !reset []
+```
+
+Then:
+
 ```bash
 cd infra/dev
 touch .env.local            # compose declares env_file, so the file must exist
@@ -52,7 +73,12 @@ docker compose up -d postgres openfga-migrate openfga openfga-seed \
 docker compose ps
 ```
 
-Expected: `platform-api` running and `openfga-seed` exited 0.
+Expected: `platform-api` running and `openfga-seed` exited 0. If compose still
+reports a port conflict, `lsof -nP -iTCP:5432 -sTCP:LISTEN` names the holder —
+do **not** kill it, it may belong to another session working in this checkout.
+
+Ports 8086 (platform-api), 8087, 8089/8090 (OpenFGA), 8091 and 4201 were all
+free when this plan was written; only 5432 collided.
 
 - [ ] **Step 2: Prove the backend is genuinely reachable, not merely running**
 
@@ -294,6 +320,10 @@ jobs:
           node-version: "22"
 
       - name: Bring up the Tier-B stack
+        # No compose override here: on a clean runner 5432 is free, and the
+        # override that a developer needs locally is deliberately not
+        # committed. If this step ever fails on a port bind, the runner image
+        # has started shipping a postgres and this needs the same treatment.
         run: |
           touch infra/dev/.env.local
           make dev-min

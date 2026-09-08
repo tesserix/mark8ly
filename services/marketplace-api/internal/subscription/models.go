@@ -62,24 +62,36 @@ func AllStatuses() []SubscriptionStatus {
 type SubscriptionStatus string
 
 const (
-	// StatusSignup is where `Bootstrap` puts every new row, and it is a
-	// RESTING STATE, not a transient one. Documented rather than fixed, on
+	// StatusSignup is a RESTING STATE, not a transient one.
+	//
+	// CORRECTED (#827): it is no longer where Bootstrap puts new rows.
+	// Bootstrap creates `trialing`, because its only caller is onboarding
+	// completion and §17.2 promotes signup → trialing on "email verified",
+	// which a completed onboarding has by definition. Rows left in signup had
+	// a trial_ends_at that nothing acted on — ExpiryCron selects trialing —
+	// so the trial clock #827 started could never ring.
+	//
+	// What still lands here: nothing, on the current paths. The value is kept
+	// because the Stripe checkout webhook's signup → trialing transition and
+	// the reminder ladder's `status IN (signup, trialing)` both still name
+	// it, and because rows written before #827 may hold it. Documented rather than fixed, on
 	// purpose — tesserix-home#582's reasoning applied to this enum
 	// (mark8ly#803, decided 2026-09-07).
 	//
-	// Exactly one thing promotes it: the Stripe
-	// `checkout.session.completed` webhook (`internal/billing/dispatch/handlers.go`).
-	// A tenant who signs up and abandons checkout therefore stays here
-	// indefinitely — and nothing else observes them, because `ExpiryCron`
-	// selects `trialing` and the dunning ladder selects live statuses. Not
-	// trialing, so no trial machinery; not expired, so no retention path;
-	// not converted, so nothing bills them.
+	// One thing promotes it: the Stripe `checkout.session.completed` webhook
+	// (`internal/billing/dispatch/handlers.go`). A row that somehow sits here
+	// is observed by almost nothing — `ExpiryCron` selects `trialing`, so it
+	// is not trialing and gets no trial machinery; not expired, so no
+	// retention path; not converted, so nothing bills it. The reminder ladder
+	// is the one exception: it selects signup AND trialing.
 	//
 	// WHY NOTHING WAS BUILT. Measured on 2026-09-07: `store_subscriptions`
 	// held ZERO rows, and Stripe is deliberately still on the test key
-	// (mark8ly#371, "not yet"), so no tenant can be stuck here yet. An
-	// expiry path or a chase path would be writer code exercised against
-	// zero rows — the failure this milestone already paid for once.
+	// (mark8ly#371, "not yet"). That premise expired the moment #827
+	// backfilled four rows — all of them landed here, and two were weeks past
+	// their trial end with nothing to sweep them. The answer was to stop
+	// creating rows in this state rather than to build a second expiry path
+	// for it.
 	//
 	// WHAT REOPENS IT: real subscribers existing (following the live-key
 	// swap), or an abandonment rate worth chasing. The chase option

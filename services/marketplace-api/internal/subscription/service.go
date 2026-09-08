@@ -134,7 +134,24 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (*StoreSubsc
 		TenantID: in.TenantID,
 		StoreID:  in.StoreID,
 		Plan:     PlanTrial,
-		Status:   StatusSignup,
+		// trialing, not signup. §17.2's own trigger for this transition is
+		// "email verified", and the only caller reaches here from onboarding
+		// completion, which cannot happen until the merchant has clicked the
+		// magic link.
+		//
+		// signup would be worse than merely inaccurate. It is documented as a
+		// RESTING STATE that only the Stripe checkout webhook promotes, and
+		// ExpiryCron selects `trialing` — so a row left in signup has a
+		// trial_ends_at that NOTHING acts on. #827 started the clock; this is
+		// what makes it ring. Four backfilled stores sat in exactly that
+		// state, two of them weeks past their end date and invisible to
+		// every sweep.
+		//
+		// trialing is also what the rest of the table expects of these rows:
+		// `trialing → expired (day 90, no card)` describes them precisely,
+		// and `trialing → active (card added)` is where the deferred-charge
+		// flow takes them next.
+		Status: StatusTrialing,
 	}
 	if cur := strings.ToLower(strings.TrimSpace(in.BillingCurrency)); cur != "" {
 		row.BillingCurrency = &cur

@@ -4,6 +4,7 @@ package admin_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -97,8 +98,10 @@ func TestSharedRateLimiter_LoginFailureVisibleToClearLockout(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, loginRec.Code, "expected the uniform invalid_credentials failure")
 
 	ipHash := breakglass.HMACIPHash(ipHMACKey, callerIP)
-	key := breakglass.LoginRateLimitKey(ipHash)
-	require.Equal(t, 1, sharedLimiter.Count(key),
+	key := breakglass.LoginKey{IPHash: ipHash}
+	recorded, err := sharedLimiter.Count(context.Background(), key)
+	require.NoError(t, err)
+	require.Equal(t, 1, recorded,
 		"the login path must have recorded its failure on sharedLimiter — if this is 0, "+
 			"the login handler is not touching the instance the test wired it with")
 
@@ -112,7 +115,9 @@ func TestSharedRateLimiter_LoginFailureVisibleToClearLockout(t *testing.T) {
 	writeRouter.ServeHTTP(clearRec, clearReq)
 	require.Equal(t, http.StatusOK, clearRec.Code)
 
-	require.Equal(t, 0, sharedLimiter.Count(key),
+	cleared, err := sharedLimiter.Count(context.Background(), key)
+	require.NoError(t, err)
+	require.Equal(t, 0, cleared,
 		"clear-lockout did NOT reset the same in-memory bucket the login path recorded the "+
 			"failure on. In production this is mark8ly#642's failure mode: the durable DB "+
 			"lockout clears, the API reports success, and the in-memory limiter silently keeps "+

@@ -61,14 +61,16 @@ func TestSharedRateLimiter_ClearLockoutResetsALoginPathFailure(t *testing.T) {
 	ipHMACKey := breakglass.HMACKey("shared-limiter-unit-test-key")
 	const callerIP = "198.51.100.23"
 	ipHash := breakglass.HMACIPHash(ipHMACKey, callerIP)
-	key := breakglass.LoginRateLimitKey(ipHash)
+	key := breakglass.LoginKey{IPHash: ipHash}
 
 	sharedLimiter := breakglass.NewLoginRateLimiter()
 
 	// --- "login path": the exact two calls break_glass_login.go's
 	// recordFailure makes on a failed attempt. ---
-	sharedLimiter.RecordFailure(key)
-	require.Equal(t, 1, sharedLimiter.Count(key), "test setup: the simulated login failure must be recorded")
+	_, _ = sharedLimiter.RecordFailure(context.Background(), key)
+	recorded, err := sharedLimiter.Count(context.Background(), key)
+	require.NoError(t, err)
+	require.Equal(t, 1, recorded, "test setup: the simulated login failure must be recorded")
 
 	// --- write path: the REAL clear-lockout HTTP handler. ---
 	writeHandler := platformadmin.NewBreakGlassWriteHandler(
@@ -92,7 +94,9 @@ func TestSharedRateLimiter_ClearLockoutResetsALoginPathFailure(t *testing.T) {
 	r.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
-	require.Equal(t, 0, sharedLimiter.Count(key),
+	cleared, err := sharedLimiter.Count(context.Background(), key)
+	require.NoError(t, err)
+	require.Equal(t, 0, cleared,
 		"clear-lockout did not reset the bucket the login path recorded a failure on — in "+
 			"production this is mark8ly#642's failure mode: the durable DB lockout row clears, "+
 			"the API reports success, and the in-memory limiter silently keeps refusing the IP, "+

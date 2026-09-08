@@ -22,14 +22,29 @@ const BreakGlassSessionTTL = 2 * time.Hour
 
 // BreakGlassDeps groups every dependency the login handler needs.
 type BreakGlassDeps struct {
-	Repo        *breakglass.Repository
-	Secrets     *breakglass.SecretManager
-	Audit       *breakglass.AuditEmitter
-	Slack       *breakglass.SlackClient
+	Repo    *breakglass.Repository
+	Secrets *breakglass.SecretManager
+	Audit   *breakglass.AuditEmitter
+	Slack   *breakglass.SlackClient
+	// RateLimiter is the IN-MEMORY window, and it is required.
+	//
+	// It is no longer the counter of record — see Window — but it cannot be
+	// dropped: it is the signal `degradedLockDecision` reads when the lockout
+	// store is unreachable, which is exactly the moment Window (also
+	// Postgres-backed) has nothing to offer either. It is therefore stamped
+	// on every failure even while Window is healthy, so it is warm when it
+	// is needed.
 	RateLimiter *breakglass.LoginRateLimiter
-	IPHMACKey   breakglass.HMACKey
-	Sessions    authbffclient.SessionIssuer
-	Logger      *slog.Logger
+	// Window is the ESTATE-WIDE window, backed by break_glass_login_attempts.
+	//
+	// Optional: nil falls back to RateLimiter alone, which is the pre-#846
+	// behaviour and is correct on a single-replica deployment. With more than
+	// one replica it must be set, or the 3-strike threshold becomes 3 strikes
+	// PER POD.
+	Window    breakglass.LoginWindow
+	IPHMACKey breakglass.HMACKey
+	Sessions  authbffclient.SessionIssuer
+	Logger    *slog.Logger
 }
 
 // BreakGlassLoginHandler answers POST /admin/break-glass/login.
@@ -82,7 +97,10 @@ func (h *BreakGlassLoginHandler) Login(c *gin.Context) {
 		// Degrade to the in-memory limiter rather than choosing one extreme.
 		// It is per-pod and resets on deploy, but it is the signal still
 		// available, and it refuses exactly the IPs that have earned it.
-		recent := h.deps.RateLimiter.Count(breakglass.LoginRateLimitKey(ipHash))
+		// The IN-MEMORY window deliberately, not Window: the branch we are in
+		// is "Postgres could not be read", so the durable window has nothing
+		// to add and asking it would just fail again.
+		recent, _ := h.deps.RateLimiter.Count(ctx, breakglass.LoginKey{IPHash: ipHash})
 		locked = degradedLockDecision(recent)
 		h.logger().Error("break-glass: lockout lookup failed; degraded to the in-memory limiter",
 			"err", err, "recent_failures", recent, "treated_as_locked", locked)
@@ -189,7 +207,11 @@ func (h *BreakGlassLoginHandler) Login(c *gin.Context) {
 		}()
 	}
 
-	h.deps.RateLimiter.Reset(breakglass.LoginRateLimitKey(ipHash))
+	// Both windows, because both are consulted: the durable one decides the
+	// threshold and the in-memory one is the degraded fallback. Clearing only
+	// one leaves a successful login still counted against the next attempt by
+	// whichever window was missed.
+	h.resetWindows(ctx, ipHash)
 
 	c.JSON(http.StatusOK, gin.H{"session_ttl_seconds": int(BreakGlassSessionTTL.Seconds())})
 }
@@ -199,7 +221,7 @@ func (h *BreakGlassLoginHandler) Login(c *gin.Context) {
 // event. Slack is also pinged so on-call sees the attempt in real
 // time.
 func (h *BreakGlassLoginHandler) recordFailure(c *gin.Context, ipHash []byte, tenantID uuid.UUID, reason string) {
-	count := h.deps.RateLimiter.RecordFailure(breakglass.LoginRateLimitKey(ipHash))
+	count := h.recordAcrossWindows(c.Request.Context(), ipHash)
 
 	if count >= breakglass.LoginMaxFailures {
 		var tidPtr *uuid.UUID
@@ -246,6 +268,55 @@ var breakGlassNamespace = uuid.MustParse("1ffb2c0e-8c3a-4d78-9aee-62267a3c110a")
 // collides with a real user).
 func BreakGlassUserID(tenantID uuid.UUID) uuid.UUID {
 	return uuid.NewSHA1(breakGlassNamespace, []byte(tenantID.String()))
+}
+
+// recordAcrossWindows stamps the failure on both windows and returns the count
+// the threshold is judged on.
+//
+// The in-memory window is stamped FIRST and unconditionally. It is the
+// degraded signal, and a durable window that is healthy today must not leave
+// it cold for the day the database is not — `degradedLockDecision` reads it
+// precisely when Window cannot answer.
+//
+// The DURABLE count wins when it is available, because it is the only one
+// that is a property of the estate rather than of this pod. When it errors,
+// the in-memory count is used rather than zero: falling back to "no failures
+// recorded" would make a database blip into a bypass of the whole threshold.
+func (h *BreakGlassLoginHandler) recordAcrossWindows(ctx context.Context, ipHash []byte) int {
+	key := breakglass.LoginKey{IPHash: ipHash}
+
+	local, _ := h.deps.RateLimiter.RecordFailure(ctx, key)
+	if h.deps.Window == nil {
+		return local
+	}
+
+	durable, err := h.deps.Window.RecordFailure(ctx, key)
+	if err != nil {
+		// Error, not Warn, for the reason #468 gives about the lockout write:
+		// this is the durable half of a security control failing, and the
+		// symptom (a threshold counted per-pod again) is invisible otherwise.
+		h.logger().Error("break-glass: durable login window unavailable; counting per-pod",
+			"err", err, "failures_in_window", local)
+		return local
+	}
+	return durable
+}
+
+// resetWindows clears both windows for an ip_hash. Errors are logged, never
+// returned: this runs after a SUCCESSFUL login, and refusing the session
+// because a cleanup delete failed would deny an operator the emergency access
+// they just proved they were entitled to. The cost of a missed clear is that
+// the IP keeps stale failures until they age out of the window.
+func (h *BreakGlassLoginHandler) resetWindows(ctx context.Context, ipHash []byte) {
+	key := breakglass.LoginKey{IPHash: ipHash}
+	_ = h.deps.RateLimiter.Reset(ctx, key)
+	if h.deps.Window == nil {
+		return
+	}
+	if err := h.deps.Window.Reset(ctx, key); err != nil {
+		h.logger().Error("break-glass: durable login window not cleared after a successful login",
+			"err", err)
+	}
 }
 
 // degradedLockDecision decides whether to treat a login as locked when the

@@ -8,26 +8,26 @@ import (
 
 func TestLoginRateLimiter_CountsFailuresInWindow(t *testing.T) {
 	rl := NewLoginRateLimiter()
-	require.Equal(t, 1, rl.RecordFailure("ip-a"))
-	require.Equal(t, 2, rl.RecordFailure("ip-a"))
-	require.Equal(t, 3, rl.RecordFailure("ip-a"))
-	require.Equal(t, 3, rl.Count("ip-a"))
+	require.Equal(t, 1, rl.recordFailure("ip-a"))
+	require.Equal(t, 2, rl.recordFailure("ip-a"))
+	require.Equal(t, 3, rl.recordFailure("ip-a"))
+	require.Equal(t, 3, rl.count("ip-a"))
 }
 
 func TestLoginRateLimiter_SeparateKeysSeparateCounts(t *testing.T) {
 	rl := NewLoginRateLimiter()
-	rl.RecordFailure("ip-a")
-	rl.RecordFailure("ip-a")
-	require.Equal(t, 1, rl.RecordFailure("ip-b"))
-	require.Equal(t, 2, rl.Count("ip-a"))
-	require.Equal(t, 1, rl.Count("ip-b"))
+	rl.recordFailure("ip-a")
+	rl.recordFailure("ip-a")
+	require.Equal(t, 1, rl.recordFailure("ip-b"))
+	require.Equal(t, 2, rl.count("ip-a"))
+	require.Equal(t, 1, rl.count("ip-b"))
 }
 
 func TestLoginRateLimiter_ResetClearsBucket(t *testing.T) {
 	rl := NewLoginRateLimiter()
-	rl.RecordFailure("ip-a")
-	rl.RecordFailure("ip-a")
-	rl.Reset("ip-a")
-	require.Equal(t, 0, rl.Count("ip-a"))
-	require.Equal(t, 1, rl.RecordFailure("ip-a"))
+	rl.recordFailure("ip-a")
+	rl.recordFailure("ip-a")
+	rl.reset("ip-a")
+	require.Equal(t, 0, rl.count("ip-a"))
+	require.Equal(t, 1, rl.recordFailure("ip-a"))
 }

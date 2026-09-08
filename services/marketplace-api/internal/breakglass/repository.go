@@ -235,6 +235,74 @@ func (r *Repository) IsIPLocked(ctx context.Context, ipHash []byte) (bool, error
 	return count > 0, nil
 }
 
+// RecordLoginFailure appends one failed attempt and returns the number of
+// failures inside the current window, counting this one — the same contract
+// LoginRateLimiter.RecordFailure has, so the two are interchangeable behind
+// LoginWindow (#846).
+//
+// The INSERT and the COUNT are two statements rather than one CTE, and the
+// count is deliberately taken AFTER the insert. Two pods failing at the same
+// instant may both read the same total; the consequence is that both persist
+// a lockout for an IP that earned one, which LockIP already treats as a
+// no-op. The opposite ordering could let both read a pre-insert count and
+// neither cross the threshold, which is the failure that matters.
+func (r *Repository) RecordLoginFailure(ctx context.Context, ipHash []byte) (int, error) {
+	if len(ipHash) == 0 {
+		return 0, ErrInvalidCredentials
+	}
+	if err := r.ctx(ctx).Create(&LoginAttempt{IPHash: ipHash}).Error; err != nil {
+		return 0, err
+	}
+	return r.CountLoginFailures(ctx, ipHash)
+}
+
+// CountLoginFailures returns the failures for this ip_hash inside the current
+// window. Rows older than the window are ignored rather than deleted — see
+// PruneLoginAttempts for why the sweep is separate.
+func (r *Repository) CountLoginFailures(ctx context.Context, ipHash []byte) (int, error) {
+	if len(ipHash) == 0 {
+		return 0, nil
+	}
+	var count int64
+	err := r.ctx(ctx).
+		Model(&LoginAttempt{}).
+		Where("ip_hash = ? AND attempted_at > ?", ipHash, time.Now().UTC().Add(-LoginRateWindow)).
+		Count(&count).Error
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+// ClearLoginFailures drops every attempt for this ip_hash.
+//
+// Called on a successful login and by the clear-lockout write path, which is
+// why it deletes rather than filtering by window: both callers mean "this IP
+// starts again from zero", and leaving in-window rows behind would let a
+// cleared lockout be re-earned by fewer failures than the threshold names.
+func (r *Repository) ClearLoginFailures(ctx context.Context, ipHash []byte) error {
+	if len(ipHash) == 0 {
+		return nil
+	}
+	return r.ctx(ctx).
+		Where("ip_hash = ?", ipHash).
+		Delete(&LoginAttempt{}).Error
+}
+
+// PruneLoginAttempts deletes attempts older than the window.
+//
+// Separate from the counting path on purpose: a delete on every failed login
+// would make the hot path do write work proportional to an attacker's rate,
+// which is the wrong direction. CountLoginFailures is already correct without
+// it — the predicate filters by time — so this is housekeeping, and a
+// deployment that never calls it is correct but accumulates rows.
+func (r *Repository) PruneLoginAttempts(ctx context.Context, olderThan time.Duration) (int64, error) {
+	res := r.ctx(ctx).
+		Where("attempted_at < ?", time.Now().UTC().Add(-olderThan)).
+		Delete(&LoginAttempt{})
+	return res.RowsAffected, res.Error
+}
+
 // isUniqueViolation recognises Postgres 23505 regardless of driver
 // wrapping; also matches sqlite's phrasing so unit tests don't have
 // to pin a specific driver.

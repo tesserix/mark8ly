@@ -32,14 +32,19 @@ type BreakGlassWriter interface {
 	ClearIPLock(ctx context.Context, ipHash []byte) (int64, error)
 }
 
-// BreakGlassRateLimiter is the subset of *breakglass.LoginRateLimiter this
-// handler needs to reset the in-process login limiter alongside the
-// durable DB lockout on clear-lockout. Declared as an interface (not the
-// concrete pointer type) so a nil Deps field is a genuine nil interface,
-// never a non-nil interface wrapping a nil pointer — see the nil check in
-// clearLockout.
+// BreakGlassRateLimiter is the subset of breakglass.LoginWindow this handler
+// needs: reset every login window alongside the durable DB lockout on
+// clear-lockout. Declared as an interface (not a concrete pointer type) so a
+// nil Deps field is a genuine nil interface, never a non-nil interface
+// wrapping a nil pointer — see the nil check in clearLockout.
+//
+// Since #846 the wired value is a *breakglass.CompositeWindow over both the
+// in-memory and the durable window, and BOTH must be cleared. Clearing only
+// the lockout row leaves the durable attempt rows in place, so the next
+// failure counts as the fourth and re-locks the IP instantly — clear-lockout
+// would report success and change nothing an operator could observe.
 type BreakGlassRateLimiter interface {
-	Reset(key string)
+	Reset(ctx context.Context, key breakglass.LoginKey) error
 }
 
 // breakGlassAuditFunc records a platform-operator action against a tenant.
@@ -319,14 +324,23 @@ func (h *BreakGlassWriteHandler) clearLockout(c *gin.Context) {
 		return
 	}
 
-	// LoginRateLimiter is an in-memory, per-pod map (breakglass/ratelimit.go)
-	// — this Reset only reaches the pod serving THIS request. The admin
-	// deployment runs 1 replica today, so the durable DB row cleared above
-	// is the one that actually matters; a second replica's own in-memory
-	// counter would be untouched by this call. That is current luck, not
-	// design (#404).
+	// Since #846 this resets the DURABLE attempt rows as well as the
+	// per-pod in-memory map, which is what makes clear-lockout mean the same
+	// thing on a multi-replica deployment as it did on a single one. The
+	// previous comment here noted that a second replica's in-memory counter
+	// would be untouched and called that "current luck, not design"; the
+	// durable window is the design.
 	if h.rateLimiter != nil {
-		h.rateLimiter.Reset(breakglass.LoginRateLimitKey(ipHash))
+		if err := h.rateLimiter.Reset(c.Request.Context(), breakglass.LoginKey{IPHash: ipHash}); err != nil {
+			// Not fatal to the response: the durable LOCKOUT row is already
+			// cleared above, which is the decision that gates login. A failed
+			// window clear leaves stale failures that age out on their own,
+			// so the operator's action did take effect — but it is logged at
+			// Error because until they age out the IP re-locks sooner than
+			// the threshold implies.
+			h.logger.Error("break-glass: clear-lockout cleared the durable lock but not every login window",
+				"err", err)
+		}
 	} else {
 		h.logger.Warn("break-glass: clear-lockout has no rate limiter wired; only the durable DB lock was cleared")
 	}

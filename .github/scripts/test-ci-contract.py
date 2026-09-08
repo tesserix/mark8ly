@@ -289,9 +289,18 @@ class ReusableCIContract(unittest.TestCase):
         # by CI. A workflow that set one of these would run the FULL_FLOW
         # golden path, or a real audit or image-seeding pass, against
         # production on every push.
+        #
+        # Both extensions: GitHub accepts .yml and .yaml equally, so a
+        # single-extension glob would let a future *.yaml workflow set one
+        # of these flags and never be checked.
         workflow_dir = ROOT / ".github/workflows"
+        workflows = sorted(
+            path
+            for pattern in ("*.yml", "*.yaml")
+            for path in workflow_dir.glob(pattern)
+        )
         offenders = []
-        for path in sorted(workflow_dir.glob("*.yml")):
+        for path in workflows:
             contents = path.read_text()
             for flag in ("FULL_FLOW", "ADMIN_AUDIT", "STOREFRONT_AUDIT", "SEED_IMAGES"):
                 if flag in contents:

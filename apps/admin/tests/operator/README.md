@@ -6,11 +6,13 @@ system (a real admin host, real accounts, real records). They:
 - require credentials supplied by the caller (no credential has a default)
 - **do NOT require a host** — and that is the danger. Four of these scripts
   fall back to a **production** host when the corresponding variable is
-  unset: `admin-verify.spec.ts:20`, `full-flow.spec.ts:27-28`,
-  `remote-audit.spec.ts:20`, `storefront-journey.spec.ts:23`. Run one
-  without `ADMIN_BASE_URL` / `STOREFRONT_BASE_URL` explicitly set and it
-  points at production, where it will create products, place orders, and
-  moderate real records. `admin-setup.spec.ts` and
+  unset: the `ADMIN_URL` default in `admin-verify.spec.ts`, the `ADMIN_URL`
+  and `STOREFRONT_URL` defaults in `full-flow.spec.ts`, the `BASE_URL`
+  default in `remote-audit.spec.ts`, and the `STOREFRONT_URL` default in
+  `storefront-journey.spec.ts`. Run one without `ADMIN_BASE_URL` /
+  `STOREFRONT_BASE_URL` explicitly set and it points at production, where
+  it will create products, place orders, and moderate real records.
+  `admin-setup.spec.ts` and
   `seed-product-images.spec.ts` do default their host to `""` and skip
   instead — that is the exception, not the rule here. Always set the host
   variable, even when you believe the default is what you wanted.

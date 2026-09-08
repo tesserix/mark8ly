@@ -4,10 +4,11 @@ These specs are not tests — they are one-off tools that drive a **live**
 system (a real storefront host). They:
 
 - require credentials supplied by the caller (no credential has a default)
-- **do NOT require a host** — and that is the danger. `remote-audit.spec.ts:19`
-  falls back to a **production** storefront when `STOREFRONT_BASE_URL` is
-  unset, so an audit run with no host set crawls production. Always set the
-  host variable explicitly. (`layout-blocks.spec.ts` defaults to localhost,
+- **do NOT require a host** — and that is the danger. The `BASE_URL`
+  default in `remote-audit.spec.ts` falls back to a **production**
+  storefront when `STOREFRONT_BASE_URL` is unset, so an audit run with no
+  host set crawls production. Always set the host variable explicitly.
+  (`layout-blocks.spec.ts` defaults to localhost,
   but it PATCHes a real store's branding through a test-only marketplace-api
   endpoint — point it at a throwaway store, never one that matters.)
 - are never run by CI. `.github/scripts/test-ci-contract.py` asserts that no

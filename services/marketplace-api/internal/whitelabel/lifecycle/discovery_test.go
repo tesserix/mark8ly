@@ -165,7 +165,12 @@ func TestNewAppleListerFactory_PropagatesCredentialErrors(t *testing.T) {
 
 // With GooglePackage empty by design, the advancer's `if
 // r.GooglePackage != ""` guards mean Play is never attempted, never
-// errors and never logs. The row must therefore say so itself.
+// errors and never logs. The row must therefore say so itself — and state
+// BOTH reasons, because they are of different kinds: the missing package
+// identifier is a decision that could be revisited, while the absent
+// unpublish API cannot be. This assertion used to require the word
+// "stub", which the wired client made false; the note now has to name
+// the two real causes instead.
 func TestTeardownCoverage_StatesPlayIsNotAttempted(t *testing.T) {
 	note := teardownCoverage(ProAppCancelledEvent{
 		AppleAppID:        "6448000111",
@@ -174,7 +179,12 @@ func TestTeardownCoverage_StatesPlayIsNotAttempted(t *testing.T) {
 
 	require.Contains(t, note, "google_play=NOT_ATTEMPTED")
 	require.Contains(t, strings.ToLower(note), "no package identifier")
-	require.Contains(t, strings.ToLower(note), "stub")
+	require.Contains(t, strings.ToLower(note), "no android publisher api",
+		"the permanent half of the reason must be stated, not just the missing identifier")
+	require.Contains(t, strings.ToLower(note), "play console",
+		"the note must name the manual action, since no code can perform it")
+	require.NotContains(t, strings.ToLower(note), "errnotwired",
+		"the Play client is wired; a note claiming otherwise is the defect #702 exists to remove")
 	require.Contains(t, note, "apple=will_attempt(app_id=6448000111)")
 	require.Contains(t, note, "merchant-app-42")
 	// A placeholder package would make the guard fire while asserting an
@@ -187,6 +197,10 @@ func TestTeardownCoverage_NamesPlayPackageWhenOneExists(t *testing.T) {
 		AppleAppID:    "1",
 		GooglePackage: "com.merchant.shop",
 	})
-	require.Contains(t, note, "google_play=will_attempt(package=com.merchant.shop)")
+	require.Contains(t, note, "google_play=will_attempt(package=com.merchant.shop")
 	require.NotContains(t, note, "NOT_ATTEMPTED")
+	// "will_attempt" must not read as "the listing will come down": day 30
+	// is all that is attemptable.
+	require.Contains(t, strings.ToLower(note), "day-30 download halt only")
+	require.Contains(t, strings.ToLower(note), "play console")
 }

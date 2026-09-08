@@ -2,8 +2,10 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -165,10 +167,12 @@ func (a *Advancer) advanceOne(ctx context.Context, r Row, now time.Time) error {
 // ─── Per-step actions ────────────────────────────────────────────────
 
 // blockDownloads calls Apple and Google to halt new downloads.
-// Idempotent — Apple PATCH is safe to re-apply; Google PATCH too.
-// If Apple succeeds but Google fails, the row stays at
-// sunset_scheduled and re-runs next tick; Apple re-application is a
-// no-op.
+// Idempotent — Apple's PATCH is safe to re-apply, and Play's edit
+// lifecycle short-circuits when the production track is already halted.
+//
+// An Apple failure stalls the row (see appleClient); a Play failure is
+// tolerated but WRITTEN DOWN, because the row is about to claim
+// downloads_blocked and that status cannot say "Apple only".
 func (a *Advancer) blockDownloads(ctx context.Context, r Row) error {
 	if r.AppleAppID != "" {
 		cli, err := a.appleClient(ctx, r)
@@ -182,21 +186,39 @@ func (a *Advancer) blockDownloads(ctx context.Context, r Row) error {
 	if r.GooglePackage != "" {
 		cli, err := a.googleClient(ctx, r)
 		if err != nil {
-			a.logger.WarnContext(ctx, "lifecycle: google client unavailable; block downloads skipped",
-				"store_id", r.StoreID, "err", err)
+			a.recordGoogleSkip(ctx, r, StatusDownloadsBlocked, stepBlockDownloads, err)
 			return nil
 		}
 		if err := cli.BlockDownloads(ctx, r.GooglePackage); err != nil {
-			// Google's ErrNotWired is tolerated — it means Apple was
-			// successful and Google integration is deferred. Logged
-			// and swallowed rather than stalling the advance.
-			a.logger.WarnContext(ctx, "lifecycle: google block downloads skipped",
-				"store_id", r.StoreID, "err", err)
+			a.recordGoogleSkip(ctx, r, StatusDownloadsBlocked, stepBlockDownloads, err)
 		}
 	}
 	return nil
 }
 
+// Teardown step identifiers. They are Prometheus label values as well as
+// note wording (recordGoogleSkip renders underscores as spaces), so they
+// must stay a small closed set — see wlmetrics.LifecycleStepSkipped.
+const (
+	stepBlockDownloads      = "block_downloads"
+	stepBlockDownloadsRetry = "block_downloads_day60_retry"
+	stepPullApp             = "pull_app"
+	stepArchiveProject      = "archive_project"
+)
+
+// pullApps removes the public listings at day 60.
+//
+// PLAY CANNOT DO THIS, EVER. Unpublishing a Play listing has no Android
+// Publisher API (googleplay.ErrUnpublishNotSupported), so unlike day 30
+// this is not a failure a later tick can turn into a success. The row
+// still advances — stalling would block the day-90 credential purge on
+// work no retry can complete — so the refusal is recorded beside the
+// status, exactly as archiveFirebase does for the Firebase stub. Without
+// that note the `pulled` status would be the only durable record of the
+// step, asserting a takedown that did not happen.
+//
+// The day-30 halt IS retryable, and is re-attempted here before the pull.
+// See the comment on that call.
 func (a *Advancer) pullApps(ctx context.Context, r Row) error {
 	if r.AppleAppID != "" {
 		cli, err := a.appleClient(ctx, r)
@@ -210,16 +232,65 @@ func (a *Advancer) pullApps(ctx context.Context, r Row) error {
 	if r.GooglePackage != "" {
 		cli, err := a.googleClient(ctx, r)
 		if err != nil {
-			a.logger.WarnContext(ctx, "lifecycle: google client unavailable; pull app skipped",
-				"store_id", r.StoreID, "err", err)
+			a.recordGoogleSkip(ctx, r, StatusPulled, stepPullApp, err)
 			return nil
 		}
+		// RE-ATTEMPT THE DAY-30 HALT FIRST. Day 30 advances the row
+		// whether or not Play was reached, so a transient failure there —
+		// a 503, a momentarily unreachable Google — would otherwise leave
+		// the app serving forever with no second chance. BlockDownloads
+		// is idempotent (an already-halted production track short-circuits
+		// without committing an edit), so this costs one GET when day 30
+		// succeeded, and converts "permanently unhalted" into "halted one
+		// tick late" when it did not.
+		//
+		// It is deliberately not a substitute for the pull below: halting
+		// stops new installs, it does not remove the listing.
+		if err := cli.BlockDownloads(ctx, r.GooglePackage); err != nil {
+			a.recordGoogleSkip(ctx, r, StatusPulled, stepBlockDownloadsRetry, err)
+		}
 		if err := cli.PullApp(ctx, r.GooglePackage); err != nil {
-			a.logger.WarnContext(ctx, "lifecycle: google pull app skipped",
-				"store_id", r.StoreID, "err", err)
+			a.recordGoogleSkip(ctx, r, StatusPulled, stepPullApp, err)
 		}
 	}
 	return nil
+}
+
+// recordGoogleSkip writes down Play work the advancer did not do, next to
+// the status that is about to imply it did.
+//
+// The status cannot carry the caveat: it is a fixed value the state
+// machine reads to reach the next step, and erroring instead would stall
+// the row — permanently, in the day-60 case, since no retry can unpublish
+// a listing. So the truth goes BESIDE the status, in the same append-only
+// lifecycle table a reader already consults. This is the reasoning
+// archiveFirebase applies to the Firebase stub; tesserix-home#702's whole
+// subject is a system reporting work it did not do.
+//
+// The note write is deliberately non-fatal: failing the advance on a
+// bookkeeping insert would stall the row, and the WARN has already gone
+// out.
+func (a *Advancer) recordGoogleSkip(ctx context.Context, r Row, next Status, step string, cause error) {
+	// The counter is the only thing an alert can see. LifecycleTransition
+	// increments identically whether or not Play was reached, and a reason
+	// string inside a database row is not a signal.
+	wlmetrics.LifecycleStepSkipped.WithLabelValues("google_play", step).Inc()
+
+	a.logger.WarnContext(ctx, "lifecycle: google step skipped",
+		"store_id", r.StoreID, "package", r.GooglePackage, "step", step, "err", cause)
+
+	reason := fmt.Sprintf("google play %s NOT performed for package %s: %v",
+		strings.ReplaceAll(step, "_", " "), r.GooglePackage, cause)
+	if errors.Is(cause, googleplay.ErrUnpublishNotSupported) {
+		// Say what an operator has to DO. A reason that only reports the
+		// API gap reads as a bug to be fixed in code, and this one cannot
+		// be: the listing stays public until a human unpublishes it.
+		reason += " (still public; requires a manual Play Console unpublish)"
+	}
+	if noteErr := a.appendNote(ctx, r, next, reason); noteErr != nil {
+		a.logger.WarnContext(ctx, "lifecycle: could not record google skip",
+			"store_id", r.StoreID, "err", noteErr)
+	}
 }
 
 // appleClient resolves the App Store Connect client for one row's tenant.
@@ -254,9 +325,10 @@ func (a *Advancer) appleClient(ctx context.Context, r Row) (AppleTeardownClient,
 // googleClient resolves the Play client for one row's tenant.
 //
 // Unlike appleClient, a failure here is tolerated by the callers: Play
-// teardown is deferred (the client is a stub returning ErrNotWired) and
-// rows carry no GooglePackage by design (#702 decision 4), so this path is
-// unreached today. The asymmetry is deliberate — Apple stalls, Play warns.
+// teardown is only partly possible — day 30 works, day 60 has no API at
+// all — and rows carry no GooglePackage by design (#702 decision 4), so
+// this path is unreached today. The asymmetry is deliberate: Apple stalls,
+// Play warns AND records what it did not do (recordGoogleSkip).
 func (a *Advancer) googleClient(ctx context.Context, r Row) (googleplay.ClientAPI, error) {
 	if a.google == nil {
 		return nil, fmt.Errorf("lifecycle: no Google client factory configured (store %s carries package %s)",
@@ -289,6 +361,7 @@ func (a *Advancer) archiveFirebase(ctx context.Context, r Row) error {
 		// it. tesserix-home#702's whole subject is a system reporting work
 		// it did not do; a status this code KNOWS is untrue must not be
 		// left as the only thing written down.
+		wlmetrics.LifecycleStepSkipped.WithLabelValues("firebase", stepArchiveProject).Inc()
 		if noteErr := a.appendNote(ctx, r, StatusFirebaseArchived,
 			fmt.Sprintf("firebase archive NOT performed for project %s: %v", r.FirebaseProjectID, err),
 		); noteErr != nil {

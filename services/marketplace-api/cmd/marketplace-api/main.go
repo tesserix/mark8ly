@@ -2496,9 +2496,12 @@ func main() {
 	// Apple, and firebase.FakeClient.ArchiveProject returns a nil error
 	// by default, so the advancer would write downloads_blocked, pulled
 	// and firebase_archived into the append-only lifecycle table for a
-	// teardown that touched nothing (#702 T3). Play and Firebase are
-	// still stubs, but their stubs return ErrNotWired, which the advancer
-	// logs — an honest "not done" instead of a silent success.
+	// teardown that touched nothing (#702 T3). Play's day-30 halt is
+	// real; its day-60 unpublish has no Android Publisher API at all and
+	// returns a refusal. Firebase remains a stub returning ErrNotWired.
+	// Both are recorded as "NOT performed" beside the status and counted
+	// by white_label_app_lifecycle_step_skipped_total — an honest "not
+	// done" instead of a silent success.
 	//
 	// Apple and Google are wired as per-tenant FACTORIES: their
 	// credentials are per-tenant and the advancer walks a multi-tenant

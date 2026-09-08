@@ -6,10 +6,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -20,6 +22,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/whitelabel/firebase"
 	"github.com/mark8ly/marketplace-api/internal/whitelabel/googleplay"
 	"github.com/mark8ly/marketplace-api/internal/whitelabel/lifecycle"
+	wlmetrics "github.com/mark8ly/marketplace-api/internal/whitelabel/metrics"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
 
@@ -143,8 +146,8 @@ func TestAdvancer_Day30_BlocksDownloads(t *testing.T) {
 	require.NoError(t, db.Where("id=?", row.ID).First(&after).Error)
 	require.Equal(t, lifecycle.StatusDownloadsBlocked, after.Status)
 	require.Equal(t, 1, appleCli.BlockDownloadsCallCount)
-	// Google returns ErrNotWired but the advancer swallows it; the
-	// fake records the attempt.
+	// Play's day-30 halt IS implemented, so the fake's silent success is
+	// the right stand-in here; the failure paths are the two tests below.
 	require.Equal(t, 1, gpCli.BlockDownloadsCallCount)
 
 	// Transition log row appended.
@@ -409,4 +412,180 @@ func TestAdvancer_FirebaseArchiveFailure_IsRecordedBesideTheStatus(t *testing.T)
 	require.NotEmpty(t, reasons, "a skipped firebase archive must leave a reason behind")
 	require.Contains(t, reasons[0], "NOT performed")
 	require.Contains(t, reasons[0], "merchant-proj-1")
+}
+
+// Day 60 cannot be completed on Play by any code, now or later:
+// unpublishing a listing has no Android Publisher API. The row still walks
+// to `pulled` — stalling would block the day-90 credential purge on work
+// no retry can finish — so the append-only log has to carry the refusal,
+// or `pulled` becomes the only durable record and asserts a takedown that
+// never happened.
+func TestAdvancer_Day60_PlayUnpublishRefusal_IsRecordedBesideTheStatus(t *testing.T) {
+	creds, _ := newCredsSvc(t)
+	appleCli, gpCli, fbCli := apple.NewFakeClient(), googleplay.NewFakeClient(), firebase.NewFakeClient()
+	gpCli.PullAppErr = googleplay.ErrUnpublishNotSupported
+	adv := newAdvancer(t, struct {
+		Apple    *apple.FakeClient
+		Google   *googleplay.FakeClient
+		Firebase *firebase.FakeClient
+		Creds    *appcreds.Service
+	}{appleCli, gpCli, fbCli, creds})
+
+	db := testdb.NewDB(t, "white_label_app_state", "white_label_app_lifecycle")
+	row := ageRow(t, 60, lifecycle.StatusDownloadsBlocked)
+	require.NoError(t, db.Create(&row).Error)
+	before := skippedNow(t, "google_play", "pull_app")
+
+	require.NoError(t, adv.AdvanceDue(context.Background()))
+
+	var after lifecycle.Row
+	require.NoError(t, db.Where("id=?", row.ID).First(&after).Error)
+	require.Equal(t, lifecycle.StatusPulled, after.Status)
+	require.Equal(t, 1, appleCli.PullAppCallCount, "Apple's pull is what makes the step partly real")
+
+	pull := findReason(t, db, row.StoreID, "pull app")
+	require.Contains(t, pull, "NOT performed")
+	require.Contains(t, pull, row.GooglePackage,
+		"the reason must name the package, or an operator cannot act on it")
+	require.Contains(t, pull, "Play Console",
+		"the reason must name the manual action, since no code can do it")
+
+	require.Equal(t, 1.0, skippedDelta(t, "google_play", "pull_app", before),
+		"a recorded skip must also be counted, or nothing can alert on Play teardown failing")
+}
+
+// Day 30 advances the row whether or not Play was reached, so a transient
+// failure there gets no second chance unless day 60 re-attempts the halt.
+// BlockDownloads is idempotent, so the retry is free when day 30 worked
+// and is the only thing standing between a 503 and an app that keeps
+// serving forever.
+func TestAdvancer_Day60_RetriesTheDay30HaltBeforePulling(t *testing.T) {
+	creds, _ := newCredsSvc(t)
+	appleCli, gpCli, fbCli := apple.NewFakeClient(), googleplay.NewFakeClient(), firebase.NewFakeClient()
+	gpCli.PullAppErr = googleplay.ErrUnpublishNotSupported
+	adv := newAdvancer(t, struct {
+		Apple    *apple.FakeClient
+		Google   *googleplay.FakeClient
+		Firebase *firebase.FakeClient
+		Creds    *appcreds.Service
+	}{appleCli, gpCli, fbCli, creds})
+
+	db := testdb.NewDB(t, "white_label_app_state", "white_label_app_lifecycle")
+	row := ageRow(t, 60, lifecycle.StatusDownloadsBlocked)
+	require.NoError(t, db.Create(&row).Error)
+
+	require.NoError(t, adv.AdvanceDue(context.Background()))
+
+	require.Equal(t, 1, gpCli.BlockDownloadsCallCount,
+		"day 60 must re-attempt the halt; without it a failed day-30 halt is permanent")
+	require.Equal(t, []string{row.GooglePackage}, gpCli.BlockedPackages)
+	require.Equal(t, 1, gpCli.PullAppCallCount,
+		"the retry must not replace the pull attempt")
+}
+
+// A failed day-60 halt retry is a distinct, separately-labelled skip: it
+// is retryable, unlike the pull, so filing both under one step would leave
+// an operator unable to tell which needs attention.
+func TestAdvancer_Day60_FailedHaltRetryIsRecordedSeparatelyFromThePull(t *testing.T) {
+	creds, _ := newCredsSvc(t)
+	appleCli, gpCli, fbCli := apple.NewFakeClient(), googleplay.NewFakeClient(), firebase.NewFakeClient()
+	gpCli.BlockDownloadsErr = googleplay.ErrUnauthorized
+	gpCli.PullAppErr = googleplay.ErrUnpublishNotSupported
+	adv := newAdvancer(t, struct {
+		Apple    *apple.FakeClient
+		Google   *googleplay.FakeClient
+		Firebase *firebase.FakeClient
+		Creds    *appcreds.Service
+	}{appleCli, gpCli, fbCli, creds})
+
+	db := testdb.NewDB(t, "white_label_app_state", "white_label_app_lifecycle")
+	row := ageRow(t, 60, lifecycle.StatusDownloadsBlocked)
+	require.NoError(t, db.Create(&row).Error)
+	before := skippedNow(t, "google_play", "block_downloads_day60_retry")
+
+	require.NoError(t, adv.AdvanceDue(context.Background()))
+
+	retry := findReason(t, db, row.StoreID, "block downloads day60 retry")
+	require.Contains(t, retry, "NOT performed")
+	require.Contains(t, retry, row.GooglePackage)
+	// The Console advice belongs only on the pull: telling an operator to
+	// unpublish by hand would be wrong for a transient auth failure.
+	require.NotContains(t, retry, "Play Console")
+	require.Equal(t, 1.0, skippedDelta(t, "google_play", "block_downloads_day60_retry", before))
+
+	// And the pull's own note is still there, under its own step.
+	require.Contains(t, findReason(t, db, row.StoreID, "pull app"), "Play Console")
+}
+
+// Day 30's Play halt is implementable, so a failure here is transient —
+// but the row advances to `downloads_blocked` regardless (pinned by
+// TestAdvancer_Day30_GoogleClientUnresolvable_StillAdvances), and that
+// status cannot say "Apple only". The note is what keeps it honest.
+func TestAdvancer_Day30_PlayBlockFailure_IsRecordedBesideTheStatus(t *testing.T) {
+	creds, _ := newCredsSvc(t)
+	appleCli, gpCli, fbCli := apple.NewFakeClient(), googleplay.NewFakeClient(), firebase.NewFakeClient()
+	gpCli.BlockDownloadsErr = googleplay.ErrUnauthorized
+	adv := newAdvancer(t, struct {
+		Apple    *apple.FakeClient
+		Google   *googleplay.FakeClient
+		Firebase *firebase.FakeClient
+		Creds    *appcreds.Service
+	}{appleCli, gpCli, fbCli, creds})
+
+	db := testdb.NewDB(t, "white_label_app_state", "white_label_app_lifecycle")
+	row := ageRow(t, 30, lifecycle.StatusSunsetScheduled)
+	require.NoError(t, db.Create(&row).Error)
+	before := skippedNow(t, "google_play", "block_downloads")
+
+	require.NoError(t, adv.AdvanceDue(context.Background()))
+
+	var after lifecycle.Row
+	require.NoError(t, db.Where("id=?", row.ID).First(&after).Error)
+	require.Equal(t, lifecycle.StatusDownloadsBlocked, after.Status)
+
+	note := findReason(t, db, row.StoreID, "block downloads")
+	require.Contains(t, note, "NOT performed")
+	require.Contains(t, note, row.GooglePackage)
+	// The day-60-only wording must NOT leak onto a day-30 note: telling an
+	// operator to unpublish in the Console would be wrong advice for a
+	// transient auth failure.
+	require.NotContains(t, note, "Play Console")
+	require.Equal(t, 1.0, skippedDelta(t, "google_play", "block_downloads", before))
+}
+
+// ─── note + counter helpers ──────────────────────────────────────────
+
+// findReason returns the one lifecycle note for storeID mentioning step.
+// Selecting by step rather than by row order matters now that a single
+// advance can record more than one skip.
+func findReason(t *testing.T, db *gorm.DB, storeID uuid.UUID, step string) string {
+	t.Helper()
+	var reasons []string
+	require.NoError(t, db.Raw(
+		`SELECT reason FROM white_label_app_lifecycle
+		  WHERE store_id = ? AND reason IS NOT NULL`, storeID,
+	).Scan(&reasons).Error)
+
+	var matched []string
+	for _, r := range reasons {
+		if strings.Contains(r, step) {
+			matched = append(matched, r)
+		}
+	}
+	require.Len(t, matched, 1,
+		"want exactly one note mentioning %q; all notes for this store: %v", step, reasons)
+	return matched[0]
+}
+
+// skippedNow / skippedDelta read the shared LifecycleStepSkipped counter.
+// It is process-global, so tests must assert a DELTA — an absolute value
+// depends on which tests ran before this one.
+func skippedNow(t *testing.T, surface, step string) float64 {
+	t.Helper()
+	return testutil.ToFloat64(wlmetrics.LifecycleStepSkipped.WithLabelValues(surface, step))
+}
+
+func skippedDelta(t *testing.T, surface, step string, before float64) float64 {
+	t.Helper()
+	return skippedNow(t, surface, step) - before
 }

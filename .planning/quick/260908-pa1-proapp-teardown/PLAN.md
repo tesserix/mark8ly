@@ -107,6 +107,27 @@ touched*. Every part of this must refuse to do a smaller version of that:
   row. Assert the emit still happens when discovery fails — a failed teardown
   must not swallow the audit event.
 
+- **T3 — production stops using fake clients.** Added 2026-09-08 after T2, which
+  found the gap. `main.go:2469-2471` wires **all three** whitelabel clients as
+  fakes, Apple included. So the advancer calls a fake `BlockDownloads`/`PullApp`
+  and then writes `downloads_blocked` and `pulled` — a row asserting a teardown
+  that touched nothing. Latent today because nothing seeds rows; **T2 is what
+  fills the table**, and the consumer's own comment says an immediate
+  cancellation seeds a row already overdue, so the advancer acts on the next
+  tick. T2 therefore must not merge without this.
+
+  Three parts, and the second two are as important as the first:
+
+  1. `Config.Apple` becomes a per-row factory — `apple.Client`'s `CredsFetcher`
+     takes no tenant, so one client structurally cannot serve a multi-tenant
+     cohort. Reuse the `AppleListerFactory` shape T2 already built.
+  2. **Google and Firebase move from fakes to their REAL stubs.** The fakes are
+     strictly less honest: `firebase.FakeClient.ArchiveProject` returns
+     `f.ArchiveErr`, nil by default — a *silent success* having done nothing —
+     while the real client returns `ErrNotWired`, which `archiveFirebase` logs.
+     T2 populates `FirebaseProjectID`, so this path IS reached.
+  3. Nothing may report a teardown it did not perform. That is the whole issue.
+
 ## Done means
 
 - [ ] A cancelled Pro+App store seeds `white_label_app_state` with a real Apple id

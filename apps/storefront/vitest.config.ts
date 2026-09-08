@@ -9,7 +9,7 @@ export default defineConfig({
       "lib/**/*.{test,spec}.{ts,tsx}",
       "app/**/*.{test,spec}.{ts,tsx}",
     ],
-    exclude: ["**/node_modules/**", "**/tests/e2e/**", "**/.next/**"],
+    exclude: ["**/node_modules/**", "**/tests/e2e/**", "**/tests/operator/**", "**/.next/**"],
   },
   resolve: {
     alias: {

@@ -21,6 +21,7 @@ export default [
       "playwright-report/**",
       "test-results/**",
       "tests/e2e/**/*-snapshots/**",
+      "tests/operator/**/*-snapshots/**",
     ],
   },
   {

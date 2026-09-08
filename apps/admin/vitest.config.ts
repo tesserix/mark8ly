@@ -9,7 +9,7 @@ export default defineConfig({
     globals: false,
     setupFiles: ["./vitest.setup.ts"],
     include: ["**/*.{test,spec}.{ts,tsx}", "../../packages/ui/src/**/*.test.{ts,tsx}"],
-    exclude: ["**/node_modules/**", "**/tests/e2e/**", "**/.next/**"],
+    exclude: ["**/node_modules/**", "**/tests/e2e/**", "**/tests/operator/**", "**/.next/**"],
     server: {
       deps: {
         inline: ["@tesserix/web"],
@@ -28,6 +28,7 @@ export default defineConfig({
       exclude: [
         "**/*.test.{ts,tsx}",
         "**/tests/e2e/**",
+        "**/tests/operator/**",
         "**/node_modules/**",
         "components/products/ProductForm.tsx",
       ],

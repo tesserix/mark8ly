@@ -20,7 +20,12 @@ import { test, expect } from "@playwright/test";
  *   DELHIVERY_API_KEY=<delhivery api key> \
  *   CUSTOMER_EMAIL=<customer email> \
  *   CUSTOMER_PASSWORD=<customer password> \
- *   npx playwright test full-flow.spec.ts
+ *   npx playwright test --config=playwright.operator.config.ts \
+ *     full-flow.spec.ts
+ *
+ * The `--config` is required, not optional: playwright.config.ts pins
+ * testDir to ./tests/e2e, so without it playwright collects nothing
+ * from this directory and exits "No tests found".
  */
 
 const SHOULD_RUN = process.env.FULL_FLOW === "1";

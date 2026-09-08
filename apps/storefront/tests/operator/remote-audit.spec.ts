@@ -10,8 +10,19 @@ import { join } from "node:path";
  * Storefront sign-in is known broken, so this audit is strictly
  * anonymous — no auth attempted.
  *
- * Runs only when STOREFRONT_AUDIT=1. Findings are written to
- * tests/operator/.audit/storefront-findings.json.
+ * Runs only when STOREFRONT_AUDIT=1.
+ *
+ * Run:
+ *   STOREFRONT_AUDIT=1 \
+ *   STOREFRONT_BASE_URL=<storefront host> \
+ *   npx playwright test --config=playwright.operator.config.ts \
+ *     remote-audit.spec.ts
+ *
+ * The `--config` is required, not optional: playwright.config.ts pins
+ * testDir to ./tests/e2e, so without it playwright collects nothing
+ * from this directory and exits "No tests found".
+ *
+ * Findings are written to tests/operator/.audit/storefront-findings.json.
  */
 
 const SHOULD_RUN = process.env.STOREFRONT_AUDIT === "1";

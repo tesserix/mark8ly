@@ -13,7 +13,12 @@ import { join } from "node:path";
  * Run:
  *   FULL_FLOW=1 \
  *   ADMIN_BASE_URL=https://india-store-admin.mark8ly.com \
- *   npx playwright test admin-verify.spec.ts
+ *   npx playwright test --config=playwright.operator.config.ts \
+ *     admin-verify.spec.ts
+ *
+ * The `--config` is required, not optional: playwright.config.ts pins
+ * testDir to ./tests/e2e, so without it playwright collects nothing
+ * from this directory and exits "No tests found".
  */
 
 const SHOULD_RUN = process.env.FULL_FLOW === "1";

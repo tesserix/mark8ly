@@ -22,7 +22,12 @@ import { join } from "node:path";
  *   RAZORPAY_KEY_ID=<razorpay key id> \
  *   RAZORPAY_KEY_SECRET=<razorpay key secret> \
  *   DELHIVERY_API_KEY=<delhivery api key> \
- *   npx playwright test admin-setup.spec.ts
+ *   npx playwright test --config=playwright.operator.config.ts \
+ *     admin-setup.spec.ts
+ *
+ * The `--config` is required, not optional: playwright.config.ts pins
+ * testDir to ./tests/e2e, so without it playwright collects nothing
+ * from this directory and exits "No tests found".
  */
 
 /* ------------------------------------------------------------------ */

@@ -19,6 +19,17 @@
  * store's branding + layout_variant by slug. When
  * STOREFRONT_VISUAL_TEST_SLUG is not set, the suite skips — baselines
  * must be generated against a real environment (CI or local stack up).
+ *
+ * Run:
+ *   STOREFRONT_VISUAL_TEST_SLUG=<store slug> \
+ *   STOREFRONT_BASE_URL=<storefront host> \
+ *   MARKETPLACE_API_URL=<marketplace-api host> \
+ *   npx playwright test --config=playwright.operator.config.ts \
+ *     layout-blocks.spec.ts
+ *
+ * The `--config` is required, not optional: playwright.config.ts pins
+ * testDir to ./tests/e2e, so without it playwright collects nothing
+ * from this directory and exits "No tests found".
  */
 
 import { expect, test } from "@playwright/test";

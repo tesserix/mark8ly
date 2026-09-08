@@ -73,9 +73,27 @@ The failure being fixed is *a system reporting teardown of something it never
 touched*. Every part of this must refuse to do a smaller version of that:
 
 - a row seeded with no Apple id must not advance as though it tore something down
-- Play and Firebase returning `ErrNotWired` must be **visible on the row and in
-  the logs**, never swallowed so the state machine can proceed to
-  `credentials_purged`
+- Play and Firebase must be **visibly not-torn-down**, never silently skipped on
+  the way to `credentials_purged`
+
+  **CORRECTED 2026-09-08, during T1 — the plan had this wrong, and it was wrong
+  because two of its own decisions interact.** The `ErrNotWired` log path is
+  UNREACHABLE for Play: `advancer.go:173,190` guard both call sites with
+  `if r.GooglePackage != ""`, and decision 4 leaves that field empty by design.
+  So Play is never attempted, never errors, and never logs — the row advances to
+  `credentials_purged` having said nothing at all about it. That is the exact
+  "reports teardown of something it never touched" failure this plan exists to
+  prevent, reintroduced by the plan itself.
+
+  T2 must therefore make Play's absence explicit through something OTHER than the
+  `ErrNotWired` path — a durable statement on the row and a log at seed time
+  saying Play teardown will not be attempted, and why (no package identifier, and
+  the client is a stub). Firebase does not have this problem: decision 5
+  populates `FirebaseProjectID`, so `archiveFirebase` reaches the stub and logs.
+
+  Do not "fix" this by populating `GooglePackage` with a placeholder to make the
+  guard fire. That trades a silent skip for a row that claims an identifier it
+  does not have, and decision 4 exists to prevent exactly that.
 - ambiguous discovery must refuse, not pick
 
 ## Tasks

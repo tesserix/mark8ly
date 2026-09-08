@@ -26,7 +26,20 @@ type Store struct {
 	// NOT SyncedAt. That is when this projection last copied the row and
 	// moves on every upsert, so using it would date a trial from the last
 	// time a merchant edited their store settings.
-	CreatedAt *time.Time `gorm:"column:created_at"                                       json:"created_at,omitempty"`
+	//
+	// autoCreateTime:false is LOAD-BEARING. GORM auto-populates any field
+	// named CreatedAt with the current time on Create, and Upsert uses
+	// Create with an ON CONFLICT clause — so without this tag every upsert
+	// sends now(), the COALESCE below prefers it, and the mirrored creation
+	// date is overwritten with the moment of the last sync.
+	//
+	// That is not hypothetical: it happened in production. Four stores had
+	// their real dates replaced within minutes of the column shipping, and
+	// the trial backfill would then have granted a fresh 90 days to a store
+	// created in April. Renaming the field would also fix it; the tag is
+	// kept because `created_at` is the column's name in platform_api and
+	// matching it is worth one annotation.
+	CreatedAt *time.Time `gorm:"column:created_at;autoCreateTime:false"                  json:"created_at,omitempty"`
 	SyncedAt  time.Time  `gorm:"column:synced_at;not null;default:now()"                 json:"synced_at"`
 	// StorefrontCustomerPortalSecret is the per-store HMAC key for customer
 	// portal tokens (§15.4, migration 058). Generated at migration time;

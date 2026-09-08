@@ -128,15 +128,26 @@ test("no captured browser session or run artifact is committed under tests/e2e",
   ).toEqual([]);
 });
 
-test("both e2e run-artifact directories are gitignored, not just one", () => {
+test("every e2e run-artifact directory is gitignored, not just some", () => {
   const ignored = readFileSync(path.join(REPO_ROOT, ".gitignore"), "utf8");
-  for (const dir of [".audit", ".state"]) {
-    expect(
-      ignored,
-      `.gitignore does not cover apps/*/tests/e2e/${dir}/. The original leak ` +
-        `was exactly this asymmetry: .audit/ was ignored, .state/ was not, and ` +
-        `nothing noticed that two directories serving the same purpose were ` +
-        `treated differently.`,
-    ).toMatch(new RegExp(`apps/\\*/tests/e2e/\\${dir}/`));
+  // Both artifact directory names, under BOTH spec trees. tests/operator/
+  // is where mark8ly#834 moved the 8 opt-in scripts, and they write exactly
+  // the same two directories — a live-host session in .state/ and a live-host
+  // audit with screenshots in .audit/. Asserting only the tests/e2e/ pair
+  // would recreate the original asymmetry one level up: the operator lines
+  // would be present but unguarded, free to be dropped by anyone who did not
+  // know why they were there. That is the failure this test exists to
+  // prevent, so it has to cover every tree the specs actually live in —
+  // extend both lists together if a third tree appears.
+  for (const tree of ["e2e", "operator"]) {
+    for (const dir of [".audit", ".state"]) {
+      expect(
+        ignored,
+        `.gitignore does not cover apps/*/tests/${tree}/${dir}/. The original ` +
+          `leak was exactly this asymmetry: .audit/ was ignored, .state/ was ` +
+          `not, and nothing noticed that two directories serving the same ` +
+          `purpose were treated differently.`,
+      ).toMatch(new RegExp(`apps/\\*/tests/${tree}/\\${dir}/`));
+    }
   }
 });

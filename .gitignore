@@ -54,6 +54,12 @@ playwright/.cache/
 # files may contain customer-facing URLs and live screenshots, and are
 # regenerated on every `ADMIN_AUDIT=1` / `STOREFRONT_AUDIT=1` run.
 apps/*/tests/e2e/.audit/
+# The same thing under a second name, and the reason this line exists: .state/
+# was NOT listed here, so the full-flow suite's Playwright storageState —
+# httpOnly session cookies for a real .mark8ly.com account — was committed to
+# a public repository along with 14 screenshots of the signed-in admin. Both
+# directories hold run output. Neither belongs in a commit.
+apps/*/tests/e2e/.state/
 
 # IDE
 .idea/

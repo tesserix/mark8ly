@@ -167,47 +167,58 @@ func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesSc
 			for _, base := range bases {
 				// SHAPE 1 — template literal: `${BASE}/internal/...`
 				//
-				// This is what every apps/* caller uses today, but that fact
-				// is NOT what makes the extractor adequate, and an earlier
-				// version of this comment said it was. Two review sabotages
-				// walked past it — concatenation, then MULTI-LINE
-				// concatenation — each with a green run while filesScanned
-				// proved the file had been read. "Nothing uses the other
-				// shape yet" is a fact about the present, not a guard.
+				// EVERY occurrence on the logical line, not just the first.
+				// Taking only the first was a live hole: an array of two
+				// URLs whose first entry was a real route swallowed a second
+				// entry pointing at a route that does not exist, and the
+				// residual backstop stayed quiet because something had
+				// matched. It was order-dependent, which is the worst kind
+				// of green.
 				needle := "${" + base + "}/internal"
-				if idx := strings.Index(line, needle); idx >= 0 {
+				for from := 0; from <= len(line); {
+					rel := strings.Index(line[from:], needle)
+					if rel < 0 {
+						break
+					}
+					idx := from + rel
 					raw, norm, ok := scanRefPath(line[idx+len(needle)-len("/internal"):])
 					refs = append(refs, internalRef{
-						File: f.rel, Line: physicalLineOf(ll, needle), Raw: raw,
+						File: f.rel, Line: physicalLineOf(ll, raw, needle), Raw: raw,
 						Path: trimQuery(norm), Parsed: ok,
 					})
 					found++
-					continue
+					from = idx + len(needle)
 				}
 
 				// SHAPE 2 — string concatenation: BASE + "/internal/..." + id
-				idx, ok := concatStart(line, base)
-				if !ok {
-					continue
-				}
-				// The operand right after `BASE +` must be a readable string
-				// literal. When it is an identifier — a path held in its own
-				// const, which is how one sabotage hid a nonexistent route —
-				// there is nothing to compare, so it is reported rather than
-				// dropped. This fires regardless of whether "/internal"
-				// appears on this line, because with the path in a constant
-				// it does not.
-				if !startsWithStringLiteral(line[idx:]) {
-					unreadableOperand = true
-					continue
-				}
-				raw, norm, parsed := scanConcatPath(line[idx:])
-				if strings.HasPrefix(norm, "/internal") {
-					refs = append(refs, internalRef{
-						File: f.rel, Line: physicalLineOf(ll, base), Raw: raw,
-						Path: trimQuery(norm), Parsed: parsed,
-					})
-					found++
+				//
+				// Also every occurrence, for the same reason.
+				for from := 0; from <= len(line); {
+					idx, ok := concatStart(line, base, from)
+					if !ok {
+						break
+					}
+					// The operand right after `BASE +` must be a readable
+					// string literal. When it is an identifier — a path held
+					// in its own const, which is how one sabotage hid a
+					// nonexistent route — there is nothing to compare, so it
+					// is reported rather than dropped. This fires regardless
+					// of whether "/internal" appears on this line, because
+					// with the path in a constant it does not.
+					if !startsWithStringLiteral(line[idx:]) {
+						unreadableOperand = true
+						from = idx + 1
+						continue
+					}
+					raw, norm, parsed := scanConcatPath(line[idx:])
+					if strings.HasPrefix(norm, "/internal") {
+						refs = append(refs, internalRef{
+							File: f.rel, Line: physicalLineOf(ll, raw, base), Raw: raw,
+							Path: trimQuery(norm), Parsed: parsed,
+						})
+						found++
+					}
+					from = idx + 1
 				}
 			}
 
@@ -324,8 +335,17 @@ const maxJoin = 6
 //
 // The join rule is syntactic and deliberately loose: a line is treated as
 // continued when it ends in an operator or opener, or when its backticks are
-// unbalanced. Over-joining costs only line-number precision, which
-// physicalLineOf recovers; under-joining is what let the sabotage through.
+// unbalanced.
+//
+// Over-joining does NOT merely cost line-number precision. An earlier version
+// of this comment said so, and that was wrong in the direction that matters:
+// because the scanners took only the FIRST match per logical line, folding
+// more lines together folded more references into a single scan and dropped
+// every one after the first. A URL array put a real route and a nonexistent
+// one on one logical line and the second was never seen — green, with the
+// residual backstop silenced because `found > 0`. Both scanners now advance
+// through every match on the line, which is what makes loose joining safe.
+// Under-joining remains what let the multi-line sabotage through.
 func joinLogicalLines(lines []string) []logicalLine {
 	var out []logicalLine
 	for i := 0; i < len(lines); {
@@ -342,12 +362,20 @@ func joinLogicalLines(lines []string) []logicalLine {
 }
 
 // physicalLineOf returns the 1-based line number within a logical line whose
-// physical text contains marker, so a failure points at the line a reader
-// will actually find the call on rather than at the start of the statement.
-func physicalLineOf(ll logicalLine, marker string) int {
-	for offset, text := range ll.Physical {
-		if strings.Contains(text, marker) {
-			return ll.Num + offset
+// text contains the first marker that matches, so a failure points at the
+// line a reader will actually find the call on rather than at the start of the
+// statement. Markers are tried most-specific first: the path as written
+// distinguishes two references that share the same base identifier, which a
+// bare needle cannot.
+func physicalLineOf(ll logicalLine, markers ...string) int {
+	for _, marker := range markers {
+		if marker == "" {
+			continue
+		}
+		for offset, text := range ll.Physical {
+			if strings.Contains(text, marker) {
+				return ll.Num + offset
+			}
 		}
 	}
 	return ll.Num
@@ -372,8 +400,11 @@ func isContinued(text string) bool {
 
 // concatStart finds `BASE +` on a line and returns the index of the operand
 // that follows, so scanConcatPath can read the concatenation from there.
-func concatStart(line, base string) (int, bool) {
-	for from := 0; ; {
+func concatStart(line, base string, from int) (int, bool) {
+	if from < 0 || from > len(line) {
+		return 0, false
+	}
+	for {
 		idx := strings.Index(line[from:], base)
 		if idx < 0 {
 			return 0, false
@@ -604,6 +635,31 @@ func requireNoCatchAllRoutes(t *testing.T, declared []string) {
 // Matching is on PATH, ignoring method: the question is whether the route
 // exists at all. Deleting a route removes every method on it, so the
 // deletion this guards against still fails.
+//
+// # What remains uncovered on the frontend side
+//
+// Observed, not reasoned about. Not a completeness claim.
+//
+//   - A WRAPPER HELPER that applies the base URL internally —
+//     marketplaceInternalFetch("/internal/store-active-domain/" + slug) —
+//     is invisible to both scanners AND to the residual check, because no
+//     base identifier appears at the call site at all. Resolving it needs
+//     TypeScript call-graph analysis. Nothing in apps/* does this today.
+//   - A REFERENCE SPLIT ACROSS MORE THAN maxJoin (6) PHYSICAL LINES: the
+//     logical line stops short and the pieces are scanned separately.
+//   - HTTP METHOD IS NOT COMPARED. A frontend POST to a path the backend
+//     serves only as GET passes. Deliberate: the deletion case this exists
+//     for removes every method on the path.
+//   - A PATH BUILT WITHOUT ANY STRING LITERAL, e.g. entirely from
+//     path.join(...) or an array join. The residual check fires only when a
+//     base identifier is adjacent to an unreadable operand or an /internal
+//     literal is on the logical line.
+//
+// Fixed in round 5, recorded because the failure mode was subtle: only the
+// FIRST reference per logical line used to be extracted, so a URL array whose
+// first entry was a real route silently swallowed a second entry pointing at
+// a route that did not exist — and `found > 0` kept the residual check quiet.
+// Both scanners now advance through every match.
 func TestFrontendInternalRoutesAreDeclared(t *testing.T) {
 	root := appsDir(t)
 	refs, filesScanned, bases, unparsed := extractInternalRefs(t, root)

@@ -406,14 +406,21 @@ const registrarPrefix = "Register"
 // was missing outright, so r.Match([]string{"GET"}, "/api/v1/admin/
 // secret-backdoor", h) registered a live route in total silence.
 //
-// KNOWN SHAPE WART, deferred deliberately: Static, StaticFile, StaticFileFS
-// and StaticFS produce keys like "StaticFile /x", because the method name
-// stands in for a verb these methods do not take. Such a key can never equal
-// a manifest entry (which is always "GET /x", "POST /x", ...), so any
-// static-file route is forced into directRoutesOutsideManifest permanently
-// rather than ever being declarable. Nothing in package main serves static
-// files today. If that changes, map these to GET here rather than adding a
-// permanent exemption.
+// KNOWN SHAPE WART, deferred deliberately: several methods produce a key whose
+// first field is not an HTTP method, so the key can never equal a manifest
+// entry (always "GET /x", "POST /x", ...) and the route is forced into
+// directRoutesOutsideManifest PERMANENTLY rather than ever being declarable:
+//
+//	Static, StaticFile, StaticFileFS, StaticFS -> "StaticFile /x"  (serve GET)
+//	Any                                        -> "Any /x"         (serves every verb)
+//	Match                                      -> "Match /x"       (verbs are a slice)
+//	Handle with a non-literal verb             -> "Handle /x"      (verb unreadable)
+//
+// Nothing in package main uses any of these today except the Match sabotage
+// that motivated adding it. If one appears for real, map it to the verb(s) it
+// serves here — GET for the Static family, an entry per verb for Any/Match —
+// rather than adding a permanent exemption, which would put a live route
+// outside the manifest for good.
 var routeMethods = map[string]bool{
 	"GET": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true,
 	"HEAD": true, "OPTIONS": true, "Any": true,
@@ -920,19 +927,51 @@ func finalSelector(name string) string {
 // requireResolvablePrefixes makes an unresolvable prefix a loud failure
 // rather than a skip.
 //
-// # What remains uncovered, named rather than discovered later
+// # What remains uncovered
 //
-//   - A registrar that does not follow the Register* convention AND is handed
-//     its group in a shape the group analysis cannot see. Either alone is
-//     caught; both together is not.
-//   - A route registered through a computed path (r.POST(pathVar, h)): no
-//     literal to compare. Skipped, not failed — see the direct-route loop.
-//   - A router group produced by a function in another package
-//     (g := httpserver.SomeGroup()): without type information nothing marks
-//     it as a group. This affects prefix resolution only, no longer totality.
+// Not a completeness claim — this is what is known to be open, written here
+// because an understated gap is worse than a named one. Each entry has been
+// observed, not reasoned about.
 //
-// None of these exists in the repo today. This list is not a claim of
-// completeness; it is what I know to be open.
+//   - A REGISTRAR CALLED THROUGH A VALUE THE AST CANNOT NAME. Both the
+//     totality check and the exemption lists are keyed on a dotted call name,
+//     and selectorChainName can only produce one when call.Fun is a selector
+//     chain. Assign the function to a variable and the name disappears:
+//
+//     rgCopy := r.RouterGroup
+//     mountMobile := storefront.RegisterMobileStorefront
+//     mountMobile(&rgCopy, deps)
+//
+//     mounts the whole mobile storefront subtree, green. Note what is NOT
+//     wrong there: the convention is followed perfectly —
+//     RegisterMobileStorefront is Register*-named — and call.Fun is a bare
+//     *ast.Ident, so there is nothing to name. The same applies to a method
+//     value, a func-typed struct field, or a dispatch table of registrars.
+//     This is one ordinary refactor, not an exotic coincidence.
+//
+//   - ANY GROUP EXPRESSION bindGroupVar/isGroupArg DOES NOT RECOGNISE,
+//     INCLUDING &rgCopy WHERE rgCopy := r.RouterGroup. That is a one-token
+//     variant of &r.RouterGroup, which IS recognised — the difference is only
+//     that the embedded field is copied to a local first. Also: a group
+//     returned by a function in another package, a group held in a struct
+//     field, a group taken from a slice or map. This costs prefix resolution
+//     rather than totality, EXCEPT in combination with the bullet above, where
+//     together they cost both.
+//
+//   - A ROUTE REGISTERED THROUGH A COMPUTED PATH (r.POST(pathVar, h)): no
+//     literal to compare, so it is skipped rather than failed. Failing closed
+//     would mean failing on every non-router X.METHOD(nonLiteral) call in the
+//     package.
+//
+//   - THE Register* CONVENTION ITSELF. If a route registrar is named something
+//     else AND is handed its group in an unrecognised shape, neither basis
+//     sees it. Either alone is caught: requireRegistrarNamingConventionHolds
+//     catches an unconventional name that takes a group, and the name-based
+//     totality check catches a conventional name whatever its arguments.
+//
+// Closing the first two properly needs type information — a go/types pass over
+// package main — which is a real option, not a fundamental limit. It is
+// deferred, not dismissed.
 func TestMainMountsEveryFrontendFacingSurface(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	require.True(t, ok, "runtime.Caller(0) failed to report this test file's own path")
@@ -998,6 +1037,7 @@ func TestMainMountsEveryFrontendFacingSurface(t *testing.T) {
 	}
 
 	requireRegistrarNamingConventionHolds(t, w)
+	requireNonRouteCallsTakeNoGroup(t, w)
 	requireResolvablePrefixes(t, w, built)
 
 	// --- Direction 2b: routes registered straight onto a router ---
@@ -1082,6 +1122,42 @@ func requireRegistrarNamingConventionHolds(t *testing.T, w mainWiring) {
 				"deliberately. Do not add it to an exemption list: the exemption lists are "+
 				"keyed on names this check has to be able to find.",
 			m.Where, name, m.Prefix, registrarPrefix)
+	}
+}
+
+// requireNonRouteCallsTakeNoGroup cross-checks nonRouteRegisterCalls against
+// the group analysis: a call that claims to register no HTTP route must not be
+// handed a router group.
+//
+// This closes a one-line bypass that was live, not hypothetical. Moving
+// admin.RegisterAdmin into nonRouteRegisterCalls with a plausible-sounding
+// reason regenerated cleanly and left a GREEN suite at 213 routes — the same
+// 190-route drop every other check in this file exists to stop. The list was
+// pure assertion, believed because it was written down.
+//
+// The refuting datum was already being computed and simply never consulted:
+// all six genuine entries take no group argument and so are absent from
+// w.Mounts, while admin.RegisterAdmin is present with prefix /api/v1. So the
+// intersection is empty today, which makes this a zero-false-positive check
+// rather than a new constraint.
+//
+// It is the same principle the naming-convention cross-check applies: a
+// claim-based exemption needs an independent check, or it is just a hole with
+// a reason attached. Applying that to one list and not the other was the
+// inconsistency.
+func requireNonRouteCallsTakeNoGroup(t *testing.T, w mainWiring) {
+	t.Helper()
+	for name := range nonRouteRegisterCalls {
+		m, isMount := w.Mounts[name]
+		require.Falsef(t, isMount,
+			"%s: %s is listed in nonRouteRegisterCalls as registering no HTTP route, but it "+
+				"IS handed a router group (prefix %q).\n\n"+
+				"Something given a router group mounts routes. Either the entry is wrong — "+
+				"in which case this is a subtree escaping the manifest through an exemption "+
+				"list, which is the shape of the bug this whole file guards against — or the "+
+				"call really is route-free and should not be receiving a group. Move it to "+
+				"buildSurfaces (and regenerate: %s) or to mountsOutsideManifest.",
+			m.Where, name, m.Prefix, routemanifest.UpdateCommand)
 	}
 }
 

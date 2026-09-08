@@ -952,11 +952,22 @@ func finalSelector(name string) string {
 //   - ANY GROUP EXPRESSION bindGroupVar/isGroupArg DOES NOT RECOGNISE,
 //     INCLUDING &rgCopy WHERE rgCopy := r.RouterGroup. That is a one-token
 //     variant of &r.RouterGroup, which IS recognised — the difference is only
-//     that the embedded field is copied to a local first. Also: a group
-//     returned by a function in another package, a group held in a struct
-//     field, a group taken from a slice or map. This costs prefix resolution
-//     rather than totality, EXCEPT in combination with the bullet above, where
-//     together they cost both.
+//     that the embedded field is copied to a local first.
+//
+//     Narrower than it first looks: rgDeref := *r.Group("/api/v1") does NOT
+//     escape, because the .Group() call is still there and the
+//     unaccounted-group check catches it. Only the EMBEDDED-FIELD copy
+//     escapes, since it involves no .Group() call at all.
+//
+//     On its own this costs prefix resolution, and fails loudly when it does
+//     (requireResolvablePrefixes). It costs TOTALITY in either of two
+//     combinations, both verified at 213 routes and exit 0:
+//
+//     (a) with an un-nameable registrar (the bullet above), or
+//     (b) with an EXEMPTION-LIST ENTRY. Both requireNonRouteCallsTakeNoGroup
+//     and requireExemptMountsAreNotFrontendFacing read w.Mounts, so an
+//     unrecognised group shape empties the intersection and skips them.
+//     Those two checks are EVIDENCE, NOT PROOF.
 //
 //   - A ROUTE REGISTERED THROUGH A COMPUTED PATH (r.POST(pathVar, h)): no
 //     literal to compare, so it is skipped rather than failed. Failing closed

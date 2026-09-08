@@ -723,6 +723,13 @@ func requireNoCatchAllRoutes(t *testing.T, declared []string) {
 //     path.join(...) or an array join. The residual check fires only when a
 //     base identifier is adjacent to an unreadable operand or an /internal
 //     literal is on the logical line.
+//   - A "//" INSIDE A STRING LITERAL that is not part of a URL scheme:
+//     stripComments truncates the rest of the line, so a reference after it
+//     is lost — and the residual check, seeing the same stripped text, cannot
+//     report it either.
+//   - A REFERENCE INSIDE A MULTI-LINE BLOCK COMMENT is still seen as live,
+//     because comments are stripped per physical line and the opening /* is
+//     on a different line. That direction is a false FAILURE, not a miss.
 //
 // Fixed in round 5, recorded because the failure mode was subtle: only the
 // FIRST reference per logical line used to be extracted, so a URL array whose

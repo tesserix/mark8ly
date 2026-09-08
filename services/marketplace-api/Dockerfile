@@ -43,7 +43,9 @@ RUN go build -trimpath -ldflags="-s -w" \
  && go build -trimpath -ldflags="-s -w" \
       -o /out/webhook-delivery-prune-cron ./cmd/webhook-delivery-prune-cron \
  && go build -trimpath -ldflags="-s -w" \
-      -o /out/carrier-secrets-backfill ./cmd/carrier-secrets-backfill
+      -o /out/carrier-secrets-backfill ./cmd/carrier-secrets-backfill \
+ && go build -trimpath -ldflags="-s -w" \
+      -o /out/backfill-trial-start ./cmd/backfill-trial-start
 
 # ─── migrate ────────────────────────────────────────────────────────────
 # Standalone image used by the K8s Job pattern.
@@ -75,5 +77,14 @@ COPY --from=builder --chown=10001:10001 /out/webhook-delivery-prune-cron /usr/lo
 # under the real ServiceAccount, rather than from an operator's laptop with
 # production credentials port-forwarded to it.
 COPY --from=builder --chown=10001:10001 /out/carrier-secrets-backfill /usr/local/bin/carrier-secrets-backfill
+# backfill-trial-start is the same shape of tool: a ONE-OFF, run by hand as a
+# Job to give stores created before #828 the subscription row — and therefore
+# the trial clock — that nothing created for them at signup (mark8ly#827).
+#
+# Shipped for the same reason as the one above, and for a sharper one: it was
+# written, merged and left out of this image, so the command existed and could
+# not be run anywhere the data lives. It reports what it would write and needs
+# -apply to write anything.
+COPY --from=builder --chown=10001:10001 /out/backfill-trial-start /usr/local/bin/backfill-trial-start
 EXPOSE 8091
 CMD ["/usr/local/bin/marketplace-api"]

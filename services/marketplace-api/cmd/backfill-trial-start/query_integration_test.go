@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,10 +118,16 @@ func seedStore(t *testing.T, db interface {
 	Exec(string, ...any) *gorm.DB
 }, storeID, tenantID uuid.UUID, createdAt *time.Time) {
 	t.Helper()
+	// storefront_customer_portal_secret is NOT NULL and generated server-side
+	// by the upsert handler, so a hand-rolled INSERT has to supply one. Any
+	// 64 hex characters satisfy the column; nothing here reads it back.
 	require.NoError(t, db.Exec(`
-		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code, timezone, status, created_at, synced_at)
-		VALUES (?, ?, ?, ?, 'AU', 'AUD', 'Australia/Sydney', 'active', ?, now())`,
-		storeID, tenantID, "s-"+storeID.String()[:8], "Test Store", createdAt,
+		INSERT INTO stores (id, tenant_id, slug, name, country_code, currency_code,
+		                    timezone, status, storefront_customer_portal_secret,
+		                    created_at, synced_at)
+		VALUES (?, ?, ?, ?, 'AU', 'AUD', 'Australia/Sydney', 'active', ?, ?, now())`,
+		storeID, tenantID, "s-"+storeID.String()[:8], "Test Store",
+		strings.Repeat("0", 64), createdAt,
 	).Error)
 }
 

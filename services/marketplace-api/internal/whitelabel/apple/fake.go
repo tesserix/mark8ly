@@ -17,6 +17,13 @@ type FakeClient struct {
 	// named error — used to exercise the advancer's error path.
 	BlockDownloadsErr error
 	PullAppErr        error
+
+	// Apps is what ListApps returns; ListAppsErr overrides it. Zero,
+	// one and many are all expressible so callers can be tested against
+	// each — an empty account and a rejected key are different facts.
+	Apps              []App
+	ListAppsErr       error
+	ListAppsCallCount int
 }
 
 // NewFakeClient is a convenience zero-value constructor.
@@ -36,4 +43,18 @@ func (f *FakeClient) PullApp(_ context.Context, appleAppID string) error {
 	f.PullAppCallCount++
 	f.PulledAppIDs = append(f.PulledAppIDs, appleAppID)
 	return f.PullAppErr
+}
+
+func (f *FakeClient) ListApps(context.Context) ([]App, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ListAppsCallCount++
+	if f.ListAppsErr != nil {
+		return nil, f.ListAppsErr
+	}
+	// Copy: ListApps is a read, and a caller must not be able to mutate
+	// the fake's state through the slice it gets back.
+	out := make([]App, len(f.Apps))
+	copy(out, f.Apps)
+	return out, nil
 }

@@ -143,8 +143,8 @@ func TestAdvancer_Day30_BlocksDownloads(t *testing.T) {
 	require.NoError(t, db.Where("id=?", row.ID).First(&after).Error)
 	require.Equal(t, lifecycle.StatusDownloadsBlocked, after.Status)
 	require.Equal(t, 1, appleCli.BlockDownloadsCallCount)
-	// Google returns ErrNotWired but the advancer swallows it; the
-	// fake records the attempt.
+	// Play's day-30 halt IS implemented, so the fake's silent success is
+	// the right stand-in here; the failure paths are the two tests below.
 	require.Equal(t, 1, gpCli.BlockDownloadsCallCount)
 
 	// Transition log row appended.
@@ -409,4 +409,84 @@ func TestAdvancer_FirebaseArchiveFailure_IsRecordedBesideTheStatus(t *testing.T)
 	require.NotEmpty(t, reasons, "a skipped firebase archive must leave a reason behind")
 	require.Contains(t, reasons[0], "NOT performed")
 	require.Contains(t, reasons[0], "merchant-proj-1")
+}
+
+// Day 60 cannot be completed on Play by any code, now or later:
+// unpublishing a listing has no Android Publisher API. The row still walks
+// to `pulled` — stalling would block the day-90 credential purge on work
+// no retry can finish — so the append-only log has to carry the refusal,
+// or `pulled` becomes the only durable record and asserts a takedown that
+// never happened.
+func TestAdvancer_Day60_PlayUnpublishRefusal_IsRecordedBesideTheStatus(t *testing.T) {
+	creds, _ := newCredsSvc(t)
+	appleCli, gpCli, fbCli := apple.NewFakeClient(), googleplay.NewFakeClient(), firebase.NewFakeClient()
+	gpCli.PullAppErr = googleplay.ErrUnpublishNotSupported
+	adv := newAdvancer(t, struct {
+		Apple    *apple.FakeClient
+		Google   *googleplay.FakeClient
+		Firebase *firebase.FakeClient
+		Creds    *appcreds.Service
+	}{appleCli, gpCli, fbCli, creds})
+
+	db := testdb.NewDB(t, "white_label_app_state", "white_label_app_lifecycle")
+	row := ageRow(t, 60, lifecycle.StatusDownloadsBlocked)
+	require.NoError(t, db.Create(&row).Error)
+
+	require.NoError(t, adv.AdvanceDue(context.Background()))
+
+	var after lifecycle.Row
+	require.NoError(t, db.Where("id=?", row.ID).First(&after).Error)
+	require.Equal(t, lifecycle.StatusPulled, after.Status)
+	require.Equal(t, 1, appleCli.PullAppCallCount, "Apple's pull is what makes the step partly real")
+
+	var reasons []string
+	require.NoError(t, db.Raw(
+		`SELECT reason FROM white_label_app_lifecycle
+		  WHERE store_id = ? AND reason IS NOT NULL`, row.StoreID,
+	).Scan(&reasons).Error)
+	require.NotEmpty(t, reasons, "a Play listing that was not pulled must leave a reason behind")
+	require.Contains(t, reasons[0], "NOT performed")
+	require.Contains(t, reasons[0], row.GooglePackage,
+		"the reason must name the package, or an operator cannot act on it")
+	require.Contains(t, reasons[0], "Play Console",
+		"the reason must name the manual action, since no code can do it")
+}
+
+// Day 30's Play halt is implementable, so a failure here is transient —
+// but the row advances to `downloads_blocked` regardless (pinned by
+// TestAdvancer_Day30_GoogleClientUnresolvable_StillAdvances), and that
+// status cannot say "Apple only". The note is what keeps it honest.
+func TestAdvancer_Day30_PlayBlockFailure_IsRecordedBesideTheStatus(t *testing.T) {
+	creds, _ := newCredsSvc(t)
+	appleCli, gpCli, fbCli := apple.NewFakeClient(), googleplay.NewFakeClient(), firebase.NewFakeClient()
+	gpCli.BlockDownloadsErr = googleplay.ErrUnauthorized
+	adv := newAdvancer(t, struct {
+		Apple    *apple.FakeClient
+		Google   *googleplay.FakeClient
+		Firebase *firebase.FakeClient
+		Creds    *appcreds.Service
+	}{appleCli, gpCli, fbCli, creds})
+
+	db := testdb.NewDB(t, "white_label_app_state", "white_label_app_lifecycle")
+	row := ageRow(t, 30, lifecycle.StatusSunsetScheduled)
+	require.NoError(t, db.Create(&row).Error)
+
+	require.NoError(t, adv.AdvanceDue(context.Background()))
+
+	var after lifecycle.Row
+	require.NoError(t, db.Where("id=?", row.ID).First(&after).Error)
+	require.Equal(t, lifecycle.StatusDownloadsBlocked, after.Status)
+
+	var reasons []string
+	require.NoError(t, db.Raw(
+		`SELECT reason FROM white_label_app_lifecycle
+		  WHERE store_id = ? AND reason IS NOT NULL`, row.StoreID,
+	).Scan(&reasons).Error)
+	require.NotEmpty(t, reasons, "a Play halt that did not happen must leave a reason behind")
+	require.Contains(t, reasons[0], "block downloads")
+	require.Contains(t, reasons[0], row.GooglePackage)
+	// The day-60-only wording must NOT leak onto a day-30 note: telling an
+	// operator to unpublish in the Console would be wrong advice for a
+	// transient auth failure.
+	require.NotContains(t, reasons[0], "Play Console")
 }

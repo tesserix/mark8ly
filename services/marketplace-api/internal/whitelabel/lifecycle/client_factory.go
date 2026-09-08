@@ -45,9 +45,11 @@ type AppleTeardownFactory func(ctx context.Context, tenantID, storeID uuid.UUID)
 // also tenant-less — so "wire the real client instead of the fake" is not
 // a one-line swap on this side either.
 //
-// The real client returns googleplay.ErrNotWired from every method, after
-// fetching credentials. That is what production should see: an honest
-// "not implemented", rather than googleplay.FakeClient's silent success.
+// The real client implements day 30 (BlockDownloads halts the production
+// track) and REFUSES day 60: unpublishing a Play listing has no Android
+// Publisher API, so PullApp returns googleplay.ErrUnpublishNotSupported.
+// That is what production should see — an honest refusal the advancer
+// records, rather than googleplay.FakeClient's silent success.
 type GoogleTeardownFactory func(ctx context.Context, tenantID, storeID uuid.UUID) (googleplay.ClientAPI, error)
 
 // NewAppleTeardownFactory builds a real App Store Connect client per

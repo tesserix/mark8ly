@@ -487,17 +487,14 @@ export function PricingClient({ currency, pricing }: PricingClientProps) {
           >
             {pricingCopy.proCtas.conversation}
           </a>
-          <a
-            href={pricingCopy.proCtas.briefHref}
-            className={[
-              'inline-block text-sm font-medium py-2.5 px-5 rounded-md transition-colors',
-              'border border-[var(--ink-900)] text-[var(--ink-900)] hover:border-[var(--moss-700)] hover:text-[var(--moss-700)]',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--moss-700)] focus-visible:ring-offset-1',
-            ].join(' ')}
-
-          >
-            {pricingCopy.proCtas.brief}
-          </a>
+          {/* The "Download brief" button was REMOVED here (#849), not
+              disabled or relabelled. It pointed at
+              `/pricing/mark8ly-pro-brief.pdf`, and no such asset exists —
+              `apps/admin/public` contains only badges, a favicon and an icon,
+              and the URL answers 404 in production. On a public, indexed page
+              a button that 404s is worse than no button: it spends a
+              prospect's click and reads as a broken product.
+              Bring it back with the PDF, not before. */}
         </section>
       )}
 

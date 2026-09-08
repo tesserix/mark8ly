@@ -16,6 +16,45 @@ export interface PlanCopyItem {
   features: string[]
 }
 
+/**
+ * Where the marketing site lives, for the self-serve signup CTAs.
+ *
+ * Those CTAs cross a HOST boundary, which is why they cannot be relative.
+ * This page is part of `apps/admin`, served at `admin.mark8ly.com` and
+ * `{tenant}-admin.mark8ly.com`; signup lives in `apps/onboarding`, served at
+ * `mark8ly.com`. A relative `/onboarding` resolves against the admin host and
+ * 404s — which is the class of bug #849 was opened for.
+ *
+ * `||`, not `??`, and that distinction is load-bearing here. The Docker build
+ * declares `ARG REUSABLE_PUBLIC_BUILD_ARG_6=""`, so an unset CI secret arrives
+ * as the EMPTY STRING rather than as undefined. `??` only falls back on
+ * null/undefined, so it would leave `MARKETING_URL` empty and every signup CTA
+ * would render as a bare `/onboarding` — relative, on the wrong host, 404.
+ * `SignInForm.tsx` uses `??` for the same variable and has that latent bug;
+ * see #849 for the note.
+ *
+ * The fallback is the real production host rather than a localhost default,
+ * because this string ends up in a PUBLIC, indexed page: if the build arg is
+ * ever missing, a link to the live marketing site is a far better failure than
+ * a link to someone's laptop.
+ */
+const MARKETING_URL = (
+  process.env.NEXT_PUBLIC_MARKETING_URL || 'https://mark8ly.com'
+).replace(/\/+$/, '')
+
+/**
+ * The self-serve signup entry, absolute.
+ *
+ * No `?plan=` query. The previous hrefs carried `?plan=starter` and
+ * `?plan=studio`, and NOTHING reads them — `apps/onboarding` never looks at a
+ * `plan` param, and by design cannot: the trial "starts with just an email and
+ * doesn't ask for a card. You'll only be asked to choose a plan once the trial
+ * is ending" (`apps/onboarding/app/help/page.tsx`). A parameter the receiving
+ * app ignores is a URL making a promise the product does not keep, which is
+ * the same failure mode as the dead links themselves.
+ */
+const SIGNUP_HREF = `${MARKETING_URL}/onboarding`
+
 export const pricingCopy = {
   /** Page headline. Source Serif 4, large. */
   h1: 'Pricing that grows with you.',
@@ -41,9 +80,7 @@ export const pricingCopy = {
   /** Pro card CTAs. */
   proCtas: {
     conversation: 'Start a conversation',
-    brief: 'Download brief',
-    conversationHref: '/admin/settings/billing/pro-contact',
-    briefHref: '/pricing/mark8ly-pro-brief.pdf',
+    conversationHref: '/settings/billing/pro-contact',
   },
 
   /** Pro+App add-on card. */
@@ -54,7 +91,7 @@ export const pricingCopy = {
     /** The $2,000 setup fee is a separate one-off charge, not part of the monthly price above. */
     setupFeeNote: 'Plus a $2,000 one-time setup.',
     cta: 'Add to plan',
-    ctaHref: '/admin/settings/billing/pro-app-purchase',
+    ctaHref: '/settings/billing/pro-app-purchase',
   },
 
   /** Bottom disclosure footnote. Currency is interpolated at render time. */
@@ -85,7 +122,7 @@ export const pricingCopy = {
       name: 'Starter',
       tagline: 'For merchants opening their first store.',
       cta: 'Start free trial',
-      ctaHref: '/signup?plan=starter',
+      ctaHref: SIGNUP_HREF,
       features: [
         'Up to 2 storefronts',
         'Unlimited products & orders',
@@ -101,7 +138,7 @@ export const pricingCopy = {
       name: 'Studio',
       tagline: 'For stores gaining consistent monthly revenue.',
       cta: 'Start free trial',
-      ctaHref: '/signup?plan=studio',
+      ctaHref: SIGNUP_HREF,
       features: [
         'Up to 5 storefronts',
         '50 images per product',
@@ -117,7 +154,7 @@ export const pricingCopy = {
       name: 'Pro',
       tagline: 'Built for teams scaling past $10k orders a month. Start a conversation.',
       cta: 'Start a conversation',
-      ctaHref: '/admin/settings/billing/pro-contact',
+      ctaHref: '/settings/billing/pro-contact',
       features: [
         'Up to 10 storefronts',
         'Unlimited images',

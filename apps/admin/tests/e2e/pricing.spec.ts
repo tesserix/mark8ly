@@ -82,7 +82,7 @@ test.describe("public /pricing page", () => {
     await ctx.close();
   });
 
-  test("plan CTAs render the hrefs currently shipped — all three 404, see mark8ly#834", async ({
+  test("plan CTAs point somewhere that resolves", async ({
     browser,
   }) => {
     const ctx = await browser.newContext();
@@ -108,29 +108,33 @@ test.describe("public /pricing page", () => {
     // the Pro contact CTAs are `<section>`s, role=region — they cannot
     // match `role: "article"`.)
     //
-    // These assert what the page renders TODAY, which is not the same as
-    // asserting the links work. All three hrefs 404 as of this commit:
-    //   - there is no /signup route anywhere under apps/admin/app;
-    //   - "(admin)" is a Next route GROUP, so pro-contact really lives at
-    //     /settings/billing/pro-contact — the /admin prefix is not a path.
-    // That is a product bug in lib/copy/pricing.ts, reported against
-    // mark8ly#834; fix the hrefs there and update these three strings
-    // together. Until then this test's NAME says 404 so the CI log does
-    // not read as an endorsement of the URLs.
+    // These used to pin the BROKEN values on purpose, with the test name
+    // saying "all three 404" so a green CI line did not read as an
+    // endorsement. #849 fixed the hrefs, so they now pin the working ones.
+    //
+    // Starter and Studio are matched by SHAPE, not by a literal URL: their
+    // host comes from NEXT_PUBLIC_MARKETING_URL and legitimately differs
+    // between dev, UAT and production, so a pinned string would just move the
+    // breakage to whichever environment this suite did not run in. What must
+    // hold everywhere is that the link is ABSOLUTE — signup lives on the
+    // marketing host, and a relative href resolves against the admin host and
+    // 404s, which was half of this bug.
+    //
+    // Pro stays an exact match: it is an in-app path on the tenant's own
+    // admin host, and the thing that broke it was a literal prefix.
     const planCta = (plan: RegExp) =>
       page.getByRole("article", { name: plan }).getByRole("link");
 
-    await expect(planCta(/starter plan/i)).toHaveAttribute(
-      "href",
-      "/signup?plan=starter",
-    );
-    await expect(planCta(/studio plan/i)).toHaveAttribute(
-      "href",
-      "/signup?plan=studio",
-    );
+    for (const plan of [/starter plan/i, /studio plan/i]) {
+      const href = await planCta(plan).getAttribute("href");
+      expect(href, `${plan} CTA must be an absolute signup URL`).toMatch(
+        /^https?:\/\/.+\/onboarding$/,
+      );
+    }
+
     await expect(planCta(/pro plan/i)).toHaveAttribute(
       "href",
-      "/admin/settings/billing/pro-contact",
+      "/settings/billing/pro-contact",
     );
 
     await ctx.close();

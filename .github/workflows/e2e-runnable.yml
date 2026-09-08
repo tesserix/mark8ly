@@ -1,0 +1,146 @@
+name: E2E (runnable subset)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+# =============================================================================
+# mark8ly#834 — of 48 Playwright specs, none ran in CI: no config declared a
+# webServer, so `playwright test` had nowhere to point.
+#
+# Exactly ONE spec turned out to be runnable with no backend stack:
+# apps/admin/tests/e2e/pricing.spec.ts. That was established by running it,
+# not by reading it.
+#
+# apps/onboarding/tests/e2e/{form-validation,tax-id-migration}.spec.ts were
+# candidates too — their assertions really are client-side only — but
+# /onboarding is a server component that fetches reference data from
+# platform-api at render time with no fallback, so the route never renders
+# without a backend and both specs time out. A spec can assert only client
+# state and still need a backend, because the PAGE will not render without
+# one. Removing that dependency is out of scope here, so onboarding is not
+# wired up at all.
+#
+# A suite that silently runs nothing reports green — the exact failure this
+# issue is about — so the job asserts the exact number of PASSED tests. Exit
+# code alone is insufficient: a spec whose tests all SKIP also exits 0 having
+# asserted nothing.
+# =============================================================================
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/admin/**"
+      - "packages/ui/**"
+      - "package-lock.json"
+      - ".github/workflows/e2e-runnable.yml"
+  pull_request:
+    paths:
+      - "apps/admin/**"
+      - "packages/ui/**"
+      - "package-lock.json"
+      - ".github/workflows/e2e-runnable.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  admin:
+    name: admin (pricing.spec.ts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          # Matches the `node_version: "22"` the Next.js job in ci.yml passes
+          # to tesserix-workflows/nextjs-ci.yml. This job runs `next build`
+          # on the same app that job builds, so a different major here would
+          # mean the build verified by CI and the build these e2e tests run
+          # against were produced by different toolchains. Move both or
+          # neither.
+          node-version: "22"
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Install Playwright Chromium
+        working-directory: apps/admin
+        run: npx playwright install --with-deps chromium
+      - name: Build admin
+        working-directory: apps/admin
+        # Its own step, NOT playwright's `webServer.command`. A cold Next 16
+        # admin build on ubuntu-latest routinely exceeds three minutes, so
+        # building inside webServer under its timeout reds the job on the
+        # build clock rather than on anything the spec asserts. Here a build
+        # failure is also its own log line instead of a webServer timeout
+        # that says nothing about the cause. playwright.ci.config.ts's
+        # webServer now runs `npm run start` only, and serves this output.
+        run: npm run build
+      - name: Run pricing.spec.ts and verify the exact pass count
+        working-directory: apps/admin
+        # Verified locally by actually running the suite against a real
+        # `next build && next start`: pricing.spec.ts has 5 tests, all of
+        # which assert DOM/href state with no fetch. `--reporter=line`
+        # prints one summary line ("N passed" / "N failed") this grep can
+        # pin.
+        #
+        # THREE independent gates, all of which must hold. No single one is
+        # sufficient:
+        #  - playwright's own exit status. A `$(...) || true` that swallows
+        #    it leaves the grep as the sole judge, and a run printing
+        #    "5 passed, 1 failed" would then satisfy the grep and report
+        #    green over a real failure. That cannot happen while testMatch
+        #    pins the file to exactly 5 tests, but it becomes live the
+        #    moment the spec grows a 6th test without this `5` moving in
+        #    lockstep.
+        #  - exactly 5 PASSED. Exit status alone is insufficient: a spec
+        #    whose tests all SKIP also exits 0 having asserted nothing,
+        #    which is the mark8ly#834 failure mode this job exists to catch.
+        #  - no "N failed" / "N timed out" anywhere in the output, so a
+        #    correct pass count can never coexist with a failure.
+        #
+        # The summary line carries leading ANSI cursor-control escapes when
+        # the reporter is redrawing, so the patterns are deliberately NOT
+        # anchored to start-of-line. `[^0-9]` still keeps "5 passed" from
+        # matching a larger count such as "15 passed".
+        #
+        # `|| status=$?` keeps the output captured for the log even on a
+        # failing run; all three gates are then evaluated together so the
+        # log names every reason it went red, not just the first.
+        #
+        # Known and benign: the app sets `output: "standalone"`, so
+        # `next start` prints `⚠ "next start" does not work with "output:
+        # standalone"`. It serves the build correctly regardless and all 5
+        # tests pass — do not re-investigate this warning.
+        run: |
+          set -o pipefail
+          status=0
+          out=$(CI=true npx playwright test --config=playwright.ci.config.ts --reporter=line 2>&1) || status=$?
+          printf '%s\n' "$out"
+          fail=0
+          if [ "$status" -ne 0 ]; then
+            echo "::error::playwright exited $status — the runnable admin e2e subset did not pass cleanly"
+            fail=1
+          fi
+          grep -qE '(^|[^0-9])5 passed \(' <<<"$out" || {
+            echo "::error::canary did not see exactly 5 passed — the runnable admin e2e subset is not actually executing and passing"
+            fail=1
+          }
+          if grep -qE '(^|[^0-9])[0-9]+ (failed|timed out)' <<<"$out"; then
+            echo "::error::canary saw a failed or timed-out test — a correct pass count must not coexist with a failure"
+            fail=1
+          fi
+          exit $fail
+      - name: Upload failure artifacts
+        # playwright.ci.config.ts captures trace, screenshot and video on
+        # failure. Without this step they were written into the runner and
+        # thrown away with it — produced and discarded, which reads like
+        # evidence exists when none is reachable.
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: admin-pricing-e2e-failure
+          path: apps/admin/test-results/
+          if-no-files-found: ignore
+          retention-days: 7

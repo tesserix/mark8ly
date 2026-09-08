@@ -3,13 +3,13 @@
 > **Audit date:** 2026-04-19  
 > **Auditor:** P16 a11y agent  
 > **Standard:** WCAG 2.1 AA  
-> **Automated tier:** `@axe-core/playwright` + `jest-axe` (see `a11y-audit.spec.ts` and `tests/unit/a11y/components.test.tsx`)
+> **Automated tier:** component tier only — `jest-axe` via `tests/unit/a11y/components.test.tsx`. There is **no automated e2e tier** any more; see below.
 
 ---
 
 ## Running the test suites
 
-### Automated component tier (Vitest + jest-axe)
+### Automated component tier (Vitest + jest-axe) — still exists
 
 ```bash
 cd apps/admin
@@ -20,40 +20,45 @@ npx vitest run tests/unit/a11y/components.test.tsx
 
 No server required — runs against jsdom.
 
-### Automated e2e tier (Playwright + @axe-core/playwright)
+### Automated e2e tier (Playwright + @axe-core/playwright) — DELETED
 
-The Playwright suite **requires a running dev server**. Start the full stack first:
+`tests/e2e/a11y-audit.spec.ts` and the `test:a11y:e2e` / `test:a11y` npm
+scripts that drove it were removed in commit `f87e1e42` (mark8ly#834). The
+instructions that used to live here — start the dev server, then
+`npm run test:a11y:e2e` — named a spec and two scripts that no longer exist,
+so following them produced "Missing script" rather than an audit.
 
-```bash
-# Terminal 1 — admin dev server
-cd apps/admin && npm run dev          # listens on :4202
+Why it went, and why that is the right call for now:
 
-# Terminal 2 — (optional) Go marketplace-api for live API responses
-# cd services/marketplace-api && go run ./cmd/main.go
-```
+- Of the 48 Playwright specs in this repo, **none** ran in CI: no config
+  declared a `webServer`, so nothing pointed `playwright test` at a server.
+  The a11y e2e spec was in that population — it had never run anywhere but a
+  developer's machine with the full local stack up.
+- Its targets were among the routes that do not exist: it swept the P16
+  billing surfaces alongside `cancellation`, `plan-change`, `pro-app` and
+  `tax-id`, the four specs deleted in the same commit for pointing at absent
+  routes and endpoints.
+- Colour-contrast rules were disabled in both axe tiers anyway (see the next
+  section), which is the class of finding a real browser tier is uniquely
+  able to make. The tier was carrying less than its file size suggested.
 
-Then in a third terminal:
+So this document is now a **manual** runbook with a component-level automated
+tier under it, and nothing in between. The checklists below are the whole
+automated-plus-manual story for these surfaces; do not assume a Playwright
+pass has already covered them.
 
-```bash
-cd apps/admin
-npm run test:a11y:e2e
-# or
-npx playwright test tests/e2e/a11y-audit.spec.ts
-```
-
-If the dev server is not running, Playwright tests will fail at navigation. The CI workflow should gate the Playwright tier behind a `needs: dev-server` step or run it only on pull requests where the preview deployment is available.
-
-### Combined shortcut
-
-```bash
-cd apps/admin && npm run test:a11y
-```
+Reinstating an e2e tier means: adding a config with a `webServer` (see
+`apps/admin/playwright.ci.config.ts` and `.github/workflows/e2e-runnable.yml`
+for the one spec that is wired up that way), confirming the routes under
+audit actually render without a backend, and re-adding
+`@axe-core/playwright` — it was removed from `package.json` as an orphaned
+dependency once its only consumer was deleted.
 
 ---
 
 ## Color contrast pairs — manual verification
 
-Color-contrast rules are **disabled** in both axe tiers (jsdom and Playwright) because axe cannot resolve CSS custom-property values without a full browser paint tree. These pairs must be manually verified.
+Color-contrast rules were **disabled** in both axe tiers — the jsdom one that remains and the Playwright one that was deleted — because axe cannot resolve CSS custom-property values without a full browser paint tree. Nothing automated checks these pairs; they must be verified by hand.
 
 | Foreground token | Background token | Hex pair | Computed ratio | AA text (4.5:1) | AA UI (3:1) | Status |
 |---|---|---|---|---|---|---|
@@ -240,7 +245,7 @@ Color-contrast rules are **disabled** in both axe tiers (jsdom and Playwright) b
 **Component:** `app/(admin)/stores/close-before-downgrade/CloseBeforeDowngradeClient.tsx`  
 **Issue:** If the store list is implemented as bare `<div>` rows rather than `<ul>/<li>` or `<table>`, screen readers cannot announce the number of stores or navigate by list item.  
 **Remediation:** Wrap the store list in `<ul role="list">` and each row in `<li>`.  
-**Priority:** Verify in Playwright run; fix if confirmed.
+**Priority:** Verify by hand — the Playwright tier this line was written for no longer exists (see “Running the test suites”); fix if confirmed.
 
 ---
 

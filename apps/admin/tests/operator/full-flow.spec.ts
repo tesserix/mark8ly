@@ -20,7 +20,12 @@ import { test, expect } from "@playwright/test";
  *   DELHIVERY_API_KEY=<delhivery api key> \
  *   CUSTOMER_EMAIL=<customer email> \
  *   CUSTOMER_PASSWORD=<customer password> \
- *   npx playwright test full-flow.spec.ts
+ *   npx playwright test --config=playwright.operator.config.ts \
+ *     full-flow.spec.ts
+ *
+ * The `--config` is required, not optional: playwright.config.ts pins
+ * testDir to ./tests/e2e, so without it playwright collects nothing
+ * from this directory and exits "No tests found".
  */
 
 const SHOULD_RUN = process.env.FULL_FLOW === "1";
@@ -63,10 +68,10 @@ test.describe("full flow: admin + storefront", () => {
     }
 
     expect(page.url()).toContain("/dashboard");
-    await page.screenshot({ path: "tests/e2e/.audit/flow-01-dashboard.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-01-dashboard.png" });
 
     // Save storage state for subsequent tests
-    await ctx.storageState({ path: "tests/e2e/.audit/admin-state.json" });
+    await ctx.storageState({ path: "tests/operator/.audit/admin-state.json" });
     await ctx.close();
   });
 
@@ -76,7 +81,7 @@ test.describe("full flow: admin + storefront", () => {
 
     const ctx = await browser.newContext({
       baseURL: ADMIN_URL,
-      storageState: "tests/e2e/.audit/admin-state.json",
+      storageState: "tests/operator/.audit/admin-state.json",
       viewport: { width: 1440, height: 900 },
     });
     const page = await ctx.newPage();
@@ -106,13 +111,13 @@ test.describe("full flow: admin + storefront", () => {
 
     await page.getByRole("button", { name: /save configuration/i }).click();
     await expect(page.getByText(/configuration saved/i)).toBeVisible({ timeout: 15_000 });
-    await page.screenshot({ path: "tests/e2e/.audit/flow-02-razorpay.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-02-razorpay.png" });
 
     // Verify status flipped to "Active" after router.refresh()
     await page.reload();
     await page.waitForLoadState("networkidle").catch(() => {});
     await expect(razorpayCard.getByText(/^Active$/).first()).toBeVisible({ timeout: 10_000 });
-    await page.screenshot({ path: "tests/e2e/.audit/flow-02-razorpay-verified.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-02-razorpay-verified.png" });
     await ctx.close();
   });
 
@@ -122,7 +127,7 @@ test.describe("full flow: admin + storefront", () => {
 
     const ctx = await browser.newContext({
       baseURL: ADMIN_URL,
-      storageState: "tests/e2e/.audit/admin-state.json",
+      storageState: "tests/operator/.audit/admin-state.json",
       viewport: { width: 1440, height: 900 },
     });
     const page = await ctx.newPage();
@@ -154,12 +159,12 @@ test.describe("full flow: admin + storefront", () => {
 
     await page.getByRole("button", { name: /save configuration/i }).click();
     await expect(page.getByText(/configuration saved/i)).toBeVisible({ timeout: 15_000 });
-    await page.screenshot({ path: "tests/e2e/.audit/flow-03-delhivery.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-03-delhivery.png" });
 
     await page.reload();
     await page.waitForLoadState("networkidle").catch(() => {});
     await expect(delhiveryCard.getByText(/^Active$/).first()).toBeVisible({ timeout: 10_000 });
-    await page.screenshot({ path: "tests/e2e/.audit/flow-03-delhivery-verified.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-03-delhivery-verified.png" });
     await ctx.close();
   });
 
@@ -168,7 +173,7 @@ test.describe("full flow: admin + storefront", () => {
 
     const ctx = await browser.newContext({
       baseURL: ADMIN_URL,
-      storageState: "tests/e2e/.audit/admin-state.json",
+      storageState: "tests/operator/.audit/admin-state.json",
       viewport: { width: 1440, height: 900 },
     });
     const page = await ctx.newPage();
@@ -210,7 +215,7 @@ test.describe("full flow: admin + storefront", () => {
       await stockInput.fill("50");
     }
 
-    await page.screenshot({ path: "tests/e2e/.audit/flow-04-product-form.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-04-product-form.png" });
 
     // Submit
     await page.getByRole("button", { name: /create product/i }).click();
@@ -218,10 +223,10 @@ test.describe("full flow: admin + storefront", () => {
     // Wait for redirect to /products/[id] or success feedback
     await page.waitForURL(/\/products\/(?!new)/, { timeout: 15_000 }).catch(async () => {
       // Maybe stayed on /products/new — check for error messages
-      await page.screenshot({ path: "tests/e2e/.audit/flow-04-product-error.png" });
+      await page.screenshot({ path: "tests/operator/.audit/flow-04-product-error.png" });
     });
 
-    await page.screenshot({ path: "tests/e2e/.audit/flow-04-product-created.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-04-product-created.png" });
     console.log("Product created. URL:", page.url());
 
     // Verify in products list
@@ -229,7 +234,7 @@ test.describe("full flow: admin + storefront", () => {
     await page.waitForLoadState("networkidle").catch(() => {});
     const body = await page.textContent("body");
     expect(body).toContain(PRODUCT_TITLE.split(" ")[0]); // at least first word
-    await page.screenshot({ path: "tests/e2e/.audit/flow-04-products-list.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-04-products-list.png" });
 
     await ctx.close();
   });
@@ -245,7 +250,7 @@ test.describe("full flow: admin + storefront", () => {
 
     await page.goto("/products");
     await page.waitForLoadState("networkidle").catch(() => {});
-    await page.screenshot({ path: "tests/e2e/.audit/flow-05-storefront-products.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-05-storefront-products.png" });
 
     // Check for the product
     const body = await page.textContent("body");
@@ -255,7 +260,7 @@ test.describe("full flow: admin + storefront", () => {
     // Try the product detail page
     await page.goto(`/products/${PRODUCT_HANDLE}`);
     await page.waitForLoadState("networkidle").catch(() => {});
-    await page.screenshot({ path: "tests/e2e/.audit/flow-05-product-detail.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-05-product-detail.png" });
 
     await ctx.close();
   });
@@ -279,10 +284,18 @@ test.describe("full flow: admin + storefront", () => {
 
     await page.waitForURL(/\/account/, { timeout: 15_000 }).catch(() => {});
     console.log("Customer signed in. URL:", page.url());
-    await page.screenshot({ path: "tests/e2e/.audit/flow-06-customer-signed-in.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-06-customer-signed-in.png" });
 
-    // Save state for cart/checkout
-    await ctx.storageState({ path: "tests/e2e/.audit/customer-state.json" });
+    // Save state for cart/checkout.
+    //
+    // This path moved with the spec (mark8ly#834): it used to be
+    // tests/e2e/.audit/customer-state.json, which tests/e2e/account-shot,
+    // purchase-journey and delivery-timeline also read. Writing there from
+    // an operator run against a LIVE host would hand the local suite a
+    // production session, so the write is deliberately confined to
+    // tests/operator/. Keep it that way; account-shot documents the
+    // producers it does have.
+    await ctx.storageState({ path: "tests/operator/.audit/customer-state.json" });
     await ctx.close();
   });
 
@@ -291,7 +304,7 @@ test.describe("full flow: admin + storefront", () => {
 
     const ctx = await browser.newContext({
       baseURL: STOREFRONT_URL,
-      storageState: "tests/e2e/.audit/customer-state.json",
+      storageState: "tests/operator/.audit/customer-state.json",
       viewport: { width: 1440, height: 900 },
     });
     const page = await ctx.newPage();
@@ -312,7 +325,7 @@ test.describe("full flow: admin + storefront", () => {
     // Go to cart
     await page.goto("/cart");
     await page.waitForLoadState("networkidle").catch(() => {});
-    await page.screenshot({ path: "tests/e2e/.audit/flow-07-cart.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-07-cart.png" });
 
     // Go to checkout
     const checkoutLink = page.getByRole("link", { name: /checkout/i }).first();
@@ -324,7 +337,7 @@ test.describe("full flow: admin + storefront", () => {
       await page.waitForLoadState("networkidle").catch(() => {});
     }
 
-    await page.screenshot({ path: "tests/e2e/.audit/flow-07-checkout.png" });
+    await page.screenshot({ path: "tests/operator/.audit/flow-07-checkout.png" });
     console.log("Checkout page:", page.url());
 
     await ctx.close();
@@ -335,7 +348,7 @@ test.describe("full flow: admin + storefront", () => {
 
     const ctx = await browser.newContext({
       baseURL: ADMIN_URL,
-      storageState: "tests/e2e/.audit/admin-state.json",
+      storageState: "tests/operator/.audit/admin-state.json",
       viewport: { width: 1440, height: 900 },
     });
     const page = await ctx.newPage();
@@ -364,7 +377,7 @@ test.describe("full flow: admin + storefront", () => {
       page.on("pageerror", (e: Error) => errors.push(e.message));
 
       const name = route.replace(/\//g, "_").slice(1);
-      await page.screenshot({ path: `tests/e2e/.audit/flow-08-${name}.png` });
+      await page.screenshot({ path: `tests/operator/.audit/flow-08-${name}.png` });
 
       if (errors.length > 0) {
         console.log(`  PAGE ERROR on ${route}:`, errors[0]);

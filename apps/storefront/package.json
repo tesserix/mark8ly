@@ -10,7 +10,8 @@
     "lint:layouts": "eslint --max-warnings=0 components/layouts/",
     "check-types": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@openpanel/nextjs": "^1.5.1",

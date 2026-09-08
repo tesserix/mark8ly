@@ -31,8 +31,10 @@ import path from "node:path";
 const REPO_ROOT = path.join(__dirname, "../../../..");
 const E2E_DIRS = [
   "apps/admin/tests/e2e",
+  "apps/admin/tests/operator",
   "apps/onboarding/tests/e2e",
   "apps/storefront/tests/e2e",
+  "apps/storefront/tests/operator",
 ];
 
 function e2eSources(): ReadonlyArray<[string, string]> {
@@ -100,6 +102,40 @@ test("no e2e spec documents a credential inline in its run instructions", () => 
   }
 });
 
+test("every config that globs tests/e2e/** also globs tests/operator/**", () => {
+  // Third instance of one specific mistake: a config or ignore-file names
+  // tests/e2e and its twin tests/operator is forgotten. It happened to
+  // .gitignore (#844 — a leaked production session, see the tests above),
+  // then to two vitest configs that let Playwright specs moved to
+  // tests/operator/ get collected by vitest and crash the whole suite
+  // (mark8ly#834's e2e-triage follow-up). Both times the fix was symmetric:
+  // whatever excludes/ignores tests/e2e/** must do the same for
+  // tests/operator/**, in the same file.
+  //
+  // `git grep -F` only searches tracked files, so this naturally skips
+  // node_modules and build output without an explicit exclude list.
+  const withE2eGlob = execFileSync(
+    "git",
+    ["grep", "-l", "-F", "tests/e2e/**"],
+    { cwd: REPO_ROOT, encoding: "utf8" },
+  )
+    .split("\n")
+    .filter(Boolean);
+
+  for (const file of withE2eGlob) {
+    const src = readFileSync(path.join(REPO_ROOT, file), "utf8");
+    expect(
+      src.includes("tests/operator/**"),
+      `${file} globs "tests/e2e/**" (to exclude or ignore it) without a ` +
+        `matching "tests/operator/**" glob in the same file. Playwright ` +
+        `specs live under tests/operator/ too (mark8ly#834 moved them ` +
+        `there), so anything that excludes/ignores one tree must exclude/ ` +
+        `ignore the other, or tests/operator content leaks into whatever ` +
+        `this file's tool collects.`,
+    ).toBe(true);
+  }
+});
+
 test("no captured browser session or run artifact is committed under tests/e2e", () => {
   // Literal paths, one per app. A `*` in a git pathspec does NOT cross a
   // `/` — `git ls-files -- "apps/*/tests/e2e/.state/"` returns nothing even
@@ -126,15 +162,26 @@ test("no captured browser session or run artifact is committed under tests/e2e",
   ).toEqual([]);
 });
 
-test("both e2e run-artifact directories are gitignored, not just one", () => {
+test("every e2e run-artifact directory is gitignored, not just some", () => {
   const ignored = readFileSync(path.join(REPO_ROOT, ".gitignore"), "utf8");
-  for (const dir of [".audit", ".state"]) {
-    expect(
-      ignored,
-      `.gitignore does not cover apps/*/tests/e2e/${dir}/. The original leak ` +
-        `was exactly this asymmetry: .audit/ was ignored, .state/ was not, and ` +
-        `nothing noticed that two directories serving the same purpose were ` +
-        `treated differently.`,
-    ).toMatch(new RegExp(`apps/\\*/tests/e2e/\\${dir}/`));
+  // Both artifact directory names, under BOTH spec trees. tests/operator/
+  // is where mark8ly#834 moved the 8 opt-in scripts, and they write exactly
+  // the same two directories — a live-host session in .state/ and a live-host
+  // audit with screenshots in .audit/. Asserting only the tests/e2e/ pair
+  // would recreate the original asymmetry one level up: the operator lines
+  // would be present but unguarded, free to be dropped by anyone who did not
+  // know why they were there. That is the failure this test exists to
+  // prevent, so it has to cover every tree the specs actually live in —
+  // extend both lists together if a third tree appears.
+  for (const tree of ["e2e", "operator"]) {
+    for (const dir of [".audit", ".state"]) {
+      expect(
+        ignored,
+        `.gitignore does not cover apps/*/tests/${tree}/${dir}/. The original ` +
+          `leak was exactly this asymmetry: .audit/ was ignored, .state/ was ` +
+          `not, and nothing noticed that two directories serving the same ` +
+          `purpose were treated differently.`,
+      ).toMatch(new RegExp(`apps/\\*/tests/${tree}/\\${dir}/`));
+    }
   }
 });

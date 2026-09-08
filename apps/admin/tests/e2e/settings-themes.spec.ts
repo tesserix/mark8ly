@@ -4,7 +4,8 @@ import { ADMIN_URL, completeOnboarding } from "./helpers";
 
 /**
  * Post-settings-IA-restructure `/settings/storefront` was renamed to
- * `/settings/themes` and the page headline became "Themes & branding".
+ * `/settings/themes`; the page headline is "Branding"
+ * (apps/admin/app/(admin)/settings/themes/page.tsx).
  * Old route redirects but the test navigates to the new URL directly.
  */
 test("settings/themes saves and persists layout choice", async ({
@@ -27,7 +28,7 @@ test("settings/themes saves and persists layout choice", async ({
 
   await page.goto(`${ADMIN_URL}/settings/themes`);
   await expect(
-    page.getByRole("heading", { name: /themes & branding/i, level: 1 }),
+    page.getByRole("heading", { name: /branding/i, level: 1 }),
   ).toBeVisible();
 
   const layoutButton = page.getByTestId("layout-bold-promo");

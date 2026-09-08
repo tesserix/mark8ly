@@ -22,7 +22,12 @@ import { join } from "node:path";
  *   RAZORPAY_KEY_ID=<razorpay key id> \
  *   RAZORPAY_KEY_SECRET=<razorpay key secret> \
  *   DELHIVERY_API_KEY=<delhivery api key> \
- *   npx playwright test admin-setup.spec.ts
+ *   npx playwright test --config=playwright.operator.config.ts \
+ *     admin-setup.spec.ts
+ *
+ * The `--config` is required, not optional: playwright.config.ts pins
+ * testDir to ./tests/e2e, so without it playwright collects nothing
+ * from this directory and exits "No tests found".
  */
 
 /* ------------------------------------------------------------------ */
@@ -145,7 +150,7 @@ test.describe("admin setup: full configuration flow", () => {
     await page.screenshot({ path: screenshotPath("01-dashboard") });
 
     await ctx.storageState({ path: ADMIN_STORAGE });
-    writeState({ adminStorageState: "tests/e2e/.state/admin-state.json" });
+    writeState({ adminStorageState: "tests/operator/.state/admin-state.json" });
 
     await ctx.close();
   });

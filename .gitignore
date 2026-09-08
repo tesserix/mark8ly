@@ -60,6 +60,10 @@ apps/*/tests/e2e/.audit/
 # a public repository along with 14 screenshots of the signed-in admin. Both
 # directories hold run output. Neither belongs in a commit.
 apps/*/tests/e2e/.state/
+# tests/operator/ holds the opt-in scripts that used to live under
+# tests/e2e/ above (mark8ly#834) — same run-output directories, same reason.
+apps/*/tests/operator/.audit/
+apps/*/tests/operator/.state/
 
 # IDE
 .idea/

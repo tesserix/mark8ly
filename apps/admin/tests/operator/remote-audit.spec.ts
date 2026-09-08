@@ -8,11 +8,24 @@ import { join } from "node:path";
  * top-level admin route, and records any console errors, page errors,
  * and failed network requests per route.
  *
- * This spec is intentionally NOT part of the local e2e suite. It only
- * runs when ADMIN_AUDIT=1, so `npx playwright test` against localhost
- * won't accidentally fire real credentials at production.
+ * This spec is intentionally NOT part of the local e2e suite. It lives
+ * outside the testDir of playwright.config.ts AND it only runs when
+ * ADMIN_AUDIT=1, so `npx playwright test` against localhost won't
+ * accidentally fire real credentials at production.
  *
- * Findings are written to tests/e2e/.audit/admin-findings.json.
+ * Run:
+ *   ADMIN_AUDIT=1 \
+ *   ADMIN_BASE_URL=<admin host> \
+ *   ADMIN_AUDIT_EMAIL=<admin email> \
+ *   ADMIN_AUDIT_PASSWORD=<admin password> \
+ *   npx playwright test --config=playwright.operator.config.ts \
+ *     remote-audit.spec.ts
+ *
+ * The `--config` is required, not optional: playwright.config.ts pins
+ * testDir to ./tests/e2e, so without it playwright collects nothing
+ * from this directory and exits "No tests found".
+ *
+ * Findings are written to tests/operator/.audit/admin-findings.json.
  */
 
 const SHOULD_RUN = process.env.ADMIN_AUDIT === "1";

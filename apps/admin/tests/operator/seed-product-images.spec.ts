@@ -12,7 +12,12 @@ import { test, expect, type Page } from "@playwright/test";
  *   SEED_IMAGES=1 \
  *   ADMIN_BASE_URL=https://playwrite-test-admin.mark8ly.com \
  *   ADMIN_EMAIL=... ADMIN_PASSWORD=... TENANT_NAME='playwrite test' \
- *   npx playwright test seed-product-images.spec.ts
+ *   npx playwright test --config=playwright.operator.config.ts \
+ *     seed-product-images.spec.ts
+ *
+ * The `--config` is required, not optional: playwright.config.ts pins
+ * testDir to ./tests/e2e, so without it playwright collects nothing
+ * from this directory and exits "No tests found".
  */
 
 const SHOULD_RUN = process.env.SEED_IMAGES === "1";
@@ -162,7 +167,7 @@ test("seed Unsplash images onto Active products", async ({ browser }) => {
       await uploadMediaFor(page, active[i]!, picks);
     } catch (e) {
       console.error(`  [fail] ${active[i]}:`, e instanceof Error ? e.message : e);
-      await page.screenshot({ path: `tests/e2e/.audit/seed-fail-${i}.png`, fullPage: true });
+      await page.screenshot({ path: `tests/operator/.audit/seed-fail-${i}.png`, fullPage: true });
     }
   }
 

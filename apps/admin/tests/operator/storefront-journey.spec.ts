@@ -15,7 +15,12 @@ import { join } from "path";
  *   STOREFRONT_BASE_URL=<storefront host> \
  *   CUSTOMER_EMAIL=<customer email> \
  *   CUSTOMER_PASSWORD=<customer password> \
- *   npx playwright test storefront-journey.spec.ts
+ *   npx playwright test --config=playwright.operator.config.ts \
+ *     storefront-journey.spec.ts
+ *
+ * The `--config` is required, not optional: playwright.config.ts pins
+ * testDir to ./tests/e2e, so without it playwright collects nothing
+ * from this directory and exits "No tests found".
  */
 
 const SHOULD_RUN = process.env.FULL_FLOW === "1";
@@ -734,7 +739,7 @@ test.describe("storefront journey", () => {
     // Write updated state
     saveState({
       orderId,
-      customerStorageState: "tests/e2e/.state/customer-state.json",
+      customerStorageState: "tests/operator/.state/customer-state.json",
     });
 
     await ctx.close();

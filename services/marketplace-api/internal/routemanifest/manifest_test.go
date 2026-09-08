@@ -326,6 +326,12 @@ var mountsOutsideManifest = map[string]string{
 
 	"emailevents.NewHandler.Register": "Resend delivery webhooks, mounted at the root group. The caller is Resend and authenticates with the svix-signature over the raw body — not a browser",
 
+	// Takes the ENGINE, not a group, so no group analysis would ever have
+	// found it; it surfaced only once totality moved to call names. It
+	// registers GET /health and GET /ready (internal/health/handler.go:41)
+	// and the caller is the kubelet.
+	"healthHandler.Register": "GET /health and GET /ready on the engine — liveness/readiness probes, called by the kubelet",
+
 	// The cluster-internal surface. One registrar IS in the manifest
 	// (internalsvc.NewStoreActiveDomainHandler.Register) because three
 	// apps/* files fetch its route; the rest have no frontend caller.
@@ -365,52 +371,89 @@ var directRoutesOutsideManifest = map[string]string{
 	"POST /webhooks/stripe-billing": "Stripe billing webhook, verified by signature over the raw body",
 }
 
+// nonRouteRegisterCalls are calls in package main whose name matches the
+// Register* convention but which mount no HTTP route at all. They exist so
+// that the convention can carry the totality property: every Register*
+// -named call must be classified as a manifest surface, a mount outside the
+// manifest, or one of these.
+//
+// Same rules as the other two lists — a non-empty reason, and an entry that
+// no longer matches any call fails as stale.
+var nonRouteRegisterCalls = map[string]string{
+	"revalidation.Register":                      "registers a cron job on the trial scheduler, not an HTTP route",
+	"campaignbudgetcron.RegisterTrialRampJob":    "registers a cron job on the trial scheduler",
+	"campaignbudgetcron.RegisterMonthlyResetJob": "registers a cron job on the trial scheduler",
+	"email.RegisterFallbacks":                    "registers embedded email-template fallbacks with the template loader",
+	"giftcard.RegisterFallbacks":                 "registers embedded email-template fallbacks with the template loader",
+	"orderdoc.RegisterFallbacks":                 "registers embedded email-template fallbacks with the template loader",
+}
+
+// registrarPrefix is the naming convention the totality property rests on:
+// in this codebase every route registrar is named Register something —
+// Register, RegisterAdmin, RegisterRoutes, RegisterInternalRoutes, and so on.
+// requireRegistrarNamingConventionHolds cross-checks it against the group
+// analysis, so a mount that breaks the convention fails rather than escaping.
+const registrarPrefix = "Register"
+
 // routeMethods are the gin router methods whose FIRST argument is the path.
 //
-// gin's Handle is deliberately absent: its signature is
-// Handle(httpMethod, relativePath string, ...), so the path is the SECOND
-// argument — see directRouteFromCall, which reads it correctly. Treating
-// Handle as path-first matched net/http's ServeMux.Handle("/metrics", …) in
-// metrics_server.go instead, which is a different server on a different
-// listener (cfg.MetricsPort, pods annotated prometheus.io/port) and not part
-// of the gin API surface this manifest describes. The argument shape is what
-// tells the two apart, since this walk is receiver-agnostic by design.
+// gin's Handle and Match are deliberately absent: their paths are NOT the
+// first argument — Handle(httpMethod, relativePath, ...) and
+// Match(methods []string, relativePath, ...). directRouteFromCall reads each
+// from the right position. Getting that wrong is not theoretical: treating
+// Handle as path-first matched net/http's ServeMux.Handle("/metrics", ...) in
+// metrics_server.go, a different server on a different listener; and Match
+// was missing outright, so r.Match([]string{"GET"}, "/api/v1/admin/
+// secret-backdoor", h) registered a live route in total silence.
+//
+// KNOWN SHAPE WART, deferred deliberately: Static, StaticFile, StaticFileFS
+// and StaticFS produce keys like "StaticFile /x", because the method name
+// stands in for a verb these methods do not take. Such a key can never equal
+// a manifest entry (which is always "GET /x", "POST /x", ...), so any
+// static-file route is forced into directRoutesOutsideManifest permanently
+// rather than ever being declarable. Nothing in package main serves static
+// files today. If that changes, map these to GET here rather than adding a
+// permanent exemption.
 var routeMethods = map[string]bool{
 	"GET": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true,
 	"HEAD": true, "OPTIONS": true, "Any": true,
-	"Static": true, "StaticFile": true, "StaticFS": true,
+	"Static": true, "StaticFile": true, "StaticFileFS": true, "StaticFS": true,
 }
 
-func isRouteMethod(name string) bool { return routeMethods[name] || name == "Handle" }
+// pathSecondMethods are the router methods whose path is the SECOND argument.
+var pathSecondMethods = map[string]bool{"Handle": true, "Match": true}
+
+func isRouteMethod(name string) bool { return routeMethods[name] || pathSecondMethods[name] }
 
 // directRouteFromCall renders a direct registration as "METHOD /path",
-// reading the path from whichever argument actually holds it: the first for
-// the per-verb methods, the second for gin's Handle(method, path, …).
+// reading the path from whichever argument actually holds it: the second for
+// Handle(method, path, ...) and Match(methods, path, ...), the first for
+// everything else.
 //
 // ok is false when no literal path is there — a computed path cannot be
-// compared with the manifest. That is a gap rather than a failure, and a
-// narrow one: nothing in package main computes a route path today, and the
-// group analysis (which DOES fail closed) covers every subtree mount.
+// compared with the manifest. See TestMainMountsEveryFrontendFacingSurface
+// for why that is a recorded gap rather than a failure.
 func directRouteFromCall(method string, call *ast.CallExpr) (string, bool) {
-	if method == "Handle" {
-		if len(call.Args) < 2 {
-			return "", false
-		}
-		verb, okV := stringLit(call.Args[0])
-		path, okP := stringLit(call.Args[1])
-		if !okV || !okP || !strings.HasPrefix(path, "/") {
-			return "", false
-		}
-		return verb + " " + path, true
+	pathArg := 0
+	if pathSecondMethods[method] {
+		pathArg = 1
 	}
-	if len(call.Args) == 0 {
+	if len(call.Args) <= pathArg {
 		return "", false
 	}
-	path, ok := stringLit(call.Args[0])
+	path, ok := stringLit(call.Args[pathArg])
 	if !ok || !strings.HasPrefix(path, "/") {
 		return "", false
 	}
-	return method + " " + path, true
+	// Handle names its verb; Match takes a slice of them, so the method name
+	// is the best label available without evaluating the slice.
+	verb := method
+	if method == "Handle" {
+		if v, ok := stringLit(call.Args[0]); ok {
+			verb = v
+		}
+	}
+	return verb + " " + path, true
 }
 
 // groupPassThroughMethods are the methods that consume a router group and
@@ -537,22 +580,47 @@ func analyseMainFile(t *testing.T, path string, w *mainWiring) {
 
 	groupVars := map[string]string{} // var name -> prefix
 	varUsed := map[string]bool{}
+	// bindGroupVar records `x := <something group-shaped>`.
+	//
+	// The three shapes it understands are the three that exist: a Group()
+	// call (optionally with Use() chained), an ALIAS of an already-tracked
+	// group variable, and &engine.RouterGroup — *gin.Engine embeds an
+	// exported RouterGroup, so taking its address yields a perfectly valid
+	// *gin.RouterGroup that is not a Group() call at all.
+	//
+	// It still returns without binding for any other right-hand side, and
+	// that is now acceptable where it previously was not: this function feeds
+	// PREFIX RESOLUTION only. The totality property — "is this registrar
+	// mounted?" — moved to CalledNames, which is argument-agnostic and cannot
+	// be evaded by how the group is spelled. Three rounds of review found a
+	// new group shape each time (local variable, alias, &r.RouterGroup);
+	// resting totality on an enumeration of shapes was the losing game.
+	// requireResolvablePrefixes below is what makes a prefix this cannot read
+	// a loud failure rather than a skip.
 	bindGroupVar := func(lhs, rhs ast.Expr) {
 		ident, ok := lhs.(*ast.Ident)
 		if !ok {
 			return
 		}
-		call, ok := unwrapGroupChain(rhs)
-		if !ok {
-			return
+		if call, ok := unwrapGroupChain(rhs); ok {
+			if prefix, ok := groupCallPrefix(call); ok {
+				groupVars[ident.Name] = prefix
+				accounted[call.Lparen] = true
+				return
+			}
 		}
-		prefix, ok := groupCallPrefix(call)
-		if !ok {
-			return
+		if alias, ok := rhs.(*ast.Ident); ok {
+			if prefix, ok := groupVars[alias.Name]; ok {
+				groupVars[ident.Name] = prefix
+				varUsed[alias.Name] = true
+				return
+			}
 		}
-		groupVars[ident.Name] = prefix
-		accounted[call.Lparen] = true
+		if prefix, ok := engineRouterGroupPrefix(rhs); ok {
+			groupVars[ident.Name] = prefix
+		}
 	}
+
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch st := n.(type) {
 		case *ast.AssignStmt:
@@ -587,6 +655,9 @@ func analyseMainFile(t *testing.T, path string, w *mainWiring) {
 				varUsed[ident.Name] = true
 				return prefix, true
 			}
+		}
+		if prefix, ok := engineRouterGroupPrefix(arg); ok {
+			return prefix, true
 		}
 		return "", false
 	}
@@ -679,6 +750,23 @@ func markReceiverAccounted(recv ast.Expr, accounted map[token.Pos]bool, groupVar
 			varUsed[ident.Name] = true
 		}
 	}
+}
+
+// engineRouterGroupPrefix recognises &engine.RouterGroup. *gin.Engine embeds
+// an exported RouterGroup whose address is a valid *gin.RouterGroup rooted at
+// "/", so this is a real mount shape that involves no Group() call. It was
+// one of the shapes that walked straight past an earlier version of this
+// walker.
+func engineRouterGroupPrefix(e ast.Expr) (string, bool) {
+	unary, ok := e.(*ast.UnaryExpr)
+	if !ok || unary.Op != token.AND {
+		return "", false
+	}
+	sel, ok := unary.X.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "RouterGroup" {
+		return "", false
+	}
+	return "/", true
 }
 
 // unwrapGroupChain peels Use() calls off an expression to reach the
@@ -783,20 +871,68 @@ func requireReasons(t *testing.T, listName string, m map[string]string) {
 	}
 }
 
+// finalSelector returns the last element of a dotted call name.
+func finalSelector(name string) string {
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		return name[i+1:]
+	}
+	return name
+}
+
 // TestMainMountsEveryFrontendFacingSurface answers the one question gin
 // cannot: whether package main actually mounts the registrars this package
 // builds — and, in the other direction, whether every registrar and every
-// direct route main mounts is accounted for.
+// direct route package main mounts is accounted for.
 //
 // Parsing source is forbidden for "which routes does a subtree register" —
 // gin answers that, above. It is the ONLY way to answer "does main mount this
 // subtree", because all wiring lives inside func main() and cannot be called.
-// Keeping the two questions apart is what makes this not a contradiction;
-// wiring_test.go in cmd/marketplace-api does the same for platformadmin.Deps
-// field parity.
 //
-// See analyseMainPackage for why the group analysis fails closed, and for the
-// one hole that remains.
+// # What carries the totality property, and why it changed
+//
+// CALL NAMES, not the router-group graph.
+//
+// Three successive reviews each found a new way to hand a registrar its
+// router group that the group analysis could not see — a local variable, then
+// an alias assignment, then &r.RouterGroup (which is not a Group() call at
+// all, since *gin.Engine embeds an exported RouterGroup). Each round closed
+// the shapes found and the next round found more. Enumerating shapes was the
+// losing game.
+//
+// But "is admin.RegisterAdmin called from package main?" does not depend on
+// how its argument is spelled. So the totality check is now: every call in
+// package main whose name matches the Register* convention must be classified
+// as one of
+//
+//   - a surface in buildSurfaces (in the manifest),
+//   - a mount in mountsOutsideManifest (deliberately not), or
+//   - a nonRouteRegisterCall (mounts no route at all).
+//
+// This is argument-agnostic and cannot be evaded by re-spelling the group.
+// It rests on a naming convention rather than on semantics, so
+// requireRegistrarNamingConventionHolds cross-checks the convention against
+// the group analysis: any call that receives a router group and is NOT
+// Register*-named fails, telling the author to follow the convention. The two
+// bases check each other.
+//
+// The group analysis is kept for what it is actually good at — resolving the
+// mount PREFIX, and finding direct route registrations — and
+// requireResolvablePrefixes makes an unresolvable prefix a loud failure
+// rather than a skip.
+//
+// # What remains uncovered, named rather than discovered later
+//
+//   - A registrar that does not follow the Register* convention AND is handed
+//     its group in a shape the group analysis cannot see. Either alone is
+//     caught; both together is not.
+//   - A route registered through a computed path (r.POST(pathVar, h)): no
+//     literal to compare. Skipped, not failed — see the direct-route loop.
+//   - A router group produced by a function in another package
+//     (g := httpserver.SomeGroup()): without type information nothing marks
+//     it as a group. This affects prefix resolution only, no longer totality.
+//
+// None of these exists in the repo today. This list is not a claim of
+// completeness; it is what I know to be open.
 func TestMainMountsEveryFrontendFacingSurface(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	require.True(t, ok, "runtime.Caller(0) failed to report this test file's own path")
@@ -804,13 +940,17 @@ func TestMainMountsEveryFrontendFacingSurface(t *testing.T) {
 
 	requireReasons(t, "mountsOutsideManifest", mountsOutsideManifest)
 	requireReasons(t, "directRoutesOutsideManifest", directRoutesOutsideManifest)
+	requireReasons(t, "nonRouteRegisterCalls", nonRouteRegisterCalls)
 
 	w := analyseMainPackage(t, mainDir)
 	require.Greaterf(t, len(w.Mounts), 10,
 		"found only %d group mounts in package main — the AST walk is broken (it found 19 "+
-			"when this test was written), and every assertion below would pass vacuously",
+			"when this test was written), and the prefix checks below would pass vacuously",
 		len(w.Mounts))
-	require.NotEmpty(t, w.CalledNames, "parsed no call names out of package main — the walk is broken")
+	require.Greaterf(t, len(w.CalledNames), 100,
+		"found only %d call names in package main — the AST walk is broken (it found 568 "+
+			"when this test was written), and the totality check below rests on this map",
+		len(w.CalledNames))
 
 	built := buildSurfaces(t)
 	inManifest := map[string]string{} // registrar -> surface name
@@ -822,36 +962,45 @@ func TestMainMountsEveryFrontendFacingSurface(t *testing.T) {
 		}
 	}
 
-	// Direction 1: everything buildSurfaces claims is actually mounted.
+	// --- Direction 1: everything buildSurfaces claims is actually called ---
+	// On CALL NAMES, so it cannot be silenced by how the group is passed.
 	for _, s := range built {
-		_, mounted := w.Mounts[s.Registrar]
-		require.Truef(t, mounted,
-			"buildSurfaces declares surface %q from %s, but package main does not mount it on "+
-				"any router group. Either the mount was removed — in which case the surface "+
-				"must come out of the manifest, not stay in it — or the registrar was renamed.",
+		require.Truef(t, w.CalledNames[s.Registrar],
+			"buildSurfaces declares surface %q from %s, but package main never calls it. "+
+				"Either the mount was removed — in which case the surface must come out of "+
+				"the manifest, not stay in it — or the registrar was renamed.",
 			s.Name, s.Registrar)
 	}
 
-	// Direction 2: everything mounted is accounted for. This is the direction
-	// whose absence let a whole surface be dropped silently.
-	for name, m := range w.Mounts {
-		if _, ok := inManifest[name]; ok {
+	// --- Direction 2 (TOTALITY): every Register*-named call is classified ---
+	for name := range w.CalledNames {
+		if !strings.HasPrefix(finalSelector(name), registrarPrefix) {
 			continue
 		}
-		if _, ok := mountsOutsideManifest[name]; ok {
+		_, isSurface := inManifest[name]
+		_, isExempt := mountsOutsideManifest[name]
+		_, isNonRoute := nonRouteRegisterCalls[name]
+		if isSurface || isExempt || isNonRoute {
 			continue
 		}
-		t.Errorf("%s: package main mounts %s on group %q, and it is neither in buildSurfaces "+
-			"nor in mountsOutsideManifest.\n\n"+
-			"If it serves a frontend, add it to buildSurfaces and regenerate the manifest "+
-			"(%s) — a subtree outside the manifest is a subtree whose deletion nothing "+
-			"catches. If it does not, add it to mountsOutsideManifest with the reason, so "+
-			"the exclusion is a decision on the record rather than a gap.",
-			m.Where, name, m.Prefix, routemanifest.UpdateCommand)
+		at := "package main"
+		if m, ok := w.Mounts[name]; ok {
+			at = m.Where + " (group " + m.Prefix + ")"
+		}
+		t.Errorf("%s calls %s, which matches the Register* registrar convention and is in "+
+			"NONE of buildSurfaces, mountsOutsideManifest or nonRouteRegisterCalls.\n\n"+
+			"If it mounts a frontend-facing subtree, add it to buildSurfaces and regenerate "+
+			"the manifest (%s) — a subtree outside the manifest is a subtree whose deletion "+
+			"nothing catches. If it mounts routes nothing in apps/* calls, exempt it in "+
+			"mountsOutsideManifest with a reason. If it registers no HTTP route at all, say "+
+			"so in nonRouteRegisterCalls.",
+			at, name, routemanifest.UpdateCommand)
 	}
 
-	// Direction 2b: the same, for routes registered straight onto a router
-	// with no registrar in between. Two of these are frontend-facing.
+	requireRegistrarNamingConventionHolds(t, w)
+	requireResolvablePrefixes(t, w, built)
+
+	// --- Direction 2b: routes registered straight onto a router ---
 	for route, at := range w.DirectRoutes {
 		if declaredRoutes[route] {
 			continue
@@ -867,13 +1016,17 @@ func TestMainMountsEveryFrontendFacingSurface(t *testing.T) {
 			"reason.", at, route, routemanifest.UpdateCommand)
 	}
 
-	// Stale exemptions hide whatever replaced them.
+	// --- Stale exemptions hide whatever replaced them ---
 	for name := range mountsOutsideManifest {
-		_, mounted := w.Mounts[name]
-		require.Truef(t, mounted,
-			"mountsOutsideManifest exempts %s, which package main no longer mounts on any "+
-				"router group. Remove the entry — an exemption for a mount that does not "+
-				"exist hides whatever took its place.", name)
+		require.Truef(t, w.CalledNames[name],
+			"mountsOutsideManifest exempts %s, which package main no longer calls. Remove "+
+				"the entry — an exemption for a mount that does not exist hides whatever "+
+				"took its place.", name)
+	}
+	for name := range nonRouteRegisterCalls {
+		require.Truef(t, w.CalledNames[name],
+			"nonRouteRegisterCalls names %s, which package main no longer calls. Remove the "+
+				"entry.", name)
 	}
 	for route := range directRoutesOutsideManifest {
 		_, present := w.DirectRoutes[route]
@@ -882,28 +1035,75 @@ func TestMainMountsEveryFrontendFacingSurface(t *testing.T) {
 				"Remove the entry.", route)
 	}
 
-	// And no registrar may be in both lists, which would make the exemption
-	// look like the reason it is out of the manifest when it is not.
+	// --- No registrar may sit in two lists ---
 	for name := range mountsOutsideManifest {
 		surface, ok := inManifest[name]
 		require.Falsef(t, ok,
 			"%s is in BOTH buildSurfaces (as surface %q) and mountsOutsideManifest — one of "+
 				"the two is wrong, and whichever it is, the exemption is misleading",
 			name, surface)
+		_, alsoNonRoute := nonRouteRegisterCalls[name]
+		require.Falsef(t, alsoNonRoute,
+			"%s is in BOTH mountsOutsideManifest and nonRouteRegisterCalls — it either "+
+				"mounts routes or it does not", name)
+	}
+	for name := range nonRouteRegisterCalls {
+		surface, ok := inManifest[name]
+		require.Falsef(t, ok,
+			"%s is in BOTH buildSurfaces (as surface %q) and nonRouteRegisterCalls — a "+
+				"surface in the manifest plainly does register routes", name, surface)
 	}
 
-	// RegisterMobileStorefront is asserted on CALL NAMES, independent of the
-	// group analysis. When this briefly read from the mount map instead,
-	// wiring the registrar through a local variable made the assertion stop
-	// firing — it only caught mounts that passed the inline-.Group() filter.
-	// A call-name check has no such escape: the call cannot be made without
-	// naming the function.
+	// RegisterMobileStorefront, on call names. When this briefly read from the
+	// mount map instead, wiring the registrar through a local variable made
+	// the assertion stop firing. A call cannot be made without naming the
+	// function, so this has no argument-shape escape.
 	require.Falsef(t, w.CalledNames["storefront.RegisterMobileStorefront"],
 		"package main now calls storefront.RegisterMobileStorefront, so "+
 			"/api/v1/mobile/storefront is a real surface. Add it to buildSurfaces and "+
 			"regenerate the manifest (%s), or the whole mobile storefront subtree stays "+
 			"outside this guard.",
 		routemanifest.UpdateCommand)
+}
+
+// requireRegistrarNamingConventionHolds is the cross-check that lets a naming
+// convention carry the totality property. The group analysis finds mounts by
+// their ARGUMENT; this asserts every one of them is also named Register*. A
+// mount that breaks the convention would otherwise be skipped by the
+// name-based totality check above, so it fails here instead.
+func requireRegistrarNamingConventionHolds(t *testing.T, w mainWiring) {
+	t.Helper()
+	for name, m := range w.Mounts {
+		require.Truef(t, strings.HasPrefix(finalSelector(name), registrarPrefix),
+			"%s: %s receives a router group (prefix %q) but is not named %s* — and the "+
+				"totality check in this test enumerates Register*-named calls, so this "+
+				"mount would escape it.\n\n"+
+				"Rename it to follow the convention, or change the totality basis "+
+				"deliberately. Do not add it to an exemption list: the exemption lists are "+
+				"keyed on names this check has to be able to find.",
+			m.Where, name, m.Prefix, registrarPrefix)
+	}
+}
+
+// requireResolvablePrefixes turns an unreadable mount prefix into a loud
+// failure. bindGroupVar returns without binding for a right-hand side it does
+// not understand, and while that no longer costs the totality property, a
+// surface whose group this test cannot locate means the prefix reported
+// everywhere else is fiction.
+func requireResolvablePrefixes(t *testing.T, w mainWiring, built []routemanifest.Surface) {
+	t.Helper()
+	for _, s := range built {
+		_, found := w.Mounts[s.Registrar]
+		require.Truef(t, found,
+			"package main calls %s (surface %q) but this test could not identify the router "+
+				"group it is given, so it cannot report the mount prefix.\n\n"+
+				"The group is being passed in a shape the resolver does not understand — a "+
+				"helper's return value, a struct field, a slice element. Teach bindGroupVar "+
+				"/ isGroupArg that shape. Failing here rather than skipping is deliberate: "+
+				"silently unresolved prefixes are how three rounds of review each found a "+
+				"new blind spot.",
+			s.Registrar, s.Name)
+	}
 }
 
 // TestEveryDepsWiresEveryMountGuard is the vacuous-pass guard for the

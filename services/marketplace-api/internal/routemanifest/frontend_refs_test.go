@@ -159,24 +159,26 @@ func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesSc
 	sort.Strings(bases)
 
 	for _, f := range files {
-		for i, line := range f.lines {
+		for _, ll := range joinLogicalLines(f.lines) {
+			line := ll.Text
 			found := 0
+			unreadableOperand := false
+
 			for _, base := range bases {
 				// SHAPE 1 — template literal: `${BASE}/internal/...`
 				//
 				// This is what every apps/* caller uses today, but that fact
 				// is NOT what makes the extractor adequate, and an earlier
-				// version of this comment said it was. A review sabotage
-				// added the concatenation form below and got a green run
-				// while filesScanned proved the file HAD been read: the
-				// shape simply was not recognised. "Nothing uses the other
-				// shape yet" is a fact about the present, not a guard, which
-				// is why shape 2 and the residual check exist.
+				// version of this comment said it was. Two review sabotages
+				// walked past it — concatenation, then MULTI-LINE
+				// concatenation — each with a green run while filesScanned
+				// proved the file had been read. "Nothing uses the other
+				// shape yet" is a fact about the present, not a guard.
 				needle := "${" + base + "}/internal"
 				if idx := strings.Index(line, needle); idx >= 0 {
 					raw, norm, ok := scanRefPath(line[idx+len(needle)-len("/internal"):])
 					refs = append(refs, internalRef{
-						File: f.rel, Line: i + 1, Raw: raw,
+						File: f.rel, Line: physicalLineOf(ll, needle), Raw: raw,
 						Path: trimQuery(norm), Parsed: ok,
 					})
 					found++
@@ -184,28 +186,47 @@ func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesSc
 				}
 
 				// SHAPE 2 — string concatenation: BASE + "/internal/..." + id
-				if idx, ok := concatStart(line, base); ok {
-					raw, norm, parsed := scanConcatPath(line[idx:])
-					if strings.HasPrefix(norm, "/internal") {
-						refs = append(refs, internalRef{
-							File: f.rel, Line: i + 1, Raw: raw,
-							Path: trimQuery(norm), Parsed: parsed,
-						})
-						found++
-					}
+				idx, ok := concatStart(line, base)
+				if !ok {
+					continue
+				}
+				// The operand right after `BASE +` must be a readable string
+				// literal. When it is an identifier — a path held in its own
+				// const, which is how one sabotage hid a nonexistent route —
+				// there is nothing to compare, so it is reported rather than
+				// dropped. This fires regardless of whether "/internal"
+				// appears on this line, because with the path in a constant
+				// it does not.
+				if !startsWithStringLiteral(line[idx:]) {
+					unreadableOperand = true
+					continue
+				}
+				raw, norm, parsed := scanConcatPath(line[idx:])
+				if strings.HasPrefix(norm, "/internal") {
+					refs = append(refs, internalRef{
+						File: f.rel, Line: physicalLineOf(ll, base), Raw: raw,
+						Path: trimQuery(norm), Parsed: parsed,
+					})
+					found++
 				}
 			}
 
-			// RESIDUAL CHECK — fail closed on a shape neither scanner read.
+			// RESIDUAL CHECK — fail closed on a shape no scanner read.
 			//
-			// A line that names a marketplace-api base AND an /internal path
-			// and yields no reference is a call site this search cannot see.
-			// Reporting it beats passing quietly: an unrecognised shape is
+			// Two triggers, because there are two ways to be unreadable: a
+			// line that names a base AND an /internal path yet yields
+			// nothing, and a base concatenated with an operand this test
+			// cannot read (where the path may not be on this line at all).
+			// Reporting beats passing quietly: an unrecognised shape is
 			// indistinguishable from "no such caller", which is exactly how
-			// the concatenation hole stayed invisible.
-			if found == 0 && mentionsInternalPath(line, bases) {
-				unparsed = append(unparsed, fmt.Sprintf("%s:%d: %s",
-					f.rel, i+1, strings.TrimSpace(line)))
+			// both concatenation holes stayed invisible.
+			if found == 0 && (unreadableOperand || mentionsInternalPath(line, bases)) {
+				why := "names a marketplace-api base URL and an /internal path"
+				if unreadableOperand {
+					why = "concatenates a marketplace-api base URL with an operand this test cannot read"
+				}
+				unparsed = append(unparsed, fmt.Sprintf("%s:%d (%s): %s",
+					f.rel, ll.Num, why, strings.TrimSpace(line)))
 			}
 		}
 	}
@@ -270,6 +291,85 @@ func scanRefPath(rest string) (raw, normalised string, ok bool) {
 	return rawB.String(), normB.String(), true
 }
 
+// logicalLine is one or more physical lines joined into a single expression,
+// carrying the physical span so a match can be attributed to the right line.
+type logicalLine struct {
+	Text     string
+	Num      int      // 1-based line where the statement starts
+	Physical []string // the physical lines it was built from
+}
+
+// maxJoin bounds how many physical lines are folded into one logical line.
+const maxJoin = 6
+
+// joinLogicalLines folds continuation lines together so a reference split
+// across lines is visible to the scanners and to the residual check.
+//
+// This exists because both were previously single-line. A review sabotage
+// wrote
+//
+//	const url =
+//	  MARKETPLACE_API_URL +
+//	  "/internal/definitely-not-a-route/" + id;
+//
+// and passed: line 2 has the base and no path, line 3 has the path and no
+// base, so mentionsInternalPath — which required both on the SAME line —
+// never fired, and neither did either scanner. The backstop shared the
+// scanner's blind spot, which is the worst property a backstop can have.
+//
+// Folded lines are CONSUMED rather than also starting their own logical line.
+// Overlapping windows were the first attempt and they double-counted: the
+// three real references became six, because each physical line started a
+// window that re-matched what the previous window had already folded in.
+//
+// The join rule is syntactic and deliberately loose: a line is treated as
+// continued when it ends in an operator or opener, or when its backticks are
+// unbalanced. Over-joining costs only line-number precision, which
+// physicalLineOf recovers; under-joining is what let the sabotage through.
+func joinLogicalLines(lines []string) []logicalLine {
+	var out []logicalLine
+	for i := 0; i < len(lines); {
+		text := lines[i]
+		last := i
+		for j := i + 1; j < len(lines) && j-i < maxJoin && isContinued(text); j++ {
+			text += " " + strings.TrimSpace(lines[j])
+			last = j
+		}
+		out = append(out, logicalLine{Text: text, Num: i + 1, Physical: lines[i : last+1]})
+		i = last + 1
+	}
+	return out
+}
+
+// physicalLineOf returns the 1-based line number within a logical line whose
+// physical text contains marker, so a failure points at the line a reader
+// will actually find the call on rather than at the start of the statement.
+func physicalLineOf(ll logicalLine, marker string) int {
+	for offset, text := range ll.Physical {
+		if strings.Contains(text, marker) {
+			return ll.Num + offset
+		}
+	}
+	return ll.Num
+}
+
+// isContinued reports whether a line's expression plainly carries on.
+func isContinued(text string) bool {
+	if strings.Count(text, "`")%2 == 1 {
+		return true // an unterminated template literal
+	}
+	t := strings.TrimRight(strings.TrimSpace(text), " \t")
+	if t == "" {
+		return false
+	}
+	for _, suffix := range []string{"+", "(", ",", "=", "&&", "||", "?", ":", "${"} {
+		if strings.HasSuffix(t, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 // concatStart finds `BASE +` on a line and returns the index of the operand
 // that follows, so scanConcatPath can read the concatenation from there.
 func concatStart(line, base string) (int, bool) {
@@ -294,6 +394,13 @@ func concatStart(line, base string) (int, bool) {
 		operand := strings.TrimLeft(rest[1:], " \t")
 		return len(line) - len(operand), true
 	}
+}
+
+// startsWithStringLiteral reports whether the next operand is a quoted
+// string, i.e. a path this test can actually read.
+func startsWithStringLiteral(rest string) bool {
+	t := strings.TrimLeft(rest, " \t")
+	return strings.HasPrefix(t, "\"") || strings.HasPrefix(t, "'") || strings.HasPrefix(t, "`")
 }
 
 func isIdentByte(b byte) bool {
@@ -550,9 +657,8 @@ func TestFrontendInternalRoutesAreDeclared(t *testing.T) {
 	}
 
 	require.Emptyf(t, unparsed,
-		"these apps/* lines name a marketplace-api base URL and an /internal path, but "+
-			"neither the template-literal nor the concatenation scanner could read a route "+
-			"out of them:\n  %s\n\n"+
+		"these apps/* call sites reference marketplace-api in a shape neither the "+
+			"template-literal nor the concatenation scanner could read a route out of:\n  %s\n\n"+
 			"An unrecognised call shape is indistinguishable from no caller at all, which is "+
 			"how the concatenation hole stayed invisible. Teach the extractor this shape "+
 			"rather than leaving it silent.", strings.Join(unparsed, "\n  "))

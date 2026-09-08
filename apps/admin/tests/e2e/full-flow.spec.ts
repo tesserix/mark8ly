@@ -9,17 +9,17 @@ import { test, expect } from "@playwright/test";
  *   Storefront: verify product on shop page → customer create account →
  *               sign in → add to cart → checkout page
  *
- * Run:
+ * Run (every value is the caller's; the spec has no defaults):
  *   FULL_FLOW=1 \
- *   ADMIN_BASE_URL=https://india-store-admin.mark8ly.com \
- *   STOREFRONT_BASE_URL=https://india-store.mark8ly.com \
- *   ADMIN_EMAIL=mahesh.sangawar@gmail.com \
- *   ADMIN_PASSWORD=Admin@1234 \
- *   RAZORPAY_KEY_ID=rzp_test_... \
- *   RAZORPAY_KEY_SECRET=QUu4... \
- *   DELHIVERY_API_KEY=b8e0... \
- *   CUSTOMER_EMAIL=admtesserix@gmail.com \
- *   CUSTOMER_PASSWORD=Test@123 \
+ *   ADMIN_BASE_URL=<admin host> \
+ *   STOREFRONT_BASE_URL=<storefront host> \
+ *   ADMIN_EMAIL=<admin email> \
+ *   ADMIN_PASSWORD=<admin password> \
+ *   RAZORPAY_KEY_ID=<razorpay key id> \
+ *   RAZORPAY_KEY_SECRET=<razorpay key secret> \
+ *   DELHIVERY_API_KEY=<delhivery api key> \
+ *   CUSTOMER_EMAIL=<customer email> \
+ *   CUSTOMER_PASSWORD=<customer password> \
  *   npx playwright test full-flow.spec.ts
  */
 

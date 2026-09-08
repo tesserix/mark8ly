@@ -51,6 +51,40 @@ func ValidateP8(payload []byte) error {
 	return nil
 }
 
+// serviceAccount is the subset of a Google service-account JSON that this
+// package reads. Both ValidateGooglePlayJSON and GooglePlayProjectID go
+// through parseServiceAccount so there is exactly one definition of what
+// a well-formed payload is; a second inline json.Unmarshal elsewhere would
+// be free to disagree with this one about what "valid" means.
+type serviceAccount struct {
+	Type        string `json:"type"`
+	ProjectID   string `json:"project_id"`
+	PrivateKey  string `json:"private_key"`
+	ClientEmail string `json:"client_email"`
+}
+
+// parseServiceAccount decodes and validates a Google Play service-account
+// JSON. Returns a wrapped ErrInvalidGooglePlayJSON on any failure.
+func parseServiceAccount(payload []byte) (serviceAccount, error) {
+	var sa serviceAccount
+	if err := json.Unmarshal(payload, &sa); err != nil {
+		return serviceAccount{}, fmt.Errorf("%w: parse json: %v", ErrInvalidGooglePlayJSON, err)
+	}
+	if sa.Type != "service_account" {
+		return serviceAccount{}, fmt.Errorf("%w: type %q; want service_account", ErrInvalidGooglePlayJSON, sa.Type)
+	}
+	if sa.ProjectID == "" {
+		return serviceAccount{}, fmt.Errorf("%w: missing project_id", ErrInvalidGooglePlayJSON)
+	}
+	if sa.PrivateKey == "" {
+		return serviceAccount{}, fmt.Errorf("%w: missing private_key", ErrInvalidGooglePlayJSON)
+	}
+	if sa.ClientEmail == "" {
+		return serviceAccount{}, fmt.Errorf("%w: missing client_email", ErrInvalidGooglePlayJSON)
+	}
+	return sa, nil
+}
+
 // ValidateGooglePlayJSON asserts the payload is a Google service-account
 // JSON (not a user-authorized OAuth credential). Checks:
 //   - valid JSON
@@ -59,26 +93,28 @@ func ValidateP8(payload []byte) error {
 //
 // Returns a wrapped ErrInvalidGooglePlayJSON on any failure.
 func ValidateGooglePlayJSON(payload []byte) error {
-	var sa struct {
-		Type        string `json:"type"`
-		ProjectID   string `json:"project_id"`
-		PrivateKey  string `json:"private_key"`
-		ClientEmail string `json:"client_email"`
+	_, err := parseServiceAccount(payload)
+	return err
+}
+
+// GooglePlayProjectID returns the "project_id" of a Google Play
+// service-account JSON, running the same validation ValidateGooglePlayJSON
+// does (same parser, same wrapped ErrInvalidGooglePlayJSON).
+//
+// WHAT THIS IDENTIFIER ACTUALLY IS: the GCP project that owns the service
+// account, which is not by definition the merchant's Firebase project.
+// Firebase projects ARE GCP projects and the Play publisher service
+// account is conventionally created inside the same one, so for a
+// Firebase-backed white-label app the two are the same string in
+// practice — but nothing enforces that, and a merchant who created the
+// publisher SA in a separate project will yield a project id that has no
+// Firebase resources at all. A caller recording this as a Firebase
+// project id (#702 teardown discovery) is recording a strong inference,
+// not a verified fact.
+func GooglePlayProjectID(payload []byte) (string, error) {
+	sa, err := parseServiceAccount(payload)
+	if err != nil {
+		return "", err
 	}
-	if err := json.Unmarshal(payload, &sa); err != nil {
-		return fmt.Errorf("%w: parse json: %v", ErrInvalidGooglePlayJSON, err)
-	}
-	if sa.Type != "service_account" {
-		return fmt.Errorf("%w: type %q; want service_account", ErrInvalidGooglePlayJSON, sa.Type)
-	}
-	if sa.ProjectID == "" {
-		return fmt.Errorf("%w: missing project_id", ErrInvalidGooglePlayJSON)
-	}
-	if sa.PrivateKey == "" {
-		return fmt.Errorf("%w: missing private_key", ErrInvalidGooglePlayJSON)
-	}
-	if sa.ClientEmail == "" {
-		return fmt.Errorf("%w: missing client_email", ErrInvalidGooglePlayJSON)
-	}
-	return nil
+	return sa.ProjectID, nil
 }

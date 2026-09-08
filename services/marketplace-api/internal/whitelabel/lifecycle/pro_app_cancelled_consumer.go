@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
 // ProAppCancelledEvent is the shape consumed when subscription emits
@@ -52,8 +56,10 @@ var ErrNoAppIdentifiers = errors.New("lifecycle/consumer: event carries no Apple
 // compresses into ~7 days of real time (§15.5 "immediate-pull compresses
 // to 7 days").
 type ProAppCancelledConsumer struct {
-	db    *gorm.DB
-	clock Clock
+	db        *gorm.DB
+	clock     Clock
+	discovery *Discovery
+	logger    *slog.Logger
 }
 
 // NewProAppCancelledConsumer wires the consumer. Clock defaults to
@@ -62,7 +68,49 @@ func NewProAppCancelledConsumer(db *gorm.DB, clock Clock) *ProAppCancelledConsum
 	if clock == nil {
 		clock = time.Now
 	}
-	return &ProAppCancelledConsumer{db: db, clock: clock}
+	return &ProAppCancelledConsumer{db: db, clock: clock, logger: slog.Default()}
+}
+
+// WithDiscovery returns a copy of the consumer that can resolve
+// identifiers for itself, enabling ProAppCancelled. Handle is unaffected
+// — a caller that already knows the identifiers still uses it directly.
+func (c *ProAppCancelledConsumer) WithDiscovery(d *Discovery) *ProAppCancelledConsumer {
+	next := *c
+	next.discovery = d
+	return &next
+}
+
+// WithLogger returns a copy of the consumer logging to l.
+func (c *ProAppCancelledConsumer) WithLogger(l *slog.Logger) *ProAppCancelledConsumer {
+	if l == nil {
+		return c
+	}
+	next := *c
+	next.logger = l
+	return &next
+}
+
+// ProAppCancelled discovers the store's app identifiers and seeds the
+// teardown row. It is the method the subscription finalize cron calls
+// through the small notifier interface that package defines — an
+// in-process call, deliberately not pub/sub: the emitter and the
+// consumer run in the same binary, and a topic would add a delivery
+// failure mode without adding a capability.
+//
+// Discovery runs here, at cancellation, because the advancer purges the
+// credentials it needs at day 90 (see Discovery).
+func (c *ProAppCancelledConsumer) ProAppCancelled(ctx context.Context, tenantID, storeID uuid.UUID) error {
+	if c.discovery == nil {
+		return ErrDiscoveryNotConfigured
+	}
+	ev, err := c.discovery.discover(ctx, tenantID, storeID)
+	if err != nil {
+		return err
+	}
+	// The cron path is the graceful 60-day teardown. The compressed
+	// merchant-initiated path (§15.5) enters through Handle directly.
+	ev.MerchantInitiatedImmediate = false
+	return c.Handle(ctx, ev)
 }
 
 // validateEvent rejects events that cannot produce a meaningful
@@ -138,5 +186,101 @@ func (c *ProAppCancelledConsumer) Handle(ctx context.Context, ev ProAppCancelled
 	if res.Error != nil {
 		return fmt.Errorf("lifecycle/consumer: insert: %w", res.Error)
 	}
+	if res.RowsAffected == 0 {
+		// ON CONFLICT DO NOTHING fired: a row already exists for this
+		// store. Replay, not a new teardown — do not append a second
+		// coverage note to the append-only log.
+		return nil
+	}
+
+	coverage := teardownCoverage(ev)
+	// Say at seed time what this teardown will and will not reach. The
+	// log line is for whoever is watching the cancellation; the
+	// white_label_app_lifecycle row below is the durable half, still
+	// readable in ninety days when the state row has advanced to
+	// credentials_purged and no longer shows how it got there.
+	c.log().InfoContext(ctx, "lifecycle/consumer: teardown seeded",
+		"store_id", ev.StoreID, "tenant_id", ev.TenantID, "coverage", coverage)
+	if err := c.appendCoverageNote(ctx, ev, now, coverage); err != nil {
+		// The state row is committed and the teardown will run; failing
+		// the whole Handle here would make the caller retry a seed that
+		// already succeeded. Log loudly instead.
+		c.log().ErrorContext(ctx, "lifecycle/consumer: teardown seeded but coverage note not recorded",
+			"store_id", ev.StoreID, "err", err)
+	}
 	return nil
+}
+
+// seedActor is the actor recorded on the seed-time coverage note.
+const seedActor = "system:consumer:pro_app_cancelled"
+
+// appendCoverageNote writes one row into the append-only
+// white_label_app_lifecycle log stating what this teardown covers.
+func (c *ProAppCancelledConsumer) appendCoverageNote(ctx context.Context, ev ProAppCancelledEvent, now time.Time, coverage string) error {
+	scheduled := now
+	entry := subscription.WhiteLabelAppLifecycleEntry{
+		ID:          uuid.New(),
+		StoreID:     ev.StoreID,
+		TenantID:    ev.TenantID,
+		Status:      StatusSunsetScheduled,
+		ScheduledAt: &scheduled,
+		Actor:       seedActor,
+		Reason:      &coverage,
+	}
+	if err := c.db.WithContext(ctx).Create(&entry).Error; err != nil {
+		return fmt.Errorf("lifecycle/consumer: append coverage note: %w", err)
+	}
+	return nil
+}
+
+// teardownCoverage renders, per surface, what this row will and will not
+// retire.
+//
+// WHY THIS EXISTS RATHER THAN A PLACEHOLDER IDENTIFIER: the advancer
+// guards both of its Google calls with `if r.GooglePackage != ""`
+// (advancer.go), and GooglePackage is empty by design — there is no
+// source for it and the Play client is an unimplemented stub. So Play is
+// never attempted, never errors, and never logs: the row would advance
+// all the way to credentials_purged having said nothing whatsoever about
+// Google, which is the same "we report a teardown we never performed"
+// failure this whole path exists to prevent, one level down.
+//
+// Filling GooglePackage with a placeholder to make the guard fire would
+// be worse: it trades a silent skip for a row asserting an identifier
+// nobody has. So the absence is stated in words, durably, instead.
+func teardownCoverage(ev ProAppCancelledEvent) string {
+	parts := make([]string, 0, 3)
+
+	if ev.AppleAppID != "" {
+		parts = append(parts, fmt.Sprintf("apple=will_attempt(app_id=%s)", ev.AppleAppID))
+	} else {
+		parts = append(parts, "apple=not_attempted(no App Store Connect app id was discovered)")
+	}
+
+	if ev.GooglePackage != "" {
+		parts = append(parts, fmt.Sprintf("google_play=will_attempt(package=%s)", ev.GooglePackage))
+	} else {
+		parts = append(parts, "google_play=NOT_ATTEMPTED(no package identifier is discoverable at cancel time, "+
+			"and the Play client is an unimplemented stub returning ErrNotWired; "+
+			"the advancer's day-30 and day-60 Google calls are guarded on google_package "+
+			"and will not run for this row — the merchant's Play listing, if any, stays live)")
+	}
+
+	if ev.FirebaseProjectID != "" {
+		parts = append(parts, fmt.Sprintf(
+			"firebase=will_attempt(project=%s, inferred from the Google Play service account's project_id; "+
+				"the Firebase client is a stub, so the attempt is logged rather than effective)",
+			ev.FirebaseProjectID))
+	} else {
+		parts = append(parts, "firebase=not_attempted(no project id was discovered)")
+	}
+
+	return strings.Join(parts, "; ")
+}
+
+func (c *ProAppCancelledConsumer) log() *slog.Logger {
+	if c.logger != nil {
+		return c.logger
+	}
+	return slog.Default()
 }

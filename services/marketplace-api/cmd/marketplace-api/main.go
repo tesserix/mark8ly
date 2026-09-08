@@ -2310,7 +2310,40 @@ func main() {
 	p11SubscriptionRepo := subscription.NewRepository()
 	p11HardDeleteRunner := harddelete.NewRunner(conn, billingStripeClient, auditEmitter, log)
 
-	finalizeCron := lifecycle.NewFinalizeCron(conn, auditEmitter, log, nil)
+	// P15 delivery path (#702). The finalize cron used to emit
+	// subscription.pro_app_cancelled and then log that it "would notify"
+	// a service that was never built; this is that service, called
+	// in-process through the small notifier interface the subscription
+	// package defines.
+	//
+	// The consumer discovers the App Store app id HERE, at cancellation,
+	// rather than lazily at day 30/60: the advancer purges every stored
+	// credential at day 90, including the ASC key discovery asks with.
+	//
+	// proAppNotifier stays a TRUE nil interface when wlAppCredsSvc is nil
+	// (MODE=storefront) — a typed nil would satisfy FinalizeCron's
+	// `notifier != nil` check and then fail on first use, the #288 shape.
+	var proAppNotifier lifecycle.ProAppTeardownNotifier
+	if wlAppCredsSvc != nil {
+		proAppNotifier = wllifecycle.NewProAppCancelledConsumer(conn, nil).
+			WithLogger(log).
+			WithDiscovery(&wllifecycle.Discovery{
+				// A REAL App Store Connect client, built per tenant from
+				// that tenant's stored credentials — a FakeClient here
+				// would see zero apps and refuse every teardown. Note
+				// the asymmetry with the advancer below, which is still
+				// wired to wlapple.NewFakeClient(): discovery reads for
+				// real, the day-30/60 writes do not yet.
+				Apple:  wllifecycle.NewAppleListerFactory(wlAppCredsSvc),
+				Creds:  wlAppCredsSvc,
+				Logger: log,
+			})
+	} else {
+		log.Info("P15 pro-app teardown notifier not wired (MODE=storefront, wlAppCredsSvc nil)")
+	}
+
+	finalizeCron := lifecycle.NewFinalizeCron(conn, auditEmitter, log, nil).
+		WithProAppTeardownNotifier(proAppNotifier)
 	if _, err := trialScheduler.AddFunc(lifecycle.FinalizeSpec, func() {
 		if err := finalizeCron.Run(workerCtx); err != nil {
 			log.Error("lifecycle finalize cron failed", "err", err)

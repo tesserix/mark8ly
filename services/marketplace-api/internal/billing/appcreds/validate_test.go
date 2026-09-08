@@ -139,3 +139,44 @@ func TestValidateGooglePlayJSON_RejectsInvalidJSON(t *testing.T) {
 		t.Errorf("err = %v, want wraps ErrInvalidGooglePlayJSON", err)
 	}
 }
+
+// ─── GooglePlayProjectID (#702 teardown discovery) ───────────────────
+
+func TestGooglePlayProjectID_ReturnsProjectID(t *testing.T) {
+	payload := []byte(`{
+	  "type": "service_account",
+	  "project_id": "merchant-app-42",
+	  "private_key": "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n",
+	  "client_email": "play@merchant-app-42.iam.gserviceaccount.com"
+	}`)
+
+	got, err := GooglePlayProjectID(payload)
+	if err != nil {
+		t.Fatalf("GooglePlayProjectID: %v", err)
+	}
+	if got != "merchant-app-42" {
+		t.Fatalf("project id = %q, want merchant-app-42", got)
+	}
+}
+
+// The reader and the validator must agree on what a valid payload is —
+// that is the whole reason they share one parser.
+func TestGooglePlayProjectID_RejectsWhatValidateRejects(t *testing.T) {
+	cases := map[string][]byte{
+		"not json":           []byte(`{`),
+		"authorized_user":    []byte(`{"type":"authorized_user","project_id":"p","private_key":"k","client_email":"e"}`),
+		"missing project_id": []byte(`{"type":"service_account","private_key":"k","client_email":"e"}`),
+	}
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, readErr := GooglePlayProjectID(payload)
+			validateErr := ValidateGooglePlayJSON(payload)
+			if readErr == nil || validateErr == nil {
+				t.Fatalf("both must reject: read=%v validate=%v", readErr, validateErr)
+			}
+			if !errors.Is(readErr, ErrInvalidGooglePlayJSON) {
+				t.Fatalf("read error must wrap ErrInvalidGooglePlayJSON, got %v", readErr)
+			}
+		})
+	}
+}

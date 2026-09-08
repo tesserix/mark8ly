@@ -19,7 +19,7 @@ passes forever after that API is deleted, and adding mocks would reproduce it.
 
 ## What exploration changed
 
-Four findings reshaped this design away from "build a CI harness from scratch".
+Five findings reshaped this design away from "build a CI harness from scratch".
 
 **1. Most of the stack already exists.** `infra/dev/docker-compose.yml` already
 brings up postgres (multi-DB: `platform_api`, `auth_bff`, `openfga`,

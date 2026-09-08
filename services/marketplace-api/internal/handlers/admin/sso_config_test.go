@@ -2,7 +2,10 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -50,6 +53,51 @@ func doJSON(r *gin.Engine, method, path string, body interface{}) *httptest.Resp
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
+}
+
+// stubSSOStore stands in for *sso.Repository so the branches that depend on a
+// LOADED config can be tested without a database (#820).
+type stubSSOStore struct {
+	cfg *sso.Config
+	err error
+}
+
+func (s *stubSSOStore) GetByTenant(context.Context, uuid.UUID) (*sso.Config, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.cfg, nil
+}
+func (s *stubSSOStore) Upsert(context.Context, *sso.Config) error { return nil }
+func (s *stubSSOStore) Delete(context.Context, uuid.UUID) error   { return nil }
+
+// oidcConfig is a configuration that passes sso.Validate — the three fields a
+// login actually needs.
+func oidcConfig() *sso.Config {
+	return &sso.Config{
+		Provider: sso.ProviderOIDC,
+		Enabled:  true,
+		Metadata: datatypes.JSONMap{
+			sso.OIDCKeyIssuer:          "https://idp.acme.example",
+			sso.OIDCKeyClientID:        "client-abc",
+			sso.OIDCKeyClientSecretRef: "kv/acme/idp",
+		},
+	}
+}
+
+// runSSOTest drives POST /sso/test through the real router and returns the
+// response plus the tenant it was called for.
+func runSSOTest(t *testing.T, cfg *sso.Config, rps SSORelyingParties) (*httptest.ResponseRecorder, uuid.UUID) {
+	t.Helper()
+	tenantID := uuid.New()
+	cfg.TenantID = tenantID
+
+	h := NewSSOConfigHandler(&stubSSOStore{cfg: cfg}, nil, nil)
+	if rps != nil {
+		h = h.WithRelyingParties(rps)
+	}
+	r := newSSOTestRouter(h, tenantID)
+	return doJSON(r, http.MethodPost, "/admin/tenants/"+tenantID.String()+"/sso/test", nil), tenantID
 }
 
 // ---------------------------------------------------------------------------
@@ -225,4 +273,91 @@ func (s *ssoTestConfig) toConfig() *sso.Config {
 		Provider: s.provider,
 		Metadata: m,
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Test endpoint (#820)
+//
+// Before this, Test re-ran sso.Validate — the same check Upsert had already
+// run to accept the config — so it answered "ok" for a configuration that had
+// never been tried against the IdP at all. A merchant pressing "Test
+// connection" is asking about the two things that actually fail: can we reach
+// your IdP, and can we read your client secret.
+// ---------------------------------------------------------------------------
+
+type stubRelyingParties struct {
+	err         error
+	invalidated []uuid.UUID
+	built       int
+}
+
+func (s *stubRelyingParties) For(context.Context, *sso.Config) (*sso.OIDCRelyingParty, error) {
+	s.built++
+	return nil, s.err
+}
+
+func (s *stubRelyingParties) Invalidate(tenantID uuid.UUID) {
+	s.invalidated = append(s.invalidated, tenantID)
+}
+
+func TestSSOConfigTest_BuildsTheRelyingPartyAndReportsWhatItChecked(t *testing.T) {
+	rps := &stubRelyingParties{}
+	w, tenantID := runSSOTest(t, oidcConfig(), rps)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), `"checked":"idp"`,
+		"a pass must say the IdP was reached, not just that the shape was valid")
+	require.Equal(t, 1, rps.built)
+	// Invalidated FIRST, or Test reports on a party built before the
+	// merchant's last edit — which is precisely when someone presses Test.
+	require.Equal(t, []uuid.UUID{tenantID}, rps.invalidated)
+}
+
+func TestSSOConfigTest_AnUnreachableIdPFails(t *testing.T) {
+	rps := &stubRelyingParties{err: errors.New("discover https://idp.acme.example: dial tcp: refused")}
+	w, _ := runSSOTest(t, oidcConfig(), rps)
+
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	require.Contains(t, w.Body.String(), "could not reach the identity provider")
+	// The cause names the tenant's issuer; it belongs in the log, not in a
+	// browser.
+	require.NotContains(t, w.Body.String(), "idp.acme.example")
+	require.NotContains(t, w.Body.String(), "dial tcp")
+}
+
+// The two failures need different fixes, so they must not read the same.
+func TestSSOConfigTest_AMissingClientSecretSaysSo(t *testing.T) {
+	rps := &stubRelyingParties{err: fmt.Errorf("read kv/acme/idp: %w", sso.ErrNoClientSecret)}
+	w, _ := runSSOTest(t, oidcConfig(), rps)
+
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	require.Contains(t, w.Body.String(), "client secret")
+	require.NotContains(t, w.Body.String(), "kv/acme/idp", "the secret path leaked to the browser")
+}
+
+// SAML has no SP. Reporting a pass for it would tell a merchant their
+// configuration works when no login can ever complete.
+func TestSSOConfigTest_SAMLIsNeverAPass(t *testing.T) {
+	cfg := oidcConfig()
+	cfg.Provider = sso.ProviderSAML
+	cfg.Metadata = datatypes.JSONMap{
+		sso.SAMLKeyIDPEntityID: "urn:acme",
+		sso.SAMLKeyIDPACSURL:   "https://idp.example.com/acs",
+		sso.SAMLKeyIDPCertPEM:  "-----BEGIN CERTIFICATE-----",
+	}
+
+	w, _ := runSSOTest(t, cfg, &stubRelyingParties{})
+
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	require.Contains(t, w.Body.String(), "not available")
+}
+
+// A build with no relying-party source can still shape-check, but it must say
+// that is all it did rather than claiming the IdP was reached.
+func TestSSOConfigTest_WithoutARelyingPartySourceSaysWhatItChecked(t *testing.T) {
+	w, _ := runSSOTest(t, oidcConfig(), nil)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"checked":"configuration"`)
+	require.NotContains(t, w.Body.String(), `"checked":"idp"`)
 }

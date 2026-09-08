@@ -100,7 +100,11 @@ const PLAN_META: readonly PlanMeta[] = [
       'Unlimited images',
       'Full read/write API',
       '100 webhook endpoints',
-      'SSO (SAML / OIDC)',
+      // SAML is not implemented — both SSO routes answer 501 for it and
+      // there is no SP (mark8ly#820). Advertising it sold something
+      // that cannot be delivered; OIDC is real and configurable at
+      // Settings -> Single sign-on.
+      'SSO (OpenID Connect)',
       'Priority support (4h response)',
       'Forever audit retention',
     ],

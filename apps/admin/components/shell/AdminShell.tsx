@@ -151,6 +151,7 @@ const navigation: NavSection[] = [
       { group: "Selling", label: "Payments", href: "/settings/payments" },
       { group: "Selling", label: "Shipping", href: "/settings/shipping" },
       { group: "Team & access", label: "Team", href: "/settings/team" },
+      { group: "Team & access", label: "Single sign-on", href: "/settings/sso" },
       { group: "Team & access", label: "Audit Logs", href: "/settings/audit-logs" },
       { group: "Account", label: "Account", href: "/settings/account" },
       { group: "Account", label: "Security", href: "/settings/security" },

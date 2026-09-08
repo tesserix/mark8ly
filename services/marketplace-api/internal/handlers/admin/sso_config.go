@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -26,17 +28,52 @@ import (
 //  2. The route group must be wrapped in plangate.RequireFeatureByTenant so
 //     only Pro+ tenants reach these handlers.
 type SSOConfigHandler struct {
-	Repo   *sso.Repository
-	Audit  *audit.Emitter
-	Logger *slog.Logger
+	// RelyingParties is optional; nil makes Test a shape check only.
+	RelyingParties SSORelyingParties
+	Repo           SSOConfigStore
+	Audit          *audit.Emitter
+	Logger         *slog.Logger
 }
 
 // NewSSOConfigHandler constructs the handler. Audit may be nil (tests).
-func NewSSOConfigHandler(repo *sso.Repository, auditEmitter *audit.Emitter, logger *slog.Logger) *SSOConfigHandler {
+func NewSSOConfigHandler(repo SSOConfigStore, auditEmitter *audit.Emitter, logger *slog.Logger) *SSOConfigHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &SSOConfigHandler{Repo: repo, Audit: auditEmitter, Logger: logger}
+}
+
+// WithRelyingParties gives Test something real to test.
+//
+// Without it Test re-runs sso.Validate — the same check Upsert already ran to
+// accept the config — so it answers "ok" for a config that has never been
+// tried against the IdP at all. With it, Test builds the relying party: it
+// fetches the issuer's discovery document and reads the client secret out of
+// OpenBao, which are the two things that actually fail in practice and the two
+// a merchant pressing "Test connection" is asking about.
+func (h *SSOConfigHandler) WithRelyingParties(rps SSORelyingParties) *SSOConfigHandler {
+	h.RelyingParties = rps
+	return h
+}
+
+// SSOConfigStore is the persistence this handler needs. *sso.Repository
+// satisfies it.
+//
+// An interface rather than the concrete repository, for the reason #833 found
+// on the login side: with a *sso.Repository here, no test could reach any
+// branch that depends on a LOADED config, and the Test endpoint's entire
+// behaviour is one of those branches.
+type SSOConfigStore interface {
+	GetByTenant(ctx context.Context, tenantID uuid.UUID) (*sso.Config, error)
+	Upsert(ctx context.Context, cfg *sso.Config) error
+	Delete(ctx context.Context, tenantID uuid.UUID) error
+}
+
+// SSORelyingParties builds (and caches) a tenant's OIDC relying party.
+// *sso.RelyingPartyCache satisfies it.
+type SSORelyingParties interface {
+	For(ctx context.Context, cfg *sso.Config) (*sso.OIDCRelyingParty, error)
+	Invalidate(tenantID uuid.UUID)
 }
 
 // ssoUpsertRequest is the JSON body accepted by Upsert.
@@ -212,9 +249,52 @@ func (h *SSOConfigHandler) Test(c *gin.Context) {
 		return
 	}
 
+	// SAML has no SP, so there is nothing to reach. Say so rather than
+	// reporting a pass for a provider that cannot serve a login.
+	if cfg.Provider == sso.ProviderSAML {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"ok":       false,
+			"provider": string(cfg.Provider),
+			"error":    "SAML sign-in is not available; configure this tenant for OIDC",
+		})
+		return
+	}
+
+	if h.RelyingParties == nil {
+		// Shape-checked only. Reported honestly rather than as a pass: this
+		// build cannot reach the IdP, and a merchant told "ok" would learn
+		// otherwise at their first login attempt.
+		c.JSON(http.StatusOK, gin.H{
+			"ok":       true,
+			"provider": string(cfg.Provider),
+			"checked":  "configuration",
+		})
+		return
+	}
+
+	// Drop any cached party first, so this tests the config as it is NOW
+	// rather than one built before the merchant's last edit — which is the
+	// whole reason someone presses Test after changing something.
+	h.RelyingParties.Invalidate(tenantID)
+
+	if _, err := h.RelyingParties.For(c.Request.Context(), cfg); err != nil {
+		h.Logger.Warn("sso_config: test failed to build the relying party",
+			"tenant_id", tenantID, "err", err)
+		// The cause is deliberately summarised, not echoed: it can carry the
+		// issuer URL and the secret path, and this response is rendered in a
+		// merchant's browser.
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"ok":       false,
+			"provider": string(cfg.Provider),
+			"error":    testFailureReason(err),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"ok":       true,
 		"provider": string(cfg.Provider),
+		"checked":  "idp",
 	})
 }
 
@@ -279,4 +359,20 @@ func stringMetaVal(m datatypes.JSONMap, k string) string {
 		}
 	}
 	return ""
+}
+
+// testFailureReason turns a build failure into something a merchant can act on
+// without leaking their issuer URL or secret path into a browser.
+//
+// Two causes, two different fixes: the secret store could not produce a client
+// secret at the path the config names, or the IdP itself could not be reached
+// or did not answer with a usable discovery document.
+func testFailureReason(err error) string {
+	if errors.Is(err, sso.ErrNoClientSecret) {
+		return "we could not read the client secret at the path this configuration names"
+	}
+	if errors.Is(err, sso.ErrInvalidMetadata) {
+		return "this configuration is missing something the provider needs"
+	}
+	return "we could not reach the identity provider, or it did not answer with a valid OpenID configuration"
 }

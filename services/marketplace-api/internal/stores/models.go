@@ -10,15 +10,24 @@ import "time"
 // exists so StoreMiddleware can look up store metadata without an HTTP
 // round-trip on every admin request (db-f1-micro 5-conn pool).
 type Store struct {
-	ID           string    `gorm:"primaryKey;column:id;type:uuid"                          json:"id"`
-	TenantID     string    `gorm:"column:tenant_id;type:uuid;not null"                     json:"tenant_id"`
-	Slug         string    `gorm:"column:slug;type:varchar(63);not null;uniqueIndex"       json:"slug"`
-	Name         string    `gorm:"column:name;type:varchar(200);not null"                  json:"name"`
-	CountryCode  string    `gorm:"column:country_code;type:char(2);not null"               json:"country_code"`
-	CurrencyCode string    `gorm:"column:currency_code;type:char(3);not null"              json:"currency_code"`
-	Timezone     string    `gorm:"column:timezone;type:varchar(64);not null"               json:"timezone"`
-	Status       string    `gorm:"column:status;type:varchar(20);not null"                 json:"status"`
-	SyncedAt     time.Time `gorm:"column:synced_at;not null;default:now()"                 json:"synced_at"`
+	ID           string `gorm:"primaryKey;column:id;type:uuid"                          json:"id"`
+	TenantID     string `gorm:"column:tenant_id;type:uuid;not null"                     json:"tenant_id"`
+	Slug         string `gorm:"column:slug;type:varchar(63);not null;uniqueIndex"       json:"slug"`
+	Name         string `gorm:"column:name;type:varchar(200);not null"                  json:"name"`
+	CountryCode  string `gorm:"column:country_code;type:char(2);not null"               json:"country_code"`
+	CurrencyCode string `gorm:"column:currency_code;type:char(3);not null"              json:"currency_code"`
+	Timezone     string `gorm:"column:timezone;type:varchar(64);not null"               json:"timezone"`
+	Status       string `gorm:"column:status;type:varchar(20);not null"                 json:"status"`
+	// CreatedAt is when the store was created in platform_api, mirrored so
+	// this service can date things from it — a backfilled trial, above all
+	// (#827). NULL for rows mirrored before migration 136, which is the
+	// honest answer: those rows never carried it.
+	//
+	// NOT SyncedAt. That is when this projection last copied the row and
+	// moves on every upsert, so using it would date a trial from the last
+	// time a merchant edited their store settings.
+	CreatedAt *time.Time `gorm:"column:created_at"                                       json:"created_at,omitempty"`
+	SyncedAt  time.Time  `gorm:"column:synced_at;not null;default:now()"                 json:"synced_at"`
 	// StorefrontCustomerPortalSecret is the per-store HMAC key for customer
 	// portal tokens (§15.4, migration 058). Generated at migration time;
 	// lazily regenerated if empty via customerportal.GenerateSecret().

@@ -45,6 +45,11 @@ type upsertStoreRequest struct {
 	CurrencyCode string `json:"currency_code" binding:"required"`
 	Timezone     string `json:"timezone"      binding:"required"`
 	Status       string `json:"status"`
+	// CreatedAt is when platform_api created the store. Optional, because a
+	// caller running an older build does not send it — and an absent value
+	// must leave the column alone rather than overwrite a known date with a
+	// zero one (#827).
+	CreatedAt *time.Time `json:"created_at"`
 }
 
 func (h *InternalHandler) upsert(c *gin.Context) {
@@ -80,6 +85,7 @@ func (h *InternalHandler) upsert(c *gin.Context) {
 		CurrencyCode:                   req.CurrencyCode,
 		Timezone:                       req.Timezone,
 		Status:                         status,
+		CreatedAt:                      req.CreatedAt,
 		SyncedAt:                       time.Now().UTC(),
 		StorefrontCustomerPortalSecret: secret,
 	}

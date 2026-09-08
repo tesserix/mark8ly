@@ -92,15 +92,22 @@ func main() {
 // importing the stores model so the backfill cannot start depending on
 // unrelated columns.
 type storeRow struct {
-	ID        string
-	TenantID  string
-	Currency  string
-	CreatedAt time.Time
+	ID       string
+	TenantID string
+	Currency string
+	// CreatedAt is NULL for a store mirrored before migration 136, which
+	// added the column. Such a row cannot be dated and is SKIPPED rather
+	// than guessed at — see run().
+	CreatedAt *time.Time
 }
 
 type runStats struct {
 	Scanned int
 	Created int
+	// Undated counts stores whose projection has no created_at — mirrored
+	// before migration 136 and not re-synced since. They are skipped, not
+	// guessed at, and reported so the operator knows the run was partial.
+	Undated int
 	// AlreadyExpired counts rows whose backfilled trial end is in the PAST,
 	// because the store is older than the trial length. Reported separately
 	// because it is the number a human needs before running with -apply: it
@@ -136,7 +143,21 @@ func run(ctx context.Context, conn *gorm.DB, batchSize int, apply bool, now time
 			lastID = r.ID
 			stats.Scanned++
 
-			trialEnd, expired := backfilledTrialEnd(r.CreatedAt, now)
+			// No creation date, no trial date. Using synced_at instead would
+			// date the trial from the last time this projection copied the
+			// row — i.e. from a store-settings edit — and using now() would
+			// hand a year-old store a fresh 90 days. Both are worse than
+			// saying so and moving on; platform-api re-sends created_at on
+			// its next upsert, and a later run picks the row up.
+			if r.CreatedAt == nil {
+				stats.Undated++
+				log.Warn("backfill-trial-start: store has no created_at — skipping",
+					"store_id", r.ID, "tenant_id", r.TenantID,
+					"hint", "re-sync the store from platform-api, then re-run")
+				continue
+			}
+
+			trialEnd, expired := backfilledTrialEnd(*r.CreatedAt, now)
 			if expired {
 				stats.AlreadyExpired++
 			}

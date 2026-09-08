@@ -11,9 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:a11y": "npm run test:a11y:unit && npm run test:a11y:e2e",
-    "test:a11y:unit": "vitest run tests/unit/a11y",
-    "test:a11y:e2e": "playwright test tests/e2e/a11y-audit.spec.ts"
+    "test:a11y:unit": "vitest run tests/unit/a11y"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

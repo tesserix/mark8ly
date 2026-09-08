@@ -1,10 +1,17 @@
+import { existsSync } from "node:fs";
 import { test } from "@playwright/test";
 
+const CUSTOMER_STATE_PATH = "tests/e2e/.audit/customer-state.json";
+
 test("customer /account/orders list + detail", async ({ browser }) => {
+  test.skip(
+    !existsSync(CUSTOMER_STATE_PATH),
+    `${CUSTOMER_STATE_PATH} not present — no spec writes it, run one first`,
+  );
   test.setTimeout(60_000);
   const ctx = await browser.newContext({
     baseURL: process.env.STOREFRONT_BASE_URL ?? "",
-    storageState: "tests/e2e/.audit/customer-state.json",
+    storageState: CUSTOMER_STATE_PATH,
     viewport: { width: 1440, height: 900 },
   });
   const page = await ctx.newPage();

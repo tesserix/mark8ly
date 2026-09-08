@@ -6,12 +6,12 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"unsafe"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/mark8ly/marketplace-api/internal/auth"
 	"github.com/mark8ly/marketplace-api/internal/authz"
+	"github.com/mark8ly/marketplace-api/internal/depsfill"
 )
 
 // ---------------------------------------------------------------------------
@@ -286,7 +286,7 @@ func buildParityRouters(t *testing.T) (web, mobile map[string]bool) {
 	gin.SetMode(gin.TestMode)
 
 	var webDeps Deps
-	fillHandlers(reflect.ValueOf(&webDeps).Elem(), 0)
+	depsfill.Struct(&webDeps)
 	webDeps.AuthzMiddleware = authz.NewMiddleware(nil, nil)
 	assertNoNilDeps(t, reflect.ValueOf(webDeps), "Deps")
 
@@ -294,7 +294,7 @@ func buildParityRouters(t *testing.T) (web, mobile map[string]bool) {
 	RegisterAdmin(webEngine.Group("/api/v1"), webDeps)
 
 	var mobileDeps MobileDeps
-	fillHandlers(reflect.ValueOf(&mobileDeps).Elem(), 0)
+	depsfill.Struct(&mobileDeps)
 	mobileDeps.AuthzMiddleware = authz.NewMiddleware(nil, nil)
 	// Interface field — reflection cannot invent an implementation, and a nil
 	// verifier makes RegisterAdminMobile return without registering anything.
@@ -330,44 +330,6 @@ func collect(engine *gin.Engine, prefix string) map[string]bool {
 		out[r.Method+" "+strings.TrimPrefix(r.Path, prefix)] = true
 	}
 	return out
-}
-
-// fillHandlers populates every nil handler pointer and gin.HandlerFunc on a
-// Deps-shaped struct so that no `if deps.XHandler != nil` guard silently hides
-// a route from this test. It recurses into the handlers themselves — including
-// unexported fields — because some registrars gate on inner state too (e.g.
-// RegisterAPIKeys returns early when APIKeysHandler.resolver is nil), and a
-// half-populated handler would make the guard blind to four real routes.
-//
-// Nothing is invoked here: registration only takes method values, so zero
-// structs are sufficient and no service, DB or FGA client is needed.
-func fillHandlers(v reflect.Value, depth int) {
-	if depth > 3 || v.Kind() != reflect.Struct {
-		return
-	}
-	for i := 0; i < v.NumField(); i++ {
-		f := v.Field(i)
-		if !f.CanAddr() {
-			continue
-		}
-		// Bypasses the unexported-field write barrier; safe because the value
-		// is addressable and we only ever store freshly allocated zero values.
-		w := reflect.NewAt(f.Type(), unsafe.Pointer(f.UnsafeAddr())).Elem()
-		switch f.Kind() {
-		case reflect.Ptr:
-			if f.Type().Elem().Kind() == reflect.Struct && w.IsNil() {
-				allocated := reflect.New(f.Type().Elem())
-				w.Set(allocated)
-				fillHandlers(allocated.Elem(), depth+1)
-			}
-		case reflect.Struct:
-			fillHandlers(w, depth+1)
-		case reflect.Func:
-			if f.Type() == reflect.TypeOf(gin.HandlerFunc(nil)) && w.IsNil() {
-				w.Set(reflect.ValueOf(gin.HandlerFunc(func(c *gin.Context) { c.Next() })))
-			}
-		}
-	}
 }
 
 // assertNoNilDeps fails loudly if a top-level dependency is still nil after

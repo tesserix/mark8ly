@@ -39,3 +39,14 @@ test("dev-min does not depend on dev-secrets", () => {
   expect(line, "Makefile has no dev-min target").toBeTruthy();
   expect(line).not.toMatch(/dev-secrets/);
 });
+
+// Compose only auto-merges docker-compose.override.yml when no -f is given.
+// The Makefile passes -f explicitly, so an override that exists (e.g. to
+// drop postgres's host port on a machine where 5432 is already taken) is
+// silently inert unless the Makefile also references it (#858).
+test("the Makefile's COMPOSE variable references docker-compose.override.yml", () => {
+  const mk = readFileSync(join(root, "Makefile"), "utf8");
+  const composeLine = mk.split("\n").find((l) => l.startsWith("COMPOSE"));
+  expect(composeLine, "Makefile has no COMPOSE variable").toBeTruthy();
+  expect(mk).toMatch(/docker-compose\.override\.yml/);
+});

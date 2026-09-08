@@ -35,7 +35,16 @@ try {
 // Always use the absolute path — the relative path in flow-state.json doesn't resolve reliably
 const ADMIN_STATE = join(__dirname, ".state", "admin-state.json");
 const ORDER_ID = state.orderId ?? "";
-const CUSTOMER_EMAIL = "admtesserix@gmail.com";
+// The customer this flow verifies, from the environment (#850).
+//
+// This was a real Gmail address as a literal. Not a credential — but PII,
+// belonging to the same account whose password leaked in #844, sitting in a
+// PUBLIC repository where it can be scraped for targeting.
+//
+// Defaulted to "" rather than to an example address, matching every other
+// operator spec here: a plausible-looking default makes the spec run and
+// assert nothing, where an empty one makes it skip and say why.
+const CUSTOMER_EMAIL = process.env.CUSTOMER_EMAIL ?? "";
 
 const SCREENSHOT_DIR = "tests/operator/.state";
 
@@ -521,6 +530,7 @@ test.describe("admin verify: orders, reviews, audit, customers", () => {
 
     // Check for test customer — soft because storefront sign-in doesn't
     // create a customer profile in marketplace-api (known gap).
+    test.skip(!CUSTOMER_EMAIL, "CUSTOMER_EMAIL not set");
     const customerVisible = await page.getByText(CUSTOMER_EMAIL).isVisible({ timeout: 5_000 }).catch(() => false);
     test.info().annotations.push({
       type: "customer",
@@ -548,6 +558,7 @@ test.describe("admin verify: orders, reviews, audit, customers", () => {
     await page.waitForLoadState("networkidle").catch(() => {});
 
     // Click on the customer row — soft because customer profile may not exist
+    test.skip(!CUSTOMER_EMAIL, "CUSTOMER_EMAIL not set");
     const customerLink = page.getByText(CUSTOMER_EMAIL).first();
     const customerVisible = await customerLink.isVisible({ timeout: 5_000 }).catch(() => false);
 

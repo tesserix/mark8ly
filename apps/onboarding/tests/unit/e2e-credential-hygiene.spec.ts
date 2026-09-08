@@ -60,6 +60,40 @@ function e2eSources(): ReadonlyArray<[string, string]> {
  */
 const CREDENTIAL_ENV = /(PASSWORD|SECRET|API_KEY|KEY_ID|TOKEN|CREDENTIAL)/;
 
+/**
+ * Identifiers whose literal value is a credential OR personal data.
+ *
+ * Wider than CREDENTIAL_ENV by one word — EMAIL — and that word is the whole
+ * point of #850. A real Gmail address sat in
+ * `apps/admin/tests/operator/admin-verify.spec.ts` as
+ * `const CUSTOMER_EMAIL = "…"`, in a PUBLIC repository, belonging to the same
+ * account whose password leaked in #844. It is not a secret, so it is not a
+ * #844-severity problem — but it is PII that can be scraped for targeting,
+ * and nothing here could see it.
+ *
+ * It was invisible for a structural reason worth naming: both assertions
+ * above match a SHAPE that mentions `process.env`. A bare `const X = "…"`
+ * mentions no environment variable at all, so neither pattern could ever fire
+ * on it, however the identifier was named.
+ */
+const SENSITIVE_IDENT = /(PASSWORD|SECRET|API_KEY|KEY_ID|TOKEN|CREDENTIAL|EMAIL)/;
+
+/**
+ * Domains reserved by RFC 2606 / RFC 6761 for documentation and testing.
+ *
+ * Broadening the guard to treat an email as sensitive necessarily catches
+ * legitimate fixtures — `user@example.com` and friends — so the reserved
+ * names are allowed rather than maintaining a per-file allowlist, which
+ * would grow one entry at a time until it allowed the next real address.
+ * These domains cannot be registered, so a value using one cannot identify
+ * a person.
+ */
+const RESERVED_EXAMPLE = /@(?:[\w-]+\.)*(?:example\.(?:com|org|net)|test|invalid|localhost)$/i;
+
+/** An email-shaped literal. Deliberately loose: the question is whether the
+ *  value looks like it could reach a real inbox, not whether it is RFC-valid. */
+const EMAIL_SHAPED = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 test("no e2e spec defaults a credential env var to a literal", () => {
   for (const [name, src] of e2eSources()) {
     // process.env.FOO ?? "…" / process.env.FOO || "…", across line breaks,
@@ -77,6 +111,65 @@ test("no e2e spec defaults a credential env var to a literal", () => {
           `public. Default to "" and let the spec fail on a missing value ` +
           `instead, which is what every other spec here already does.`,
       ).toBe("");
+    }
+  }
+});
+
+test("no e2e spec assigns a credential or a real email to a bare literal", () => {
+  // The #850 shape: `const CUSTOMER_EMAIL = "a.real.person@gmail.com"`.
+  //
+  // Matched on the DECLARATION rather than on `process.env`, because the
+  // defining property of this bug is that no environment variable is
+  // mentioned. `const`, `let` and `var`, single or double quoted.
+  //
+  // An empty literal passes: `?? ""` is the fix this guard asks for
+  // everywhere else, and a bare `const X = ""` is the same statement.
+  for (const [name, src] of e2eSources()) {
+    for (const m of src.matchAll(
+      /\b(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[^=]+)?=\s*(?:"([^"]*)"|'([^']*)')/g,
+    )) {
+      const ident = m[1] ?? "";
+      const value = m[2] ?? m[3] ?? "";
+      if (value === "") continue;
+      if (!SENSITIVE_IDENT.test(ident.toUpperCase())) continue;
+
+      // An email-shaped value on a reserved documentation domain is a
+      // fixture, not a person.
+      if (EMAIL_SHAPED.test(value) && RESERVED_EXAMPLE.test(value)) continue;
+
+      expect(
+        false,
+        `${name} assigns a literal to ${ident}. This repository is PUBLIC. ` +
+          `If it is a credential the value is committed; if it is a real ` +
+          `email address it is personal data that can be scraped for ` +
+          `targeting (#850). Read it from process.env and default to "", ` +
+          `with test.skip(!VALUE, "VALUE not set") in the blocks that need ` +
+          `it — the idiom every other operator spec here already uses. A ` +
+          `fixture address on example.com/.test/.invalid is fine.`,
+      ).toBe(true);
+    }
+  }
+});
+
+test("no e2e spec passes a real email address inline to a page interaction", () => {
+  // The SECOND occurrence in #850 was not a declaration at all — it was
+  // `.fill("a.real.person@gmail.com")` mid-test, in a file that already read
+  // CUSTOMER_EMAIL from the environment ten lines from the top. The mechanism
+  // was present and simply bypassed, so a guard that only inspects
+  // declarations would have caught one of the two and reported the class
+  // closed.
+  for (const [name, src] of e2eSources()) {
+    for (const m of src.matchAll(/(?:"([^"@\s]+@[^"\s]+)"|'([^'@\s]+@[^'\s]+)')/g)) {
+      const value = m[1] ?? m[2] ?? "";
+      if (!EMAIL_SHAPED.test(value)) continue;
+      if (RESERVED_EXAMPLE.test(value)) continue;
+      expect(
+        false,
+        `${name} contains the literal email address ${"<redacted>"}. This ` +
+          `repository is PUBLIC — a real address here is personal data ` +
+          `(#850). Use a constant read from process.env, or a fixture on a ` +
+          `reserved domain such as example.com.`,
+      ).toBe(true);
     }
   }
 });

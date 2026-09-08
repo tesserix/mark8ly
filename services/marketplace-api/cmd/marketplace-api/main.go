@@ -588,6 +588,12 @@ func main() {
 	// never two. See the construction site (admin-mode block) for why.
 	var breakGlassLoginHandler *admin.BreakGlassLoginHandler
 	var breakGlassRateLimiter *breakglass.LoginRateLimiter
+	// The composite the CLEAR path uses — in-memory plus durable. Separate
+	// from breakGlassRateLimiter because the login path needs the two apart
+	// (it prefers the durable count and falls back to the in-memory one),
+	// while clear-lockout must hit both or the IP re-locks on its next
+	// failure (#846).
+	var breakGlassWindowReset *breakglass.CompositeWindow
 	// #404's write deps. Declared at this scope for the same reason the
 	// limiter is: platformadmin.Register is called far below, and both
 	// must reach it from inside the OpenBao-guarded block that builds them.
@@ -1430,12 +1436,22 @@ func main() {
 			// durable lockout row clears, the operator sees success, and
 			// the in-memory limiter keeps refusing the IP (#642).
 			breakGlassRateLimiter = breakglass.NewLoginRateLimiter()
+			// The DURABLE window, backed by break_glass_login_attempts. It is
+			// what makes the 3-strike threshold a property of the estate
+			// rather than of whichever pod took the request, and therefore
+			// what allows this deployment to run more than one replica —
+			// which is what removes the total platform-admin outage on every
+			// deploy (#846).
+			breakGlassDBWindow := breakglass.NewDBLoginWindow(breakGlassRepo)
+			breakGlassWindowReset = breakglass.NewCompositeWindow(
+				breakGlassRateLimiter, breakGlassDBWindow)
 			breakGlassLoginHandler = admin.NewBreakGlassLoginHandler(admin.BreakGlassDeps{
 				Repo:        breakGlassRepo,
 				Secrets:     breakGlassSecrets,
 				Audit:       breakGlassAudit,
 				Slack:       breakGlassSlack,
 				RateLimiter: breakGlassRateLimiter,
+				Window:      breakGlassDBWindow,
 				IPHMACKey:   breakGlassIPHMACKey,
 				Sessions:    authbffclient.NewSessionIssuer(cfg.AuthBFFURL, cfg.InternalAuthSecret, nil),
 				Logger:      log,
@@ -2635,7 +2651,7 @@ func main() {
 			BreakGlass:              platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),
 			BreakGlassRotator:       breakGlassRotator,
 			BreakGlassWriter:        breakGlassWriter,
-			BreakGlassRateLimiter:   breakGlassRateLimiter,
+			BreakGlassRateLimiter:   breakGlassWindowResetOrNil(breakGlassWindowReset),
 			BreakGlassIPHMACKey:     breakglass.HMACKey(cfg.BreakGlassIPHMACKey),
 			EmailTemplates:          templateStore,
 			EmailTemplateRegistry:   templateLoader,
@@ -2812,7 +2828,7 @@ func main() {
 				BreakGlass:              platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),
 				BreakGlassRotator:       breakGlassRotator,
 				BreakGlassWriter:        breakGlassWriter,
-				BreakGlassRateLimiter:   breakGlassRateLimiter,
+				BreakGlassRateLimiter:   breakGlassWindowResetOrNil(breakGlassWindowReset),
 				BreakGlassIPHMACKey:     breakglass.HMACKey(cfg.BreakGlassIPHMACKey),
 				EmailTemplates:          templateStore,
 				EmailTemplateRegistry:   templateLoader,
@@ -3119,4 +3135,19 @@ func tenantDiscountApplier(s *tenantdiscount.Service) planchange.TenantDiscountA
 		return nil
 	}
 	return s
+}
+
+// breakGlassWindowResetOrNil returns w as the platformadmin interface, or a
+// genuine nil interface when w is nil.
+//
+// Assigning a nil *breakglass.CompositeWindow straight into an interface
+// field would produce a NON-nil interface wrapping a nil pointer, and
+// platformadmin's clear-lockout nil-check (`if h.rateLimiter != nil`) would
+// pass — then call Reset on nil. The interface's own doc comment asks callers
+// to avoid exactly this; this helper is where that promise is kept.
+func breakGlassWindowResetOrNil(w *breakglass.CompositeWindow) platformadmin.BreakGlassRateLimiter {
+	if w == nil {
+		return nil
+	}
+	return w
 }

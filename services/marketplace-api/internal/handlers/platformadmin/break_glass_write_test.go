@@ -76,10 +76,13 @@ type fakeRateLimiter struct {
 	resetOn []string
 }
 
-func (f *fakeRateLimiter) Reset(key string) {
+func (f *fakeRateLimiter) Reset(_ context.Context, key breakglass.LoginKey) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.resetOn = append(f.resetOn, key)
+	// Recorded as the BUCKET string so the existing assertions, which compare
+	// against breakglass.LoginRateLimitKey, keep meaning what they meant.
+	f.resetOn = append(f.resetOn, key.Bucket())
+	return nil
 }
 
 func discardBreakGlassAudit(*gin.Context, uuid.UUID, audit.Event) error { return nil }

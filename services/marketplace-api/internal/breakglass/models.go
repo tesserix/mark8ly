@@ -62,6 +62,23 @@ type Lockout struct {
 // TableName pins the Postgres table name.
 func (Lockout) TableName() string { return "break_glass_lockouts" }
 
+// LoginAttempt is one failed break-glass login, kept for the length of
+// LoginRateWindow so the 3-strike threshold can be evaluated across every
+// pod rather than within one (#846).
+//
+// Deliberately append-only and id-keyed rather than a counter row per
+// ip_hash: a counter needs read-modify-write and two pods racing it would
+// undercount exactly when the count matters most. An INSERT races nothing,
+// and the window is a COUNT over an index.
+type LoginAttempt struct {
+	ID          int64     `gorm:"column:id;primaryKey;autoIncrement"`
+	IPHash      []byte    `gorm:"column:ip_hash;type:bytea;not null;index"`
+	AttemptedAt time.Time `gorm:"column:attempted_at;not null;autoCreateTime"`
+}
+
+// TableName pins the Postgres table name.
+func (LoginAttempt) TableName() string { return "break_glass_login_attempts" }
+
 // Sentinel errors. Callers use errors.Is to distinguish these from
 // arbitrary SQL / Secret Manager failures.
 var (

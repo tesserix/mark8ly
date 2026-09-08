@@ -590,6 +590,11 @@ func main() {
 	// never two. See the construction site (admin-mode block) for why.
 	var breakGlassLoginHandler *admin.BreakGlassLoginHandler
 	var breakGlassRateLimiter *breakglass.LoginRateLimiter
+	// #404's write deps. Declared at this scope for the same reason the
+	// limiter is: platformadmin.Register is called far below, and both
+	// must reach it from inside the OpenBao-guarded block that builds them.
+	var breakGlassRotator *breakglass.Rotator
+	var breakGlassWriter platformadmin.BreakGlassWriter
 	// delhiveryWebhookHandler is constructed in the admin wiring branch
 	// (where shipmentsHandler, apiKeyEncryptor and carrierSecretStore
 	// are built) but mounted below inside the engine switch, so declare
@@ -1437,6 +1442,26 @@ func main() {
 				Sessions:    authbffclient.NewSessionIssuer(cfg.AuthBFFURL, cfg.InternalAuthSecret, nil),
 				Logger:      log,
 			})
+
+			// #404's write endpoints: rotate / disable / enable /
+			// clear-lockout. Both must be non-nil or platformadmin leaves
+			// all four unmounted while List (#333) keeps working.
+			//
+			// Held back until now on purpose: #404 argued that controls
+			// over a feature nobody could reach "look delivered and cannot
+			// work". That was right while the login route was unmounted
+			// (#642) and while per-tenant SSO did not exist. Both shipped —
+			// the route mounts, and #836 wired SSO onto a real identity
+			// source — so break-glass now guards a failure mode that can
+			// occur, and its controls should exist alongside it.
+			//
+			// The Rotator reuses the SAME repo, secret manager, audit
+			// emitter and Slack client the login handler was built with, so
+			// a rotation and a login cannot disagree about where the
+			// credential lives.
+			breakGlassRotator = breakglass.NewRotator(
+				breakGlassRepo, breakGlassSecrets, breakGlassAudit, breakGlassSlack)
+			breakGlassWriter = breakGlassRepo
 		}
 
 		// P13 §12 — per-tenant SSO (#820). Both surfaces are constructed
@@ -2573,6 +2598,8 @@ func main() {
 			EstateUsers:             estateUsersClient,
 			EmailSends:              platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
 			BreakGlass:              platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),
+			BreakGlassRotator:       breakGlassRotator,
+			BreakGlassWriter:        breakGlassWriter,
 			BreakGlassRateLimiter:   breakGlassRateLimiter,
 			BreakGlassIPHMACKey:     breakglass.HMACKey(cfg.BreakGlassIPHMACKey),
 			EmailTemplates:          templateStore,
@@ -2748,6 +2775,8 @@ func main() {
 				EstateUsers:             estateUsersClient,
 				EmailSends:              platformadmin.EmailSendListerFunc(emaillog.ListPlatform),
 				BreakGlass:              platformadmin.BreakGlassListerFunc(breakglass.ListPlatform),
+				BreakGlassRotator:       breakGlassRotator,
+				BreakGlassWriter:        breakGlassWriter,
 				BreakGlassRateLimiter:   breakGlassRateLimiter,
 				BreakGlassIPHMACKey:     breakglass.HMACKey(cfg.BreakGlassIPHMACKey),
 				EmailTemplates:          templateStore,

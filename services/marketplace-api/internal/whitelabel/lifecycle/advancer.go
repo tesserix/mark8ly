@@ -279,6 +279,46 @@ func (a *Advancer) archiveFirebase(ctx context.Context, r Row) error {
 	if err := a.firebase.ArchiveProject(ctx, r.FirebaseProjectID); err != nil {
 		a.logger.WarnContext(ctx, "lifecycle: firebase archive skipped",
 			"store_id", r.StoreID, "err", err)
+		// The row is about to transition to `firebase_archived`, and that
+		// status would otherwise be the ONLY durable record of this step —
+		// asserting an archive that did not happen. The status cannot say
+		// so: it is a fixed value the state machine reads to reach day 90,
+		// and erroring here instead would stall every row forever, because
+		// the Firebase client is an unimplemented stub that always returns
+		// ErrNotWired. So the truth goes beside the status rather than in
+		// it. tesserix-home#702's whole subject is a system reporting work
+		// it did not do; a status this code KNOWS is untrue must not be
+		// left as the only thing written down.
+		if noteErr := a.appendNote(ctx, r, StatusFirebaseArchived,
+			fmt.Sprintf("firebase archive NOT performed for project %s: %v", r.FirebaseProjectID, err),
+		); noteErr != nil {
+			// Deliberately not fatal: failing the advance here would stall
+			// the row on a bookkeeping write, and the WARN above has
+			// already been emitted.
+			a.logger.WarnContext(ctx, "lifecycle: could not record firebase skip",
+				"store_id", r.StoreID, "err", noteErr)
+		}
+	}
+	return nil
+}
+
+// appendNote writes a lifecycle row carrying a REASON rather than marking a
+// transition. Same append-only table as appendLog, deliberately: a reader
+// asking "what happened to this store" gets one ordered history, not a
+// status trail plus a separate place the caveats live.
+func (a *Advancer) appendNote(ctx context.Context, r Row, status Status, reason string) error {
+	now := a.clock()
+	entry := subscription.WhiteLabelAppLifecycleEntry{
+		ID:          uuid.New(),
+		StoreID:     r.StoreID,
+		TenantID:    r.TenantID,
+		Status:      status,
+		ScheduledAt: &now,
+		Actor:       "system:cron:lifecycle",
+		Reason:      &reason,
+	}
+	if err := a.db.WithContext(ctx).Create(&entry).Error; err != nil {
+		return fmt.Errorf("lifecycle: append note: %w", err)
 	}
 	return nil
 }

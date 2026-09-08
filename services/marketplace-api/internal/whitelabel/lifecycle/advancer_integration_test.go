@@ -366,3 +366,47 @@ func TestAdvancer_Day30_GoogleClientUnresolvable_StillAdvances(t *testing.T) {
 		"a Play failure is tolerated; Apple is what makes the step real")
 	require.Equal(t, 1, appleCli.BlockDownloadsCallCount)
 }
+
+// A Firebase archive that did not happen must be written down, because the
+// row is about to claim `firebase_archived` and that status cannot say
+// otherwise — it is a fixed value the state machine reads to reach day 90.
+// The real Firebase client is an unimplemented stub that always returns
+// ErrNotWired, so without this the ONLY durable record of the step asserts
+// an archive that never occurred. tesserix-home#702 is precisely about a
+// system reporting work it did not do.
+func TestAdvancer_FirebaseArchiveFailure_IsRecordedBesideTheStatus(t *testing.T) {
+	creds, _ := newCredsSvc(t)
+	appleCli, gpCli, fbCli := apple.NewFakeClient(), googleplay.NewFakeClient(), firebase.NewFakeClient()
+	fbCli.ArchiveErr = firebase.ErrNotWired
+	adv := newAdvancer(t, struct {
+		Apple    *apple.FakeClient
+		Google   *googleplay.FakeClient
+		Firebase *firebase.FakeClient
+		Creds    *appcreds.Service
+	}{appleCli, gpCli, fbCli, creds})
+
+	db := testdb.NewDB(t, "white_label_app_state", "white_label_app_lifecycle")
+	// StatusPulled, not DownloadsBlocked: day 60 transitions INTO Pulled,
+	// and `archiveFirebase` runs on the Pulled case on the following tick.
+	row := ageRow(t, 60, lifecycle.StatusPulled)
+	row.FirebaseProjectID = "merchant-proj-1"
+	require.NoError(t, db.Create(&row).Error)
+
+	require.NoError(t, adv.AdvanceDue(context.Background()))
+
+	// The row still advances — erroring here would stall every row forever,
+	// since the stub never succeeds, and would block the day-90 purge.
+	var after lifecycle.Row
+	require.NoError(t, db.Where("id=?", row.ID).First(&after).Error)
+	require.Equal(t, lifecycle.StatusFirebaseArchived, after.Status)
+
+	// …but the failure is durable, with a reason naming the project.
+	var reasons []string
+	require.NoError(t, db.Raw(
+		`SELECT reason FROM white_label_app_lifecycle
+		  WHERE store_id = ? AND reason IS NOT NULL`, row.StoreID,
+	).Scan(&reasons).Error)
+	require.NotEmpty(t, reasons, "a skipped firebase archive must leave a reason behind")
+	require.Contains(t, reasons[0], "NOT performed")
+	require.Contains(t, reasons[0], "merchant-proj-1")
+}

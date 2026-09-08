@@ -281,6 +281,28 @@ class ReusableCIContract(unittest.TestCase):
             self.assertIn("REDACTED", finding["Secret"])
             self.assertIn("REDACTED", finding["Match"])
 
+    def test_no_workflow_sets_the_opt_in_operator_flags(self) -> None:
+        # mark8ly#834 Task 1 moved 8 opt-in operator scripts to
+        # apps/*/tests/operator/ — five of them default to a PRODUCTION
+        # host and seed data / audit live systems. They are gated behind
+        # env vars that must be set by hand on a developer's machine, never
+        # by CI. A workflow that set one of these would run the FULL_FLOW
+        # golden path, or a real audit or image-seeding pass, against
+        # production on every push.
+        workflow_dir = ROOT / ".github/workflows"
+        offenders = []
+        for path in sorted(workflow_dir.glob("*.yml")):
+            contents = path.read_text()
+            for flag in ("FULL_FLOW", "ADMIN_AUDIT", "STOREFRONT_AUDIT", "SEED_IMAGES"):
+                if flag in contents:
+                    offenders.append(f"{path.name} sets/references {flag}")
+        self.assertEqual(
+            offenders,
+            [],
+            "a workflow references an opt-in operator flag — these must "
+            "only ever be set by hand, never by CI:\n" + "\n".join(offenders),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

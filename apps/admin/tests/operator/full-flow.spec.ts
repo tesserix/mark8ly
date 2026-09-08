@@ -286,7 +286,15 @@ test.describe("full flow: admin + storefront", () => {
     console.log("Customer signed in. URL:", page.url());
     await page.screenshot({ path: "tests/operator/.audit/flow-06-customer-signed-in.png" });
 
-    // Save state for cart/checkout
+    // Save state for cart/checkout.
+    //
+    // This path moved with the spec (mark8ly#834): it used to be
+    // tests/e2e/.audit/customer-state.json, which tests/e2e/account-shot,
+    // purchase-journey and delivery-timeline also read. Writing there from
+    // an operator run against a LIVE host would hand the local suite a
+    // production session, so the write is deliberately confined to
+    // tests/operator/. Keep it that way; account-shot documents the
+    // producers it does have.
     await ctx.storageState({ path: "tests/operator/.audit/customer-state.json" });
     await ctx.close();
   });

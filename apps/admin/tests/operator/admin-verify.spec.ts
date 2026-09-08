@@ -32,7 +32,7 @@ const ADMIN_STATE = join(__dirname, ".state", "admin-state.json");
 const ORDER_ID = state.orderId ?? "";
 const CUSTOMER_EMAIL = "admtesserix@gmail.com";
 
-const SCREENSHOT_DIR = "tests/e2e/.state";
+const SCREENSHOT_DIR = "tests/operator/.state";
 
 test.describe("admin verify: orders, reviews, audit, customers", () => {
   test.skip(!SHOULD_RUN, "set FULL_FLOW=1 to run");

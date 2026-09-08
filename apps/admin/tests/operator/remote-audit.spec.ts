@@ -12,7 +12,7 @@ import { join } from "node:path";
  * runs when ADMIN_AUDIT=1, so `npx playwright test` against localhost
  * won't accidentally fire real credentials at production.
  *
- * Findings are written to tests/e2e/.audit/admin-findings.json.
+ * Findings are written to tests/operator/.audit/admin-findings.json.
  */
 
 const SHOULD_RUN = process.env.ADMIN_AUDIT === "1";

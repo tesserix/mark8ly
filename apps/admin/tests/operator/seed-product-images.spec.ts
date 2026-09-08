@@ -162,7 +162,7 @@ test("seed Unsplash images onto Active products", async ({ browser }) => {
       await uploadMediaFor(page, active[i]!, picks);
     } catch (e) {
       console.error(`  [fail] ${active[i]}:`, e instanceof Error ? e.message : e);
-      await page.screenshot({ path: `tests/e2e/.audit/seed-fail-${i}.png`, fullPage: true });
+      await page.screenshot({ path: `tests/operator/.audit/seed-fail-${i}.png`, fullPage: true });
     }
   }
 

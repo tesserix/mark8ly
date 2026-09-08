@@ -734,7 +734,7 @@ test.describe("storefront journey", () => {
     // Write updated state
     saveState({
       orderId,
-      customerStorageState: "tests/e2e/.state/customer-state.json",
+      customerStorageState: "tests/operator/.state/customer-state.json",
     });
 
     await ctx.close();

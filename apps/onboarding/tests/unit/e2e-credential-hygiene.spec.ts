@@ -31,8 +31,10 @@ import path from "node:path";
 const REPO_ROOT = path.join(__dirname, "../../../..");
 const E2E_DIRS = [
   "apps/admin/tests/e2e",
+  "apps/admin/tests/operator",
   "apps/onboarding/tests/e2e",
   "apps/storefront/tests/e2e",
+  "apps/storefront/tests/operator",
 ];
 
 function e2eSources(): ReadonlyArray<[string, string]> {

@@ -145,7 +145,7 @@ test.describe("admin setup: full configuration flow", () => {
     await page.screenshot({ path: screenshotPath("01-dashboard") });
 
     await ctx.storageState({ path: ADMIN_STORAGE });
-    writeState({ adminStorageState: "tests/e2e/.state/admin-state.json" });
+    writeState({ adminStorageState: "tests/operator/.state/admin-state.json" });
 
     await ctx.close();
   });

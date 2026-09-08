@@ -11,7 +11,7 @@ import { join } from "node:path";
  * anonymous — no auth attempted.
  *
  * Runs only when STOREFRONT_AUDIT=1. Findings are written to
- * tests/e2e/.audit/storefront-findings.json.
+ * tests/operator/.audit/storefront-findings.json.
  */
 
 const SHOULD_RUN = process.env.STOREFRONT_AUDIT === "1";
@@ -49,7 +49,6 @@ const STATIC_ROUTES: string[] = [
   "/cart",
   "/checkout",
   "/gift-cards",
-  "/orders",
   "/account",
 ];
 

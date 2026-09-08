@@ -11,7 +11,6 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/billing/appcreds"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
-	"github.com/mark8ly/marketplace-api/internal/whitelabel/apple"
 	"github.com/mark8ly/marketplace-api/internal/whitelabel/firebase"
 	"github.com/mark8ly/marketplace-api/internal/whitelabel/googleplay"
 	wlmetrics "github.com/mark8ly/marketplace-api/internal/whitelabel/metrics"
@@ -23,10 +22,16 @@ type Clock func() time.Time
 
 // Config groups Advancer dependencies. All fields required in
 // production; tests inject fakes for Apple/Google/Firebase.
+//
+// Apple and Google are FACTORIES, not clients: their credentials are
+// per-tenant and the advancer walks a multi-tenant cohort, so a client is
+// resolved per row. See AppleTeardownFactory for why one shared client
+// cannot work. Firebase is a plain client — its stub takes no per-tenant
+// configuration.
 type Config struct {
 	DB       *gorm.DB
-	Apple    apple.ClientAPI
-	Google   googleplay.ClientAPI
+	Apple    AppleTeardownFactory
+	Google   GoogleTeardownFactory
 	Firebase firebase.ClientAPI
 	Creds    *appcreds.Service
 	Clock    Clock // defaults to time.Now when nil
@@ -39,8 +44,8 @@ type Config struct {
 // pullApps / archiveFirebase / purgeCredentials).
 type Advancer struct {
 	db       *gorm.DB
-	apple    apple.ClientAPI
-	google   googleplay.ClientAPI
+	apple    AppleTeardownFactory
+	google   GoogleTeardownFactory
 	firebase firebase.ClientAPI
 	creds    *appcreds.Service
 	clock    Clock
@@ -166,12 +171,22 @@ func (a *Advancer) advanceOne(ctx context.Context, r Row, now time.Time) error {
 // no-op.
 func (a *Advancer) blockDownloads(ctx context.Context, r Row) error {
 	if r.AppleAppID != "" {
-		if err := a.apple.BlockDownloads(ctx, r.AppleAppID); err != nil {
+		cli, err := a.appleClient(ctx, r)
+		if err != nil {
+			return err
+		}
+		if err := cli.BlockDownloads(ctx, r.AppleAppID); err != nil {
 			return fmt.Errorf("apple.BlockDownloads(%s): %w", r.AppleAppID, err)
 		}
 	}
 	if r.GooglePackage != "" {
-		if err := a.google.BlockDownloads(ctx, r.GooglePackage); err != nil {
+		cli, err := a.googleClient(ctx, r)
+		if err != nil {
+			a.logger.WarnContext(ctx, "lifecycle: google client unavailable; block downloads skipped",
+				"store_id", r.StoreID, "err", err)
+			return nil
+		}
+		if err := cli.BlockDownloads(ctx, r.GooglePackage); err != nil {
 			// Google's ErrNotWired is tolerated — it means Apple was
 			// successful and Google integration is deferred. Logged
 			// and swallowed rather than stalling the advance.
@@ -184,17 +199,77 @@ func (a *Advancer) blockDownloads(ctx context.Context, r Row) error {
 
 func (a *Advancer) pullApps(ctx context.Context, r Row) error {
 	if r.AppleAppID != "" {
-		if err := a.apple.PullApp(ctx, r.AppleAppID); err != nil {
+		cli, err := a.appleClient(ctx, r)
+		if err != nil {
+			return err
+		}
+		if err := cli.PullApp(ctx, r.AppleAppID); err != nil {
 			return fmt.Errorf("apple.PullApp(%s): %w", r.AppleAppID, err)
 		}
 	}
 	if r.GooglePackage != "" {
-		if err := a.google.PullApp(ctx, r.GooglePackage); err != nil {
+		cli, err := a.googleClient(ctx, r)
+		if err != nil {
+			a.logger.WarnContext(ctx, "lifecycle: google client unavailable; pull app skipped",
+				"store_id", r.StoreID, "err", err)
+			return nil
+		}
+		if err := cli.PullApp(ctx, r.GooglePackage); err != nil {
 			a.logger.WarnContext(ctx, "lifecycle: google pull app skipped",
 				"store_id", r.StoreID, "err", err)
 		}
 	}
 	return nil
+}
+
+// appleClient resolves the App Store Connect client for one row's tenant.
+//
+// A resolution failure — no factory wired, credentials revoked, the store's
+// ASC key already purged — is returned as an ERROR, which stalls the row:
+// advanceOne aborts, no status is written and no lifecycle log row is
+// appended, so next_action_at stays due and the step retries next tick.
+//
+// It is deliberately NOT "log it and mark the step done". A row whose
+// merchant we cannot authenticate as has not had its listing blocked or
+// pulled; advancing it would write downloads_blocked or pulled into the
+// append-only audit table asserting a teardown that never happened, which
+// is the exact failure #702 exists to fix. A row stuck retrying with an
+// ERROR log every tick is a visible, truthful state; a row that walked to
+// credentials_purged having touched nothing is not.
+func (a *Advancer) appleClient(ctx context.Context, r Row) (AppleTeardownClient, error) {
+	if a.apple == nil {
+		return nil, fmt.Errorf("lifecycle: no Apple client factory configured (store %s carries apple app id %s)",
+			r.StoreID, r.AppleAppID)
+	}
+	cli, err := a.apple(ctx, r.TenantID, r.StoreID)
+	if err != nil {
+		return nil, fmt.Errorf("lifecycle: apple client for store %s: %w", r.StoreID, err)
+	}
+	if cli == nil {
+		return nil, fmt.Errorf("lifecycle: apple client factory returned no client for store %s", r.StoreID)
+	}
+	return cli, nil
+}
+
+// googleClient resolves the Play client for one row's tenant.
+//
+// Unlike appleClient, a failure here is tolerated by the callers: Play
+// teardown is deferred (the client is a stub returning ErrNotWired) and
+// rows carry no GooglePackage by design (#702 decision 4), so this path is
+// unreached today. The asymmetry is deliberate — Apple stalls, Play warns.
+func (a *Advancer) googleClient(ctx context.Context, r Row) (googleplay.ClientAPI, error) {
+	if a.google == nil {
+		return nil, fmt.Errorf("lifecycle: no Google client factory configured (store %s carries package %s)",
+			r.StoreID, r.GooglePackage)
+	}
+	cli, err := a.google(ctx, r.TenantID, r.StoreID)
+	if err != nil {
+		return nil, fmt.Errorf("lifecycle: google client for store %s: %w", r.StoreID, err)
+	}
+	if cli == nil {
+		return nil, fmt.Errorf("lifecycle: google client factory returned no client for store %s", r.StoreID)
+	}
+	return cli, nil
 }
 
 func (a *Advancer) archiveFirebase(ctx context.Context, r Row) error {
@@ -204,6 +279,46 @@ func (a *Advancer) archiveFirebase(ctx context.Context, r Row) error {
 	if err := a.firebase.ArchiveProject(ctx, r.FirebaseProjectID); err != nil {
 		a.logger.WarnContext(ctx, "lifecycle: firebase archive skipped",
 			"store_id", r.StoreID, "err", err)
+		// The row is about to transition to `firebase_archived`, and that
+		// status would otherwise be the ONLY durable record of this step —
+		// asserting an archive that did not happen. The status cannot say
+		// so: it is a fixed value the state machine reads to reach day 90,
+		// and erroring here instead would stall every row forever, because
+		// the Firebase client is an unimplemented stub that always returns
+		// ErrNotWired. So the truth goes beside the status rather than in
+		// it. tesserix-home#702's whole subject is a system reporting work
+		// it did not do; a status this code KNOWS is untrue must not be
+		// left as the only thing written down.
+		if noteErr := a.appendNote(ctx, r, StatusFirebaseArchived,
+			fmt.Sprintf("firebase archive NOT performed for project %s: %v", r.FirebaseProjectID, err),
+		); noteErr != nil {
+			// Deliberately not fatal: failing the advance here would stall
+			// the row on a bookkeeping write, and the WARN above has
+			// already been emitted.
+			a.logger.WarnContext(ctx, "lifecycle: could not record firebase skip",
+				"store_id", r.StoreID, "err", noteErr)
+		}
+	}
+	return nil
+}
+
+// appendNote writes a lifecycle row carrying a REASON rather than marking a
+// transition. Same append-only table as appendLog, deliberately: a reader
+// asking "what happened to this store" gets one ordered history, not a
+// status trail plus a separate place the caveats live.
+func (a *Advancer) appendNote(ctx context.Context, r Row, status Status, reason string) error {
+	now := a.clock()
+	entry := subscription.WhiteLabelAppLifecycleEntry{
+		ID:          uuid.New(),
+		StoreID:     r.StoreID,
+		TenantID:    r.TenantID,
+		Status:      status,
+		ScheduledAt: &now,
+		Actor:       "system:cron:lifecycle",
+		Reason:      &reason,
+	}
+	if err := a.db.WithContext(ctx).Create(&entry).Error; err != nil {
+		return fmt.Errorf("lifecycle: append note: %w", err)
 	}
 	return nil
 }

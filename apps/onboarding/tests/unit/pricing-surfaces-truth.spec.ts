@@ -150,3 +150,46 @@ test("no pricing surface still sells custom code injection (#544)", () => {
     }
   }
 });
+
+/**
+ * #838. Pro was sold as `SSO (SAML / OIDC)` on all three surfaces. OIDC is
+ * real and self-serve since #839; SAML is not, and does not merely lack an
+ * implementation — `loginSAML` and its callback both answer **501**
+ * deliberately (`internal/handlers/public/sso_login.go:265,303`).
+ *
+ * #839 narrowed the two TypeScript surfaces to OpenID Connect and left
+ * `llms-full.txt` still advertising SAML. That is the worst surface to miss
+ * it on: it is the machine-readable pricing document, so the corrected claim
+ * reached humans while the stale one kept reaching every agent and crawler,
+ * the audience least placed to notice the contradiction.
+ *
+ * The positive half of this test matters as much as the negative one. Deleting
+ * the bullet outright would also pass a SAML check while quietly dropping a
+ * capability Pro genuinely has — understating is drift too, just in the
+ * direction nobody complains about.
+ */
+test("pricing surfaces sell the SSO protocol that works, and only that one (#838)", () => {
+  const surfaces: ReadonlyArray<[string, string]> = [
+    ["onboarding Pricing.tsx", copyOnly(read("apps/onboarding/components/marketing/Pricing.tsx"))],
+    ["admin lib/copy/pricing.ts", copyOnly(read("apps/admin/lib/copy/pricing.ts"))],
+    ["llms-full.txt", read("apps/onboarding/public/llms-full.txt")],
+  ];
+
+  for (const [name, src] of surfaces) {
+    expect(
+      src,
+      `${name} advertises SAML. Both SSO routes answer 501 for it by design ` +
+        `(#820, #838) and there is no SP, so this sells a protocol the product ` +
+        `refuses. Narrow it to OpenID Connect, which is real and configurable ` +
+        `at Settings -> Single sign-on.`,
+    ).not.toMatch(/SAML/i);
+
+    expect(
+      src,
+      `${name} mentions SSO without naming OpenID Connect. Pro really does ` +
+        `include self-serve OIDC (#839) — a bullet that says only "SSO", or no ` +
+        `bullet at all, understates the plan and leaves the next editor guessing ` +
+        `which protocols are meant. Name the one that works.`,
+    ).toMatch(/OpenID Connect/i);
+  }
+});

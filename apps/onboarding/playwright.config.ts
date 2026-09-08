@@ -3,11 +3,11 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * Playwright config for the onboarding e2e suite.
  *
- * Assumes the local stack (`make dev`) is already up — Postgres,
- * platform-api, auth-bff, firebase auth emulator, openfga, and the
- * onboarding Next.js dev server on :4201. The suite never spawns these
- * itself; spawning a full Go/Postgres stack from inside Playwright would
- * couple two unrelated lifecycles and make CI failures harder to debug.
+ * Assumes the local stack (`make dev`) is already up — Postgres, OpenFGA,
+ * platform-api, and the onboarding Next.js server on :4201. The suite
+ * never spawns these itself; spawning a full Go/Postgres stack from inside
+ * Playwright would couple two unrelated lifecycles and make CI failures
+ * harder to debug.
  *
  * Override `BASE_URL` and `API_URL` from the environment if running
  * against a different host (e.g. inside the docker-compose network in

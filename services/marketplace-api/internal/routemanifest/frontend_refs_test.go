@@ -1,0 +1,293 @@
+package routemanifest_test
+
+import (
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/mark8ly/marketplace-api/internal/routemanifest"
+)
+
+// ---------------------------------------------------------------------------
+// Why this file replaced an assertion that /internal is out of scope
+//
+// The original brief for #834 said no frontend references /internal, and
+// asked for an assertion that no manifest entry begins with it. That claim
+// was false, and the way it failed is the reason this file works the way it
+// does: the check behind it grepped apps/admin/{lib,app} and
+// apps/storefront/{lib,app}, but middleware.ts sits at the app ROOT, outside
+// all four — so two of the three real callers were unreachable by
+// construction, and the third was pushed out of a `head -5` window by
+// comment-only hits.
+//
+// An assertion that the scope is correct cannot catch a scope that is wrong.
+// So this asserts the opposite direction: every /internal path apps/* points
+// at marketplace-api MUST be in the manifest. The references are DERIVED from
+// source, never hand-listed, so a new frontend call to an uncovered internal
+// route fails here instead of quietly widening the gap.
+// ---------------------------------------------------------------------------
+
+// appsDir is the frontend workspace root, resolved from this test file rather
+// than the working directory. Walking from here — not from a hand-written
+// list of subdirectories — is what makes app-root files like middleware.ts
+// reachable.
+func appsDir(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	require.True(t, ok, "runtime.Caller(0) failed to report this test file's own path")
+	return filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "..", "apps")
+}
+
+// skipDirs are build outputs and vendored trees. Everything else under apps/
+// is scanned, at every depth.
+var skipDirs = map[string]bool{
+	"node_modules": true, ".next": true, "dist": true, "build": true,
+	"coverage": true, ".turbo": true, "playwright-report": true, "test-results": true,
+}
+
+var sourceExts = map[string]bool{".ts": true, ".tsx": true, ".js": true, ".jsx": true, ".mjs": true}
+
+// baseIdentDecl finds an identifier bound to marketplace-api's base URL, e.g.
+//
+//	const MARKETPLACE_API_URL =
+//	  process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
+//
+// The declaration wraps across lines in most apps/* files, hence (?s) and the
+// bounded gap. Matching the NAME is what makes this work across files: an
+// identifier imported from a lib module keeps its name at the use site.
+var baseIdentDecl = regexp.MustCompile(`(?s)(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=[^;]{0,200}?process\.env\.(?:NEXT_PUBLIC_)?MARKETPLACE_API_URL`)
+
+// interpolation matches a `${...}` substitution with no nested braces, which
+// covers every reference in apps/* today (`${encodeURIComponent(slug)}`,
+// `${tenantID}`). A nested-brace substitution would simply not match, and the
+// reference would be reported as unparsed rather than silently skipped — see
+// the trailing check in extractInternalRefs.
+var interpolation = regexp.MustCompile(`\$\{[^{}]*\}`)
+
+// internalRef is one frontend call site pointing at marketplace-api /internal.
+type internalRef struct {
+	File string // repo-relative
+	Line int
+	Raw  string // the path exactly as written
+	Path string // normalised: `${...}` -> ":param", query string dropped
+}
+
+// extractInternalRefs walks the whole of apps/ and returns every reference to
+// a marketplace-api /internal path.
+//
+// Two passes. The first collects the identifiers bound to marketplace-api's
+// base URL anywhere under apps/; the second finds `${THAT_IDENT}/internal/...`
+// anywhere under apps/. Splitting them is what lets a module define the base
+// and a different file use it.
+//
+// Only marketplace-api bases count. apps/* also calls PLATFORM_API_URL
+// /internal routes — a different service, whose routes this manifest does not
+// and should not describe.
+func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesScanned int, bases []string) {
+	t.Helper()
+
+	type scanned struct {
+		rel   string
+		lines []string
+	}
+	var files []scanned
+	baseSet := map[string]bool{
+		// The env var names themselves, for a direct `process.env.X` use.
+		"MARKETPLACE_API_URL":             true,
+		"NEXT_PUBLIC_MARKETPLACE_API_URL": true,
+	}
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if skipDirs[d.Name()] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !sourceExts[strings.ToLower(filepath.Ext(d.Name()))] {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(filepath.Dir(root), path)
+		if err != nil {
+			rel = path
+		}
+		for _, m := range baseIdentDecl.FindAllStringSubmatch(string(raw), -1) {
+			baseSet[m[1]] = true
+		}
+		files = append(files, scanned{rel: rel, lines: strings.Split(string(raw), "\n")})
+		return nil
+	})
+	require.NoError(t, err, "walking %s", root)
+
+	for b := range baseSet {
+		bases = append(bases, b)
+	}
+	sort.Strings(bases)
+
+	for _, f := range files {
+		for i, line := range f.lines {
+			for _, base := range bases {
+				needle := "${" + base + "}/internal"
+				idx := strings.Index(line, needle)
+				if idx < 0 {
+					continue
+				}
+				raw := pathFrom(line[idx+len(needle)-len("/internal"):])
+				refs = append(refs, internalRef{
+					File: f.rel, Line: i + 1, Raw: raw, Path: normaliseRefPath(raw),
+				})
+			}
+		}
+	}
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].File != refs[j].File {
+			return refs[i].File < refs[j].File
+		}
+		return refs[i].Line < refs[j].Line
+	})
+	return refs, len(files), bases
+}
+
+// pathFrom reads the URL path out of the remainder of a template literal,
+// stopping at the closing backtick/quote or at whitespace.
+func pathFrom(rest string) string {
+	end := strings.IndexAny(rest, "`\"'\n\t ,)")
+	if end >= 0 {
+		rest = rest[:end]
+	}
+	return rest
+}
+
+// normaliseRefPath turns a written path into a gin-comparable one: each
+// `${...}` becomes a single ":param" segment, and any query string is dropped.
+func normaliseRefPath(raw string) string {
+	p := interpolation.ReplaceAllString(raw, ":param")
+	if i := strings.IndexAny(p, "?#"); i >= 0 {
+		p = p[:i]
+	}
+	return strings.TrimSuffix(p, "/")
+}
+
+// matchesTemplate reports whether a normalised reference path is served by a
+// gin route template. Segment counts must match; a gin `:name` matches any
+// single segment, and a reference's own ":param" matches any gin segment
+// because an interpolation can produce a literal.
+func matchesTemplate(ref, template string) bool {
+	r := strings.Split(strings.TrimPrefix(ref, "/"), "/")
+	g := strings.Split(strings.TrimPrefix(template, "/"), "/")
+	if len(r) != len(g) {
+		return false
+	}
+	for i := range r {
+		if strings.HasPrefix(g[i], ":") || strings.HasPrefix(g[i], "*") || r[i] == ":param" {
+			continue
+		}
+		if r[i] != g[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestFrontendInternalRoutesAreDeclared is the replacement for the assertion
+// that no manifest entry begins /internal. That one asserted the scope was
+// right; this one tests whether it is.
+//
+// Every /internal path apps/* calls on marketplace-api must be declared in
+// route-manifest.json. A new frontend call to an internal route this manifest
+// does not cover fails HERE, naming the file and line, rather than silently
+// widening the gap the original brief opened.
+//
+// Matching is on PATH, ignoring method: the question is whether the route
+// exists at all. Deleting a route removes every method on it, so the
+// deletion this guards against still fails.
+func TestFrontendInternalRoutesAreDeclared(t *testing.T) {
+	root := appsDir(t)
+	refs, filesScanned, bases := extractInternalRefs(t, root)
+
+	// Vacuous-pass guards. A walk that silently reaches nothing — a moved
+	// apps/ directory, an over-broad skipDirs entry, a renamed base
+	// identifier — would otherwise report zero references and pass, which is
+	// precisely how the original scope claim came to be believed.
+	require.Greaterf(t, filesScanned, 100,
+		"scanned only %d source files under %s — the walk is not reaching apps/, "+
+			"and this test would pass while checking nothing", filesScanned, root)
+	require.Greaterf(t, len(bases), 2,
+		"found only the two built-in base identifiers %v — baseIdentDecl matched no "+
+			"declaration in any apps/* file, so no reference can be found and this "+
+			"test would pass vacuously", bases)
+	require.NotEmpty(t, refs,
+		"found no marketplace-api /internal references in apps/ at all. Three existed "+
+			"when this test was written (apps/admin/middleware.ts, "+
+			"apps/admin/lib/auth/cross-domain-handoff.ts, apps/storefront/middleware.ts). "+
+			"If they were genuinely all removed, delete the internal surface from "+
+			"buildSurfaces too; otherwise the extractor has stopped matching.")
+
+	// The specific regression guard for how the original claim failed: a
+	// reference in a file at an APP ROOT, outside lib/ and app/. Both
+	// middleware.ts callers live there. If the walk ever stops covering app
+	// roots, this fails instead of quietly shrinking the reference set.
+	foundAtAppRoot := false
+	for _, r := range refs {
+		// "apps/<app>/<file>" — three segments means directly in the app root.
+		if len(strings.Split(filepath.ToSlash(r.File), "/")) == 3 {
+			foundAtAppRoot = true
+			break
+		}
+	}
+	require.Truef(t, foundAtAppRoot,
+		"no reference was found in a file at an app ROOT (apps/<app>/<file>), only in "+
+			"subdirectories. That is exactly the shape of the search bug this test "+
+			"replaced — middleware.ts lives at the app root, outside lib/ and app/. "+
+			"References found: %v", refs)
+
+	doc, err := routemanifest.Load(manifestPath(t))
+	require.NoError(t, err)
+
+	var declared []string
+	for _, s := range doc.Surfaces {
+		for _, route := range s.Routes {
+			_, path, found := strings.Cut(route, " ")
+			require.Truef(t, found, "surface %q has malformed entry %q — expected \"METHOD PATH\"", s.Name, route)
+			declared = append(declared, path)
+		}
+	}
+
+	for _, ref := range refs {
+		require.Containsf(t, ref.Raw, "${", "reference %s:%d (%q) has no interpolation — "+
+			"pathFrom probably truncated it; fix the extractor rather than the manifest",
+			ref.File, ref.Line, ref.Raw)
+
+		matched := false
+		for _, path := range declared {
+			if matchesTemplate(ref.Path, path) {
+				matched = true
+				break
+			}
+		}
+		require.Truef(t, matched,
+			"%s:%d calls marketplace-api %q (normalised %q) and route-manifest.json does "+
+				"not declare it.\n\n"+
+				"A frontend caller of a route this manifest does not cover is a route whose "+
+				"deletion nothing catches — #826's bug shape, and the one it was actually "+
+				"observed in. Either add the registrar that mounts it to buildSurfaces and "+
+				"regenerate (%s), or remove the frontend caller.",
+			ref.File, ref.Line, ref.Raw, ref.Path, routemanifest.UpdateCommand)
+	}
+
+	t.Logf("checked %d marketplace-api /internal reference(s) across %d source files under apps/", len(refs), filesScanned)
+}

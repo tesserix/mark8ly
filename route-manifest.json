@@ -199,6 +199,14 @@
       ]
     },
     {
+      "name": "internal-store-active-domain",
+      "registrar": "internalsvc.NewStoreActiveDomainHandler.Register",
+      "mount": "/internal",
+      "routes": [
+        "GET /internal/store-active-domain/:slug"
+      ]
+    },
+    {
       "name": "mobile-admin",
       "registrar": "admin.RegisterAdminMobile",
       "mount": "/api/v1",

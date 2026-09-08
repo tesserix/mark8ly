@@ -9,7 +9,11 @@
  * middleware rewrites that cookie from the `CF-IPCountry` request header
  * on every request, so the header is the only input a test can drive.
  *
- * Requires: admin dev server on ADMIN_BASE_URL (default :4202).
+ * Requires: admin dev server on ADMIN_URL (default :4202). Note the name:
+ * navigation goes through helpers.ts, which reads ADMIN_URL — NOT the
+ * ADMIN_BASE_URL that playwright.config.ts's `baseURL` reads. Every goto
+ * here is an absolute URL built from ADMIN_URL, so `baseURL` is unused by
+ * this spec and setting ADMIN_BASE_URL alone moves nothing.
  */
 
 import { expect, test } from "@playwright/test";
@@ -78,43 +82,56 @@ test.describe("public /pricing page", () => {
     await ctx.close();
   });
 
-  test("plan CTAs link to the correct signup URLs", async ({ browser }) => {
+  test("plan CTAs render the hrefs currently shipped — all three 404, see mark8ly#834", async ({
+    browser,
+  }) => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
 
     await page.goto(PRICING_URL);
 
-    // Locate by href rather than CTA label text. The copy in
-    // apps/admin/lib/copy/pricing.ts has drifted from this spec's original
-    // label guesses ("Get started" / "Get Studio"), and Starter and Studio
-    // now share the identical label "Start free trial" — so no label
-    // locator can tell those two CTAs apart at all.
+    // Select each CTA by the PLAN IT BELONGS TO, then assert its href.
     //
-    // This asserts what the page renders TODAY, which is not the same as
-    // asserting the links work. Both hrefs 404 as of this commit:
+    // Not by label: the copy in apps/admin/lib/copy/pricing.ts has drifted
+    // from this spec's original guesses ("Get started" / "Get Studio"), and
+    // Starter and Studio now share the identical label "Start free trial".
+    //
+    // Not by href either, which is what this test used to do. Selecting
+    // `a[href="/signup?plan=starter"]` and then asserting that same href is
+    // a tautology: it can only hold or throw in the locator, never fail an
+    // expect, and it would stay green if Starter's and Studio's hrefs were
+    // swapped — the plan each link belongs to was never checked.
+    //
+    // apps/admin/app/pricing/PricingClient.tsx:90-100 renders every plan as
+    // `<article aria-label="{name} plan">` with exactly one link inside, so
+    // the article IS the per-plan handle. (The White-label App add-on and
+    // the Pro contact CTAs are `<section>`s, role=region — they cannot
+    // match `role: "article"`.)
+    //
+    // These assert what the page renders TODAY, which is not the same as
+    // asserting the links work. All three hrefs 404 as of this commit:
     //   - there is no /signup route anywhere under apps/admin/app;
     //   - "(admin)" is a Next route GROUP, so pro-contact really lives at
     //     /settings/billing/pro-contact — the /admin prefix is not a path.
     // That is a product bug in lib/copy/pricing.ts, reported against
     // mark8ly#834; fix the hrefs there and update these three strings
-    // together.
-    const starterHref = await page
-      .locator('a[href="/signup?plan=starter"]')
-      .first()
-      .getAttribute("href");
-    expect(starterHref).toBe("/signup?plan=starter");
+    // together. Until then this test's NAME says 404 so the CI log does
+    // not read as an endorsement of the URLs.
+    const planCta = (plan: RegExp) =>
+      page.getByRole("article", { name: plan }).getByRole("link");
 
-    const studioHref = await page
-      .locator('a[href="/signup?plan=studio"]')
-      .first()
-      .getAttribute("href");
-    expect(studioHref).toBe("/signup?plan=studio");
-
-    const proHref = await page
-      .locator('a[href="/admin/settings/billing/pro-contact"]')
-      .first()
-      .getAttribute("href");
-    expect(proHref).toBe("/admin/settings/billing/pro-contact");
+    await expect(planCta(/starter plan/i)).toHaveAttribute(
+      "href",
+      "/signup?plan=starter",
+    );
+    await expect(planCta(/studio plan/i)).toHaveAttribute(
+      "href",
+      "/signup?plan=studio",
+    );
+    await expect(planCta(/pro plan/i)).toHaveAttribute(
+      "href",
+      "/admin/settings/billing/pro-contact",
+    );
 
     await ctx.close();
   });

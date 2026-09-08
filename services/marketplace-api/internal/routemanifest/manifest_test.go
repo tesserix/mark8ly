@@ -81,31 +81,31 @@ func buildSurfaces(t *testing.T) []routemanifest.Surface {
 			Name:      "admin",
 			Registrar: "admin.RegisterAdmin",
 			Mount:     apiPrefix,
-			Routes:    collect(t, "admin", func(g *gin.RouterGroup) { admin.RegisterAdmin(g, adminDeps(t)) }, apiPrefix, excludeInternal),
+			Routes:    collect(t, func(g *gin.RouterGroup) { admin.RegisterAdmin(g, adminDeps(t)) }, apiPrefix, excludeInternal),
 		},
 		{
 			Name:      "mobile-admin",
 			Registrar: "admin.RegisterAdminMobile",
 			Mount:     apiPrefix,
-			Routes:    collect(t, "mobile-admin", func(g *gin.RouterGroup) { admin.RegisterAdminMobile(g, adminMobileDeps(t)) }, apiPrefix, excludeInternal),
+			Routes:    collect(t, func(g *gin.RouterGroup) { admin.RegisterAdminMobile(g, adminMobileDeps(t)) }, apiPrefix, excludeInternal),
 		},
 		{
 			Name:      "storefront",
 			Registrar: "storefront.RegisterStorefront",
 			Mount:     apiPrefix,
-			Routes:    collect(t, "storefront", func(g *gin.RouterGroup) { storefront.RegisterStorefront(g, storefrontDeps(t)) }, apiPrefix, excludeInternal),
+			Routes:    collect(t, func(g *gin.RouterGroup) { storefront.RegisterStorefront(g, storefrontDeps(t)) }, apiPrefix, excludeInternal),
 		},
 		{
 			Name:      "public",
 			Registrar: "public.RegisterPublic",
 			Mount:     apiPrefix,
-			Routes:    collect(t, "public", func(g *gin.RouterGroup) { public.RegisterPublic(g, publicDeps(t)) }, apiPrefix, excludeInternal),
+			Routes:    collect(t, func(g *gin.RouterGroup) { public.RegisterPublic(g, publicDeps(t)) }, apiPrefix, excludeInternal),
 		},
 		{
 			Name:      "platform",
 			Registrar: "platformadmin.Register",
 			Mount:     platformadmin.MountPrefix,
-			Routes: collect(t, "platform", func(g *gin.RouterGroup) {
+			Routes: collect(t, func(g *gin.RouterGroup) {
 				platformadmin.Register(g, platformDeps(t))
 			}, platformadmin.MountPrefix, excludeInternal),
 		},
@@ -130,7 +130,7 @@ func buildSurfaces(t *testing.T) []routemanifest.Surface {
 			Name:      "internal-store-active-domain",
 			Registrar: "internalsvc.NewStoreActiveDomainHandler.Register",
 			Mount:     internalMount,
-			Routes: collect(t, "internal-store-active-domain", func(g *gin.RouterGroup) {
+			Routes: collect(t, func(g *gin.RouterGroup) {
 				internalsvc.NewStoreActiveDomainHandler(&gorm.DB{}).
 					Register(g, "route-manifest-unused-secret")
 			}, internalMount, keepInternal),
@@ -172,7 +172,7 @@ const (
 // an empty surface) and asserting against it (a surface empty on BOTH sides
 // is seeing nothing). Everything else is a route diff, and gets a route
 // diff's message.
-func collect(t *testing.T, name string, register func(*gin.RouterGroup), mount string, internal internalPolicy) []string {
+func collect(t *testing.T, register func(*gin.RouterGroup), mount string, internal internalPolicy) []string {
 	t.Helper()
 
 	engine := gin.New()
@@ -186,7 +186,6 @@ func collect(t *testing.T, name string, register func(*gin.RouterGroup), mount s
 		out = append(out, r.Method+" "+r.Path)
 	}
 	sort.Strings(out)
-	_ = name // named for the caller's benefit; emptiness is judged by the caller
 	return out
 }
 
@@ -302,9 +301,160 @@ func TestRouteManifestMatchesMountedRoutes(t *testing.T) {
 	}
 }
 
-// TestMainMountsExactlyTheseSurfaces answers the one question gin cannot:
-// whether cmd/marketplace-api/main.go actually mounts the registrars this
-// package builds.
+// mountsOutsideManifest are the registrars cmd/marketplace-api/main.go mounts
+// on a router group that this manifest deliberately does NOT describe. Every
+// one must earn its place with a reason, and a stale entry — one naming a
+// mount that no longer exists — fails just as loudly as an unclassified
+// mount, exactly as route_parity_test.go treats its exemptions.
+//
+// This map is what makes TestMainMountsEveryFrontendFacingSurface
+// bidirectional. Without it the test could only check that surfaces in
+// buildSurfaces are mounted, never that everything mounted is accounted for
+// — and a whole surface could be dropped from buildSurfaces, regenerated
+// away, and leave the suite green with 190 admin routes unguarded.
+var mountsOutsideManifest = map[string]string{
+	"brandingSeeder.Register": "/api/v1/test — e2e/visual seeding, gated by MARKETPLACE_API_ENABLE_TEST_ROUTES and never enabled in a deployed environment, so no frontend can call it",
+
+	"emailevents.NewHandler.Register": "Resend delivery webhooks, mounted at the root group. The caller is Resend and authenticates with the svix-signature over the raw body — not a browser",
+
+	// The cluster-internal surface. One registrar IS in the manifest
+	// (internalsvc.NewStoreActiveDomainHandler.Register) because three
+	// apps/* files fetch its route; the rest have no frontend caller.
+	// TestFrontendInternalRoutesAreDeclared is what will say so if that
+	// changes — a new frontend call to any of these fails there by name.
+	"vendorHandler.RegisterRoutes":                             "/internal vendor sync — called by platform-api at onboarding completion with a shared secret",
+	"templateHandler.Register":                                 "/internal email-template refresh + test-send — operator/cron surface",
+	"internalDomainsHandler.Register":                          "/internal domain re-verify + cert refresh — super-admin actions via the console's own backend, not the browser",
+	"stores.NewInternalHandler.RegisterRoutes":                 "/internal stores mirror — written by platform-api at onboarding completion",
+	"subscription.NewInternalHandler.WithPromo.RegisterRoutes": "/internal signup subscription + promo callback — called by onboarding's backend with MARKETPLACE_INTERNAL_AUTH_SECRET",
+	"ticketInternalHandler.RegisterRoutes":                     "/internal ticket-from-conversation — posted by slm-router on AI-to-human handoff",
+	"migrationHandler.RegisterInternalRoutes":                  "/internal CSM migration fast-path review — operator action through the console backend",
+	"internalsvc.NewAuditIngestHandler.Register":               "/internal audit ingest — auth-bff and platform-api post login/logout and staff invite events",
+	"internalsvc.NewStorefrontStatusHandler.Register":          "/internal storefront status — read at the edge by the storefront-gate Cloudflare Worker",
+	"internalsvc.NewActiveDomainsHandler.Register":             "/internal active domains list — read by the OpenPanel CORS reconciler",
+	"internalsvc.NewTenantPurgeHandler.Register":               "/internal tenant hard-delete — posted by platform-api's outbox drainer",
+}
+
+// groupMount describes one registrar main.go mounts on a router group.
+type groupMount struct {
+	Registrar string // canonical dotted name, e.g. "admin.RegisterAdmin"
+	Prefix    string // the group prefix as written, for the failure message
+}
+
+// findGroupMounts returns every call in main.go that takes a `*.Group(...)`
+// result as an argument — the structural signature of mounting a route
+// subtree. Keyed by canonical registrar name.
+//
+// Two shapes of call site are NOT found by this, and both are deliberate
+// rather than overlooked:
+//
+//   - direct route registrations on the engine (r.POST("/webhooks/
+//     stripe-billing", …), r.POST("/pubsub/merchant-push", …)) and
+//     healthHandler.Register(r), which take the engine, not a group. None is
+//     a frontend-facing subtree: the callers are Stripe, Pub/Sub and the
+//     kubelet.
+//   - a registrar reached through a local helper rather than named in
+//     main.go. Nothing does that today.
+//
+// A new frontend-facing subtree mounted in either shape would be missed
+// here. It would still be caught the moment a frontend called it, by
+// TestFrontendInternalRoutesAreDeclared for /internal or by a
+// declared-but-not-mounted diff for anything already in the manifest.
+func findGroupMounts(t *testing.T, mainPath string) map[string]groupMount {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, mainPath, nil, 0)
+	require.NoError(t, err)
+
+	out := map[string]groupMount{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		name, ok := selectorChainName(call.Fun)
+		if !ok {
+			return true
+		}
+		for _, arg := range call.Args {
+			prefix, ok := groupPrefix(arg)
+			if !ok {
+				continue
+			}
+			// Recorded once per registrar. main.go mounts most of these
+			// twice — once on the mode.Both engine and once on the
+			// mode.Admin/Storefront engine — and the set is what matters.
+			out[name] = groupMount{Registrar: name, Prefix: prefix}
+		}
+		return true
+	})
+	return out
+}
+
+// selectorChainName renders a call target as a dotted name, walking down
+// through constructor calls so a registrar that is a method on a constructed
+// value gets a stable, checkable name rather than being silently exempt:
+//
+//	admin.RegisterAdmin                                       -> "admin.RegisterAdmin"
+//	internalsvc.NewStoreActiveDomainHandler(db).Register      -> "internalsvc.NewStoreActiveDomainHandler.Register"
+//	subscription.NewInternalHandler(x).WithPromo(y).Register  -> "subscription.NewInternalHandler.WithPromo.Register"
+//	someLocalVar.Register                                     -> "someLocalVar.Register"
+//
+// The last form is a local variable, not a package. The AST cannot resolve
+// its type without type-checking, and the variable name is stable enough to
+// key an exception on.
+func selectorChainName(fn ast.Expr) (string, bool) {
+	sel, ok := fn.(*ast.SelectorExpr)
+	if !ok {
+		return "", false
+	}
+	switch recv := sel.X.(type) {
+	case *ast.Ident:
+		return recv.Name + "." + sel.Sel.Name, true
+	case *ast.CallExpr:
+		inner, ok := selectorChainName(recv.Fun)
+		if !ok {
+			return "", false
+		}
+		return inner + "." + sel.Sel.Name, true
+	}
+	return "", false
+}
+
+// groupPrefix reports the prefix of a `*.Group(...)` argument. ok is false
+// when the argument is not a Group call at all.
+//
+// A prefix this cannot read as a string returns "<unresolved>", which
+// TestMainMountsEveryFrontendFacingSurface treats as frontend-facing —
+// failing safe, because an unreadable prefix must not become an exemption.
+// platformadmin.MountPrefix is the one that lands here today.
+func groupPrefix(arg ast.Expr) (string, bool) {
+	call, ok := arg.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Group" {
+		return "", false
+	}
+	if len(call.Args) == 0 {
+		return "", true // g.Group() with no prefix — root
+	}
+	switch a := call.Args[0].(type) {
+	case *ast.BasicLit:
+		// Strips the surrounding quotes of an interpreted or raw string
+		// literal. cutset form is deliberate: only the delimiters can appear
+		// at either end of a Go string literal token.
+		return strings.Trim(a.Value, "\"`"), true
+	}
+	return "<unresolved>", true
+}
+
+// TestMainMountsEveryFrontendFacingSurface answers the one question gin
+// cannot: whether cmd/marketplace-api/main.go actually mounts the registrars
+// this package builds — and, in the other direction, whether every registrar
+// main.go mounts is accounted for.
 //
 // Parsing source is forbidden for "which routes does a subtree register" —
 // gin answers that, above. It is the ONLY way to answer "does main.go mount
@@ -313,61 +463,92 @@ func TestRouteManifestMatchesMountedRoutes(t *testing.T) {
 // contradiction; wiring_test.go in cmd/marketplace-api does the same for
 // platformadmin.Deps field parity.
 //
-// storefront.RegisterMobileStorefront is the reason this test exists. It is
-// defined, exported and complete, and main.go never calls it — see its doc
-// comment: its only client shipped and was deleted in #792, and it has no
-// customer bearer verifier left. Declaring its routes would fill the
-// manifest with an entire subtree the service does not serve, which is the
-// over-declaring failure: a frontend guard would then bless calls that 404.
-func TestMainMountsExactlyTheseSurfaces(t *testing.T) {
+// # Why it is bidirectional, and why it was renamed
+//
+// It used to be called ...MountsExactlyTheseSurfaces while only checking one
+// direction: that every surface in buildSurfaces is mounted. Deleting the
+// six-line `admin` entry from buildSurfaces therefore regenerated cleanly
+// (exit 0), dropped 190 routes from the manifest, and left the whole suite
+// green — every route apps/admin calls, unguarded, with nothing red. The
+// name promised what the test did not do.
+//
+// So the check now runs both ways. Every mounted registrar must be EITHER in
+// buildSurfaces OR in mountsOutsideManifest with a reason; anything else
+// fails. That does not lean on a prefix heuristic someone could accidentally
+// satisfy — a new subtree has to be classified by a human, and dropping an
+// existing one fails immediately.
+//
+// storefront.RegisterMobileStorefront keeps its own named assertion. The
+// generic check would now catch it too, but as an unclassified mount rather
+// than by name; it is defined, exported and complete, main.go never calls it
+// (#792 deleted its only client and its bearer verifier), and declaring its
+// routes would fill the manifest with a subtree the service does not serve.
+func TestMainMountsEveryFrontendFacingSurface(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	require.True(t, ok, "runtime.Caller(0) failed to report this test file's own path")
 	mainPath := filepath.Join(filepath.Dir(thisFile), "..", "..", "cmd", "marketplace-api", "main.go")
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, mainPath, nil, 0)
-	require.NoError(t, err)
+	mounts := findGroupMounts(t, mainPath)
+	require.Greaterf(t, len(mounts), 10,
+		"found only %d group mounts in main.go — the AST walk is broken (it found 19 when "+
+			"this test was written), and every assertion below would pass vacuously", len(mounts))
 
-	called := map[string]bool{}
-	ast.Inspect(file, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		switch recv := sel.X.(type) {
-		case *ast.Ident:
-			// pkg.Func(...) — the four package-level registrars.
-			called[recv.Name+"."+sel.Sel.Name] = true
-		case *ast.CallExpr:
-			// pkg.NewThing(...).Method(...) — how the internal surface is
-			// mounted. Recorded as "pkg.NewThing.Method" so a surface whose
-			// registrar is a method on a constructor result is checkable
-			// too, rather than silently exempt from this test.
-			if inner, ok := recv.Fun.(*ast.SelectorExpr); ok {
-				if pkg, ok := inner.X.(*ast.Ident); ok {
-					called[pkg.Name+"."+inner.Sel.Name+"."+sel.Sel.Name] = true
-				}
-			}
-		}
-		return true
-	})
-	require.NotEmpty(t, called, "parsed no calls out of main.go — the AST walk is broken, "+
-		"and both assertions below would pass vacuously")
+	built := buildSurfaces(t)
+	inManifest := map[string]string{} // registrar -> surface name
+	for _, s := range built {
+		inManifest[s.Registrar] = s.Name
+	}
 
-	for _, s := range buildSurfaces(t) {
-		require.Truef(t, called[s.Registrar],
-			"buildSurfaces declares surface %q from %s, but main.go never calls it. Either "+
-				"the mount was removed — in which case the surface must come out of the "+
-				"manifest, not stay in it — or the registrar was renamed.",
+	// Direction 1: everything buildSurfaces claims is actually mounted.
+	for _, s := range built {
+		_, mounted := mounts[s.Registrar]
+		require.Truef(t, mounted,
+			"buildSurfaces declares surface %q from %s, but main.go does not mount it on any "+
+				"router group. Either the mount was removed — in which case the surface must "+
+				"come out of the manifest, not stay in it — or the registrar was renamed.",
 			s.Name, s.Registrar)
 	}
 
-	require.Falsef(t, called["storefront.RegisterMobileStorefront"],
-		"main.go now calls storefront.RegisterMobileStorefront, so /api/v1/mobile/storefront "+
+	// Direction 2: everything mounted is accounted for. This is the direction
+	// whose absence let a whole surface be dropped silently.
+	for name, m := range mounts {
+		if _, ok := inManifest[name]; ok {
+			continue
+		}
+		if _, ok := mountsOutsideManifest[name]; ok {
+			continue
+		}
+		t.Errorf("main.go mounts %s on group %q, and it is neither in buildSurfaces nor in "+
+			"mountsOutsideManifest.\n\n"+
+			"If it serves a frontend, add it to buildSurfaces and regenerate the manifest "+
+			"(%s) — a subtree outside the manifest is a subtree whose deletion nothing "+
+			"catches. If it does not, add it to mountsOutsideManifest with the reason, so "+
+			"the exclusion is a decision on the record rather than a gap.",
+			name, m.Prefix, routemanifest.UpdateCommand)
+	}
+
+	// A stale exemption hides whatever replaced it.
+	for name := range mountsOutsideManifest {
+		_, mounted := mounts[name]
+		require.Truef(t, mounted,
+			"mountsOutsideManifest exempts %s, which main.go no longer mounts on any router "+
+				"group. Remove the entry — an exemption for a mount that does not exist "+
+				"hides whatever took its place.", name)
+	}
+
+	// And no registrar may be in both lists, which would make the exemption
+	// look like the reason it is out of the manifest when it is not.
+	for name := range mountsOutsideManifest {
+		surface, ok := inManifest[name]
+		require.Falsef(t, ok,
+			"%s is in BOTH buildSurfaces (as surface %q) and mountsOutsideManifest — one of "+
+				"the two is wrong, and whichever it is, the exemption is misleading",
+			name, surface)
+	}
+
+	_, wired := mounts["storefront.RegisterMobileStorefront"]
+	require.Falsef(t, wired,
+		"main.go now mounts storefront.RegisterMobileStorefront, so /api/v1/mobile/storefront "+
 			"is a real surface. Add it to buildSurfaces and regenerate the manifest (%s), or "+
 			"the whole mobile storefront subtree stays outside this guard.",
 		routemanifest.UpdateCommand)

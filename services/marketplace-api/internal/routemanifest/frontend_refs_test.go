@@ -54,6 +54,27 @@ var skipDirs = map[string]bool{
 
 var sourceExts = map[string]bool{".ts": true, ".tsx": true, ".js": true, ".jsx": true, ".mjs": true}
 
+// testFileSuffixes are excluded from the scan. A mocked path in a unit or e2e
+// spec is not a live caller, and treating it as one gets the direction of
+// #826 exactly backwards: the e2e spec that kept the suite green after the
+// arbitrage-appeal endpoint was deleted did so by MOCKING the endpoint that
+// had just gone. Counting that as evidence a route is in use would make this
+// guard agree with the artifact that hid the bug.
+var testFileSuffixes = []string{
+	".test.ts", ".test.tsx", ".test.js", ".test.jsx", ".test.mjs",
+	".spec.ts", ".spec.tsx", ".spec.js", ".spec.jsx", ".spec.mjs",
+}
+
+func isTestFile(name string) bool {
+	lower := strings.ToLower(name)
+	for _, suffix := range testFileSuffixes {
+		if strings.HasSuffix(lower, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 // baseIdentDecl finds an identifier bound to marketplace-api's base URL, e.g.
 //
 //	const MARKETPLACE_API_URL =
@@ -112,7 +133,7 @@ func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesSc
 			}
 			return nil
 		}
-		if !sourceExts[strings.ToLower(filepath.Ext(d.Name()))] {
+		if !sourceExts[strings.ToLower(filepath.Ext(d.Name()))] || isTestFile(d.Name()) {
 			return nil
 		}
 		raw, err := os.ReadFile(path)
@@ -139,6 +160,20 @@ func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesSc
 	for _, f := range files {
 		for i, line := range f.lines {
 			for _, base := range bases {
+				// The search shape, and its one real blind spot.
+				//
+				// This finds a base URL interpolated IMMEDIATELY before the
+				// path — the shape every apps/* caller uses today. It does
+				// NOT find a path passed through a wrapper, e.g.
+				//
+				//	marketplaceInternalFetch(`/internal/store-active-domain/${slug}`)
+				//
+				// where the base is applied inside the helper. Resolving
+				// that needs call-graph analysis of TypeScript, which is a
+				// different tool from a Go test. Nothing in apps/* does it
+				// today; the day a helper like that appears, every caller
+				// behind it becomes invisible here, and this comment is the
+				// warning.
 				needle := "${" + base + "}/internal"
 				idx := strings.Index(line, needle)
 				if idx < 0 {
@@ -221,25 +256,88 @@ func trimQuery(p string) string {
 	return strings.TrimSuffix(p, "/")
 }
 
+// matchOutcome is why a reference path did or did not resolve to a gin route
+// template. The middle case is the point of the type.
+type matchOutcome int
+
+const (
+	// matchNone: the paths genuinely describe different routes.
+	matchNone matchOutcome = iota
+	// matchExact: every segment lines up, with gin's own :name segments
+	// absorbing whatever the frontend interpolates into them.
+	matchExact
+	// matchUnresolvable: the reference interpolates a segment where the
+	// route template has a LITERAL, so no static comparison can say whether
+	// this reference reaches this route. It is not a match, and it is
+	// reported differently, because "we cannot tell" is not "it is fine".
+	matchUnresolvable
+)
+
 // matchesTemplate reports whether a normalised reference path is served by a
-// gin route template. Segment counts must match; a gin `:name` matches any
-// single segment, and a reference's own ":param" matches any gin segment
-// because an interpolation can produce a literal.
-func matchesTemplate(ref, template string) bool {
+// gin route template.
+//
+// Only gin's OWN :name is a wildcard, and that asymmetry is the whole
+// correctness of this function. The first version also treated the
+// REFERENCE's ":param" as a wildcard against a literal template segment, so
+// any interpolated non-final segment matched any declared route of the same
+// length. A review sabotage added
+// fetch(`${MARKETPLACE_API_URL}/internal/${k}/${id}`) — a route that exists
+// nowhere in this service — and the guard PASSED: it normalised to
+// /internal/:param/:param and matched /internal/store-active-domain/:slug
+// because segment 2's literal was compared against the reference's wildcard.
+// That is the unsafe direction. A base-URL misattribution errs toward a
+// false failure; this errs toward blessing a call to a route that does not
+// exist, which is precisely what this instrument is for.
+//
+// Multi-segment catch-alls (gin's *name) are rejected up front by
+// requireNoCatchAllRoutes rather than half-handled here — the equal-segment
+// -count rule below is wrong for them, and none exists in the manifest.
+func matchesTemplate(ref, template string) matchOutcome {
 	r := strings.Split(strings.TrimPrefix(ref, "/"), "/")
 	g := strings.Split(strings.TrimPrefix(template, "/"), "/")
 	if len(r) != len(g) {
-		return false
+		return matchNone
 	}
+
+	outcome := matchExact
 	for i := range r {
-		if strings.HasPrefix(g[i], ":") || strings.HasPrefix(g[i], "*") || r[i] == ":param" {
+		switch {
+		case strings.HasPrefix(g[i], ":"):
+			// gin's own param absorbs any single segment, interpolated or
+			// literal. This is the ONLY wildcard.
 			continue
-		}
-		if r[i] != g[i] {
-			return false
+		case r[i] == paramSegment:
+			// Interpolated against a literal. Cannot be decided statically;
+			// keep scanning so a later mismatching literal still downgrades
+			// this to a plain non-match rather than a reported ambiguity.
+			outcome = matchUnresolvable
+		case r[i] != g[i]:
+			return matchNone
 		}
 	}
-	return true
+	return outcome
+}
+
+// requireNoCatchAllRoutes fails if any declared path uses gin's multi-segment
+// catch-all (*name). matchesTemplate compares segment counts, which is
+// simply wrong for a segment that matches several — /internal/*rest would
+// serve /internal/a/b/c and compare equal to nothing.
+//
+// There is no such route in the manifest today, so this is a deliberate
+// refusal rather than an implementation: made explicit here instead of left
+// as a silently wrong comparison that would surface as a confusing
+// not-declared failure years from now.
+func requireNoCatchAllRoutes(t *testing.T, declared []string) {
+	t.Helper()
+	for _, path := range declared {
+		for _, seg := range strings.Split(path, "/") {
+			require.Falsef(t, strings.HasPrefix(seg, "*"),
+				"route-manifest.json declares %q, which uses gin's multi-segment catch-all "+
+					"(%s). matchesTemplate compares segment counts and cannot reason about "+
+					"it — teach it to, or exclude the route deliberately. Do not leave the "+
+					"comparison silently wrong.", path, seg)
+		}
+	}
 }
 
 // TestFrontendInternalRoutesAreDeclared is the replacement for the assertion
@@ -306,6 +404,8 @@ func TestFrontendInternalRoutesAreDeclared(t *testing.T) {
 		}
 	}
 
+	requireNoCatchAllRoutes(t, declared)
+
 	for _, ref := range refs {
 		// The extractor's own correctness, asserted before its output is
 		// trusted. A half-read path compares against gin templates whose
@@ -325,12 +425,33 @@ func TestFrontendInternalRoutesAreDeclared(t *testing.T) {
 			ref.Path, ref.File, ref.Line)
 
 		matched := false
+		var ambiguous []string
 		for _, path := range declared {
-			if matchesTemplate(ref.Path, path) {
+			switch matchesTemplate(ref.Path, path) {
+			case matchExact:
 				matched = true
+			case matchUnresolvable:
+				ambiguous = append(ambiguous, path)
+			}
+			if matched {
 				break
 			}
 		}
+
+		// Reported separately from a plain non-match, because the fix is
+		// different: an ambiguous reference is not a missing route, it is a
+		// call site this search shape cannot resolve, and blessing it is the
+		// one thing that must not happen.
+		require.Falsef(t, !matched && len(ambiguous) > 0,
+			"%s:%d calls marketplace-api %q (normalised %q). It cannot be resolved "+
+				"statically: it interpolates a segment where the manifest has a literal, so "+
+				"it is UNDECIDABLE whether it reaches %v.\n\n"+
+				"This is not a pass. Either give the call site a literal path segment, or "+
+				"teach this test how to resolve it — do not widen matchesTemplate to treat "+
+				"the reference's own interpolation as a wildcard, which is what previously "+
+				"let a call to a nonexistent route pass.",
+			ref.File, ref.Line, ref.Raw, ref.Path, ambiguous)
+
 		require.Truef(t, matched,
 			"%s:%d calls marketplace-api %q (normalised %q) and route-manifest.json does "+
 				"not declare it.\n\n"+

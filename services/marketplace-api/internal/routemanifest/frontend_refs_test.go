@@ -1,6 +1,7 @@
 package routemanifest_test
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -109,7 +110,7 @@ type internalRef struct {
 // Only marketplace-api bases count. apps/* also calls PLATFORM_API_URL
 // /internal routes — a different service, whose routes this manifest does not
 // and should not describe.
-func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesScanned int, bases []string) {
+func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesScanned int, bases, unparsed []string) {
 	t.Helper()
 
 	type scanned struct {
@@ -159,31 +160,52 @@ func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesSc
 
 	for _, f := range files {
 		for i, line := range f.lines {
+			found := 0
 			for _, base := range bases {
-				// The search shape, and its one real blind spot.
+				// SHAPE 1 — template literal: `${BASE}/internal/...`
 				//
-				// This finds a base URL interpolated IMMEDIATELY before the
-				// path — the shape every apps/* caller uses today. It does
-				// NOT find a path passed through a wrapper, e.g.
-				//
-				//	marketplaceInternalFetch(`/internal/store-active-domain/${slug}`)
-				//
-				// where the base is applied inside the helper. Resolving
-				// that needs call-graph analysis of TypeScript, which is a
-				// different tool from a Go test. Nothing in apps/* does it
-				// today; the day a helper like that appears, every caller
-				// behind it becomes invisible here, and this comment is the
-				// warning.
+				// This is what every apps/* caller uses today, but that fact
+				// is NOT what makes the extractor adequate, and an earlier
+				// version of this comment said it was. A review sabotage
+				// added the concatenation form below and got a green run
+				// while filesScanned proved the file HAD been read: the
+				// shape simply was not recognised. "Nothing uses the other
+				// shape yet" is a fact about the present, not a guard, which
+				// is why shape 2 and the residual check exist.
 				needle := "${" + base + "}/internal"
-				idx := strings.Index(line, needle)
-				if idx < 0 {
+				if idx := strings.Index(line, needle); idx >= 0 {
+					raw, norm, ok := scanRefPath(line[idx+len(needle)-len("/internal"):])
+					refs = append(refs, internalRef{
+						File: f.rel, Line: i + 1, Raw: raw,
+						Path: trimQuery(norm), Parsed: ok,
+					})
+					found++
 					continue
 				}
-				raw, norm, ok := scanRefPath(line[idx+len(needle)-len("/internal"):])
-				refs = append(refs, internalRef{
-					File: f.rel, Line: i + 1, Raw: raw,
-					Path: trimQuery(norm), Parsed: ok,
-				})
+
+				// SHAPE 2 — string concatenation: BASE + "/internal/..." + id
+				if idx, ok := concatStart(line, base); ok {
+					raw, norm, parsed := scanConcatPath(line[idx:])
+					if strings.HasPrefix(norm, "/internal") {
+						refs = append(refs, internalRef{
+							File: f.rel, Line: i + 1, Raw: raw,
+							Path: trimQuery(norm), Parsed: parsed,
+						})
+						found++
+					}
+				}
+			}
+
+			// RESIDUAL CHECK — fail closed on a shape neither scanner read.
+			//
+			// A line that names a marketplace-api base AND an /internal path
+			// and yields no reference is a call site this search cannot see.
+			// Reporting it beats passing quietly: an unrecognised shape is
+			// indistinguishable from "no such caller", which is exactly how
+			// the concatenation hole stayed invisible.
+			if found == 0 && mentionsInternalPath(line, bases) {
+				unparsed = append(unparsed, fmt.Sprintf("%s:%d: %s",
+					f.rel, i+1, strings.TrimSpace(line)))
 			}
 		}
 	}
@@ -193,7 +215,8 @@ func extractInternalRefs(t *testing.T, root string) (refs []internalRef, filesSc
 		}
 		return refs[i].Line < refs[j].Line
 	})
-	return refs, len(files), bases
+	sort.Strings(unparsed)
+	return refs, len(files), bases, unparsed
 }
 
 // scanRefPath reads the URL path out of the remainder of a template literal,
@@ -245,6 +268,128 @@ func scanRefPath(rest string) (raw, normalised string, ok bool) {
 		i++
 	}
 	return rawB.String(), normB.String(), true
+}
+
+// concatStart finds `BASE +` on a line and returns the index of the operand
+// that follows, so scanConcatPath can read the concatenation from there.
+func concatStart(line, base string) (int, bool) {
+	for from := 0; ; {
+		idx := strings.Index(line[from:], base)
+		if idx < 0 {
+			return 0, false
+		}
+		idx += from
+		from = idx + len(base)
+		// Reject a longer identifier that merely contains the base name.
+		if idx > 0 && isIdentByte(line[idx-1]) {
+			continue
+		}
+		if from < len(line) && isIdentByte(line[from]) {
+			continue
+		}
+		rest := strings.TrimLeft(line[from:], " \t")
+		if !strings.HasPrefix(rest, "+") {
+			continue
+		}
+		operand := strings.TrimLeft(rest[1:], " \t")
+		return len(line) - len(operand), true
+	}
+}
+
+func isIdentByte(b byte) bool {
+	return b == '_' || b == '$' ||
+		(b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
+// scanConcatPath reads a `"literal" + expr + "literal"` chain into a path,
+// rendering each non-literal operand as one ":param" segment — the same
+// normalisation scanRefPath applies to a `${...}` substitution, so both
+// shapes compare against gin templates identically.
+//
+// ok is false when the chain contains an unterminated string, so a path the
+// scanner cannot read is reported rather than compared in a mangled form.
+func scanConcatPath(rest string) (raw, normalised string, ok bool) {
+	var rawB, normB strings.Builder
+	i := 0
+	for i < len(rest) {
+		for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t') {
+			i++
+		}
+		if i >= len(rest) {
+			break
+		}
+		switch c := rest[i]; c {
+		case '"', '\'', '`':
+			j := i + 1
+			for ; j < len(rest); j++ {
+				if rest[j] == '\\' {
+					j++
+					continue
+				}
+				if rest[j] == c {
+					break
+				}
+			}
+			if j >= len(rest) {
+				return rawB.String(), normB.String(), false // unterminated
+			}
+			rawB.WriteString(rest[i : j+1])
+			normB.WriteString(rest[i+1 : j])
+			i = j + 1
+		default:
+			// A non-literal operand: read to the next top-level "+" or to
+			// the end of the expression.
+			depth, j := 0, i
+			for ; j < len(rest); j++ {
+				switch rest[j] {
+				case '(', '[', '{':
+					depth++
+				case ')', ']', '}':
+					if depth == 0 {
+						goto operandDone
+					}
+					depth--
+				case '+', ';', ',':
+					if depth == 0 {
+						goto operandDone
+					}
+				}
+			}
+		operandDone:
+			rawB.WriteString(strings.TrimSpace(rest[i:j]))
+			normB.WriteString(paramSegment)
+			i = j
+		}
+		for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t') {
+			i++
+		}
+		if i < len(rest) && rest[i] == '+' {
+			rawB.WriteString(" + ")
+			i++
+			continue
+		}
+		break
+	}
+	return rawB.String(), normB.String(), true
+}
+
+// mentionsInternalPath reports whether a line names one of the marketplace-api
+// base identifiers alongside an /internal path, ignoring comment lines. It is
+// the trigger for the residual check: such a line MUST yield a reference.
+func mentionsInternalPath(line string, bases []string) bool {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "*") || strings.HasPrefix(trimmed, "/*") {
+		return false
+	}
+	if !strings.Contains(line, "/internal") {
+		return false
+	}
+	for _, base := range bases {
+		if strings.Contains(line, base) {
+			return true
+		}
+	}
+	return false
 }
 
 // trimQuery drops a query string or fragment and any trailing slash, so
@@ -354,7 +499,7 @@ func requireNoCatchAllRoutes(t *testing.T, declared []string) {
 // deletion this guards against still fails.
 func TestFrontendInternalRoutesAreDeclared(t *testing.T) {
 	root := appsDir(t)
-	refs, filesScanned, bases := extractInternalRefs(t, root)
+	refs, filesScanned, bases, unparsed := extractInternalRefs(t, root)
 
 	// Vacuous-pass guards. A walk that silently reaches nothing — a moved
 	// apps/ directory, an over-broad skipDirs entry, a renamed base
@@ -403,6 +548,14 @@ func TestFrontendInternalRoutesAreDeclared(t *testing.T) {
 			declared = append(declared, path)
 		}
 	}
+
+	require.Emptyf(t, unparsed,
+		"these apps/* lines name a marketplace-api base URL and an /internal path, but "+
+			"neither the template-literal nor the concatenation scanner could read a route "+
+			"out of them:\n  %s\n\n"+
+			"An unrecognised call shape is indistinguishable from no caller at all, which is "+
+			"how the concatenation hole stayed invisible. Teach the extractor this shape "+
+			"rather than leaving it silent.", strings.Join(unparsed, "\n  "))
 
 	requireNoCatchAllRoutes(t, declared)
 

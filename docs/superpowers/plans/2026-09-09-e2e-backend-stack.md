@@ -35,6 +35,8 @@ This task produces a **measurement recorded in the repo**, not product code.
 
 **Files:**
 - Create: `docs/superpowers/plans/2026-09-09-e2e-baseline.md`
+- Create (untracked, per-developer): `infra/dev/docker-compose.override.yml`
+- Modify: `.gitignore` (add the override path)
 
 **Interfaces:**
 - Consumes: nothing.
@@ -128,9 +130,12 @@ State counts as measured. Do not round, estimate, or write "should be".
 - [ ] **Step 6: Commit**
 
 ```bash
-git add docs/superpowers/plans/2026-09-09-e2e-baseline.md
+git add docs/superpowers/plans/2026-09-09-e2e-baseline.md .gitignore
 git commit -m "docs(e2e): record the measured onboarding suite baseline against a real stack (#858)"
 ```
+
+`infra/dev/docker-compose.override.yml` must NOT be committed — confirm with
+`git status --short infra/dev/` that it shows as ignored, not staged.
 
 ---
 
@@ -139,7 +144,9 @@ git commit -m "docs(e2e): record the measured onboarding suite baseline against 
 `make dev` is broken: it depends on `dev-secrets`, which pulls GIP secrets that nothing reads. This blocks both a developer and CI. Fix it so the Tier-B subset comes up with no GCP access at all.
 
 **Files:**
+- Create: `apps/onboarding/tests/unit/dev-stack-config.spec.ts`
 - Modify: `infra/dev/load-secrets.sh`
+- Modify: `apps/onboarding/playwright.config.ts:1-14` (stale header comment)
 - Modify: `Makefile:16-20`
 - Modify: `infra/dev/.env.local.example`
 - Modify: `infra/dev/docker-compose.yml:1-18` (the stale header comment)
@@ -173,7 +180,17 @@ test("the dev secret loader no longer pulls GIP values", () => {
 test("the compose header does not claim a GIP dependency", () => {
   const yml = readFileSync(join(root, "infra/dev/docker-compose.yml"), "utf8");
   expect(yml).not.toMatch(/Google Identity Platform/);
-  expect(yml).not.toMatch(/firebase/i);
+});
+
+// The onboarding Playwright config still lists a "firebase auth emulator"
+// among the services it assumes are up. There has never been one since GIP
+// was removed, and it sends anyone debugging a failure looking for a
+// container that does not exist. NOTE: do not assert this against
+// docker-compose.yml — it contains zero occurrences of "firebase", so the
+// assertion would pass vacuously and guard nothing.
+test("the onboarding playwright config does not reference a firebase emulator", () => {
+  const cfg = readFileSync(join(root, "apps/onboarding/playwright.config.ts"), "utf8");
+  expect(cfg).not.toMatch(/firebase/i);
 });
 
 // The Tier-B subset must come up with no GCP access, so the target that
@@ -192,7 +209,9 @@ test("dev-min does not depend on dev-secrets", () => {
 cd apps/onboarding && npx playwright test --config=playwright.unit.config.ts tests/unit/dev-stack-config.spec.ts
 ```
 
-Expected: three failures — `GIP_` present, `Google Identity Platform` present, no `dev-min` target.
+Expected: **four** failures — `GIP_` present in the loader, `Google Identity
+Platform` present in the compose header, `firebase` present in the onboarding
+Playwright config, and no `dev-min` target in the Makefile.
 
 - [ ] **Step 3: Strip the GIP block from the loader**
 
@@ -230,13 +249,20 @@ Replace the `What's NOT running here:` block's GIP paragraph with:
 
 Also update `.env.local.example` to list the keys the loader still writes, so the file stops describing two keys when the stack reads more.
 
+Then fix `apps/onboarding/playwright.config.ts:7`, which still lists a
+"firebase auth emulator" among the services it assumes are running. Replace
+that service list with: `Postgres, OpenFGA, platform-api, and the onboarding
+Next.js server on :4201`. Leave the rest of the comment — its point about not
+spawning the stack from Playwright is still correct and is why this plan
+builds and starts the app in separate CI steps.
+
 - [ ] **Step 6: Run the tests to confirm they pass**
 
 ```bash
 cd apps/onboarding && npx playwright test --config=playwright.unit.config.ts tests/unit/dev-stack-config.spec.ts
 ```
 
-Expected: 3 passed.
+Expected: 4 passed.
 
 - [ ] **Step 7: Verify the stack still comes up from clean**
 

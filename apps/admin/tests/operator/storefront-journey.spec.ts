@@ -633,6 +633,11 @@ test.describe("storefront journey", () => {
 
   test("14. place order and verify confirmation", async ({ browser }) => {
     test.setTimeout(45_000);
+    // Skips rather than filling an empty checkout email, matching test 7.
+    // Without this the spec would run with a blank contact field and fail
+    // deep in the order flow, reporting a checkout bug that is really an
+    // unset variable.
+    test.skip(!CUSTOMER_EMAIL, "CUSTOMER_EMAIL not set");
 
     const customerStatePath = join(STATE_DIR, "customer-state.json");
     const ctx = await browser.newContext({
@@ -655,7 +660,11 @@ test.describe("storefront journey", () => {
     await page.waitForLoadState("networkidle").catch(() => {});
 
     // Fill ALL required checkout fields (contact + shipping)
-    await page.locator("#email").fill("admtesserix@gmail.com").catch(() => {});
+    // CUSTOMER_EMAIL, which this file already reads from the environment at
+    // the top. The literal that used to be here bypassed that constant
+    // entirely — the mechanism was present and simply not used, which is why
+    // #850 is a hygiene-guard gap rather than a missing-feature one.
+    await page.locator("#email").fill(CUSTOMER_EMAIL).catch(() => {});
     await page.locator("#customer-name").fill("E2E Test Customer").catch(() => {});
     await page.locator("#ship-name").fill("E2E Test Customer").catch(() => {});
     await page.locator("#ship-line1").fill("123 Test Lane").catch(() => {});

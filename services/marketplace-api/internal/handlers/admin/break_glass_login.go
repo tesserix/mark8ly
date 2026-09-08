@@ -22,10 +22,10 @@ const BreakGlassSessionTTL = 2 * time.Hour
 
 // BreakGlassDeps groups every dependency the login handler needs.
 type BreakGlassDeps struct {
-	Repo        *breakglass.Repository
-	Secrets     *breakglass.SecretManager
-	Audit       *breakglass.AuditEmitter
-	Slack       *breakglass.SlackClient
+	Repo    *breakglass.Repository
+	Secrets *breakglass.SecretManager
+	Audit   *breakglass.AuditEmitter
+	Slack   *breakglass.SlackClient
 	// RateLimiter is the IN-MEMORY window, and it is required.
 	//
 	// It is no longer the counter of record — see Window — but it cannot be
@@ -41,10 +41,10 @@ type BreakGlassDeps struct {
 	// behaviour and is correct on a single-replica deployment. With more than
 	// one replica it must be set, or the 3-strike threshold becomes 3 strikes
 	// PER POD.
-	Window      breakglass.LoginWindow
-	IPHMACKey   breakglass.HMACKey
-	Sessions    authbffclient.SessionIssuer
-	Logger      *slog.Logger
+	Window    breakglass.LoginWindow
+	IPHMACKey breakglass.HMACKey
+	Sessions  authbffclient.SessionIssuer
+	Logger    *slog.Logger
 }
 
 // BreakGlassLoginHandler answers POST /admin/break-glass/login.

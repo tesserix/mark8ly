@@ -14,25 +14,25 @@ env:
 # canary, the route manifest) already run there. This catches integration
 # drift on a slower cadence.
 #
-# Pinned to invalid-token.spec.ts only, per docs/superpowers/plans/
-# 2026-09-09-e2e-baseline.md's per-spec table (Task 1's measurement run, 3x
-# reproduced). At this stage 10 of 16 onboarding specs fail for reasons this
-# job cannot fix yet:
-#   - cross-device-verify.spec.ts, golden-path.spec.ts, resume.spec.ts,
-#     slug-collision.spec.ts: ALL tests in these files fail — they need
-#     Zitadel to complete set-password → welcome, which arrives in a later
-#     stage of #858.
-#   - form-validation.spec.ts, tax-id-migration.spec.ts: PARTIALLY fail —
-#     each file mixes passing tests with pre-existing UI bugs (submit button
-#     not gated on a too-short slug; a migration radio group not
-#     found/interactable), tracked separately and independent of the
-#     backend/Zitadel gap.
+# Pinned to three spec files that are fully clean (commit ddd361ac repaired
+# the two that had drifted):
+#   - tests/e2e/form-validation.spec.ts    — 2 passed, 0 failed
+#   - tests/e2e/invalid-token.spec.ts      — 1 passed, 0 failed
+#   - tests/e2e/tax-id-migration.spec.ts   — 4 passed, 5 SKIPPED, 0 failed
+# The 5 skips in tax-id-migration are the migration-UI tests, which skip
+# themselves while MIGRATION_UI_ENABLED is false
+# (apps/onboarding/.../OnboardingForm.tsx:43) — that's a deliberate flag
+# check, not a failure, and the skip is derived from the flag's real value
+# at test time, so flipping the flag on later revives them.
+#
 # testMatch selects whole files, so any file with even one failing test is
 # excluded wholesale rather than picking individual passing tests out of it
 # — the same file-granularity e2e-runnable.yml uses for pricing.spec.ts.
-# That leaves exactly one fully-clean file: invalid-token.spec.ts (1 test),
-# hence the pass count of 1 below, not the raw ONBOARDING_PASS_COUNT of 6
-# measured in Task 1 (which included tests from the mixed-result files).
+# The four remaining onboarding specs — cross-device-verify.spec.ts,
+# golden-path.spec.ts, resume.spec.ts, slug-collision.spec.ts — are excluded
+# because every test in them needs Zitadel to complete set-password →
+# welcome, which arrives in a later stage of #858. That exclusion stays
+# deliberate and visible here, not silent.
 # =============================================================================
 on:
   push:
@@ -128,39 +128,53 @@ jobs:
         env:
           BASE_URL: http://localhost:4201
           API_URL: http://localhost:8086
-        # THREE gates, as in e2e-runnable.yml. None is sufficient alone:
+        # FOUR gates, as in e2e-runnable.yml (was three; skips are now
+        # counted too — see below). None is sufficient alone:
         #  - playwright's exit status;
-        #  - exactly 1 PASSED, because an all-skipped run also exits 0 —
+        #  - exactly 7 PASSED, because an all-skipped run also exits 0 —
         #    the mark8ly#834 failure this job exists to prevent;
         #  - no "N failed"/"N timed out", so a correct pass count can never
-        #    coexist with a failure.
+        #    coexist with a failure;
+        #  - exactly 5 SKIPPED. A skip that nobody counts is how a suite
+        #    quietly stops testing things: tax-id-migration.spec.ts's 5
+        #    migration tests skip behind MIGRATION_UI_ENABLED (see the
+        #    header comment). If that flag flips on and those tests start
+        #    running (or start failing), the skip count changes and this
+        #    job must notice rather than silently reporting 7 passed as
+        #    before.
         # Patterns are not anchored to start-of-line: the reporter emits ANSI
-        # cursor escapes ahead of the summary. [^0-9] stops "1 passed"
-        # matching a larger count.
+        # cursor escapes ahead of the summary. [^0-9] stops "7 passed"
+        # matching a larger count (e.g. "17 passed" does not match, because
+        # the character before "7" is "1", not start-of-string or a
+        # non-digit) — same discipline applied to "5 skipped".
         #
-        # tests/e2e/invalid-token.spec.ts is passed explicitly rather than
-        # relying on testMatch in the shared playwright.config.ts (which
-        # also serves local `make dev` runs against the full suite) — see
-        # the header comment above for why every other spec file is
-        # excluded at this stage.
+        # The three spec files are passed explicitly rather than relying on
+        # testMatch in the shared playwright.config.ts (which also serves
+        # local `make dev` runs against the full suite) — see the header
+        # comment above for why every other spec file is excluded at this
+        # stage.
         run: |
           set -o pipefail
           status=0
-          out=$(CI=true npx playwright test tests/e2e/invalid-token.spec.ts --reporter=line 2>&1) || status=$?
+          out=$(CI=true npx playwright test tests/e2e/form-validation.spec.ts tests/e2e/invalid-token.spec.ts tests/e2e/tax-id-migration.spec.ts --reporter=line 2>&1) || status=$?
           printf '%s\n' "$out"
           fail=0
           if [ "$status" -ne 0 ]; then
             echo "::error::playwright exited $status"
             fail=1
           fi
-          grep -qE '(^|[^0-9])1 passed' <<<"$out" || {
-            echo "::error::did not see exactly 1 passed — the onboarding suite is not actually executing and passing"
+          grep -qE '(^|[^0-9])7 passed' <<<"$out" || {
+            echo "::error::did not see exactly 7 passed — the onboarding suite is not actually executing and passing"
             fail=1
           }
           if grep -qE '(^|[^0-9])[0-9]+ (failed|timed out)' <<<"$out"; then
             echo "::error::a failed or timed-out test coexists with the expected pass count"
             fail=1
           fi
+          grep -qE '(^|[^0-9])5 skipped' <<<"$out" || {
+            echo "::error::did not see exactly 5 skipped — the tax-id-migration skip count changed, investigate before trusting the pass count"
+            fail=1
+          }
           exit $fail
 
       - name: Dump service logs on failure

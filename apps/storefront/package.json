@@ -20,7 +20,7 @@
     "@tailwindcss/postcss": "^4.2.2",
     "@tesserix/otto-widget": "^0.6.0",
     "@tesserix/web": "^2.4.2",
-    "next": "^16.2.11",
+    "next": "^16.3.3",
     "postcss": "^8.5.8",
     "react": "19.2.7",
     "react-dom": "19.2.7",

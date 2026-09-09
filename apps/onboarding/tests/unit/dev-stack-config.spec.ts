@@ -27,7 +27,10 @@ test("the compose header does not claim a GIP dependency", () => {
 // docker-compose.yml — it contains zero occurrences of "firebase", so the
 // assertion would pass vacuously and guard nothing.
 test("the onboarding playwright config does not reference a firebase emulator", () => {
-  const cfg = readFileSync(join(root, "apps/onboarding/playwright.config.ts"), "utf8");
+  const cfg = readFileSync(
+    join(root, "apps/onboarding/playwright.config.ts"),
+    "utf8",
+  );
   expect(cfg).not.toMatch(/firebase/i);
 });
 
@@ -59,7 +62,10 @@ test("the Makefile's COMPOSE variable references docker-compose.override.yml", (
   const lines = mk.split("\n");
 
   const overrideVarLine = lines.find((l) => /^COMPOSE_OVERRIDE\s*:?=/.test(l));
-  expect(overrideVarLine, "Makefile has no COMPOSE_OVERRIDE variable").toBeTruthy();
+  expect(
+    overrideVarLine,
+    "Makefile has no COMPOSE_OVERRIDE variable",
+  ).toBeTruthy();
   expect(overrideVarLine).toMatch(/\$\(wildcard/);
 
   const composeLine = lines.find((l) => /^COMPOSE\s*:?=/.test(l));
@@ -71,7 +77,7 @@ test("the Makefile's COMPOSE variable references docker-compose.override.yml", (
 // binary instead of being passed to it — the container execs "up" and fails
 // immediately. Every migrate command must name its binary as argv[0] (e.g.
 // ["/migrate", "up"]), never a bare ["up"].
-test("no docker-compose service uses a bare command: [\"up\"]", () => {
+test('no docker-compose service uses a bare command: ["up"]', () => {
   const yml = readFileSync(join(root, "infra/dev/docker-compose.yml"), "utf8");
   const commandLines = yml.match(/^\s*command:\s*\[[^\]]*\]/gm) ?? [];
   expect(commandLines.length).toBeGreaterThan(0);
@@ -80,13 +86,81 @@ test("no docker-compose service uses a bare command: [\"up\"]", () => {
   }
 });
 
-// All three platform-api services (migrate, seed, server) must build from
-// the monorepo root with an explicit dockerfile key, not from the old
-// service-local context that broke the build (#858).
-test("all platform-api services build with context: ../.. and an explicit dockerfile", () => {
-  const yml = readFileSync(join(root, "infra/dev/docker-compose.yml"), "utf8");
-  expect(yml).not.toMatch(/context:\s*\.\.\/\.\.\/services\/platform-api/);
+// Every compose build context must be able to see what its Dockerfile
+// COPYs (#858).
+//
+// The stage-1 version of this test named platform-api explicitly, so when
+// marketplace-api carried the identical defect -- a service-local context
+// under a Dockerfile that COPYs services/ AND packages/ -- it passed. The
+// service that was measured got fixed and the one that was not stayed
+// broken, and `marketplace-api` had therefore never once started in the
+// dev stack.
+//
+// So this derives the rule instead of restating one service's answer: read
+// each service's real COPY sources and check they are reachable from the
+// declared context. A new service is covered the day it lands.
+test("every compose build context can see what its Dockerfile COPYs", () => {
+  const composePath = join(root, "infra/dev/docker-compose.yml");
+  const yml = readFileSync(composePath, "utf8");
 
-  const contextBlocks = yml.match(/context:\s*\.\.\/\.\.\s*\n\s*dockerfile:\s*services\/platform-api\/Dockerfile/g) ?? [];
-  expect(contextBlocks.length).toBe(3);
+  // service name -> { context, dockerfile }. Compose resolves both relative
+  // to the compose file's own directory, infra/dev.
+  const builds = new Map<string, { context: string; dockerfile: string }>();
+  for (const m of yml.matchAll(
+    /^ {2}([a-z0-9-]+):\n {4}build:\n((?: {6}[a-z_]+:.*\n)+)/gm,
+  )) {
+    const service = m[1];
+    const block = m[2];
+    if (!service || !block) continue;
+    const context = block.match(/^ {6}context:\s*(\S+)/m)?.[1];
+    if (!context) continue;
+    const dockerfile =
+      block.match(/^ {6}dockerfile:\s*(\S+)/m)?.[1] ?? "Dockerfile";
+    builds.set(service, { context, dockerfile });
+  }
+  // A compose file whose build blocks stopped parsing would vacuously pass.
+  expect(builds.size).toBeGreaterThan(0);
+
+  const offenders: string[] = [];
+  for (const [service, { context, dockerfile }] of builds) {
+    const contextDir = join(root, "infra/dev", context);
+    const dockerfilePath = join(contextDir, dockerfile);
+
+    let contents: string;
+    try {
+      contents = readFileSync(dockerfilePath, "utf8");
+    } catch {
+      offenders.push(
+        `${service}: dockerfile ${dockerfile} does not exist under context ${context}`,
+      );
+      continue;
+    }
+
+    // COPY sources, skipping --from=<stage> (those read another build
+    // stage, never the context) and --chown-style flags.
+    for (const line of contents.split("\n")) {
+      if (!/^COPY\s/.test(line) || /--from=/.test(line)) continue;
+      const args = line
+        .replace(/^COPY\s+/, "")
+        .split(/\s+/)
+        .filter((a) => !a.startsWith("--"));
+      for (const src of args.slice(0, -1)) {
+        if (src.startsWith("/")) continue;
+        try {
+          readFileSync(join(contextDir, src));
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException).code;
+          // EISDIR means the path resolved to a directory -- reachable,
+          // which is all this asserts. ENOENT means it is not in context.
+          if (code === "ENOENT") {
+            offenders.push(
+              `${service}: ${dockerfile} COPYs "${src}", unreachable from context "${context}"`,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  expect(offenders.join("\n")).toBe("");
 });

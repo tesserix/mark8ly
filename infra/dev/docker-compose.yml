@@ -180,8 +180,12 @@ services:
 
   marketplace-api-migrate:
     build:
-      context: ../../services/marketplace-api
-      dockerfile: Dockerfile
+      # Repo root, not the service dir: the Dockerfile COPYs
+      # services/marketplace-api/ AND packages/platformauth/, so a
+      # service-scoped context cannot see the shared module. Same fix
+      # platform-api got in #858 stage 1; this service was missed.
+      context: ../..
+      dockerfile: services/marketplace-api/Dockerfile
       target: migrate
     environment:
       DATABASE_URL: postgres://dev:dev@postgres:5432/marketplace_db?sslmode=disable
@@ -195,16 +199,30 @@ services:
 
   marketplace-api:
     build:
-      context: ../../services/marketplace-api
-      dockerfile: Dockerfile
+      # Repo root, not the service dir: the Dockerfile COPYs
+      # services/marketplace-api/ AND packages/platformauth/, so a
+      # service-scoped context cannot see the shared module. Same fix
+      # platform-api got in #858 stage 1; this service was missed.
+      context: ../..
+      dockerfile: services/marketplace-api/Dockerfile
       target: runtime
     environment:
       ENV: dev
       MODE: both
       HTTP_PORT: "8091"
       DATABASE_URL: postgres://dev:dev@postgres:5432/marketplace_db?sslmode=disable
+      # Required unconditionally by pkg/config (envconfig required:"true");
+      # without it the container panics at startup rather than degrading.
+      # Container-internal port, not the published 8091 -> openfga is 8080
+      # inside the network even though the host sees it on 8089.
+      MARKETPLACE_FGA_API_URL: http://openfga:8080
+      # ENV=dev also exempts this service from Validate()'s prod-only
+      # requirements (MARKETPLACE_INTERNAL_AUTH_SECRET, CUSTOMER_SESSION_SECRET,
+      # ENCRYPTION_MODE=aes + ENCRYPTION_KEY).
     depends_on:
       marketplace-api-migrate:
+        condition: service_completed_successfully
+      openfga-seed:
         condition: service_completed_successfully
     ports:
       - "8091:8091"

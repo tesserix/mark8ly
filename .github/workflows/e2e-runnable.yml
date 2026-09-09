@@ -55,13 +55,15 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          # Matches the `node_version: "22"` the Next.js job in ci.yml passes
-          # to tesserix-workflows/nextjs-ci.yml. This job runs `next build`
-          # on the same app that job builds, so a different major here would
-          # mean the build verified by CI and the build these e2e tests run
-          # against were produced by different toolchains. Move both or
-          # neither.
-          node-version: "22"
+          # Matches the `node_version: "24"` the Next.js job in ci.yml passes
+          # to tesserix-workflows/nextjs-ci.yml, which in turn matches the
+          # base-node-*-24 images the app Dockerfiles ship. This job runs
+          # `next build` on the same app that job builds, so a different
+          # major here would mean the build verified by CI and the build
+          # these e2e tests run against were produced by different
+          # toolchains. Move both or neither -- and
+          # .github/scripts/test-ci-contract.py now fails if they diverge.
+          node-version: "24"
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
       - name: Install Playwright Chromium

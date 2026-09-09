@@ -82,6 +82,9 @@ export const API_URL = process.env.API_URL ?? "http://localhost:8086";
 // directly — there's no "invite teammate" UI yet, so the tests seed
 // the tuples the UI would create.
 export const OPENFGA_URL = process.env.OPENFGA_URL ?? "http://localhost:8089";
+// auth-bff. Only signInAsOwner talks to it directly, via the internal
+// mint-session endpoint — see that helper for why.
+export const AUTH_BFF_URL = process.env.AUTH_BFF_URL ?? "http://localhost:8087";
 
 /**
  * Build a unique email + slug + business name per test run so Postgres
@@ -184,7 +187,10 @@ export async function completeOnboarding(
     await currencyTrigger.click();
     await page.getByRole("option", { name: /usd/i }).first().click();
   }
-  await page.getByRole("button", { name: /get my store ready/i }).click();
+  // "Send verification link", not "get my store ready" — the label
+  // changed and this helper had never run to notice. apps/onboarding's
+  // own specs already use the current label.
+  await page.getByRole("button", { name: /send verification link/i }).click();
   await expect(page).toHaveURL(/\/onboarding\/check-inbox/, {
     timeout: 10_000,
   });
@@ -205,4 +211,97 @@ export async function completeOnboarding(
   await expect(page).toHaveURL(/\/welcome/, { timeout: 15_000 });
 
   return details;
+}
+
+/**
+ * Sign a merchant in WITHOUT driving the login form (#858 stage 3b).
+ *
+ * The form cannot render on a local stack, and that is deliberate rather
+ * than broken: `middleware.ts` 404s canonical `/login` unless it carries a
+ * valid `returnUrl`, and `isValidSlugReturnUrl` requires `https:` plus a
+ * `{slug}-admin.mark8ly.{com,dev}` host. No local HTTP origin can satisfy
+ * both, so for twelve specs the sign-in step is an unreachable prelude to
+ * the thing actually under test.
+ *
+ * So we mint the session directly, the same way break-glass login does —
+ * auth-bff's existing `POST /internal/mint-session`, guarded by
+ * X-Internal-Auth and an auth_context allow-list. Nothing test-only is
+ * added to production, and the cookie is the real one: the same signer,
+ * the same shape, validated through the same `/auth/session` round trip.
+ *
+ * `sign-in.spec.ts` deliberately does NOT use this — it is the spec that
+ * tests the login form, so bypassing the form would make it assert nothing.
+ *
+ * The returned context is pinned to the tenant's slug host. That is not a
+ * convenience: on the canonical host an authenticated merchant is bounced
+ * to their slug subdomain, and `{slug}-admin.mark8ly.com` is reachable in
+ * tests only because playwright.config.ts maps it to 127.0.0.1 (see the
+ * `--host-resolver-rules` launch arg there).
+ */
+export async function signInAsOwner(
+  browser: import("@playwright/test").Browser,
+  request: APIRequestContext,
+  details: { email: string; slug: string },
+): Promise<import("@playwright/test").BrowserContext> {
+  const secret = process.env.INTERNAL_AUTH_SECRET ?? "";
+  if (!secret) {
+    throw new Error(
+      "INTERNAL_AUTH_SECRET is unset — auth-bff's mint-session endpoint " +
+        "fails closed (503 not_configured) without it, and platform-api's " +
+        "/internal lookups 401. Set it to the value in infra/dev/docker-compose.yml.",
+    );
+  }
+  const authHeaders = { "X-Internal-Auth": secret };
+
+  // Resolves BOTH ids in one call: the tenant, and owner_user_id — the
+  // Zitadel uid platform-api recorded at onboarding. The session must
+  // carry the uid, not the email: middleware's role lookup is
+  // /internal/tenants/:id/me?uid=.
+  const tenantRes = await request.get(
+    `${API_URL}/internal/tenants/by-owner-email?email=${encodeURIComponent(details.email)}`,
+    { headers: authHeaders },
+  );
+  expect(
+    tenantRes.ok(),
+    `by-owner-email failed for ${details.email} (${tenantRes.status()})`,
+  ).toBeTruthy();
+  const tenant = (await tenantRes.json()).data as {
+    id: string;
+    owner_user_id: string;
+  };
+
+  const mintRes = await request.post(`${AUTH_BFF_URL}/internal/mint-session`, {
+    headers: authHeaders,
+    data: {
+      tenant_id: tenant.id,
+      tenant_slug: details.slug,
+      user_id: tenant.owner_user_id,
+      email: details.email,
+      auth_context: "staff",
+      ttl_seconds: 3600,
+    },
+  });
+  expect(
+    mintRes.ok(),
+    `mint-session failed (${mintRes.status()})`,
+  ).toBeTruthy();
+
+  // The response is a whole Set-Cookie header VALUE; we need just the
+  // cookie's own value to hand to addCookies.
+  const setCookie = ((await mintRes.json()).set_cookie ?? "") as string;
+  const value = setCookie.split(";")[0]?.split("=").slice(1).join("=") ?? "";
+  expect(value, "mint-session returned no cookie value").not.toBe("");
+
+  const ctx = await browser.newContext({
+    baseURL: `http://${details.slug}-admin.mark8ly.com`,
+  });
+  await ctx.addCookies([
+    {
+      name: "m8_session",
+      value,
+      domain: `${details.slug}-admin.mark8ly.com`,
+      path: "/",
+    },
+  ]);
+  return ctx;
 }

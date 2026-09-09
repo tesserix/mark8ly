@@ -221,6 +221,17 @@ services:
       # then logs "THIS STORE HAS NO TRIAL CLOCK". The store is created
       # either way, so the dev stack silently produced trial-less stores.
       MARKETPLACE_API_URL: http://marketplace-api:8091
+      # Guards platform-api's /internal/* routes. Unset, they answer
+      # "not_configured" 503 rather than 401 — fail-closed, but it reads as
+      # a bug. The e2e helpers use /internal/users and
+      # /internal/tenants/by-owner-email to resolve a merchant's uid and
+      # tenant before minting a session, so the local stack must set it.
+      INTERNAL_AUTH_SECRET: dev-internal-auth-secret-not-a-real-key
+      # The SAME value must reach the admin app as
+      # PLATFORM_INTERNAL_AUTH_SECRET. Without it admin's middleware role
+      # lookup (/internal/tenants/:id/me?uid=) 401s, `role` stays unset,
+      # and EVERY authenticated page fails closed to a login that then
+      # 404s on canonical — a valid session that looks like a broken one.
       # Phase P: accept-invite links in invitation emails. Host-side
       # admin dev server — container-internal defaults don't resolve
       # for the user clicking the link in their mail client.

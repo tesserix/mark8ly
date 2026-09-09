@@ -10,6 +10,15 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * Assumes `make dev` (or equivalent) is already up.
  */
+// Admin's middleware bounces an authenticated merchant to their slug
+// subdomain, and canonical /login 404s without an https slug returnUrl —
+// so the specs have to BE on `{slug}-admin.mark8ly.com`. Chromium maps it
+// to the local server; no DNS entry, no TLS, no hosts-file edit, and
+// nothing in the app is relaxed to accommodate the test (#858).
+const HOST_MAP = [
+  "--host-resolver-rules=MAP *-admin.mark8ly.com 127.0.0.1:4202",
+];
+
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,
@@ -22,6 +31,7 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
+    launchOptions: { args: HOST_MAP },
   },
   projects: [
     {

@@ -416,3 +416,44 @@ export async function seedProducts(
     expect(res.ok(), `seeding product ${i} failed (${res.status()})`).toBeTruthy();
   }
 }
+
+/**
+ * Give a merchant a SECOND store (#858).
+ *
+ * `copy one product to another store` needs somewhere to copy TO, and a
+ * freshly-onboarded merchant has exactly one store — so the copy dialog had
+ * no target and the spec timed out on a control that could never appear.
+ *
+ * `uid` travels in the BODY here, not a header: platform-api's
+ * createStoreForTenant reads req.UID and answers `missing_uid` otherwise.
+ */
+export async function seedSecondStore(
+  request: APIRequestContext,
+  details: { email: string; slug: string },
+): Promise<string> {
+  const authHeaders = { "X-Internal-Auth": process.env.INTERNAL_AUTH_SECRET ?? "" };
+  const tenantRes = await request.get(
+    `${API_URL}/internal/tenants/by-owner-email?email=${encodeURIComponent(details.email)}`,
+    { headers: authHeaders },
+  );
+  expect(tenantRes.ok(), "by-owner-email failed while adding a store").toBeTruthy();
+  const tenant = (await tenantRes.json()).data as {
+    id: string;
+    owner_user_id: string;
+  };
+
+  const slug = `${details.slug}-outlet`;
+  const res = await request.post(`${API_URL}/internal/tenants/${tenant.id}/stores`, {
+    headers: { ...authHeaders, "Content-Type": "application/json" },
+    data: {
+      uid: tenant.owner_user_id,
+      name: "Outlet",
+      slug,
+      country_code: "US",
+      currency_code: "USD",
+      timezone: "America/New_York",
+    },
+  });
+  expect(res.ok(), `second store create failed (${res.status()})`).toBeTruthy();
+  return slug;
+}

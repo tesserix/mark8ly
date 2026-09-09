@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import {
   completeOnboarding,
   seedProducts,
+  seedSecondStore,
   signInAsOwner,
 } from "./helpers";
 
@@ -85,6 +86,8 @@ test.describe("M7d bulk actions", () => {
 
     // A fresh tenant has no products; these assertions need rows.
     await seedProducts(request, details);
+    // ...and exactly one store, so "copy to store" has no target without this.
+    await seedSecondStore(request, details);
 
     const ctx = await signInAsOwner(browser, request, details);
     const page = await ctx.newPage();

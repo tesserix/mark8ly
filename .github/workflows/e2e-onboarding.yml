@@ -62,9 +62,10 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          # Matches ci.yml's Next.js job. Production containers run 24; that
-          # divergence is tracked in #857 and must not be changed here.
-          node-version: "22"
+          # Must match the base-node-*-24 the app Dockerfiles ship: #863
+          # moved every gate to 24 and closed the #857 divergence this
+          # comment used to point at. test-ci-contract.py fails if it drifts.
+          node-version: "24"
 
       - name: Bring up the Tier-B stack
         # No compose override here: on a clean runner 5432 is free, and the
@@ -93,7 +94,7 @@ jobs:
             || { echo "::error::openfga store mark8ly-platform missing — openfga-seed did not run"; exit 1; }
 
       - name: Install dependencies
-        run: npm ci --legacy-peer-deps
+        run: npm ci
 
       - name: Install Playwright Chromium
         working-directory: apps/onboarding

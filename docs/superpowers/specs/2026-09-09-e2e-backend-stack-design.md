@@ -131,6 +131,12 @@ stack minus Zitadel, builds and starts the onboarding app with real
 ones, via the test-only verification endpoint above. Retire `load-secrets.sh`'s
 GIP block so `make dev` works again.
 
+> **Addendum (superseded by measurement):** the magic-link claim above did not
+> hold up — those specs need Zitadel to reach `/welcome`, so they are excluded
+> from Stage 1 and enabled later alongside the other auth-dependent specs in
+> Stage 3. See `docs/superpowers/plans/2026-09-09-e2e-baseline.md` for what was
+> actually measured against the running stack.
+
 **Stage 2 (Tier C).** Add marketplace-api to the CI path and the storefront and
 admin apps. Unlocks the storefront and probe specs.
 

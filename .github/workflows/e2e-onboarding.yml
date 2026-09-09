@@ -9,10 +9,14 @@ env:
 # this job stands up postgres, OpenFGA and platform-api from the SAME
 # infra/dev/docker-compose.yml a developer uses, so the two cannot drift.
 #
-# NOT triggered on pull_request: the stack plus a cold Next 16 build costs
-# several minutes, and the fast gates (unit, tsc, next build, the pricing
-# canary, the route manifest) already run there. This catches integration
-# drift on a slower cadence.
+# Triggered on pull_request, but ONLY through the same paths filter the push
+# trigger uses. The stack plus a cold Next 16 build costs several minutes, so
+# running it on every PR would be waste — the fast gates (unit, tsc, next
+# build, the pricing canary, the route manifest) already cover those. Filtered
+# to the paths it actually tests, it costs nothing on an unrelated PR and
+# catches integration drift on the PR that introduces it, rather than after
+# the merge. It also means this workflow can never again reach main without
+# having executed: the PR that changes it is a PR that runs it.
 #
 # Pinned to three spec files that are fully clean (commit ddd361ac repaired
 # the two that had drifted):
@@ -35,6 +39,15 @@ env:
 # deliberate and visible here, not silent.
 # =============================================================================
 on:
+  # Keep these two path lists identical. A path that can break the suite but
+  # only appears under `push` is a path whose breakage is found after merge.
+  pull_request:
+    paths:
+      - "apps/onboarding/**"
+      - "services/platform-api/**"
+      - "infra/dev/**"
+      - "infra/openfga/**"
+      - ".github/workflows/e2e-onboarding.yml"
   push:
     branches: [main]
     paths:

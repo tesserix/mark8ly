@@ -86,6 +86,73 @@ test('no docker-compose service uses a bare command: ["up"]', () => {
   }
 });
 
+// A distroless runtime cannot run a shell-based healthcheck (#858).
+//
+// marketplace-api declared `test: ["CMD", "wget", ...]` while its runtime
+// stage is base-distroless-static, which ships no shell, wget or curl. The
+// probe could never pass, so the container sat permanently `unhealthy` while
+// serving 200s -- and nothing noticed, because the service could not start
+// at all until #875. The real cost is downstream: a
+// `condition: service_healthy` on such a service blocks forever.
+//
+// The compose file already records this for openfga in prose. This makes it
+// a rule, derived from each service's actual runtime base.
+test("no service with a distroless runtime declares a shell healthcheck", () => {
+  const yml = readFileSync(join(root, "infra/dev/docker-compose.yml"), "utf8");
+  const offenders: string[] = [];
+
+  for (const m of yml.matchAll(
+    /^ {2}([a-z0-9-]+):\n((?: {4}\S.*\n| {4,}.*\n|\n)*)/gm,
+  )) {
+    const service = m[1];
+    const body = m[2];
+    if (!service || !body) continue;
+    if (!/^ {4}healthcheck:/m.test(body)) continue;
+
+    const probe = body.match(/^ {6}test:\s*(.+)$/m)?.[1] ?? "";
+    if (!/wget|curl|CMD-SHELL/.test(probe)) continue;
+
+    // Which Dockerfile backs this service, if any? Services built from a
+    // published image (postgres:15-alpine) are fine -- they have a shell.
+    const context = body.match(/^ {6}context:\s*(\S+)/m)?.[1];
+    if (!context) continue;
+    // `dockerfile:` is relative to the CONTEXT, not to the compose file.
+    // Resolving it against infra/dev instead made every read throw, and the
+    // catch below swallowed it -- the first version of this test passed
+    // against the very defect it was written for.
+    const dockerfileRel =
+      body.match(/^ {6}dockerfile:\s*(\S+)/m)?.[1] ?? "Dockerfile";
+
+    let dockerfile: string;
+    try {
+      dockerfile = readFileSync(
+        join(root, "infra/dev", context, dockerfileRel),
+        "utf8",
+      );
+    } catch {
+      continue; // the build-context test above owns unreadable Dockerfiles
+    }
+
+    // The stage the service runs: `target:`, else the final FROM.
+    const target = body.match(/^ {6}target:\s*(\S+)/m)?.[1];
+    const stages = [
+      ...dockerfile.matchAll(/^FROM\s+(\S+)(?:\s+AS\s+(\S+))?/gm),
+    ];
+    const stage = target
+      ? stages.find((f) => f[2] === target)
+      : stages[stages.length - 1];
+    if (!stage) continue;
+
+    if (/distroless/.test(stage[1] ?? "")) {
+      offenders.push(
+        `${service}: healthcheck runs ${probe.trim()} but its runtime stage is ${stage[1]} (no shell/wget/curl)`,
+      );
+    }
+  }
+
+  expect(offenders.join("\n")).toBe("");
+});
+
 // Every compose build context must be able to see what its Dockerfile
 // COPYs (#858).
 //

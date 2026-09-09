@@ -226,11 +226,14 @@ services:
         condition: service_completed_successfully
     ports:
       - "8091:8091"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8091/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
+    # No healthcheck: the runtime stage is base-distroless-static, which has
+    # no shell, wget or curl -- same reason openfga above declares none. The
+    # wget probe that used to sit here could never pass, so the container sat
+    # permanently `unhealthy` while serving 200s. Nothing noticed because the
+    # service could not start at all until #875. Anything that needs to wait
+    # for this service must poll http://localhost:8091/health from outside,
+    # as .github/workflows/e2e-onboarding.yml already does for platform-api;
+    # a `condition: service_healthy` on it would block forever.
 
 volumes:
   postgres-data:

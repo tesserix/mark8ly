@@ -104,9 +104,48 @@ jobs:
       # set is listed, so metro/react-native picking up anything unrelated
       # still fails. Revisit on the next react-native bump: drop these two
       # ids and see whether the chain has been patched upstream.
+      #
+      # ── TEMPORARY, tracked by mark8ly#864 ────────────────────────────────
+      #
+      # Four advisories published 2026-09-08 that DO have published fixes and
+      # still cannot be applied. `main` passed at 17:03 on an unchanged
+      # lockfile and every PR failed from ~00:00, blocking work that touches
+      # no dependency at all.
+      #
+      # Unlike image-size above, these are allowlisted because the LOCKFILE
+      # cannot currently be regenerated, not because there is nothing to
+      # upgrade to:
+      #
+      #   - Generating with `--legacy-peer-deps` silently DROPS peer deps. A
+      #     no-op regeneration removes ~50 packages — `@tiptap/pm` and
+      #     `expo-haptics` vanish — and the admin suite then dies on
+      #     `Cannot find package '@tiptap/pm'`. (`npm ci --legacy-peer-deps`,
+      #     what this workflow runs, is safe: it honours the lock as written.)
+      #   - Generating WITHOUT it is clean (+1/-48) until a version actually
+      #     changes, at which point it fails on an Expo SDK conflict: the
+      #     workspace spans SDK 52 (mobile-storefront), 56 and 57
+      #     (mobile-admin), and their peer ranges cannot all be satisfied.
+      #
+      # So the fix is a multi-app Expo reconciliation, not a version bump.
+      # #864 carries the evidence and the four ruled-out approaches.
+      #
+      # The `next` entry is a CRITICAL and this should be short-lived. Exposure
+      # is bounded: all three are patched-in-range, so removing these five ids
+      # is the FIRST thing to try once #864 lands — not a later cleanup.
+      #
+      #   next          16.2.11 -> 16.3.4   critical
+      #   @tiptap/core  3.22.5  -> 3.30.5+  high, admin editor only
+      #   js-yaml       -> 3.15.2 / 4.3.2   high, transitive
+      #   sharp         0.35.3  -> 0.35.4   high, transitive
       audit_allowlist: >-
         GHSA-w3rx-r6r6-pgpr
         GHSA-5p2g-fcmc-qvqq
+        GHSA-2xp9-vwfh-vxw4
+        GHSA-p293-qw3h-jr36
+        GHSA-rgj7-g3m4-5g8c
+        GHSA-cp6q-959q-f8rh
+        GHSA-j95f-988m-3j2f
+        GHSA-2883-xcg3-v3hh
     secrets:
       package_read_token: ${{ secrets.GHCR_PAT }}
 

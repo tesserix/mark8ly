@@ -74,7 +74,6 @@ jobs:
     with:
       working_directory: .
       node_version: "24"
-      legacy_peer_dependencies: true
       audit_workspaces: >-
         @mark8ly/admin
         @mark8ly/storefront
@@ -105,21 +104,14 @@ jobs:
       # still fails. Revisit on the next react-native bump: drop these two
       # ids and see whether the chain has been patched upstream.
       #
-      # TEMPORARY — four advisories published 2026-09-08, tracked by #864.
-      #
-      # Unlike image-size above these DO have in-range fixes; they cannot be
-      # applied because the lockfile cannot currently be regenerated.
-      # Generating with --legacy-peer-deps silently drops peer deps (a no-op
-      # regen loses ~50 packages incl. @tiptap/pm and expo-haptics, breaking
-      # the admin suite); generating without it fails on an Expo SDK conflict
-      # in apps/mobile-admin. `npm ci --legacy-peer-deps` stays safe — it
-      # honours the lock as written. #864 has the evidence.
-      #
-      # `next` is a CRITICAL. Removing these five ids is the FIRST thing to
-      # try once #864 lands, not a later cleanup.
+      # The six ids that used to sit here alongside image-size were the
+      # 2026-09-08 batch tracked by #864. They are gone rather than
+      # allowlisted: #867/#868 patched them, and #869 regenerated the
+      # lockfile without --legacy-peer-deps so the fixes actually resolve.
+      # Measured on 2026-09-09 across all three Next.js workspaces: the only
+      # high-or-above advisories remaining are the two image-size ids below.
       audit_allowlist: >-
-        GHSA-w3rx-r6r6-pgpr GHSA-5p2g-fcmc-qvqq GHSA-2xp9-vwfh-vxw4 GHSA-p293-qw3h-jr36
-        GHSA-rgj7-g3m4-5g8c GHSA-cp6q-959q-f8rh GHSA-j95f-988m-3j2f GHSA-2883-xcg3-v3hh
+        GHSA-w3rx-r6r6-pgpr GHSA-5p2g-fcmc-qvqq
     secrets:
       package_read_token: ${{ secrets.GHCR_PAT }}
 

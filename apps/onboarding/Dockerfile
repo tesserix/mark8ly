@@ -29,7 +29,7 @@ COPY packages/ui/package.json ./packages/ui/
 # credential. The scoped-registry .npmrc and its PACKAGE_READ_TOKEN
 # BuildKit secret are gone with it — an unauthenticated pull is one less
 # thing that can expire.
-RUN npm ci --no-audit --no-fund --legacy-peer-deps
+RUN npm ci --no-audit --no-fund
 
 # ─── builder ───────────────────────────────────────────────────────────
 FROM ghcr.io/tesserix/base-node-builder-24@sha256:dc8e8205eab94ba9fbc4bea454f3998f0440135ed7e0f7300d0fef51d6e8b3a6 AS builder

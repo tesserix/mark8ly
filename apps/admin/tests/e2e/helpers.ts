@@ -85,6 +85,9 @@ export const OPENFGA_URL = process.env.OPENFGA_URL ?? "http://localhost:8089";
 // auth-bff. Only signInAsOwner talks to it directly, via the internal
 // mint-session endpoint — see that helper for why.
 export const AUTH_BFF_URL = process.env.AUTH_BFF_URL ?? "http://localhost:8087";
+// marketplace-api. Used only by seedProducts — see that helper.
+export const MARKETPLACE_API_URL =
+  process.env.MARKETPLACE_API_URL ?? "http://localhost:8091";
 
 /**
  * Build a unique email + slug + business name per test run so Postgres
@@ -329,4 +332,87 @@ export async function signInAsOwner(
     },
   ]);
   return ctx;
+}
+
+/**
+ * Create products for a freshly-onboarded merchant (#858).
+ *
+ * Several specs assert against a populated products table but onboard a
+ * FRESH tenant, which has none — they were written when the suite mocked
+ * its backend and something else supplied the rows. Against a real stack
+ * they saw the empty state, which surfaced as "table tbody tr not visible"
+ * and read like a rendering bug.
+ *
+ * Per-spec, not a shared fixture. Shared mutable fixtures across specs are
+ * what made the old suite ordering-dependent, and the design for #858
+ * called that out explicitly as the thing to avoid.
+ *
+ * Goes through marketplace-api's real admin API as the real owner. The
+ * owner's uid matters: the route authorises against an FGA role, so a
+ * synthetic user id gets a 404 that looks like a missing store.
+ */
+export async function seedProducts(
+  request: APIRequestContext,
+  details: { email: string },
+  count = 3,
+): Promise<void> {
+  const secret = process.env.INTERNAL_AUTH_SECRET ?? "";
+  const authHeaders = { "X-Internal-Auth": secret };
+
+  const tenantRes = await request.get(
+    `${API_URL}/internal/tenants/by-owner-email?email=${encodeURIComponent(details.email)}`,
+    { headers: authHeaders },
+  );
+  expect(tenantRes.ok(), "by-owner-email failed while seeding").toBeTruthy();
+  const tenant = (await tenantRes.json()).data as {
+    id: string;
+    owner_user_id: string;
+  };
+
+  // marketplace-api keeps its OWN store rows (created by ensure-self-store
+  // during onboarding), with different ids from platform-api's. Ask it.
+  const scope = {
+    "X-Tenant-Id": tenant.id,
+    "X-User-Id": tenant.owner_user_id,
+  };
+  // Poll: onboarding Complete calls ensure-self-store/ensure-self-vendor on
+  // marketplace-api, and neither the store row nor the marketplace-store FGA
+  // grant is readable the instant Complete returns. Same race as the owner
+  // role in signInAsOwner — an immediate call 404s, which reads as "this
+  // merchant has no store" rather than "not yet".
+  let stores: { id: string }[] = [];
+  for (let attempt = 0; attempt < 30 && stores.length === 0; attempt++) {
+    const res = await request.get(`${MARKETPLACE_API_URL}/api/v1/admin/stores`, {
+      headers: scope,
+    });
+    if (res.ok()) stores = ((await res.json()).data ?? []) as { id: string }[];
+    if (stores.length === 0) await new Promise((r) => setTimeout(r, 500));
+  }
+  expect(
+    stores.length,
+    "marketplace-api never reported a store for this merchant — " +
+      "ensure-self-store did not land",
+  ).toBeGreaterThan(0);
+  const storeId = stores[0]!.id;
+
+  for (let i = 1; i <= count; i++) {
+    const res = await request.post(
+      `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products`,
+      {
+        headers: { ...scope, "Content-Type": "application/json" },
+        data: {
+          title: `Seeded Product ${i}`,
+          status: "active",
+          variants: [
+            {
+              sku: `SEED-${i}`,
+              price: "10.00",
+              inventory_quantity: 5,
+            },
+          ],
+        },
+      },
+    );
+    expect(res.ok(), `seeding product ${i} failed (${res.status()})`).toBeTruthy();
+  }
 }

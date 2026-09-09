@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   completeOnboarding,
+  seedProducts,
   signInAsOwner,
 } from "./helpers";
 
@@ -28,6 +29,9 @@ test.describe("M7d bulk actions", () => {
     const signupPage = await signupCtx.newPage();
     const details = await completeOnboarding(signupPage, request, "m7d-bulk");
     await signupCtx.close();
+
+    // A fresh tenant has no products; these assertions need rows.
+    await seedProducts(request, details);
 
     const ctx = await signInAsOwner(browser, request, details);
     const page = await ctx.newPage();
@@ -60,8 +64,10 @@ test.describe("M7d bulk actions", () => {
     // Wait for toast confirmation
     await expect(page.getByText(/archived/i)).toBeVisible({ timeout: 10_000 });
 
-    // Verify status changed — filter by archived
-    await page.getByLabel(/filter by status/i).selectOption("archived");
+    // Verify status changed — filter by archived.
+    // The status filter is a row of links now, not a <select>
+    // (ProductsListFilters.tsx:83), so selectOption has nothing to drive.
+    await page.getByRole("link", { name: "Archived", exact: true }).click();
     await expect(rows.first()).toBeVisible({ timeout: 5_000 });
 
     await ctx.close();
@@ -76,6 +82,9 @@ test.describe("M7d bulk actions", () => {
     const signupPage = await signupCtx.newPage();
     const details = await completeOnboarding(signupPage, request, "m7d-copy");
     await signupCtx.close();
+
+    // A fresh tenant has no products; these assertions need rows.
+    await seedProducts(request, details);
 
     const ctx = await signInAsOwner(browser, request, details);
     const page = await ctx.newPage();

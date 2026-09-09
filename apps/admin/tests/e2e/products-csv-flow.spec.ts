@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   completeOnboarding,
+  seedProducts,
   signInAsOwner,
 } from "./helpers";
 
@@ -27,6 +28,9 @@ test.describe("M7e CSV import flow", () => {
     const signupPage = await signupCtx.newPage();
     const details = await completeOnboarding(signupPage, request, "m7e-import");
     await signupCtx.close();
+
+    // A fresh tenant has no products; these assertions need rows.
+    await seedProducts(request, details);
 
     const ctx = await signInAsOwner(browser, request, details);
     const page = await ctx.newPage();
@@ -87,6 +91,9 @@ test.describe("M7e CSV export flow", () => {
     const signupPage = await signupCtx.newPage();
     const details = await completeOnboarding(signupPage, request, "m7e-export");
     await signupCtx.close();
+
+    // A fresh tenant has no products; these assertions need rows.
+    await seedProducts(request, details);
 
     const ctx = await signInAsOwner(browser, request, details);
     const page = await ctx.newPage();

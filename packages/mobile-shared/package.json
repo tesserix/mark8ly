@@ -38,6 +38,7 @@
     "@react-native-firebase/auth": "*"
   },
   "devDependencies": {
+    "expo-haptics": "~56.0.0",
     "typescript": "^5.9.0"
   }
 }

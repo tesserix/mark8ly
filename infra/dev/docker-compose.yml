@@ -29,7 +29,7 @@ services:
     environment:
       POSTGRES_USER: dev
       POSTGRES_PASSWORD: dev
-      POSTGRES_MULTIPLE_DATABASES: platform_api,auth_bff,openfga,marketplace_db
+      POSTGRES_MULTIPLE_DATABASES: platform_api,auth_bff,openfga,marketplace_db,zitadel
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./postgres-init.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
@@ -88,6 +88,84 @@ services:
   # Go services
   # ──────────────────────────────────────────────────────────────────────
 
+  # ─── Zitadel (#858 stage 3) ──────────────────────────────────────────
+  # Pinned to the major tesserix-k8s runs. `start-from-init` creates the
+  # schema, the first instance, its org and a machine user, then serves —
+  # one container instead of the init/setup/start trio, which matters here
+  # because CI waits on it before it can build any Next app.
+  # A named volume is created root-owned, and the zitadel image runs as a
+  # non-root user with no shell to fix it from. Without this, setup dies on
+  # `open /pat/pat: permission denied` at migration 03_default_instance and
+  # the container exits 1 — after appearing to run 40 migrations fine.
+  #
+  # chmod rather than chown: the image has no shell and no /etc/passwd we
+  # can read, so the uid is not knowable from here. Mode 1777 (sticky, like
+  # /tmp) works whatever uid the image ships. Dev/CI only — this volume
+  # holds one throwaway token for an instance rebuilt on every run.
+  zitadel-pat-init:
+    image: alpine:3.19
+    command: ["chmod", "1777", "/pat"]
+    volumes:
+      - zitadel-pat:/pat
+    restart: "no"
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:v4.15.3
+    # The masterkey is exactly 32 bytes and is a DEV-ONLY constant: this
+    # instance is created empty on every run and holds nothing but test
+    # fixtures. Do not copy it anywhere a real instance can reach.
+    command: >-
+      start-from-init
+      --masterkey MasterkeyNeedsToHave32Characters
+      --tlsMode disabled
+    environment:
+      ZITADEL_DATABASE_POSTGRES_HOST: postgres
+      ZITADEL_DATABASE_POSTGRES_PORT: "5432"
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: dev
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: dev
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: dev
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: dev
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      # Zitadel resolves the instance from the request's Host header. These
+      # three decide what that domain is, and every caller must send it —
+      # a container-internal service name matches no instance and returns
+      # "Instance not found" (the same scar the k8s bootstrap.py records).
+      ZITADEL_EXTERNALSECURE: "false"
+      # The instance domain is the CONTAINER name, not localhost, because
+      # the only in-stack caller is platform-api and it reaches Zitadel at
+      # http://zitadel:8080 — so its Host header must be `zitadel:8080` for
+      # the instance to resolve at all.
+      #
+      # Consequence for host-side callers (the bootstrap script, any curl):
+      # connect to localhost:8092 but send `Host: zitadel:8080` explicitly,
+      # or every request 404s with "Instance not found".
+      #
+      # Stage 3b, which puts a BROWSER through the OIDC flow, will need a
+      # second instance domain so the same instance answers to both names.
+      ZITADEL_EXTERNALDOMAIN: zitadel
+      ZITADEL_EXTERNALPORT: "8080"
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: mark8ly
+      # The PAT is written here at first start and read by the bootstrap
+      # container. That is the ONLY moment the token is retrievable.
+      ZITADEL_FIRSTINSTANCE_PATPATH: /pat/pat
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: bootstrap
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: bootstrap
+      # Without an explicit PAT block no token is minted and PATPATH stays
+      # empty — the machine user alone is not enough. Verified against
+      # v4.15.3 by watching /pat stay empty with the two keys above only.
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2519-04-01T08:45:00Z"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      zitadel-pat-init:
+        condition: service_completed_successfully
+    volumes:
+      - zitadel-pat:/pat
+    ports:
+      - "8092:8080"
+
   platform-api-migrate:
     build:
       context: ../..
@@ -124,11 +202,25 @@ services:
       target: server
     env_file:
       - .env.local
+      # Written by infra/dev/zitadel-bootstrap.py, and gitignored. Compose
+      # reads env_file when it CREATES the container, so the bootstrap must
+      # run before `up platform-api` -- `make dev-zitadel` does that ordering.
+      # `required: false` keeps `make dev-min` working with no Zitadel at all;
+      # platform-api's ZITADEL_ENABLED then stays at its false default.
+      - path: .env.zitadel
+        required: false
     environment:
       ENV: dev
       HTTP_PORT: "8086"
       DATABASE_URL: postgres://dev:dev@postgres:5432/platform_api?sslmode=disable
       FGA_API_URL: http://openfga:8080
+      # Without this, platform-api keeps its production default
+      # (mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080) and
+      # every onboarding Complete spends ~20s failing DNS three times --
+      # ensure-self-vendor, ensure-self-store and ensure-subscription --
+      # then logs "THIS STORE HAS NO TRIAL CLOCK". The store is created
+      # either way, so the dev stack silently produced trial-less stores.
+      MARKETPLACE_API_URL: http://marketplace-api:8091
       # Phase P: accept-invite links in invitation emails. Host-side
       # admin dev server — container-internal defaults don't resolve
       # for the user clicking the link in their mail client.
@@ -237,3 +329,4 @@ services:
 
 volumes:
   postgres-data:
+  zitadel-pat:

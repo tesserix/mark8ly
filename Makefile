@@ -28,6 +28,27 @@ dev-min: ## Bring up the Tier-B stack (postgres, OpenFGA, platform-api) with no 
 	$(COMPOSE) up -d postgres openfga-migrate openfga openfga-seed \
 	                platform-api-migrate platform-api-seed platform-api
 
+dev-zitadel: ## Bring up the Tier-D stack (dev-min + Zitadel, bootstrapped) with no GCP access
+	$(COMPOSE) up -d postgres zitadel
+	@# Zitadel writes the PAT during setup, not at container start: on a cold
+	@# volume it runs ~40 migrations first. Reading the file before then gets
+	@# "No such file or directory". Wait on healthz, which is only served once
+	@# setup has completed -- and send the Host header, or it 404s forever.
+	@printf 'waiting for zitadel'
+	@for i in $$(seq 1 80); do \
+		if [ "$$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: zitadel:8080' \
+			http://localhost:8092/debug/healthz)" = "200" ]; then echo " ready"; break; fi; \
+		printf '.'; sleep 3; \
+	done
+	@docker run --rm -v $$(docker volume ls -q -f name=zitadel-pat | head -1):/pat alpine \
+		cat /pat/pat > infra/dev/.pat.tmp
+	python3 infra/dev/zitadel-bootstrap.py \
+		--pat-file infra/dev/.pat.tmp --env-out infra/dev/.env.zitadel
+	@rm -f infra/dev/.pat.tmp
+	$(COMPOSE) up -d openfga-migrate openfga openfga-seed \
+	                platform-api-migrate platform-api-seed platform-api \
+	                marketplace-api-migrate marketplace-api
+
 dev-down: ## Stop the local stack
 	$(COMPOSE) down
 

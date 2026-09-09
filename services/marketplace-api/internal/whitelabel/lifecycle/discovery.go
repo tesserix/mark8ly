@@ -96,15 +96,23 @@ func (d *Discovery) discover(ctx context.Context, tenantID, storeID uuid.UUID) (
 		return ProAppCancelledEvent{}, err
 	}
 
-	// GooglePackage is deliberately left empty (decision 4): there is no
-	// source for it, and inventing a placeholder to satisfy the
-	// advancer's `if r.GooglePackage != ""` guards would seed a row that
-	// claims an identifier it does not have. The row's Play coverage is
-	// stated explicitly instead — see teardownCoverage.
+	// GooglePackage comes from the merchant, via the optional
+	// `package_name` field on the Play credential upload (#872). It is
+	// still frequently EMPTY and that stays a first-class state: the
+	// field is optional because the upload sits behind an active
+	// Pro+App subscription, so no earlier point could have required it,
+	// and every merchant onboarded before #872 has none.
+	//
+	// The original reasoning holds for the empty case and is why nothing
+	// substitutes a placeholder here: the advancer guards both Google
+	// calls on `r.GooglePackage != ""`, so a fabricated value would seed
+	// a row claiming an identifier nobody has. The absence is stated in
+	// words instead — see teardownCoverage.
 	ev := ProAppCancelledEvent{
 		TenantID:          tenantID,
 		StoreID:           storeID,
 		AppleAppID:        appleID,
+		GooglePackage:     d.discoverGooglePackage(ctx, tenantID, storeID, log),
 		FirebaseProjectID: d.discoverFirebaseProjectID(ctx, tenantID, storeID, log),
 	}
 	return ev, nil
@@ -137,6 +145,49 @@ func (d *Discovery) discoverAppleAppID(ctx context.Context, tenantID, storeID uu
 // returns its project_id. Failures are logged and yield "" rather than
 // failing the whole discovery: a missing Firebase project makes the
 // teardown narrower, not wrong, and the row states the narrowing.
+// discoverGooglePackage reads the merchant-supplied Android applicationId.
+//
+// Best-effort, exactly like discoverFirebaseProjectID beside it: an absent
+// or unreadable package narrows what the teardown can do but does not make
+// the row a lie, and teardownCoverage renders the narrowing. Failing the
+// whole discovery here would cost the merchant their APPLE teardown too,
+// which is the larger half and entirely unrelated.
+//
+// Re-validated on read rather than trusted from the write. The value is
+// stored as a Secret Manager payload and may have been written by an older
+// image, or by hand during an incident; a malformed one reaching
+// GooglePackage would pass the advancer's non-empty guard and fail against
+// Play inside a nightly cron. Cheap check, and the only other place a human
+// could notice is months later in a skipped-step counter.
+func (d *Discovery) discoverGooglePackage(ctx context.Context, tenantID, storeID uuid.UUID, log *slog.Logger) string {
+	if d.Creds == nil {
+		log.WarnContext(ctx, "lifecycle/discovery: no credential loader; google package not discovered",
+			"store_id", storeID)
+		return ""
+	}
+	payload, err := d.Creds.Load(ctx, appcreds.LoadInput{
+		TenantID: tenantID,
+		StoreID:  storeID,
+		CredType: appcreds.CredTypeGooglePackageName,
+		Actor:    discoveryActor,
+	})
+	if err != nil {
+		// Expected for every merchant who never supplied one, so this is
+		// Info rather than Warn: at Warn it would fire on the majority of
+		// rows and train readers to skip it.
+		log.InfoContext(ctx, "lifecycle/discovery: no google package name on file",
+			"store_id", storeID, "err", err)
+		return ""
+	}
+	name := strings.TrimSpace(string(payload))
+	if err := appcreds.ValidateGooglePackageName(name); err != nil {
+		log.WarnContext(ctx, "lifecycle/discovery: stored google package name is not valid; treating as absent",
+			"store_id", storeID, "err", err)
+		return ""
+	}
+	return name
+}
+
 func (d *Discovery) discoverFirebaseProjectID(ctx context.Context, tenantID, storeID uuid.UUID, log *slog.Logger) string {
 	if d.Creds == nil {
 		log.WarnContext(ctx, "lifecycle/discovery: no credential loader; firebase project id not discovered",

@@ -238,12 +238,21 @@ func (c *ProAppCancelledConsumer) appendCoverageNote(ctx context.Context, ev Pro
 //
 // WHY THIS EXISTS RATHER THAN A PLACEHOLDER IDENTIFIER: the advancer
 // guards both of its Google calls with `if r.GooglePackage != ""`
-// (advancer.go), and GooglePackage is empty by design — there is no
-// source for it. So Play is never attempted, never errors, and never
-// logs: the row would advance all the way to credentials_purged having
-// said nothing whatsoever about Google, which is the same "we report a
-// teardown we never performed" failure this whole path exists to prevent,
-// one level down.
+// (advancer.go). When the guard does not fire, Play is never attempted,
+// never errors, and never logs: the row would advance all the way to
+// credentials_purged having said nothing whatsoever about Google, which is
+// the same "we report a teardown we never performed" failure this whole
+// path exists to prevent, one level down.
+//
+// SINCE #872 THERE IS A SOURCE, AND IT IS STILL OFTEN ABSENT. This comment
+// used to say GooglePackage was "empty by design — there is no source for
+// it", which was true until the optional `package_name` field landed on the
+// Play credential upload. The field is optional because that upload sits
+// behind an active Pro+App subscription (`appAddOnGate`), so no earlier
+// point could have required it, and every merchant onboarded before #872
+// has none. So an empty package is now an ORDINARY state rather than the
+// only state — which makes stating it on the row more important, not less:
+// two rows that look identical may differ in whether Play was reachable.
 //
 // TWO SEPARATE REASONS, both stated in the note. The Play client is NOT a
 // stub any more — day 30 halts the production track for real — so the
@@ -273,7 +282,8 @@ func teardownCoverage(ev ProAppCancelledEvent) string {
 			"google_play=will_attempt(package=%s, day-30 download halt only; day-60 unpublish has no "+
 				"Android Publisher API and requires a manual Play Console action)", ev.GooglePackage))
 	} else {
-		parts = append(parts, "google_play=NOT_ATTEMPTED(no package identifier is discoverable at cancel time, "+
+		parts = append(parts, "google_play=NOT_ATTEMPTED(no package identifier on file for this store "+
+			"(the optional package_name on the Play credential upload was never supplied), "+
 			"so the advancer's day-30 and day-60 Google calls, both guarded on google_package, "+
 			"will not run for this row; and even with a package, day 60 could never complete — "+
 			"unpublishing a Play listing has no Android Publisher API and requires a manual "+

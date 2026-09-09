@@ -30,6 +30,23 @@ const (
 	// CredTypeGooglePlayJSON is the Google Play Android Publisher
 	// service-account JSON (not a user OAuth credential).
 	CredTypeGooglePlayJSON CredType = "google-play-service-account"
+
+	// CredTypeGooglePackageName is the merchant's Android applicationId
+	// (e.g. "com.example.app").
+	//
+	// NOT A SECRET, and stored here anyway — following
+	// CredTypeAppleIssuerID, which is likewise a plain identifier. The
+	// reason is the choke-point in this package's doc comment: every read
+	// and write emits an audit event and a Prometheus counter, and the
+	// secret name embeds the tenant id, so tenant isolation is structural
+	// rather than a WHERE clause someone can forget. A new column on some
+	// other table would have neither property.
+	//
+	// It exists because Play, unlike App Store Connect, has no discovery
+	// endpoint: the Android Publisher API is edit-scoped, so every call
+	// needs the package name you are asking about and nothing can
+	// enumerate them (tesserix/mark8ly#872).
+	CredTypeGooglePackageName CredType = "google-play-package-name"
 )
 
 // AllCredTypes returns every CredType in a stable order. This is the
@@ -41,6 +58,7 @@ func AllCredTypes() []CredType {
 		CredTypeAppleIssuerID,
 		CredTypeAppleKeyID,
 		CredTypeGooglePlayJSON,
+		CredTypeGooglePackageName,
 	}
 }
 

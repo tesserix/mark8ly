@@ -13,6 +13,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -319,5 +320,102 @@ func TestAppAddOnGate_SubRepoError(t *testing.T) {
 	// Fail-closed: repo error → 403 add_on_not_active, not 500.
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403 (fail-closed)", w.Code)
+	}
+}
+
+// validGoogleSA is the shape PostGoogle accepts; the package-name tests below
+// vary only the package_name field so a failure names the field it is about.
+func validGoogleSA() []byte {
+	return []byte(`{
+	  "type":"service_account","project_id":"proj",
+	  "private_key":"-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----",
+	  "client_email":"sa@proj.iam.gserviceaccount.com"
+	}`)
+}
+
+func postGoogle(t *testing.T, fields map[string]any) (*httptest.ResponseRecorder, *appcreds.FakeSM, uuid.UUID) {
+	t.Helper()
+	tenantID, storeID, userID := uuid.New(), uuid.New(), uuid.New()
+	fake := appcreds.NewFakeSM()
+	svc := appcreds.NewService(appcreds.Config{ProjectID: "p", SM: fake, Emitter: nil})
+	repo := &fakeSubRepo{sub: &subscription.StoreSubscription{
+		TenantID: tenantID, StoreID: storeID,
+		Plan: subscription.PlanPro, HasWhiteLabelAppAddOn: true,
+	}}
+	h := NewAppCredentialsHandler(nil, repo, svc)
+
+	body, ct := makeMultipart(t, fields)
+	req := httptest.NewRequest(http.MethodPost, "/admin/stores/"+storeID.String()+"/app-credentials/google", body)
+	req.Header.Set("Content-Type", ct)
+	w := httptest.NewRecorder()
+	router(h, tenantID, userID).ServeHTTP(w, req)
+	return w, fake, tenantID
+}
+
+// package_name — the optional Android applicationId (#872).
+
+func TestPostGoogle_StoresPackageName(t *testing.T) {
+	w, fake, tenantID := postGoogle(t, map[string]any{
+		"service_account_json": validGoogleSA(),
+		"package_name":         "com.example.storefront",
+	})
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body: %s", w.Code, w.Body.String())
+	}
+	name := appcreds.Path("p", tenantID.String(), appcreds.CredTypeGooglePackageName)
+	if !fake.Has(name) {
+		t.Fatalf("package name not stored at %s", name)
+	}
+}
+
+func TestPostGoogle_PackageNameIsOptional(t *testing.T) {
+	// It HAS to be optional: this endpoint is behind appAddOnGate, which
+	// requires an active Pro+App subscription, so the sale always precedes
+	// the upload and no earlier point could have required a package name.
+	// Requiring it here would also lock existing merchants out of
+	// re-uploading their service account.
+	w, fake, tenantID := postGoogle(t, map[string]any{
+		"service_account_json": validGoogleSA(),
+	})
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body: %s", w.Code, w.Body.String())
+	}
+	if fake.Has(appcreds.Path("p", tenantID.String(), appcreds.CredTypeGooglePackageName)) {
+		t.Error("no package name was supplied; nothing should have been written for it")
+	}
+	if !fake.Has(appcreds.Path("p", tenantID.String(), appcreds.CredTypeGooglePlayJSON)) {
+		t.Error("the service account must still be stored")
+	}
+}
+
+func TestPostGoogle_RejectsMalformedPackageName(t *testing.T) {
+	// And critically: rejects it WITHOUT storing the service account, so a
+	// merchant never has to discover a half-applied upload by retrying.
+	for _, bad := range []string{"com", "com.example.my-app", "com.1example", "not a package"} {
+		t.Run(bad, func(t *testing.T) {
+			w, fake, tenantID := postGoogle(t, map[string]any{
+				"service_account_json": validGoogleSA(),
+				"package_name":         bad,
+			})
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+			}
+			if fake.Has(appcreds.Path("p", tenantID.String(), appcreds.CredTypeGooglePlayJSON)) {
+				t.Error("service account was stored despite the request being rejected")
+			}
+		})
+	}
+}
+
+func TestPostGoogle_PackageNameErrorNamesTheField(t *testing.T) {
+	// The service-account failure already answers "invalid_service_account_json".
+	// A package-name failure answering the same thing would send a merchant to
+	// re-export a credential that was fine.
+	w, _, _ := postGoogle(t, map[string]any{
+		"service_account_json": validGoogleSA(),
+		"package_name":         "nope",
+	})
+	if got := w.Body.String(); !strings.Contains(got, "invalid_package_name") {
+		t.Errorf("body = %s, want it to name invalid_package_name", got)
 	}
 }

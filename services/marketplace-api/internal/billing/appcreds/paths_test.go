@@ -39,8 +39,8 @@ func TestPath_MatchesSpec18_9(t *testing.T) {
 // CredType without adding it here would leak a credential past teardown.
 func TestAllCredTypes_Enumerated(t *testing.T) {
 	got := AllCredTypes()
-	if len(got) != 4 {
-		t.Errorf("AllCredTypes() len = %d, want 4", len(got))
+	if len(got) != 5 {
+		t.Errorf("AllCredTypes() len = %d, want 5", len(got))
 	}
 	// Must contain each known CredType exactly once.
 	seen := make(map[CredType]int)
@@ -49,6 +49,7 @@ func TestAllCredTypes_Enumerated(t *testing.T) {
 	}
 	want := []CredType{
 		CredTypeAppleP8, CredTypeAppleIssuerID, CredTypeAppleKeyID, CredTypeGooglePlayJSON,
+		CredTypeGooglePackageName,
 	}
 	for _, ct := range want {
 		if seen[ct] != 1 {
@@ -87,6 +88,7 @@ func TestAllCredTypes_StableOrder(t *testing.T) {
 		"apple-asc-issuer-id":         true,
 		"apple-asc-key-id":            true,
 		"google-play-service-account": true,
+		"google-play-package-name":    true,
 	}
 	for _, s := range gotStrs {
 		if !wantSet[s] {

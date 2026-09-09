@@ -326,9 +326,15 @@ func (a *Advancer) appleClient(ctx context.Context, r Row) (AppleTeardownClient,
 //
 // Unlike appleClient, a failure here is tolerated by the callers: Play
 // teardown is only partly possible — day 30 works, day 60 has no API at
-// all — and rows carry no GooglePackage by design (#702 decision 4), so
-// this path is unreached today. The asymmetry is deliberate: Apple stalls,
-// Play warns AND records what it did not do (recordGoogleSkip).
+// all. The asymmetry is deliberate: Apple stalls, Play warns AND records
+// what it did not do (recordGoogleSkip).
+//
+// THIS PATH IS REACHABLE SINCE #872. It previously could not run at all —
+// rows carried no GooglePackage because nothing produced one (#702
+// decision 4) — and this comment said so. The optional `package_name` on
+// the Play credential upload is now that source, so a row belonging to a
+// merchant who supplied one reaches here for real. Rows without a package
+// still skip the guard in the callers and never arrive.
 func (a *Advancer) googleClient(ctx context.Context, r Row) (googleplay.ClientAPI, error) {
 	if a.google == nil {
 		return nil, fmt.Errorf("lifecycle: no Google client factory configured (store %s carries package %s)",

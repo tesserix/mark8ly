@@ -55,7 +55,7 @@ at the helper with no obvious cause.
 **5. The Next.js client id is build-time, so bootstrap ordering is forced.**
 `NEXT_PUBLIC_ZITADEL_ADMIN_CLIENT_ID` and `NEXT_PUBLIC_ZITADEL_ISSUER` are
 inlined at `next build`. Zitadel mints the client id during bootstrap. CI must
-therefore bootstrap Zitadel *before* building any Next app. This is a hard
+therefore bootstrap Zitadel _before_ building any Next app. This is a hard
 ordering constraint, not a preference, and it is the single most likely thing to
 be got wrong by someone reordering steps for speed.
 
@@ -64,14 +64,29 @@ be got wrong by someone reordering steps for speed.
 Measured by which specs import auth helpers (`completeOnboarding`, `signIn`,
 `ADMIN_URL`):
 
-| tier | additionally needs | specs unlocked |
-|---|---|---|
-| runs today | nothing | 1 (`pricing`) |
-| B | postgres + OpenFGA + platform-api | up to 7 onboarding + probes |
-| C | + marketplace-api | storefront `home`, admin probes |
-| D | + Zitadel + auth-bff | **18 of 26 admin specs** |
+| tier       | additionally needs                | specs unlocked                  |
+| ---------- | --------------------------------- | ------------------------------- |
+| runs today | nothing                           | 1 (`pricing`)                   |
+| B          | postgres + OpenFGA + platform-api | up to 7 onboarding + probes     |
+| C          | + marketplace-api                 | storefront `home`, admin probes |
+| D          | + Zitadel + auth-bff              | **18 of 26 admin specs**        |
 
 Tier D holds most of the value and all of the risk.
+
+> **Addendum (measured 2026-09-09).** This table was derived by reading
+> imports and is wrong about Tier C -- see the Stage 2 addendum below. What
+> was measured against real stacks:
+>
+> | tier       | specs it actually unlocks                               |
+> | ---------- | ------------------------------------------------------- |
+> | runs today | 1 (`pricing`, 5 tests)                                  |
+> | B          | 3 onboarding specs (7 passed, 5 skipped) -- **shipped** |
+> | C          | **0**                                                   |
+> | D          | **19** -- 13 admin + 2 storefront + 4 onboarding        |
+>
+> The denominator changed too: 12 of the 35 were operator scripts, so there
+> are **23 real specs**, of which 4 run. Tier D is not "most of the value",
+> it is all of the remaining value.
 
 ## Approach
 
@@ -91,16 +106,16 @@ instance.
 
 That file is a 1048-line reconciler that already creates orgs, projects, OIDC
 apps, roles, machine users and PATs against a live instance, and its header
-records that every JSON shape is pinned to what was *observed*, not to what the
+records that every JSON shape is pinned to what was _observed_, not to what the
 docs claim. We port its handling for the specific calls we make, and skip the
 rest (SMTP, branding, assets, IDP templates) as irrelevant to CI.
 
 Rejected alternatives:
 
-- *Vendor `bootstrap.py` wholesale.* Cross-repo coupling for a file that is
+- _Vendor `bootstrap.py` wholesale._ Cross-repo coupling for a file that is
   ~85% irrelevant here, and it reconciles a long-lived instance rather than
   initialising a fresh one.
-- *Commit a pre-bootstrapped Zitadel database dump.* Fastest and fully
+- _Commit a pre-bootstrapped Zitadel database dump._ Fastest and fully
   deterministic — fixed client ids remove the ordering constraint entirely — but
   it is an opaque blob that drifts silently from the Zitadel version. That is
   exactly the "fixture diverges from reality" failure this issue exists to
@@ -113,11 +128,11 @@ authenticates with that PAT for everything else.
 ### Two scars to encode, from prior sessions
 
 - **A test user needs an explicit project grant.** With `projectRoleCheck=true`,
-  a user without a grant gets a 403 at *finalize* — after a successful password
+  a user without a grant gets a 403 at _finalize_ — after a successful password
   check. A bootstrap that skips the grant produces a spec failure that reads as
   broken auth rather than as missing setup.
 - **Zitadel v2 protojson flattens oneofs.** A wrapped oneof returns 200 and
-  silently does the wrong thing, so the bootstrap must assert on the *success*
+  silently does the wrong thing, so the bootstrap must assert on the _success_
   path rather than trusting the status code.
 
 ## Staging
@@ -139,6 +154,31 @@ GIP block so `make dev` works again.
 
 **Stage 2 (Tier C).** Add marketplace-api to the CI path and the storefront and
 admin apps. Unlocks the storefront and probe specs.
+
+> **Addendum (superseded by measurement, 2026-09-09):** Tier C unlocks
+> **nothing**, and the tier table above overstates it in the same way the
+> Stage 1 magic-link claim did. Measured against a running Tier C stack:
+>
+> - Both storefront specs (`home`, `auth-isolation`) walk
+>   `set-password -> /welcome`, so they are **Tier D**, not Tier C.
+> - Of the four admin specs that reach `ADMIN_URL` without an auth helper,
+>   only `pricing` passes (5 tests, and it already ran). `image-audit`,
+>   `products-sync` and `delivery-timeline` all fail at `/login`.
+> - The 8 admin specs that import no auth helper at all are **not tests**:
+>   six contain zero `expect()` calls, and all of them attach to a
+>   pre-existing tenant with caller-supplied credentials.
+>
+> So Stage 2 was retired as a no-op. What shipped under its name instead was
+> an honesty pass: fix two compose defects that meant marketplace-api had
+> **never started** in the dev stack, and move 12 operator scripts out of
+> `tests/e2e/`. The real remaining work is entirely Tier D.
+>
+> **The dividing line that replaced the tier table** -- a spec belongs in
+> `tests/e2e/` if it builds its own tenant (`completeOnboarding()`); it is an
+> operator script if it attaches to an existing one (`TENANT_NAME` plus
+> caller credentials). That partitions all 26 original admin specs with no
+> judgement calls left over, and it is what `tests/operator/README.md` now
+> records.
 
 **Stage 3 (Tier D).** Add Zitadel plus the bootstrap script, wire auth-bff, feed
 the minted client id into the Next builds, and enable the 18 auth-dependent

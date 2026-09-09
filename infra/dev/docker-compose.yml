@@ -154,7 +154,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["up"]
+    # Full argv: the migrate stage sets CMD with no ENTRYPOINT, so a bare
+    # ["up"] replaces the binary instead of being passed to it.
+    command: ["/migrate", "up"]
     restart: "no"
 
   auth-bff:
@@ -186,7 +188,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["up"]
+    # Full argv: the migrate stage sets CMD with no ENTRYPOINT, so a bare
+    # ["up"] replaces the binary instead of being passed to it.
+    command: ["/usr/local/bin/migrate", "up"]
     restart: "no"
 
   marketplace-api:

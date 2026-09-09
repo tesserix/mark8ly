@@ -44,7 +44,6 @@ jobs:
       install_directory: .
       lockfile_path: package-lock.json
       node_version: "24"
-      legacy_peer_dependencies: true
       # A tag push builds ANDROID only: mobile-admin-ios-release.yml answers
       # the same tag with a local iOS build, and leaving this at 'all' would
       # build and submit iOS twice — once here on EAS quota, once there for

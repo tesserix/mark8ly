@@ -51,9 +51,6 @@ jobs:
       # Metro run on EAS's servers there; in a LOCAL build they run HERE.
       # Root package.json pins `engines: { node: ">=24" }`.
       node_version: "24"
-      # The committed lockfile needs legacy peer resolution, same as the cloud
-      # workflow — without it `npm ci` fails on peer conflicts.
-      legacy_peer_dependencies: true
       profile: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'production' }}
       submit: ${{ github.event_name != 'workflow_dispatch' || inputs.submit }}
     secrets:

@@ -367,6 +367,106 @@ class ReusableCIContract(unittest.TestCase):
             "only ever be set by hand, never by CI:\n" + "\n".join(offenders),
         )
 
+    def test_no_install_path_relaxes_peer_resolution(self) -> None:
+        """No CI or image install may use legacy peer resolution (#869).
+
+        `--legacy-peer-deps` was in every install path for exactly one
+        reason: apps/mobile-admin mixed expo@56 with expo-router@57, which a
+        plain `npm install` cannot resolve. #869 realigned those pins, so the
+        flag no longer has a job.
+
+        Keeping it out matters more than removing it did. Under the flag a
+        package can import something it never declared and survive on
+        hoisting until a version moves -- that shipped twice (#863's five
+        undeclared expo peers, #867's 37 @tiptap/core call sites) and left
+        `expo-web-browser` and `react-native-otp-entry` unresolvable in
+        apps/mobile-admin's own typecheck. It also makes `npm install
+        --legacy-peer-deps` -- the obvious move when an advisory lands --
+        destructive: it prunes every peer-only entry from the lockfile.
+
+        Without the flag a cross-major bump fails loudly at install instead.
+
+        Globbing both workflow extensions and every Dockerfile means a NEW
+        file reintroducing the flag is covered the day it lands, which is
+        how it spread in the first place.
+        """
+        offenders = []
+
+        workflow_dir = ROOT / ".github/workflows"
+        for path in sorted(
+            p
+            for pattern in ("*.yml", "*.yaml")
+            for p in workflow_dir.glob(pattern)
+        ):
+            for lineno, line in enumerate(path.read_text().splitlines(), 1):
+                if line.lstrip().startswith("#"):
+                    continue  # prose about the flag is fine; using it is not
+                if "--legacy-peer-deps" in line or "legacy_peer_dependencies" in line:
+                    offenders.append(f".github/workflows/{path.name}:{lineno}")
+
+        for dockerfile in sorted(ROOT.glob("apps/*/Dockerfile")):
+            for lineno, line in enumerate(dockerfile.read_text().splitlines(), 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                if "--legacy-peer-deps" in line:
+                    rel = dockerfile.relative_to(ROOT)
+                    offenders.append(f"{rel}:{lineno}")
+
+        self.assertEqual(
+            offenders,
+            [],
+            "legacy peer resolution is back in an install path -- it hides "
+            "undeclared imports and makes `npm install` prune peer deps "
+            "(#869):\n" + "\n".join(offenders),
+        )
+
+    def test_mobile_admin_expo_packages_share_one_sdk_major(self) -> None:
+        """Every expo-versioned pin in mobile-admin must match `expo` (#869).
+
+        Expo publishes expo-* and jest-expo on the SDK's own major, so
+        `expo@~56` pairs with `expo-router@~56`, `expo-constants@~56` and so
+        on. Dependabot does not know that: #84, #86 and #88 each bumped one
+        package across a major on its own, which is what produced the
+        unresolvable tree.
+
+        The install now fails on such a bump too, but with an ERESOLVE dump
+        that names transitive peers rather than the mistake. This fails at
+        the policy gate instead, and says which package drifted.
+
+        Scoped to mobile-admin deliberately: apps/mobile-storefront is on
+        SDK 52, which predates unified SDK versioning (expo-constants@~17,
+        expo-device@~7), so the rule does not hold there.
+
+        @expo-google-fonts/* is excluded -- it versions independently of the
+        SDK (currently ^0.4.0).
+        """
+        manifest = json.loads((ROOT / "apps/mobile-admin/package.json").read_text())
+        pins = {**manifest["dependencies"], **manifest["devDependencies"]}
+
+        def major(spec: str) -> str:
+            found = re.search(r"(\d+)", spec)
+            self.assertIsNotNone(found, f"unparseable version range: {spec}")
+            return found.group(1)
+
+        sdk = major(pins["expo"])
+        self.assertGreaterEqual(
+            int(sdk), 56, "this rule assumes unified SDK versioning (SDK >= 53)"
+        )
+
+        drifted = {
+            name: spec
+            for name, spec in sorted(pins.items())
+            if (name == "expo" or name.startswith("expo-") or name == "jest-expo")
+            and major(spec) != sdk
+        }
+        self.assertEqual(
+            drifted,
+            {},
+            f"apps/mobile-admin is on Expo SDK {sdk}; these pins are on "
+            "another major, which npm cannot resolve (#869):\n"
+            + "\n".join(f"  {n}: {v}" for n, v in drifted.items()),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

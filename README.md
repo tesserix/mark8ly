@@ -58,7 +58,7 @@ npm workspaces.
 
 ```bash
 # 1. Install JS deps (npm workspaces)
-npm install --legacy-peer-deps
+npm install
 
 # 2. Pull local secrets + bring up the local stack
 #    Postgres, OpenFGA, Firebase Auth emulator, platform-api,

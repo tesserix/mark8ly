@@ -4,6 +4,7 @@ import {
   ADMIN_URL,
   API_URL,
   completeOnboarding,
+  signInAsOwner,
   uniqueEmail,
 } from "./helpers";
 
@@ -42,16 +43,10 @@ test("owner invites viewer → invitee accepts via password → lands in read-on
   await signupCtx.close();
 
   // ── 2. Sign in + navigate to /settings/team ─────────────────────
-  const ownerCtx = await browser.newContext();
+  const ownerCtx = await signInAsOwner(browser, request, owner);
   const ownerPage = await ownerCtx.newPage();
 
-  await ownerPage.goto(`${ADMIN_URL}/login`);
-  await ownerPage.getByLabel(/email address/i).fill(owner.email);
-  await ownerPage.getByLabel(/password/i).fill(owner.password);
-  await ownerPage.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(ownerPage).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
-  await ownerPage.goto(`${ADMIN_URL}/settings/team`);
+  await ownerPage.goto(`/settings/team`);
   await expect(
     ownerPage.getByRole("heading", { name: /^team$/i }),
   ).toBeVisible();

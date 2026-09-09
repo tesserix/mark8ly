@@ -1,7 +1,10 @@
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
-import { ADMIN_URL, completeOnboarding } from "./helpers";
+import {
+  completeOnboarding,
+  signInAsOwner,
+} from "./helpers";
 
 /**
  * M7c — Media flow E2E.
@@ -45,17 +48,11 @@ async function signInAndSeedProduct(
   const details = await completeOnboarding(signupPage, request, label);
   await signupCtx.close();
 
-  const ctx = await browser.newContext();
+  const ctx = await signInAsOwner(browser, request, details);
   const page = await ctx.newPage();
 
-  await page.goto(`${ADMIN_URL}/login`);
-  await page.getByLabel(/email address/i).fill(details.email);
-  await page.getByLabel(/password/i).fill(details.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
   // Create the draft product via the UI so media uploads have an id.
-  await page.goto(`${ADMIN_URL}/products/new`);
+  await page.goto(`/products/new`);
   await page.getByLabel(/^title$/i).fill("Linen tee");
   await page.getByLabel(/^handle$/i).fill(`linen-tee-${label}`);
   await page.getByLabel(/^price/i).fill("19.99");

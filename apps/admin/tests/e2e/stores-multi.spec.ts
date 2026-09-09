@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { ADMIN_URL, completeOnboarding, uniqueEmail } from "./helpers";
+import {
+  completeOnboarding,
+  signInAsOwner,
+  uniqueEmail,
+} from "./helpers";
 
 /**
  * Phase Q.2 — multi-store lifecycle.
@@ -39,16 +43,10 @@ test("owner creates a second store, switches, and edits each separately", async 
   await signupCtx.close();
 
   // ── 2. Sign in + stores index ────────────────────────────────
-  const ctx = await browser.newContext();
+  const ctx = await signInAsOwner(browser, request, owner);
   const page = await ctx.newPage();
 
-  await page.goto(`${ADMIN_URL}/login`);
-  await page.getByLabel(/email address/i).fill(owner.email);
-  await page.getByLabel(/password/i).fill(owner.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
-  await page.goto(`${ADMIN_URL}/settings/stores`);
+  await page.goto(`/settings/stores`);
   const initialRows = page.getByTestId("store-row");
   await expect(initialRows).toHaveCount(1);
   await expect(initialRows.first()).toContainText(/current/i);

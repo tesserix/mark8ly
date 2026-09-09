@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { ADMIN_URL, completeOnboarding } from "./helpers";
+import {
+  completeOnboarding,
+  signInAsOwner,
+} from "./helpers";
 
 /**
  * M7d — Products bulk actions + copy-to-store E2E flows.
@@ -26,18 +29,11 @@ test.describe("M7d bulk actions", () => {
     const details = await completeOnboarding(signupPage, request, "m7d-bulk");
     await signupCtx.close();
 
-    const ctx = await browser.newContext();
+    const ctx = await signInAsOwner(browser, request, details);
     const page = await ctx.newPage();
 
-    // Sign in
-    await page.goto(`${ADMIN_URL}/login`);
-    await page.getByLabel(/email address/i).fill(details.email);
-    await page.getByLabel(/password/i).fill(details.password);
-    await page.getByRole("button", { name: /^sign in$/i }).click();
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
     // Navigate to products
-    await page.goto(`${ADMIN_URL}/products`);
+    await page.goto(`/products`);
     await expect(
       page.getByRole("heading", { name: /^products$/i, level: 1 }),
     ).toBeVisible();
@@ -81,18 +77,11 @@ test.describe("M7d bulk actions", () => {
     const details = await completeOnboarding(signupPage, request, "m7d-copy");
     await signupCtx.close();
 
-    const ctx = await browser.newContext();
+    const ctx = await signInAsOwner(browser, request, details);
     const page = await ctx.newPage();
 
-    // Sign in
-    await page.goto(`${ADMIN_URL}/login`);
-    await page.getByLabel(/email address/i).fill(details.email);
-    await page.getByLabel(/password/i).fill(details.password);
-    await page.getByRole("button", { name: /^sign in$/i }).click();
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
     // Navigate to products
-    await page.goto(`${ADMIN_URL}/products`);
+    await page.goto(`/products`);
 
     // Wait for product rows
     const rows = page.locator("table tbody tr");
@@ -136,7 +125,7 @@ test.describe("M7d bulk actions", () => {
       const storeOptions = page.getByRole("option");
       if ((await storeOptions.count()) > 1) {
         await storeOptions.nth(1).click();
-        await page.goto(`${ADMIN_URL}/products`);
+        await page.goto(`/products`);
         if (firstProductTitle) {
           await expect(page.getByText(firstProductTitle)).toBeVisible({
             timeout: 10_000,

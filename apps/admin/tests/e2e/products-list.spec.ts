@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { ADMIN_URL, completeOnboarding } from "./helpers";
+import {
+  completeOnboarding,
+  signInAsOwner,
+} from "./helpers";
 
 /**
  * M7a — Products list page.
@@ -30,16 +33,10 @@ test("products list renders the empty state for a fresh tenant", async ({
   const details = await completeOnboarding(signupPage, request, "m7a");
   await signupCtx.close();
 
-  const ctx = await browser.newContext();
+  const ctx = await signInAsOwner(browser, request, details);
   const page = await ctx.newPage();
 
-  await page.goto(`${ADMIN_URL}/login`);
-  await page.getByLabel(/email address/i).fill(details.email);
-  await page.getByLabel(/password/i).fill(details.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
-  await page.goto(`${ADMIN_URL}/products`);
+  await page.goto(`/products`);
 
   // Editorial header
   await expect(

@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { ADMIN_URL, completeOnboarding } from "./helpers";
+import {
+  completeOnboarding,
+  signInAsOwner,
+} from "./helpers";
 
 /**
  * Post-settings-IA-restructure `/settings/storefront` was renamed to
@@ -17,16 +20,10 @@ test("settings/themes saves and persists layout choice", async ({
   const details = await completeOnboarding(signupPage, request, "themes");
   await signupCtx.close();
 
-  const ctx = await browser.newContext();
+  const ctx = await signInAsOwner(browser, request, details);
   const page = await ctx.newPage();
 
-  await page.goto(`${ADMIN_URL}/login`);
-  await page.getByLabel(/email address/i).fill(details.email);
-  await page.getByLabel(/password/i).fill(details.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
-  await page.goto(`${ADMIN_URL}/settings/themes`);
+  await page.goto(`/settings/themes`);
   await expect(
     page.getByRole("heading", { name: /branding/i, level: 1 }),
   ).toBeVisible();

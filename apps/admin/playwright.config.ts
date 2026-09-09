@@ -26,6 +26,15 @@ export default defineConfig({
   // reach marketplace-api and platform-api, and the assertion regularly
   // fires before the RSC stream lands -- producing "element(s) not found"
   // on headings that demonstrably render (#858).
+  // Every spec here now begins with a REAL onboarding — form, magic link,
+  // set-password, Zitadel user provisioning — which costs ~20s on its own,
+  // so Playwright's 30s default left ~10s for the assertions themselves.
+  //
+  // 60s, not more: measured at 120s the same six specs still failed and the
+  // suite went from 5.8min to 16.5min. Extra budget bought nothing because
+  // those six are hanging on something real, not running out of clock — a
+  // longer timeout would only have hidden that behind a slower suite (#858).
+  timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,

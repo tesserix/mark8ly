@@ -533,9 +533,30 @@ When a Pro+App merchant cancels or churns, the apps cannot just vanish — their
 |---|---|
 | 0 | Cancellation confirmed. Push notification disabled (Firebase project placed in read-only). |
 | 7 | In-app banner deploys: "Service ending in 53 days. Contact [merchant email] for questions." |
-| 30 | New downloads blocked (app marked unavailable in both stores). Existing users still open app; storefront shows "Store closed" page. |
-| 60 | App pulled from both stores. Firebase project archived. Existing installs show static "service ended" screen on launch. |
+| 30 | New downloads blocked (Apple: unavailable in all territories. Play: production release `halted`). Existing users still open app; storefront shows "Store closed" page. |
+| 60 | **Apple:** app removed. **Play: the listing stays up — not automatable, requires a person (see the note below).** Firebase project archived. Existing installs show static "service ended" screen on launch. |
 | 90 | Firebase project deleted. App removed from tenant's Apple/Google accounts (optional — merchant decides). |
+
+> **Day 60 on Google Play has no API, and this table used to claim otherwise.**
+>
+> Verified against the Android Publisher v3 reference on 2026-09-09 (#862): there is no
+> `unpublished` release status — the values are `draft`, `inProgress`, `halted`,
+> `completed`, `statusUnspecified`. `edits.tracks.update` manages releases *within* a
+> track and cannot delist, and the `applications` resource has exactly one method,
+> `dataSafety`. `edits.listings.delete` and `countryTargeting` were both considered and
+> rejected. Unpublishing is a Play Console action performed by a person.
+>
+> `googleplay.Client.PullApp` therefore returns `ErrUnpublishNotSupported` rather than
+> reporting a success it did not earn (#860), and the advancer records the skip as
+> `white_label_app_lifecycle_step_skipped_total{surface="google_play",step="pull_app"}`.
+> **That counter rising is the expected steady state, not a fault** — it is the signal an
+> operator acts on, and `docs/runbooks/white-label-app-lifecycle.md` carries the manual
+> step.
+>
+> Nothing merchant-facing has ever asserted the stronger promise — this table was the only
+> place it appeared, so it is corrected here rather than walked back with customers. That
+> is only possible because it was caught before the day-60 path became reachable: nothing
+> produces a Play package identifier yet, so neither Play step runs in production today.
 
 **Merchant-initiated immediate pull**: merchant can request accelerated teardown. Apps pulled within 7 days, Firebase archived immediately.
 

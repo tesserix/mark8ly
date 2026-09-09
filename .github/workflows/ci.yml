@@ -104,9 +104,22 @@ jobs:
       # set is listed, so metro/react-native picking up anything unrelated
       # still fails. Revisit on the next react-native bump: drop these two
       # ids and see whether the chain has been patched upstream.
+      #
+      # TEMPORARY — four advisories published 2026-09-08, tracked by #864.
+      #
+      # Unlike image-size above these DO have in-range fixes; they cannot be
+      # applied because the lockfile cannot currently be regenerated.
+      # Generating with --legacy-peer-deps silently drops peer deps (a no-op
+      # regen loses ~50 packages incl. @tiptap/pm and expo-haptics, breaking
+      # the admin suite); generating without it fails on an Expo SDK conflict
+      # in apps/mobile-admin. `npm ci --legacy-peer-deps` stays safe — it
+      # honours the lock as written. #864 has the evidence.
+      #
+      # `next` is a CRITICAL. Removing these five ids is the FIRST thing to
+      # try once #864 lands, not a later cleanup.
       audit_allowlist: >-
-        GHSA-w3rx-r6r6-pgpr
-        GHSA-5p2g-fcmc-qvqq
+        GHSA-w3rx-r6r6-pgpr GHSA-5p2g-fcmc-qvqq GHSA-2xp9-vwfh-vxw4 GHSA-p293-qw3h-jr36
+        GHSA-rgj7-g3m4-5g8c GHSA-cp6q-959q-f8rh GHSA-j95f-988m-3j2f GHSA-2883-xcg3-v3hh
     secrets:
       package_read_token: ${{ secrets.GHCR_PAT }}
 

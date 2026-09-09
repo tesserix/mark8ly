@@ -467,6 +467,51 @@ class ReusableCIContract(unittest.TestCase):
             + "\n".join(f"  {n}: {v}" for n, v in drifted.items()),
         )
 
+    def test_e2e_onboarding_pr_and_push_watch_the_same_paths(self) -> None:
+        """The onboarding e2e triggers must filter on one path list (#858).
+
+        This workflow is expensive (a docker compose stack plus a cold Next
+        16 build), so it runs only when a PR touches what it tests. That is
+        only safe while the `pull_request` and `push` path lists agree: a
+        path listed under `push` alone is a path whose breakage is found
+        after the merge instead of on the PR that caused it.
+
+        It also keeps the workflow self-validating. Because
+        `.github/workflows/e2e-onboarding.yml` is itself in both lists, any
+        PR editing this workflow runs it -- which is the property that was
+        missing when it reached review having never once executed.
+
+        Parsed rather than grepped: PyYAML resolves the bare `on:` key to
+        the boolean True, which is why this reads d[True] with a fallback.
+        """
+        try:
+            import yaml
+        except ImportError:  # pragma: no cover - yaml ships on the runner
+            self.skipTest("PyYAML unavailable")
+
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows/e2e-onboarding.yml").read_text()
+        )
+        triggers = workflow[True] if True in workflow else workflow["on"]
+
+        self.assertIn(
+            "pull_request",
+            triggers,
+            "e2e-onboarding.yml lost its pull_request trigger -- without it "
+            "the workflow can reach main having never executed (#858)",
+        )
+        self.assertEqual(
+            triggers["pull_request"]["paths"],
+            triggers["push"]["paths"],
+            "e2e-onboarding.yml's pull_request and push path filters have "
+            "diverged; a path watched only on push is found only after merge",
+        )
+        self.assertIn(
+            ".github/workflows/e2e-onboarding.yml",
+            triggers["pull_request"]["paths"],
+            "e2e-onboarding.yml must watch itself, so a PR editing it runs it",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

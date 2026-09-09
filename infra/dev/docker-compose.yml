@@ -13,9 +13,10 @@
 #
 # What's NOT running here:
 #   - The onboarding Next.js app — run on host with `cd apps/onboarding && npm run dev`
-#   - Any auth emulator — auth-bff talks to real Google Identity Platform
-#     (project: tesseracthub-480811). Secrets are loaded from GCP Secret
-#     Manager into infra/dev/.env.local by `make dev-secrets`.
+#   - Any identity provider — the Tier-B stack runs without one. Specs that
+#     need sign-in are enabled in Stage 3 (#858), which adds a disposable
+#     Zitadel to this file. Do not point this stack at the shared live
+#     instance at auth.tesserix.app.
 
 services:
 
@@ -89,7 +90,8 @@ services:
 
   platform-api-migrate:
     build:
-      context: ../../services/platform-api
+      context: ../..
+      dockerfile: services/platform-api/Dockerfile
       target: migrate
     environment:
       ENV: dev
@@ -97,12 +99,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["up"]
+    # Full argv: the migrate stage sets CMD with no ENTRYPOINT, so a bare
+    # ["up"] replaces the binary instead of being passed to it.
+    command: ["/migrate", "up"]
     restart: "no"
 
   platform-api-seed:
     build:
-      context: ../../services/platform-api
+      context: ../..
+      dockerfile: services/platform-api/Dockerfile
       target: seed
     environment:
       ENV: dev
@@ -114,7 +119,8 @@ services:
 
   platform-api:
     build:
-      context: ../../services/platform-api
+      context: ../..
+      dockerfile: services/platform-api/Dockerfile
       target: server
     env_file:
       - .env.local
@@ -148,7 +154,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["up"]
+    # Full argv: the migrate stage sets CMD with no ENTRYPOINT, so a bare
+    # ["up"] replaces the binary instead of being passed to it.
+    command: ["/migrate", "up"]
     restart: "no"
 
   auth-bff:
@@ -180,7 +188,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["up"]
+    # Full argv: the migrate stage sets CMD with no ENTRYPOINT, so a bare
+    # ["up"] replaces the binary instead of being passed to it.
+    command: ["/usr/local/bin/migrate", "up"]
     restart: "no"
 
   marketplace-api:

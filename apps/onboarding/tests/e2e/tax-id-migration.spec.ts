@@ -1,4 +1,36 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
+
+// The migration fast-path UI is gated behind a feature flag that is
+// deliberately off (OnboardingForm.tsx:43): "Migration fast-path (§5.1.1)
+// is hidden from the UI until the flow is tested end-to-end — everyone
+// signs up as a new store. Flip to true to restore the question; all
+// validation and submit wiring stays intact." While the flag is false,
+// the radio group and evidence panel in the "migration fast-path"
+// describe block below simply do not render, so those tests are skipped
+// rather than treated as failures. Read the flag's current value out of
+// the source file at test time (same shape as
+// apps/onboarding/tests/unit/dev-stack-config.spec.ts) so that flipping
+// the flag back to true automatically re-enables these tests — no one
+// has to remember to touch this spec.
+const formSource = readFileSync(
+  join(
+    __dirname,
+    "../../components/onboarding/OnboardingForm.tsx",
+  ),
+  "utf8",
+);
+const migrationFlagMatch = formSource.match(
+  /const MIGRATION_UI_ENABLED = (true|false);/,
+);
+if (!migrationFlagMatch) {
+  throw new Error(
+    "Could not find `const MIGRATION_UI_ENABLED = true|false;` in OnboardingForm.tsx — " +
+      "update this regex if the flag declaration changed shape.",
+  );
+}
+const MIGRATION_UI_ENABLED = migrationFlagMatch[1] === "true";
 
 /**
  * P16 Task 12 — Tax-ID field + §5.1.1 migration fast-path evidence.
@@ -65,6 +97,17 @@ test.describe("tax ID field", () => {
 });
 
 test.describe("migration fast-path (§5.1.1)", () => {
+  test.beforeEach(async () => {
+    // See the top-of-file comment: OnboardingForm.tsx:43 hides this UI
+    // behind MIGRATION_UI_ENABLED = false on purpose. This is not a bug —
+    // do not remove this skip to "fix" a failure; flip the flag instead
+    // once the flow has been tested end-to-end.
+    test.skip(
+      !MIGRATION_UI_ENABLED,
+      "migration fast-path UI is behind MIGRATION_UI_ENABLED (OnboardingForm.tsx:43), currently off",
+    );
+  });
+
   test("migration radio defaults to 'new store'", async ({ page }) => {
     await page.goto("/onboarding");
 

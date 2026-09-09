@@ -85,3 +85,6 @@ CLAUDE.md
 
 # Local (kind) Secret — copy of k8s/secrets.example.yaml; never commit real creds
 k8s/secrets.yaml
+
+# Per-developer local port overrides for the dev stack (task-1 e2e baseline)
+infra/dev/docker-compose.override.yml

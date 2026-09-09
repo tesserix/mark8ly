@@ -5,9 +5,14 @@
 #   - SERVICE=<name> selects which Go service for migrate/seed targets.
 #   - Local stack lives in infra/dev/docker-compose.yml.
 
-COMPOSE := docker compose -f infra/dev/docker-compose.yml --project-directory infra/dev
+# docker compose auto-merges docker-compose.override.yml ONLY when no -f is
+# passed. We pass -f, so the override must be listed explicitly or it is
+# silently inert — see #858. wildcard yields nothing when the file is absent,
+# so this stays correct on a machine that has no override.
+COMPOSE_OVERRIDE := $(wildcard infra/dev/docker-compose.override.yml)
+COMPOSE := docker compose -f infra/dev/docker-compose.yml $(if $(COMPOSE_OVERRIDE),-f $(COMPOSE_OVERRIDE),) --project-directory infra/dev
 
-.PHONY: help dev dev-secrets dev-down dev-logs dev-clean build test test-unit test-int cover lint check-types e2e \
+.PHONY: help dev dev-min dev-secrets dev-down dev-logs dev-clean build test test-unit test-int cover lint check-types e2e \
         migrate-up migrate-down migrate-version migrate-new seed go-tidy go-build clean
 
 help:
@@ -18,6 +23,10 @@ dev-secrets: ## Pull GIP/OAuth secrets from GCP Secret Manager into infra/dev/.e
 
 dev: dev-secrets ## Bring up the full local stack (auto-loads secrets first)
 	$(COMPOSE) up --build
+
+dev-min: ## Bring up the Tier-B stack (postgres, OpenFGA, platform-api) with no GCP access
+	$(COMPOSE) up -d postgres openfga-migrate openfga openfga-seed \
+	                platform-api-migrate platform-api-seed platform-api
 
 dev-down: ## Stop the local stack
 	$(COMPOSE) down

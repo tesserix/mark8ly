@@ -92,6 +92,7 @@ export function uniqueEmail(label = "admin-e2e"): {
   slug: string;
   businessName: string;
   password: string;
+  name: string;
 } {
   const stamp = `${Date.now().toString(36)}${Math.floor(
     Math.random() * 1e4,
@@ -103,7 +104,15 @@ export function uniqueEmail(label = "admin-e2e"): {
     businessName: `${label} ${stamp}`,
     // Phase M: the set-password page collects this after the magic link
     // is consumed. Stable per call so the admin sign-in spec can reuse it.
-    password: "e2e-test-password-123",
+    // Must satisfy the onboarding password policy (>=12 chars with upper,
+    // lower, digit AND symbol). The old value had neither an uppercase
+    // letter nor a symbol; every completeOnboarding() bounced on the policy
+    // message. Same drift #858 stage 3a fixed in the onboarding suite.
+    // Deliberately low-entropy: a random-looking literal trips gitleaks.
+    password: "E2e-test-password-123!",
+    // The set-password step requires a name -- Zitadel needs a
+    // givenName/familyName and platform-api splits this single field.
+    name: "E2E Tester",
   };
 }
 
@@ -158,6 +167,7 @@ export async function completeOnboarding(
   slug: string;
   businessName: string;
   password: string;
+  name: string;
 }> {
   const details = uniqueEmail(label);
 
@@ -189,6 +199,7 @@ export async function completeOnboarding(
   await expect(page).toHaveURL(/\/onboarding\/set-password/, {
     timeout: 15_000,
   });
+  await page.locator("#name").fill(details.name);
   await page.locator("#password").fill(details.password);
   await page.getByRole("button", { name: /create account/i }).click();
   await expect(page).toHaveURL(/\/welcome/, { timeout: 15_000 });

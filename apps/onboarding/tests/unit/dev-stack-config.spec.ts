@@ -86,6 +86,45 @@ test('no docker-compose service uses a bare command: ["up"]', () => {
   }
 });
 
+// platform-api must reach marketplace-api by its compose name (#858).
+//
+// Its config default is the production k8s DNS name. Unset here, every
+// onboarding Complete fails DNS three times with backoff -- ensure-self-vendor,
+// ensure-self-store, ensure-subscription -- taking ~20s and logging
+// "THIS STORE HAS NO TRIAL CLOCK". The store is still created and the request
+// still returns 200, so nothing fails: the dev stack silently produced
+// trial-less stores, and the e2e specs merely timed out at 15s looking like a
+// backend problem.
+test("platform-api reaches marketplace-api by its compose service name", () => {
+  const yml = readFileSync(join(root, "infra/dev/docker-compose.yml"), "utf8");
+  const block = yml.match(/^ {2}platform-api:\n((?: {4}.*\n|\n)*)/m)?.[1];
+  expect(block, "platform-api service block not found").toBeTruthy();
+  const url = block?.match(/^ {6}MARKETPLACE_API_URL:\s*(\S+)/m)?.[1];
+  expect(
+    url,
+    "platform-api has no MARKETPLACE_API_URL, so it keeps the k8s production " +
+      "default and every onboarding Complete is slow and trial-less",
+  ).toBeTruthy();
+  expect(url).toMatch(/^http:\/\/marketplace-api:/);
+});
+
+// Zitadel mints its bootstrap PAT only when an expiry is declared (#858).
+//
+// With the machine-user keys but no PAT block, v4.15.3 starts cleanly, serves
+// healthz, and writes NOTHING to PATPATH -- so the bootstrap fails later with
+// an empty token file and the cause is three steps upstream.
+test("zitadel declares a first-instance PAT expiry, or no token is minted", () => {
+  const yml = readFileSync(join(root, "infra/dev/docker-compose.yml"), "utf8");
+  const block = yml.match(/^ {2}zitadel:\n((?: {4}.*\n|\n)*)/m)?.[1];
+  expect(block, "zitadel service block not found").toBeTruthy();
+  expect(block).toMatch(/ZITADEL_FIRSTINSTANCE_PATPATH:/);
+  expect(
+    block,
+    "ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE is required: " +
+      "without it the machine user exists but no PAT is ever written",
+  ).toMatch(/ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE:/);
+});
+
 // A distroless runtime cannot run a shell-based healthcheck (#858).
 //
 // marketplace-api declared `test: ["CMD", "wget", ...]` while its runtime

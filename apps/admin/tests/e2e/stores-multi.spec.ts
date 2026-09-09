@@ -54,14 +54,27 @@ test("owner creates a second store, switches, and edits each separately", async 
   // ── 3. Add a second store ────────────────────────────────────
   const second = uniqueEmail("store2");
   await page.getByRole("button", { name: /\+ add store/i }).click();
-  await page.getByLabel(/store name/i).fill(`${owner.businessName} Outlet`);
-  await page.getByLabel(/url slug/i).fill(second.slug);
+  // Distinct ids, not getByLabel: the page behind this inline panel
+  // (StoresList.tsx:322 — a <section>, not a dialog) already has a
+  // "Store name" for the current store, so an unscoped label matches
+  // two elements and strict mode correctly refuses.
+  await page.locator("#new-store-name").fill(`${owner.businessName} Outlet`);
+  await page.locator("#new-store-slug").fill(second.slug);
   // Country + currency + timezone default to US/USD/America/New_York
   await page.getByRole("button", { name: /create store/i }).click();
 
   // Auto-redirects back to /settings/stores after switch-store.
   await expect(page).toHaveURL(/\/settings\/stores/, { timeout: 15_000 });
-  await expect(page.getByLabel("Store name")).toHaveValue(
+  // #name is the CURRENT store's edit field; the add-store panel's is
+  // #new-store-name. Both are labelled "Store name", so the bare label
+  // matches two elements once that panel has been opened.
+  //
+  // KNOWN RED (#858): this asserts that creating a store switches to it —
+  // measured, the form still shows the ORIGINAL store afterwards. Whether
+  // create-then-switch is the intended behaviour is a product decision,
+  // not a locator fix, so this is left failing rather than quietly
+  // rewritten to match whatever the app happens to do today.
+  await expect(page.locator("#name")).toHaveValue(
     `${owner.businessName} Outlet`,
   );
 

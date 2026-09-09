@@ -48,8 +48,12 @@ test("store-scoped invite grants store role without tenant access", async ({
   const second = uniqueEmail("outlet");
   await ownerPage.goto(`/settings/stores`);
   await ownerPage.getByRole("button", { name: /\+ add store/i }).click();
-  await ownerPage.getByLabel(/store name/i).fill(`${owner.businessName} Outlet`);
-  await ownerPage.getByLabel(/url slug/i).fill(second.slug);
+  // Distinct ids, not getByLabel: the page behind this inline panel
+  // (StoresList.tsx:322 — a <section>, not a dialog) already has a
+  // "Store name" for the current store, so an unscoped label matches
+  // two elements and strict mode correctly refuses.
+  await ownerPage.locator("#new-store-name").fill(`${owner.businessName} Outlet`);
+  await ownerPage.locator("#new-store-slug").fill(second.slug);
   await ownerPage.getByRole("button", { name: /create store/i }).click();
   await expect(ownerPage).toHaveURL(/\/settings\/general/, { timeout: 15_000 });
 

@@ -54,7 +54,15 @@ test("products list renders the empty state for a fresh tenant", async ({
 
   // Filter surface is present even in the empty state
   await expect(page.getByPlaceholder(/search products/i)).toBeVisible();
-  await expect(page.getByLabel(/filter by status/i)).toBeVisible();
+  // The status filter is a row of links under a "Status" heading, not a
+  // labelled control — ProductsListFilters.tsx:83. `getByLabel(/filter by
+  // status/i)` was written against the old select; that aria-label now
+  // exists only on the coupons list. Assert the shape that ships, and
+  // assert an option too so a filter reduced to a bare heading fails.
+  await expect(page.getByText("Status", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Active", exact: true }),
+  ).toBeVisible();
 
   // CTA navigates to the stub detail page
   await newProductCta.click();

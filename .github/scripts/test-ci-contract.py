@@ -281,6 +281,61 @@ class ReusableCIContract(unittest.TestCase):
             self.assertIn("REDACTED", finding["Secret"])
             self.assertIn("REDACTED", finding["Match"])
 
+    def test_every_node_gate_matches_the_shipped_node_major(self) -> None:
+        """No gate may run a Node major that production does not ship (#857).
+
+        CI ran every Node gate on 22 while the app Dockerfiles ship
+        base-node-*-24, so no gate exercised the runtime that ships -- which
+        had already left two Node-24-only test failures green in CI. The
+        Dockerfile bases are the source of truth here: they are what runs in
+        production, and they are digest-pinned and updated by the base image
+        refresh workflow. Every other Node declaration must agree with them.
+        """
+        majors: dict[str, set[str]] = {}
+
+        def record(label: str, value: str) -> None:
+            majors.setdefault(value, set()).add(label)
+
+        for app in ("admin", "storefront", "onboarding"):
+            dockerfile = (ROOT / f"apps/{app}/Dockerfile").read_text()
+            found = set(re.findall(r"base-node-(?:builder|runtime)-(\d+)@", dockerfile))
+            self.assertNotEqual(
+                found, set(), f"apps/{app}/Dockerfile pins no base-node-* image"
+            )
+            for major in found:
+                record(f"apps/{app}/Dockerfile base-node-*-{major}", major)
+
+        # `node_version:`/`node-version:` in any workflow, and the root
+        # package.json engines floor. Globbing the workflow dir rather than
+        # naming files means a NEW workflow with a Node pin is covered the
+        # day it lands, which is how the drift got in the first time.
+        workflow_dir = ROOT / ".github/workflows"
+        for path in sorted(
+            p
+            for pattern in ("*.yml", "*.yaml")
+            for p in workflow_dir.glob(pattern)
+        ):
+            for major in re.findall(
+                r'^\s*node[_-]version:\s*"?(\d+)', path.read_text(), re.MULTILINE
+            ):
+                record(f"{path.name} node_version", major)
+
+        engines = json.loads((ROOT / "package.json").read_text())["engines"]["node"]
+        engines_major = re.search(r"(\d+)", engines)
+        self.assertIsNotNone(engines_major, f"unparseable engines.node: {engines}")
+        record(f"package.json engines.node ({engines})", engines_major.group(1))
+
+        self.assertEqual(
+            len(majors),
+            1,
+            "Node major drift -- every gate must run the major production "
+            "ships:\n"
+            + "\n".join(
+                f"  {major}: {', '.join(sorted(labels))}"
+                for major, labels in sorted(majors.items())
+            ),
+        )
+
     def test_no_workflow_sets_the_opt_in_operator_flags(self) -> None:
         # mark8ly#834 Task 1 moved 8 opt-in operator scripts to
         # apps/*/tests/operator/ — five of them default to a PRODUCTION

@@ -9,6 +9,26 @@
  * request body was a FormData instance by checking Content-Type is
  * multipart/form-data (set automatically by the browser/node FormData).
  *
+ * Note on the FormData/Blob/File globals (see #857): this suite runs in the
+ * jsdom environment, which installs jsdom's own FormData, Blob and File over
+ * the Node built-ins. Node's bundled undici -- which implements fetch, and so
+ * both serialises and parses the multipart body -- constructs file parts with
+ * `new File(...)` off the live global but brand-checks them against the `File`
+ * it captured at its own module init, the built-in one. Under jsdom those are
+ * two different classes, with two consequences: serialising a jsdom File loses
+ * its filename (it degrades to a plain Blob part named "blob"), and parsing
+ * the body back fails an internal assertion outright, so
+ * `request.formData()` throws.
+ *
+ * Neither is MSW's doing and neither is a product defect: a bare
+ * `new Request(url, { method: 'POST', body: fd }).formData()` throws the same
+ * assertion under jsdom with no MSW in the picture, and succeeds once the
+ * built-ins are restored. Browsers use the native FormData/Blob/File, so
+ * restoring them here makes this file exercise the same primitives production
+ * does. jsdom is still what resolves the relative request URLs the API client
+ * sends, so the environment stays jsdom; only these three globals are swapped,
+ * and they are put back afterwards.
+ *
  * Tests:
  *   1. Apple 204 — resolves void
  *   2. Apple sends correct multipart fields
@@ -22,6 +42,7 @@
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest'
 import { setupServer } from 'msw/node'
 import { http, HttpResponse } from 'msw'
+import { Blob as NodeBlob, File as NodeFile } from 'node:buffer'
 
 import {
   uploadAppleCredentials,
@@ -35,9 +56,42 @@ import { ApiError } from '@/lib/api/client'
 
 const server = setupServer()
 
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
+// ---------------------------------------------------------------------------
+// Restore the built-in multipart primitives over jsdom's -- see header note
+// ---------------------------------------------------------------------------
+
+const jsdomGlobals = {
+  FormData: globalThis.FormData,
+  Blob: globalThis.Blob,
+  File: globalThis.File,
+}
+
+/**
+ * Node exposes Blob and File from `node:buffer` but FormData only as a global,
+ * which jsdom has already overwritten by the time this file loads. Round-trip
+ * a trivial urlencoded body through the built-in fetch types to get an
+ * instance of the built-in FormData back, and read its constructor off it.
+ */
+async function builtinFormData(): Promise<typeof FormData> {
+  const parsed = await new Response('_=1', {
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  }).formData()
+  return parsed.constructor as typeof FormData
+}
+
+beforeAll(async () => {
+  globalThis.FormData = await builtinFormData()
+  globalThis.Blob = NodeBlob as unknown as typeof globalThis.Blob
+  globalThis.File = NodeFile as unknown as typeof globalThis.File
+  server.listen({ onUnhandledRequest: 'error' })
+})
 afterEach(() => server.resetHandlers())
-afterAll(() => server.close())
+afterAll(() => {
+  server.close()
+  globalThis.FormData = jsdomGlobals.FormData
+  globalThis.Blob = jsdomGlobals.Blob
+  globalThis.File = jsdomGlobals.File
+})
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -93,9 +147,12 @@ describe('uploadAppleCredentials', () => {
     expect(contentType).toMatch(/multipart\/form-data/)
     expect(formData?.get('issuer_id')).toBe(APPLE_FIXTURE.issuer_id)
     expect(formData?.get('key_id')).toBe(APPLE_FIXTURE.key_id)
-    // p8 sent as a Blob file named 'key.p8'
+    // p8 sent as a file part named 'key.p8', carrying the .p8 text verbatim --
+    // this is what the Go handler reads via c.Request.FormFile("p8").
     const p8Field = formData?.get('p8')
-    expect(p8Field).not.toBeNull()
+    expect(p8Field).toBeInstanceOf(NodeFile)
+    expect((p8Field as File).name).toBe('key.p8')
+    expect(await (p8Field as File).text()).toBe(APPLE_FIXTURE.p8_contents)
   })
 
   it('400 invalid_p8_format — throws ApiError(400)', async () => {
@@ -160,8 +217,12 @@ describe('uploadGoogleCredentials', () => {
 
     await uploadGoogleCredentials(STORE_ID, GOOGLE_FIXTURE)
 
+    // Sent as a file part named 'service-account.json' carrying the JSON
+    // verbatim, not as a plain string field.
     const field = formData?.get('service_account_json')
-    expect(field).not.toBeNull()
+    expect(field).toBeInstanceOf(NodeFile)
+    expect((field as File).name).toBe('service-account.json')
+    expect(await (field as File).text()).toBe(GOOGLE_FIXTURE.service_account_json)
   })
 
   it('400 invalid_service_account_json — throws ApiError(400)', async () => {

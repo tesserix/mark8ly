@@ -73,7 +73,7 @@ jobs:
     uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@v2.3.0
     with:
       working_directory: .
-      node_version: "22"
+      node_version: "24"
       legacy_peer_dependencies: true
       audit_workspaces: >-
         @mark8ly/admin

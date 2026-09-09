@@ -66,3 +66,27 @@ test("the Makefile's COMPOSE variable references docker-compose.override.yml", (
   expect(composeLine, "Makefile has no COMPOSE variable").toBeTruthy();
   expect(composeLine).toMatch(/\$\(COMPOSE_OVERRIDE\)/);
 });
+
+// A migrate stage's CMD has no ENTRYPOINT, so `command: ["up"]` replaces the
+// binary instead of being passed to it — the container execs "up" and fails
+// immediately. Every migrate command must name its binary as argv[0] (e.g.
+// ["/migrate", "up"]), never a bare ["up"].
+test("no docker-compose service uses a bare command: [\"up\"]", () => {
+  const yml = readFileSync(join(root, "infra/dev/docker-compose.yml"), "utf8");
+  const commandLines = yml.match(/^\s*command:\s*\[[^\]]*\]/gm) ?? [];
+  expect(commandLines.length).toBeGreaterThan(0);
+  for (const line of commandLines) {
+    expect(line).not.toMatch(/command:\s*\[\s*"up"\s*\]/);
+  }
+});
+
+// All three platform-api services (migrate, seed, server) must build from
+// the monorepo root with an explicit dockerfile key, not from the old
+// service-local context that broke the build (#858).
+test("all platform-api services build with context: ../.. and an explicit dockerfile", () => {
+  const yml = readFileSync(join(root, "infra/dev/docker-compose.yml"), "utf8");
+  expect(yml).not.toMatch(/context:\s*\.\.\/\.\.\/services\/platform-api/);
+
+  const contextBlocks = yml.match(/context:\s*\.\.\/\.\.\s*\n\s*dockerfile:\s*services\/platform-api\/Dockerfile/g) ?? [];
+  expect(contextBlocks.length).toBe(3);
+});

@@ -46,6 +46,10 @@ test("viewer sees read-only settings page after role change", async ({
   const ctx = await signInAsOwner(browser, request, details);
   const page = await ctx.newPage();
 
+  // The old login block ended on /dashboard; signInAsOwner hands back a
+  // context, not a landed page, so navigate explicitly (#858).
+  await page.goto("/dashboard");
+
   // Owner path: role badge says "owner".
   await expect(page.getByTestId("role-badge")).toHaveText(/owner/i);
 

@@ -56,9 +56,18 @@ test("settings/stores surfaces onboarding data and saves a name edit", async ({
   // Owner email is read-only but visible
   await expect(page.getByLabel("Owner email")).toHaveValue(details.email);
 
-  // Country + currency from onboarding (US → USD)
-  await expect(page.getByLabel("Country")).toHaveValue("US");
-  await expect(page.getByLabel("Currency")).toHaveValue("USD");
+  // Country + currency from onboarding (US → USD).
+  //
+  // These are read-only DISPLAY fields now (#ro-country / #ro-currency) and
+  // render human names, not codes: "United States", "US Dollar (USD)". The
+  // spec asserted the raw codes and had never run to notice.
+  //
+  // The currency assertion pins the CODE via regex rather than the whole
+  // display string — the code is the invariant that matters (the store bills
+  // in USD); the surrounding name is presentation and can change without
+  // anything being wrong.
+  await expect(page.getByLabel("Country")).toHaveValue("United States");
+  await expect(page.getByLabel("Currency")).toHaveValue(/\(USD\)$/);
 
   // ── 4. Edit the name, save ──────────────────────────────────────────
   const newName = `${details.businessName} Renamed`;

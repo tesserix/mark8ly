@@ -4,6 +4,7 @@ import {
   ADMIN_URL,
   API_URL,
   completeOnboarding,
+  signInAsOwner,
   uniqueEmail,
 } from "./helpers";
 
@@ -41,24 +42,23 @@ test("store-scoped invite grants store role without tenant access", async ({
   await signupCtx.close();
 
   // ── 2. Sign in + add second store ────────────────────────────
-  const ownerCtx = await browser.newContext();
+  const ownerCtx = await signInAsOwner(browser, request, owner);
   const ownerPage = await ownerCtx.newPage();
-  await ownerPage.goto(`${ADMIN_URL}/login`);
-  await ownerPage.getByLabel(/email address/i).fill(owner.email);
-  await ownerPage.getByLabel(/password/i).fill(owner.password);
-  await ownerPage.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(ownerPage).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 
   const second = uniqueEmail("outlet");
-  await ownerPage.goto(`${ADMIN_URL}/settings/stores`);
+  await ownerPage.goto(`/settings/stores`);
   await ownerPage.getByRole("button", { name: /\+ add store/i }).click();
-  await ownerPage.getByLabel(/store name/i).fill(`${owner.businessName} Outlet`);
-  await ownerPage.getByLabel(/url slug/i).fill(second.slug);
+  // Distinct ids, not getByLabel: the page behind this inline panel
+  // (StoresList.tsx:322 — a <section>, not a dialog) already has a
+  // "Store name" for the current store, so an unscoped label matches
+  // two elements and strict mode correctly refuses.
+  await ownerPage.locator("#new-store-name").fill(`${owner.businessName} Outlet`);
+  await ownerPage.locator("#new-store-slug").fill(second.slug);
   await ownerPage.getByRole("button", { name: /create store/i }).click();
   await expect(ownerPage).toHaveURL(/\/settings\/general/, { timeout: 15_000 });
 
   // ── 3. Team page — scope toggle is now visible ──────────────
-  await ownerPage.goto(`${ADMIN_URL}/settings/team`);
+  await ownerPage.goto(`/settings/team`);
   await expect(ownerPage.getByTestId("invite-scope")).toBeVisible();
 
   // ── 4. Flip to "Specific store", pick the outlet, role=manager

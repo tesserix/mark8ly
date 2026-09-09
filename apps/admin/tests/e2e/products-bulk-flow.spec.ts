@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-import { ADMIN_URL, completeOnboarding } from "./helpers";
+import {
+  completeOnboarding,
+  seedProducts,
+  seedSecondStore,
+  signInAsOwner,
+} from "./helpers";
 
 /**
  * M7d — Products bulk actions + copy-to-store E2E flows.
@@ -26,18 +31,14 @@ test.describe("M7d bulk actions", () => {
     const details = await completeOnboarding(signupPage, request, "m7d-bulk");
     await signupCtx.close();
 
-    const ctx = await browser.newContext();
+    // A fresh tenant has no products; these assertions need rows.
+    await seedProducts(request, details);
+
+    const ctx = await signInAsOwner(browser, request, details);
     const page = await ctx.newPage();
 
-    // Sign in
-    await page.goto(`${ADMIN_URL}/login`);
-    await page.getByLabel(/email address/i).fill(details.email);
-    await page.getByLabel(/password/i).fill(details.password);
-    await page.getByRole("button", { name: /^sign in$/i }).click();
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
     // Navigate to products
-    await page.goto(`${ADMIN_URL}/products`);
+    await page.goto(`/products`);
     await expect(
       page.getByRole("heading", { name: /^products$/i, level: 1 }),
     ).toBeVisible();
@@ -64,8 +65,10 @@ test.describe("M7d bulk actions", () => {
     // Wait for toast confirmation
     await expect(page.getByText(/archived/i)).toBeVisible({ timeout: 10_000 });
 
-    // Verify status changed — filter by archived
-    await page.getByLabel(/filter by status/i).selectOption("archived");
+    // Verify status changed — filter by archived.
+    // The status filter is a row of links now, not a <select>
+    // (ProductsListFilters.tsx:83), so selectOption has nothing to drive.
+    await page.getByRole("link", { name: "Archived", exact: true }).click();
     await expect(rows.first()).toBeVisible({ timeout: 5_000 });
 
     await ctx.close();
@@ -81,18 +84,16 @@ test.describe("M7d bulk actions", () => {
     const details = await completeOnboarding(signupPage, request, "m7d-copy");
     await signupCtx.close();
 
-    const ctx = await browser.newContext();
+    // A fresh tenant has no products; these assertions need rows.
+    await seedProducts(request, details);
+    // ...and exactly one store, so "copy to store" has no target without this.
+    await seedSecondStore(request, details);
+
+    const ctx = await signInAsOwner(browser, request, details);
     const page = await ctx.newPage();
 
-    // Sign in
-    await page.goto(`${ADMIN_URL}/login`);
-    await page.getByLabel(/email address/i).fill(details.email);
-    await page.getByLabel(/password/i).fill(details.password);
-    await page.getByRole("button", { name: /^sign in$/i }).click();
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
     // Navigate to products
-    await page.goto(`${ADMIN_URL}/products`);
+    await page.goto(`/products`);
 
     // Wait for product rows
     const rows = page.locator("table tbody tr");
@@ -136,7 +137,7 @@ test.describe("M7d bulk actions", () => {
       const storeOptions = page.getByRole("option");
       if ((await storeOptions.count()) > 1) {
         await storeOptions.nth(1).click();
-        await page.goto(`${ADMIN_URL}/products`);
+        await page.goto(`/products`);
         if (firstProductTitle) {
           await expect(page.getByText(firstProductTitle)).toBeVisible({
             timeout: 10_000,

@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { ADMIN_URL, completeOnboarding } from "./helpers";
+import {
+  completeOnboarding,
+  seedProducts,
+  signInAsOwner,
+} from "./helpers";
 
 /**
  * M7e — CSV import/export E2E flows.
@@ -25,18 +29,14 @@ test.describe("M7e CSV import flow", () => {
     const details = await completeOnboarding(signupPage, request, "m7e-import");
     await signupCtx.close();
 
-    const ctx = await browser.newContext();
+    // A fresh tenant has no products; these assertions need rows.
+    await seedProducts(request, details);
+
+    const ctx = await signInAsOwner(browser, request, details);
     const page = await ctx.newPage();
 
-    // Sign in
-    await page.goto(`${ADMIN_URL}/login`);
-    await page.getByLabel(/email address/i).fill(details.email);
-    await page.getByLabel(/password/i).fill(details.password);
-    await page.getByRole("button", { name: /^sign in$/i }).click();
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
     // Navigate to import page
-    await page.goto(`${ADMIN_URL}/products/import`);
+    await page.goto(`/products/import`);
     await expect(
       page.getByRole("heading", { name: /import products/i }),
     ).toBeVisible();
@@ -92,18 +92,14 @@ test.describe("M7e CSV export flow", () => {
     const details = await completeOnboarding(signupPage, request, "m7e-export");
     await signupCtx.close();
 
-    const ctx = await browser.newContext();
+    // A fresh tenant has no products; these assertions need rows.
+    await seedProducts(request, details);
+
+    const ctx = await signInAsOwner(browser, request, details);
     const page = await ctx.newPage();
 
-    // Sign in
-    await page.goto(`${ADMIN_URL}/login`);
-    await page.getByLabel(/email address/i).fill(details.email);
-    await page.getByLabel(/password/i).fill(details.password);
-    await page.getByRole("button", { name: /^sign in$/i }).click();
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
     // Navigate to products list
-    await page.goto(`${ADMIN_URL}/products`);
+    await page.goto(`/products`);
     await expect(
       page.getByRole("heading", { name: /^products$/i, level: 1 }),
     ).toBeVisible();

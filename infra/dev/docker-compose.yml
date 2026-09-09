@@ -221,6 +221,17 @@ services:
       # then logs "THIS STORE HAS NO TRIAL CLOCK". The store is created
       # either way, so the dev stack silently produced trial-less stores.
       MARKETPLACE_API_URL: http://marketplace-api:8091
+      # Guards platform-api's /internal/* routes. Unset, they answer
+      # "not_configured" 503 rather than 401 — fail-closed, but it reads as
+      # a bug. The e2e helpers use /internal/users and
+      # /internal/tenants/by-owner-email to resolve a merchant's uid and
+      # tenant before minting a session, so the local stack must set it.
+      INTERNAL_AUTH_SECRET: dev-internal-auth-secret-not-a-real-key
+      # The SAME value must reach the admin app as
+      # PLATFORM_INTERNAL_AUTH_SECRET. Without it admin's middleware role
+      # lookup (/internal/tenants/:id/me?uid=) 401s, `role` stays unset,
+      # and EVERY authenticated page fails closed to a login that then
+      # 404s on canonical — a valid session that looks like a broken one.
       # Phase P: accept-invite links in invitation emails. Host-side
       # admin dev server — container-internal defaults don't resolve
       # for the user clicking the link in their mail client.
@@ -257,15 +268,40 @@ services:
       target: server
     env_file:
       - .env.local
+      # Written by infra/dev/zitadel-bootstrap.py before this container is
+      # created (see `make dev-zitadel`). Supplies ZITADEL_ENABLED, the
+      # issuer, org/project ids, the login-client PAT, and the admin OIDC
+      # client id + secret. required:false keeps `make dev-min` working.
+      - path: .env.zitadel
+        required: false
     environment:
       ENV: dev
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://dev:dev@postgres:5432/auth_bff?sslmode=disable
       FGA_API_URL: http://openfga:8080
       SESSION_COOKIE_DOMAIN: localhost
+      # Every one of these is REQUIRED by ValidateZitadel once
+      # ZITADEL_ENABLED is true; auth-bff panics at startup naming the
+      # missing key rather than degrading, which is the right behaviour and
+      # also why they must all be here rather than discovered one restart
+      # at a time.
+      PLATFORM_API_URL: http://platform-api:8086
+      MARKETPLACE_INTERNAL_AUTH_SECRET: dev-internal-auth-secret-not-a-real-key
+      SESSION_ENCRYPT_KEY: dev-session-encrypt-key-32-bytes
+      # Host only (no port), and it MUST have two labels. auth-bff's
+      # NewReturnURLAllowlist rejects a bare "localhost" outright -- a
+      # single label is treated as a bare TLD that would match every domain
+      # under it. The rule is right for production and leaves plain
+      # `localhost` inexpressible, so the local stack uses *.localhost,
+      # which RFC 6761 requires resolvers to send to 127.0.0.1 and which
+      # Chromium honours. Drive the specs at http://admin.localhost:4202.
+      ZITADEL_RETURN_URL_ALLOWED_HOSTS_ADMIN: admin.localhost
+      ZITADEL_RETURN_URL_ALLOWED_HOSTS_STOREFRONT: store.localhost
     depends_on:
       auth-bff-migrate:
         condition: service_completed_successfully
+      zitadel:
+        condition: service_started
     # Host port 8087 → container 8080 (8080 is commonly taken on dev machines)
     ports:
       - "8087:8080"

@@ -467,50 +467,67 @@ class ReusableCIContract(unittest.TestCase):
             + "\n".join(f"  {n}: {v}" for n, v in drifted.items()),
         )
 
-    def test_e2e_onboarding_pr_and_push_watch_the_same_paths(self) -> None:
-        """The onboarding e2e triggers must filter on one path list (#858).
+    def test_e2e_workflows_pr_and_push_watch_the_same_paths(self) -> None:
+        """Every e2e workflow must filter both triggers on one path list (#858).
 
-        This workflow is expensive (a docker compose stack plus a cold Next
-        16 build), so it runs only when a PR touches what it tests. That is
-        only safe while the `pull_request` and `push` path lists agree: a
-        path listed under `push` alone is a path whose breakage is found
-        after the merge instead of on the PR that caused it.
+        These are expensive (a docker compose stack plus cold Next builds), so
+        they run only when a PR touches what they test. That is safe only
+        while `pull_request` and `push` agree: a path listed under `push`
+        alone is a path whose breakage is found after the merge instead of on
+        the PR that caused it.
 
-        It also keeps the workflow self-validating. Because
-        `.github/workflows/e2e-onboarding.yml` is itself in both lists, any
-        PR editing this workflow runs it -- which is the property that was
-        missing when it reached review having never once executed.
+        Each must also watch ITSELF, which is the property that was missing
+        when e2e-onboarding.yml reached review having never once executed --
+        a PR editing the workflow is then a PR that runs it.
 
-        Parsed rather than grepped: PyYAML resolves the bare `on:` key to
-        the boolean True, which is why this reads d[True] with a fallback.
+        Globbed rather than named: e2e-admin.yml was added later and would
+        not have been covered by a test that named only the onboarding one.
+        That is the same mistake the build-context guard made before it was
+        derived rather than restated.
+
+        Parsed rather than grepped: PyYAML resolves the bare `on:` key to the
+        boolean True, which is why this reads d[True] with a fallback.
         """
         try:
             import yaml
         except ImportError:  # pragma: no cover - yaml ships on the runner
             self.skipTest("PyYAML unavailable")
 
-        workflow = yaml.safe_load(
-            (ROOT / ".github/workflows/e2e-onboarding.yml").read_text()
+        workflow_dir = ROOT / ".github/workflows"
+        e2e = sorted(workflow_dir.glob("e2e-*.yml")) + sorted(
+            workflow_dir.glob("e2e-*.yaml")
         )
-        triggers = workflow[True] if True in workflow else workflow["on"]
+        # A rename that dodged the glob would make this vacuously pass.
+        self.assertGreaterEqual(
+            len(e2e), 2, "expected the onboarding and admin e2e workflows"
+        )
 
-        self.assertIn(
-            "pull_request",
-            triggers,
-            "e2e-onboarding.yml lost its pull_request trigger -- without it "
-            "the workflow can reach main having never executed (#858)",
-        )
-        self.assertEqual(
-            triggers["pull_request"]["paths"],
-            triggers["push"]["paths"],
-            "e2e-onboarding.yml's pull_request and push path filters have "
-            "diverged; a path watched only on push is found only after merge",
-        )
-        self.assertIn(
-            ".github/workflows/e2e-onboarding.yml",
-            triggers["pull_request"]["paths"],
-            "e2e-onboarding.yml must watch itself, so a PR editing it runs it",
-        )
+        for path in e2e:
+            workflow = yaml.safe_load(path.read_text())
+            triggers = workflow[True] if True in workflow else workflow["on"]
+
+            # e2e-runnable.yml has no paths filter -- it is the cheap canary
+            # and runs on every PR deliberately.
+            if "paths" not in triggers.get("push", {}):
+                continue
+
+            self.assertIn(
+                "pull_request",
+                triggers,
+                f"{path.name} lost its pull_request trigger -- without it the "
+                "workflow can reach main having never executed (#858)",
+            )
+            self.assertEqual(
+                triggers["pull_request"]["paths"],
+                triggers["push"]["paths"],
+                f"{path.name}'s pull_request and push path filters have "
+                "diverged; a path watched only on push is found only after merge",
+            )
+            self.assertIn(
+                f".github/workflows/{path.name}",
+                triggers["pull_request"]["paths"],
+                f"{path.name} must watch itself, so a PR editing it runs it",
+            )
 
 
 if __name__ == "__main__":

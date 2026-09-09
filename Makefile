@@ -47,7 +47,8 @@ dev-zitadel: ## Bring up the Tier-D stack (dev-min + Zitadel, bootstrapped) with
 	@rm -f infra/dev/.pat.tmp
 	$(COMPOSE) up -d openfga-migrate openfga openfga-seed \
 	                platform-api-migrate platform-api-seed platform-api \
-	                marketplace-api-migrate marketplace-api
+	                marketplace-api-migrate marketplace-api \
+	                auth-bff-migrate auth-bff
 
 dev-down: ## Stop the local stack
 	$(COMPOSE) down

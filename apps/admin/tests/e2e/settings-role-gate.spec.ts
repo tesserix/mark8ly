@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  ADMIN_URL,
   completeOnboarding,
   fetchPlatformStoreId,
+  signInAsOwner,
   writeFgaTuples,
 } from "./helpers";
 
@@ -43,14 +43,12 @@ test("viewer sees read-only settings page after role change", async ({
   const details = await completeOnboarding(signupPage, request, "role-gate");
   await signupCtx.close();
 
-  const ctx = await browser.newContext();
+  const ctx = await signInAsOwner(browser, request, details);
   const page = await ctx.newPage();
 
-  await page.goto(`${ADMIN_URL}/login`);
-  await page.getByLabel(/email address/i).fill(details.email);
-  await page.getByLabel(/password/i).fill(details.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+  // The old login block ended on /dashboard; signInAsOwner hands back a
+  // context, not a landed page, so navigate explicitly (#858).
+  await page.goto("/dashboard");
 
   // Owner path: role badge says "owner".
   await expect(page.getByTestId("role-badge")).toHaveText(/owner/i);
@@ -92,7 +90,7 @@ test("viewer sees read-only settings page after role change", async ({
   // ── 4. Navigate to settings — now read-only ────────────────────
   // `/settings/general` merged into `/settings/stores` during the
   // IA restructure; the store identity form lives on the stores page.
-  await page.goto(`${ADMIN_URL}/settings/stores`);
+  await page.goto(`/settings/stores`);
   await expect(page.getByTestId("role-badge")).toHaveText(/viewer/i);
   await expect(page.getByText(/read-only:/i)).toBeVisible();
 

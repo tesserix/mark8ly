@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { ADMIN_URL, completeOnboarding } from "./helpers";
+import {
+  completeOnboarding,
+  signInAsOwner,
+} from "./helpers";
 
 /**
  * Phase N — Tenant settings (stores) page.
@@ -31,17 +34,11 @@ test("settings/stores surfaces onboarding data and saves a name edit", async ({
   await signupCtx.close();
 
   // ── 2. Sign in to admin ─────────────────────────────────────────────
-  const ctx = await browser.newContext();
+  const ctx = await signInAsOwner(browser, request, details);
   const page = await ctx.newPage();
 
-  await page.goto(`${ADMIN_URL}/login`);
-  await page.getByLabel(/email address/i).fill(details.email);
-  await page.getByLabel(/password/i).fill(details.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
   // ── 3. Settings page surfaces every onboarding field ───────────────
-  await page.goto(`${ADMIN_URL}/settings/stores`);
+  await page.goto(`/settings/stores`);
   await expect(
     page.getByRole("heading", { name: /^stores$/i, level: 1 }),
   ).toBeVisible();
@@ -59,9 +56,18 @@ test("settings/stores surfaces onboarding data and saves a name edit", async ({
   // Owner email is read-only but visible
   await expect(page.getByLabel("Owner email")).toHaveValue(details.email);
 
-  // Country + currency from onboarding (US → USD)
-  await expect(page.getByLabel("Country")).toHaveValue("US");
-  await expect(page.getByLabel("Currency")).toHaveValue("USD");
+  // Country + currency from onboarding (US → USD).
+  //
+  // These are read-only DISPLAY fields now (#ro-country / #ro-currency) and
+  // render human names, not codes: "United States", "US Dollar (USD)". The
+  // spec asserted the raw codes and had never run to notice.
+  //
+  // The currency assertion pins the CODE via regex rather than the whole
+  // display string — the code is the invariant that matters (the store bills
+  // in USD); the surrounding name is presentation and can change without
+  // anything being wrong.
+  await expect(page.getByLabel("Country")).toHaveValue("United States");
+  await expect(page.getByLabel("Currency")).toHaveValue(/\(USD\)$/);
 
   // ── 4. Edit the name, save ──────────────────────────────────────────
   const newName = `${details.businessName} Renamed`;
@@ -87,16 +93,10 @@ test("settings/stores rejects an empty store name", async ({
   const details = await completeOnboarding(signupPage, request, "empty-name");
   await signupCtx.close();
 
-  const ctx = await browser.newContext();
+  const ctx = await signInAsOwner(browser, request, details);
   const page = await ctx.newPage();
 
-  await page.goto(`${ADMIN_URL}/login`);
-  await page.getByLabel(/email address/i).fill(details.email);
-  await page.getByLabel(/password/i).fill(details.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
-  await page.goto(`${ADMIN_URL}/settings/stores`);
+  await page.goto(`/settings/stores`);
   const nameInput = page.getByLabel("Store name");
   await nameInput.fill("   ");
 

@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { ADMIN_URL, completeOnboarding } from "./helpers";
+import {
+  completeOnboarding,
+  signInAsOwner,
+} from "./helpers";
 
 /**
  * M7a — Products list page.
@@ -30,16 +33,10 @@ test("products list renders the empty state for a fresh tenant", async ({
   const details = await completeOnboarding(signupPage, request, "m7a");
   await signupCtx.close();
 
-  const ctx = await browser.newContext();
+  const ctx = await signInAsOwner(browser, request, details);
   const page = await ctx.newPage();
 
-  await page.goto(`${ADMIN_URL}/login`);
-  await page.getByLabel(/email address/i).fill(details.email);
-  await page.getByLabel(/password/i).fill(details.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
-
-  await page.goto(`${ADMIN_URL}/products`);
+  await page.goto(`/products`);
 
   // Editorial header
   await expect(
@@ -57,7 +54,15 @@ test("products list renders the empty state for a fresh tenant", async ({
 
   // Filter surface is present even in the empty state
   await expect(page.getByPlaceholder(/search products/i)).toBeVisible();
-  await expect(page.getByLabel(/filter by status/i)).toBeVisible();
+  // The status filter is a row of links under a "Status" heading, not a
+  // labelled control — ProductsListFilters.tsx:83. `getByLabel(/filter by
+  // status/i)` was written against the old select; that aria-label now
+  // exists only on the coupons list. Assert the shape that ships, and
+  // assert an option too so a filter reduced to a bare heading fails.
+  await expect(page.getByText("Status", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Active", exact: true }),
+  ).toBeVisible();
 
   // CTA navigates to the stub detail page
   await newProductCta.click();

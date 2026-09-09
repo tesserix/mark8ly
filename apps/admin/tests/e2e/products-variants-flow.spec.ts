@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { ADMIN_URL, completeOnboarding } from "./helpers";
+import {
+  completeOnboarding,
+  signInAsOwner,
+} from "./helpers";
 
 /**
  * M7c — Variants flow E2E.
@@ -31,14 +34,8 @@ async function signInFreshAdmin(
   const details = await completeOnboarding(signupPage, request, label);
   await signupCtx.close();
 
-  const ctx = await browser.newContext();
+  const ctx = await signInAsOwner(browser, request, details);
   const page = await ctx.newPage();
-
-  await page.goto(`${ADMIN_URL}/login`);
-  await page.getByLabel(/email address/i).fill(details.email);
-  await page.getByLabel(/password/i).fill(details.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 
   return { page, ctx };
 }
@@ -76,7 +73,7 @@ test.describe("M7c products — variants flow", () => {
     const { page, ctx } = await signInFreshAdmin(browser, request, "m7c-var");
 
     // 1. Create a draft product from /products/new.
-    await page.goto(`${ADMIN_URL}/products/new`);
+    await page.goto(`/products/new`);
     await expect(
       page.getByRole("heading", { name: /new product/i }),
     ).toBeVisible();
@@ -154,7 +151,7 @@ test.describe("M7c products — variants flow", () => {
   }) => {
     const { page, ctx } = await signInFreshAdmin(browser, request, "m7c-cap");
 
-    await page.goto(`${ADMIN_URL}/products/new`);
+    await page.goto(`/products/new`);
     await page.getByLabel(/^title$/i).fill("Big matrix");
     await page.getByLabel(/^handle$/i).fill("big-matrix");
     await page.getByLabel(/^price/i).fill("1.00");

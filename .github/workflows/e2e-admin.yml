@@ -1,0 +1,186 @@
+name: E2E (admin, real stack)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+# =============================================================================
+# mark8ly#858 stage 3b — the admin suite against the same Tier-D stack
+# infra/dev/docker-compose.yml gives a developer: postgres, OpenFGA,
+# Zitadel, platform-api, marketplace-api and auth-bff.
+#
+# Pinned to the FIVE spec files that pass end to end today, gated on exactly
+# 10 passed. The other nine are excluded deliberately and visibly, not
+# silently: each carries UI drift that needs a judgement about whether the
+# app or the spec is right, and guessing bakes a false assertion into CI —
+# the exact failure this issue exists to prevent.
+#
+# Admin /login cannot render on a local stack BY DESIGN (middleware 404s
+# canonical /login without an https {slug}-admin.mark8ly.com returnUrl), so
+# specs mint a real session through auth-bff's existing
+# POST /internal/mint-session and Chromium maps *-admin.mark8ly.com to the
+# local server. Nothing in the app is relaxed to accommodate the tests.
+#
+# Excluded, with reasons:
+#   sign-in                 tests the login FORM, so it cannot use the bypass
+#   stores-multi            asserts create-store switches to it; measured, it
+#                           does not — a product decision, left red on purpose
+#   auth-handoff            not converted; different session pattern
+#   invite-teammate         drift
+#   invite-store-scope      drift
+#   products-bulk-flow      1 of 2 green; copy-to-store toast drift
+#   products-csv-flow       drift
+#   products-media-flow     hangs, uninvestigated
+#   products-variants-flow  hangs, uninvestigated
+# =============================================================================
+on:
+  # Keep these two path lists identical. A path that can break the suite but
+  # only appears under `push` is a path whose breakage is found after merge.
+  pull_request:
+    paths:
+      - "apps/admin/**"
+      - "apps/onboarding/**"
+      - "services/platform-api/**"
+      - "services/marketplace-api/**"
+      - "services/auth-bff/**"
+      - "infra/dev/**"
+      - "infra/openfga/**"
+      - ".github/workflows/e2e-admin.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/admin/**"
+      - "apps/onboarding/**"
+      - "services/platform-api/**"
+      - "services/marketplace-api/**"
+      - "services/auth-bff/**"
+      - "infra/dev/**"
+      - "infra/openfga/**"
+      - ".github/workflows/e2e-admin.yml"
+  schedule:
+    - cron: "0 16 * * *" # 02:00 AEST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  admin:
+    name: admin suite vs real stack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+
+      - name: Bring up the Tier-D stack
+        run: |
+          touch infra/dev/.env.local
+          make dev-zitadel
+
+      - name: Prove the backend is reachable, not merely running
+        run: |
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8086/health >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8086/health >/dev/null \
+            || { echo "::error::platform-api never became healthy"; exit 1; }
+          curl -fsS http://localhost:8087/health >/dev/null \
+            || { echo "::error::auth-bff never became healthy — the suite mints sessions through it"; exit 1; }
+          curl -fsS http://localhost:8091/health >/dev/null \
+            || { echo "::error::marketplace-api never became healthy — product seeding goes through it"; exit 1; }
+          curl -fsS -H 'Host: zitadel:8080' http://localhost:8092/debug/healthz >/dev/null \
+            || { echo "::error::zitadel not ready"; exit 1; }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: apps/admin
+        run: npx playwright install --with-deps chromium
+
+      - name: Build onboarding and admin
+        env:
+          PLATFORM_API_URL: http://localhost:8086
+          MARKETPLACE_API_URL: http://localhost:8091
+          AUTH_BFF_URL: http://localhost:8087
+          SESSION_ENCRYPT_KEY: dev-session-encrypt-key-32-bytes
+        # Every admin spec onboards through the onboarding app first, so both
+        # have to be built. Zitadel must already be bootstrapped: the admin
+        # app inlines NEXT_PUBLIC_ZITADEL_* at BUILD time.
+        run: |
+          set -a; . ./infra/dev/.env.zitadel; set +a
+          export NEXT_PUBLIC_ZITADEL_ISSUER=http://localhost:8092
+          export NEXT_PUBLIC_ZITADEL_ADMIN_CLIENT_ID="$ZITADEL_ADMIN_CLIENT_ID"
+          npm run build --workspace @mark8ly/onboarding
+          npm run build --workspace @mark8ly/admin
+
+      - name: Start onboarding and admin
+        env:
+          PLATFORM_API_URL: http://localhost:8086
+          MARKETPLACE_API_URL: http://localhost:8091
+          AUTH_BFF_URL: http://localhost:8087
+          SESSION_ENCRYPT_KEY: dev-session-encrypt-key-32-bytes
+          # Without this admin's middleware role lookup 401s and EVERY
+          # authenticated page fails closed to a login that then 404s.
+          PLATFORM_INTERNAL_AUTH_SECRET: dev-internal-auth-secret-not-a-real-key
+        run: |
+          set -a; . ./infra/dev/.env.zitadel; set +a
+          export NEXT_PUBLIC_ZITADEL_ISSUER=http://localhost:8092
+          export NEXT_PUBLIC_ZITADEL_ADMIN_CLIENT_ID="$ZITADEL_ADMIN_CLIENT_ID"
+          npm run start --workspace @mark8ly/onboarding &
+          npm run start --workspace @mark8ly/admin &
+          for i in $(seq 1 40); do
+            ob=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4201/onboarding || true)
+            ad=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4202/pricing || true)
+            [ "$ob" = "200" ] && [ "$ad" = "200" ] && exit 0
+            sleep 3
+          done
+          echo "::error::onboarding ($ob) or admin ($ad) never came up"
+          exit 1
+
+      - name: Run the pinned admin specs and verify the exact pass count
+        working-directory: apps/admin
+        env:
+          ADMIN_URL: http://localhost:4202
+          ONBOARDING_URL: http://localhost:4201
+          API_URL: http://localhost:8086
+          AUTH_BFF_URL: http://localhost:8087
+          MARKETPLACE_API_URL: http://localhost:8091
+          OPENFGA_URL: http://localhost:8089
+          INTERNAL_AUTH_SECRET: dev-internal-auth-secret-not-a-real-key
+        # Same three gates as e2e-onboarding.yml. The pass count is the one
+        # that matters: an all-skipped run also exits 0.
+        run: |
+          set -o pipefail
+          status=0
+          out=$(CI=true npx playwright test \
+            tests/e2e/pricing.spec.ts \
+            tests/e2e/products-list.spec.ts \
+            tests/e2e/settings-role-gate.spec.ts \
+            tests/e2e/settings-stores.spec.ts \
+            tests/e2e/settings-themes.spec.ts \
+            --reporter=line 2>&1) || status=$?
+          printf '%s\n' "$out"
+          fail=0
+          if [ "$status" -ne 0 ]; then
+            echo "::error::playwright exited $status"
+            fail=1
+          fi
+          grep -qE '(^|[^0-9])10 passed' <<<"$out" || {
+            echo "::error::did not see exactly 10 passed — the admin suite is not actually executing and passing"
+            fail=1
+          }
+          if grep -qE '(^|[^0-9])[0-9]+ (failed|timed out)' <<<"$out"; then
+            echo "::error::a failed or timed-out test coexists with the expected pass count"
+            fail=1
+          fi
+          exit $fail
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose -f infra/dev/docker-compose.yml logs --tail=80

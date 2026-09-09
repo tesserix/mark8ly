@@ -44,7 +44,7 @@ on:
       - "infra/openfga/**"
       - ".github/workflows/e2e-onboarding.yml"
   schedule:
-    - cron: "0 16 * * *"   # 02:00 AEST
+    - cron: "0 16 * * *" # 02:00 AEST
   workflow_dispatch:
 
 permissions:

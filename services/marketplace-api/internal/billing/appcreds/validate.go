@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"regexp"
 )
 
 // ErrInvalidP8 is returned when a .p8 payload is not a PEM-wrapped,
@@ -19,6 +20,10 @@ var ErrInvalidP8 = errors.New("appcreds: invalid .p8 (expected PEM PKCS#8 ECDSA 
 // a service-account JSON (e.g. user OAuth credentials, invalid JSON, or
 // missing required fields).
 var ErrInvalidGooglePlayJSON = errors.New("appcreds: invalid Google Play service-account JSON")
+
+// ErrInvalidGooglePackageName is returned when a supplied Android
+// applicationId is not a legal package name.
+var ErrInvalidGooglePackageName = errors.New("appcreds: invalid Google Play package name")
 
 // ValidateP8 asserts the payload is a PEM-wrapped PKCS#8 ECDSA P-256
 // private key. Returns a wrapped ErrInvalidP8 on failure. Does NOT persist
@@ -117,4 +122,57 @@ func GooglePlayProjectID(payload []byte) (string, error) {
 		return "", err
 	}
 	return sa.ProjectID, nil
+}
+
+// googlePackageNameRe is Android's applicationId grammar: two or more
+// dot-separated segments, each a legal Java identifier — a leading letter
+// followed by letters, digits or underscores.
+//
+// ANCHORED AT BOTH ENDS, and `\A`/`\z` rather than `^`/`$`, because Go's
+// `$` matches before a trailing newline. A package name pasted out of a
+// build file arrives as "com.example.app\n" more often than not, and `^...$`
+// would accept it — storing a name the Android Publisher API then rejects.
+var googlePackageNameRe = regexp.MustCompile(`\A[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+\z`)
+
+// maxGooglePackageNameLen matches white_label_app_state.google_package
+// (varchar(255), migration 000076). Validating shorter than the column
+// would reject legal names; validating longer would accept one that
+// truncates on write, and a truncated package is a package Play does not
+// know — the advancer would call it nightly and fail.
+const maxGooglePackageNameLen = 255
+
+// ValidateGooglePackageName checks a merchant-supplied Android
+// applicationId.
+//
+// # Why this is validated at all, when it is only an identifier
+//
+// It is the one white-label credential with no self-describing format: a
+// .p8 is parsed as a key and a service-account JSON is parsed as JSON, so
+// both fail loudly on garbage. A package name is just a string, and a
+// wrong one is INDISTINGUISHABLE FROM A RIGHT ONE until it reaches Play.
+//
+// That matters because of where it is used. `lifecycle/advancer.go` guards
+// both Google calls on `r.GooglePackage != ""` — a typo is non-empty, so it
+// passes the guard, reaches `edits.insert` inside the nightly cron, and
+// surfaces only as a skipped teardown step for one merchant, months later,
+// at the moment the teardown was supposed to happen. Refusing it at the
+// upload boundary is the only place a human is present to fix it.
+//
+// It deliberately does NOT verify the package exists in Play. That would
+// need an API call with the merchant's credential at upload time, and a
+// merchant may legitimately supply the name before the app is published.
+func ValidateGooglePackageName(name string) error {
+	if len(name) > maxGooglePackageNameLen {
+		return fmt.Errorf("%w: %d bytes exceeds the %d-byte column",
+			ErrInvalidGooglePackageName, len(name), maxGooglePackageNameLen)
+	}
+	if !googlePackageNameRe.MatchString(name) {
+		// The name is NOT echoed into the error. It reaches an HTTP response
+		// and a log line, and while a package name is not a secret it is
+		// attacker-controlled input on an authenticated endpoint — the same
+		// reason the sibling validators return a fixed sentinel.
+		return fmt.Errorf("%w: expected two or more dot-separated segments, "+
+			"each starting with a letter (e.g. com.example.app)", ErrInvalidGooglePackageName)
+	}
+	return nil
 }

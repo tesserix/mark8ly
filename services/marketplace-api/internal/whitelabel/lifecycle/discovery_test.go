@@ -204,3 +204,69 @@ func TestTeardownCoverage_NamesPlayPackageWhenOneExists(t *testing.T) {
 	require.Contains(t, strings.ToLower(note), "day-30 download halt only")
 	require.Contains(t, strings.ToLower(note), "play console")
 }
+
+// GooglePackage — the merchant-supplied Android applicationId (#872).
+//
+// Before #872 this was empty by design, so these tests are the first
+// coverage that the day-30 Play halt can ever become reachable.
+
+func TestDiscover_GooglePackage_WhenSupplied(t *testing.T) {
+	creds := &stubCreds{byType: map[appcreds.CredType][]byte{
+		appcreds.CredTypeGooglePlayJSON:    []byte(serviceAccountJSON),
+		appcreds.CredTypeGooglePackageName: []byte("com.example.storefront"),
+	}}
+	ev, err := discoveryWith([]apple.App{{ID: "123"}}, nil, creds).
+		discover(context.Background(), uuid.New(), uuid.New())
+
+	require.NoError(t, err)
+	require.Equal(t, "com.example.storefront", ev.GooglePackage)
+}
+
+func TestDiscover_GooglePackage_AbsentIsNotAnError(t *testing.T) {
+	// The majority case, and it must stay a first-class state: the upload
+	// sits behind an active Pro+App subscription, so every merchant
+	// onboarded before #872 has none. Apple's teardown is the larger half
+	// and must not be lost with it.
+	creds := &stubCreds{byType: map[appcreds.CredType][]byte{
+		appcreds.CredTypeGooglePlayJSON: []byte(serviceAccountJSON),
+	}}
+	ev, err := discoveryWith([]apple.App{{ID: "123"}}, nil, creds).
+		discover(context.Background(), uuid.New(), uuid.New())
+
+	require.NoError(t, err)
+	require.Empty(t, ev.GooglePackage)
+	require.Equal(t, "123", ev.AppleAppID, "apple teardown must survive an absent package")
+}
+
+func TestDiscover_GooglePackage_MalformedIsTreatedAsAbsent(t *testing.T) {
+	// The value is a Secret Manager payload that an older image or a
+	// hand-edit during an incident could have written. A malformed one
+	// reaching GooglePackage would pass the advancer's `!= ""` guard and
+	// fail against Play inside the nightly cron — months later, visible
+	// only as a skipped step. Re-validating on read is what stops that,
+	// and dropping to empty is strictly better than seeding a lie.
+	creds := &stubCreds{byType: map[appcreds.CredType][]byte{
+		appcreds.CredTypeGooglePlayJSON:    []byte(serviceAccountJSON),
+		appcreds.CredTypeGooglePackageName: []byte("not a package name"),
+	}}
+	ev, err := discoveryWith([]apple.App{{ID: "123"}}, nil, creds).
+		discover(context.Background(), uuid.New(), uuid.New())
+
+	require.NoError(t, err)
+	require.Empty(t, ev.GooglePackage)
+}
+
+func TestDiscover_GooglePackage_IsTrimmed(t *testing.T) {
+	// Package names are copy-pasted out of build files, and a trailing
+	// newline is the usual artefact. It is rejected at upload, but a value
+	// written before #872's validator existed would still carry one.
+	creds := &stubCreds{byType: map[appcreds.CredType][]byte{
+		appcreds.CredTypeGooglePlayJSON:    []byte(serviceAccountJSON),
+		appcreds.CredTypeGooglePackageName: []byte("  com.example.app\n"),
+	}}
+	ev, err := discoveryWith([]apple.App{{ID: "123"}}, nil, creds).
+		discover(context.Background(), uuid.New(), uuid.New())
+
+	require.NoError(t, err)
+	require.Equal(t, "com.example.app", ev.GooglePackage)
+}

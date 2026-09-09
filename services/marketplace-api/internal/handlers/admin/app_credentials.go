@@ -182,6 +182,7 @@ func (h *AppCredentialsHandler) PostApple(c *gin.Context) {
 //	POST /admin/stores/:storeId/app-credentials/google
 //	multipart/form-data:
 //	  - service_account_json (file)
+//	  - package_name         (optional text — the Android applicationId)
 func (h *AppCredentialsHandler) PostGoogle(c *gin.Context) {
 	tenantID, storeID, ok := h.appAddOnGate(c)
 	if !ok {
@@ -206,6 +207,27 @@ func (h *AppCredentialsHandler) PostGoogle(c *gin.Context) {
 		return
 	}
 
+	// OPTIONAL, and it has to be — this endpoint is behind `appAddOnGate`,
+	// which requires an ACTIVE Pro+App subscription. The sale therefore
+	// strictly precedes this upload, so there is no earlier point at which a
+	// package name could be required, and making it mandatory here would only
+	// lock existing merchants out of re-uploading their service account
+	// (tesserix/mark8ly#872).
+	//
+	// Validated BEFORE the JSON is stored, so a bad name cannot leave the
+	// service account written and the package rejected — a partial write the
+	// merchant would have to discover by re-uploading.
+	packageName := strings.TrimSpace(c.Request.FormValue("package_name"))
+	if packageName != "" {
+		if err := appcreds.ValidateGooglePackageName(packageName); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":  "invalid_package_name",
+				"detail": "expected an Android applicationId such as com.example.app",
+			})
+			return
+		}
+	}
+
 	actor := "user:" + c.GetString("user_id")
 	if err := h.credsSvc.Store(c.Request.Context(), appcreds.StoreInput{
 		TenantID: tenantID, StoreID: storeID,
@@ -213,6 +235,20 @@ func (h *AppCredentialsHandler) PostGoogle(c *gin.Context) {
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "store_failed"})
 		return
+	}
+
+	// Second, and only after the service account landed: the package name is
+	// useless without it, so an order that could leave a package name with no
+	// credential beside it would be the worse half to keep.
+	if packageName != "" {
+		if err := h.credsSvc.Store(c.Request.Context(), appcreds.StoreInput{
+			TenantID: tenantID, StoreID: storeID,
+			CredType: appcreds.CredTypeGooglePackageName,
+			Payload:  []byte(packageName), Actor: actor,
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "store_failed"})
+			return
+		}
 	}
 	c.Status(http.StatusNoContent)
 }

@@ -180,3 +180,61 @@ func TestGooglePlayProjectID_RejectsWhatValidateRejects(t *testing.T) {
 		})
 	}
 }
+
+// ValidateGooglePackageName — the Android applicationId a merchant supplies
+// alongside their Play service account (#872).
+//
+// The rules are Android's, not ours, and the reason to pin them in a test is
+// that a wrong package name FAILS SILENTLY in the place it matters: the
+// advancer guards its Play calls on `google_package != ""`, so a typo'd name
+// is non-empty, passes the guard, and fails at `edits.insert` inside a nightly
+// cron — visible only as a skipped teardown step for one merchant.
+func TestValidateGooglePackageName(t *testing.T) {
+	valid := []string{
+		"com.mark8ly.storefront",
+		"com.example.app_two",
+		"a.b",
+		"com.example.sub.deep.nesting",
+		"com.example.a1b2",
+	}
+	for _, in := range valid {
+		if err := ValidateGooglePackageName(in); err != nil {
+			t.Errorf("ValidateGooglePackageName(%q) = %v, want nil", in, err)
+		}
+	}
+
+	invalid := map[string]string{
+		"":                   "empty",
+		"com":                "single segment — Android requires at least one dot",
+		"com.":               "trailing dot leaves an empty segment",
+		".com.example":       "leading dot leaves an empty segment",
+		"com..example":       "empty middle segment",
+		"com.example.":       "trailing dot",
+		"com.1example":       "segment starting with a digit",
+		"com.example.my-app": "hyphen is not a legal Java identifier char",
+		"com.example.my app": "space",
+		"com.example.app\n":  "trailing newline, the classic copy-paste artefact",
+		" com.example.app":   "leading space, likewise",
+		"COM.EXAMPLE.APP\t":  "trailing tab",
+	}
+	for in, why := range invalid {
+		if err := ValidateGooglePackageName(in); err == nil {
+			t.Errorf("ValidateGooglePackageName(%q) = nil, want error (%s)", in, why)
+		} else if !errors.Is(err, ErrInvalidGooglePackageName) {
+			t.Errorf("ValidateGooglePackageName(%q) = %v, want ErrInvalidGooglePackageName", in, err)
+		}
+	}
+}
+
+// Length is bounded because the column is varchar(255) (migration 000076).
+// A name that validates here and truncates on write would be a package the
+// advancer calls Play with and Play does not recognise.
+func TestValidateGooglePackageNameLength(t *testing.T) {
+	long := "com.example." + string(make([]byte, 0))
+	for len(long) <= 255 {
+		long += "a"
+	}
+	if err := ValidateGooglePackageName(long); err == nil {
+		t.Errorf("ValidateGooglePackageName(len %d) = nil, want error", len(long))
+	}
+}

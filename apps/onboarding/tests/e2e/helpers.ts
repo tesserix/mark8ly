@@ -17,12 +17,20 @@ export const API_URL =
  * part so it stays under 63 chars and matches the slug regex.
  *
  * Phase M added a required password field on the signup form, so each
- * generated identity also carries a default e2e password. */
+ * generated identity also carries a default e2e password.
+ *
+ * #858 stage 3 added `name`. The set-password form requires it -- Zitadel
+ * needs a givenName/familyName and platform-api splits this single field to
+ * get them. These four specs were written before that field existed and had
+ * never once run, so they submitted a blank name and sat on
+ * "Your name is required" forever, which reads as a broken backend. */
 export function uniqueEmail(label = "e2e"): {
   email: string;
   slug: string;
   businessName: string;
   password: string;
+  /** Submitted on the set-password step; split into givenName/familyName. */
+  name: string;
 } {
   const stamp = `${Date.now().toString(36)}${Math.floor(
     Math.random() * 1e4,
@@ -32,7 +40,14 @@ export function uniqueEmail(label = "e2e"): {
     email: `${local}@example.com`,
     slug: local.replace(/[^a-z0-9-]/g, "").slice(0, 60),
     businessName: `${label} ${stamp}`,
-    password: "e2e-test-password-123",
+    // Must satisfy apps/onboarding/lib/auth/password-policy.ts: >=12 chars
+    // with upper, lower, digit AND symbol. The old value had neither an
+    // uppercase letter nor a symbol, so every set-password submit bounced
+    // on the policy message -- invisible until these specs first ran.
+    // Deliberately low-entropy and self-describing: a random-looking
+    // literal here trips the gitleaks keyword+entropy rule in CI.
+    password: "E2e-test-password-123!",
+    name: "E2E Tester",
   };
 }
 

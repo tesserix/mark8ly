@@ -71,11 +71,16 @@ test("magic link works in a fresh browser context (cross-device)", async ({
   await expect(bPage).toHaveURL(/\/onboarding\/set-password/, {
     timeout: 15_000,
   });
+  await bPage.locator("#name").fill(details.name);
   await bPage.locator("#password").fill(details.password);
   await bPage.getByRole("button", { name: /create account/i }).click();
   await expect(bPage).toHaveURL(/\/welcome/, { timeout: 15_000 });
+  // "Sign in to your admin", not "Open admin dashboard": no session is
+  // minted for the admin origin during onboarding, so the CTA is a sign-in
+  // hand-off (WelcomeCta.tsx). This spec predated that change and had never
+  // run, so it still asserted the old label.
   await expect(
-    bPage.getByRole("link", { name: /open admin dashboard/i }),
+    bPage.getByRole("link", { name: /sign in to your admin/i }),
   ).toBeVisible();
 
   await b.close();

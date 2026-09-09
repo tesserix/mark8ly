@@ -18,25 +18,22 @@ env:
 # the merge. It also means this workflow can never again reach main without
 # having executed: the PR that changes it is a PR that runs it.
 #
-# Pinned to three spec files that are fully clean (commit ddd361ac repaired
-# the two that had drifted):
-#   - tests/e2e/form-validation.spec.ts    — 2 passed, 0 failed
-#   - tests/e2e/invalid-token.spec.ts      — 1 passed, 0 failed
-#   - tests/e2e/tax-id-migration.spec.ts   — 4 passed, 5 SKIPPED, 0 failed
-# The 5 skips in tax-id-migration are the migration-UI tests, which skip
-# themselves while MIGRATION_UI_ENABLED is false
-# (apps/onboarding/.../OnboardingForm.tsx:43) — that's a deliberate flag
-# check, not a failure, and the skip is derived from the flag's real value
-# at test time, so flipping the flag on later revives them.
+# Runs the WHOLE onboarding suite: all 7 spec files, 16 tests, gated on
+# exactly 11 passed and 5 skipped.
 #
-# testMatch selects whole files, so any file with even one failing test is
-# excluded wholesale rather than picking individual passing tests out of it
-# — the same file-granularity e2e-runnable.yml uses for pricing.spec.ts.
-# The four remaining onboarding specs — cross-device-verify.spec.ts,
-# golden-path.spec.ts, resume.spec.ts, slug-collision.spec.ts — are excluded
-# because every test in them needs Zitadel to complete set-password →
-# welcome, which arrives in a later stage of #858. That exclusion stays
-# deliberate and visible here, not silent.
+# The 5 skips are tax-id-migration's migration-UI tests, which skip
+# themselves while MIGRATION_UI_ENABLED is false
+# (apps/onboarding/.../OnboardingForm.tsx:43) — a deliberate flag check
+# derived from the flag's real value at test time, so flipping the flag on
+# revives them AND changes the count, which this job then refuses.
+#
+# #858 stage 3 removed the previous three-spec pin. The four excluded
+# specs (cross-device-verify, golden-path, resume, slug-collision) needed
+# Zitadel to get past set-password → /welcome, which this stack now
+# provides. All four turned out to ALSO carry spec drift that only a real
+# run could surface: a required name field they never filled, a password
+# that failed the policy, a renamed welcome CTA, and one asserting a
+# submit button disables when it deliberately does not.
 # =============================================================================
 on:
   # Keep these two path lists identical. A path that can break the suite but
@@ -87,7 +84,7 @@ jobs:
         # has started shipping a postgres and this needs the same treatment.
         run: |
           touch infra/dev/.env.local
-          make dev-min
+          make dev-zitadel
 
       - name: Prove the backend is reachable, not merely running
         # A stack that is "up" but unseeded renders /onboarding as a 500 and
@@ -105,6 +102,23 @@ jobs:
           store=$(curl -fsS http://localhost:8089/stores | jq -r '.stores[] | select(.name=="mark8ly-platform") | .id')
           [ -n "$store" ] \
             || { echo "::error::openfga store mark8ly-platform missing — openfga-seed did not run"; exit 1; }
+          # Zitadel resolves the instance from the Host header; without it
+          # every request 404s "Instance not found" no matter how healthy
+          # the process is. Assert with the header the stack actually uses.
+          curl -fsS -H 'Host: zitadel:8080' http://localhost:8092/debug/healthz >/dev/null \
+            || { echo "::error::zitadel not ready"; docker compose -f infra/dev/docker-compose.yml logs zitadel; exit 1; }
+          # The bootstrap's output is what platform-api reads. An empty or
+          # missing file means it silently started with ZITADEL_ENABLED
+          # false and every set-password submit would stall at 500.
+          grep -q '^ZITADEL_ADMIN_PROJECT_ID=[0-9]' infra/dev/.env.zitadel \
+            || { echo "::error::zitadel bootstrap produced no admin project id"; cat infra/dev/.env.zitadel; exit 1; }
+          # platform-api must reach marketplace-api by its COMPOSE name. On
+          # the k8s default it fails DNS three times per onboarding (~20s)
+          # and leaves the store with no trial clock — the suite still
+          # passes, just slowly, so this is asserted rather than observed.
+          docker compose -f infra/dev/docker-compose.yml exec -T platform-api \
+            printenv MARKETPLACE_API_URL 2>/dev/null | grep -q '^http://marketplace-api:' \
+            || echo "::warning::MARKETPLACE_API_URL is not the compose name; onboarding will be slow and trial-less"
 
       - name: Install dependencies
         run: npm ci
@@ -170,15 +184,15 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          out=$(CI=true npx playwright test tests/e2e/form-validation.spec.ts tests/e2e/invalid-token.spec.ts tests/e2e/tax-id-migration.spec.ts --reporter=line 2>&1) || status=$?
+          out=$(CI=true npx playwright test --reporter=line 2>&1) || status=$?
           printf '%s\n' "$out"
           fail=0
           if [ "$status" -ne 0 ]; then
             echo "::error::playwright exited $status"
             fail=1
           fi
-          grep -qE '(^|[^0-9])7 passed' <<<"$out" || {
-            echo "::error::did not see exactly 7 passed — the onboarding suite is not actually executing and passing"
+          grep -qE '(^|[^0-9])11 passed' <<<"$out" || {
+            echo "::error::did not see exactly 11 passed — the onboarding suite is not actually executing and passing"
             fail=1
           }
           if grep -qE '(^|[^0-9])[0-9]+ (failed|timed out)' <<<"$out"; then

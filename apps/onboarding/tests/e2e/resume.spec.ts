@@ -27,7 +27,7 @@ test("survives full browser close between submit and verify", async ({
   browser,
   request,
 }) => {
-  const { email, slug, businessName, password } = uniqueEmail("resume");
+  const { email, slug, businessName, password, name } = uniqueEmail("resume");
 
   // ── 1. First context: complete the form ───────────────────────────────
   const first = await browser.newContext();
@@ -98,6 +98,7 @@ test("survives full browser close between submit and verify", async ({
   await expect(secondPage).toHaveURL(/\/onboarding\/set-password/, {
     timeout: 15_000,
   });
+  await secondPage.locator("#name").fill(name);
   await secondPage.locator("#password").fill(password);
   await secondPage.getByRole("button", { name: /create account/i }).click();
   await expect(secondPage).toHaveURL(/\/welcome/, { timeout: 15_000 });

@@ -47,6 +47,7 @@ test("rejects a slug that another tenant has already claimed", async ({
   await expect(page).toHaveURL(/\/onboarding\/set-password/, {
     timeout: 15_000,
   });
+  await page.locator("#name").fill(claim.name);
   await page.locator("#password").fill(claim.password);
   await page.getByRole("button", { name: /create account/i }).click();
   await expect(page).toHaveURL(/\/welcome/, { timeout: 15_000 });
@@ -69,9 +70,16 @@ test("rejects a slug that another tenant has already claimed", async ({
   await expect(freshPage.getByText(/already taken/i)).toBeVisible({
     timeout: 5000,
   });
+  // The button stays ENABLED on a taken slug, deliberately:
+  // OnboardingForm's `canSubmit = !pending && !screenshotUploading`
+  // (:296, rationale at :292-295) -- gating on slug availability left a
+  // mystery-disabled button on first load, so an invalid slug surfaces an
+  // error instead. Stage 1 recorded the same decision for
+  // form-validation.spec.ts; this spec asserted the superseded behaviour
+  // and had never run to find out.
   await expect(
     freshPage.getByRole("button", { name: /send verification link/i }),
-  ).toBeDisabled();
+  ).toBeEnabled();
 
   await fresh.close();
 });

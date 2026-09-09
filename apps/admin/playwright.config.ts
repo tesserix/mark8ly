@@ -21,6 +21,12 @@ const HOST_MAP = [
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  // 5s (the default) was calibrated when these specs mocked their backend.
+  // Against a real stack the first render for a brand-new tenant has to
+  // reach marketplace-api and platform-api, and the assertion regularly
+  // fires before the RSC stream lands -- producing "element(s) not found"
+  // on headings that demonstrably render (#858).
+  expect: { timeout: 15_000 },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

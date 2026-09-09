@@ -292,6 +292,31 @@ export async function signInAsOwner(
   const value = setCookie.split(";")[0]?.split("=").slice(1).join("=") ?? "";
   expect(value, "mint-session returned no cookie value").not.toBe("");
 
+  // Wait for the merchant's role to be READABLE before handing back a
+  // context. onboarding Complete returns before the FGA owner tuple is
+  // visible to platform-api, and admin's middleware fails closed on a
+  // missing role: it bounces to canonical /login, which then 404s. The
+  // spec sees "heading not found" on a page that renders perfectly a
+  // second later, so this presented as spec drift in fifteen different
+  // places rather than as one race.
+  //
+  // Polling the exact endpoint the middleware itself calls, rather than
+  // sleeping: this is done when the thing that gates rendering says so.
+  let role: string | undefined;
+  for (let attempt = 0; attempt < 30 && !role; attempt++) {
+    const meRes = await request.get(
+      `${API_URL}/internal/tenants/${tenant.id}/me?uid=${encodeURIComponent(tenant.owner_user_id)}`,
+      { headers: authHeaders },
+    );
+    if (meRes.ok()) role = ((await meRes.json()).data ?? {}).role;
+    if (!role) await new Promise((r) => setTimeout(r, 500));
+  }
+  expect(
+    role,
+    `owner role never became visible for tenant ${tenant.id} — admin's ` +
+      "middleware would bounce every page to a login that 404s",
+  ).toBeTruthy();
+
   const ctx = await browser.newContext({
     baseURL: `http://${details.slug}-admin.mark8ly.com`,
   });

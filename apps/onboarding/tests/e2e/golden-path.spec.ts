@@ -17,7 +17,7 @@ test("golden path: landing → form → magic link → welcome", async ({
   page,
   request,
 }) => {
-  const { email, slug, businessName, password } = uniqueEmail();
+  const { email, slug, businessName, password, name } = uniqueEmail();
 
   // 1. Landing page renders and the primary CTA goes to /onboarding.
   await page.goto("/");
@@ -78,6 +78,7 @@ test("golden path: landing → form → magic link → welcome", async ({
   await expect(page).toHaveURL(/\/onboarding\/set-password/, {
     timeout: 15_000,
   });
+  await page.locator("#name").fill(name);
   await page.locator("#password").fill(password);
   await page.getByRole("button", { name: /create account/i }).click();
   await expect(page).toHaveURL(/\/welcome/, { timeout: 15_000 });

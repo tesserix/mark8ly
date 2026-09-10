@@ -322,6 +322,16 @@ export async function signInAsOwner(
 
   const ctx = await browser.newContext({
     baseURL: `http://${details.slug}-admin.mark8ly.com`,
+    // middleware's externalOrigin() (middleware.ts:505) picks the scheme
+    // from x-forwarded-proto, falling back to https for any host that is
+    // not localhost/127.* — so on a *-admin.mark8ly.com host every redirect
+    // it builds points at https://, which nothing here serves. Chromium
+    // then fails the navigation with a bare net::ERR_ABORTED that names
+    // neither the scheme nor the redirect.
+    //
+    // Declaring the scheme is what a local reverse proxy would do, and
+    // keeps the app's production default untouched.
+    extraHTTPHeaders: { "x-forwarded-proto": "http" },
   });
   await ctx.addCookies([
     {

@@ -186,6 +186,15 @@ jobs:
             echo "::error::playwright exited $status"
             fail=1
           fi
+          # A flaky test is a real defect, so this stays a failure — but it
+          # must SAY so. Playwright counts a retry-then-pass as `flaky`, not
+          # `passed`, so without this the exact-count check below fires with
+          # "the suite is not actually executing", which sends the reader
+          # looking for a broken stack instead of an intermittent test.
+          if grep -qE '(^|[^0-9])[0-9]+ flaky' <<<"$out"; then
+            echo "::error::a test is FLAKY (passed only on retry) — the exact pass count below will also fail; fix the intermittency rather than re-running"
+            fail=1
+          fi
           grep -qE '(^|[^0-9])10 passed' <<<"$out" || {
             echo "::error::did not see exactly 10 passed — the admin suite is not actually executing and passing"
             fail=1

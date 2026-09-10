@@ -87,6 +87,17 @@ test.describe("M7d bulk actions", () => {
     // A fresh tenant has no products; these assertions need rows.
     await seedProducts(request, details);
     // ...and exactly one store, so "copy to store" has no target without this.
+    //
+    // KNOWN RED (#858): seeding the second store makes the FIRST store's
+    // admin host unreachable — the navigation dies with a bare
+    // net::ERR_ABORTED. Isolated by removing this line: the goto then
+    // succeeds and the test gets as far as the (targetless) copy dialog.
+    //
+    // So creating a store appears to move which host the merchant's admin
+    // lives on. That is the same open product question stores-multi.spec.ts
+    // raises from the other side ("does creating a store switch to it?"),
+    // and it wants an answer before either spec is rewritten to match
+    // whatever today's behaviour happens to be.
     await seedSecondStore(request, details);
 
     const ctx = await signInAsOwner(browser, request, details);
@@ -126,8 +137,19 @@ test.describe("M7d bulk actions", () => {
     // Click copy
     await page.getByRole("button", { name: /^copy$/i }).click();
 
-    // Wait for success feedback
-    await expect(page.getByText(/copied/i)).toBeVisible({ timeout: 10_000 });
+    // Success feedback is the dialog CLOSING — handleCopySubmit
+    // (ProductsList.tsx:98) awaits the copy, closes, and clears the
+    // selection. There is no toast.
+    //
+    // The old assertion waited for text matching /copied/i, which the
+    // dialog's own static helper line ("Copied products will land as
+    // drafts in the target store") satisfies before anything is copied —
+    // so it proved nothing while the dialog was open and found nothing
+    // once it closed. The real verification is the target-store check
+    // below.
+    await expect(
+      page.getByText(/copy product to another store/i),
+    ).toBeHidden({ timeout: 10_000 });
 
     // Switch to the target store and verify the product exists
     // This requires the store switcher UI — skip if not available

@@ -28,6 +28,25 @@ import { ADMIN_URL, ONBOARDING_URL, completeOnboarding } from "./helpers";
  *   - platform-api /internal/tenants/:id is broken
  *   - the logout route isn't clearing the cookie
  */
+// KNOWN RED (#858) — this spec describes an architecture that was removed,
+// and it needs a DECISION, not a repair.
+//
+// Its premise is that onboarding mints a session cookie the admin origin
+// then reuses ("Same context = same cookie jar"). That handoff is gone:
+// apps/onboarding/components/onboarding/WelcomeCta.tsx records that no
+// session is minted for the admin origin during onboarding, because admin
+// lives on a different origin ({slug}-admin.mark8ly.com) and no cookie this
+// app sets could reach it. The merchant signs in there once instead.
+//
+// Step 1 also asserts anonymous /dashboard bounces to a 200 /login. On the
+// canonical host /login deliberately 404s without a valid returnUrl
+// (middleware.ts:233), so that assertion cannot hold either.
+//
+// Converting it to signInAsOwner would be worse than leaving it red: the
+// session handoff is the ONLY thing it tests, and minting the session for
+// it would assert nothing. Either rewrite it against the sign-in-once flow
+// or delete it — both are calls for whoever owns that flow.
+
 test("onboarding → admin → dashboard with real tenant → logout", async ({
   page,
   request,

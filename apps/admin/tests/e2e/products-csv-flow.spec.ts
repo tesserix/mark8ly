@@ -18,6 +18,27 @@ import {
  * - At least one tenant with products seeded
  */
 
+// KNOWN RED (#858) — the SPEC is right and the APP is broken. CSV import
+// does not work in production, and this suite is what found it:
+//
+//   1. apps/admin/lib/api/csvImports.ts:97 builds
+//      /api/v1/admin/stores/{id}/products/csv-imports
+//      marketplace-api serves
+//      /api/v1/admin/stores/{id}/csv-imports          (no /products segment)
+//      The GET therefore lands on /products/:id with id="csv-imports" and
+//      500s on `invalid input syntax for type uuid`.
+//
+//   2. apps/admin/app/(admin)/products/import/page.tsx:67 passes the literal
+//      string "__STORE_ID__" as the store id, so the POST 404s. The page is
+//      a client component with no store id in scope — threading one in is a
+//      product change, not a test fix.
+//
+// apps/admin/lib/api/csvImports.test.ts:71 asserts the WRONG url, so the
+// unit suite has been locking the first bug in. That is the whole argument
+// for this issue: green unit tests, a feature that has never worked.
+//
+// Do not "fix" this spec to match the broken behaviour.
+
 test.describe("M7e CSV import flow", () => {
   test("upload 10-row CSV, redirect to job page, see progress, reach completion", async ({
     browser,
@@ -59,9 +80,18 @@ test.describe("M7e CSV import flow", () => {
       buffer: Buffer.from(csvContent),
     });
 
-    // Preview should show headers
-    await expect(page.getByText("title")).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText("price")).toBeVisible();
+    // Preview should show headers.
+    //
+    // Scoped to the preview table's <th> cells (CsvPreviewTable.tsx:23): a
+    // bare getByText("title") matched three elements — the column header,
+    // and the column-mapping controls that name the same field — so strict
+    // mode refused. Asserting the COLUMN HEADER is also the thing this step
+    // actually cares about: that the uploaded file was parsed into columns.
+    const previewHeaders = page.getByRole("columnheader");
+    await expect(
+      previewHeaders.filter({ hasText: /^title$/i }),
+    ).toBeVisible({ timeout: 5_000 });
+    await expect(previewHeaders.filter({ hasText: /^price$/i })).toBeVisible();
 
     // Submit import
     await page.getByRole("button", { name: /start import/i }).click();

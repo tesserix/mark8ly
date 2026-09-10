@@ -82,19 +82,34 @@ jobs:
           make dev-zitadel
 
       - name: Prove the backend is reachable, not merely running
+        # Waits for EACH service, not just the first. The original version
+        # polled platform-api and then checked the other three immediately —
+        # so whichever came up slowest decided the outcome. It passed on the
+        # PR that introduced it and failed on the very next unrelated PR
+        # with "marketplace-api never became healthy": a gate that was flaky
+        # by construction, which is worse than no gate because it teaches
+        # people to re-run.
         run: |
-          for i in $(seq 1 60); do
-            curl -fsS http://localhost:8086/health >/dev/null 2>&1 && break
-            sleep 2
-          done
-          curl -fsS http://localhost:8086/health >/dev/null \
-            || { echo "::error::platform-api never became healthy"; exit 1; }
-          curl -fsS http://localhost:8087/health >/dev/null \
-            || { echo "::error::auth-bff never became healthy — the suite mints sessions through it"; exit 1; }
-          curl -fsS http://localhost:8091/health >/dev/null \
-            || { echo "::error::marketplace-api never became healthy — product seeding goes through it"; exit 1; }
-          curl -fsS -H 'Host: zitadel:8080' http://localhost:8092/debug/healthz >/dev/null \
-            || { echo "::error::zitadel not ready"; exit 1; }
+          wait_for() {
+            local name="$1" url="$2" host="$3" i
+            for i in $(seq 1 60); do
+              if [ -n "$host" ]; then
+                curl -fsS -H "Host: $host" "$url" >/dev/null 2>&1 && return 0
+              else
+                curl -fsS "$url" >/dev/null 2>&1 && return 0
+              fi
+              sleep 2
+            done
+            echo "::error::$name never became healthy at $url"
+            docker compose -f infra/dev/docker-compose.yml logs --tail=40 || true
+            return 1
+          }
+          wait_for platform-api    http://localhost:8086/health        ''
+          wait_for auth-bff        http://localhost:8087/health        ''
+          wait_for marketplace-api http://localhost:8091/health        ''
+          # Zitadel resolves the instance from the Host header; without it
+          # every request 404s no matter how healthy the process is.
+          wait_for zitadel         http://localhost:8092/debug/healthz 'zitadel:8080'
 
       - name: Install dependencies
         run: npm ci
@@ -169,6 +184,15 @@ jobs:
           fail=0
           if [ "$status" -ne 0 ]; then
             echo "::error::playwright exited $status"
+            fail=1
+          fi
+          # A flaky test is a real defect, so this stays a failure — but it
+          # must SAY so. Playwright counts a retry-then-pass as `flaky`, not
+          # `passed`, so without this the exact-count check below fires with
+          # "the suite is not actually executing", which sends the reader
+          # looking for a broken stack instead of an intermittent test.
+          if grep -qE '(^|[^0-9])[0-9]+ flaky' <<<"$out"; then
+            echo "::error::a test is FLAKY (passed only on retry) — the exact pass count below will also fail; fix the intermittency rather than re-running"
             fail=1
           fi
           grep -qE '(^|[^0-9])10 passed' <<<"$out" || {

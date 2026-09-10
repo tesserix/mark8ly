@@ -55,7 +55,11 @@ test("store-scoped invite grants store role without tenant access", async ({
   await ownerPage.locator("#new-store-name").fill(`${owner.businessName} Outlet`);
   await ownerPage.locator("#new-store-slug").fill(second.slug);
   await ownerPage.getByRole("button", { name: /create store/i }).click();
-  await expect(ownerPage).toHaveURL(/\/settings\/general/, { timeout: 15_000 });
+  // `/settings/general` merged into `/settings/stores` in the settings IA
+  // restructure — the same rename invite-teammate.spec.ts:113 and
+  // settings-stores.spec.ts:14 already record. This spec had never run to
+  // notice, so it waited 15s for a URL that no longer exists.
+  await expect(ownerPage).toHaveURL(/\/settings\/stores/, { timeout: 15_000 });
 
   // ── 3. Team page — scope toggle is now visible ──────────────
   await ownerPage.goto(`/settings/team`);

@@ -344,6 +344,11 @@ services:
       # Container-internal port, not the published 8091 -> openfga is 8080
       # inside the network even though the host sees it on 8089.
       MARKETPLACE_FGA_API_URL: http://openfga:8080
+      # The billing write routes (POST /billing/subscription,
+      # POST /subscription/cancel) default to 503 because production runs a
+      # live Stripe key while cancellation never reaches Stripe. Locally
+      # there is no live key and nothing to overcharge, so keep them usable.
+      BILLING_WRITES_ENABLED: "true"
       # ENV=dev also exempts this service from Validate()'s prod-only
       # requirements (MARKETPLACE_INTERNAL_AUTH_SECRET, CUSTOMER_SESSION_SECRET,
       # ENCRYPTION_MODE=aes + ENCRYPTION_KEY).

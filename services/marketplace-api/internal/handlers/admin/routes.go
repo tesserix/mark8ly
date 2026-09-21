@@ -53,6 +53,9 @@ type Deps struct {
 	// P10 — promo-code engine (§7) + 14-day cooling-off refund (§8).
 	PromoHandler  *PromoHandler
 	RefundHandler *RefundHandler
+	// BillingWritesEnabled gates the routes that can create live money.
+	// False (the default) makes them 503 — see RequireBillingWrites for why.
+	BillingWritesEnabled bool
 	// P11 — merchant-initiated cancellation + save-offer (§15).
 	CancelHandler            *cancel.Handler
 	MigrationFastPathHandler *migration.Handler
@@ -813,6 +816,7 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				if deps.CancelHandler != nil {
 					sub.POST("/cancel",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+						RequireBillingWrites(deps.BillingWritesEnabled),
 						deps.CancelHandler.Cancel)
 				}
 			}
@@ -844,6 +848,7 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		if deps.TrialBillingHandler != nil {
 			storeRoute.POST("/billing/subscription",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.SubscriptionEditRole),
+				RequireBillingWrites(deps.BillingWritesEnabled),
 				deps.TrialBillingHandler.Subscribe)
 		}
 

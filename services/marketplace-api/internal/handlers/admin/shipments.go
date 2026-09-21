@@ -184,6 +184,11 @@ func (h *ShipmentsHandler) CancelShipment(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("shipmentId", "must be a uuid"), h.logger)
 		return
 	}
+	orderID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
 	if h.canceller == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "service_unavailable",
@@ -191,6 +196,23 @@ func (h *ShipmentsHandler) CancelShipment(c *gin.Context) {
 		})
 		return
 	}
+
+	// StoreMiddleware proves :storeId belongs to the caller's tenant and
+	// nothing more, so a shipment id from another order — or another
+	// tenant's store — has to be rejected here. Every sibling shipment
+	// route already does this (see UpdateShipmentStatus); this one did not,
+	// and it drives a REAL carrier cancel/RTO, so the omission let any
+	// staff user cancel any shipment in the estate by uuid.
+	rec, err := h.repo.GetShipmentByID(c.Request.Context(), shipmentID)
+	if err != nil {
+		RespondErr(c, apperrors.NotFound("shipment"), h.logger)
+		return
+	}
+	if rec.OrderID != orderID || rec.StoreID.String() != c.Param("storeId") {
+		RespondErr(c, apperrors.NotFound("shipment"), h.logger)
+		return
+	}
+
 	outcome, err := h.canceller.CancelShipmentByID(c.Request.Context(), shipmentID)
 	if err != nil {
 		RespondErr(c, apperrors.NotFound("shipment"), h.logger)

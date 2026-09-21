@@ -6,7 +6,7 @@
 # Go's runtime handles SIGTERM directly so tini is unnecessary; K8s
 # securityContext overrides USER, mode 0755 lets any uid execute.
 
-FROM ghcr.io/tesserix/base-go-builder@sha256:196c74ed0c05329dbe72c4277b7c983ab32c31279769e09bee9c9539e89e2b4a AS build
+FROM ghcr.io/tesserix/base-go-builder:20260919@sha256:f60d710e75afce7cffbcb63e1bbbf5dd7236d16bfff882ba050fb1f7ded3ed21 AS build
 USER 0:0
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
-FROM ghcr.io/tesserix/base-distroless-static@sha256:2fea7cf18950a0c9e6a08d0260643003d05eb43e66e09ec4d06562e3b71024e8 AS server
+FROM ghcr.io/tesserix/base-distroless-static:20260912@sha256:98b997f450dc0c45cc6fbf4b717ae399c03b3312873d515e3e0438fc1f5d628b AS server
 COPY --from=build --chown=10001:10001 /out/server /server
 EXPOSE 8089
 CMD ["/server"]

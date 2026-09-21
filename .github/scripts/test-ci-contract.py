@@ -298,7 +298,14 @@ class ReusableCIContract(unittest.TestCase):
 
         for app in ("admin", "storefront", "onboarding"):
             dockerfile = (ROOT / f"apps/{app}/Dockerfile").read_text()
-            found = set(re.findall(r"base-node-(?:builder|runtime)-(\d+)@", dockerfile))
+            # The pin may carry a dated tag before the digest
+            # (base-node-builder-24:20260919@sha256:...) so that Renovate can
+            # track it -- the shared preset matches tesserix base images by a
+            # YYYYMMDD tag, and a bare digest is invisible to it. Accept both
+            # shapes; the Node major is what this test is about.
+            found = set(
+                re.findall(r"base-node-(?:builder|runtime)-(\d+)(?::[\w.-]+)?@", dockerfile)
+            )
             self.assertNotEqual(
                 found, set(), f"apps/{app}/Dockerfile pins no base-node-* image"
             )

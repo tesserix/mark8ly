@@ -448,10 +448,24 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		return
 	}
 
-	// ── C2 fix: Recompute subtotal server-side from unit_price * quantity ──
+	// ── Reprice every line from the catalog, then recompute the subtotal ──
+	//
+	// req.Items arrives entirely from the browser, unit_price included. The
+	// code that stood here recomputed the subtotal as unit_price * quantity —
+	// the CLIENT's price — so it validated the arithmetic and not the amount,
+	// and a shopper could POST unit_price: 0.01 and pay a cent for anything.
+	// repriceItems overwrites unit_price, line_total and currency_code from
+	// product_variants (store-scoped) before any total is derived.
+	if err := repriceItems(ctx, dbCatalogPricer{db: h.db}, store.ID, req.Items); err != nil {
+		h.logWarn("checkout_ext: repricing failed", "store_id", store.ID, "err", err)
+		h.respondErr(c, apperrors.ValidationFailed("items",
+			"one or more items are no longer available at the requested price"))
+		return
+	}
+
 	computedSubtotal := decimal.Zero
 	for _, it := range req.Items {
-		computedSubtotal = computedSubtotal.Add(it.UnitPrice.Mul(decimal.NewFromInt(int64(it.Quantity))))
+		computedSubtotal = computedSubtotal.Add(it.LineTotal)
 	}
 	if !computedSubtotal.Equal(req.Subtotal) {
 		h.logWarn("checkout_ext: client subtotal mismatch",

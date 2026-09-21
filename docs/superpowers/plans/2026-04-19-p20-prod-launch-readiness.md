@@ -125,7 +125,9 @@ WS-H        [CVE triage ──┤[critical + high remediation ─────┤
 ### B1. Stripe
 
 - [ ] **B1.1** Stripe AU account fully verified (business docs, bank account, tax ID) — confirm prod access beyond test mode
-- [ ] **B1.2** AU GST registration activated on Stripe Tax for AU tenants only
+- [x] **B1.2** ~~AU GST registration activated on Stripe Tax for AU tenants only~~ — **REVERSED 2026-09-21.**
+  **DO NOT ENABLE STRIPE TAX FOR AU.** Tesserix is not GST-registered and charges no GST. AUD Prices are `tax_behavior: exclusive`, so switching Stripe Tax on adds 10% on top with no repricing and no copy change — collecting GST there is no registration to remit. Keeping `exclusive` is what preserves registration as a later config flip. See `docs/runbooks/stripe-billing-go-live.md`.
+  Closed as *do not do*; no action remains. Re-open only if Tesserix actually registers for GST, and then reprice deliberately.
 - [ ] **B1.3** Webhook endpoint URL registered in Stripe Dashboard pointing to prod `https://api.mark8ly.com/webhooks/stripe-billing`
 - [ ] **B1.4** Webhook signing secret rotated into GCP Secret Manager as `stripe-billing-webhook-secret` (prod value)
 - [ ] **B1.5** Stripe live secret key in Secret Manager as `stripe-billing-secret-key`
@@ -543,7 +545,7 @@ Check these the day of public launch. Any `✗` = no-go, investigate.
 - [ ] Every Price object in `pricing.AllDescriptors()` exists in prod Stripe with correct lookup_keys (developed + PPP tiers — see B1.8)
 - [ ] Webhook signing secret rotated; test event round-trips
 - [ ] Stripe India SCA test passed
-- [ ] AU Stripe Tax registration confirmed
+- [x] AU Stripe Tax **confirmed OFF** — Tesserix is not GST-registered; enabling it would collect unremittable GST. See B1.2.
 
 **Security**
 - [ ] All 8 D5 security regression tests green

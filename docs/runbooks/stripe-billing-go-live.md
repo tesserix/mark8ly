@@ -1,11 +1,41 @@
 # Stripe billing go-live checklist
 
 **Issue:** #366 (the record), #371 (the execution).
-**Status:** not scheduled. #366's recorded decision is **"not yet"** — production stays on
-the test key until the open billing correctness work is closed.
+
+> ## ⚠ STATUS CORRECTED 2026-09-21 — THE SWAP ALREADY HAPPENED
+>
+> **Production has been on a LIVE Stripe key since 2026-09-09.** The "not yet" status
+> below was reversed and executed by `tesserix-k8s` commit `6b8f91b7`, and this document
+> was never updated. Anything here that describes the swap as future work, or
+> `store_subscriptions` as empty, is wrong.
+>
+> Verified 2026-09-21 against the running cluster:
+>
+> | | |
+> |---|---|
+> | Secret consumed | `prod-mark8ly-stripe-billing-secret-key-live` (prefix `rk_live_`) |
+> | Webhook secret | `prod-mark8ly-stripe-billing-webhook-secret-live` |
+> | `CONSOLE_CATALOG_MODE` | `live` |
+> | Stripe account | `acct_1SgwbFCyiazmanuP`, 42 active live prices |
+> | Charged so far | **nothing** — 0 customers, subscriptions, invoices, charges, refunds |
+> | `store_subscriptions` | 4 rows, all trial-state, no Stripe linkage |
+>
+> **The billing write routes are currently OPEN and must not be.** Cancellation never
+> reaches Stripe — there is no `Subscriptions.Cancel` call anywhere in marketplace-api — so
+> the first real subscriber would lose access at the next finalize tick and keep being
+> billed. A 503 gate on `POST /billing/subscription` and `POST /subscription/cancel` is the
+> agreed stopgap; update this line when it lands.
+>
+> **If you need to roll back**, the target is the **`-sandbox`** pair, NOT `-test`. Both
+> hold `rk_test_` but they are different accounts — `…-secret-key-test` is the main
+> account's empty test mode (0 prices, the #696 breakage), while `…-secret-key-sandbox` is
+> where the console publishes its test prices. The revert is the exact inverse of
+> `6b8f91b7`: two `remoteRef.key` values in
+> `external-secrets/prod/mark8ly/externalsecret.yaml` plus `consoleCatalog.mode` in
+> `charts/apps/mark8ly-marketplace-api-admin/values.yaml`.
 
 This document is the thing #366 asks for: what changes meaning the moment the key is
-swapped, written down before it is swapped rather than after.
+swapped. It was written before the swap; the swap has since occurred.
 
 **Re-measured 2026-09-08.** Most of §2 has closed and two steps of §4 turn out to be
 already done, so the remaining work is smaller than this document said. Corrections are

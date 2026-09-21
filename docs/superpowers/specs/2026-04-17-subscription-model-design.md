@@ -949,9 +949,14 @@ Referenced in invoices. Reviewed by Mark8ly legal annually; checkbox text versio
 
 ### 19.4 Australia-specific
 
-Mark8ly Pty Ltd charges 10% GST + remits to ATO. AU pricing shown **GST-exclusive** with "Plus GST" below price card. Invoice breaks out GST separately.
+> **SUPERSEDED 2026-09-21.** This section described an intended future state, not
+> reality. **Tesserix is not GST-registered, charges no GST, and remits none.** No
+> "Plus GST" copy is shown and invoices break out no GST — correctly. The paragraph
+> below is retained only to show what was once planned.
 
-**Stripe configuration:** AU Price objects must use `tax_behavior: exclusive`. Stripe Tax enabled for AU GST registration. Default `tax_behavior: inclusive` would cause price/invoice mismatch — explicit configuration required at implementation.
+~~Mark8ly Pty Ltd charges 10% GST + remits to ATO. AU pricing shown **GST-exclusive** with "Plus GST" below price card. Invoice breaks out GST separately.~~
+
+**Stripe configuration:** AU Price objects must use `tax_behavior: exclusive` — this part stands and must be preserved. **DO NOT ENABLE STRIPE TAX FOR AU.** Tesserix is not GST-registered and charges no GST. AUD Prices are `tax_behavior: exclusive`, so switching Stripe Tax on adds 10% on top with no repricing and no copy change — collecting GST there is no registration to remit. Keeping `exclusive` is what preserves registration as a later config flip. See `docs/runbooks/stripe-billing-go-live.md`.
 
 ### 19.5 Quarterly revalidation
 
@@ -962,7 +967,7 @@ Scheduled job re-checks tax IDs. Invalid → email merchant, 14-day update windo
 Required before launch:
 - EU/UK/India reverse-charge applicability for B2B SaaS
 - **NZ GST reverse-charge applicability** — NZ has explicit "remote services" GST regime since 2016 that may require registration regardless of B2B status. Counsel opinion critical path (see §20.3).
-- AU GST registration confirmed
+- ~~AU GST registration confirmed~~ — **not pursued.** Tesserix is not GST-registered; see §19.4.
 
 ---
 
@@ -1147,7 +1152,7 @@ CREATE TABLE billing_archive (
 | Tax ID validation (12 validators + clock-pause logic) | 2 weeks |
 | US/CA business-entity checkbox + immutable storage (§19.3.1) | 2 days |
 | Reverse-charge invoice template + logic | 1 week |
-| AU Stripe `tax_behavior: exclusive` + Stripe Tax AU GST config | 1 day |
+| AU Stripe `tax_behavior: exclusive` (**Stripe Tax AU GST config dropped — see §19.4**) | 1 day |
 | Billing archive + hard-delete hook | 2 days |
 | Geo-pricing anti-arbitrage + `subscription_arbitrage_audit` schema + IP hashing + self-service appeal | 4 days |
 | SEA manual-review with name cross-check + queue capacity monitoring | 3 days |

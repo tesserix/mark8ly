@@ -13,7 +13,7 @@
 # `replace github.com/mark8ly/platformauth => ../../packages/platformauth`,
 # a sibling module a services/platform-api-scoped context can't reach.
 
-FROM ghcr.io/tesserix/base-go-builder@sha256:196c74ed0c05329dbe72c4277b7c983ab32c31279769e09bee9c9539e89e2b4a AS build
+FROM ghcr.io/tesserix/base-go-builder@sha256:f60d710e75afce7cffbcb63e1bbbf5dd7236d16bfff882ba050fb1f7ded3ed21 AS build
 USER 0:0
 WORKDIR /src
 
@@ -39,7 +39,7 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/server           ./cmd/server \
 # overrides can pick the right entrypoint without pulling a second image.
 # /backfill-vendors is the CLI surfaced by the marketplace-api error
 # "tenant has no self-vendor; run platform-api's backfill-vendors CLI".
-FROM ghcr.io/tesserix/base-distroless-static@sha256:2fea7cf18950a0c9e6a08d0260643003d05eb43e66e09ec4d06562e3b71024e8 AS server
+FROM ghcr.io/tesserix/base-distroless-static@sha256:98b997f450dc0c45cc6fbf4b717ae399c03b3312873d515e3e0438fc1f5d628b AS server
 COPY --from=build --chown=10001:10001 /out/server           /server
 COPY --from=build --chown=10001:10001 /out/migrate          /migrate
 COPY --from=build --chown=10001:10001 /out/seed             /seed
@@ -48,10 +48,10 @@ EXPOSE 8086
 CMD ["/server"]
 
 # Legacy single-purpose stages retained for local docker-compose flows.
-FROM ghcr.io/tesserix/base-distroless-static@sha256:2fea7cf18950a0c9e6a08d0260643003d05eb43e66e09ec4d06562e3b71024e8 AS migrate
+FROM ghcr.io/tesserix/base-distroless-static@sha256:98b997f450dc0c45cc6fbf4b717ae399c03b3312873d515e3e0438fc1f5d628b AS migrate
 COPY --from=build --chown=10001:10001 /out/migrate /migrate
 CMD ["/migrate"]
 
-FROM ghcr.io/tesserix/base-distroless-static@sha256:2fea7cf18950a0c9e6a08d0260643003d05eb43e66e09ec4d06562e3b71024e8 AS seed
+FROM ghcr.io/tesserix/base-distroless-static@sha256:98b997f450dc0c45cc6fbf4b717ae399c03b3312873d515e3e0438fc1f5d628b AS seed
 COPY --from=build --chown=10001:10001 /out/seed /seed
 CMD ["/seed"]

@@ -11,7 +11,7 @@
 # the repo root.
 
 # ─── deps ──────────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-node-builder-24@sha256:dc8e8205eab94ba9fbc4bea454f3998f0440135ed7e0f7300d0fef51d6e8b3a6 AS deps
+FROM ghcr.io/tesserix/base-node-builder-24@sha256:9bfb3e13777c24f75f9c63f075599e59925eb14227d4590677cbe183ce801118 AS deps
 USER 0:0
 WORKDIR /src
 
@@ -32,7 +32,7 @@ COPY packages/ui/package.json ./packages/ui/
 RUN npm ci --no-audit --no-fund
 
 # ─── builder ───────────────────────────────────────────────────────────
-FROM ghcr.io/tesserix/base-node-builder-24@sha256:dc8e8205eab94ba9fbc4bea454f3998f0440135ed7e0f7300d0fef51d6e8b3a6 AS builder
+FROM ghcr.io/tesserix/base-node-builder-24@sha256:9bfb3e13777c24f75f9c63f075599e59925eb14227d4590677cbe183ce801118 AS builder
 USER 0:0
 WORKDIR /src
 COPY --from=deps /src/node_modules ./node_modules
@@ -92,7 +92,7 @@ RUN --mount=type=secret,id=APPLICATION_BUILD_SECRET \
 # Next.js standalone output for a workspace ends up at
 # apps/onboarding/.next/standalone/ with the monorepo directory layout
 # preserved, so the entrypoint is apps/onboarding/server.js.
-FROM ghcr.io/tesserix/base-node-runtime-24@sha256:a76c207828d824d59e1c80957fe11d3ab5b561bbbe581962f23027d15e4eff7a AS runtime
+FROM ghcr.io/tesserix/base-node-runtime-24@sha256:9b8af4837035fb624cddb1898b19f2be92f47c5ce139dce8d4a8e28f658116ac AS runtime
 WORKDIR /app
 
 ENV PORT=4201

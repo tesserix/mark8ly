@@ -20,11 +20,20 @@
 > | Charged so far | **nothing** — 0 customers, subscriptions, invoices, charges, refunds |
 > | `store_subscriptions` | 4 rows, all trial-state, no Stripe linkage |
 >
-> **The billing write routes are currently OPEN and must not be.** Cancellation never
-> reaches Stripe — there is no `Subscriptions.Cancel` call anywhere in marketplace-api — so
-> the first real subscriber would lose access at the next finalize tick and keep being
-> billed. A 503 gate on `POST /billing/subscription` and `POST /subscription/cancel` is the
-> agreed stopgap; update this line when it lands.
+> **The billing write routes are gated to 503.** `POST /billing/subscription` and
+> `POST /subscription/cancel` return `billing_writes_disabled` unless
+> `BILLING_WRITES_ENABLED=true`, which is set nowhere in production. The gate exists
+> because cancellation never reaches Stripe — there is no `Subscriptions.Cancel` call
+> anywhere in marketplace-api — so the first real subscriber would lose access at the next
+> finalize tick and keep being billed.
+>
+> **Do not set that flag in production** until cancellation reaches Stripe AND
+> `current_period_end` is persisted at subscribe time. The flag is not a judgement about
+> the key; it is a judgement about the cancellation path.
+>
+> Note `POST /subscription/change-plan` is NOT gated. It writes prorated invoices, but it
+> is inert today because there are zero live subscriptions for it to act on. Gate it too if
+> that stops being true.
 >
 > **If you need to roll back**, the target is the **`-sandbox`** pair, NOT `-test`. Both
 > hold `rk_test_` but they are different accounts — `…-secret-key-test` is the main

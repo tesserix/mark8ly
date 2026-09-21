@@ -1529,6 +1529,7 @@ func main() {
 			ChangePlanHandler:        changePlanHandler,
 			CancelHandler:            cancelHandler,
 			TrialBillingHandler:      trialBillingHandler,
+			BillingWritesEnabled:     cfg.BillingWritesEnabled,
 			MigrationFastPathHandler: migrationHandler,
 			TaxHandler:               taxHandler,
 			APIKeysHandler:           apiKeysHandler,

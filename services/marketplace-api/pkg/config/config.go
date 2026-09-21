@@ -232,7 +232,13 @@ type Config struct {
 	// until legal approves. The remaining keys are per-registry secrets;
 	// empty values mean "anonymous" for HMRC/VIES/ABN/ACRA (which permit
 	// anonymous lookups) and "skip" for GSTN (token required in prod).
-	NZTaxValidationEnabled  bool   `envconfig:"NZ_TAX_VALIDATION_ENABLED" default:"false"`
+	NZTaxValidationEnabled bool `envconfig:"NZ_TAX_VALIDATION_ENABLED" default:"false"`
+	// BillingWritesEnabled gates POST /billing/subscription and
+	// POST /subscription/cancel. Default false: production runs a live Stripe
+	// key while cancellation never reaches Stripe, so taking a real payment
+	// today would bill a merchant who cannot cancel. See
+	// handlers/admin.RequireBillingWrites.
+	BillingWritesEnabled    bool   `envconfig:"BILLING_WRITES_ENABLED" default:"false"`
 	GSTNAuthToken           string `envconfig:"GSTN_AUTH_TOKEN" default:""`
 	ABNGUID                 string `envconfig:"AU_ABN_LOOKUP_GUID" default:""`
 	TaxAttestationIPHashKey string `envconfig:"TAX_ATTESTATION_IP_HASH_KEY" default:""`

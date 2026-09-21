@@ -76,11 +76,25 @@ func (h *AbandonedCartsHandler) TriggerRecoveryEmail(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
 		return
 	}
+	// StoreMiddleware validates :storeId against the caller's tenant and
+	// nothing else, so a cart uuid from another tenant's store reached this
+	// route — and this sends an email to that store's customer. Prove
+	// ownership BEFORE triggering: the send is not reversible.
+	cart, err := h.svc.Get(c.Request.Context(), id)
+	if err != nil {
+		RespondErr(c, apperrors.NotFound("abandoned_cart"), h.logger)
+		return
+	}
+	if cart.StoreID.String() != c.Param("storeId") {
+		RespondErr(c, apperrors.NotFound("abandoned_cart"), h.logger)
+		return
+	}
+
 	if err := h.svc.TriggerRecoveryEmail(c.Request.Context(), id); err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}
-	cart, err := h.svc.Get(c.Request.Context(), id)
+	cart, err = h.svc.Get(c.Request.Context(), id)
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return

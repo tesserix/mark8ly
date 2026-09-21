@@ -202,10 +202,35 @@ func (h *ReturnsHandler) Request(c *gin.Context) {
 // body may carry an optional pickup_details free-text block that the
 // customer will see on their order page next to the "Request approved"
 // banner (carrier, pickup window, replacement tracking, etc.).
+// requireReturnInStore proves the return belongs to :storeId before anything
+// acts on it.
+//
+// StoreMiddleware validates :storeId against the caller's tenant and nothing
+// else, so a return uuid belonging to another tenant's store was actionable
+// through these routes. Get already checked inline; the state transitions did
+// not, and MarkRefunded drives a REAL gateway refund. Approve is the sharpest
+// case: it called svc.Approve BEFORE loading the row, so the mutation landed
+// before anything could have rejected it.
+func (h *ReturnsHandler) requireReturnInStore(c *gin.Context, id uuid.UUID) bool {
+	r, _, err := h.repo.GetByID(c.Request.Context(), h.db, id)
+	if err != nil {
+		RespondErr(c, apperrors.NotFound("return"), h.logger)
+		return false
+	}
+	if r.StoreID.String() != c.Param("storeId") {
+		RespondErr(c, apperrors.NotFound("return"), h.logger)
+		return false
+	}
+	return true
+}
+
 func (h *ReturnsHandler) Approve(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	if !h.requireReturnInStore(c, id) {
 		return
 	}
 	var req ApproveReturnRequest
@@ -233,6 +258,9 @@ func (h *ReturnsHandler) SetPickupDetails(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
 		return
 	}
+	if !h.requireReturnInStore(c, id) {
+		return
+	}
 	var req ApproveReturnRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
@@ -257,6 +285,9 @@ func (h *ReturnsHandler) Reject(c *gin.Context) {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
 		return
 	}
+	if !h.requireReturnInStore(c, id) {
+		return
+	}
 	var req RejectReturnRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
@@ -279,6 +310,9 @@ func (h *ReturnsHandler) MarkReceived(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	if !h.requireReturnInStore(c, id) {
 		return
 	}
 	if err := h.svc.MarkReceived(c.Request.Context(), id); err != nil {
@@ -312,6 +346,9 @@ func (h *ReturnsHandler) MarkRefunded(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	if !h.requireReturnInStore(c, id) {
 		return
 	}
 	var req MarkRefundedRequest

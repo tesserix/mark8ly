@@ -341,10 +341,34 @@ func (h *OrdersHandler) Create(c *gin.Context) {
 }
 
 // Confirm handles POST /admin/stores/:storeId/orders/:id/confirm.
+// requireOrderInStore proves the order belongs to :storeId before anything
+// acts on it.
+//
+// StoreMiddleware validates :storeId against the caller's tenant and nothing
+// else, so an order uuid from another tenant's store was actionable through
+// these routes. Confirm, MarkFulfilled and Refund all called the service
+// BEFORE loading the row, so the mutation — including a real gateway refund —
+// landed before any ownership check could have rejected it.
+func (h *OrdersHandler) requireOrderInStore(c *gin.Context, id uuid.UUID) bool {
+	o, _, _, err := h.repo.GetByID(c.Request.Context(), h.db, id)
+	if err != nil {
+		RespondErr(c, apperrors.NotFound("order"), h.logger)
+		return false
+	}
+	if o.StoreID.String() != c.Param("storeId") {
+		RespondErr(c, apperrors.NotFound("order"), h.logger)
+		return false
+	}
+	return true
+}
+
 func (h *OrdersHandler) Confirm(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	if !h.requireOrderInStore(c, id) {
 		return
 	}
 	// H7 fix: verify the order belongs to this store + tenant.
@@ -386,6 +410,9 @@ func (h *OrdersHandler) MarkFulfilled(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	if !h.requireOrderInStore(c, id) {
 		return
 	}
 	if err := h.verifyOrderOwnership(c, id); err != nil {
@@ -492,6 +519,9 @@ func (h *OrdersHandler) Refund(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "must be a uuid"), h.logger)
+		return
+	}
+	if !h.requireOrderInStore(c, id) {
 		return
 	}
 	if err := h.verifyOrderOwnership(c, id); err != nil {

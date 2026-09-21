@@ -19,12 +19,17 @@ mobile apps in the stores, and a public launch. All four.
 
 | | Change |
 |---|---|
-| ✅ | AU Stripe Tax instructions reversed in 4 documents; go-live runbook status corrected (`1f199272`) |
-| ✅ | Base image digests bumped + repinned by dated tag so Renovate tracks them (PR #883) |
+| ✅ | **Checkout priced from the catalog** — `unit_price` and the tax fields no longer come from the request (#883, `9f8f43af`) |
+| ✅ | **Billing writes gated to 503** until cancellation reaches Stripe (#885, `ca3a9fbd`) |
+| ✅ | AU Stripe Tax instructions reversed in 4 documents; go-live runbook status corrected (#885) |
+| ✅ | Base image digests bumped **and repinned by dated tag** so Renovate can see them (#883) — containers and both e2e suites green again after 11 days dead |
 | ✅ | `required_status_checks: CI gate` added to the `main` ruleset |
-| 🔵 | `/internal/*` 404 at the ingress gateway — **tesserix-k8s PR #1063**, needs review + merge, then secret rotation |
-| 🔵 | Billing writes gated to 503 — **mark8ly PR #882** |
-| 🔵 | Checkout repriced from the catalog — **mark8ly PR #883** |
+| 🔴 | **`/internal/*` 404 at the ingress gateway — tesserix-k8s PR #1063 is STILL OPEN.** Checks pass; blocked on an approving review. Session minting for any user in any tenant is reachable from the internet until this merges, and the secret must be rotated afterwards. |
+
+Two caveats on the ruleset change: the existing bypass actor (admin role, `bypass_mode: always`)
+can still merge past the required check, and `required_approving_review_count` is still `0`.
+Only `CI gate` is required — the three e2e workflows are path-filtered, and requiring a
+path-filtered check permanently blocks any PR that does not touch those paths.
 
 ---
 
@@ -283,8 +288,9 @@ Recorded because they change where effort should go.
 
 ## 5. Sequencing
 
-1. **Turn on Cloud Logging** — one flag, and it makes everything else verifiable.
-2. **Merge #1063 and rotate the secret**; merge #883; merge #882.
+1. **Merge tesserix-k8s#1063 and rotate `MARKETPLACE_INTERNAL_AUTH_SECRET`** — the last
+   live, internet-reachable hole. Restart auth-bff and marketplace-api-admin together.
+2. **Turn on Cloud Logging** — one flag, and it makes everything else verifiable.
 3. **IDOR cluster and platform-api fail-open** — both are small, both are live.
 4. **Restore postgres metrics, create `slack-webhooks`/`pagerduty-keys`, clear the 18-day
    false positive** so the alert channel is trustworthy again.

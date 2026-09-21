@@ -34,7 +34,7 @@ export const MAHESH_SANGAWAR: Author = {
   id: "https://mark8ly.com/about#mahesh-sangawar",
   name: "Mahesh Sangawar",
   jobTitle: "Co-founder, Tesserix",
-  bio: "Co-founder of Tesserix, the studio behind Mark8ly, and the principal author of Mark8ly's payment integration — including the Razorpay checkout that handles UPI, cards and wallets for merchants selling in India.",
+  bio: "Co-founder of Tesserix, the studio behind Mark8ly, and one of the engineers who builds its payments and checkout.",
   sameAs: [
     "https://www.linkedin.com/in/mahesh-sangawar-985a3214/",
     "https://github.com/mahesh-sangawar",

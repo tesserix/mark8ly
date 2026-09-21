@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { Source_Sans_3, Source_Serif_4 } from "next/font/google";
 import { SkipLink } from "@repo/ui/skip-link";
+import { ChunkRecovery } from "@repo/ui/chunk-recovery";
 import { Analytics } from "./analytics";
 import { QueryProvider } from "@/lib/query/QueryProvider";
 
@@ -55,6 +56,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <body>
         <SkipLink />
         <QueryProvider>{children}</QueryProvider>
+        <ChunkRecovery />
         <Analytics />
       </body>
     </html>

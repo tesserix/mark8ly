@@ -30,7 +30,21 @@ interface AcceptInviteFormProps {
  * keeps one stable resolver.
  */
 const baseSchema = z.object({
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  // The policy is enforced HERE, not only in onValid. Leaving min(8) in
+  // the resolver meant a short password was rejected with "at least 8
+  // characters" directly beneath a placeholder reading
+  // `At least ${PASSWORD_MIN_LENGTH} characters` — and this is the form
+  // whose eleven-character failure prompted password-policy.ts in the
+  // first place.
+  password: z
+    .string()
+    .min(1, "Password is required")
+    .superRefine((value, ctx) => {
+      const message = validateNewPassword(value);
+      if (message) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    }),
   confirmPassword: z.string().optional(),
 });
 

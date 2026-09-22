@@ -30,7 +30,12 @@ const schema = z
   .object({
     password: z
       .string()
-      .min(8, "At least 8 characters")
+      // No min(8) here: it fired BEFORE the superRefine below and
+      // reported "At least 8 characters" under a field whose helper text
+      // says twelve — the same self-contradiction #695 fixed in the error
+      // path but left in the resolver. min(1) keeps the empty-field
+      // message; every other case is the policy's one complete sentence.
+      .min(1, "Password is required")
       .max(128, "Password is too long"),
     confirm: z.string().min(1, "Please confirm your password"),
   })

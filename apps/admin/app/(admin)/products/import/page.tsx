@@ -64,7 +64,10 @@ export default function ImportPage() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const result = await submitCsvImportAction("__STORE_ID__", formData);
+      // The action resolves the store from the session — a client component
+      // cannot know it, which is why this used to pass a literal placeholder
+      // and every upload 404'd (#881).
+      const result = await submitCsvImportAction(formData);
       if (!result.ok && result.error) {
         setError(result.error.message);
       }
@@ -75,10 +78,7 @@ export default function ImportPage() {
   const hasTitleMapping = Object.values(mapping).includes("title");
 
   return (
-    <main
-      className="flex flex-col gap-8"
-      aria-labelledby="import-heading"
-    >
+    <main className="flex flex-col gap-8" aria-labelledby="import-heading">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link
@@ -146,13 +146,19 @@ export default function ImportPage() {
 
       {/* Error */}
       {error && (
-        <p role="alert" className="font-[var(--font-body)] text-sm text-[var(--signal)]">
+        <p
+          role="alert"
+          className="font-[var(--font-body)] text-sm text-[var(--signal)]"
+        >
           {error}
         </p>
       )}
 
       {/* Import history — rendered below */}
-      <section aria-label="Import history" className="border-t border-[var(--ink-900)]/10 pt-6">
+      <section
+        aria-label="Import history"
+        className="border-t border-[var(--ink-900)]/10 pt-6"
+      >
         <CsvImportHistory />
       </section>
     </main>

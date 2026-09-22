@@ -89,6 +89,16 @@ export default async function ProductsPage({
           >
             Categories
           </Link>
+          {/* Import had no inbound link anywhere in the app — the page
+              existed and was reachable only by typing the URL (#881). */}
+          {canCreate ? (
+            <Link
+              href="/products/import"
+              className="text-sm text-foreground-secondary underline-offset-4 transition-colors hover:text-[color:var(--moss-700)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+            >
+              Import CSV
+            </Link>
+          ) : null}
           {canCreate ? (
             <Link
               href="/products/new"
@@ -150,6 +160,7 @@ function parseSearchParams(
     status: validStatus,
     search: search || undefined,
     page: page && page > 0 ? page : undefined,
-    pageSize: pageSize && pageSize > 0 && pageSize <= 100 ? pageSize : undefined,
+    pageSize:
+      pageSize && pageSize > 0 && pageSize <= 100 ? pageSize : undefined,
   };
 }

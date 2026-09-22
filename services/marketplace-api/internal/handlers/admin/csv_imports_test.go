@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -112,7 +114,7 @@ func TestCSVImportsHandler_SubmitAndStatus(t *testing.T) {
 
 	repo := newMemRepo()
 	svc := csvjob.NewService(repo, nil)
-	handler := admin.NewCSVImportsHandler(svc, stubExportRepo{}, nil)
+	handler := admin.NewCSVImportsHandler(svc, stubExportRepo{}, newMemUploader(), nil)
 
 	r := gin.New()
 	r.POST("/csv-imports", func(c *gin.Context) {
@@ -168,7 +170,7 @@ func TestCSVImportsHandler_SubmitDeduplicates(t *testing.T) {
 
 	repo := newMemRepo()
 	svc := csvjob.NewService(repo, nil)
-	handler := admin.NewCSVImportsHandler(svc, stubExportRepo{}, nil)
+	handler := admin.NewCSVImportsHandler(svc, stubExportRepo{}, newMemUploader(), nil)
 
 	r := gin.New()
 	r.POST("/csv-imports", func(c *gin.Context) {
@@ -206,4 +208,127 @@ func TestCSVImportsHandler_SubmitDeduplicates(t *testing.T) {
 	json.Unmarshal(w1.Body.Bytes(), &r1)
 	json.Unmarshal(w2.Body.Bytes(), &r2)
 	require.Equal(t, r1.ID, r2.ID)
+}
+
+func (r *memRepo) ClaimJob(_ context.Context, id string) (bool, error) {
+	j, ok := r.jobs[id]
+	if !ok || j.Status != csvjob.StatusQueued {
+		return false, nil
+	}
+	j.Status = csvjob.StatusRunning
+	return true, nil
+}
+
+// memUploader records what Submit stored, so a test can assert the bytes
+// actually landed at the gcs_path written on the job — the exact link that
+// was missing when import looked like it worked (#897).
+type memUploader struct {
+	objects map[string][]byte
+	err     error
+}
+
+func newMemUploader() *memUploader { return &memUploader{objects: map[string][]byte{}} }
+
+func (u *memUploader) Upload(_ context.Context, path string, r io.Reader) error {
+	if u.err != nil {
+		return u.err
+	}
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	u.objects[path] = b
+	return nil
+}
+
+// The regression this whole issue was: the handler computed a gcs_path,
+// discarded the uploaded bytes, and returned 201. The job was then
+// unrunnable, but nothing said so.
+func TestCSVImportsHandler_Submit_StoresFileAtJobPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := newMemRepo()
+	uploader := newMemUploader()
+	handler := admin.NewCSVImportsHandler(csvjob.NewService(repo, nil), stubExportRepo{}, uploader, nil)
+
+	r := gin.New()
+	r.POST("/csv-imports", func(c *gin.Context) {
+		c.Set("user_id", "test-user")
+		c.Params = append(c.Params, gin.Param{Key: "storeId", Value: "store-1"})
+		c.Next()
+	}, handler.Submit)
+
+	csvBody := "name,sku,price\nWidget,W-1,9.99\n"
+	w := postCSV(t, r, csvBody)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var resp struct {
+		ID      string `json:"id"`
+		GCSPath string `json:"gcs_path"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	job, err := repo.GetByID(context.Background(), resp.ID)
+	require.NoError(t, err)
+
+	stored, ok := uploader.objects[job.GCSPath]
+	require.True(t, ok, "no object was stored at the job's gcs_path %q", job.GCSPath)
+	require.Equal(t, csvBody, string(stored),
+		"the stored bytes must be the uploaded CSV, not a truncated or re-read copy")
+}
+
+func TestCSVImportsHandler_Submit_FailsWhenUploadFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := newMemRepo()
+	uploader := newMemUploader()
+	uploader.err = errors.New("bucket unavailable")
+	handler := admin.NewCSVImportsHandler(csvjob.NewService(repo, nil), stubExportRepo{}, uploader, nil)
+
+	r := gin.New()
+	r.POST("/csv-imports", func(c *gin.Context) {
+		c.Set("user_id", "test-user")
+		c.Params = append(c.Params, gin.Param{Key: "storeId", Value: "store-1"})
+		c.Next()
+	}, handler.Submit)
+
+	w := postCSV(t, r, "name,sku,price\nWidget,W-1,9.99\n")
+	require.NotEqual(t, http.StatusCreated, w.Code,
+		"a failed upload must not report the import as accepted")
+	require.Empty(t, repo.jobs, "no job row should exist for a CSV that was never stored")
+}
+
+func TestCSVImportsHandler_Submit_RefusesWithoutStorage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := newMemRepo()
+	handler := admin.NewCSVImportsHandler(csvjob.NewService(repo, nil), stubExportRepo{}, nil, nil)
+
+	r := gin.New()
+	r.POST("/csv-imports", func(c *gin.Context) {
+		c.Set("user_id", "test-user")
+		c.Params = append(c.Params, gin.Param{Key: "storeId", Value: "store-1"})
+		c.Next()
+	}, handler.Submit)
+
+	w := postCSV(t, r, "name,sku,price\nWidget,W-1,9.99\n")
+	require.NotEqual(t, http.StatusCreated, w.Code)
+	require.Empty(t, repo.jobs)
+}
+
+func postCSV(t *testing.T, r *gin.Engine, content string) *httptest.ResponseRecorder {
+	t.Helper()
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("file", "products.csv")
+	require.NoError(t, err)
+	_, err = part.Write([]byte(content))
+	require.NoError(t, err)
+	require.NoError(t, mw.Close())
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/csv-imports", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	r.ServeHTTP(w, req)
+	return w
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,7 +17,12 @@ import (
 )
 
 // fakeRepo is an in-memory csvjob.Repository for unit tests.
+//
+// The mutex is not decoration: the dispatcher runs jobs on its own
+// goroutine while a test polls this repo from the test goroutine, and
+// -race fails the build without it.
 type fakeRepo struct {
+	mu   sync.Mutex
 	jobs map[string]*csvjob.CsvImportJob
 }
 
@@ -25,11 +31,17 @@ func newFakeRepo() *fakeRepo {
 }
 
 func (f *fakeRepo) Create(_ context.Context, job *csvjob.CsvImportJob) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.jobs[job.ID] = job
 	return nil
 }
 
 func (f *fakeRepo) GetByID(_ context.Context, id string) (*csvjob.CsvImportJob, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	j, ok := f.jobs[id]
 	if !ok {
 		return nil, apperrors.NotFound("csv_import_job")
@@ -38,6 +50,9 @@ func (f *fakeRepo) GetByID(_ context.Context, id string) (*csvjob.CsvImportJob, 
 }
 
 func (f *fakeRepo) ListByStore(_ context.Context, storeID string, page, pageSize int) ([]csvjob.CsvImportJob, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	var out []csvjob.CsvImportJob
 	for _, j := range f.jobs {
 		if j.StoreID == storeID {
@@ -48,6 +63,9 @@ func (f *fakeRepo) ListByStore(_ context.Context, storeID string, page, pageSize
 }
 
 func (f *fakeRepo) UpdateStatus(_ context.Context, id, status string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	j, ok := f.jobs[id]
 	if !ok {
 		return apperrors.NotFound("csv_import_job")
@@ -57,6 +75,9 @@ func (f *fakeRepo) UpdateStatus(_ context.Context, id, status string) error {
 }
 
 func (f *fakeRepo) UpdateProgress(_ context.Context, id string, lastRow, successCount, errorCount int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	j, ok := f.jobs[id]
 	if !ok {
 		return apperrors.NotFound("csv_import_job")
@@ -68,6 +89,9 @@ func (f *fakeRepo) UpdateProgress(_ context.Context, id string, lastRow, success
 }
 
 func (f *fakeRepo) UpdateHeartbeat(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	j, ok := f.jobs[id]
 	if !ok {
 		return apperrors.NotFound("csv_import_job")
@@ -78,6 +102,9 @@ func (f *fakeRepo) UpdateHeartbeat(_ context.Context, id string) error {
 }
 
 func (f *fakeRepo) FindOrphanedJobs(_ context.Context, staleDuration time.Duration) ([]csvjob.CsvImportJob, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	cutoff := time.Now().Add(-staleDuration)
 	var out []csvjob.CsvImportJob
 	for _, j := range f.jobs {
@@ -89,6 +116,9 @@ func (f *fakeRepo) FindOrphanedJobs(_ context.Context, staleDuration time.Durati
 }
 
 func (f *fakeRepo) FindQueuedJobs(_ context.Context, limit int) ([]csvjob.CsvImportJob, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if limit <= 0 {
 		limit = 10
 	}
@@ -105,6 +135,9 @@ func (f *fakeRepo) FindQueuedJobs(_ context.Context, limit int) ([]csvjob.CsvImp
 }
 
 func (f *fakeRepo) FindByContentHash(_ context.Context, storeID, contentHash string) (*csvjob.CsvImportJob, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	for _, j := range f.jobs {
 		if j.StoreID == storeID && j.ContentHash == contentHash &&
 			(j.Status == csvjob.StatusQueued || j.Status == csvjob.StatusRunning || j.Status == csvjob.StatusPaused) {
@@ -115,6 +148,9 @@ func (f *fakeRepo) FindByContentHash(_ context.Context, storeID, contentHash str
 }
 
 func (f *fakeRepo) SetStatusFields(_ context.Context, id string, fields map[string]any) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	j, ok := f.jobs[id]
 	if !ok {
 		return apperrors.NotFound("csv_import_job")
@@ -228,4 +264,18 @@ func TestService_ResumeFromNonPausedFails(t *testing.T) {
 	// Job is queued, not paused.
 	err = svc.Resume(ctx, result.Job.ID)
 	require.Error(t, err)
+}
+
+// ClaimJob mirrors the atomic transition the gorm repository makes: only
+// a queued job can be claimed, and only once.
+func (f *fakeRepo) ClaimJob(_ context.Context, id string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	j, ok := f.jobs[id]
+	if !ok || j.Status != csvjob.StatusQueued {
+		return false, nil
+	}
+	j.Status = csvjob.StatusRunning
+	return true, nil
 }

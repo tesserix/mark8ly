@@ -63,7 +63,7 @@ export default function JobStatusPage() {
 
   const handleCancel = useCallback(async () => {
     if (!job) return;
-    const result = await cancelCsvImportAction(job.store_id, jobId);
+    const result = await cancelCsvImportAction(jobId);
     if (!result.ok && result.error) {
       setError(result.error.message);
     } else {
@@ -72,10 +72,7 @@ export default function JobStatusPage() {
   }, [job, jobId, fetchStatus]);
 
   return (
-    <main
-      className="flex flex-col gap-8"
-      aria-labelledby="job-status-heading"
-    >
+    <main className="flex flex-col gap-8" aria-labelledby="job-status-heading">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link
@@ -94,7 +91,10 @@ export default function JobStatusPage() {
       </div>
 
       {error && (
-        <p role="alert" className="font-[var(--font-body)] text-sm text-[var(--signal)]">
+        <p
+          role="alert"
+          className="font-[var(--font-body)] text-sm text-[var(--signal)]"
+        >
           {error}
         </p>
       )}
@@ -109,14 +109,13 @@ export default function JobStatusPage() {
           />
 
           {/* Error summary — shown when errors exist and job is terminal */}
-          {job.error_count > 0 &&
-            TERMINAL_STATUSES.has(job.status) && (
-              <CsvErrorSummary
-                jobId={jobId}
-                storeId={job.store_id}
-                errorCount={job.error_count}
-              />
-            )}
+          {job.error_count > 0 && TERMINAL_STATUSES.has(job.status) && (
+            <CsvErrorSummary
+              jobId={jobId}
+              storeId={job.store_id}
+              errorCount={job.error_count}
+            />
+          )}
         </div>
       ) : !error ? (
         <p className="font-[var(--font-body)] text-sm text-[var(--ink-900)]/60">

@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/mark8ly/marketplace-api/internal/auth"
 )
 
 type InternalHandler struct {
@@ -29,11 +31,23 @@ func NewInternalHandler(repo Repository) *InternalHandler {
 	return &InternalHandler{repo: repo}
 }
 
-// RegisterRoutes mounts POST /stores/upsert on the supplied group.
-// Caller is expected to mount this on the /internal group of the admin
-// engine, alongside the existing vendor.Handler routes.
-func (h *InternalHandler) RegisterRoutes(g *gin.RouterGroup) {
-	g.POST("/stores/upsert", h.upsert)
+// RegisterRoutes mounts POST /stores/upsert on the supplied group, behind
+// the shared internal secret.
+//
+// The guard is not optional hardening. This endpoint rewrites the
+// store→tenant projection that StoreMiddleware reads to decide tenant
+// isolation, so an unauthenticated caller could reassign any store to any
+// tenant and walk straight through every downstream scope check. It was
+// mounted with no guard at all, leaving only a NetworkPolicy between the
+// internet and the isolation model.
+//
+// InternalSecretAuth, not HeaderTrustAuth: platform-api calls this at
+// onboarding completion, before the merchant has signed in anywhere, so
+// there is no X-User-Id/X-Tenant-Id to present. Its VendorClient already
+// sends X-Internal-Auth (vendor_client.go addInternalAuth), so no change
+// is needed on the calling side.
+func (h *InternalHandler) RegisterRoutes(g *gin.RouterGroup, internalSecret string) {
+	g.POST("/stores/upsert", auth.InternalSecretAuth(internalSecret), h.upsert)
 }
 
 type upsertStoreRequest struct {

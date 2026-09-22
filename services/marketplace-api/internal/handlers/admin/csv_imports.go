@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
@@ -16,16 +17,25 @@ import (
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
+// CSVUploader persists the uploaded CSV body so the worker can read it
+// back at the job's gcs_path.
+type CSVUploader interface {
+	Upload(ctx context.Context, path string, r io.Reader) error
+}
+
 // CSVImportsHandler bundles dependencies for the CSV import/export endpoints.
 type CSVImportsHandler struct {
 	svc        *csvjob.Service
 	exportRepo product.ExportRepository
+	uploader   CSVUploader
 	logger     *slog.Logger
 }
 
-// NewCSVImportsHandler constructs a CSVImportsHandler.
-func NewCSVImportsHandler(svc *csvjob.Service, exportRepo product.ExportRepository, logger *slog.Logger) *CSVImportsHandler {
-	return &CSVImportsHandler{svc: svc, exportRepo: exportRepo, logger: logger}
+// NewCSVImportsHandler constructs a CSVImportsHandler. uploader may be nil
+// only where object storage is not configured; Submit then refuses rather
+// than queueing a job whose file does not exist (#897).
+func NewCSVImportsHandler(svc *csvjob.Service, exportRepo product.ExportRepository, uploader CSVUploader, logger *slog.Logger) *CSVImportsHandler {
+	return &CSVImportsHandler{svc: svc, exportRepo: exportRepo, uploader: uploader, logger: logger}
 }
 
 // Submit handles POST /admin/stores/:storeId/csv-imports.
@@ -33,6 +43,11 @@ func NewCSVImportsHandler(svc *csvjob.Service, exportRepo product.ExportReposito
 func (h *CSVImportsHandler) Submit(c *gin.Context) {
 	storeID := c.Param("storeId")
 	userID := c.GetString("user_id")
+
+	if h.uploader == nil {
+		RespondErr(c, fmt.Errorf("csv_imports: object storage is not configured"), h.logger)
+		return
+	}
 
 	file, _, err := c.Request.FormFile("file")
 	if err != nil {
@@ -49,10 +64,19 @@ func (h *CSVImportsHandler) Submit(c *gin.Context) {
 	}
 	contentHash := hex.EncodeToString(hasher.Sum(nil))
 
-	// In a real deployment the file would be uploaded to GCS here. For now,
-	// the GCS path is constructed from the store and hash. The actual upload
-	// is deferred to when the GCS writer integration is complete in CI.
 	gcsPath := fmt.Sprintf("csv-imports/%s/%s.csv", storeID, contentHash)
+
+	// Rewind: hashing consumed the reader, and the same bytes are what we
+	// store. Upload before creating the row — a queued job pointing at a
+	// missing object can only ever fail.
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		RespondErr(c, fmt.Errorf("csv_imports: rewind upload: %w", err), h.logger)
+		return
+	}
+	if err := h.uploader.Upload(c.Request.Context(), gcsPath, file); err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
 
 	result, err := h.svc.SubmitWithHash(c.Request.Context(), storeID, userID, gcsPath, contentHash)
 	if err != nil {

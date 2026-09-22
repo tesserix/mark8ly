@@ -763,6 +763,12 @@ func main() {
 	})
 	ticketInternalHandler := ticket.NewInternalHandler(ticketSvc, ticketNotifier)
 
+	// Hoisted out of the admin block below so the CSV dispatcher, which is
+	// wired much further down, can reach them. Both stay nil outside admin
+	// mode, and csvStore stays nil when no bucket is configured.
+	var csvStore *csvjob.GCSStore
+	var csvProductSvc csvjob.ProductCreator
+
 	if m == mode.Admin || m == mode.Both {
 		productRepo := product.NewRepository(conn)
 		categoryRepo := category.NewRepository(conn)
@@ -772,6 +778,7 @@ func main() {
 		// Media uploader — real GCS when MARKETPLACE_GCS_BUCKET is set,
 		// FakeUploader otherwise so `make dev` works without credentials.
 		var uploader media.Uploader
+		var gcsClient *storage.Client
 		if cfg.GCSBucket != "" {
 			gcsCtx, gcsCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			sc, err := storage.NewClient(gcsCtx)
@@ -780,6 +787,7 @@ func main() {
 				log.Error("media: gcs client", "err", err)
 				os.Exit(1)
 			}
+			gcsClient = sc
 			if cfg.GCSSignerSAEmail != "" {
 				signCtx, signCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				gcsUploader, err := media.NewGCSUploaderWithIAMSigner(signCtx, sc, cfg.GCSBucket, cfg.GCSSignerSAEmail)
@@ -895,7 +903,21 @@ func main() {
 		csvRepo := csvjob.NewRepository(conn)
 		csvSvc := csvjob.NewService(csvRepo, log)
 		exportRepo := product.NewExportRepository(conn)
-		csvImportsHandler := admin.NewCSVImportsHandler(csvSvc, exportRepo, log)
+		// The same GCS bucket backs media. Without one, Submit refuses
+		// rather than queueing a job whose CSV was never stored — the
+		// failure mode that made import look functional and do nothing
+		// (#897).
+		if gcsClient != nil {
+			csvStore = csvjob.NewGCSStore(gcsClient, cfg.GCSBucket)
+		} else {
+			log.Warn("csvjob: no GCS bucket configured, CSV import is disabled")
+		}
+		csvProductSvc = productSvc
+		var csvUploader admin.CSVUploader
+		if csvStore != nil {
+			csvUploader = csvStore
+		}
+		csvImportsHandler := admin.NewCSVImportsHandler(csvSvc, exportRepo, csvUploader, log)
 
 		// Settings handlers (P5a).
 		countryRepoAdmin := country.NewRepository(conn)
@@ -1873,7 +1895,12 @@ func main() {
 
 	// CSV import worker — runs in admin and both modes. On startup, recover
 	// orphaned jobs (stale heartbeat > 15 min → paused). Then poll for
-	// queued jobs every 5s and run the worker.
+	// queued jobs and run them.
+	//
+	// Until #897 this loop counted the backlog and logged it, and nothing
+	// dispatched: every upload sat at queued forever while the UI reported
+	// the job as accepted. The dispatcher below is what the count was
+	// always describing.
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	defer workerCancel()
 	var workerDone <-chan struct{}
@@ -1888,47 +1915,22 @@ func main() {
 			log.Info("csvjob: recovery scan complete")
 		}
 
-		// Polling goroutine.
-		done := make(chan struct{})
-		workerDone = done
-		go func() {
-			defer close(done)
-			ticker := time.NewTicker(5 * time.Second)
-			defer ticker.Stop()
-			// Only log when the pending count or the error state changes —
-			// a 5s tick would otherwise flood the log with identical lines.
-			lastPending := -1
-			var lastErr string
-			for {
-				select {
-				case <-workerCtx.Done():
-					return
-				case <-ticker.C:
-					jobs, err := csvRepo.FindQueuedJobs(workerCtx, 10)
-					if err != nil {
-						if workerCtx.Err() != nil {
-							return
-						}
-						if err.Error() != lastErr {
-							lastErr = err.Error()
-							log.Error("csvjob: poll error", "err", err)
-						}
-						continue
-					}
-					lastErr = ""
-					if len(jobs) != lastPending {
-						lastPending = len(jobs)
-						if lastPending > 0 {
-							log.Info("csvjob: queued jobs awaiting dispatch", "count", lastPending)
-						}
-					}
-					// Dispatch is driven by the submit handler once the CSV
-					// upload writes to GCS; this loop reports the backlog of
-					// jobs recovered from a crash so it is visible in logs.
-				}
-			}
-		}()
-		log.Info("csvjob: worker polling started")
+		if csvStore == nil || csvProductSvc == nil {
+			// No bucket: Submit already refuses, so there is nothing for a
+			// dispatcher to drain. Say so once rather than spinning.
+			log.Warn("csvjob: dispatcher not started (object storage unavailable)")
+		} else {
+			d := csvjob.NewDispatcher(csvjob.DispatcherConfig{
+				Repo:       csvRepo,
+				Stores:     csvjob.NewStoreLookup(conn),
+				Products:   csvProductSvc,
+				Reader:     csvStore,
+				ErrFactory: csvStore,
+				Logger:     log,
+			})
+			workerDone = d.Start(workerCtx, 5*time.Second)
+			log.Info("csvjob: dispatcher started")
+		}
 	}
 
 	// Loyalty point expiry worker — runs daily, admin/both modes only.

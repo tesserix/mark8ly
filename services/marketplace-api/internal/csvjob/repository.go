@@ -21,6 +21,11 @@ type Repository interface {
 	UpdateHeartbeat(ctx context.Context, id string) error
 	FindOrphanedJobs(ctx context.Context, staleDuration time.Duration) ([]CsvImportJob, error)
 	FindQueuedJobs(ctx context.Context, limit int) ([]CsvImportJob, error)
+	// ClaimJob moves a job from queued to running, returning false if
+	// someone else got there first. marketplace-api-admin runs two
+	// replicas and both poll, so claiming has to be atomic or the same
+	// CSV is imported twice (#897).
+	ClaimJob(ctx context.Context, id string) (bool, error)
 	FindByContentHash(ctx context.Context, storeID, contentHash string) (*CsvImportJob, error)
 	SetStatusFields(ctx context.Context, id string, fields map[string]any) error
 }
@@ -156,6 +161,22 @@ func (r *gormRepository) FindQueuedJobs(ctx context.Context, limit int) ([]CsvIm
 		return nil, fmt.Errorf("csvjob: find queued: %w", err)
 	}
 	return jobs, nil
+}
+
+// ClaimJob transitions queued -> running for exactly one caller.
+//
+// The WHERE clause carries the status, so the database arbitrates: the
+// loser's UPDATE matches zero rows and it moves on. Without this, both
+// admin replicas would run the same import and create duplicate products.
+func (r *gormRepository) ClaimJob(ctx context.Context, id string) (bool, error) {
+	res := r.db.WithContext(ctx).
+		Model(&CsvImportJob{}).
+		Where("id = ? AND status = ?", id, StatusQueued).
+		Updates(map[string]any{"status": StatusRunning, "heartbeat_at": time.Now()})
+	if res.Error != nil {
+		return false, fmt.Errorf("csvjob: claim %s: %w", id, res.Error)
+	}
+	return res.RowsAffected == 1, nil
 }
 
 // FindByContentHash returns an active (queued/running/paused) job for the

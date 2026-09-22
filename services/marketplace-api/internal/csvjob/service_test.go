@@ -229,3 +229,14 @@ func TestService_ResumeFromNonPausedFails(t *testing.T) {
 	err = svc.Resume(ctx, result.Job.ID)
 	require.Error(t, err)
 }
+
+// ClaimJob mirrors the atomic transition the gorm repository makes: only
+// a queued job can be claimed, and only once.
+func (f *fakeRepo) ClaimJob(_ context.Context, id string) (bool, error) {
+	j, ok := f.jobs[id]
+	if !ok || j.Status != csvjob.StatusQueued {
+		return false, nil
+	}
+	j.Status = csvjob.StatusRunning
+	return true, nil
+}

@@ -2691,7 +2691,7 @@ func main() {
 		// by platform-api at onboarding completion (parallel to
 		// EnsureSelfVendor). See internal_handler.go for idempotency.
 		stores.NewInternalHandler(domainStoresRepo).
-			RegisterRoutes(r.Group("/internal"))
+			RegisterRoutes(r.Group("/internal"), cfg.InternalAuthSecret)
 		// Onboarding's subscription callback — what makes the 90-day trial
 		// start at signup rather than when a merchant happens to open the
 		// Billing page (#827). Mounted on BOTH engines via the same method,
@@ -2874,7 +2874,7 @@ func main() {
 			// above for context. Admin engine only — storefront never
 			// writes stores.
 			stores.NewInternalHandler(domainStoresRepo).
-				RegisterRoutes(engine.Group("/internal"))
+				RegisterRoutes(engine.Group("/internal"), cfg.InternalAuthSecret)
 			// Onboarding's subscription callback — what makes the 90-day trial
 			// start at signup rather than when a merchant happens to open the
 			// Billing page (#827). Mounted on BOTH engines via the same method,

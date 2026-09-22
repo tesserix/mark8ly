@@ -48,16 +48,27 @@ const schema = z.object({
     .trim()
     .min(1, "Your name is required")
     .max(80, "Name is too long"),
-  // The resolver floor. The real Zitadel policy (12 characters, upper,
-  // lower, number, symbol — see lib/auth/password-policy.ts) is applied
-  // on top of this in onValid, so react-hook-form keeps one stable
-  // resolver. A client rule LOOSER than the server's is worse than no
-  // rule at all — it promises an acceptance the server will refuse —
-  // which is exactly what min(8) was doing here (#685).
+  // The resolver enforces the real Zitadel policy, not a looser floor.
+  //
+  // This previously carried min(8) as a "resolver floor", justified by a
+  // GIP fallback path whose own minimum was 8. That path is gone (GIP was
+  // removed 2026-09-08; this file no longer mentions it), so the floor was
+  // residue — and it fired BEFORE onValid's policy check, so a short
+  // password was rejected with "Password must be at least 8 characters"
+  // directly under a field whose placeholder reads "At least 12
+  // characters". The form contradicted itself.
+  //
+  // password-policy.ts states it is the only copy of these rules on the
+  // TypeScript side and that the schema reads from it. That is now true.
   password: z
     .string()
     .min(1, "Password is required")
-    .min(8, "Password must be at least 8 characters"),
+    .superRefine((value, ctx) => {
+      const message = validateNewPassword(value);
+      if (message) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    }),
 });
 
 type FormValues = z.infer<typeof schema>;

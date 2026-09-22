@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -128,32 +129,37 @@ func main() {
 	// store named "mark8ly-platform" automatically — that's the store
 	// created by infra/dev/seed/fga-init.sh, so a fresh `make dev` self-
 	// bootstraps without anyone hand-managing the store ID.
+	//
+	// Discovery failing is fatal. It used to log a Warn and continue with
+	// a nil client, which meant a slow OpenFGA start did not stop the
+	// server — it started it without authorisation, and GET /tenants/:id/me
+	// answered "owner" to anyone. Serving no authz is worse than not
+	// serving: marketplace-api exits here for the same reason.
 	storeID := cfg.FGAStoreID
 	if storeID == "" {
 		discoverCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		discovered, derr := authz.DiscoverStoreID(discoverCtx, cfg.FGAAPIURL, authz.FGAStoreName)
 		cancel()
 		if derr != nil {
-			log.Warn("authz: store discovery failed; FGA outbox events will be marked dead",
-				"err", derr)
-		} else if discovered == "" {
-			log.Warn("authz: no store named " + authz.FGAStoreName + " found; FGA outbox events will be marked dead")
-		} else {
-			storeID = discovered
-			log.Info("authz: discovered openfga store", "store_id", storeID)
+			log.Error("authz: discover store", "err", derr, "api_url", cfg.FGAAPIURL)
+			os.Exit(1)
 		}
+		if discovered == "" {
+			log.Error("authz: store not found — bring up openfga-seed first",
+				"store_name", authz.FGAStoreName, "api_url", cfg.FGAAPIURL)
+			os.Exit(1)
+		}
+		storeID = discovered
+		log.Info("authz: discovered openfga store", "store_id", storeID)
 	}
 
-	var fga authz.Client
-	if storeID != "" {
-		fga, err = authz.New(authz.Config{
-			APIURL:  cfg.FGAAPIURL,
-			StoreID: storeID,
-		})
-		if err != nil {
-			log.Error("authz: openfga client", "err", err)
-			panic(err)
-		}
+	fga, err := authz.New(authz.Config{
+		APIURL:  cfg.FGAAPIURL,
+		StoreID: storeID,
+	})
+	if err != nil {
+		log.Error("authz: openfga client", "err", err)
+		os.Exit(1)
 	}
 
 	// ─── Domains ───────────────────────────────────────────────────────

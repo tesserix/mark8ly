@@ -106,9 +106,16 @@ export async function submitCsvImport(
   session: SessionHeaders,
   storeId: string,
   file: File,
+  columnMapping?: Record<string, string>,
 ): Promise<MutationResult<CsvImportJob>> {
   const formData = new FormData();
   formData.append("file", file);
+  // The server rewrites the CSV's header row with this before storing it,
+  // so the parser sees the columns the merchant chose. Omitted when empty:
+  // a CSV whose headers are already canonical needs no mapping.
+  if (columnMapping && Object.keys(columnMapping).length > 0) {
+    formData.append("column_mapping", JSON.stringify(columnMapping));
+  }
 
   const res = await fetch(csvImportsUrl(storeId), {
     method: "POST",

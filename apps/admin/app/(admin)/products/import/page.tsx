@@ -63,6 +63,7 @@ export default function ImportPage() {
     startTransition(async () => {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("column_mapping", JSON.stringify(mapping));
 
       // The action resolves the store from the session — a client component
       // cannot know it, which is why this used to pass a literal placeholder
@@ -73,7 +74,7 @@ export default function ImportPage() {
       }
       // On success, the server action redirects to /products/import/[jobId]
     });
-  }, [file]);
+  }, [file, mapping]);
 
   const hasTitleMapping = Object.values(mapping).includes("title");
 

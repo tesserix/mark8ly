@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -66,6 +68,15 @@ func (h *CSVImportsHandler) Submit(c *gin.Context) {
 
 	gcsPath := fmt.Sprintf("csv-imports/%s/%s.csv", storeID, contentHash)
 
+	// The admin column mapper sends what the merchant chose for each of
+	// their own headers. Applying it here means whatever lands in the
+	// bucket already uses the names the parser reads.
+	mapping, err := parseColumnMapping(c.Request.FormValue("column_mapping"))
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("column_mapping", err.Error()), h.logger)
+		return
+	}
+
 	// Rewind: hashing consumed the reader, and the same bytes are what we
 	// store. Upload before creating the row — a queued job pointing at a
 	// missing object can only ever fail.
@@ -73,7 +84,12 @@ func (h *CSVImportsHandler) Submit(c *gin.Context) {
 		RespondErr(c, fmt.Errorf("csv_imports: rewind upload: %w", err), h.logger)
 		return
 	}
-	if err := h.uploader.Upload(c.Request.Context(), gcsPath, file); err != nil {
+	body, err := csvjob.ApplyColumnMapping(file, mapping)
+	if err != nil {
+		RespondErr(c, apperrors.ValidationFailed("column_mapping", err.Error()), h.logger)
+		return
+	}
+	if err := h.uploader.Upload(c.Request.Context(), gcsPath, body); err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}
@@ -89,6 +105,24 @@ func (h *CSVImportsHandler) Submit(c *gin.Context) {
 		status = http.StatusOK
 	}
 	c.JSON(status, ToCSVImportJobResponse(&result.Job))
+}
+
+// parseColumnMapping decodes the mapper's JSON payload. Absent or empty
+// means the CSV's own headers are used as-is, which is what a merchant
+// whose export already matches gets.
+func parseColumnMapping(raw string) (map[string]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var mapping map[string]string
+	if err := json.Unmarshal([]byte(raw), &mapping); err != nil {
+		return nil, fmt.Errorf("column_mapping is not valid JSON")
+	}
+	if err := csvjob.ValidateColumnMapping(mapping); err != nil {
+		return nil, err
+	}
+	return mapping, nil
 }
 
 // List handles GET /admin/stores/:storeId/csv-imports.
@@ -112,10 +146,22 @@ func (h *CSVImportsHandler) List(c *gin.Context) {
 	for i := range jobs {
 		items = append(items, ToCSVImportJobResponse(&jobs[i]))
 	}
+	// "data" + "meta", not "items" — the house envelope every other list
+	// endpoint uses and the one the admin client has always parsed. While
+	// this returned "items" the import history read undefined and rendered
+	// "No import history yet" no matter how many jobs existed.
+	totalPages := 0
+	if q.PageSize > 0 {
+		totalPages = int((total + int64(q.PageSize) - 1) / int64(q.PageSize))
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"items": items,
-		"total": total,
-		"page":  q.Page,
+		"data": items,
+		"meta": gin.H{
+			"page":        q.Page,
+			"page_size":   q.PageSize,
+			"total":       total,
+			"total_pages": totalPages,
+		},
 	})
 }
 

@@ -84,4 +84,24 @@ describe("CsvImportHistory", () => {
 
     expect(await screen.findByText(/no import history/i)).toBeInTheDocument();
   });
+
+  // A swallowed failure rendered as "No import history yet", which is
+  // exactly how a response-shape mismatch stayed invisible: jobs existed,
+  // the request 200'd, and the page said there were none.
+  it("reports a failed load instead of showing an empty history", async () => {
+    mockedFetch().mockResolvedValue({ ok: false, status: 500 } as Response);
+
+    render(<CsvImportHistory />);
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByText("No import history yet")).not.toBeInTheDocument();
+  });
+
+  it("reports a network error the same way", async () => {
+    mockedFetch().mockRejectedValue(new Error("offline"));
+
+    render(<CsvImportHistory />);
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
 });

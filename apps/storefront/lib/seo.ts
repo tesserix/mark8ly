@@ -15,6 +15,30 @@ import type {
  * tenant record. When the store can't be resolved we return a quiet
  * "Store not found" surface that stays out of the index.
  */
+/**
+ * The merchant's title template, or the store-name default.
+ *
+ * Exported because a `title.template` only ever applies to a segment's
+ * CHILDREN. A page that sets the template inside its own
+ * `generateMetadata` does not template its own title — which is why the
+ * merchant's setting produced nothing for as long as it did (#894): every
+ * page computed the right template and then discarded it, while the root
+ * layout's hardcoded `template: "%s"` was the one that actually applied.
+ *
+ * The root layout now resolves this, so pages can keep returning plain
+ * string titles and inherit it.
+ *
+ * A template without `%s` has nowhere to put the page title, so it is
+ * ignored rather than silently replacing every title with a constant.
+ */
+export function resolveTitleTemplate(
+  storeName: string,
+  branding?: StorefrontBranding | null,
+): string {
+  const custom = branding?.seo_title_template?.trim();
+  return custom && custom.includes("%s") ? custom : `%s · ${storeName}`;
+}
+
 export function makeTenantMetadata(
   store: PublicStore | null,
   slug: string,
@@ -34,13 +58,7 @@ export function makeTenantMetadata(
     branding?.seo_default_description?.trim() ||
     `Shop ${store.name} on Mark8ly. ${store.country_code} · ${store.currency_code}.`;
 
-  // Merchant-provided title template takes precedence. The template
-  // must contain `%s` — that's where Next.js inserts the page title.
-  const customTemplate = branding?.seo_title_template?.trim();
-  const titleTemplate =
-    customTemplate && customTemplate.includes("%s")
-      ? customTemplate
-      : `%s · ${store.name}`;
+  const titleTemplate = resolveTitleTemplate(store.name, branding);
 
   const ogImage = branding?.seo_og_image_url?.trim() || undefined;
   const twitterHandle = branding?.seo_twitter_handle?.trim() || undefined;

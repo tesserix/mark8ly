@@ -25,6 +25,7 @@ import { PromotionBar } from "@/components/PromotionBar";
 import { OttoSupportChat } from "@/components/OttoSupportChat";
 import { Toaster } from "@/components/Toaster";
 import { resolveStoreSlug } from "@/lib/slug";
+import { resolveTitleTemplate } from "@/lib/seo";
 import { buildLoginUrl, buildLogoutUrl } from "@/lib/auth";
 import { decodeSessionForScope } from "@/lib/session";
 import { fetchBranding } from "@/lib/api/marketplace-api";
@@ -98,11 +99,56 @@ const spaceGrotesk = Space_Grotesk({
    the fallback and the shared-shape baseline.
    ============================================================ */
 
-export const metadata: Metadata = {
-  title: {
-    default: "Storefront",
-    template: "%s",
-  },
+/**
+ * Resolved per-request so the merchant's SEO title template actually
+ * applies.
+ *
+ * A `title.template` only affects a segment's CHILDREN. This layout used
+ * to hardcode `template: "%s"` — a pass-through — and because every page
+ * returns a plain string title, that hardcoded template is the one that
+ * won. The merchant's template was computed by makeTenantMetadata on every
+ * page and then discarded, and product pages lost the store name from
+ * their titles entirely (#894).
+ *
+ * Failing soft matters here: this metadata also covers the error boundary,
+ * 404 and sign-out, where there may be no resolvable store. Any failure
+ * falls back to the previous static shape rather than breaking the page.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const base: Metadata = { ...staticMetadata };
+  try {
+    const h = await headers();
+    const storeSlug = await resolveStoreSlug(h.get("host"));
+    if (!storeSlug) return base;
+
+    const [store, brandingData] = await Promise.all([
+      fetchStoreBySlug(storeSlug).catch(() => null),
+      fetchBranding(storeSlug).catch(() => null),
+    ]);
+    if (!store) return base;
+
+    return {
+      ...base,
+      title: {
+        default: store.name,
+        template: resolveTitleTemplate(store.name, brandingData?.branding),
+      },
+    };
+  } catch {
+    return base;
+  }
+}
+
+const staticMetadata: Metadata = {
+  // No `template` here on purpose. A pass-through `"%s"` changes nothing
+  // for a child that sets a plain string title, but it DOES outrank any
+  // template a page sets for itself — which is how the merchant's SEO
+  // template was silently defeated (#894). With no template declared,
+  // child titles render as-is and generateMetadata above supplies the
+  // real one whenever a store resolves.
+  // A plain string, not { default }: Next's Metadata type requires a
+  // `template` alongside `default`, and supplying one here is the bug.
+  title: "Storefront",
   description: "A store on Mark8ly.",
   robots: {
     index: true,

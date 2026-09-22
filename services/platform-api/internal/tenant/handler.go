@@ -23,15 +23,15 @@ import (
 // gate its UI.
 type Handler struct {
 	svc *Service
-	fga authz.Client // may be nil in dev if OpenFGA failed to initialise
+	fga authz.Client // nil only in tests/teardown wiring; treat as "cannot authorise"
 }
 
 // NewHandler constructs a Handler.
 //
-// fga may be nil — the startup path logs a warning and continues when
-// OpenFGA isn't reachable so dev iteration isn't blocked. All code
-// paths that touch fga must nil-check before use; see updateTenant and
-// getMe below.
+// fga may be nil only in tests and in the teardown wiring that has no
+// authz to do. Every path that touches it must nil-check, and must fail
+// closed when it is nil — never grant a role. See updateTenant and getMe
+// below.
 func NewHandler(svc *Service, fga authz.Client) *Handler {
 	return &Handler{svc: svc, fga: fga}
 }
@@ -155,10 +155,14 @@ func (h *Handler) updateTenant(c *gin.Context) {
 // Response shape: { data: { role: "owner"|"admin"|"staff"|"viewer" } }
 // 404 body: { error: "no_role", message: ... }
 //
-// If fga is nil (dev without OpenFGA), we fall back to returning
-// role=owner. That keeps the admin UI usable during local iteration
-// — the tenant-scoped PATCH check above also skips in the same
-// condition, so the degraded behaviour is consistent.
+// If fga is nil the role cannot be determined, and this fails closed
+// with 503. It used to answer role=owner for local iteration, which
+// made a slow OpenFGA start a privilege escalation: startup only
+// logged a Warn and left fga nil, the admin BFF forwards whatever
+// this returns, and every caller became owner on any tenant id they
+// asked about. Startup now exits instead of continuing without authz,
+// so nil is no longer a state a running server reaches — this branch
+// is the second lock on the same door.
 func (h *Handler) getMe(c *gin.Context) {
 	uid := c.Query("uid")
 	if uid == "" {
@@ -170,7 +174,10 @@ func (h *Handler) getMe(c *gin.Context) {
 	}
 	tenantID := c.Param("id")
 	if h.fga == nil {
-		c.JSON(http.StatusOK, gin.H{"data": gin.H{"role": string(authz.RoleOwner)}})
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "authz_unavailable",
+			"message": "authorization is unavailable; role cannot be determined",
+		})
 		return
 	}
 	role, err := h.fga.GetRole(c.Request.Context(), uid, tenantID)

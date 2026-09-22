@@ -1,3 +1,4 @@
+import { writeHeaders, type SessionHeaders } from "./auth-headers";
 // apps/admin/lib/api/loyalty-api.ts
 //
 // Server-side API client for loyalty endpoints. Follows the same
@@ -7,10 +8,7 @@
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 
-export interface SessionHeaders {
-  userId: string;
-  tenantId: string;
-}
+export type { SessionHeaders } from "./auth-headers";
 
 // ---------- Types ----------
 
@@ -71,13 +69,10 @@ export interface LoyaltyReferral {
 
 // ---------- Helpers ----------
 
+// Delegates to the shared builder so X-Internal-Auth cannot be
+// forgotten here again (#890).
 function authHeaders(session: SessionHeaders): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    "X-User-Id": session.userId,
-    "X-Tenant-Id": session.tenantId,
-  };
+  return writeHeaders(session);
 }
 
 // ---------- API functions ----------
@@ -120,8 +115,7 @@ export async function updateLoyaltyProgram(
     });
     const json = await res.json().catch(() => null);
     if (!res.ok) {
-      const msg =
-        json?.message ?? json?.error ?? `Save failed (${res.status})`;
+      const msg = json?.message ?? json?.error ?? `Save failed (${res.status})`;
       return { ok: false, error: msg };
     }
     return { ok: true, program: json?.data ?? undefined };

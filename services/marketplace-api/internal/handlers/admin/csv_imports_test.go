@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 	"time"
 
@@ -331,4 +332,150 @@ func postCSV(t *testing.T, r *gin.Engine, content string) *httptest.ResponseReco
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	r.ServeHTTP(w, req)
 	return w
+}
+
+// postCSVWithMapping submits a CSV plus the mapper's payload.
+func postCSVWithMapping(t *testing.T, r *gin.Engine, content, mapping string) *httptest.ResponseRecorder {
+	t.Helper()
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("file", "products.csv")
+	require.NoError(t, err)
+	_, err = part.Write([]byte(content))
+	require.NoError(t, err)
+	if mapping != "" {
+		require.NoError(t, mw.WriteField("column_mapping", mapping))
+	}
+	require.NoError(t, mw.Close())
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/csv-imports", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func mappingHandler(t *testing.T) (*gin.Engine, *memRepo, *memUploader) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	repo := newMemRepo()
+	uploader := newMemUploader()
+	handler := admin.NewCSVImportsHandler(csvjob.NewService(repo, nil), stubExportRepo{}, uploader, nil)
+
+	r := gin.New()
+	r.POST("/csv-imports", func(c *gin.Context) {
+		c.Set("user_id", "test-user")
+		c.Params = append(c.Params, gin.Param{Key: "storeId", Value: "store-1"})
+		c.Next()
+	}, handler.Submit)
+	return r, repo, uploader
+}
+
+// The mapper was purely decorative: the page collected the merchant's
+// choices and never sent them, so a CSV whose headers were not already
+// canonical imported nothing.
+func TestCSVImportsHandler_Submit_AppliesColumnMapping(t *testing.T) {
+	r, repo, uploader := mappingHandler(t)
+
+	w := postCSVWithMapping(t, r,
+		"Product Name,URL Key,Variant Price\nShirt,shirt-1,10.00\n",
+		`{"Product Name":"title","URL Key":"handle","Variant Price":"base_price"}`)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var resp struct {
+		ID string `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	job, err := repo.GetByID(context.Background(), resp.ID)
+	require.NoError(t, err)
+
+	require.Equal(t,
+		"title,handle,base_price\nShirt,shirt-1,10.00\n",
+		string(uploader.objects[job.GCSPath]),
+		"the stored CSV must carry the canonical headers the parser reads")
+}
+
+func TestCSVImportsHandler_Submit_RejectsCollidingMapping(t *testing.T) {
+	r, repo, uploader := mappingHandler(t)
+
+	w := postCSVWithMapping(t, r,
+		"Price,Sale Price\n10.00,8.00\n",
+		`{"Price":"base_price","Sale Price":"base_price"}`)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Empty(t, repo.jobs)
+	require.Empty(t, uploader.objects, "nothing should be stored for a rejected mapping")
+}
+
+func TestCSVImportsHandler_Submit_RejectsMalformedMapping(t *testing.T) {
+	r, repo, _ := mappingHandler(t)
+
+	w := postCSVWithMapping(t, r, "title\nShirt\n", "not json")
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Empty(t, repo.jobs)
+}
+
+// A merchant whose export already matches sends no mapping, and the file
+// must reach the bucket untouched.
+func TestCSVImportsHandler_Submit_WithoutMappingStoresFileVerbatim(t *testing.T) {
+	r, repo, uploader := mappingHandler(t)
+
+	csvBody := "title,handle,base_price\nShirt,shirt-1,10.00\n"
+	w := postCSVWithMapping(t, r, csvBody, "")
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var resp struct {
+		ID string `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	job, err := repo.GetByID(context.Background(), resp.ID)
+	require.NoError(t, err)
+	require.Equal(t, csvBody, string(uploader.objects[job.GCSPath]))
+}
+
+// The admin client reads data/meta. While this returned items/total/page
+// the import history silently rendered "No import history yet" with a
+// 200 on the wire and jobs in the database — and the frontend's own test
+// mocked data, so nothing caught the mismatch.
+func TestCSVImportsHandler_List_UsesTheHouseEnvelope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := newMemRepo()
+	require.NoError(t, repo.Create(context.Background(), &csvjob.CsvImportJob{
+		ID: "job-1", StoreID: "store-1", Status: csvjob.StatusCompleted,
+		GCSPath: "csv-imports/store-1/a.csv",
+	}))
+	handler := admin.NewCSVImportsHandler(csvjob.NewService(repo, nil), stubExportRepo{}, newMemUploader(), nil)
+
+	r := gin.New()
+	r.GET("/csv-imports", func(c *gin.Context) {
+		c.Params = append(c.Params, gin.Param{Key: "storeId", Value: "store-1"})
+		c.Next()
+	}, handler.List)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/csv-imports", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+
+	data, ok := body["data"].([]any)
+	require.True(t, ok, `list must return "data", got keys %v`, keysOf(body))
+	require.Len(t, data, 1)
+
+	meta, ok := body["meta"].(map[string]any)
+	require.True(t, ok, `list must return "meta", got keys %v`, keysOf(body))
+	for _, k := range []string{"page", "page_size", "total", "total_pages"} {
+		require.Contains(t, meta, k)
+	}
+}
+
+func keysOf(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

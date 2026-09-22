@@ -61,6 +61,25 @@ const NO_STORE = {
   },
 };
 
+/**
+ * Read the column mapping the page collected.
+ *
+ * Until now the page gathered the merchant's choices and never sent them,
+ * so the mapper was decorative and any CSV whose headers were not already
+ * canonical imported nothing. A malformed value is dropped rather than
+ * thrown: the server validates the mapping and reports it properly.
+ */
+function parseMappingField(raw: FormDataEntryValue | null): Record<string, string> | undefined {
+  if (typeof raw !== "string" || raw === "") return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    return parsed as Record<string, string>;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function submitCsvImportAction(
   formData: FormData,
 ): Promise<CsvActionResult> {
@@ -89,7 +108,9 @@ export async function submitCsvImportAction(
   const storeId = await resolveStoreId();
   if (!storeId) return NO_STORE;
 
-  const result = await submitCsvImport(session, storeId, file);
+  const mapping = parseMappingField(formData.get("column_mapping"));
+
+  const result = await submitCsvImport(session, storeId, file, mapping);
   if (!result.ok) {
     return { ok: false, error: result.error };
   }

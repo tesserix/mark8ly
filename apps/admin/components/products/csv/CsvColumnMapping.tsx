@@ -8,19 +8,39 @@ import {
   SelectValue,
 } from "@tesserix/web";
 
+// These are the importer's canonical column names, and they must stay
+// spelled exactly as the Go parser reads them — a mapper that offers a
+// field the parser does not look for silently drops that column. "price"
+// was such a field: the parser reads "base_price", so price never mapped
+// and auto-mapping left it on "skip".
 export const PRODUCT_FIELDS = [
   "title",
   "handle",
   "description",
   "status",
-  "price",
+  "base_price",
   "sku",
   "stock",
+  "weight",
+  "category_slugs",
 ] as const;
 
 export type ProductField = (typeof PRODUCT_FIELDS)[number];
 
 export type ColumnMapping = Record<string, ProductField | "">;
+
+/** Display names. The value sent to the server is always the canonical key. */
+const FIELD_LABELS: Record<ProductField, string> = {
+  title: "title",
+  handle: "handle",
+  description: "description",
+  status: "status",
+  base_price: "price (base_price)",
+  sku: "sku",
+  stock: "stock",
+  weight: "weight",
+  category_slugs: "categories (category_slugs)",
+};
 
 interface CsvColumnMappingProps {
   csvHeaders: string[];
@@ -77,7 +97,7 @@ export function CsvColumnMapping({
                 <SelectItem value="__skip__">— skip —</SelectItem>
                 {PRODUCT_FIELDS.map((field) => (
                   <SelectItem key={field} value={field}>
-                    {field}
+                    {FIELD_LABELS[field]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -89,18 +109,45 @@ export function CsvColumnMapping({
   );
 }
 
+// Header spellings common in merchant exports. Mark8ly's pitch is
+// migrating off Shopify and Woo, and neither writes our column names.
+const FIELD_ALIASES: Record<string, ProductField> = {
+  name: "title",
+  "product name": "title",
+  slug: "handle",
+  "url key": "handle",
+  price: "base_price",
+  "variant price": "base_price",
+  "regular price": "base_price",
+  "variant sku": "sku",
+  quantity: "stock",
+  qty: "stock",
+  inventory: "stock",
+  "variant inventory qty": "stock",
+  "body (html)": "description",
+  categories: "category_slugs",
+};
+
 /**
- * Build an initial mapping by auto-matching CSV headers to product fields
- * using exact name matches (case-insensitive).
+ * Build an initial mapping by matching CSV headers to product fields,
+ * first by canonical name and then by common export aliases
+ * (case-insensitive).
  */
 export function autoMapColumns(csvHeaders: string[]): ColumnMapping {
   const mapping: ColumnMapping = {};
   const fieldSet = new Set<string>(PRODUCT_FIELDS);
+  const taken = new Set<ProductField>();
 
   for (const csvHeader of csvHeaders) {
     const lower = csvHeader.toLowerCase().trim();
-    if (fieldSet.has(lower)) {
-      mapping[csvHeader] = lower as ProductField;
+    const field = fieldSet.has(lower)
+      ? (lower as ProductField)
+      : FIELD_ALIASES[lower];
+    // The server rejects two headers claiming one field, so first match
+    // wins here rather than sending a mapping that cannot be accepted.
+    if (field && !taken.has(field)) {
+      mapping[csvHeader] = field;
+      taken.add(field);
     }
   }
 

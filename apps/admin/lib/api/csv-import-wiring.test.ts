@@ -65,3 +65,39 @@ describe("csv import wiring", () => {
     ).toBe(false);
   });
 });
+
+// #897 follow-up: the column mapper was decorative. The page collected the
+// merchant's choices into state and the submit handler built a FormData
+// with only the file, so any CSV whose headers were not already the
+// parser's canonical names imported nothing — and nothing failed, because
+// the mapping was simply never sent.
+describe("column mapping reaches the server", () => {
+  const strip = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  it("the import page puts the mapping in the submitted form data", () => {
+    const src = strip(
+      readFileSync(
+        path.join(APP, "(admin)", "products", "import", "page.tsx"),
+        "utf8",
+      ),
+    );
+    expect(src).toMatch(/formData\.append\(\s*["']column_mapping["']/);
+  });
+
+  it("the server action forwards it to the API client", () => {
+    const src = strip(
+      readFileSync(
+        path.join(APP, "(admin)", "products", "import", "actions.ts"),
+        "utf8",
+      ),
+    );
+    expect(src).toContain("column_mapping");
+    expect(src).toMatch(/submitCsvImport\([^)]*mapping/s);
+  });
+
+  it("the API client sends it as a form field", () => {
+    const src = strip(readFileSync(path.join(__dirname, "csvImports.ts"), "utf8"));
+    expect(src).toMatch(/formData\.append\(\s*["']column_mapping["']/);
+  });
+});

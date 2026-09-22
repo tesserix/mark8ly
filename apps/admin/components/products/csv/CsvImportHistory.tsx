@@ -44,13 +44,22 @@ function formatDate(iso: string): string {
 export function CsvImportHistory() {
   const [jobs, setJobs] = useState<CsvImportJob[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const fetchJobs = useCallback(async () => {
     try {
       const res = await fetch("/api/products/csv-imports?page=1&page_size=10");
-      if (!res.ok) return;
+      if (!res.ok) {
+        // A swallowed failure here is indistinguishable from an empty
+        // history, which is how a shape mismatch went unnoticed: the list
+        // read undefined and the page said there were no imports.
+        setFailed(true);
+        return;
+      }
       const body = (await res.json()) as ListCsvImportsResponse;
       setJobs(body.data ?? []);
+    } catch {
+      setFailed(true);
     } finally {
       setLoaded(true);
     }
@@ -64,6 +73,17 @@ export function CsvImportHistory() {
     return (
       <p className="font-[var(--font-body)] text-sm text-[var(--ink-900)]/60 py-2">
         Loading history...
+      </p>
+    );
+  }
+
+  if (failed) {
+    return (
+      <p
+        role="alert"
+        className="font-[var(--font-body)] text-sm text-[var(--signal)] py-2"
+      >
+        We couldn&rsquo;t load your import history. Reload to try again.
       </p>
     );
   }

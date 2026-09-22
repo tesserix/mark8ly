@@ -1,3 +1,4 @@
+import { readHeaders, type SessionHeaders } from "./auth-headers";
 // apps/admin/lib/api/csvImports.ts
 //
 // Typed client for CSV import/export endpoints on marketplace-api.
@@ -11,10 +12,7 @@ const MARKETPLACE_API_URL =
 
 // ─── Types ───────────────────────────────────────────────────────────
 
-export interface SessionHeaders {
-  userId: string;
-  tenantId: string;
-}
+export type { SessionHeaders } from "./auth-headers";
 
 export type CsvImportJobStatus =
   | "queued"
@@ -72,12 +70,11 @@ type VoidResult = { ok: true } | { ok: false; error: MutationError };
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
+// Delegates to the shared builder: this file omitted X-Internal-Auth
+// and so every CSV-import call 401'd (#890). readHeaders deliberately
+// sets no Content-Type, which is also what the multipart upload needs.
 function baseHeaders(session: SessionHeaders): Record<string, string> {
-  return {
-    "X-User-Id": session.userId,
-    "X-Tenant-Id": session.tenantId,
-    Accept: "application/json",
-  };
+  return readHeaders(session);
 }
 
 async function parseMutationError(res: Response): Promise<MutationError> {
@@ -86,15 +83,16 @@ async function parseMutationError(res: Response): Promise<MutationError> {
     code: body?.error ?? "unknown_error",
     message: body?.message ?? `marketplace-api returned ${res.status}`,
     field:
-      typeof body?.details?.field === "string"
-        ? body.details.field
-        : undefined,
+      typeof body?.details?.field === "string" ? body.details.field : undefined,
     details: body?.details,
   };
 }
 
 function csvImportsUrl(storeId: string, suffix = ""): string {
-  return `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/csv-imports${suffix}`;
+  // The route group is storeRoute.Group("/csv-imports") — there is no
+  // /products segment (routes.go:266). This built /products/csv-imports
+  // and 404'd for as long as the feature has existed (#881).
+  return `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/csv-imports${suffix}`;
 }
 
 // ─── API functions ───────────────────────────────────────────────────
@@ -115,10 +113,7 @@ export async function submitCsvImport(
   const res = await fetch(csvImportsUrl(storeId), {
     method: "POST",
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-    },
+    headers: baseHeaders(session),
     body: formData,
   });
 
@@ -211,12 +206,9 @@ export async function downloadErrorCsv(
   storeId: string,
   jobId: string,
 ): Promise<Blob> {
-  const res = await fetch(csvImportsUrl(storeId, `/${jobId}/errors.csv`), {
+  const res = await fetch(csvImportsUrl(storeId, `/${jobId}/errors`), {
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-    },
+    headers: baseHeaders(session),
   });
 
   if (!res.ok) {
@@ -248,10 +240,7 @@ export async function exportProductsCsv(
 
   const res = await fetch(url, {
     cache: "no-store",
-    headers: {
-      "X-User-Id": session.userId,
-      "X-Tenant-Id": session.tenantId,
-    },
+    headers: baseHeaders(session),
   });
 
   if (!res.ok) {

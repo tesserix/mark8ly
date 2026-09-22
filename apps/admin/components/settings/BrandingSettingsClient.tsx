@@ -2,9 +2,24 @@
 
 import { useState, useTransition, useCallback, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
-import { Link2, Code, Image, Check, Home, Palette, FileText, Search, Scroll } from "lucide-react";
+import {
+  Link2,
+  Code,
+  Image,
+  Check,
+  Home,
+  Palette,
+  FileText,
+  Search,
+  Scroll,
+} from "lucide-react";
 
-import type { StoreBranding, UpdateBrandingInput, AdminPage, AdminCategory } from "@/lib/api/marketplace-api";
+import type {
+  StoreBranding,
+  UpdateBrandingInput,
+  AdminPage,
+  AdminCategory,
+} from "@/lib/api/marketplace-api";
 import { HomepageTab } from "./HomepageTab";
 import { SeoTab } from "./SeoTab";
 import type { StoreInfo } from "./HomepageTab.helpers";
@@ -34,15 +49,23 @@ interface BrandingSettingsClientProps {
   pagesContent?: ReactNode;
 }
 
-type Tab = "identity" | "theme" | "homepage" | "pages" | "footer" | "seo" | "policies" | "advanced";
+type Tab =
+  | "identity"
+  | "theme"
+  | "homepage"
+  | "pages"
+  | "footer"
+  | "seo"
+  | "policies"
+  | "advanced";
 
 const TABS: { key: Tab; label: string; icon: typeof Image }[] = [
   { key: "identity", label: "Identity", icon: Image },
-  { key: "theme",    label: "Theme",    icon: Palette },
+  { key: "theme", label: "Theme", icon: Palette },
   { key: "homepage", label: "Homepage", icon: Home },
-  { key: "pages",    label: "Pages",    icon: FileText },
-  { key: "footer",   label: "Footer",   icon: Link2 },
-  { key: "seo",      label: "SEO",      icon: Search },
+  { key: "pages", label: "Pages", icon: FileText },
+  { key: "footer", label: "Footer", icon: Link2 },
+  { key: "seo", label: "SEO", icon: Search },
   { key: "policies", label: "Policies", icon: Scroll },
   { key: "advanced", label: "Advanced", icon: Code },
 ];
@@ -87,7 +110,10 @@ export function BrandingSettingsClient({
   })();
   const [tab, setTab] = useState<Tab>(initialTab);
   const [isPending, startTransition] = useTransition();
-  const [status, setStatus] = useState<{ type: "idle" | "saved" | "error"; message?: string }>({ type: "idle" });
+  const [status, setStatus] = useState<{
+    type: "idle" | "saved" | "error";
+    message?: string;
+  }>({ type: "idle" });
   // heroValid tracks whether HeroEditor's aside-alt a11y constraint is satisfied.
   // Defaults true so the Save button isn't blocked before the homepage tab is visited.
   const [heroValid, setHeroValid] = useState(true);
@@ -96,13 +122,10 @@ export function BrandingSettingsClient({
 
   useUnsavedGuard(dirty, isPending);
 
-  const patch = useCallback(
-    (updates: Partial<StoreBranding>) => {
-      setForm((prev) => ({ ...prev, ...updates }));
-      setStatus({ type: "idle" });
-    },
-    [],
-  );
+  const patch = useCallback((updates: Partial<StoreBranding>) => {
+    setForm((prev) => ({ ...prev, ...updates }));
+    setStatus({ type: "idle" });
+  }, []);
 
   function handleReset() {
     setForm(initial);
@@ -115,7 +138,13 @@ export function BrandingSettingsClient({
       const input: UpdateBrandingInput = {};
       const keys = Object.keys(form) as (keyof StoreBranding)[];
       for (const key of keys) {
-        if (key === "id" || key === "store_id" || key === "created_at" || key === "updated_at") continue;
+        if (
+          key === "id" ||
+          key === "store_id" ||
+          key === "created_at" ||
+          key === "updated_at"
+        )
+          continue;
         if (form[key] !== initial[key]) {
           (input as Record<string, unknown>)[key] = form[key];
         }
@@ -171,14 +200,39 @@ export function BrandingSettingsClient({
 
       {/* Main content */}
       <div className="min-w-0 space-y-8">
-        {tab === "identity" && <IdentityTab form={form} patch={patch} editable={editable} />}
+        {tab === "identity" && (
+          <IdentityTab form={form} patch={patch} editable={editable} />
+        )}
         {tab === "theme" && themeContent}
-        {tab === "homepage" && <HomepageTab form={form} patch={patch} editable={editable} pages={pages} categories={categories} store={store} onHeroValidityChange={setHeroValid} />}
+        {tab === "homepage" && (
+          <HomepageTab
+            form={form}
+            patch={patch}
+            editable={editable}
+            pages={pages}
+            categories={categories}
+            store={store}
+            onHeroValidityChange={setHeroValid}
+          />
+        )}
         {tab === "pages" && pagesContent}
-        {tab === "footer" && <FooterTab form={form} patch={patch} editable={editable} pages={pages} />}
-        {tab === "seo" && <SeoTab form={form} patch={patch} editable={editable} />}
-        {tab === "policies" && <PoliciesTab form={form} patch={patch} editable={editable} />}
-        {tab === "advanced" && <AdvancedTab form={form} patch={patch} editable={editable} />}
+        {tab === "footer" && (
+          <FooterTab
+            form={form}
+            patch={patch}
+            editable={editable}
+            pages={pages}
+          />
+        )}
+        {tab === "seo" && (
+          <SeoTab form={form} patch={patch} editable={editable} />
+        )}
+        {tab === "policies" && (
+          <PoliciesTab form={form} patch={patch} editable={editable} />
+        )}
+        {tab === "advanced" && (
+          <AdvancedTab form={form} patch={patch} editable={editable} />
+        )}
 
         {/* Save bar — hidden on the Theme tab, which ships its own
             save/reset/preview controls inside the StorefrontThemeForm. */}
@@ -190,12 +244,16 @@ export function BrandingSettingsClient({
               disabled={!dirty || isPending || !heroValid}
               className="inline-flex h-10 items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-5 text-sm font-medium text-white transition-colors hover:bg-[color:var(--ink-900)]/90 disabled:opacity-40"
             >
-              {isPending ? "Saving..." : status.type === "saved" ? (
+              {isPending ? (
+                "Saving..."
+              ) : status.type === "saved" ? (
                 <>
                   <Check className="h-3.5 w-3.5" aria-hidden="true" />
                   Saved
                 </>
-              ) : "Save changes"}
+              ) : (
+                "Save changes"
+              )}
             </button>
             {dirty && (
               <button
@@ -229,20 +287,37 @@ interface TabProps {
   categories?: Pick<AdminCategory, "id" | "slug" | "name">[];
 }
 
-export function SectionHeader({ title, description }: { title: string; description: string }) {
+export function SectionHeader({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   return (
     <div className="space-y-1">
       <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground">
         {title}
       </h2>
-      <p className="text-sm leading-6 text-foreground-secondary">{description}</p>
+      <p className="text-sm leading-6 text-foreground-secondary">
+        {description}
+      </p>
     </div>
   );
 }
 
-export function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: React.ReactNode }) {
+export function FieldLabel({
+  htmlFor,
+  children,
+}: {
+  htmlFor?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label htmlFor={htmlFor} className="block text-sm font-medium text-foreground">
+    <label
+      htmlFor={htmlFor}
+      className="block text-sm font-medium text-foreground"
+    >
       {children}
     </label>
   );
@@ -474,13 +549,35 @@ function FooterTab({ form, patch, editable, pages = [] }: TabProps) {
       <div className="space-y-4 border-t border-border-subtle pt-6">
         <p className="text-sm font-medium text-foreground">Social links</p>
         <div className="grid gap-4 sm:grid-cols-2">
-          {([
-            { key: "social_instagram" as const, label: "Instagram", placeholder: "https://instagram.com/yourstore" },
-            { key: "social_twitter" as const, label: "X / Twitter", placeholder: "https://x.com/yourstore" },
-            { key: "social_facebook" as const, label: "Facebook", placeholder: "https://facebook.com/yourstore" },
-            { key: "social_tiktok" as const, label: "TikTok", placeholder: "https://tiktok.com/@yourstore" },
-            { key: "social_youtube" as const, label: "YouTube", placeholder: "https://youtube.com/@yourstore" },
-          ] as const).map(({ key, label, placeholder }) => (
+          {(
+            [
+              {
+                key: "social_instagram" as const,
+                label: "Instagram",
+                placeholder: "https://instagram.com/yourstore",
+              },
+              {
+                key: "social_twitter" as const,
+                label: "X / Twitter",
+                placeholder: "https://x.com/yourstore",
+              },
+              {
+                key: "social_facebook" as const,
+                label: "Facebook",
+                placeholder: "https://facebook.com/yourstore",
+              },
+              {
+                key: "social_tiktok" as const,
+                label: "TikTok",
+                placeholder: "https://tiktok.com/@yourstore",
+              },
+              {
+                key: "social_youtube" as const,
+                label: "YouTube",
+                placeholder: "https://youtube.com/@yourstore",
+              },
+            ] as const
+          ).map(({ key, label, placeholder }) => (
             <div key={key} className="space-y-1.5">
               <FieldLabel htmlFor={key}>{label}</FieldLabel>
               <TextInput
@@ -512,13 +609,15 @@ function PoliciesTab({ form, patch, editable }: TabProps) {
         <div className="flex items-baseline justify-between">
           <FieldLabel htmlFor="return_policy">Return policy</FieldLabel>
           <span className="text-[11px] text-foreground-tertiary">
-            {charCount > 0 ? `${charCount.toLocaleString()} characters` : "Not set"}
+            {charCount > 0
+              ? `${charCount.toLocaleString()} characters`
+              : "Not set"}
           </span>
         </div>
         <p className="text-xs text-foreground-secondary">
-          Describe your return window, eligibility, and how customers request
-          a return. Plain text — no HTML. Linked from the storefront footer
-          and shown on checkout for regulated regions.
+          Describe your return window, eligibility, and how customers request a
+          return. Plain text — no HTML. Once saved, it appears at
+          /policies/returns on your storefront and is linked from your footer.
         </p>
         <textarea
           id="return_policy"
@@ -553,7 +652,9 @@ function AdvancedTab({ form, patch, editable }: TabProps) {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <p className="text-sm font-medium text-foreground">Show &quot;Powered by mark8ly&quot;</p>
+            <p className="text-sm font-medium text-foreground">
+              Show &quot;Powered by mark8ly&quot;
+            </p>
             <p className="text-xs text-foreground-secondary">
               A small &ldquo;Powered by mark8ly&rdquo; link in your storefront
               footer. On by default &mdash; it helps other makers discover
@@ -619,4 +720,3 @@ export function ToggleSwitch({
     </button>
   );
 }
-

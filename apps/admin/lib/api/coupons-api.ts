@@ -1,3 +1,4 @@
+import { writeHeaders, type SessionHeaders } from "./auth-headers";
 // apps/admin/lib/api/coupons-api.ts
 //
 // Admin coupon API client. Follows the same calling convention as
@@ -7,18 +8,12 @@
 const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 
-export interface SessionHeaders {
-  userId: string;
-  tenantId: string;
-}
+export type { SessionHeaders } from "./auth-headers";
 
+// Delegates to the shared builder so X-Internal-Auth cannot be
+// forgotten here again (#890).
 function authHeaders(session: SessionHeaders): Record<string, string> {
-  return {
-    "X-User-Id": session.userId,
-    "X-Tenant-Id": session.tenantId,
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  };
+  return writeHeaders(session);
 }
 
 // ---------- Types ----------
@@ -120,7 +115,10 @@ export async function listCoupons(
 
   const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/coupons?${params}`;
   try {
-    const res = await fetch(url, { headers: authHeaders(session), cache: "no-store" });
+    const res = await fetch(url, {
+      headers: authHeaders(session),
+      cache: "no-store",
+    });
     if (!res.ok) return null;
     return (await res.json()) as ListCouponsResponse;
   } catch {
@@ -135,7 +133,10 @@ export async function getCoupon(
 ): Promise<GetCouponResponse | null> {
   const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/coupons/${couponId}`;
   try {
-    const res = await fetch(url, { headers: authHeaders(session), cache: "no-store" });
+    const res = await fetch(url, {
+      headers: authHeaders(session),
+      cache: "no-store",
+    });
     if (!res.ok) return null;
     return (await res.json()) as GetCouponResponse;
   } catch {

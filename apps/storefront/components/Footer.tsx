@@ -75,11 +75,31 @@ type SocialLink = {
 
 function SocialRow({ branding }: { branding: StorefrontBranding }) {
   const links: SocialLink[] = [
-    { key: "instagram", label: "Instagram", url: branding.social_instagram, Icon: InstagramIcon },
+    {
+      key: "instagram",
+      label: "Instagram",
+      url: branding.social_instagram,
+      Icon: InstagramIcon,
+    },
     { key: "twitter", label: "X", url: branding.social_twitter, Icon: XIcon },
-    { key: "facebook", label: "Facebook", url: branding.social_facebook, Icon: FacebookIcon },
-    { key: "tiktok", label: "TikTok", url: branding.social_tiktok, Icon: TikTokIcon },
-    { key: "youtube", label: "YouTube", url: branding.social_youtube, Icon: YouTubeIcon },
+    {
+      key: "facebook",
+      label: "Facebook",
+      url: branding.social_facebook,
+      Icon: FacebookIcon,
+    },
+    {
+      key: "tiktok",
+      label: "TikTok",
+      url: branding.social_tiktok,
+      Icon: TikTokIcon,
+    },
+    {
+      key: "youtube",
+      label: "YouTube",
+      url: branding.social_youtube,
+      Icon: YouTubeIcon,
+    },
   ];
   const present = links.filter((l) => !!l.url);
   if (present.length === 0) return null;
@@ -151,9 +171,7 @@ function BrandHero({
   }
   if (storeName) {
     return (
-      <p
-        className="font-[family-name:var(--storefront-heading-font,var(--font-serif))] text-[clamp(2.25rem,5vw,3.5rem)] font-normal leading-[1.05] tracking-[-0.015em] text-[color:var(--storefront-text,var(--ink-900))]"
-      >
+      <p className="font-[family-name:var(--storefront-heading-font,var(--font-serif))] text-[clamp(2.25rem,5vw,3.5rem)] font-normal leading-[1.05] tracking-[-0.015em] text-[color:var(--storefront-text,var(--ink-900))]">
         {storeName}
       </p>
     );
@@ -164,19 +182,21 @@ function BrandHero({
 export function Footer({ branding, storeName }: FooterProps) {
   const tagline = branding?.footer_tagline?.trim() || null;
   const name = storeName?.trim() || null;
-  const copyright = branding?.footer_copyright?.trim() || defaultCopyright(name);
+  const copyright =
+    branding?.footer_copyright?.trim() || defaultCopyright(name);
   const logoUrl = branding?.logo_url?.trim() || null;
   const sections = (branding?.footer_sections ?? []).filter(
     (s) => s.label && s.label.trim().length > 0,
   );
   const showPoweredBy = branding?.show_powered_by !== false;
+  const returnPolicy = branding?.return_policy?.trim();
   const hasHero = Boolean(name || logoUrl);
   const hasSocials = Boolean(
     branding?.social_instagram ||
-      branding?.social_twitter ||
-      branding?.social_facebook ||
-      branding?.social_tiktok ||
-      branding?.social_youtube,
+    branding?.social_twitter ||
+    branding?.social_facebook ||
+    branding?.social_tiktok ||
+    branding?.social_youtube,
   );
 
   return (
@@ -225,6 +245,19 @@ export function Footer({ branding, storeName }: FooterProps) {
         {/* ── Bottom bar ─────────────────────────────────────── */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--storefront-text,var(--ink-900))]/10 py-6 text-[11px] text-[color:var(--storefront-text,var(--ink-900))]/55">
           <p>{copyright}</p>
+          {/* The admin Policies tab has always told merchants their return
+              policy is "linked from the storefront footer". It was not
+              (#891). Rendered only when the merchant has written one, so
+              this link and /policies/returns agree — that route 404s when
+              the text is unset. */}
+          {returnPolicy && (
+            <a
+              href="/policies/returns"
+              className="underline underline-offset-2 transition-colors hover:text-[color:var(--storefront-accent,var(--moss-700))]"
+            >
+              Returns
+            </a>
+          )}
           {showPoweredBy && (
             <p>
               Powered by{" "}

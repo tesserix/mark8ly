@@ -68,7 +68,11 @@ describe("csvImports API client", () => {
       expect(mockedFetch()).toHaveBeenCalledTimes(1);
 
       const [url, opts] = mockedFetch().mock.calls[0]!;
-      expect(url).toContain("/api/v1/admin/stores/s1/products/csv-imports");
+      // The route group is /csv-imports with no /products segment
+      // (routes.go:266). This assertion previously pinned the wrong URL,
+      // which is why #881 stayed green for as long as it did.
+      expect(url).toContain("/api/v1/admin/stores/s1/csv-imports");
+      expect(url).not.toContain("/products/csv-imports");
       expect(opts.method).toBe("POST");
       // FormData should be the body (not JSON)
       expect(opts.body).toBeInstanceOf(FormData);
@@ -78,7 +82,10 @@ describe("csvImports API client", () => {
 
     it("returns error on failure", async () => {
       mockedFetch().mockResolvedValue(
-        makeFetchResponse({ error: "too_large", message: "File too large" }, 400),
+        makeFetchResponse(
+          { error: "too_large", message: "File too large" },
+          400,
+        ),
       );
 
       const file = new File(["x"], "big.csv", { type: "text/csv" });
@@ -117,7 +124,11 @@ describe("csvImports API client", () => {
 
   describe("getCsvImportStatus", () => {
     it("returns typed job object", async () => {
-      const job = makeJob({ status: "running", total_rows: 100, success_count: 50 });
+      const job = makeJob({
+        status: "running",
+        total_rows: 100,
+        success_count: 50,
+      });
       mockedFetch().mockResolvedValue(makeFetchResponse(job));
 
       const result = await getCsvImportStatus(mockSession, "s1", "job-1");
@@ -148,7 +159,10 @@ describe("csvImports API client", () => {
 
     it("returns error on failure", async () => {
       mockedFetch().mockResolvedValue(
-        makeFetchResponse({ error: "not_cancellable", message: "Already completed" }, 409),
+        makeFetchResponse(
+          { error: "not_cancellable", message: "Already completed" },
+          409,
+        ),
       );
       const result = await cancelCsvImport(mockSession, "s1", "job-1");
       expect(result.ok).toBe(false);
@@ -163,7 +177,9 @@ describe("csvImports API client", () => {
 
       expect(blob).toBeInstanceOf(Blob);
       const [url] = mockedFetch().mock.calls[0]!;
-      expect(url).toContain("/csv-imports/job-1/errors.csv");
+      // Route is GET /:id/errors — no .csv suffix.
+      expect(url).toContain("/csv-imports/job-1/errors");
+      expect(url).not.toContain("errors.csv");
     });
   });
 

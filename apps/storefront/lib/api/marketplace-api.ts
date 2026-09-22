@@ -333,6 +333,11 @@ export interface StorefrontBranding {
   // mark8ly badge in footer bottom bar; backend default is true.
   show_powered_by?: boolean;
 
+  // Merchant-authored return policy, plain text. Rendered at
+  // /policies/returns and linked from the footer — which is what the
+  // admin UI has always told merchants happens (#891).
+  return_policy?: string | null;
+
   // merchant-injected CSS. Sanitized at render time.
   custom_css?: string | null;
 

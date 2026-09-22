@@ -22,8 +22,15 @@ import (
 // public. If it is, add it to PublicBrandingResponse. If it is not, add it to
 // withheld below AND to the doc comment.
 func TestPublicBrandingExposureIsExactlyWhatTheCommentClaims(t *testing.T) {
-	// Withheld from the storefront. Identifiers and timestamps, plus
-	// ReturnPolicy, which only the admin DTO carries.
+	// Withheld from the storefront: identifiers and timestamps.
+	//
+	// ReturnPolicy WAS listed here. It is now public (#891): the admin
+	// Policies tab tells the merchant it is "linked from the storefront
+	// footer and shown on checkout for regulated regions", and migration
+	// 000037 says it is used "by storefront policy pages" — but it reached
+	// no shopper, so the merchant wrote consumer-protection copy that
+	// nobody could read. It is merchant-authored text intended for
+	// shoppers, so it belongs on the public payload.
 	withheld := map[string]struct{}{
 		"ID":        {},
 		"TenantID":  {},
@@ -31,7 +38,6 @@ func TestPublicBrandingExposureIsExactlyWhatTheCommentClaims(t *testing.T) {
 		"CreatedAt": {},
 		"UpdatedAt": {},
 
-		"ReturnPolicy": {},
 		// #749: merchant contact address. Withheld from this
 		// unauthenticated endpoint — see the PublicBrandingResponse doc.
 		"SupportEmail": {},

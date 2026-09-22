@@ -89,6 +89,14 @@ type PublicBrandingResponse struct {
 	SocialYoutube      *string                  `json:"social_youtube,omitempty"`
 	CustomCSS          *string                  `json:"custom_css,omitempty"`
 	ShowPoweredBy      bool                     `json:"show_powered_by"`
+	// ReturnPolicy is merchant-authored plain text. The admin UI tells the
+	// merchant it is "linked from the storefront footer and shown on
+	// checkout for regulated regions", and migration 000037 says it is used
+	// "by storefront policy pages" — but it was absent from this struct, so
+	// no shopper could ever read it (#891). It is consumer-protection copy
+	// the product actively asks merchants to write; it belongs in the
+	// public payload.
+	ReturnPolicy *string `json:"return_policy,omitempty"`
 	// SEO + AI SEO (public — storefront needs these for metadata emission).
 	SeoTitleTemplate      *string         `json:"seo_title_template,omitempty"`
 	SeoDefaultDescription *string         `json:"seo_default_description,omitempty"`
@@ -129,6 +137,7 @@ func toPublicBrandingResponse(b branding.StoreBranding) PublicBrandingResponse {
 		SocialYoutube:         b.SocialYoutube,
 		CustomCSS:             b.CustomCSS,
 		ShowPoweredBy:         b.ShowPoweredBy,
+		ReturnPolicy:          b.ReturnPolicy,
 		SeoTitleTemplate:      b.SeoTitleTemplate,
 		SeoDefaultDescription: b.SeoDefaultDescription,
 		SeoOgImageURL:         b.SeoOgImageURL,

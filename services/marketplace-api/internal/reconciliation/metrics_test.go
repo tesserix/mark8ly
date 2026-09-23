@@ -2,6 +2,7 @@ package reconciliation
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -95,5 +96,25 @@ func TestHeartbeatIsNotRegisteredByImportAlone(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("registering cron metrics did not publish %s", name)
+	}
+}
+
+// Registration must seed the heartbeat to now, not leave it at zero.
+//
+// A gauge left at 0 reads as unix epoch — "last succeeded in 1970" — so a
+// freshly deployed pod is instantly 56 years stale and the staleness alert
+// goes pending the moment it starts. That is exactly what happened on the
+// deploy that shipped this gauge: StripeReconciliationStale sat in pending
+// between the rollout and the first 02:15 pass.
+func TestRegisteringCronMetricsSeedsTheHeartbeatToNow(t *testing.T) {
+	before := float64(time.Now().Add(-time.Second).Unix())
+
+	reg := prometheus.NewRegistry()
+	MustRegisterCronMetrics(reg)
+
+	got := testutil.ToFloat64(lastSuccessTimestamp)
+	if got <= before {
+		t.Fatalf("heartbeat seeded to %v, want >= %v — a zero here reads as "+
+			"1970 and pages a healthy pod the moment it boots", got, before)
 	}
 }

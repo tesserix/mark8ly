@@ -2124,7 +2124,11 @@ func main() {
 			},
 			AllowedTypes: allowed,
 			MaxBodyBytes: cfg.WebhookMaxBodyBytes,
-			Logger:       log,
+			// Same cap as the orphan cron below: an event must not be
+			// flagged by one recovery path while the other still treats it
+			// as live.
+			MaxRetries: cfg.OrphanRetryMaxCount,
+			Logger:     log,
 		})
 		stripeBillingWebhookHandler = webhookH.Handle
 

@@ -25,3 +25,18 @@ type StripeWebhookEvent struct {
 
 // TableName returns the database table name for GORM.
 func (StripeWebhookEvent) TableName() string { return "stripe_webhook_events" }
+
+// ResolvedStoreID reports the store this event was attributed to, and whether
+// it has one.
+//
+// A row with a store_id is not an orphan: the handler resolves the store and
+// records it before dispatching, so a populated store_id means the attempt
+// got as far as its handler and failed there. Recovery re-attempts such an
+// event rather than re-resolving it, because the store on the row is the one
+// the first attempt acted under.
+func (e StripeWebhookEvent) ResolvedStoreID() (uuid.UUID, bool) {
+	if e.StoreID == nil || *e.StoreID == uuid.Nil {
+		return uuid.Nil, false
+	}
+	return *e.StoreID, true
+}

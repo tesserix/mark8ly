@@ -5,6 +5,7 @@ package webhooks_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,6 +32,13 @@ var fixedNow = time.Unix(1_712_000_000, 0)
 
 func newHandler(t *testing.T, db *gorm.DB, dispatch webhooks.DispatchFunc) *webhooks.StripeHandler {
 	t.Helper()
+	return newHandlerWithMaxRetries(t, db, 0, dispatch)
+}
+
+// newHandlerWithMaxRetries builds a handler with an explicit retry cap.
+// maxRetries 0 means "use the default", as the config does.
+func newHandlerWithMaxRetries(t *testing.T, db *gorm.DB, maxRetries int, dispatch webhooks.DispatchFunc) *webhooks.StripeHandler {
+	t.Helper()
 	return webhooks.NewStripeHandler(webhooks.StripeHandlerConfig{
 		DB:       db,
 		Secret:   testSecret,
@@ -40,7 +48,8 @@ func newHandler(t *testing.T, db *gorm.DB, dispatch webhooks.DispatchFunc) *webh
 			"customer.subscription.updated": true,
 			"checkout.session.completed":    true,
 		},
-		Now: func() time.Time { return fixedNow },
+		MaxRetries: maxRetries,
+		Now:        func() time.Time { return fixedNow },
 	})
 }
 
@@ -193,13 +202,24 @@ func TestStripeWebhook_UnknownType_PersistsButSkipsDispatch(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Table("stripe_webhook_events").Where("event_id = ?", "evt_unknown").Count(&count).Error)
 	require.EqualValues(t, 1, count, "event row must be persisted even when type is not in allowlist")
+
+	// Kept for audit, and finished. Leaving it unprocessed enrolled every
+	// ignored event in the recovery loop, where it burned the retry budget
+	// and the alert channel on an event no handler will ever want.
+	var e webhookevents.StripeWebhookEvent
+	require.NoError(t, db.First(&e, "event_id = ?", "evt_unknown").Error)
+	require.NotNil(t, e.ProcessedAt, "an event nothing will ever handle must not sit in the retry queue")
 }
 
-// TestStripeWebhook_OrphanCustomer_ReturnsRetryScheduled verifies that when the
-// stripe_customer_id in the payload has no matching store_subscriptions row,
-// the handler returns "retry_scheduled", bumps retry_count, and does NOT stamp
-// processed_at — leaving the event for the cron retrier.
-func TestStripeWebhook_OrphanCustomer_ReturnsRetryScheduled(t *testing.T) {
+// TestStripeWebhook_OrphanCustomer_AsksStripeToRedeliver verifies that when
+// the stripe_customer_id in the payload has no matching store_subscriptions
+// row, the handler bumps retry_count, leaves processed_at NULL, and answers
+// 503 so Stripe redelivers.
+//
+// It used to answer 200. The orphan case is usually a race — the event
+// arrives before the subscription row commits — and Stripe's own redelivery
+// resolves it sooner than a five-minute cron, for free, if we simply ask.
+func TestStripeWebhook_OrphanCustomer_AsksStripeToRedeliver(t *testing.T) {
 	db := testdb.NewDB(t, "stripe_webhook_events", "store_subscriptions")
 
 	called := false
@@ -213,14 +233,115 @@ func TestStripeWebhook_OrphanCustomer_ReturnsRetryScheduled(t *testing.T) {
 	sig := billingstripe.BuildSignatureForTesting(payload, testSecret, fixedNow)
 
 	w := post(t, h, payload, sig)
-	require.Equal(t, 200, w.Code)
-	require.Contains(t, w.Body.String(), "retry_scheduled")
+	require.Equal(t, 503, w.Code, "a non-2xx is what makes Stripe send it again")
+	require.Contains(t, w.Body.String(), "dispatch_failed")
 	require.False(t, called, "dispatch must NOT be called for orphan events")
 
 	var e webhookevents.StripeWebhookEvent
 	require.NoError(t, db.First(&e, "event_id = ?", "evt_orphan").Error)
 	require.Nil(t, e.ProcessedAt, "processed_at must remain NULL for orphan events")
-	require.Nil(t, e.StoreID, "store_id must remain NULL so cron can retry")
+	require.Nil(t, e.StoreID, "store_id must remain NULL so the resolver can attribute it")
 	require.Greater(t, e.RetryCount, 0, "retry_count must be bumped")
 	require.NotNil(t, e.ProcessingError, "processing_error must record the orphan reason")
+}
+
+// TestStripeWebhook_RedeliveryOfUnprocessedEvent_DispatchesAgain is the
+// defect that made every other retry mechanism moot.
+//
+// Stripe resends a failed webhook for three days. The handler answered every
+// resend "duplicate" on the strength of the row existing, without asking
+// whether it had ever processed — so the first failure was final no matter
+// how many times Stripe tried. A redelivery is a duplicate of DELIVERY, not
+// of work.
+func TestStripeWebhook_RedeliveryOfUnprocessedEvent_DispatchesAgain(t *testing.T) {
+	db := testdb.NewDB(t, "stripe_webhook_events", "store_subscriptions")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_redeliver",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusSignup,
+	}).Error)
+
+	calls := 0
+	failFirst := func(_ context.Context, _ *gorm.DB, _ webhookevents.StripeWebhookEvent) error {
+		calls++
+		if calls == 1 {
+			return errors.New("handler blew up")
+		}
+		return nil
+	}
+	h := newHandler(t, db, failFirst)
+
+	payload := []byte(`{"id":"evt_redeliver","type":"customer.subscription.updated","data":{"object":{"customer":"cus_redeliver"}}}`)
+	sig := billingstripe.BuildSignatureForTesting(payload, testSecret, fixedNow)
+
+	// First delivery fails inside the handler.
+	w1 := post(t, h, payload, sig)
+	require.Equal(t, 503, w1.Code)
+
+	var afterFirst webhookevents.StripeWebhookEvent
+	require.NoError(t, db.First(&afterFirst, "event_id = ?", "evt_redeliver").Error)
+	require.Nil(t, afterFirst.ProcessedAt)
+	require.NotNil(t, afterFirst.StoreID,
+		"the store was resolved before dispatch — which is exactly why recovery must not filter on store_id IS NULL")
+
+	// Stripe sends it again; this time the handler succeeds.
+	w2 := post(t, h, payload, sig)
+	require.Equal(t, 200, w2.Code)
+	require.Contains(t, w2.Body.String(), "processed")
+	require.Equal(t, 2, calls, "the redelivery must reach the dispatcher, not be dismissed as a duplicate")
+
+	var afterSecond webhookevents.StripeWebhookEvent
+	require.NoError(t, db.First(&afterSecond, "event_id = ?", "evt_redeliver").Error)
+	require.NotNil(t, afterSecond.ProcessedAt, "the retry is what finally processes it")
+
+	// A third delivery is now a genuine duplicate and must not re-apply.
+	w3 := post(t, h, payload, sig)
+	require.Equal(t, 200, w3.Code)
+	require.Contains(t, w3.Body.String(), "duplicate")
+	require.Equal(t, 2, calls, "an already-processed event must never dispatch again")
+}
+
+// TestStripeWebhook_PastTheRetryCap_StopsAskingStripe — an event that fails
+// the same way every time must stop churning: flagged for a human, 200 to
+// Stripe so it gives up, and visible to cmd/webhook-replay.
+func TestStripeWebhook_PastTheRetryCap_StopsAskingStripe(t *testing.T) {
+	db := testdb.NewDB(t, "stripe_webhook_events", "store_subscriptions")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_capped",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusSignup,
+	}).Error)
+
+	h := newHandlerWithMaxRetries(t, db, 2, func(_ context.Context, _ *gorm.DB, _ webhookevents.StripeWebhookEvent) error {
+		return errors.New("always fails")
+	})
+
+	payload := []byte(`{"id":"evt_capped","type":"customer.subscription.updated","data":{"object":{"customer":"cus_capped"}}}`)
+	sig := billingstripe.BuildSignatureForTesting(payload, testSecret, fixedNow)
+
+	require.Equal(t, 503, post(t, h, payload, sig).Code, "first failure: ask again")
+
+	last := post(t, h, payload, sig)
+	require.Equal(t, 200, last.Code, "at the cap, stop asking Stripe to resend")
+	require.Contains(t, last.Body.String(), "manual_review_required")
+
+	var e webhookevents.StripeWebhookEvent
+	require.NoError(t, db.First(&e, "event_id = ?", "evt_capped").Error)
+	require.True(t, e.ManualReviewRequired)
+	require.Nil(t, e.ProcessedAt)
+
+	// And a further redelivery is answered without another attempt.
+	again := post(t, h, payload, sig)
+	require.Equal(t, 200, again.Code)
+	require.Contains(t, again.Body.String(), "manual_review_required")
 }

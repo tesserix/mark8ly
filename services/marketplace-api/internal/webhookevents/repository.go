@@ -20,9 +20,21 @@ type Repository interface {
 	// (ON CONFLICT DO NOTHING).
 	InsertIfNew(ctx context.Context, db *gorm.DB, e StripeWebhookEvent) (bool, error)
 
-	// GetUnprocessedOrphans returns up to `limit` rows with processed_at IS NULL,
-	// store_id IS NULL, and manual_review_required = false. Ordered by received_at.
-	GetUnprocessedOrphans(ctx context.Context, db *gorm.DB, limit int) ([]StripeWebhookEvent, error)
+	// GetUnprocessed returns up to `limit` rows with processed_at IS NULL and
+	// manual_review_required = false, ordered by received_at.
+	//
+	// It deliberately does NOT filter on store_id IS NULL, which is what its
+	// predecessor (GetUnprocessedOrphans) did. The handler resolves the store
+	// and calls SetStoreID BEFORE dispatching, so an event that failed in its
+	// handler — the ordinary failure, not the orphan race — came back with
+	// store_id populated and was excluded from recovery forever. Stripe had
+	// already been told 200, so nothing else was going to retry it either.
+	GetUnprocessed(ctx context.Context, db *gorm.DB, limit int) ([]StripeWebhookEvent, error)
+
+	// Get returns one event by id. Used by the handler to decide whether a
+	// duplicate delivery is a genuine duplicate or a redelivery of something
+	// that never processed.
+	Get(ctx context.Context, db *gorm.DB, eventID string) (*StripeWebhookEvent, error)
 
 	// MarkProcessed stamps processed_at = now() for the event_id.
 	MarkProcessed(ctx context.Context, db *gorm.DB, eventID string) error
@@ -37,6 +49,20 @@ type Repository interface {
 	// FlagManualReview sets manual_review_required = true and records the reason
 	// in processing_error. Used after OrphanRetryMaxCount exceeded.
 	FlagManualReview(ctx context.Context, db *gorm.DB, eventID string, reason string) error
+
+	// ClearManualReview clears the flag and resets retry_count so the recovery
+	// loop picks the event up again.
+	//
+	// The flag is how an event stops churning, but nothing cleared it, so it
+	// was a one-way door: every flagged event was excluded from recovery and
+	// from the stale alert, permanently and silently. An operator who has
+	// fixed the underlying cause needs a way back in — see
+	// cmd/webhook-replay.
+	ClearManualReview(ctx context.Context, db *gorm.DB, eventID string) error
+
+	// ListManualReview returns up to `limit` events awaiting manual review,
+	// oldest first, so an operator can see what is stuck before replaying it.
+	ListManualReview(ctx context.Context, db *gorm.DB, limit int) ([]StripeWebhookEvent, error)
 }
 
 type repoImpl struct{}
@@ -56,15 +82,53 @@ func (r *repoImpl) InsertIfNew(ctx context.Context, db *gorm.DB, e StripeWebhook
 	return res.RowsAffected > 0, nil
 }
 
-func (r *repoImpl) GetUnprocessedOrphans(ctx context.Context, db *gorm.DB, limit int) ([]StripeWebhookEvent, error) {
+func (r *repoImpl) GetUnprocessed(ctx context.Context, db *gorm.DB, limit int) ([]StripeWebhookEvent, error) {
 	var rows []StripeWebhookEvent
 	err := db.WithContext(ctx).
-		Where("processed_at IS NULL AND store_id IS NULL AND manual_review_required = false").
+		Where("processed_at IS NULL AND manual_review_required = false").
 		Order("received_at ASC").
 		Limit(limit).
 		Find(&rows).Error
 	if err != nil {
-		return nil, fmt.Errorf("webhookevents: GetUnprocessedOrphans: %w", err)
+		return nil, fmt.Errorf("webhookevents: GetUnprocessed: %w", err)
+	}
+	return rows, nil
+}
+
+func (r *repoImpl) Get(ctx context.Context, db *gorm.DB, eventID string) (*StripeWebhookEvent, error) {
+	var row StripeWebhookEvent
+	err := db.WithContext(ctx).
+		Where("event_id = ?", eventID).
+		First(&row).Error
+	if err != nil {
+		return nil, fmt.Errorf("webhookevents: Get: %w", err)
+	}
+	return &row, nil
+}
+
+func (r *repoImpl) ClearManualReview(ctx context.Context, db *gorm.DB, eventID string) error {
+	res := db.WithContext(ctx).
+		Model(&StripeWebhookEvent{}).
+		Where("event_id = ?", eventID).
+		Updates(map[string]any{
+			"manual_review_required": false,
+			"retry_count":            0,
+		})
+	if res.Error != nil {
+		return fmt.Errorf("webhookevents: ClearManualReview: %w", res.Error)
+	}
+	return nil
+}
+
+func (r *repoImpl) ListManualReview(ctx context.Context, db *gorm.DB, limit int) ([]StripeWebhookEvent, error) {
+	var rows []StripeWebhookEvent
+	err := db.WithContext(ctx).
+		Where("manual_review_required = true AND processed_at IS NULL").
+		Order("received_at ASC").
+		Limit(limit).
+		Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("webhookevents: ListManualReview: %w", err)
 	}
 	return rows, nil
 }

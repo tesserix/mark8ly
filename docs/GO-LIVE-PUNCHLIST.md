@@ -227,9 +227,26 @@ covered by the DPA. This scales with every new store.
   unknown value 404s, falls back to the *compiled* test-mode catalog, and serves baked test
   amounts against a live account. The chart renders it with no `| default`, and envconfig's
   default applies only to unset, not empty.
-- **Webhook events are silently dropped**: dispatch failure returns 200 so Stripe never
-  retries, while the orphan-recovery query excludes the row forever. All 31 historical
-  events sit unprocessed at exhausted retries, including 7 `invoice.paid`.
+- ~~**Webhook events are silently dropped**~~ **— fixed.** Dispatch failure returned 200 so
+  Stripe never retried, while the orphan-recovery query excluded the row forever. All 31
+  historical events sat unprocessed at exhausted retries, including 7 `invoice.paid`.
+
+  Four mechanisms were nominally in place and none of them ran. The handler resolves the
+  store and calls `SetStoreID` **before** dispatching, so an ordinary handler failure came
+  back with `store_id` populated — and both the recovery query and the stale alert filtered
+  on `store_id IS NULL`, so it was neither retried nor alerted on. Stripe's own three days
+  of redelivery were discarded by the 200; and had they not been, the handler answered
+  every redelivery "duplicate" on the strength of the row existing, without asking whether
+  it had ever processed. `manual_review_required` was a one-way door with no code that
+  cleared it, which is where the 31 ended up.
+
+  Now: recovery and the stale alert select on `processed_at IS NULL` alone; a genuine
+  failure answers 503 so Stripe redelivers; a redelivery of an unprocessed event dispatches
+  again; past the retry cap the event is flagged and answered 200 so Stripe stops;
+  `processed_at` is stamped **inside** the dispatch transaction rather than after it; events
+  whose type is not allowlisted are stamped processed rather than left to churn; and
+  `cmd/webhook-replay` lists what is stuck and puts chosen events back in front of the
+  resolver. **The 31 stuck events are recovered by running that tool** — `-list` first.
 
 ### Email
 - **No "you have a new order" email to the merchant** — the only signal is in-app + device
@@ -240,19 +257,39 @@ covered by the DPA. This scales with every new store.
   takes out verification and password reset, i.e. signup itself.
 
 ### Mobile
-- **Ship `mobile-admin`, hold `mobile-storefront`.** The storefront app has no auth at all
-  (sign-in deliberately disabled, no replacement endpoint) yet ships five screens that
-  cannot function plus a `com.example.shop` bundle id — an Apple 2.1/2.3.1 rejection that
-  would draw scrutiny onto the admin app under the same account.
+- **DECIDED 2026-09-23: `mobile-storefront` is deferred.** It was never tested, and the
+  white-label app it exists for is later work. Nothing can ship it by accident — it has no
+  CI and no release workflow; only `mobile-admin` has one (`mobile-admin-build.yml`,
+  `mobile-admin-ios-release.yml`). Its `com.example.shop` bundle id and missing auth stop
+  being launch risks and become that later project's first tasks.
+
+  **It is not free to leave sitting there, though.** It is the other half of the two-Expo
+  -SDK problem below — `mobile-admin` is on Expo 56, `mobile-storefront` on Expo 52 — and
+  the root hoists the older pins, which is exactly what `mobile-admin`'s four jest
+  `moduleNameMapper` hacks exist to undo ("the monorepo root hoists an older major
+  (pinned by another app in the workspace)"). So a shelved app is degrading the test
+  fidelity of the one that ships. Dropping it from the npm `workspaces` array until it is
+  picked up again would remove the hacks and the divergence in one move.
+- ~~**Ship `mobile-admin`, hold `mobile-storefront`.**~~ Superseded by the decision above.
+  The original reasoning: the storefront app has no auth at all (sign-in deliberately
+  disabled, no replacement endpoint) yet ships five screens that cannot function plus a
+  `com.example.shop` bundle id — an Apple 2.1/2.3.1 rejection that would draw scrutiny
+  onto the admin app under the same account.
 - **Universal links are declared but not served** — AASA and `assetlinks.json` both 404, so
   Android App Links verification fails at install on every device. Either serve them or set
-  `autoVerify: false`; nothing in the app depends on them today.
+  `autoVerify: false`; nothing in the app depends on them today. **This one is
+  `mobile-admin`'s** (`app.config.js:74` declares `applinks:admin.mark8ly.com` with
+  `autoVerify: true`), so deferring the storefront app does not retire it.
 - **No crash reporting in any mobile app.** Highest-regret omission for an app that has
   never run on a stranger's device.
 - **130 test files and 50 routes with zero CI** — every turbo script filters mobile-admin
-  out, and it has no ESLint at all.
+  out (root `package.json` excludes `@repo/mobile-admin` from build, lint, test and
+  check-types), and it has no ESLint at all. Its only workflows are the tag-triggered EAS
+  build and iOS release. This is now the **largest** open mobile item, because it belongs
+  to the app that actually ships.
 - **Two Expo SDK majors in one workspace**, papered over by four jest resolution hacks — so
-  jest and Metro test different dependency graphs, exactly how #719 shipped green.
+  jest and Metro test different dependency graphs, exactly how #719 shipped green. The
+  second major is the deferred `mobile-storefront` (Expo 52 vs 56) — see above.
 - Store consoles still need App Privacy labels, Data Safety, age rating and screenshots by
   hand. Account deletion **does** exist in-app and is reachable, which satisfies both
   stores' hard requirement.

@@ -85,9 +85,18 @@ func (c *Cron) RunOnce(ctx context.Context) error {
 		return err
 	}
 
+	// Any unprocessed event, not only an unattributed one.
+	//
+	// This query carried the same `store_id IS NULL` blind spot as the
+	// resolver: an event that failed inside its handler had a store_id, so
+	// it was neither retried nor alerted on. Silence was the failure mode.
+	//
+	// Events already flagged for manual review are still excluded — they are
+	// alerted once on the way in, and paging every five minutes about work a
+	// human has to schedule is how a channel gets muted.
 	var stale []webhookevents.StripeWebhookEvent
 	err := c.cfg.DB.WithContext(ctx).
-		Where("store_id IS NULL AND processed_at IS NULL AND manual_review_required = false").
+		Where("processed_at IS NULL AND manual_review_required = false").
 		Where("received_at < now() - make_interval(secs => ?)", int64(c.cfg.StaleThreshold/time.Second)).
 		Find(&stale).Error
 	if err != nil {
@@ -97,8 +106,8 @@ func (c *Cron) RunOnce(ctx context.Context) error {
 	for _, e := range stale {
 		if c.cfg.PagerDuty != nil {
 			_ = c.cfg.PagerDuty.Trigger(ctx, fmt.Sprintf(
-				"Stripe webhook orphan >%s: event_id=%s type=%s",
-				c.cfg.StaleThreshold, e.EventID, e.EventType,
+				"Stripe webhook unprocessed >%s: event_id=%s type=%s attributed=%t",
+				c.cfg.StaleThreshold, e.EventID, e.EventType, e.StoreID != nil,
 			))
 		}
 	}

@@ -37,9 +37,17 @@ type StripeHandlerConfig struct {
 	Dispatch     DispatchFunc
 	AllowedTypes map[string]bool
 	MaxBodyBytes int64
-	Now          func() time.Time
-	Logger       *slog.Logger
+	// MaxRetries bounds how many failed dispatches are tolerated before the
+	// event is flagged for manual review instead of asking Stripe to
+	// redeliver. Defaults to defaultMaxRetries; set it from the same config
+	// value as the orphan cron (OrphanRetryMaxCount) so the two agree.
+	MaxRetries int
+	Now        func() time.Time
+	Logger     *slog.Logger
 }
+
+// defaultMaxRetries mirrors dispatch.NewOrphanResolver's own default.
+const defaultMaxRetries = 6
 
 // StripeHandler is the Gin handler for POST /webhooks/stripe-billing.
 type StripeHandler struct {
@@ -105,14 +113,53 @@ func (h *StripeHandler) Handle(c *gin.Context) {
 		return
 	}
 	if !inserted {
-		h.cfg.Logger.Info("stripe: duplicate event ignored",
-			"event_id", eventID, "event_type", eventType)
-		c.JSON(http.StatusOK, gin.H{"status": "duplicate"})
-		return
+		// A redelivery is not automatically a duplicate of WORK done. Stripe
+		// resends for up to three days, and answering every resend "duplicate"
+		// without looking meant a row whose first dispatch failed could never
+		// be retried by Stripe — the one retry mechanism that costs us
+		// nothing to run. Only an event that actually processed is finished.
+		existing, getErr := h.cfg.Repo.Get(c.Request.Context(), h.cfg.DB, eventID)
+		switch {
+		case getErr != nil:
+			h.cfg.Logger.Error("stripe: could not load the existing event",
+				"event_id", eventID, "event_type", eventType, "err", getErr.Error())
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "lookup_failed"})
+			return
+		case existing.ProcessedAt != nil:
+			h.cfg.Logger.Info("stripe: duplicate of an already-processed event ignored",
+				"event_id", eventID, "event_type", eventType)
+			c.JSON(http.StatusOK, gin.H{"status": "duplicate"})
+			return
+		case existing.ManualReviewRequired, existing.RetryCount >= h.maxRetries():
+			// Out of automatic road. Answering 200 stops Stripe from
+			// resending something only a human can now move, and the row
+			// stays visible to an operator via cmd/webhook-replay.
+			h.cfg.Logger.Warn("stripe: redelivery of an event awaiting manual review",
+				"event_id", eventID, "event_type", eventType,
+				"retry_count", existing.RetryCount)
+			c.JSON(http.StatusOK, gin.H{"status": "manual_review_required"})
+			return
+		}
+		h.cfg.Logger.Info("stripe: redelivery of an unprocessed event — retrying dispatch",
+			"event_id", eventID, "event_type", eventType, "retry_count", existing.RetryCount)
+		evt = *existing
 	}
 
-	// 4. Check event-type allowlist. Persisted but not dispatched.
+	// 4. Check event-type allowlist. Persisted for audit, never dispatched —
+	// and stamped processed, because it IS finished: there is no handler and
+	// no later attempt that could change that.
+	//
+	// It used to be left unprocessed, which quietly enrolled every ignored
+	// event in the recovery loop: attributed, dispatched, "no handler for
+	// <type>", retried to the cap, flagged. Harmless-looking noise that
+	// consumed the same retry budget and alert channel as a real failure —
+	// and with recovery no longer blind to attributed events, it would now
+	// page as well.
 	if !allowed {
+		if err := h.cfg.Repo.MarkProcessed(c.Request.Context(), h.cfg.DB, eventID); err != nil {
+			h.cfg.Logger.Warn("stripe: could not stamp an ignored event as processed",
+				"event_id", eventID, "event_type", eventType, "err", err.Error())
+		}
 		h.cfg.Logger.Info("stripe: event_type not in allowlist",
 			"event_id", eventID, "event_type", eventType)
 		c.JSON(http.StatusOK, gin.H{"status": "persisted"})
@@ -129,17 +176,45 @@ func (h *StripeHandler) Handle(c *gin.Context) {
 	// because store_id remains NULL and processing_error captures the orphan reason,
 	// giving operators visibility. MarkProcessed is NOT called, satisfying the SLA.
 	if err := h.dispatchLocked(c.Request.Context(), evt); err != nil {
-		h.cfg.Logger.Error("stripe: dispatch failed (will retry via cron)",
-			"event_id", eventID, "event_type", eventType,
-			"err", billingstripe.SanitizeForLog(err))
-		_, _ = h.cfg.Repo.IncrementRetry(
+		count, _ := h.cfg.Repo.IncrementRetry(
 			c.Request.Context(), h.cfg.DB, eventID, billingstripe.SanitizeForLog(err))
-		c.JSON(http.StatusOK, gin.H{"status": "retry_scheduled"})
+
+		// Ask Stripe to send it again. This used to answer 200, which threw
+		// away three days of free exponential retries and left the in-process
+		// cron as the only recovery — a cron that could not see this event at
+		// all once store_id was set. Two retry mechanisms were nominally in
+		// place and neither ran.
+		if count < h.maxRetries() {
+			h.cfg.Logger.Error("stripe: dispatch failed — asking Stripe to redeliver",
+				"event_id", eventID, "event_type", eventType, "retry_count", count,
+				"err", billingstripe.SanitizeForLog(err))
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "dispatch_failed"})
+			return
+		}
+
+		// Past the cap, stop the churn: flag it, take the 200, and let an
+		// operator pick it up. Stripe would otherwise keep resending an
+		// event that has failed the same way every time.
+		_ = h.cfg.Repo.FlagManualReview(
+			c.Request.Context(), h.cfg.DB, eventID, "retry cap exceeded at the webhook endpoint")
+		h.cfg.Logger.Error("stripe: dispatch failed past the retry cap — flagged for manual review",
+			"event_id", eventID, "event_type", eventType, "retry_count", count,
+			"err", billingstripe.SanitizeForLog(err))
+		c.JSON(http.StatusOK, gin.H{"status": "manual_review_required"})
 		return
 	}
 
-	_ = h.cfg.Repo.MarkProcessed(c.Request.Context(), h.cfg.DB, eventID)
 	c.JSON(http.StatusOK, gin.H{"status": "processed"})
+}
+
+// maxRetries is the number of failed attempts tolerated before an event is
+// handed to a human. It matches the orphan cron's cap so an event cannot be
+// flagged by one path while the other still considers it live.
+func (h *StripeHandler) maxRetries() int {
+	if h.cfg.MaxRetries > 0 {
+		return h.cfg.MaxRetries
+	}
+	return defaultMaxRetries
 }
 
 // dispatchLocked resolves the customer → store_id mapping and, if found,
@@ -167,7 +242,15 @@ func (h *StripeHandler) dispatchLocked(ctx context.Context, evt webhookevents.St
 	// budget.
 	ctx, deferred := postcommit.WithDeferredSends(ctx)
 	if err := subscription.WithAdvisoryLock(ctx, h.cfg.DB, storeID, func(tx *gorm.DB) error {
-		return h.cfg.Dispatch(ctx, tx, evt)
+		if derr := h.cfg.Dispatch(ctx, tx, evt); derr != nil {
+			return derr
+		}
+		// Stamped inside the dispatch transaction. Stamping it afterwards
+		// left a window where the effects were committed and the row still
+		// read unprocessed — harmless while nothing ever retried such a row,
+		// and not harmless now that Stripe redelivery and the recovery loop
+		// both re-attempt one.
+		return h.cfg.Repo.MarkProcessed(ctx, tx, evt.EventID)
 	}); err != nil {
 		// Rolled back: the pending sends describe side effects that never
 		// happened, so drop them rather than draining.

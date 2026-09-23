@@ -43,6 +43,19 @@ var transitionTable = map[subscription.SubscriptionStatus]map[subscription.Subsc
 	subscription.StatusTrialing: {
 		subscription.StatusActive:  {SeverityInfo, ActorSystem, "§17.2 trialing → active (card added; first charge day 90)"},
 		subscription.StatusExpired: {SeverityWarning, ActorSystem, "§17.2 trialing → expired (day 90, no card)"},
+		// Added 2026-09-23, resolving a contradiction between §15 and this
+		// table. §15 has always said "active and trialing are the only
+		// cancellable states" and cancel.IsCancellableStatus implements that,
+		// but no trialing → cancel_scheduled move existed here — so a
+		// merchant cancelling during a trial passed the guard and fell out of
+		// the state machine as a 500.
+		//
+		// Resolved in favour of §15 because a trial carries a card for the
+		// day-90 deferred charge: a merchant who wants out needs a way to
+		// stop that charge, and since the cancellation now reaches Stripe
+		// (cancel_at_period_end) this transition is exactly that path. The
+		// trialing → expired move above stays for trials that simply run out.
+		subscription.StatusCancelScheduled: {SeverityInfo, ActorUser, "§17.2 trialing → cancel_scheduled (merchant cancels during the trial)"},
 	},
 	subscription.StatusActive: {
 		subscription.StatusPastDue:               {SeverityWarning, ActorSystem, "§17.2 active → past_due (invoice.payment_failed)"},
@@ -60,6 +73,18 @@ var transitionTable = map[subscription.SubscriptionStatus]map[subscription.Subsc
 	subscription.StatusCancelScheduled: {
 		subscription.StatusActive:  {SeverityInfo, ActorUser, "§17.2 cancel_scheduled → active (save-offer reversal or card re-added)"},
 		subscription.StatusExpired: {SeverityWarning, ActorSystem, "§17.2 cancel_scheduled → expired (current_period_end)"},
+		// The reversal's other half, and the direct consequence of admitting
+		// trialing → cancel_scheduled above: a merchant who cancels mid-trial
+		// and then changes their mind must land back in the trial they were
+		// in, not in `active`.
+		//
+		// Reversing a trial cancellation to `active` would say they are
+		// paying when they have not been charged: the trial reminder and
+		// expiry crons select on `trialing`, so they would stop being told
+		// their trial was ending and then simply be billed. The row would
+		// have caught up on its own at the first invoice, which is exactly
+		// the kind of "eventually correct" that nobody is watching.
+		subscription.StatusTrialing: {SeverityInfo, ActorUser, "§17.2 cancel_scheduled → trialing (save-offer reversal during a trial)"},
 	},
 	subscription.StatusExpired: {
 		subscription.StatusActive:      {SeverityInfo, ActorUser, "§17.2 expired → active (card re-added during grace)"},

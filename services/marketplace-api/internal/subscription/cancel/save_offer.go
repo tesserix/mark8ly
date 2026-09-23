@@ -2,6 +2,9 @@ package cancel
 
 import (
 	"context"
+	"time"
+
+	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 
 	"github.com/mark8ly/marketplace-api/internal/promo"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
@@ -58,12 +61,14 @@ func SaveOfferMessage(discountApplied bool) string {
 	return saveOfferMsgReversalOnly
 }
 
-// saveOfferOutput builds the response for a completed save-offer reversal. The
-// status is active either way: whether the discount applied has no bearing on
-// the reversal, which has already been committed by the time this is called.
-func saveOfferOutput(discountApplied bool) Output {
+// saveOfferOutput builds the response for a completed save-offer reversal.
+// `restored` is the status the subscription went back to — active, or trialing
+// when the trial is still running. Whether the discount applied has no bearing
+// on the reversal, which has already been committed by the time this is
+// called.
+func saveOfferOutput(restored subscription.SubscriptionStatus, discountApplied bool) Output {
 	return Output{
-		Status:       string(subscription.StatusActive),
+		Status:       string(restored),
 		SaveOfferMsg: SaveOfferMessage(discountApplied),
 	}
 }
@@ -133,4 +138,42 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// restoredStatus is the status a save-offer reversal returns the subscription
+// to: the trial it came from while that trial is still running, otherwise
+// active.
+//
+// Reversing a mid-trial cancellation to `active` would claim the merchant is
+// paying before their first invoice. The trial reminder and expiry crons
+// select on `trialing`, so they would quietly stop being told the trial was
+// ending and then simply be billed — a row that corrects itself at the first
+// invoice, weeks after the messages that should have preceded it.
+//
+// STRIPE IS THE AUTHORITY, not the local trial window. trial.EndsAt answers
+// "when would this trial end" — the operator-extended date, else signup plus
+// the trial length — which is a DIFFERENT question from "is this a trial".
+// A merchant who added a card on day 30 converted to active while
+// created_at + 90d is still sixty days away, and deciding from the window
+// alone would have restored them to `trialing`: a paying subscriber demoted
+// into a trial, back inside the expiry crons. Stripe's own status does not
+// have that ambiguity.
+//
+// stripeStatus is empty for a subscription Stripe never billed — a trial that
+// added no card. Those cannot have converted (conversion requires the card),
+// so the local window is a sound answer for them and the only one available.
+func restoredStatus(sub *subscription.StoreSubscription, stripeStatus string, now time.Time) subscription.SubscriptionStatus {
+	if sub == nil {
+		return subscription.StatusActive
+	}
+	if stripeStatus != "" {
+		if stripeStatus == StatusTrialing {
+			return subscription.StatusTrialing
+		}
+		return subscription.StatusActive
+	}
+	if trial.EndsAt(*sub).After(now) {
+		return subscription.StatusTrialing
+	}
+	return subscription.StatusActive
 }

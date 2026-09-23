@@ -24,6 +24,9 @@ import (
 // can prove the call was made at all — the whole defect was that it never was.
 type recordingCanceller struct {
 	periodEnd time.Time
+	// status is what Stripe says the subscription is. Empty behaves like a
+	// Stripe that reported none, which is the fallback path.
+	status string
 
 	cancelled []string
 	resumed   []string
@@ -31,12 +34,12 @@ type recordingCanceller struct {
 
 func (r *recordingCanceller) CancelAtPeriodEnd(_ context.Context, subscriptionID string) (cancel.StripeState, error) {
 	r.cancelled = append(r.cancelled, subscriptionID)
-	return cancel.StripeState{CancelAtPeriodEnd: true, CurrentPeriodEnd: r.periodEnd}, nil
+	return cancel.StripeState{CancelAtPeriodEnd: true, CurrentPeriodEnd: r.periodEnd, Status: r.status}, nil
 }
 
 func (r *recordingCanceller) Resume(_ context.Context, subscriptionID string) (cancel.StripeState, error) {
 	r.resumed = append(r.resumed, subscriptionID)
-	return cancel.StripeState{CancelAtPeriodEnd: false, CurrentPeriodEnd: r.periodEnd}, nil
+	return cancel.StripeState{CancelAtPeriodEnd: false, CurrentPeriodEnd: r.periodEnd, Status: r.status}, nil
 }
 
 func seedCancellableSub(t *testing.T, db *gorm.DB, status subscription.SubscriptionStatus, stripeSubID *string) subscription.StoreSubscription {
@@ -149,7 +152,9 @@ func TestSaveOffer_ClearsTheScheduleAtStripe(t *testing.T) {
 		Where("id = ?", row.ID).
 		Update("cancel_at_period_end", true).Error)
 
-	stripe := &recordingCanceller{periodEnd: time.Now().Add(12 * 24 * time.Hour).UTC()}
+	// Stripe says active: this is a paying subscription, whatever the local
+	// trial window would compute.
+	stripe := &recordingCanceller{periodEnd: time.Now().Add(12 * 24 * time.Hour).UTC(), status: "active"}
 	svc := cancel.NewService(db, subscription.NewRepository(), nil, slog.Default()).WithStripe(stripe)
 
 	out, err := svc.Cancel(context.Background(), cancel.Input{
@@ -167,6 +172,67 @@ func TestSaveOffer_ClearsTheScheduleAtStripe(t *testing.T) {
 	require.NoError(t, db.Where("id = ?", row.ID).First(&updated).Error)
 	assert.Equal(t, subscription.StatusActive, updated.Status)
 	assert.False(t, updated.CancelAtPeriodEnd, "the local flag must not outlive the reversal")
+}
+
+// TestSaveOffer_DuringATrial_ReturnsToTheTrial — the reversal's other half.
+//
+// Reversing a mid-trial cancellation to `active` would claim the merchant is
+// paying before their first invoice, and the trial reminder and expiry crons
+// select on `trialing` — so they would quietly stop being told the trial was
+// ending and then simply be billed. They go back to the trial they were in.
+func TestSaveOffer_DuringATrial_ReturnsToTheTrial(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+
+	row := seedCancellableSub(t, db, subscription.StatusCancelScheduled, stringPtr("sub_live_trial_save"))
+	stripe := &recordingCanceller{periodEnd: time.Now().Add(80 * 24 * time.Hour).UTC(), status: cancel.StatusTrialing}
+
+	svc := cancel.NewService(db, subscription.NewRepository(), nil, slog.Default()).WithStripe(stripe)
+	out, err := svc.Cancel(context.Background(), cancel.Input{
+		TenantID:        row.TenantID,
+		StoreID:         row.StoreID,
+		Actor:           "user:" + uuid.NewString(),
+		AcceptSaveOffer: true,
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"sub_live_trial_save"}, stripe.resumed)
+	assert.Equal(t, string(subscription.StatusTrialing), out.Status,
+		"a trial that is still running is what they return to")
+
+	var after subscription.StoreSubscription
+	require.NoError(t, db.Where("id = ?", row.ID).First(&after).Error)
+	assert.Equal(t, subscription.StatusTrialing, after.Status)
+	assert.False(t, after.CancelAtPeriodEnd)
+}
+
+// TestSaveOffer_ForAnEarlyConverter_ReturnsToActive is the case the local
+// trial window gets wrong.
+//
+// A merchant who adds a card on day 30 converts to active while
+// created_at + 90d is still sixty days away. Deciding from the window alone
+// would restore them to `trialing` — a paying subscriber demoted into a
+// trial and back inside the expiry crons. Stripe knows they are active.
+func TestSaveOffer_ForAnEarlyConverter_ReturnsToActive(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+
+	row := seedCancellableSub(t, db, subscription.StatusCancelScheduled, stringPtr("sub_live_early"))
+	// Created now: the local window says "still in trial" and is wrong.
+	stripe := &recordingCanceller{periodEnd: time.Now().Add(10 * 24 * time.Hour).UTC(), status: "active"}
+
+	svc := cancel.NewService(db, subscription.NewRepository(), nil, slog.Default()).WithStripe(stripe)
+	out, err := svc.Cancel(context.Background(), cancel.Input{
+		TenantID:        row.TenantID,
+		StoreID:         row.StoreID,
+		Actor:           "user:" + uuid.NewString(),
+		AcceptSaveOffer: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, string(subscription.StatusActive), out.Status,
+		"Stripe is the authority on whether this is still a trial")
+
+	var after subscription.StoreSubscription
+	require.NoError(t, db.Where("id = ?", row.ID).First(&after).Error)
+	assert.Equal(t, subscription.StatusActive, after.Status)
 }
 
 // TestCancel_WithoutAStripeSubscriptionStaysLocal — a subscription Stripe is
@@ -189,21 +255,52 @@ func TestCancel_WithoutAStripeSubscriptionStaysLocal(t *testing.T) {
 	assert.Equal(t, string(subscription.StatusCancelScheduled), out.Status)
 }
 
-// TestCancel_WhileTrialing_IsRefusedNotA500 pins the §15/§17.2 contradiction
-// until someone decides which spec is right.
+// TestCancel_WhileTrialing_StopsTheDeferredCharge is the §15/§17.2
+// contradiction, resolved.
 //
-// cancel.IsCancellableStatus admits trialing; the §17.2 transition table has
-// no trialing → cancel_scheduled move. A merchant cancelling during a trial
-// therefore passed the guard and fell out of the state machine, which the
-// handler maps to 500 internal_error. Refusing up front is not a decision
-// that trials are uncancellable — it is a decision not to answer with a
-// server error, and not to cancel at Stripe a subscription whose local row
-// cannot record it.
-func TestCancel_WhileTrialing_IsRefusedNotA500(t *testing.T) {
+// §15 always called trialing cancellable and cancel.IsCancellableStatus
+// implemented that, but the §17.2 table carried no trialing →
+// cancel_scheduled move, so the request passed the guard and fell out of the
+// state machine as a 500. Resolved in favour of §15: a trial holds a card for
+// the day-90 deferred charge, and a merchant who wants out needs a way to
+// stop it. That way is this — the cancellation reaches Stripe, which is what
+// prevents the first invoice.
+func TestCancel_WhileTrialing_StopsTheDeferredCharge(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stores")
 
 	row := seedCancellableSub(t, db, subscription.StatusTrialing, stringPtr("sub_live_trial"))
-	stripe := &recordingCanceller{periodEnd: time.Now().Add(40 * 24 * time.Hour).UTC()}
+	trialEnd := time.Now().Add(40 * 24 * time.Hour).UTC().Truncate(time.Second)
+	stripe := &recordingCanceller{periodEnd: trialEnd}
+
+	svc := cancel.NewService(db, subscription.NewRepository(), nil, slog.Default()).WithStripe(stripe)
+	out, err := svc.Cancel(context.Background(), cancel.Input{
+		TenantID: row.TenantID,
+		StoreID:  row.StoreID,
+		Actor:    "user:" + uuid.NewString(),
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"sub_live_trial"}, stripe.cancelled,
+		"Stripe is what holds the deferred charge — a local-only cancel still bills them at day 90")
+	assert.Equal(t, string(subscription.StatusCancelScheduled), out.Status)
+	assert.Equal(t, trialEnd.Format("2006-01-02T15:04:05Z"), out.CancelsAt,
+		"a cancelled trial runs to its trial end, which is the period end Stripe reports")
+
+	var after subscription.StoreSubscription
+	require.NoError(t, db.Where("id = ?", row.ID).First(&after).Error)
+	assert.Equal(t, subscription.StatusCancelScheduled, after.Status)
+	assert.True(t, after.CancelAtPeriodEnd)
+}
+
+// TestCancel_FromAnUncancellableStatus_Is409NotA500 keeps the guard the
+// contradiction produced. The status check and the transition table are two
+// separate statements of what may be cancelled and can drift apart again; a
+// 409 naming the reason beats a 500 out of the state machine.
+func TestCancel_FromAnUncancellableStatus_Is409NotA500(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+
+	row := seedCancellableSub(t, db, subscription.StatusExpired, stringPtr("sub_live_expired"))
+	stripe := &recordingCanceller{periodEnd: time.Now().Add(24 * time.Hour).UTC()}
 
 	svc := cancel.NewService(db, subscription.NewRepository(), nil, slog.Default()).WithStripe(stripe)
 	_, err := svc.Cancel(context.Background(), cancel.Input{
@@ -215,8 +312,4 @@ func TestCancel_WhileTrialing_IsRefusedNotA500(t *testing.T) {
 	require.ErrorIs(t, err, cancel.ErrNotCancellable)
 	assert.Empty(t, stripe.cancelled,
 		"a state the machine will refuse must not be cancelled at Stripe first")
-
-	var after subscription.StoreSubscription
-	require.NoError(t, db.Where("id = ?", row.ID).First(&after).Error)
-	assert.Equal(t, subscription.StatusTrialing, after.Status, "the row is untouched")
 }

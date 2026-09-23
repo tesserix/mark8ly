@@ -47,6 +47,10 @@ func newHandlerWithMaxRetries(t *testing.T, db *gorm.DB, maxRetries int, dispatc
 		AllowedTypes: map[string]bool{
 			"customer.subscription.updated": true,
 			"checkout.session.completed":    true,
+			// The object on this one IS the customer, which is the shape
+			// that used to be unroutable — see
+			// TestStripeWebhook_CustomerUpdated_ReachesItsHandler.
+			"customer.updated": true,
 		},
 		MaxRetries: maxRetries,
 		Now:        func() time.Time { return fixedNow },

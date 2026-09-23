@@ -2293,6 +2293,12 @@ func main() {
 	// RunWithLock, not RunOnce: two replicas serve this deployment and the
 	// SKIP LOCKED in the fetch query does not serialise them.
 	if billingStripeClient != nil {
+		// Register the heartbeat here, not in the package's init(), so it
+		// is published only by a pod that will really run the pass — a
+		// gauge registered anywhere else sits at unix 0 and reads as "last
+		// succeeded in 1970" forever.
+		reconciliation.MustRegisterCronMetrics(prometheus.DefaultRegisterer)
+
 		reconciler := reconciliation.New(conn, billingStripeClient, auditEmitter, log)
 		if _, err := trialScheduler.AddFunc(reconciliation.Spec, func() {
 			drift, err := reconciler.RunWithLock(workerCtx)

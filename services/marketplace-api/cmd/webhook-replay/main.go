@@ -15,11 +15,25 @@
 // pass and dispatches it under the usual advisory lock, so nothing here
 // bypasses the normal path or applies an effect itself.
 //
+// Not every flagged event is worth replaying. Some will NEVER resolve, and
+// for those -acknowledge closes them out: processed_at stamped, flag cleared,
+// a required -reason recorded. On 2026-09-23 all 31 flagged events were of
+// that kind — none carried the mark8ly_store_id metadata CreateSubscription
+// stamps, and no store_subscriptions row held a Stripe customer id for them
+// to match, so they were events for subscriptions this service never created.
+// Replaying them would have failed six more times and flagged them again.
+//
+// Leaving dead events flagged is its own failure: the next genuinely stuck
+// event is then buried among known-dead ones, and a queue nobody can read is
+// a queue nobody reads.
+//
 // Usage:
 //
 //	DATABASE_URL=... go run ./cmd/webhook-replay -list
 //	DATABASE_URL=... go run ./cmd/webhook-replay -events evt_1,evt_2
 //	DATABASE_URL=... go run ./cmd/webhook-replay -all -dry-run
+//	DATABASE_URL=... go run ./cmd/webhook-replay -all -acknowledge \
+//	    -reason "not a mark8ly subscription: no mark8ly_store_id metadata"
 //
 // -list prints what is stuck and changes nothing. -events replays the named
 // ids. -all replays every flagged event and must be typed deliberately; it
@@ -45,15 +59,21 @@ const listLimit = 500
 
 func main() {
 	var (
-		list   bool
-		all    bool
-		events string
-		dryRun bool
+		list        bool
+		all         bool
+		events      string
+		dryRun      bool
+		acknowledge bool
+		reason      string
 	)
 	flag.BoolVar(&list, "list", false, "print the events awaiting manual review and exit")
 	flag.BoolVar(&all, "all", false, "replay every event awaiting manual review")
 	flag.StringVar(&events, "events", "", "comma-separated event ids to replay")
 	flag.BoolVar(&dryRun, "dry-run", false, "report what would be replayed without writing")
+	flag.BoolVar(&acknowledge, "acknowledge", false,
+		"close the events out instead of replaying them: stamp processed_at, clear the flag, record -reason. For events that will never resolve.")
+	flag.StringVar(&reason, "reason", "",
+		"why these events will never resolve. Required with -acknowledge: an event closed with no explanation is indistinguishable later from one closed by mistake.")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -65,6 +85,14 @@ func main() {
 	}
 	if !list && !all && events == "" {
 		log.Error("webhook-replay: pass -list, -events, or -all")
+		os.Exit(1)
+	}
+	if acknowledge && reason == "" {
+		log.Error("webhook-replay: -acknowledge requires -reason")
+		os.Exit(1)
+	}
+	if reason != "" && !acknowledge {
+		log.Error("webhook-replay: -reason only applies with -acknowledge")
 		os.Exit(1)
 	}
 
@@ -100,7 +128,21 @@ func main() {
 	replayed := 0
 	for _, id := range ids {
 		if dryRun {
-			log.Info("webhook-replay: would replay", "event_id", id)
+			action := "replay"
+			if acknowledge {
+				action = "acknowledge"
+			}
+			log.Info("webhook-replay: would "+action, "event_id", id)
+			continue
+		}
+		if acknowledge {
+			if err := repo.Acknowledge(ctx, conn, id, reason); err != nil {
+				log.Error("webhook-replay: could not acknowledge", "event_id", id, "err", err)
+				continue
+			}
+			replayed++
+			log.Info("webhook-replay: closed out, will not be retried",
+				"event_id", id, "reason", reason)
 			continue
 		}
 		if err := repo.ClearManualReview(ctx, conn, id); err != nil {
@@ -113,9 +155,13 @@ func main() {
 		log.Info("webhook-replay: queued for the orphan cron", "event_id", id)
 	}
 
+	next := "the orphan cron dispatches these on its next pass"
+	if acknowledge {
+		next = "closed out; nothing will retry these"
+	}
 	log.Info("webhook-replay: done",
-		"dry_run", dryRun, "targeted", len(ids), "replayed", replayed,
-		"next", "the orphan cron dispatches these on its next pass")
+		"dry_run", dryRun, "acknowledge", acknowledge,
+		"targeted", len(ids), "actioned", replayed, "next", next)
 }
 
 // printStuck reports what is awaiting manual review, so an operator reads

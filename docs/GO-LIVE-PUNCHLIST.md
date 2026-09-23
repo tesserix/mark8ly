@@ -53,7 +53,7 @@ observability and legal, and is listed below rather than repeated.
 | | Item | Why it is stuck |
 |---|---|---|
 | 1 | **`BILLING_WRITES_ENABLED`** | Subscribe and cancel still answer 503. Every condition §1.5 named is met in code; what is missing is a live-mode run — subscribe, cancel, un-cancel, let a period roll — and then the chart flag. Nobody has been charged, and this gate is what keeps that true. |
-| 2 | **Recover the 31 stuck webhook events** | 7 are `invoice.paid`. `cmd/webhook-replay` now ships in the image (#908). Run `webhook-replay -list` in-cluster and read before replaying. |
+| 2 | ~~**Recover the 31 stuck webhook events**~~ **— not recoverable, and not ours.** Checked in production 2026-09-23: none of the 31 carries the `mark8ly_store_id` metadata `CreateSubscription` stamps, and no `store_subscriptions` row holds a Stripe customer id to match them — all five rows are trialing or closed, and a trial has no Stripe customer until card-add. They are events for subscriptions this service never created, arriving on a shared Stripe account. The seven `invoice.paid` among them are NOT mark8ly revenue; this document previously implied they were. Close them out with `webhook-replay -acknowledge -reason ...`, which #911 adds. | Replaying would fail them six more times and re-flag. |
 | 3 | **Counsel, and the NZ decision** | Unchanged and still the longest pole. Removing NZ from the allowlist is a one-line change that reclaims roughly ten weeks. |
 
 ### Observability — the honest remainder

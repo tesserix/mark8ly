@@ -63,6 +63,22 @@ type Repository interface {
 	// ListManualReview returns up to `limit` events awaiting manual review,
 	// oldest first, so an operator can see what is stuck before replaying it.
 	ListManualReview(ctx context.Context, db *gorm.DB, limit int) ([]StripeWebhookEvent, error)
+
+	// Acknowledge closes an event out permanently: processed_at is stamped,
+	// the manual-review flag cleared, and `reason` recorded in
+	// processing_error.
+	//
+	// For events that will NEVER resolve, which replaying cannot help. On
+	// 2026-09-23 all 31 flagged events were of that kind: none carried the
+	// mark8ly_store_id metadata CreateSubscription stamps, so none was for a
+	// subscription this service created, and no store_subscriptions row held
+	// a Stripe customer id for them to match. Replaying would have failed
+	// them six more times and flagged them again.
+	//
+	// Leaving them flagged is not free either: the next genuinely stuck event
+	// would be buried among known-dead ones, which is how a queue stops being
+	// read.
+	Acknowledge(ctx context.Context, db *gorm.DB, eventID, reason string) error
 }
 
 type repoImpl struct{}
@@ -116,6 +132,24 @@ func (r *repoImpl) ClearManualReview(ctx context.Context, db *gorm.DB, eventID s
 		})
 	if res.Error != nil {
 		return fmt.Errorf("webhookevents: ClearManualReview: %w", res.Error)
+	}
+	return nil
+}
+
+func (r *repoImpl) Acknowledge(ctx context.Context, db *gorm.DB, eventID, reason string) error {
+	res := db.WithContext(ctx).
+		Model(&StripeWebhookEvent{}).
+		Where("event_id = ?", eventID).
+		Updates(map[string]any{
+			"processed_at":           time.Now(),
+			"manual_review_required": false,
+			"processing_error":       reason,
+		})
+	if res.Error != nil {
+		return fmt.Errorf("webhookevents: Acknowledge: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("webhookevents: Acknowledge: no event %s", eventID)
 	}
 	return nil
 }

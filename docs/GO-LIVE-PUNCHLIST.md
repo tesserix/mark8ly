@@ -111,7 +111,15 @@ NULL and expires the row), and the merchant-facing copy is re-checked.
 - The cancellation flow's final copy no longer renders "Your plan ends on ." when no date
   is known.
 
-**Found on the way, and NOT decided: §15 and §17.2 disagree about cancelling a trial.**
+**Found on the way, and now DECIDED (2026-09-23): §15 and §17.2 disagreed about cancelling a
+trial; resolved in favour of §15.** A trial carries a card for the day-90 deferred charge, so
+a merchant who wants out needs a way to stop it — and since cancellation reaches Stripe, this
+is that path. `trialing → cancel_scheduled` is now in the §17.2 table, and so is
+`cancel_scheduled → trialing`: un-cancelling mid-trial returns to the trial rather than
+claiming `active`, which would have dropped the merchant out of the trial reminder and expiry
+crons (they select on `trialing`) and then billed them. Original finding below.
+
+**Original finding: §15 and §17.2 disagree about cancelling a trial.**
 `cancel.IsCancellableStatus` admits trialing — "active and trialing are the only
 cancellable states (§15)" — while §17.2's transition table has no
 `trialing → cancel_scheduled` move. A merchant cancelling during a trial passed the guard,

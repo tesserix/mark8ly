@@ -37,7 +37,7 @@ type Input struct {
 
 // Output reports what happened.
 type Output struct {
-	Status       string `json:"status"`                   // "cancel_scheduled" | "active" (save-offer accepted)
+	Status       string `json:"status"`                   // "cancel_scheduled" | "active" | "trialing" (save-offer accepted mid-trial)
 	CancelsAt    string `json:"cancels_at"`               // RFC3339 of current_period_end; "" when save offer accepted
 	SaveOfferMsg string `json:"save_offer_msg,omitempty"` // set when save offer was accepted
 }
@@ -55,6 +55,27 @@ type Service struct {
 	// carries a stripe_subscription_id and finds this nil is refused rather
 	// than cancelled locally; see requireStripe in stripe.go.
 	stripe StripeCanceller
+	// clock is injectable so a test can put a subscription either side of
+	// its trial end without waiting ninety days. Nil means time.Now.
+	clock func() time.Time
+}
+
+// WithClock returns a copy of the Service that reads the time from c. For
+// tests; production leaves it nil and gets time.Now.
+func (s *Service) WithClock(c func() time.Time) *Service {
+	if s == nil || c == nil {
+		return s
+	}
+	cp := *s
+	cp.clock = c
+	return &cp
+}
+
+func (s *Service) now() time.Time {
+	if s.clock != nil {
+		return s.clock().UTC()
+	}
+	return time.Now().UTC()
 }
 
 // requireStripe returns the Stripe subscription id this row is billed under,
@@ -83,14 +104,17 @@ func NewService(db *gorm.DB, repo subscription.Repository, emitter *audit.Emitte
 // Cancel processes a merchant cancellation request.
 //
 // Save-offer branch (§15.1):
-//   - AcceptSaveOffer=true AND status=cancel_scheduled → transition back to active.
-//     The discount (20%-off-6-months) is prospective-only. It is attempted after
-//     the transition via the optional promo dependency, and the response claims a
+//   - AcceptSaveOffer=true AND status=cancel_scheduled → clear the schedule at
+//     Stripe, then transition back to where the subscription came from: active,
+//     or trialing while the trial is still running (see restoredStatus). The
+//     discount (20%-off-6-months) is prospective-only. It is attempted after the
+//     transition via the optional promo dependency, and the response claims a
 //     discount only when one was actually applied (#701).
-//   - AcceptSaveOffer=false (or no offer presented) → transition active → cancel_scheduled
-//     setting cancel_at_period_end=true. The subscription expires at Stripe's
-//     current_period_end; we do NOT call Stripe here because Stripe already has
-//     cancel_at_period_end=true from the webhook layer (or this is a test run).
+//   - AcceptSaveOffer=false (or no offer presented) → set cancel_at_period_end
+//     at Stripe FIRST, then transition active|trialing → cancel_scheduled. The
+//     subscription expires at the period end Stripe reports, which for a
+//     cancelled trial is the trial end — cancelling mid-trial is what stops the
+//     day-90 deferred charge.
 //
 // NOTE: cancellation_reason is intentionally NOT persisted on the
 // store_subscriptions row. The audit_logs table is the system of record for
@@ -117,17 +141,15 @@ func (s *Service) scheduleCancellation(ctx context.Context, in Input, sub *subsc
 		return Output{}, fmt.Errorf("%w: current status=%s", ErrNotCancellable, sub.Status)
 	}
 
-	// §15 and §17.2 disagree about trialing, and this is where that used to
-	// surface as a 500: IsCancellableStatus admits trialing ("active and
-	// trialing are the only cancellable states (§15)") while the §17.2
-	// transition table has no trialing → cancel_scheduled move, so the
-	// request passed the guard above and then fell out of the state machine.
+	// Asked before Stripe, so a state the machine will refuse never causes a
+	// cancellation at Stripe that the local row cannot record.
 	//
-	// Asked here, before Stripe, so a state the machine will refuse never
-	// causes a cancellation at Stripe that the local row cannot record.
-	// Which of the two specs is wrong is a product decision, not this
-	// function's; until it is made, the honest answer is that this
-	// subscription cannot be cancelled from the state it is in.
+	// This guard was added when §15 and §17.2 disagreed about trialing and
+	// the mismatch surfaced as a 500. That contradiction is resolved — the
+	// table now carries trialing → cancel_scheduled — but the check stays:
+	// the status guard above and the transition table are two separate
+	// statements of what is cancellable, and they can drift again. Better a
+	// 409 naming the reason than a 500 out of the state machine.
 	if !statemachine.IsValidTransition(sub.Status, subscription.StatusCancelScheduled) {
 		return Output{}, fmt.Errorf("%w: no %s → %s transition (§17.2)",
 			ErrNotCancellable, sub.Status, subscription.StatusCancelScheduled)
@@ -252,13 +274,14 @@ func (s *Service) acceptSaveOffer(ctx context.Context, in Input, sub *subscripti
 		}
 	}
 
+	restored := restoredStatus(sub, s.now())
 	err = statemachine.Transition(ctx, statemachine.TransitionInput{
 		DB:       s.db,
 		Emitter:  s.emitter,
 		TenantID: in.TenantID,
 		StoreID:  in.StoreID,
 		From:     subscription.StatusCancelScheduled,
-		To:       subscription.StatusActive,
+		To:       restored,
 		Actor:    in.Actor,
 		Reason:   "save_offer_accepted",
 	})
@@ -274,9 +297,10 @@ func (s *Service) acceptSaveOffer(ctx context.Context, in Input, sub *subscripti
 		"store_id", in.StoreID,
 		"tenant_id", in.TenantID,
 		"actor", in.Actor,
+		"restored_status", restored,
 		"discount_applied", discountApplied)
 
-	return saveOfferOutput(discountApplied), nil
+	return saveOfferOutput(restored, discountApplied), nil
 }
 
 // clearCancellationSchedule drops the local cancel_at_period_end flag after

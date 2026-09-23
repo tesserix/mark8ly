@@ -2,6 +2,9 @@ package cancel
 
 import (
 	"context"
+	"time"
+
+	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 
 	"github.com/mark8ly/marketplace-api/internal/promo"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
@@ -58,12 +61,14 @@ func SaveOfferMessage(discountApplied bool) string {
 	return saveOfferMsgReversalOnly
 }
 
-// saveOfferOutput builds the response for a completed save-offer reversal. The
-// status is active either way: whether the discount applied has no bearing on
-// the reversal, which has already been committed by the time this is called.
-func saveOfferOutput(discountApplied bool) Output {
+// saveOfferOutput builds the response for a completed save-offer reversal.
+// `restored` is the status the subscription went back to — active, or trialing
+// when the trial is still running. Whether the discount applied has no bearing
+// on the reversal, which has already been committed by the time this is
+// called.
+func saveOfferOutput(restored subscription.SubscriptionStatus, discountApplied bool) Output {
 	return Output{
-		Status:       string(subscription.StatusActive),
+		Status:       string(restored),
 		SaveOfferMsg: SaveOfferMessage(discountApplied),
 	}
 }
@@ -133,4 +138,27 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// restoredStatus is the status a save-offer reversal returns the subscription
+// to: the trial it came from while that trial is still running, otherwise
+// active.
+//
+// Reversing a mid-trial cancellation to `active` would claim the merchant is
+// paying before their first invoice. The trial reminder and expiry crons
+// select on `trialing`, so they would quietly stop being told the trial was
+// ending and then simply be billed — a row that corrects itself at the first
+// invoice, weeks after the messages that should have preceded it.
+//
+// The trial end is the operator-extended date when there is one, else signup
+// plus the trial length; trial.EndsAt owns that rule and this defers to it
+// rather than restating it.
+func restoredStatus(sub *subscription.StoreSubscription, now time.Time) subscription.SubscriptionStatus {
+	if sub == nil {
+		return subscription.StatusActive
+	}
+	if trial.EndsAt(*sub).After(now) {
+		return subscription.StatusTrialing
+	}
+	return subscription.StatusActive
 }

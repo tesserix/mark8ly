@@ -16,6 +16,12 @@ func TestValidTransitions_MatchSpecExactly(t *testing.T) {
 		{subscription.StatusSignup, subscription.StatusTrialing},
 		{subscription.StatusTrialing, subscription.StatusActive},
 		{subscription.StatusTrialing, subscription.StatusExpired},
+		// §15 has always called trialing cancellable; this table did not
+		// carry the move, so the two disagreed and a merchant cancelling
+		// during a trial got a 500. Resolved in favour of §15 — a trial
+		// holds a card for the day-90 charge, so there has to be a way to
+		// stop it.
+		{subscription.StatusTrialing, subscription.StatusCancelScheduled},
 		{subscription.StatusActive, subscription.StatusPastDue},
 		{subscription.StatusActive, subscription.StatusPaymentActionRequired},
 		{subscription.StatusActive, subscription.StatusCancelScheduled},
@@ -25,6 +31,11 @@ func TestValidTransitions_MatchSpecExactly(t *testing.T) {
 		{subscription.StatusPaymentActionRequired, subscription.StatusPastDue},
 		{subscription.StatusCancelScheduled, subscription.StatusActive},
 		{subscription.StatusCancelScheduled, subscription.StatusExpired},
+		// The reversal's other half: un-cancelling mid-trial returns to the
+		// trial, not to `active`. Reversing to active would claim they are
+		// paying before the first invoice and drop them out of the trial
+		// reminder and expiry crons, which select on `trialing`.
+		{subscription.StatusCancelScheduled, subscription.StatusTrialing},
 		{subscription.StatusExpired, subscription.StatusActive},
 		{subscription.StatusExpired, subscription.StatusStoreClosed},
 		{subscription.StatusStoreClosed, subscription.StatusActive},

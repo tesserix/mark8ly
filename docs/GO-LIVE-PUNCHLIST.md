@@ -111,6 +111,17 @@ NULL and expires the row), and the merchant-facing copy is re-checked.
 - The cancellation flow's final copy no longer renders "Your plan ends on ." when no date
   is known.
 
+**Found on the way, and NOT decided: §15 and §17.2 disagree about cancelling a trial.**
+`cancel.IsCancellableStatus` admits trialing — "active and trialing are the only
+cancellable states (§15)" — while §17.2's transition table has no
+`trialing → cancel_scheduled` move. A merchant cancelling during a trial passed the guard,
+fell out of the state machine, and got a **500**. It is now refused up front as
+"not cancellable" (409) and no Stripe call is made for a state the local row cannot
+record. That is deliberately not an answer to whether a trial *should* be cancellable —
+it is only a refusal to answer with a server error. Someone has to pick: add the
+transition to §17.2, or drop trialing from §15. Nobody is hitting it today because the
+route is 503.
+
 What remains is a decision, not code: an end-to-end run against a live-mode test
 subscription — subscribe, cancel, un-cancel, let a period roll — and then
 `BILLING_WRITES_ENABLED=true` in the chart. Until someone does that, subscribe and cancel

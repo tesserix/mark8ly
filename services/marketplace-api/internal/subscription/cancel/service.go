@@ -117,6 +117,22 @@ func (s *Service) scheduleCancellation(ctx context.Context, in Input, sub *subsc
 		return Output{}, fmt.Errorf("%w: current status=%s", ErrNotCancellable, sub.Status)
 	}
 
+	// §15 and §17.2 disagree about trialing, and this is where that used to
+	// surface as a 500: IsCancellableStatus admits trialing ("active and
+	// trialing are the only cancellable states (§15)") while the §17.2
+	// transition table has no trialing → cancel_scheduled move, so the
+	// request passed the guard above and then fell out of the state machine.
+	//
+	// Asked here, before Stripe, so a state the machine will refuse never
+	// causes a cancellation at Stripe that the local row cannot record.
+	// Which of the two specs is wrong is a product decision, not this
+	// function's; until it is made, the honest answer is that this
+	// subscription cannot be cancelled from the state it is in.
+	if !statemachine.IsValidTransition(sub.Status, subscription.StatusCancelScheduled) {
+		return Output{}, fmt.Errorf("%w: no %s → %s transition (§17.2)",
+			ErrNotCancellable, sub.Status, subscription.StatusCancelScheduled)
+	}
+
 	// Stripe first, and the local transition only if it took.
 	//
 	// The other order is what shipped: the row said cancel_scheduled while
@@ -168,6 +184,8 @@ func (s *Service) scheduleCancellation(ctx context.Context, in Input, sub *subsc
 		Reason:   reasonLabel("merchant_cancelled", in.SurveyReason),
 	})
 	if err != nil {
+		// The pre-check above makes this reachable only by a concurrent
+		// writer moving the row underneath us, so it stays a plain failure.
 		return Output{}, fmt.Errorf("cancel: transition: %w", err)
 	}
 

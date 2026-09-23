@@ -169,12 +169,12 @@ func TestSaveOffer_ClearsTheScheduleAtStripe(t *testing.T) {
 	assert.False(t, updated.CancelAtPeriodEnd, "the local flag must not outlive the reversal")
 }
 
-// TestCancel_WithoutAStripeSubscriptionStaysLocal — a trial that never added
-// a card has no Stripe subscription to cancel, and must not be blocked on one.
+// TestCancel_WithoutAStripeSubscriptionStaysLocal — a subscription Stripe is
+// not billing has nothing to cancel there, and must not be blocked on one.
 func TestCancel_WithoutAStripeSubscriptionStaysLocal(t *testing.T) {
 	db := testdb.NewDB(t, "store_subscriptions", "stores")
 
-	row := seedCancellableSub(t, db, subscription.StatusTrialing, nil)
+	row := seedCancellableSub(t, db, subscription.StatusActive, nil)
 	stripe := &recordingCanceller{periodEnd: time.Now().Add(24 * time.Hour).UTC()}
 
 	svc := cancel.NewService(db, subscription.NewRepository(), nil, slog.Default()).WithStripe(stripe)
@@ -187,4 +187,36 @@ func TestCancel_WithoutAStripeSubscriptionStaysLocal(t *testing.T) {
 
 	assert.Empty(t, stripe.cancelled, "there is no Stripe subscription to cancel")
 	assert.Equal(t, string(subscription.StatusCancelScheduled), out.Status)
+}
+
+// TestCancel_WhileTrialing_IsRefusedNotA500 pins the §15/§17.2 contradiction
+// until someone decides which spec is right.
+//
+// cancel.IsCancellableStatus admits trialing; the §17.2 transition table has
+// no trialing → cancel_scheduled move. A merchant cancelling during a trial
+// therefore passed the guard and fell out of the state machine, which the
+// handler maps to 500 internal_error. Refusing up front is not a decision
+// that trials are uncancellable — it is a decision not to answer with a
+// server error, and not to cancel at Stripe a subscription whose local row
+// cannot record it.
+func TestCancel_WhileTrialing_IsRefusedNotA500(t *testing.T) {
+	db := testdb.NewDB(t, "store_subscriptions", "stores")
+
+	row := seedCancellableSub(t, db, subscription.StatusTrialing, stringPtr("sub_live_trial"))
+	stripe := &recordingCanceller{periodEnd: time.Now().Add(40 * 24 * time.Hour).UTC()}
+
+	svc := cancel.NewService(db, subscription.NewRepository(), nil, slog.Default()).WithStripe(stripe)
+	_, err := svc.Cancel(context.Background(), cancel.Input{
+		TenantID: row.TenantID,
+		StoreID:  row.StoreID,
+		Actor:    "user:" + uuid.NewString(),
+	})
+
+	require.ErrorIs(t, err, cancel.ErrNotCancellable)
+	assert.Empty(t, stripe.cancelled,
+		"a state the machine will refuse must not be cancelled at Stripe first")
+
+	var after subscription.StoreSubscription
+	require.NoError(t, db.Where("id = ?", row.ID).First(&after).Error)
+	assert.Equal(t, subscription.StatusTrialing, after.Status, "the row is untouched")
 }

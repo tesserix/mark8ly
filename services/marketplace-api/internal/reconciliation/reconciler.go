@@ -92,7 +92,7 @@ var lastSuccessTimestamp = prometheus.NewGauge(
 	prometheus.GaugeOpts{
 		Namespace: "mark8ly",
 		Name:      "subscription_reconciliation_last_success_timestamp_seconds",
-		Help:      "Unix time this replica last COMPLETED a reconciliation pass. Never advanced by a failed pass. Aggregate with max() across replicas — only the advisory-lock winner runs the pass.",
+		Help:      "Unix time this replica last COMPLETED a reconciliation pass, seeded to process start so a fresh pod is not instantly stale. Never advanced by a FAILED pass. Aggregate with max() across replicas — only the advisory-lock winner runs the pass.",
 	},
 )
 
@@ -143,6 +143,22 @@ func publishZeroSeries(vec *prometheus.CounterVec) {
 // same shape, as billing/consolecatalog.MustRegisterMetrics.
 func MustRegisterCronMetrics(reg prometheus.Registerer) {
 	reg.MustRegister(lastSuccessTimestamp)
+
+	// Seed it to NOW, not zero.
+	//
+	// Registering alone leaves a gauge at 0, and 0 unix time reads as "last
+	// succeeded in 1970" — so a freshly deployed pod is instantly 56 years
+	// stale and StripeReconciliationStale goes pending the moment it starts.
+	// That is not hypothetical: it happened on the deploy that shipped this
+	// gauge, which sat in `pending` between the rollout and its first 02:15.
+	//
+	// The gauge is registered here precisely because the cron IS wired on
+	// this pod, so the honest reading at startup is "nothing has been missed
+	// yet", not "nothing has ever run". A pod that then fails to complete a
+	// pass goes stale 26h after boot, which is the signal worth paging on —
+	// the daily 02:15 falls inside any 26h window, so a live pod always gets
+	// a chance to advance it before the threshold.
+	lastSuccessTimestamp.SetToCurrentTime()
 }
 
 // billablePlans are the plans that have a Stripe Price object in the catalog.

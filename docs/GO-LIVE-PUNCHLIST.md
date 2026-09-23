@@ -36,6 +36,86 @@ path-filtered check permanently blocks any PR that does not touch those paths.
 
 ---
 
+## 0.5 Open items as of 2026-09-23, end of session
+
+Scoped to mark8ly. Estate-wide problems found on the way (a Document AI
+refresh failure in `01-foundation`, for one) are recorded in their own repos
+rather than here.
+
+**Section 1 is closed.** All four blockers that opened it — checkout pricing,
+the internet-reachable `/internal/*`, the cross-tenant IDOR cluster, and
+platform-api failing open to owner — are done, along with §1.5's billing
+cancellation. What remains in §1 is §1.6 through §1.11, which is entirely
+observability and legal, and is listed below rather than repeated.
+
+### Needs a person, not a patch
+
+| | Item | Why it is stuck |
+|---|---|---|
+| 1 | **`BILLING_WRITES_ENABLED`** | Subscribe and cancel still answer 503. Every condition §1.5 named is met in code; what is missing is a live-mode run — subscribe, cancel, un-cancel, let a period roll — and then the chart flag. Nobody has been charged, and this gate is what keeps that true. |
+| 2 | **Recover the 31 stuck webhook events** | 7 are `invoice.paid`. `cmd/webhook-replay` now ships in the image (#908). Run `webhook-replay -list` in-cluster and read before replaying. |
+| 3 | **Counsel, and the NZ decision** | Unchanged and still the longest pole. Removing NZ from the allowlist is a one-line change that reclaims roughly ten weeks. |
+
+### Observability — the honest remainder
+
+Today closed the correctness and security items. The estate's ability to TELL
+you something broke is very nearly where it was this morning, and it cost real
+time twice during this session:
+
+- Mid-investigation, pod logs read an hour earlier returned zero lines — the
+  ring buffer had rotated and the evidence was simply gone (§1.8, Cloud
+  Logging is disabled on the cluster). A question that should have been
+  settled from logs had to be settled by re-running a job, which only worked
+  because the failure was reproducible.
+- A 17-minute platform-api outage reached the operator through a Kargo
+  promotion alert rather than through anything watching platform-api.
+
+Still open, unchanged: §1.6 postgres metrics evaluating over an absent series,
+§1.7 Alertmanager discarding every `severity: warning`, §1.8 no log
+aggregation, §1.9 async replication with unsupervised failover, §1.10 three-day
+backup retention never restore-tested, §1.11 no shopper privacy notice and one
+shared OpenPanel id across all merchants.
+
+tesserix-k8s#1066 added external uptime checks and #1065/#1076 added tunnel
+rules that now route to Slack, so the OUTSIDE-IN view improved today. Nothing
+above it did.
+
+### Correctness and product, still open
+
+- **Funnel instrumentation.** Still zero `.track(`/`.capture(` repo-wide. Two
+  days of work, and without it none of the launch targets are computable —
+  the highest value-per-hour item in this document.
+- **Sentry** is declared in config and read by nothing.
+- **Fail-open secrets at boot.** `MARKETPLACE_STOREFRONT_KEY` and
+  `AUDIT_INGEST_SECRET` still default to `""` and no-op their middleware.
+  `platformauth.RequireInternalAuth` has the same shape —
+  `RequireInternalAuthStrict` exists, 503s instead, and nothing uses it.
+- **`reconciliation-cron`** exists in `cmd/` and is in no Dockerfile or
+  CronJob, so `StripeReconciliationDrift` can never fire. Same class as the
+  `webhook-replay` omission #908 fixed; worth doing next.
+- **`CONSOLE_CATALOG_MODE` fails open** to the compiled test-mode catalog.
+- **Email:** no merchant "new order" notification, no "subscription cancelled"
+  confirmation.
+- **mobile-admin:** universal links declared but AASA/`assetlinks.json` 404, no
+  crash reporting, and 130 test files with zero CI. `mobile-storefront` is
+  deferred (see Mobile below), and dropping it from the npm workspaces would
+  remove the four jest resolution hacks it forces on mobile-admin.
+- **§3 known-broken** is unchanged: Ireland silently dropped, the second-store
+  country gate, multi-store switching, the unenforced 14-day tax window, and a
+  CRM holding 259 leads with no templates.
+
+### A pattern worth carrying forward
+
+Three separate things today were configured and inert: a conformance suite
+reporting the wrong cause for every 503, five tunnel alert rules routing to
+`null`, and a credentials file nobody had ignored. Each looked correct in a
+review and on a dashboard. That is the same failure as the ServiceMonitor
+scraped for 228 days with no rule reading it, and as `reconciliation-cron`
+above. **"Does it exist" is the wrong question; "is it wired end to end" is
+the one that finds these.**
+
+---
+
 ## 1. Must fix before a single real merchant touches this
 
 Ordered by what I would do first. Everything here is live today.

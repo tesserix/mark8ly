@@ -79,17 +79,36 @@ func (h *SegmentHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"data": ToSegmentResponse(seg)})
 }
 
-// Get handles GET /admin/stores/:storeId/segments/:id.
-func (h *SegmentHandler) Get(c *gin.Context) {
+// requireSegmentInStore parses :id, loads the segment, and proves it belongs
+// to :storeId.
+//
+// StoreMiddleware proves only that :storeId belongs to the caller's tenant.
+// campaign.Service.GetSegment takes a bare segment id, so without this a
+// staff user could read, rewrite or delete another tenant's segment — and a
+// segment is the recipient list a campaign sends to.
+func (h *SegmentHandler) requireSegmentInStore(c *gin.Context) (*campaign.CustomerSegment, bool) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
-		return
+		return nil, false
 	}
 
 	seg, err := h.svc.GetSegment(c.Request.Context(), id)
 	if err != nil {
 		RespondErr(c, err, h.logger)
+		return nil, false
+	}
+	if seg.StoreID.String() != c.Param("storeId") {
+		RespondErr(c, apperrors.NotFound("segment"), h.logger)
+		return nil, false
+	}
+	return seg, true
+}
+
+// Get handles GET /admin/stores/:storeId/segments/:id.
+func (h *SegmentHandler) Get(c *gin.Context) {
+	seg, ok := h.requireSegmentInStore(c)
+	if !ok {
 		return
 	}
 
@@ -98,21 +117,14 @@ func (h *SegmentHandler) Get(c *gin.Context) {
 
 // Update handles PATCH /admin/stores/:storeId/segments/:id.
 func (h *SegmentHandler) Update(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
+	existing, ok := h.requireSegmentInStore(c)
+	if !ok {
 		return
 	}
 
 	var req UpdateSegmentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
-		return
-	}
-
-	existing, err := h.svc.GetSegment(c.Request.Context(), id)
-	if err != nil {
-		RespondErr(c, err, h.logger)
 		return
 	}
 
@@ -135,13 +147,12 @@ func (h *SegmentHandler) Update(c *gin.Context) {
 
 // Delete handles DELETE /admin/stores/:storeId/segments/:id.
 func (h *SegmentHandler) Delete(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
+	existing, ok := h.requireSegmentInStore(c)
+	if !ok {
 		return
 	}
 
-	if err := h.svc.DeleteSegment(c.Request.Context(), id); err != nil {
+	if err := h.svc.DeleteSegment(c.Request.Context(), existing.ID); err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}

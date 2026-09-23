@@ -24,7 +24,8 @@ mobile apps in the stores, and a public launch. All four.
 | ✅ | AU Stripe Tax instructions reversed in 4 documents; go-live runbook status corrected (#885) |
 | ✅ | Base image digests bumped **and repinned by dated tag** so Renovate can see them (#883) — containers and both e2e suites green again after 11 days dead |
 | ✅ | `required_status_checks: CI gate` added to the `main` ruleset |
-| 🔴 | **`/internal/*` 404 at the ingress gateway — tesserix-k8s PR #1063 is STILL OPEN.** Checks pass; blocked on an approving review. Session minting for any user in any tenant is reachable from the internet until this merges, and the secret must be rotated afterwards. |
+| ✅ | **`/internal/*` 404 at the ingress gateway** — tesserix-k8s #1063 merged 2026-09-21; `POST https://auth.mark8ly.com/internal/mint-session` now answers 404, not 401. **`MARKETPLACE_INTERNAL_AUTH_SECRET` must still be rotated** — it was internet-reachable and must be treated as exposed (#888 added the rotation script; restart auth-bff and marketplace-api-admin together). |
+| ✅ | **Cross-tenant IDOR cluster closed** (§1.3) — orders/returns/shipments/abandoned-carts in #887, then campaigns, segments, reviews, csv-imports and loyalty members. `knownUnscoped` in `store_scope_arch_test.go` is now empty. |
 
 Two caveats on the ruleset change: the existing bypass actor (admin role, `bypass_mode: always`)
 can still merge past the required check, and `required_approving_review_count` is still `0`.
@@ -69,6 +70,17 @@ tenant's customer), returns approve/reject/received. Most are mirrored under
 
 The correct guard already exists in-repo at `admin/returns.go:91`. Apply it uniformly, or
 push `storeId` into each repository query.
+
+**Closed.** #887 scoped orders, returns, shipments and abandoned-carts and added
+`store_scope_arch_test.go`, which lists every remaining unscoped handler as debt that may
+only shrink. The rest — campaigns (read/edit/delete/schedule/pause/resume and **send**),
+segments, review moderation, csv-import job read/cancel/errors, and loyalty member
+read/adjust — now each load the row through a `require*InStore` helper and 404 when it is
+not this store's, so `knownUnscoped` is empty. The mobile mirrors are the same handler
+functions behind the same middleware, so they close with them. The settings three were
+never actually unscoped: they resolve the store through `storeFromCtx` and filter on it,
+which the arch test now recognises. Wire-level proof, including that no write, send or
+points adjust happens on the refused call, is in `store_scope_test.go`.
 
 ### 1.4 platform-api fails **open** to "owner" when OpenFGA is slow
 `cmd/server/main.go:132-157` — 5s timeout on store discovery, then a `Warn` and `fga = nil`
@@ -288,10 +300,11 @@ Recorded because they change where effort should go.
 
 ## 5. Sequencing
 
-1. **Merge tesserix-k8s#1063 and rotate `MARKETPLACE_INTERNAL_AUTH_SECRET`** — the last
-   live, internet-reachable hole. Restart auth-bff and marketplace-api-admin together.
+1. **Rotate `MARKETPLACE_INTERNAL_AUTH_SECRET`** — tesserix-k8s#1063 is merged and the
+   route is 404 at the edge, but the secret was internet-reachable and is still the one
+   that was exposed. Restart auth-bff and marketplace-api-admin together.
 2. **Turn on Cloud Logging** — one flag, and it makes everything else verifiable.
-3. **IDOR cluster and platform-api fail-open** — both are small, both are live.
+3. ~~IDOR cluster and platform-api fail-open~~ — both closed (§1.3, `9c93b4ab`).
 4. **Restore postgres metrics, create `slack-webhooks`/`pagerduty-keys`, clear the 18-day
    false positive** so the alert channel is trustworthy again.
 5. **Engage counsel this week** and decide NZ in or out — that decision alone is worth ~10

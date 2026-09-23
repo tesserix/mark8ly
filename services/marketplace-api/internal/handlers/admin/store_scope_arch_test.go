@@ -32,46 +32,34 @@ var knownUnscoped = map[string]string{
 	"apikeys_handler.go:APIKeysHandler.Revoke":              "api key is tenant-scoped",
 	"sso_config.go:SSOConfigHandler.requirePathTenantMatch": "this IS the tenant check, keyed on :tenantId",
 
-	// --- Tenant-scoped but not store-scoped. Cross-TENANT access is blocked
-	// because the service takes tenantUUID; cross-store within one tenant is
-	// still possible. Lower severity, still wrong. ---
-	"loyalty.go:LoyaltyHandler.GetMember":    "service is tenant-scoped; cross-store within a tenant still open",
-	"loyalty.go:LoyaltyHandler.AdjustPoints": "service is tenant-scoped; cross-store within a tenant still open",
-
 	// --- Outstanding cross-tenant debt. Each must compare the loaded row's
 	// store_id to :storeId before acting. Tracked in
 	// docs/GO-LIVE-PUNCHLIST.md section 1.3. ---
-	"campaigns.go:CampaignHandler.Get":      "TODO cross-tenant: svc.GetCampaign takes a bare id",
-	"campaigns.go:CampaignHandler.Patch":    "TODO cross-tenant: svc takes a bare id",
-	"campaigns.go:CampaignHandler.Delete":   "TODO cross-tenant: svc.DeleteCampaign takes a bare id",
-	"campaigns.go:CampaignHandler.Schedule": "TODO cross-tenant: svc takes a bare id",
-	"campaigns.go:CampaignHandler.Pause":    "TODO cross-tenant: svc takes a bare id",
-	"campaigns.go:CampaignHandler.Resume":   "TODO cross-tenant: svc takes a bare id",
-
-	"csv_imports.go:CSVImportsHandler.Status":         "TODO cross-tenant: svc takes a bare job id",
-	"csv_imports.go:CSVImportsHandler.Cancel":         "TODO cross-tenant: svc.Cancel takes a bare job id",
-	"csv_imports.go:CSVImportsHandler.DownloadErrors": "TODO cross-tenant: svc takes a bare job id",
-
-	"reviews.go:ReviewsHandler.Get":            "TODO cross-tenant: repo.GetByID takes a bare id",
-	"reviews.go:ReviewsHandler.Approve":        "TODO cross-tenant: repo.UpdateStatus takes a bare id",
-	"reviews.go:ReviewsHandler.Reject":         "TODO cross-tenant: repo.UpdateStatus takes a bare id",
-	"reviews.go:ReviewsHandler.ToggleFeatured": "TODO cross-tenant: repo takes a bare id",
-	"reviews.go:ReviewsHandler.Reply":          "TODO cross-tenant: repo takes a bare id",
-
-	"segments.go:SegmentHandler.Get":    "TODO cross-tenant: svc takes a bare id",
-	"segments.go:SegmentHandler.Update": "TODO cross-tenant: svc takes a bare id",
-	"segments.go:SegmentHandler.Delete": "TODO cross-tenant: svc.DeleteSegment takes a bare id",
-
-	"settings.go:PaymentSettingsHandler.Delete":         "TODO: keyed on :provider, store scoping unverified",
-	"settings.go:PaymentSettingsHandler.TestConnection": "TODO: keyed on :provider, store scoping unverified",
-	"settings.go:ShippingSettingsHandler.Delete":        "TODO: keyed on :provider, store scoping unverified",
+	//
+	// Campaigns, csv-imports, reviews and segments were closed by giving
+	// each handler a require*InStore helper; the settings three were always
+	// scoped through storeFromCtx and only looked unscoped to this test.
 }
 
 // scopeMarkers are the ways a handler can demonstrate store scoping.
+//
+// Note how the matching works before adding one: nodeText flattens a
+// handler body to bare identifiers, so a marker has to be a name that
+// survives that — a helper or field name. `Param("storeId")` is kept for
+// documentation but only ever matches via the `storeId` literal.
 var scopeMarkers = []string{
 	`Param("storeId")`,
 	`requireOrderInStore`,
 	`requireReturnInStore`,
+	`requireCampaignInStore`,
+	`requireSegmentInStore`,
+	`requireReviewInStore`,
+	`requireJobInStore`,
+	`requireMemberInStore`,
+	// storeFromCtx returns the store StoreMiddleware resolved from :storeId
+	// for this tenant; every caller then filters its query by that store's
+	// id, which is the same proof the require*InStore helpers give.
+	`storeFromCtx`,
 	`MustGet("store")`,
 	`Get("store")`,
 	"StoreID",

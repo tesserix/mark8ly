@@ -75,17 +75,33 @@ func (h *ReviewsHandler) List(c *gin.Context) {
 	})
 }
 
-// Get handles GET /admin/stores/:storeId/reviews/:id.
-func (h *ReviewsHandler) Get(c *gin.Context) {
-	reviewID := c.Param("id")
-
+// requireReviewInStore loads :id and proves it belongs to :storeId.
+//
+// StoreMiddleware proves only that :storeId belongs to the caller's tenant;
+// review.Repository is keyed on a bare review id, so without this a staff
+// user could read or moderate any review in the estate by uuid. Returns the
+// loaded row so callers that need it do not fetch twice.
+func (h *ReviewsHandler) requireReviewInStore(c *gin.Context, reviewID string) (*review.Review, bool) {
 	rev, err := h.repo.GetByID(c.Request.Context(), reviewID)
 	if err != nil {
 		if errors.Is(err, review.ErrNotFound) {
 			RespondErr(c, apperrors.NotFound("review"), h.logger)
-			return
+			return nil, false
 		}
 		RespondErr(c, err, h.logger)
+		return nil, false
+	}
+	if rev.StoreID != c.Param("storeId") {
+		RespondErr(c, apperrors.NotFound("review"), h.logger)
+		return nil, false
+	}
+	return rev, true
+}
+
+// Get handles GET /admin/stores/:storeId/reviews/:id.
+func (h *ReviewsHandler) Get(c *gin.Context) {
+	rev, ok := h.requireReviewInStore(c, c.Param("id"))
+	if !ok {
 		return
 	}
 
@@ -96,14 +112,8 @@ func (h *ReviewsHandler) Get(c *gin.Context) {
 func (h *ReviewsHandler) Approve(c *gin.Context) {
 	reviewID := c.Param("id")
 
-	// Verify review exists.
-	existing, err := h.repo.GetByID(c.Request.Context(), reviewID)
-	if err != nil {
-		if errors.Is(err, review.ErrNotFound) {
-			RespondErr(c, apperrors.NotFound("review"), h.logger)
-			return
-		}
-		RespondErr(c, err, h.logger)
+	existing, ok := h.requireReviewInStore(c, reviewID)
+	if !ok {
 		return
 	}
 
@@ -130,14 +140,8 @@ func (h *ReviewsHandler) Approve(c *gin.Context) {
 func (h *ReviewsHandler) Reject(c *gin.Context) {
 	reviewID := c.Param("id")
 
-	// Verify review exists.
-	existing, err := h.repo.GetByID(c.Request.Context(), reviewID)
-	if err != nil {
-		if errors.Is(err, review.ErrNotFound) {
-			RespondErr(c, apperrors.NotFound("review"), h.logger)
-			return
-		}
-		RespondErr(c, err, h.logger)
+	existing, ok := h.requireReviewInStore(c, reviewID)
+	if !ok {
 		return
 	}
 
@@ -165,13 +169,7 @@ func (h *ReviewsHandler) Reject(c *gin.Context) {
 func (h *ReviewsHandler) ToggleFeatured(c *gin.Context) {
 	reviewID := c.Param("id")
 
-	// Verify review exists.
-	if _, err := h.repo.GetByID(c.Request.Context(), reviewID); err != nil {
-		if errors.Is(err, review.ErrNotFound) {
-			RespondErr(c, apperrors.NotFound("review"), h.logger)
-			return
-		}
-		RespondErr(c, err, h.logger)
+	if _, ok := h.requireReviewInStore(c, reviewID); !ok {
 		return
 	}
 
@@ -203,13 +201,7 @@ func (h *ReviewsHandler) ToggleFeatured(c *gin.Context) {
 func (h *ReviewsHandler) Reply(c *gin.Context) {
 	reviewID := c.Param("id")
 
-	// Verify review exists.
-	if _, err := h.repo.GetByID(c.Request.Context(), reviewID); err != nil {
-		if errors.Is(err, review.ErrNotFound) {
-			RespondErr(c, apperrors.NotFound("review"), h.logger)
-			return
-		}
-		RespondErr(c, err, h.logger)
+	if _, ok := h.requireReviewInStore(c, reviewID); !ok {
 		return
 	}
 

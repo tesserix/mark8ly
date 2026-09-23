@@ -124,7 +124,9 @@ func TestCSVImportsHandler_SubmitAndStatus(t *testing.T) {
 		c.Params = append(c.Params, gin.Param{Key: "storeId", Value: "store-1"})
 		c.Next()
 	}, handler.Submit)
-	r.GET("/csv-imports/:id", handler.Status)
+	// Status is mounted with :storeId, as production does — the handler
+	// refuses a job that is not this store's.
+	r.GET("/stores/:storeId/csv-imports/:id", handler.Status)
 
 	// Test 1: POST without file returns 400.
 	w := httptest.NewRecorder()
@@ -156,7 +158,7 @@ func TestCSVImportsHandler_SubmitAndStatus(t *testing.T) {
 
 	// Test 3: GET status returns the same job.
 	w3 := httptest.NewRecorder()
-	req3 := httptest.NewRequest("GET", "/csv-imports/"+resp.ID, nil)
+	req3 := httptest.NewRequest("GET", "/stores/store-1/csv-imports/"+resp.ID, nil)
 	r.ServeHTTP(w3, req3)
 	require.Equal(t, http.StatusOK, w3.Code)
 
@@ -164,6 +166,14 @@ func TestCSVImportsHandler_SubmitAndStatus(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w3.Body.Bytes(), &statusResp))
 	require.Equal(t, resp.ID, statusResp.ID)
 	require.Equal(t, csvjob.StatusQueued, statusResp.Status)
+
+	// Test 4: the same job id under another store is not this caller's to
+	// read. The error CSV quotes the importing merchant's own product rows,
+	// so a leak here is a leak of their catalogue.
+	w4 := httptest.NewRecorder()
+	req4 := httptest.NewRequest("GET", "/stores/store-2/csv-imports/"+resp.ID, nil)
+	r.ServeHTTP(w4, req4)
+	require.Equal(t, http.StatusNotFound, w4.Code)
 }
 
 func TestCSVImportsHandler_SubmitDeduplicates(t *testing.T) {

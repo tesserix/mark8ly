@@ -45,7 +45,9 @@ RUN go build -trimpath -ldflags="-s -w" \
  && go build -trimpath -ldflags="-s -w" \
       -o /out/carrier-secrets-backfill ./cmd/carrier-secrets-backfill \
  && go build -trimpath -ldflags="-s -w" \
-      -o /out/backfill-trial-start ./cmd/backfill-trial-start
+      -o /out/backfill-trial-start ./cmd/backfill-trial-start \
+ && go build -trimpath -ldflags="-s -w" \
+      -o /out/webhook-replay ./cmd/webhook-replay
 
 # ─── migrate ────────────────────────────────────────────────────────────
 # Standalone image used by the K8s Job pattern.
@@ -86,5 +88,16 @@ COPY --from=builder --chown=10001:10001 /out/carrier-secrets-backfill /usr/local
 # not be run anywhere the data lives. It reports what it would write and needs
 # -apply to write anything.
 COPY --from=builder --chown=10001:10001 /out/backfill-trial-start /usr/local/bin/backfill-trial-start
+# webhook-replay repeats the mistake recorded directly above, which is why it
+# is here: it shipped in #905 and was left out of this image, so the tool that
+# recovers stuck Stripe events could not be run anywhere the events live.
+#
+# It puts events that exhausted their retries back in front of the resolver by
+# clearing manual_review_required. It applies nothing itself — the orphan cron
+# dispatches them on its next pass, under the usual advisory lock — and -list
+# changes nothing at all. Shipped for the same reason as the two above: it
+# needs the database, so it belongs in-cluster under the real ServiceAccount
+# rather than on a laptop with production credentials forwarded to it.
+COPY --from=builder --chown=10001:10001 /out/webhook-replay /usr/local/bin/webhook-replay
 EXPOSE 8091
 CMD ["/usr/local/bin/marketplace-api"]

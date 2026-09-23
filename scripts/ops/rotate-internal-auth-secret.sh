@@ -152,18 +152,42 @@ curl -s -o /dev/null -w '%{http_code}\n' --max-time 15 \
 
 cat <<EOF
 
-Done. Still to check by hand — these exercise the shared secret end to end and
-a mismatch only shows up here:
-  - admin login (auth-bff -> marketplace-api mint-session)
+Done. Check the logs before anything else — a mismatch between the halves
+shows up as 401s on /internal, and their ABSENCE only counts as evidence if
+that route saw traffic at all:
+
+  kubectl logs -n $NAMESPACE -l app.kubernetes.io/name=mark8ly-marketplace-api-admin \\
+    --since=10m --tail=3000 | grep '/internal' | grep -oE '"status":[0-9]+' | sort | uniq -c
+
+A 200 there is real evidence: the caller signed with the new secret and the
+verifier accepted it. Zero lines is not evidence of anything.
+
+Still worth exercising by hand:
   - a storefront page that reads linked providers
   - an admin action that deletes a user
 
-If any of those fail, the halves disagree: re-run step 2 and confirm every
-pod is on the new fingerprint.
+NOT a useful check: a normal admin login. It does NOT touch mint-session —
+that route is marketplace-api -> auth-bff, and today only break-glass login
+uses it (see auth-bff/cmd/server/main.go, "break-glass login today, SSO
+callback later"). Break-glass is armed with zero accounts, so mint-session
+is dormant: it cannot be exercised on the way in, and an OTP prompt on the
+login page says nothing about this secret. An earlier version of this note
+pointed at that flow and sent someone to test the wrong thing.
 
-The previous secret version is still enabled. Once you have verified the
-above, disable it:
-  gcloud secrets versions disable <previous> --secret=$GCP_SECRET --project=$PROJECT
-Leaving it enabled is what allowed the 2026-09-03 incident to run a live key
-for six minutes.
+If a real mismatch appears, re-run step 2 and confirm every pod is on the
+new fingerprint.
+
+EVERY earlier version is still enabled, not just the previous one. Once you
+have verified the above, disable all of them:
+  gcloud secrets versions list $GCP_SECRET --project=$PROJECT \\
+    --filter="state=enabled" --format="value(name)"
+  # then, for each name that is not the new version:
+  gcloud secrets versions disable <n> --secret=$GCP_SECRET --project=$PROJECT
+
+On 2026-09-23 only the immediately previous version was disabled, because
+this note named it in the singular — the original April version stayed
+enabled and readable for another day. Disabling controls who can READ a
+version from Secret Manager; the exposed value stops authenticating the
+moment every consumer restarts on the new one, which step 4 is what
+guarantees.
 EOF

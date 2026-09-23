@@ -25,7 +25,8 @@ mobile apps in the stores, and a public launch. All four.
 | ✅ | AU Stripe Tax instructions reversed in 4 documents; go-live runbook status corrected (#885) |
 | ✅ | Base image digests bumped **and repinned by dated tag** so Renovate can see them (#883) — containers and both e2e suites green again after 11 days dead |
 | ✅ | `required_status_checks: CI gate` added to the `main` ruleset |
-| ✅ | **`/internal/*` 404 at the ingress gateway** — tesserix-k8s #1063 merged 2026-09-21; `POST https://auth.mark8ly.com/internal/mint-session` now answers 404, not 401. **`MARKETPLACE_INTERNAL_AUTH_SECRET` must still be rotated** — it was internet-reachable and must be treated as exposed (#888 added the rotation script; restart auth-bff and marketplace-api-admin together). |
+| ✅ | **`/internal/*` 404 at the ingress gateway** — tesserix-k8s #1063 merged 2026-09-21; `POST https://auth.mark8ly.com/internal/mint-session` now answers 404, not 401. |
+| ✅ | **`MARKETPLACE_INTERNAL_AUTH_SECRET` rotated** 2026-09-23 via `scripts/ops/rotate-internal-auth-secret.sh`. All seven consumers restarted together and rolled clean; `/internal/shipments/tracking/sync` answered 200 for a freshly-created caller against a restarted verifier, and no consumer logged a single 401 on `/internal`. Versions 1 and 2 are disabled; only the new version is enabled. The exposure is closed. |
 | ✅ | **Cross-tenant IDOR cluster closed** (§1.3) — orders/returns/shipments/abandoned-carts in #887, then campaigns, segments, reviews, csv-imports and loyalty members. `knownUnscoped` in `store_scope_arch_test.go` is now empty. |
 
 Two caveats on the ruleset change: the existing bypass actor (admin role, `bypass_mode: always`)
@@ -54,6 +55,20 @@ Whoever holds it mints a session for **any user in any tenant**.
 **After merging: rotate `MARKETPLACE_INTERNAL_AUTH_SECRET`.** It must be treated as
 exposed. Restart auth-bff and marketplace-api-admin *together* or the internal calls break.
 Still missing afterwards: any rate limit or lockout on that comparison.
+
+**Closed 2026-09-23.** The edge rule merged 2026-09-21 and the secret was rotated on the
+23rd: all seven consumers restarted together, `/internal` answered 200 for a freshly
+created caller against a restarted verifier, and no consumer logged a 401. Versions 1 and
+2 are disabled, so no earlier value is readable from Secret Manager either.
+
+Two things this did NOT fix, both still open:
+- **No rate limit or lockout** on the constant-time comparison. A leaked value is still
+  usable at whatever rate the caller likes, for as long as it takes someone to notice.
+- **`RequireInternalAuth` fails OPEN on an empty secret** — it calls `c.Next()` rather
+  than refusing. Every consumer maps the secret with `optional: true`, so a Secret that
+  fails to sync produces an unguarded `/internal` surface rather than a service that
+  refuses to start. `RequireInternalAuthStrict` exists and 503s instead; nothing in
+  platform-api uses it. See the fail-open secrets item in §2.
 
 ### 1.3 Cross-tenant IDOR cluster in the admin API
 `StoreMiddleware` proves only that `:storeId` belongs to your tenant; it constrains no other
@@ -272,8 +287,17 @@ covered by the DPA. This scales with every new store.
   push, and the ICP is Instagram sellers who may never install the app. Payment-failure
   dunning *does* exist and is wired (that worry was unfounded).
 - **No "subscription cancelled" confirmation** for a paid cancel.
-- **Single provider, no fallback** — `RESEND_API_KEY` is set nowhere. A SendGrid incident
-  takes out verification and password reset, i.e. signup itself.
+- ~~**Single provider, no fallback** — `RESEND_API_KEY` is set nowhere.~~ **Wrong as
+  written, checked 2026-09-23.** platform-api runs `EMAIL_PRIMARY_PROVIDER=resend` with
+  `RESEND_API_KEY` wired from the `mark8ly-resend` Secret, populated. Resend is the
+  primary, not the absent fallback.
+
+  What remains true is the shape of the risk, just pointed at a different provider: it is
+  still ONE provider per sender, and the `secretKeyRef` is `optional: true`, so a Secret
+  that fails to sync leaves the variable unset and the mailer silently degrades rather
+  than refusing to start. Zitadel mails through its own separate key
+  (`prod-zitadel-resend-api-key`), so login OTP and password reset do NOT share mark8ly's
+  key — a Resend account-level incident still takes out both, a key-level one does not.
 
 ### Mobile
 - **DECIDED 2026-09-23: `mobile-storefront` is deferred.** It was never tested, and the
@@ -384,9 +408,9 @@ Recorded because they change where effort should go.
 
 ## 5. Sequencing
 
-1. **Rotate `MARKETPLACE_INTERNAL_AUTH_SECRET`** — tesserix-k8s#1063 is merged and the
-   route is 404 at the edge, but the secret was internet-reachable and is still the one
-   that was exposed. Restart auth-bff and marketplace-api-admin together.
+1. ~~**Rotate `MARKETPLACE_INTERNAL_AUTH_SECRET`**~~ — done 2026-09-23, versions 1 and 2
+   disabled. See §1.2 for the two residual gaps it did not close (no rate limit on the
+   comparison; the middleware still fails open on an empty secret).
 2. **Turn on Cloud Logging** — one flag, and it makes everything else verifiable.
 3. ~~IDOR cluster and platform-api fail-open~~ — both closed (§1.3, `9c93b4ab`).
 4. **Restore postgres metrics, create `slack-webhooks`/`pagerduty-keys`, clear the 18-day

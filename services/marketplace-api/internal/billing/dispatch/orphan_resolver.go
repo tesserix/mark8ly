@@ -2,8 +2,6 @@ package dispatch
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 
@@ -43,14 +41,20 @@ func NewOrphanResolver(cfg OrphanConfig) *OrphanResolver {
 	return &OrphanResolver{cfg: cfg}
 }
 
-// RunOnce fetches up to BatchSize orphan events and attempts to resolve each.
-// Failed resolutions bump retry_count; reaching MaxRetries flips manual_review_required.
+// RunOnce fetches up to BatchSize unprocessed events and attempts each one.
+// Failed attempts bump retry_count; reaching MaxRetries flips manual_review_required.
+//
+// "Unprocessed" now means exactly that, rather than "unprocessed AND still
+// an orphan". The handler sets store_id before it dispatches, so an event
+// whose handler failed came back with store_id populated and fell outside
+// the old query — and Stripe had been answered 200, so no other retry
+// existed. Those events were stranded silently and permanently.
 func (r *OrphanResolver) RunOnce(ctx context.Context) error {
-	orphans, err := r.cfg.Repo.GetUnprocessedOrphans(ctx, r.cfg.DB, r.cfg.BatchSize)
+	pending, err := r.cfg.Repo.GetUnprocessed(ctx, r.cfg.DB, r.cfg.BatchSize)
 	if err != nil {
 		return err
 	}
-	for _, e := range orphans {
+	for _, e := range pending {
 		if err := r.resolveOne(ctx, e); err != nil {
 			newCount, rerr := r.cfg.Repo.IncrementRetry(ctx, r.cfg.DB, e.EventID, err.Error())
 			if rerr != nil {
@@ -65,19 +69,32 @@ func (r *OrphanResolver) RunOnce(ctx context.Context) error {
 }
 
 func (r *OrphanResolver) resolveOne(ctx context.Context, e webhookevents.StripeWebhookEvent) error {
-	storeID, tenantID, ok := lookupStoreByStripeCustomerPayload(ctx, r.cfg.DB, []byte(e.Payload))
+	// An event that already knows its store is not an orphan — it is a
+	// previous dispatch failure — so it needs no lookup, only another
+	// attempt. Re-resolving would be wrong as well as wasteful: the store
+	// on the row is what the first attempt acted under.
+	storeID, ok := e.ResolvedStoreID()
 	if !ok {
-		return fmt.Errorf("orphan: no subscription for event_id=%s", e.EventID)
+		var err error
+		if storeID, err = r.resolveStore(ctx, e); err != nil {
+			return err
+		}
 	}
-	if err := r.cfg.Repo.SetStoreID(ctx, r.cfg.DB, e.EventID, storeID, tenantID); err != nil {
-		return err
-	}
+
 	// Collector installed before the lock, drained after it commits — the
 	// dispatcher registers provider HTTP calls (e.g. the trial-billed
 	// confirmation) here rather than making them under the advisory lock.
 	ctx, deferred := postcommit.WithDeferredSends(ctx)
 	err := subscription.WithAdvisoryLock(ctx, r.cfg.DB, storeID, func(tx *gorm.DB) error {
-		return r.cfg.Dispatcher.Dispatch(ctx, tx, e)
+		if derr := r.cfg.Dispatcher.Dispatch(ctx, tx, e); derr != nil {
+			return derr
+		}
+		// Marked inside the dispatch transaction, not after it. Stamping it
+		// afterwards left a window where the effects were committed and the
+		// row still said unprocessed, so the next run would apply them
+		// again — a window this change would otherwise have widened, since
+		// re-attempting a dispatched event is now something that happens.
+		return r.cfg.Repo.MarkProcessed(ctx, tx, e.EventID)
 	})
 	if err != nil {
 		// Rolled back: the pending sends describe side effects that never
@@ -89,48 +106,33 @@ func (r *OrphanResolver) resolveOne(ctx context.Context, e webhookevents.StripeW
 		slog.Default().Warn("orphan: deferred billing email failed",
 			"event_id", e.EventID, "err", sendErr.Error())
 	}
-	return r.cfg.Repo.MarkProcessed(ctx, r.cfg.DB, e.EventID)
+	return nil
 }
 
-// lookupStoreByStripeCustomerPayload parses customer ID from raw event JSON and
-// resolves (store_id, tenant_id) via store_subscriptions.stripe_customer_id.
-// Duplicates the logic from handlers/webhooks/stripe.go rather than importing
-// it to avoid a dispatcher <- handlers import cycle.
-func lookupStoreByStripeCustomerPayload(ctx context.Context, db *gorm.DB, payload []byte) (uuid.UUID, uuid.UUID, bool) {
-	var e struct {
-		Data struct {
-			Object struct {
-				Customer string `json:"customer"`
-			} `json:"object"`
-		} `json:"data"`
+// resolveStore looks the event's Stripe customer up against
+// store_subscriptions and records the result on the row.
+func (r *OrphanResolver) resolveStore(ctx context.Context, e webhookevents.StripeWebhookEvent) (uuid.UUID, error) {
+	storeID, tenantID, ok := lookupStoreByStripeCustomerPayload(ctx, r.cfg.DB, e.EventType, []byte(e.Payload))
+	if !ok {
+		return uuid.Nil, fmt.Errorf("orphan: no subscription for event_id=%s", e.EventID)
 	}
-	if err := json.Unmarshal(payload, &e); err != nil || e.Data.Object.Customer == "" {
-		return uuid.Nil, uuid.Nil, false
+	if err := r.cfg.Repo.SetStoreID(ctx, r.cfg.DB, e.EventID, storeID, tenantID); err != nil {
+		return uuid.Nil, err
 	}
-	var row struct {
-		StoreID  string `gorm:"column:store_id"`
-		TenantID string `gorm:"column:tenant_id"`
-	}
-	err := db.WithContext(ctx).Raw(
-		`SELECT store_id::text AS store_id, tenant_id::text AS tenant_id
-         FROM store_subscriptions
-         WHERE stripe_customer_id = ?
-         LIMIT 1`,
-		e.Data.Object.Customer,
-	).Scan(&row).Error
-	if err != nil || row.StoreID == "" {
-		return uuid.Nil, uuid.Nil, false
-	}
-	sid, err := uuid.Parse(row.StoreID)
-	if err != nil {
-		return uuid.Nil, uuid.Nil, false
-	}
-	tid, err := uuid.Parse(row.TenantID)
-	if err != nil {
-		return uuid.Nil, uuid.Nil, false
-	}
-	return sid, tid, true
+	return storeID, nil
 }
 
-// Sentinel for documentation — callers check nil-ness of returned uuid.
-var _ = errors.New
+// lookupStoreByStripeCustomerPayload resolves an event's customer to a store.
+//
+// This used to hold its own copy of the payload parsing, duplicated from
+// handlers/webhooks/stripe.go to dodge an import cycle — and both copies read
+// only data.object.customer, so neither could resolve a customer.updated
+// event and both retried it to the manual-review cap. The extraction now
+// lives once, in webhookevents, which both packages already import.
+func lookupStoreByStripeCustomerPayload(ctx context.Context, db *gorm.DB, eventType string, payload []byte) (uuid.UUID, uuid.UUID, bool) {
+	customerID := webhookevents.CustomerIDFromPayload(eventType, payload)
+	if customerID == "" {
+		return uuid.Nil, uuid.Nil, false
+	}
+	return webhookevents.LookupStoreByCustomer(ctx, db, customerID)
+}

@@ -9,6 +9,8 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
+
+	"github.com/mark8ly/marketplace-api/internal/mode"
 )
 
 // Config holds all runtime configuration for marketplace-api.
@@ -378,6 +380,8 @@ var (
 		"marketplace config: ENCRYPTION_MODE must be \"aes\" when ENV != \"dev\" (noop stores merchant provider secrets as base64)")
 	ErrEncryptionKeyRequired = errors.New(
 		"marketplace config: ENCRYPTION_KEY must be set when ENCRYPTION_MODE=aes")
+	ErrStorefrontKeyRequired = errors.New(
+		"marketplace config: MARKETPLACE_STOREFRONT_KEY must be set when ENV != \"dev\" and MODE serves storefront routes (RequireStorefrontKey gates the whole /storefront/stores/* surface)")
 
 	// ErrShippingSecretStoreUnknown guards against a typo silently
 	// leaving the wrong carrier-secret backend primary — checked in
@@ -507,6 +511,24 @@ func (c *Config) Validate() error {
 	}
 	if c.EncryptionKey == "" {
 		return ErrEncryptionKeyRequired
+	}
+	// Gated on the mode, not required outright: MODE=admin deliberately does
+	// not carry this secret, and demanding it there would crash-loop the
+	// admin deployment on the first boot after this check landed.
+	//
+	// This check is the one that was missing. The storefront gate was
+	// no-opped in PRODUCTION for months because the chart injected the
+	// secret as STOREFRONT_KEY while this package reads
+	// MARKETPLACE_STOREFRONT_KEY (tesserix-k8s#1079). envconfig found
+	// nothing, cfg.StorefrontKey stayed "", RequireStorefrontKey took its
+	// empty-secret branch, and every /storefront/stores/* route answered 200
+	// to a request carrying no key or a wrong one. Nothing upstream could
+	// catch that: the Secret existed, synced, and held the right 44 bytes,
+	// and the Next.js app sent the header faithfully the whole time. Only
+	// the server never read it. A boot that refuses to start turns that
+	// class of mistake into a crash-loop on the first deploy.
+	if parsedMode, err := mode.Parse(c.Mode); err == nil && parsedMode.RunsStorefront() && c.StorefrontKey == "" {
+		return ErrStorefrontKeyRequired
 	}
 	return nil
 }

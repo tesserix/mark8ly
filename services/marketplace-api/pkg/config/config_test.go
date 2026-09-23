@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"testing"
 )
@@ -99,6 +100,12 @@ func prodEnv(t *testing.T) {
 		"CUSTOMER_SESSION_SECRET":          "customer-secret",
 		"ENCRYPTION_MODE":                  "aes",
 		"ENCRYPTION_KEY":                   "0123456789abcdef0123456789abcdef",
+		// MODE is unset in these tests, which parses as "both" and therefore
+		// serves storefront routes — so a complete prod config includes the
+		// storefront key. This entry is what the production chart was
+		// missing for months: it mounted the same secret as STOREFRONT_KEY,
+		// which envconfig does not read, so the gate no-opped on a live pod.
+		"MARKETPLACE_STOREFRONT_KEY": "storefront-secret",
 	} {
 		t.Setenv(k, v)
 	}
@@ -133,6 +140,14 @@ func TestLoad_ProdRequiresEncryptionKeyForAES(t *testing.T) {
 	t.Setenv("ENCRYPTION_KEY", "")
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() with ENCRYPTION_MODE=aes and empty ENCRYPTION_KEY = nil, want error")
+	}
+}
+
+func TestLoad_ProdRequiresStorefrontKey(t *testing.T) {
+	prodEnv(t)
+	t.Setenv("MARKETPLACE_STOREFRONT_KEY", "")
+	if _, err := Load(); !errors.Is(err, ErrStorefrontKeyRequired) {
+		t.Fatalf("Load() with empty MARKETPLACE_STOREFRONT_KEY in prod = %v, want ErrStorefrontKeyRequired", err)
 	}
 }
 
@@ -499,5 +514,70 @@ func TestLoadCarrierSecretJob_BaoModeSucceedsWithFullSettings(t *testing.T) {
 	}
 	if cfg.ShippingSecretStore != "bao" {
 		t.Errorf("ShippingSecretStore = %q, want bao", cfg.ShippingSecretStore)
+	}
+}
+
+// The storefront key gate was no-opped in PRODUCTION for months: the chart
+// injected the secret as STOREFRONT_KEY while this package reads
+// MARKETPLACE_STOREFRONT_KEY, so cfg.StorefrontKey was "" on a live pod and
+// every /storefront/stores/* route answered 200 to a wrong key. Validate is
+// the layer that turns that into a crash-loop on the first deploy.
+func TestValidateRequiresStorefrontKeyOnlyWhereStorefrontRoutesRun(t *testing.T) {
+	base := func() Config {
+		return Config{
+			Env:                   "prod",
+			InternalAuthSecret:    "internal",
+			CustomerSessionSecret: "session",
+			EncryptionMode:        "aes",
+			EncryptionKey:         "key",
+			ShippingSecretStore:   "inline",
+		}
+	}
+
+	for _, tc := range []struct {
+		name    string
+		mode    string
+		key     string
+		wantErr bool
+	}{
+		// MODE=admin deliberately does not carry this secret. Requiring it
+		// outright would crash-loop the admin deployment.
+		{name: "admin without the key boots", mode: "admin", wantErr: false},
+		{name: "admin with the key boots", mode: "admin", key: "k", wantErr: false},
+
+		{name: "storefront without the key refuses", mode: "storefront", wantErr: true},
+		{name: "storefront with the key boots", mode: "storefront", key: "k", wantErr: false},
+
+		// "" parses as both, which serves storefront routes.
+		{name: "both without the key refuses", mode: "both", wantErr: true},
+		{name: "unset mode without the key refuses", mode: "", wantErr: true},
+		{name: "both with the key boots", mode: "both", key: "k", wantErr: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := base()
+			cfg.Mode = tc.mode
+			cfg.StorefrontKey = tc.key
+
+			err := cfg.Validate()
+			if tc.wantErr {
+				if !errors.Is(err, ErrStorefrontKeyRequired) {
+					t.Fatalf("got %v, want ErrStorefrontKeyRequired", err)
+				}
+				return
+			}
+			if errors.Is(err, ErrStorefrontKeyRequired) {
+				t.Fatalf("unexpected ErrStorefrontKeyRequired for mode=%q", tc.mode)
+			}
+		})
+	}
+}
+
+// dev keeps working without the secret, in every mode.
+func TestValidateLeavesDevAloneWithoutTheStorefrontKey(t *testing.T) {
+	for _, m := range []string{"admin", "storefront", "both", ""} {
+		cfg := Config{Env: "dev", Mode: m, ShippingSecretStore: "inline"}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("mode=%q: dev must not require secrets: %v", m, err)
+		}
 	}
 }

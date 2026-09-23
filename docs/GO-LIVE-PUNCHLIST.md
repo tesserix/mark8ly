@@ -21,6 +21,7 @@ mobile apps in the stores, and a public launch. All four.
 |---|---|
 | ✅ | **Checkout priced from the catalog** — `unit_price` and the tax fields no longer come from the request (#883, `9f8f43af`) |
 | ✅ | **Billing writes gated to 503** until cancellation reaches Stripe (#885, `ca3a9fbd`) |
+| ✅ | **Cancellation now reaches Stripe** (§1.5) — `cancel_at_period_end` is set and reversed at Stripe, the period end is persisted at subscribe time, and a Stripe failure refuses the cancellation instead of recording a local-only one. The gate stays closed pending a live-mode end-to-end run and the `BILLING_WRITES_ENABLED` decision. |
 | ✅ | AU Stripe Tax instructions reversed in 4 documents; go-live runbook status corrected (#885) |
 | ✅ | Base image digests bumped **and repinned by dated tag** so Renovate can see them (#883) — containers and both e2e suites green again after 11 days dead |
 | ✅ | `required_status_checks: CI gate` added to the `main` ruleset |
@@ -98,6 +99,22 @@ keeps being billed. PR #882 gates the write routes to 503.
 **The gate comes off only when:** cancellation reaches Stripe, `current_period_end` is
 persisted at subscribe time (today it is written only from webhooks, so `FinalizeCron` sees
 NULL and expires the row), and the merchant-facing copy is re-checked.
+
+**All three conditions are now met in code; the gate is still closed.**
+- Cancellation reaches Stripe through `cancel.StripeCanceller` (`CancelAtPeriodEnd`), and
+  **refuses** — 503, nothing changed locally — when Stripe cannot be reached or is not
+  wired for a row Stripe is billing. Accepting the save offer reverses the schedule at
+  Stripe as well, which the local-only reversal never did.
+- `current_period_end` and `current_period_start` are written at subscribe time from the
+  created subscription. An integration test runs `FinalizeCron` after a cancellation and
+  requires the row to survive until the period actually ends.
+- The cancellation flow's final copy no longer renders "Your plan ends on ." when no date
+  is known.
+
+What remains is a decision, not code: an end-to-end run against a live-mode test
+subscription — subscribe, cancel, un-cancel, let a period roll — and then
+`BILLING_WRITES_ENABLED=true` in the chart. Until someone does that, subscribe and cancel
+stay 503 and nothing can be charged.
 
 ### 1.6 The production database has been unmonitored for 15 days
 Every `mark8ly-postgres` alert evaluates over an **absent metric series** — mark8ly is the

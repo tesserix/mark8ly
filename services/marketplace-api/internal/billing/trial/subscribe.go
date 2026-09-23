@@ -183,9 +183,25 @@ func (s *Subscriber) subscribeInTx(ctx context.Context, tx *gorm.DB, in Subscrib
 		return nil, fmt.Errorf("trial: create stripe subscription: %w", err)
 	}
 
+	// The period columns are written here, not only by webhooks.
+	//
+	// Stripe returns the billing period on the created subscription, and
+	// until this wrote it the row's current_period_end stayed NULL until a
+	// webhook happened to fill it. Every consumer of that column reads NULL
+	// as "the period has already ended": FinalizeCron expires a
+	// cancel_scheduled row on its next tick, and the cancellation response
+	// could not tell the merchant what date their access runs to. A webhook
+	// that arrives later overwrites these with the same values.
+	fields := map[string]any{"stripe_subscription_id": sub.ID}
+	if sub.CurrentPeriodStart > 0 {
+		fields["current_period_start"] = time.Unix(sub.CurrentPeriodStart, 0).UTC()
+	}
+	if sub.CurrentPeriodEnd > 0 {
+		fields["current_period_end"] = time.Unix(sub.CurrentPeriodEnd, 0).UTC()
+	}
 	if err := tx.Model(&subscription.StoreSubscription{}).
 		Where("tenant_id = ? AND store_id = ?", in.TenantID, in.StoreID).
-		Update("stripe_subscription_id", sub.ID).Error; err != nil {
+		Updates(fields).Error; err != nil {
 		return nil, fmt.Errorf("trial: persist subscription id: %w", err)
 	}
 

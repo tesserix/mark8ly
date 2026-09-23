@@ -80,17 +80,18 @@ func TestCancel_ReasonLabel(t *testing.T) {
 
 // TestCancel_ProspectiveOnly_SaveOfferNeverCreditsPeriod verifies the contract
 // that save-offer acceptance (cancel_scheduled→active) emits no refund signal
-// and no period credit (Success Criterion #54). Since the actual Stripe call
-// is deferred to P10, this test verifies that cancel.Service does NOT call
-// any Stripe credit method by confirming the interface it uses has no such method.
+// and no period credit (Success Criterion #54).
+//
+// This used to argue that cancel.Service accepts no Stripe client at all, and
+// called that the compile-time proof. It was true, and it was also the reason
+// cancellation never reached Stripe: the flow could not stop the billing it
+// was telling merchants it had stopped. The seam now exists, so the invariant
+// is enforced against its shape instead — see
+// TestStripeCanceller_CannotCreditOrRefund in stripe_test.go, which pins the
+// method set to schedule-and-reverse and nothing that moves money backwards.
 func TestCancel_ProspectiveOnly_SaveOfferNeverCreditsPeriod(t *testing.T) {
-	// The cancel.Service signature intentionally does NOT accept a stripe client —
-	// that's the compile-time proof that P11 never touches Stripe on save-offer.
-	// This assertion is structural: NewService's parameter list is the contract.
-	//
-	// If NewService gains a Stripe param in future, this test name will serve as
-	// a red flag that §15.1 is at risk.
-	//
-	// We document the contract here; the compile check is implicit.
-	t.Log("cancel.NewService takes (db, repo, emitter, logger) — no Stripe client (§15.1 prospective-only)")
+	require.ElementsMatch(t,
+		[]string{"CancelAtPeriodEnd", "Resume"},
+		stripeCancellerMethods(),
+		"§15.1 prospective-only: the save offer may reverse a cancellation, never credit a period")
 }

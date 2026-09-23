@@ -197,17 +197,58 @@ class Zitadel:
         # false booleans entirely, so a request that silently failed to set
         # projectRoleCheck is indistinguishable from one that set it to false
         # -- and a 200 does not prove the field landed.
-        status, body = self.call(
-            "POST", "/management/v1/projects/_search",
-            {"query": {"limit": 100}}, org_id=org_id,
-        )
-        live = next(
-            (p for p in body.get("result", []) if p["id"] == project_id), None
-        )
-        if not live or not live.get("projectRoleCheck", False):
-            die(f"project {name} has projectRoleCheck=false after bootstrap; "
-                "every merchant sign-in would 403 at finalize")
+        #
+        # RETRIED, because _search does not read what the write wrote.
+        # Zitadel is CQRS: the POST appends to the event store and returns,
+        # while _search reads a projection updated asynchronously. A read
+        # issued microseconds later legitimately returns the pre-write state,
+        # or no row at all. This check used to fire once, immediately, and
+        # CI failed on the gap:
+        #
+        #   17:39:20.4024  project mark8ly-admin: created (392059312257630211)
+        #   17:39:20.4239  FATAL: projectRoleCheck=false after bootstrap
+        #
+        # 21 milliseconds. The bootstrap was correct; the projection had not
+        # caught up. Every other run won that race, which is exactly what
+        # makes it expensive -- it reds a PR at random and the next run is
+        # green, so it reads as flake rather than as a bug with a cause.
+        #
+        # Retrying does NOT weaken the check. The failure it exists to catch
+        # is a write that never landed, and that state does not heal with
+        # time: it still fails, just after the timeout instead of instantly.
+        self._await_project_role_check(org_id, project_id, name)
         return project_id
+
+    def _await_project_role_check(
+        self, org_id: str, project_id: str, name: str, attempts: int = 30
+    ) -> None:
+        """Poll the projection until it reports projectRoleCheck, or die.
+
+        attempts x 0.5s = 15s, generous against a projection that normally
+        catches up in well under a second, and still fast to fail when the
+        flag genuinely did not land.
+        """
+        last = None
+        for attempt in range(attempts):
+            status, body = self.call(
+                "POST", "/management/v1/projects/_search",
+                {"query": {"limit": 100}}, org_id=org_id,
+            )
+            if status == 200:
+                last = next(
+                    (p for p in body.get("result", []) if p["id"] == project_id),
+                    None,
+                )
+                if last and last.get("projectRoleCheck", False):
+                    if attempt:
+                        log(f"project {name}: projectRoleCheck confirmed after "
+                            f"{attempt + 1} reads")
+                    return
+            time.sleep(0.5)
+
+        seen = "absent from the projection" if last is None else "projectRoleCheck=false"
+        die(f"project {name} is {seen} after {attempts} reads over "
+            f"{attempts // 2}s; every merchant sign-in would 403 at finalize")
 
     def ensure_oidc_app(self, org_id, project_id, name, redirect_uri):
         """Mint the admin web app, returning (client_id, client_secret).

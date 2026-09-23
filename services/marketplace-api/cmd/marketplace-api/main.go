@@ -1290,7 +1290,15 @@ func main() {
 		refundHandler := admin.NewRefundHandler(conn, refundSvc, log).WithAudit(auditEmitter)
 
 		// P11 — Cancel handler (merchant-initiated cancellation + save-offer §15).
+		//
+		// The Stripe canceller is what makes a cancellation actually stop
+		// the billing. Attached only when Stripe is configured; a store
+		// whose row carries a stripe_subscription_id and finds none wired
+		// is refused rather than cancelled locally (cancel.requireStripe).
 		cancelSvc := cancel.NewService(conn, subscriptionRepo, auditEmitter, log).WithPromo(promoSvc)
+		if billingStripeClient != nil {
+			cancelSvc = cancelSvc.WithStripe(&cancel.StripeAdapter{C: billingStripeClient})
+		}
 		cancelHandler := cancel.NewHandler(cancelSvc, log)
 
 		// P5 — Migration fast-path submit handler.

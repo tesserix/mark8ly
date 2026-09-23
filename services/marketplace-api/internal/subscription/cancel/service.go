@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -50,6 +51,28 @@ type Service struct {
 	// promo is optional. When nil the save offer reverses the cancellation and
 	// claims no discount; see WithPromo in save_offer.go.
 	promo PromoApplier
+	// stripe is optional only for stores Stripe is not billing. A row that
+	// carries a stripe_subscription_id and finds this nil is refused rather
+	// than cancelled locally; see requireStripe in stripe.go.
+	stripe StripeCanceller
+}
+
+// requireStripe returns the Stripe subscription id this row is billed under,
+// and whether Stripe has to be told about this cancellation at all.
+//
+// A store with no stripe_subscription_id is one Stripe never billed — a trial
+// that added no card, or a local/dev row — and cancelling it is purely a
+// local state change. Everything else is real money: if the canceller is not
+// wired, refuse, because the alternative is telling a paying merchant they
+// have cancelled while Stripe keeps charging them.
+func (s *Service) requireStripe(sub *subscription.StoreSubscription) (string, bool, error) {
+	if sub == nil || sub.StripeSubscriptionID == nil || *sub.StripeSubscriptionID == "" {
+		return "", false, nil
+	}
+	if s.stripe == nil {
+		return "", false, ErrStripeNotWired
+	}
+	return *sub.StripeSubscriptionID, true, nil
 }
 
 // NewService constructs a cancel.Service.
@@ -94,7 +117,63 @@ func (s *Service) scheduleCancellation(ctx context.Context, in Input, sub *subsc
 		return Output{}, fmt.Errorf("%w: current status=%s", ErrNotCancellable, sub.Status)
 	}
 
-	err := statemachine.Transition(ctx, statemachine.TransitionInput{
+	// §15 and §17.2 disagree about trialing, and this is where that used to
+	// surface as a 500: IsCancellableStatus admits trialing ("active and
+	// trialing are the only cancellable states (§15)") while the §17.2
+	// transition table has no trialing → cancel_scheduled move, so the
+	// request passed the guard above and then fell out of the state machine.
+	//
+	// Asked here, before Stripe, so a state the machine will refuse never
+	// causes a cancellation at Stripe that the local row cannot record.
+	// Which of the two specs is wrong is a product decision, not this
+	// function's; until it is made, the honest answer is that this
+	// subscription cannot be cancelled from the state it is in.
+	if !statemachine.IsValidTransition(sub.Status, subscription.StatusCancelScheduled) {
+		return Output{}, fmt.Errorf("%w: no %s → %s transition (§17.2)",
+			ErrNotCancellable, sub.Status, subscription.StatusCancelScheduled)
+	}
+
+	// Stripe first, and the local transition only if it took.
+	//
+	// The other order is what shipped: the row said cancel_scheduled while
+	// Stripe went on charging. Failing here leaves a merchant still
+	// subscribed and still billed, which is recoverable by retrying;
+	// succeeding here and failing below leaves them billed to the period end
+	// and then not billed at all, which costs them nothing. Neither outcome
+	// takes money for access that has stopped.
+	stripeSubID, billed, err := s.requireStripe(sub)
+	if err != nil {
+		return Output{}, err
+	}
+	periodEnd := sub.CurrentPeriodEnd
+	if billed {
+		state, err := s.stripe.CancelAtPeriodEnd(ctx, stripeSubID)
+		if err != nil {
+			s.logger.Error("cancel: stripe would not schedule the cancellation — local row untouched",
+				"store_id", in.StoreID, "tenant_id", in.TenantID,
+				"stripe_subscription_id", stripeSubID, "err", err)
+			return Output{}, fmt.Errorf("%w: %v", ErrStripeUnavailable, err)
+		}
+		// Stripe owns the period end, and this response is the only place
+		// it is reliably known: it is written to the row at subscribe time
+		// and by webhooks, but a row that missed both would otherwise be
+		// finalised on the next cron tick (current_period_end IS NULL is
+		// treated as already ended) — i.e. access lost immediately, which
+		// is the half of the defect the merchant actually feels.
+		if !state.CurrentPeriodEnd.IsZero() {
+			end := state.CurrentPeriodEnd
+			periodEnd = &end
+		}
+		if err := s.persistCancellationSchedule(ctx, in, periodEnd); err != nil {
+			// The cancellation IS scheduled at Stripe; the merchant is not
+			// being charged again. Carry on and let the webhook reconcile
+			// the columns rather than failing a request that succeeded.
+			s.logger.Error("cancel: scheduled at stripe but the local period end could not be persisted",
+				"store_id", in.StoreID, "tenant_id", in.TenantID, "err", err)
+		}
+	}
+
+	err = statemachine.Transition(ctx, statemachine.TransitionInput{
 		DB:       s.db,
 		Emitter:  s.emitter,
 		TenantID: in.TenantID,
@@ -105,6 +184,8 @@ func (s *Service) scheduleCancellation(ctx context.Context, in Input, sub *subsc
 		Reason:   reasonLabel("merchant_cancelled", in.SurveyReason),
 	})
 	if err != nil {
+		// The pre-check above makes this reachable only by a concurrent
+		// writer moving the row underneath us, so it stays a plain failure.
 		return Output{}, fmt.Errorf("cancel: transition: %w", err)
 	}
 
@@ -112,16 +193,34 @@ func (s *Service) scheduleCancellation(ctx context.Context, in Input, sub *subsc
 		"store_id", in.StoreID,
 		"tenant_id", in.TenantID,
 		"actor", in.Actor,
+		"billed_by_stripe", billed,
 		"reason", in.SurveyReason)
 
 	var cancelsAt string
-	if sub.CurrentPeriodEnd != nil {
-		cancelsAt = sub.CurrentPeriodEnd.UTC().Format("2006-01-02T15:04:05Z")
+	if periodEnd != nil {
+		cancelsAt = periodEnd.UTC().Format("2006-01-02T15:04:05Z")
 	}
 	return Output{
 		Status:    string(subscription.StatusCancelScheduled),
 		CancelsAt: cancelsAt,
 	}, nil
+}
+
+// persistCancellationSchedule mirrors what Stripe now holds onto the local
+// row, so FinalizeCron expires the subscription on the date the merchant was
+// told and not before.
+func (s *Service) persistCancellationSchedule(ctx context.Context, in Input, periodEnd *time.Time) error {
+	fields := map[string]any{
+		"cancel_at_period_end": true,
+		"updated_at":           time.Now().UTC(),
+	}
+	if periodEnd != nil {
+		fields["current_period_end"] = *periodEnd
+	}
+	return s.db.WithContext(ctx).
+		Model(&subscription.StoreSubscription{}).
+		Where("tenant_id = ? AND store_id = ?", in.TenantID, in.StoreID).
+		Updates(fields).Error
 }
 
 // acceptSaveOffer reverts cancel_scheduled → active (prospective save-offer path).
@@ -132,7 +231,28 @@ func (s *Service) acceptSaveOffer(ctx context.Context, in Input, sub *subscripti
 		return Output{}, fmt.Errorf("%w: must be cancel_scheduled to accept save offer, got %s", ErrSaveOfferAlreadyAccepted, sub.Status)
 	}
 
-	err := statemachine.Transition(ctx, statemachine.TransitionInput{
+	// Clear the schedule at Stripe before promising the merchant their
+	// subscription stays. They un-cancel in reliance on that sentence, so it
+	// must not be said while Stripe still intends to stop billing them at
+	// the period end.
+	stripeSubID, billed, err := s.requireStripe(sub)
+	if err != nil {
+		return Output{}, err
+	}
+	if billed {
+		if _, err := s.stripe.Resume(ctx, stripeSubID); err != nil {
+			s.logger.Error("cancel: stripe would not clear the scheduled cancellation — reversal refused",
+				"store_id", in.StoreID, "tenant_id", in.TenantID,
+				"stripe_subscription_id", stripeSubID, "err", err)
+			return Output{}, fmt.Errorf("%w: %v", ErrStripeUnavailable, err)
+		}
+		if err := s.clearCancellationSchedule(ctx, in); err != nil {
+			s.logger.Error("cancel: reversed at stripe but the local flag could not be cleared",
+				"store_id", in.StoreID, "tenant_id", in.TenantID, "err", err)
+		}
+	}
+
+	err = statemachine.Transition(ctx, statemachine.TransitionInput{
 		DB:       s.db,
 		Emitter:  s.emitter,
 		TenantID: in.TenantID,
@@ -157,6 +277,19 @@ func (s *Service) acceptSaveOffer(ctx context.Context, in Input, sub *subscripti
 		"discount_applied", discountApplied)
 
 	return saveOfferOutput(discountApplied), nil
+}
+
+// clearCancellationSchedule drops the local cancel_at_period_end flag after
+// Stripe has cleared its own. The period end is left as it is: the
+// subscription continues, so the date it renews on is still the truth.
+func (s *Service) clearCancellationSchedule(ctx context.Context, in Input) error {
+	return s.db.WithContext(ctx).
+		Model(&subscription.StoreSubscription{}).
+		Where("tenant_id = ? AND store_id = ?", in.TenantID, in.StoreID).
+		Updates(map[string]any{
+			"cancel_at_period_end": false,
+			"updated_at":           time.Now().UTC(),
+		}).Error
 }
 
 // IsCancellableStatus reports whether a subscription in the given status may be

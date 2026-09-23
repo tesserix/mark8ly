@@ -10,16 +10,23 @@ import (
 //
 // Production has run a live Stripe key since 2026-09-09 (tesserix-k8s
 // 6b8f91b7), and the swap is what made price resolution work for the first
-// time — so the subscribe flow went from broken to functional. It is not,
-// however, correct: there is no Subscriptions.Cancel call anywhere in this
-// service. Cancellation is recorded locally only, which means a real
-// subscriber is told access continues to period end, loses it at the next
-// FinalizeCron tick, and keeps being charged by Stripe.
+// time — so the subscribe flow went from broken to functional. What it was
+// not was correct: cancellation was recorded locally and never sent to
+// Stripe, so a real subscriber was told access continues to period end, lost
+// it at the next FinalizeCron tick, and kept being charged.
 //
-// Nothing has been charged yet (0 live customers, subscriptions, invoices and
-// charges at 2026-09-21), so this gate is what keeps that true. Remove it only
-// once cancellation reaches Stripe and current_period_end is persisted at
-// subscribe time — not merely once the key is judged safe.
+// Both halves of that are now fixed. Cancellation reaches Stripe through
+// cancel.StripeCanceller — and refuses rather than recording a local-only
+// cancellation when Stripe cannot be reached — the save offer reverses the
+// schedule at Stripe, and current_period_end is written at subscribe time
+// from the created subscription instead of waiting on a webhook.
+//
+// The gate stays closed anyway, because enabling it is a decision and not a
+// consequence: it wants an end-to-end run against a live-mode test
+// subscription (subscribe, cancel, un-cancel, let a period roll) and a read
+// of the merchant-facing copy. Turn it on with BILLING_WRITES_ENABLED once
+// that is done. Nothing has been charged to date, and this is what keeps
+// that true until someone decides otherwise.
 //
 // Deliberately fail-closed: the config default is false, so an environment
 // that forgets to set BILLING_WRITES_ENABLED blocks writes rather than taking

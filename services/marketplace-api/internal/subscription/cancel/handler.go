@@ -87,6 +87,15 @@ func mapCancelErr(c *gin.Context, err error, logger *slog.Logger) {
 		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": "not_cancellable", "message": err.Error()})
 	case errors.Is(err, ErrSaveOfferAlreadyAccepted):
 		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": "save_offer_already_accepted"})
+	case errors.Is(err, ErrStripeUnavailable), errors.Is(err, ErrStripeNotWired):
+		// Nothing changed — not at Stripe, and not locally. Say so plainly:
+		// a merchant who is told "cancelled" and keeps being charged is the
+		// exact failure this path refuses to produce.
+		logger.Error("cancel handler: stripe could not be updated", "err", err)
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "billing_provider_unavailable",
+			"message": "Your subscription is unchanged and you have not been charged again. Please try again shortly, or contact support.",
+		})
 	default:
 		logger.Error("cancel handler: unexpected error", "err", err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal_error"})

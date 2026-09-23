@@ -56,8 +56,14 @@ export const cancellationCopy = {
 
   finalStep: {
     title: 'Your subscription is scheduled to end',
+    // The date is whatever Stripe reports as the end of the period the
+    // merchant has already paid for. It can still be absent — a trial that
+    // never added a card has no billing period — and "Your plan ends on ."
+    // is not a sentence, so that case gets its own.
     body: (date: string) =>
-      `Your plan ends on ${date}. You'll keep full access until then. If you change your mind, come back any time.`,
+      date
+        ? `Your plan ends on ${date}. You'll keep full access until then. If you change your mind, come back any time.`
+        : `Your plan ends at the end of your current billing period. You'll keep full access until then. If you change your mind, come back any time.`,
     revertCta: 'Keep my subscription after all',
     doneCta: 'Back to billing',
   },

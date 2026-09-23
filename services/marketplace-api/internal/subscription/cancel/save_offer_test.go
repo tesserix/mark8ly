@@ -110,28 +110,54 @@ func TestSaveOfferOutput_NeverLooksCancelled(t *testing.T) {
 	}
 }
 
-// TestRestoredStatus_PicksTheStateTheSubscriptionCameFrom pins the rule
-// without needing a database: a trial that is still running is what a
-// reversal returns to, and anything past its trial end is active.
-func TestRestoredStatus_PicksTheStateTheSubscriptionCameFrom(t *testing.T) {
+// TestRestoredStatus_PrefersStripeOverTheLocalTrialWindow pins the rule
+// without needing a database.
+//
+// The local window answers "when would this trial end", which is a different
+// question from "is this a trial". A merchant who added a card on day 30 is
+// active while created_at + 90d is still sixty days away — deciding from the
+// window alone would demote a paying subscriber into a trial, and back inside
+// the expiry crons.
+func TestRestoredStatus_PrefersStripeOverTheLocalTrialWindow(t *testing.T) {
+	now := time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)
+	insideTheWindow := &subscription.StoreSubscription{CreatedAt: now.Add(-10 * 24 * time.Hour)}
+
+	// Stripe's word wins in both directions.
+	require.Equal(t, subscription.StatusActive,
+		restoredStatus(insideTheWindow, "active", now),
+		"an early converter is active however much trial window remains")
+	require.Equal(t, subscription.StatusTrialing,
+		restoredStatus(insideTheWindow, StatusTrialing, now))
+
+	pastTheWindow := &subscription.StoreSubscription{CreatedAt: now.Add(-200 * 24 * time.Hour)}
+	require.Equal(t, subscription.StatusTrialing,
+		restoredStatus(pastTheWindow, StatusTrialing, now),
+		"an operator-extended trial Stripe still calls trialing is a trial")
+}
+
+// TestRestoredStatus_FallsBackToTheWindowWithoutStripe covers a subscription
+// Stripe never billed — a trial that added no card. It cannot have converted,
+// because conversion requires the card, so the local window is both sound and
+// the only answer available.
+func TestRestoredStatus_FallsBackToTheWindowWithoutStripe(t *testing.T) {
 	now := time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)
 
 	midTrial := &subscription.StoreSubscription{CreatedAt: now.Add(-10 * 24 * time.Hour)}
-	require.Equal(t, subscription.StatusTrialing, restoredStatus(midTrial, now))
+	require.Equal(t, subscription.StatusTrialing, restoredStatus(midTrial, "", now))
 
 	pastTrial := &subscription.StoreSubscription{CreatedAt: now.Add(-200 * 24 * time.Hour)}
-	require.Equal(t, subscription.StatusActive, restoredStatus(pastTrial, now))
+	require.Equal(t, subscription.StatusActive, restoredStatus(pastTrial, "", now))
 
-	// An operator-extended trial is still a trial, which is the whole reason
-	// this defers to trial.EndsAt rather than restating created_at + 90d.
+	// The operator-extended date is what trial.EndsAt reads, which is the
+	// reason this defers to it rather than restating created_at + 90d.
 	extended := now.Add(30 * 24 * time.Hour)
 	operatorExtended := &subscription.StoreSubscription{
 		CreatedAt:   now.Add(-200 * 24 * time.Hour),
 		TrialEndsAt: &extended,
 	}
-	require.Equal(t, subscription.StatusTrialing, restoredStatus(operatorExtended, now))
+	require.Equal(t, subscription.StatusTrialing, restoredStatus(operatorExtended, "", now))
 
-	require.Equal(t, subscription.StatusActive, restoredStatus(nil, now))
+	require.Equal(t, subscription.StatusActive, restoredStatus(nil, "", now))
 }
 
 func TestApplySaveOfferDiscount_AppliedWhenPromoSucceeds(t *testing.T) {

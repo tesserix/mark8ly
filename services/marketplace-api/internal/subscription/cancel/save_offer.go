@@ -150,11 +150,26 @@ func derefString(s *string) string {
 // ending and then simply be billed — a row that corrects itself at the first
 // invoice, weeks after the messages that should have preceded it.
 //
-// The trial end is the operator-extended date when there is one, else signup
-// plus the trial length; trial.EndsAt owns that rule and this defers to it
-// rather than restating it.
-func restoredStatus(sub *subscription.StoreSubscription, now time.Time) subscription.SubscriptionStatus {
+// STRIPE IS THE AUTHORITY, not the local trial window. trial.EndsAt answers
+// "when would this trial end" — the operator-extended date, else signup plus
+// the trial length — which is a DIFFERENT question from "is this a trial".
+// A merchant who added a card on day 30 converted to active while
+// created_at + 90d is still sixty days away, and deciding from the window
+// alone would have restored them to `trialing`: a paying subscriber demoted
+// into a trial, back inside the expiry crons. Stripe's own status does not
+// have that ambiguity.
+//
+// stripeStatus is empty for a subscription Stripe never billed — a trial that
+// added no card. Those cannot have converted (conversion requires the card),
+// so the local window is a sound answer for them and the only one available.
+func restoredStatus(sub *subscription.StoreSubscription, stripeStatus string, now time.Time) subscription.SubscriptionStatus {
 	if sub == nil {
+		return subscription.StatusActive
+	}
+	if stripeStatus != "" {
+		if stripeStatus == StatusTrialing {
+			return subscription.StatusTrialing
+		}
 		return subscription.StatusActive
 	}
 	if trial.EndsAt(*sub).After(now) {

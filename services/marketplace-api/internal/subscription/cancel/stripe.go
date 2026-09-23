@@ -27,7 +27,16 @@ var ErrStripeNotWired = errors.New("cancel: stripe billing is not configured for
 type StripeState struct {
 	CancelAtPeriodEnd bool
 	CurrentPeriodEnd  time.Time // zero when Stripe reports none
+	// Status is Stripe's own subscription status ("trialing", "active", …),
+	// empty when unknown. It is the authority on whether a subscription is
+	// still in its trial: the local trial window says when a trial WOULD end,
+	// which is a different question once a merchant has converted early.
+	Status string
 }
+
+// StatusTrialing is the Stripe subscription status for a subscription inside
+// its trial period.
+const StatusTrialing = "trialing"
 
 // StripeCanceller is the narrow slice of the Stripe client this flow needs.
 // Declared here so the dependency is optional and stubbable, the same shape
@@ -77,7 +86,7 @@ func (a *StripeAdapter) Resume(ctx context.Context, subscriptionID string) (Stri
 }
 
 func toStripeState(sub *billingstripe.Subscription) StripeState {
-	out := StripeState{CancelAtPeriodEnd: sub.CancelAtPeriodEnd}
+	out := StripeState{CancelAtPeriodEnd: sub.CancelAtPeriodEnd, Status: sub.Status}
 	if sub.CurrentPeriodEnd > 0 {
 		out.CurrentPeriodEnd = time.Unix(sub.CurrentPeriodEnd, 0).UTC()
 	}

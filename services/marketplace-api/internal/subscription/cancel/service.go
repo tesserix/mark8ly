@@ -261,20 +261,25 @@ func (s *Service) acceptSaveOffer(ctx context.Context, in Input, sub *subscripti
 	if err != nil {
 		return Output{}, err
 	}
+	var stripeStatus string
 	if billed {
-		if _, err := s.stripe.Resume(ctx, stripeSubID); err != nil {
+		state, err := s.stripe.Resume(ctx, stripeSubID)
+		if err != nil {
 			s.logger.Error("cancel: stripe would not clear the scheduled cancellation — reversal refused",
 				"store_id", in.StoreID, "tenant_id", in.TenantID,
 				"stripe_subscription_id", stripeSubID, "err", err)
 			return Output{}, fmt.Errorf("%w: %v", ErrStripeUnavailable, err)
 		}
+		// Stripe's status is what decides whether this reversal lands back in
+		// a trial; see restoredStatus.
+		stripeStatus = state.Status
 		if err := s.clearCancellationSchedule(ctx, in); err != nil {
 			s.logger.Error("cancel: reversed at stripe but the local flag could not be cleared",
 				"store_id", in.StoreID, "tenant_id", in.TenantID, "err", err)
 		}
 	}
 
-	restored := restoredStatus(sub, s.now())
+	restored := restoredStatus(sub, stripeStatus, s.now())
 	err = statemachine.Transition(ctx, statemachine.TransitionInput{
 		DB:       s.db,
 		Emitter:  s.emitter,

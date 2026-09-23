@@ -53,7 +53,7 @@ observability and legal, and is listed below rather than repeated.
 | | Item | Why it is stuck |
 |---|---|---|
 | 1 | **`BILLING_WRITES_ENABLED`** | Subscribe and cancel still answer 503. Every condition §1.5 named is met in code; what is missing is a live-mode run — subscribe, cancel, un-cancel, let a period roll — and then the chart flag. Nobody has been charged, and this gate is what keeps that true. |
-| 2 | ~~**Recover the 31 stuck webhook events**~~ **— not recoverable, and not ours.** Checked in production 2026-09-23: none of the 31 carries the `mark8ly_store_id` metadata `CreateSubscription` stamps, and no `store_subscriptions` row holds a Stripe customer id to match them — all five rows are trialing or closed, and a trial has no Stripe customer until card-add. They are events for subscriptions this service never created, arriving on a shared Stripe account. The seven `invoice.paid` among them are NOT mark8ly revenue; this document previously implied they were. Close them out with `webhook-replay -acknowledge -reason ...`, which #911 adds. | Replaying would fail them six more times and re-flag. |
+| 2 | ~~**Recover the 31 stuck webhook events**~~ **— not recoverable, and not ours.** Checked in production 2026-09-23: none of the 31 carries the `mark8ly_store_id` metadata `CreateSubscription` stamps, and no `store_subscriptions` row holds a Stripe customer id to match them — all five rows are trialing or closed, and a trial has no Stripe customer until card-add. They are events for subscriptions this service never created, arriving on a shared Stripe account. The seven `invoice.paid` among them are NOT mark8ly revenue; this document previously implied they were. Closed out 2026-09-23 with `webhook-replay -all -acknowledge`: 31 targeted, 31 actioned, `manual_review_required` false on all of them, reason stamped, queue empty. | Done. |
 | 3 | **Counsel, and the NZ decision** | Unchanged and still the longest pole. Removing NZ from the allowlist is a one-line change that reclaims roughly ten weeks. |
 
 ### Observability — the honest remainder
@@ -80,16 +80,47 @@ tesserix-k8s#1066 added external uptime checks and #1065/#1076 added tunnel
 rules that now route to Slack, so the OUTSIDE-IN view improved today. Nothing
 above it did.
 
+#1066's stack had never planned green: `alert_notification_channels` is
+required with no default — deliberately, because a default of `[]` produces
+alert policies that render green, pass review and tell nobody, which is the
+exact failure the stack exists to end. #1078 names the recipient (a Cloud
+Monitoring Slack channel against `#falco-events`, the same channel
+Alertmanager posts to) and the stack plans `10 to add, 0 to change`.
+
 ### Correctness and product, still open
 
 - **Funnel instrumentation.** Still zero `.track(`/`.capture(` repo-wide. Two
   days of work, and without it none of the launch targets are computable —
   the highest value-per-hour item in this document.
 - **Sentry** is declared in config and read by nothing.
-- **Fail-open secrets at boot.** `MARKETPLACE_STOREFRONT_KEY` and
-  `AUDIT_INGEST_SECRET` still default to `""` and no-op their middleware.
-  `platformauth.RequireInternalAuth` has the same shape —
-  `RequireInternalAuthStrict` exists, 503s instead, and nothing uses it.
+- **Fail-open secrets at boot.** This entry was three claims and two of
+  them were wrong. Checked against the live cluster 2026-09-23:
+  - `MARKETPLACE_STOREFRONT_KEY` was worse than fail-open — it was fail-open
+    **in production**. The chart injected the secret under the name
+    `STOREFRONT_KEY`; the binary reads `MARKETPLACE_STOREFRONT_KEY`. So
+    `cfg.StorefrontKey` was `""` on a live pod and `RequireStorefrontKey`
+    no-opped: `GET api.mark8ly.com/api/v1/storefront/stores/demo-store/
+    products` answered 200 with no header, and 200 again with a deliberately
+    wrong key. Every `/storefront/stores/*` route — products, cart holds,
+    checkout, orders, account — was ungated. Fixed in tesserix-k8s#1079; the
+    44-byte secret had been mounted and correct the whole time, and the
+    Next.js app opposite had always sent the header.
+  - `AUDIT_INGEST_SECRET` is **not** fail-open in production. The env name
+    matches what the binary reads and the secret holds 64 bytes, so the gate
+    is live. The `default:""` is a local-dev affordance, as intended.
+  - `RequireInternalAuthStrict` is **not** unused. `platform-api`'s
+    `routes/internal.go:73` mounts the strict group on it, which is what
+    gates the tenant directory (#277). The permissive group beside it is a
+    deliberate second tier, not an oversight.
+
+  The narrow version is now closed too. `Validate()` refuses to boot outside
+  dev on an empty `StorefrontKey`, alongside the four it already checked —
+  which is what would have turned the bug above into a crash-loop on the
+  first deploy instead of months of silence. It is gated on
+  `mode.RunsStorefront()`, because `MODE=admin` deliberately does not carry
+  the secret and an unconditional check would crash-loop the admin
+  deployment instead. Landed after tesserix-k8s#1079 was verified in
+  production, in that order, for the same reason.
 - ~~**`reconciliation-cron`**~~ **— fixed.** It was worse than "not in the
   image": the counter it emits is registered on the in-process default
   registry, so a short-lived Job could never deliver it — nothing scrapes a
@@ -98,6 +129,23 @@ above it did.
   still cannot fire. The pass now runs in-process inside marketplace-api,
   which IS scraped, under an advisory lock; `cmd/reconciliation-cron` is
   deleted rather than left as a second way to run it.
+
+  That fix was necessary and not sufficient, which only checking it end to
+  end showed. After #910 deployed, live Prometheus still returned zero
+  results for both `mark8ly_subscription_reconciliation_drift_total` and
+  `subscription:reconciliation_drift:rate1h`, with the pods up and scraped:
+  the counter is a `CounterVec`, and a `CounterVec` with no children exports
+  nothing. The series would first have appeared on the night drift was
+  found — a metric that works only once something else has already gone
+  wrong. #912 publishes every `drift_type` at zero from process start.
+
+  Worse, a clean pass and a dead cron both leave every series at zero, so
+  the job could have stopped entirely and every dashboard would have agreed
+  the estate was fine. #912 adds
+  `mark8ly_subscription_reconciliation_last_success_timestamp_seconds`,
+  advanced only where a pass COMPLETES, and tesserix-k8s#1080 the matching
+  `StripeReconciliationStale` rule (26h, `max()` across replicas — only the
+  advisory-lock winner runs the pass).
 - **`CONSOLE_CATALOG_MODE` fails open** to the compiled test-mode catalog.
 - **Email:** no merchant "new order" notification, no "subscription cancelled"
   confirmation.
@@ -118,6 +166,25 @@ review and on a dashboard. That is the same failure as the ServiceMonitor
 scraped for 228 days with no rule reading it, and as `reconciliation-cron`
 above. **"Does it exist" is the wrong question; "is it wired end to end" is
 the one that finds these.**
+
+Three more turned up the same way before the session ended, and all three
+were found by checking a thing that had just been declared fixed:
+
+- The **storefront key gate** had a correct secret, a correct ExternalSecret,
+  a correct client, a `values.yaml` comment asserting it validated requests,
+  and a `_proxy.ts` comment asserting the edge enforced it. The env var name
+  differed by a prefix, so the server never read it, and every route it
+  guards answered 200 to a wrong key.
+- The **drift counter** was moved into a scraped process by #910 and still
+  had no series, because an unchild'd `CounterVec` exports nothing.
+- The **uptime stack** shipped with alert policies whose notification channel
+  list had never been set, so it could not plan at all.
+
+The sharpened version: a mechanism is not wired until you have seen the
+signal come out the far end. For a gate that means a request that should be
+REJECTED actually being rejected — not a 200 on the happy path, which an
+absent gate also produces. For a metric it means the series in Prometheus,
+not the code that increments it. Every one of these passed the weaker test.
 
 ---
 

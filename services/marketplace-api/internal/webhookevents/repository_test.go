@@ -168,3 +168,51 @@ func TestFlagManualReview_RemovesFromTheRecoveryQueue(t *testing.T) {
 		require.NotEqual(t, "evt_manual", o.EventID)
 	}
 }
+
+// TestAcknowledge_ClosesAnEventThatWillNeverResolve — some flagged events
+// cannot be replayed into success, and leaving them flagged buries the next
+// real one. Acknowledge is the disposition for those: processed, unflagged,
+// and carrying the reason someone decided that.
+func TestAcknowledge_ClosesAnEventThatWillNeverResolve(t *testing.T) {
+	db := testdb.NewDB(t, "stripe_webhook_events")
+	repo := webhookevents.NewRepository()
+	ctx := context.Background()
+
+	_, err := repo.InsertIfNew(ctx, db, webhookevents.StripeWebhookEvent{
+		EventID:   "evt_foreign",
+		EventType: "invoice.paid",
+		Payload:   []byte(`{}`),
+	})
+	require.NoError(t, err)
+	require.NoError(t, repo.FlagManualReview(ctx, db, "evt_foreign", "retry cap exceeded"))
+
+	const reason = "not a mark8ly subscription: no mark8ly_store_id metadata"
+	require.NoError(t, repo.Acknowledge(ctx, db, "evt_foreign", reason))
+
+	got, err := repo.Get(ctx, db, "evt_foreign")
+	require.NoError(t, err)
+	require.NotNil(t, got.ProcessedAt, "an acknowledged event is finished")
+	require.False(t, got.ManualReviewRequired)
+	require.NotNil(t, got.ProcessingError)
+	require.Equal(t, reason, *got.ProcessingError, "the reason is the record")
+
+	// And it leaves both queues: recovery will not pick it up, and it no
+	// longer sits in the manual-review list hiding the next real failure.
+	pending, err := repo.GetUnprocessed(ctx, db, 10)
+	require.NoError(t, err)
+	require.Empty(t, pending)
+
+	stuck, err := repo.ListManualReview(ctx, db, 10)
+	require.NoError(t, err)
+	require.Empty(t, stuck)
+}
+
+// TestAcknowledge_UnknownEventIsAnError — a typo in an event id must not
+// report success, because the operator would believe something was closed.
+func TestAcknowledge_UnknownEventIsAnError(t *testing.T) {
+	db := testdb.NewDB(t, "stripe_webhook_events")
+	repo := webhookevents.NewRepository()
+
+	err := repo.Acknowledge(context.Background(), db, "evt_does_not_exist", "whatever")
+	require.Error(t, err)
+}

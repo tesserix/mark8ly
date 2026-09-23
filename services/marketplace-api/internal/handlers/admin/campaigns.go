@@ -138,17 +138,36 @@ func (h *CampaignHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"data": ToCampaignResponse(model)})
 }
 
-// Get handles GET /admin/stores/:storeId/campaigns/:id.
-func (h *CampaignHandler) Get(c *gin.Context) {
+// requireCampaignInStore parses :id, loads the campaign, and proves it
+// belongs to :storeId.
+//
+// StoreMiddleware proves only that :storeId belongs to the caller's tenant,
+// and every campaign service method is keyed on a bare campaign id. Without
+// this, a staff user could read, edit, delete — or SEND — another tenant's
+// campaign, which puts mail in another merchant's customers' inboxes.
+func (h *CampaignHandler) requireCampaignInStore(c *gin.Context) (*campaign.Campaign, bool) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
-		return
+		return nil, false
 	}
 
 	result, err := h.repo.GetCampaignByID(c.Request.Context(), h.svc.DB(), id)
 	if err != nil {
 		RespondErr(c, err, h.logger)
+		return nil, false
+	}
+	if result.StoreID.String() != c.Param("storeId") {
+		RespondErr(c, apperrors.NotFound("campaign"), h.logger)
+		return nil, false
+	}
+	return result, true
+}
+
+// Get handles GET /admin/stores/:storeId/campaigns/:id.
+func (h *CampaignHandler) Get(c *gin.Context) {
+	result, ok := h.requireCampaignInStore(c)
+	if !ok {
 		return
 	}
 
@@ -157,15 +176,8 @@ func (h *CampaignHandler) Get(c *gin.Context) {
 
 // Patch handles PATCH /admin/stores/:storeId/campaigns/:id.
 func (h *CampaignHandler) Patch(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
-		return
-	}
-
-	existing, err := h.repo.GetCampaignByID(c.Request.Context(), h.svc.DB(), id)
-	if err != nil {
-		RespondErr(c, err, h.logger)
+	existing, ok := h.requireCampaignInStore(c)
+	if !ok {
 		return
 	}
 
@@ -221,13 +233,12 @@ func (h *CampaignHandler) Patch(c *gin.Context) {
 
 // Delete handles DELETE /admin/stores/:storeId/campaigns/:id.
 func (h *CampaignHandler) Delete(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
+	existing, ok := h.requireCampaignInStore(c)
+	if !ok {
 		return
 	}
 
-	if err := h.svc.DeleteCampaign(c.Request.Context(), id); err != nil {
+	if err := h.svc.DeleteCampaign(c.Request.Context(), existing.ID); err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}
@@ -240,11 +251,13 @@ func (h *CampaignHandler) Delete(c *gin.Context) {
 //  1. Max 3 concurrent sends per store via h.slots.AcquireSlot → 429
 //  2. Monthly campaign email budget via h.budget.Reserve → 403
 func (h *CampaignHandler) Send(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
+	// Scope first: a slot and a budget reservation are both side effects,
+	// so neither may be spent on a campaign that is not this store's.
+	cmp, ok := h.requireCampaignInStore(c)
+	if !ok {
 		return
 	}
+	id := cmp.ID
 	storeID, err := uuid.Parse(c.Param("storeId"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("storeId", "invalid UUID"), h.logger)
@@ -268,13 +281,9 @@ func (h *CampaignHandler) Send(c *gin.Context) {
 		defer release()
 	}
 
-	// P9: check budget. Fetch recipient count from existing campaign data first.
+	// P9: check budget. Recipient count comes from the campaign the scope
+	// check already loaded.
 	if h.budget != nil {
-		cmp, fetchErr := h.repo.GetCampaignByID(c.Request.Context(), h.svc.DB(), id)
-		if fetchErr != nil {
-			RespondErr(c, fetchErr, h.logger)
-			return
-		}
 		recipientCount := cmp.TotalRecipients
 		if recipientCount <= 0 {
 			// Segment not yet resolved — resolve now so we can check budget.
@@ -319,9 +328,8 @@ func (h *CampaignHandler) Send(c *gin.Context) {
 
 // Schedule handles POST /admin/stores/:storeId/campaigns/:id/schedule.
 func (h *CampaignHandler) Schedule(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
+	existing, ok := h.requireCampaignInStore(c)
+	if !ok {
 		return
 	}
 
@@ -337,7 +345,7 @@ func (h *CampaignHandler) Schedule(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.ScheduleCampaign(c.Request.Context(), id, scheduledAt)
+	result, err := h.svc.ScheduleCampaign(c.Request.Context(), existing.ID, scheduledAt)
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return
@@ -348,13 +356,12 @@ func (h *CampaignHandler) Schedule(c *gin.Context) {
 
 // Pause handles POST /admin/stores/:storeId/campaigns/:id/pause.
 func (h *CampaignHandler) Pause(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
+	existing, ok := h.requireCampaignInStore(c)
+	if !ok {
 		return
 	}
 
-	result, err := h.svc.PauseCampaign(c.Request.Context(), id)
+	result, err := h.svc.PauseCampaign(c.Request.Context(), existing.ID)
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return
@@ -365,13 +372,12 @@ func (h *CampaignHandler) Pause(c *gin.Context) {
 
 // Resume handles POST /admin/stores/:storeId/campaigns/:id/resume.
 func (h *CampaignHandler) Resume(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
+	existing, ok := h.requireCampaignInStore(c)
+	if !ok {
 		return
 	}
 
-	result, err := h.svc.ResumeCampaign(c.Request.Context(), id)
+	result, err := h.svc.ResumeCampaign(c.Request.Context(), existing.ID)
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return

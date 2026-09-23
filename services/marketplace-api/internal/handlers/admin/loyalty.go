@@ -129,18 +129,38 @@ func (h *LoyaltyHandler) ListMembers(c *gin.Context) {
 }
 
 // GetMember handles GET /admin/stores/:storeId/loyalty/members/:id.
-func (h *LoyaltyHandler) GetMember(c *gin.Context) {
+// requireMemberInStore parses :id, loads the loyalty member, and proves it
+// belongs to :storeId.
+//
+// StoreMiddleware proves only that :storeId belongs to the caller's tenant.
+// GetCustomerByID takes a bare member id and carries no tenant filter of its
+// own, so without this a staff user could read any member's balance and
+// transaction history — or move their points — from any store in the estate.
+func (h *LoyaltyHandler) requireMemberInStore(c *gin.Context) (*loyalty.CustomerLoyalty, bool) {
 	memberID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
-		return
+		return nil, false
 	}
 
 	member, err := h.svc.GetCustomerByID(c.Request.Context(), memberID)
 	if err != nil {
 		RespondErr(c, err, h.logger)
+		return nil, false
+	}
+	if member.StoreID.String() != c.Param("storeId") {
+		RespondErr(c, apperrors.NotFound("loyalty_member"), h.logger)
+		return nil, false
+	}
+	return member, true
+}
+
+func (h *LoyaltyHandler) GetMember(c *gin.Context) {
+	member, ok := h.requireMemberInStore(c)
+	if !ok {
 		return
 	}
+	memberID := member.ID
 
 	page, limit := loyaltyParsePagination(c)
 	txns, txnTotal, err := h.svc.ListTransactions(c.Request.Context(), memberID, page, limit)
@@ -165,11 +185,11 @@ func (h *LoyaltyHandler) GetMember(c *gin.Context) {
 
 // AdjustPoints handles POST /admin/stores/:storeId/loyalty/members/:id/adjust.
 func (h *LoyaltyHandler) AdjustPoints(c *gin.Context) {
-	memberID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		RespondErr(c, apperrors.ValidationFailed("id", "invalid UUID"), h.logger)
+	member, ok := h.requireMemberInStore(c)
+	if !ok {
 		return
 	}
+	memberID := member.ID
 	tenantID := c.GetString("tenant_id")
 	tenantUUID, err := uuid.Parse(tenantID)
 	if err != nil {

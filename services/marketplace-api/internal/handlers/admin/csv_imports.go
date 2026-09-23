@@ -165,13 +165,29 @@ func (h *CSVImportsHandler) List(c *gin.Context) {
 	})
 }
 
-// Status handles GET /admin/stores/:storeId/csv-imports/:id.
-func (h *CSVImportsHandler) Status(c *gin.Context) {
-	jobID := c.Param("id")
-
-	job, err := h.svc.GetStatus(c.Request.Context(), jobID)
+// requireJobInStore loads :id and proves the job belongs to :storeId.
+//
+// StoreMiddleware proves only that :storeId belongs to the caller's tenant,
+// and csvjob.Service is keyed on a bare job id. Without this, a staff user
+// could read another tenant's import progress — including its error CSV,
+// which quotes their product rows — or cancel their running import.
+func (h *CSVImportsHandler) requireJobInStore(c *gin.Context) (*csvjob.CsvImportJob, bool) {
+	job, err := h.svc.GetStatus(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		RespondErr(c, err, h.logger)
+		return nil, false
+	}
+	if job.StoreID != c.Param("storeId") {
+		RespondErr(c, apperrors.NotFound("csv_import_job"), h.logger)
+		return nil, false
+	}
+	return job, true
+}
+
+// Status handles GET /admin/stores/:storeId/csv-imports/:id.
+func (h *CSVImportsHandler) Status(c *gin.Context) {
+	job, ok := h.requireJobInStore(c)
+	if !ok {
 		return
 	}
 	c.JSON(http.StatusOK, ToCSVImportJobResponse(job))
@@ -179,9 +195,12 @@ func (h *CSVImportsHandler) Status(c *gin.Context) {
 
 // Cancel handles POST /admin/stores/:storeId/csv-imports/:id/cancel.
 func (h *CSVImportsHandler) Cancel(c *gin.Context) {
-	jobID := c.Param("id")
+	job, ok := h.requireJobInStore(c)
+	if !ok {
+		return
+	}
 
-	if err := h.svc.Cancel(c.Request.Context(), jobID); err != nil {
+	if err := h.svc.Cancel(c.Request.Context(), job.ID); err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}
@@ -192,11 +211,8 @@ func (h *CSVImportsHandler) Cancel(c *gin.Context) {
 // Streams the error CSV from GCS as text/csv. Currently returns 501 when
 // GCS streaming is not wired (deferred to CI with real GCS).
 func (h *CSVImportsHandler) DownloadErrors(c *gin.Context) {
-	jobID := c.Param("id")
-
-	job, err := h.svc.GetStatus(c.Request.Context(), jobID)
-	if err != nil {
-		RespondErr(c, err, h.logger)
+	job, ok := h.requireJobInStore(c)
+	if !ok {
 		return
 	}
 	if job.ErrorCSVGCSPath == nil || *job.ErrorCSVGCSPath == "" {

@@ -41,13 +41,22 @@ func (f *segmentDeleteRepo) DeleteSegment(_ *gorm.DB, _ uuid.UUID) error {
 
 func runSegmentDelete(t *testing.T, campaignCount int64) (*httptest.ResponseRecorder, map[string]any, *segmentDeleteRepo) {
 	t.Helper()
+	return runSegmentDeleteAs(t, campaignCount, "")
+}
+
+// runSegmentDeleteAs issues the DELETE as callerStoreID. Empty means "the
+// store the segment actually belongs to" — pass another uuid to exercise the
+// cross-store refusal.
+func runSegmentDeleteAs(t *testing.T, campaignCount int64, callerStoreID string) (*httptest.ResponseRecorder, map[string]any, *segmentDeleteRepo) {
+	t.Helper()
 
 	segID := uuid.New()
+	storeID := uuid.New()
 	repo := &segmentDeleteRepo{
 		seg: &campaign.CustomerSegment{
 			ID:       segID,
 			TenantID: uuid.New(),
-			StoreID:  uuid.New(),
+			StoreID:  storeID,
 			Name:     "VIPs",
 		},
 		campaignCount: campaignCount,
@@ -58,8 +67,11 @@ func runSegmentDelete(t *testing.T, campaignCount int64) (*httptest.ResponseReco
 	r := gin.New()
 	r.DELETE("/admin/stores/:storeId/segments/:id", h.Delete)
 
+	if callerStoreID == "" {
+		callerStoreID = storeID.String()
+	}
 	req := httptest.NewRequest(http.MethodDelete,
-		"/admin/stores/"+uuid.NewString()+"/segments/"+segID.String(), nil)
+		"/admin/stores/"+callerStoreID+"/segments/"+segID.String(), nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -105,5 +117,22 @@ func TestSegmentDelete_Unreferenced_Returns204(t *testing.T) {
 	}
 	if !repo.deleteCalled {
 		t.Fatal("expected the segment to be deleted")
+	}
+}
+
+// TestSegmentDelete_OtherStore_Returns404 pins the store scope: a segment id
+// belonging to another store must not be deletable, and must not even
+// confirm it exists. A segment is the recipient list a campaign sends to.
+func TestSegmentDelete_OtherStore_Returns404(t *testing.T) {
+	w, body, repo := runSegmentDeleteAs(t, 0, uuid.NewString())
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (body %q)", w.Code, w.Body.String())
+	}
+	if body["error"] != "not_found" {
+		t.Fatalf("error = %v, want not_found", body["error"])
+	}
+	if repo.deleteCalled {
+		t.Fatal("another store's segment was deleted")
 	}
 }

@@ -59,19 +59,90 @@ const (
 	storeIDMetadataKey = "mark8ly_store_id"
 )
 
+// DriftTypes is every value that can appear in the drift_type label. It
+// exists so init() can publish a zero for each one — see below.
+func DriftTypes() []string {
+	return []string{
+		DriftTypeStatusMismatch,
+		DriftTypeStripeNotFound,
+		DriftTypeLocallyMissing,
+		DriftTypePlanMismatch,
+	}
+}
+
 // driftTotal is the Prometheus counter for reconciliation drift events.
 // Registered once by init() against the default registry.
 var driftTotal = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
 		Namespace: "mark8ly",
 		Name:      "subscription_reconciliation_drift_total",
-		Help:      "Count of subscription status drift events detected during daily Stripe reconciliation.",
+		Help:      "Count of subscription status drift events detected during daily Stripe reconciliation. Every drift_type is published at zero from startup, so an empty result means the metric is missing, not that the estate is clean.",
 	},
 	[]string{"drift_type"},
 )
 
+// lastSuccessTimestamp is when a pass last COMPLETED on THIS replica. A
+// failed pass must never advance it; that is what makes silence detectable.
+//
+// Read it with max() across replicas. Two pods serve this deployment and
+// only the one that wins the advisory lock does the work, so the loser's
+// gauge legitimately stays behind — a per-series staleness comparison would
+// page every night for a deployment behaving exactly as designed.
+var lastSuccessTimestamp = prometheus.NewGauge(
+	prometheus.GaugeOpts{
+		Namespace: "mark8ly",
+		Name:      "subscription_reconciliation_last_success_timestamp_seconds",
+		Help:      "Unix time this replica last COMPLETED a reconciliation pass. Never advanced by a failed pass. Aggregate with max() across replicas — only the advisory-lock winner runs the pass.",
+	},
+)
+
+// init publishes a zero for every drift type rather than only registering
+// the vector.
+//
+// A CounterVec with no children exports NOTHING, so before this the estate
+// held no series at all for subscription_reconciliation_drift_total — the
+// recording rule subscription:reconciliation_drift:rate1h returned empty and
+// the StripeReconciliationDrift alert compared an absent vector to zero.
+// Verified against live Prometheus on 2026-09-23: both queries returned
+// zero results while the pods were up and scraped.
+//
+// #910 moved this counter into a process that IS scraped, which was
+// necessary and not sufficient: a counter that only springs into existence
+// on the first bad night is indistinguishable from a counter nobody is
+// collecting, and the state it cannot describe — "clean" — is the state it
+// spends almost all its time in.
+//
+// Registering in init() means every mode of the binary publishes the zeros,
+// including storefront pods that never run the pass. That is harmless for a
+// rate() over a sum, and it is why the heartbeat below is registered
+// separately, only where the cron is really wired.
 func init() {
 	prometheus.MustRegister(driftTotal)
+	publishZeroSeries(driftTotal)
+}
+
+// publishZeroSeries materialises one child per drift type. Extracted from
+// init() so a test can exercise it against a fresh vector — asserting on
+// driftTotal's own values cannot work, since every other test in the
+// package shares this process and increments it.
+func publishZeroSeries(vec *prometheus.CounterVec) {
+	for _, driftType := range DriftTypes() {
+		vec.WithLabelValues(driftType)
+	}
+}
+
+// MustRegisterCronMetrics registers the heartbeat gauge. Call it once, and
+// ONLY from the branch that actually schedules the cron.
+//
+// Registering a gauge publishes it at zero immediately, and a zero unix
+// timestamp reads as "last succeeded in 1970" — so registering it on a pod
+// that was never going to run the pass would make a staleness alert fire
+// forever against a deployment that is configured exactly as intended.
+// Absent means "not enabled here"; present-but-stale means "enabled and not
+// working", which is the thing worth paging about. Same reasoning, and the
+// same shape, as billing/consolecatalog.MustRegisterMetrics.
+func MustRegisterCronMetrics(reg prometheus.Registerer) {
+	reg.MustRegister(lastSuccessTimestamp)
 }
 
 // billablePlans are the plans that have a Stripe Price object in the catalog.
@@ -208,6 +279,11 @@ func (r *Reconciler) RunOnce(ctx context.Context) (int, error) {
 	r.logger.Info("reconciliation: batch complete",
 		"checked", len(rows),
 		"drift", driftCount)
+
+	// Advanced here and nowhere else: every early return above is a pass
+	// that did not complete, and leaving the gauge behind on those is the
+	// entire point of having it.
+	lastSuccessTimestamp.SetToCurrentTime()
 
 	return driftCount, nil
 }

@@ -10,6 +10,7 @@ import (
 	"context"
 	"database/sql"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -314,15 +315,24 @@ func main() {
 	}
 
 	// ─── Post-identity login gauntlet ──────────────────────────────────
+	demoEmails := splitCSV(cfg.DemoLoginEmails)
+	if len(demoEmails) > 0 {
+		// Loud on purpose. These accounts are weaker than every other
+		// account on the platform, and the one place that is visible
+		// without reading config is this line.
+		log.Warn("autologin: demo accounts skip the new-device email OTP",
+			"count", len(demoEmails), "emails", demoEmails)
+	}
 	autologinSvc := autologin.NewService(autologin.Config{
-		FGA:      fgaClient,
-		Sessions: sessions,
-		Registry: sessionRegistry,
-		MFA:      mfaSvc,
-		Devices:  deviceEvaluator,
-		EmailOTP: otpIssuer,
-		Audit:    auditClient,
-		Logger:   log,
+		FGA:        fgaClient,
+		Sessions:   sessions,
+		Registry:   sessionRegistry,
+		MFA:        mfaSvc,
+		Devices:    deviceEvaluator,
+		EmailOTP:   otpIssuer,
+		Audit:      auditClient,
+		Logger:     log,
+		DemoEmails: demoEmails,
 	})
 	// ─── Zitadel login client (#524 phase 2) ────────────────────────────
 	// Constructed only when explicitly enabled AND fully configured; nil
@@ -471,4 +481,17 @@ func main() {
 		log.Error("http server", "err", err)
 		panic(err)
 	}
+}
+
+// splitCSV turns a comma-separated env value into a trimmed, non-empty
+// slice. Returns nil for an empty or all-blank value, so an unset variable
+// and a variable set to ", ," behave identically.
+func splitCSV(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

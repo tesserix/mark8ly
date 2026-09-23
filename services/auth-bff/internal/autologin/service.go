@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/mark8ly/auth-bff/internal/audit"
@@ -57,9 +58,12 @@ type Service struct {
 	mfa      MFAStatusChecker
 	devices  DeviceEvaluator
 	emailOTP ChallengeIssuer
-	audit    *audit.Client // optional — nil/no-op when marketplace-api is not wired
-	logger   *slog.Logger
-	policy   RetryPolicy
+	// demoEmails is a set, lower-cased at construction so the hot path
+	// does no allocation and no per-entry comparison.
+	demoEmails map[string]struct{}
+	audit      *audit.Client // optional — nil/no-op when marketplace-api is not wired
+	logger     *slog.Logger
+	policy     RetryPolicy
 }
 
 // RetryPolicy controls the FGA-check retry loop. Defaults are conservative.
@@ -97,6 +101,10 @@ type Config struct {
 	Audit  *audit.Client
 	Logger *slog.Logger
 	Policy RetryPolicy
+	// DemoEmails are accounts that skip the new-device email-OTP step-up.
+	// See config.DemoLoginEmails for why this is an allowlist of
+	// identities and not a fixed code. Empty changes nothing.
+	DemoEmails []string
 }
 
 // NewService constructs a Service. Defaults are applied to Policy.
@@ -112,15 +120,16 @@ func NewService(cfg Config) *Service {
 		p.MaxBackoff = 500 * time.Millisecond
 	}
 	return &Service{
-		fga:      cfg.FGA,
-		sessions: cfg.Sessions,
-		registry: cfg.Registry,
-		mfa:      cfg.MFA,
-		devices:  cfg.Devices,
-		emailOTP: cfg.EmailOTP,
-		audit:    cfg.Audit,
-		logger:   cfg.Logger,
-		policy:   p,
+		fga:        cfg.FGA,
+		sessions:   cfg.Sessions,
+		registry:   cfg.Registry,
+		mfa:        cfg.MFA,
+		devices:    cfg.Devices,
+		emailOTP:   cfg.EmailOTP,
+		demoEmails: normaliseDemoEmails(cfg.DemoEmails),
+		audit:      cfg.Audit,
+		logger:     cfg.Logger,
+		policy:     p,
 	}
 }
 
@@ -300,6 +309,19 @@ func (s *Service) completeLogin(ctx context.Context, w http.ResponseWriter, id I
 	// Step 2d: an unrecognised device must prove control of the account's
 	// email before it gets a session. This is what makes signing in on a
 	// second device safe rather than merely possible.
+	if newDevice && s.emailOTP != nil && s.isDemoAccount(id.Email) {
+		// A demo account is shared by design, so every prospect arrives on
+		// an unrecognised device and the step-up mails a code to an inbox
+		// they cannot read. Skipping it is the point; logging it loudly is
+		// how it stays visible that this account is weaker than the rest.
+		if s.logger != nil {
+			s.logger.Warn("autologin: demo account — new-device email OTP skipped",
+				"email", id.Email, "user_id", id.UID,
+				"tenant_id", req.WorkspaceTenant, "ip", req.IPAddress)
+		}
+		newDevice = false
+	}
+
 	if newDevice && s.emailOTP != nil {
 		if err := s.emailOTP.IssueChallenge(ctx, id.Email, req.IPAddress); err != nil {
 			if s.logger != nil {
@@ -426,4 +448,38 @@ func (s *Service) checkMembershipWithRetry(ctx context.Context, userID, tenantID
 		return fmt.Errorf("%w: %s", ErrFGAUnreachable, lastErr)
 	}
 	return ErrNotMember
+}
+
+// normaliseDemoEmails lower-cases and trims the configured addresses into a
+// set, dropping blanks. Done once at construction rather than per login.
+func normaliseDemoEmails(emails []string) map[string]struct{} {
+	if len(emails) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(emails))
+	for _, email := range emails {
+		normalised := strings.ToLower(strings.TrimSpace(email))
+		if normalised != "" {
+			set[normalised] = struct{}{}
+		}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	return set
+}
+
+// isDemoAccount reports whether this address is one of the configured demo
+// accounts. Exact match on the whole address, case-insensitive.
+//
+// No wildcard, prefix or domain matching, deliberately: the blast radius of
+// this function is every merchant's new-device protection, and a rule that
+// can match more than it was written for is how that gets widened by
+// accident.
+func (s *Service) isDemoAccount(email string) bool {
+	if len(s.demoEmails) == 0 {
+		return false
+	}
+	_, ok := s.demoEmails[strings.ToLower(strings.TrimSpace(email))]
+	return ok
 }

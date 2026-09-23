@@ -315,3 +315,141 @@ func TestCompleteForProvider_RateLimitSurvivesWrap(t *testing.T) {
 }
 
 var _ = time.Now
+
+// newDemoOTPService is newOTPService with a demo allowlist.
+func newDemoOTPService(t *testing.T, devices DeviceEvaluator, issuer ChallengeIssuer, demo ...string) *Service {
+	t.Helper()
+	sm, err := session.NewManager(session.Config{
+		CookieName: "m8_test", Domain: "localhost", Secure: false, EncryptKey: testKey,
+	})
+	if err != nil {
+		t.Fatalf("session manager: %v", err)
+	}
+	fgaFake := authz.NewFake()
+	fgaFake.SetMembership("user-1", "tenant-uuid-1")
+
+	return NewService(Config{
+		FGA: fgaFake, Sessions: sm, Policy: fastPolicy,
+		Devices: devices, EmailOTP: issuer, DemoEmails: demo,
+	})
+}
+
+// A demo account signs straight in from an unrecognised device. The account is
+// shared with sales leads by design, so the step-up mails a code to an inbox
+// the prospect cannot read — the gate works perfectly and the demo cannot be
+// opened.
+func TestCompleteForProvider_DemoAccount_SkipsOTPOnNewDevice(t *testing.T) {
+	issuer := &stubIssuer{}
+	svc := newDemoOTPService(t, &stubDevices{isNew: true}, issuer, "u@e.com")
+	w := httptest.NewRecorder()
+
+	res, err := svc.CompleteForProvider(context.Background(), w, loginCtx())
+	if err != nil {
+		t.Fatalf("CompleteForProvider: %v", err)
+	}
+	if res.EmailOTPRequired {
+		t.Error("EmailOTPRequired = true, want false for a demo account")
+	}
+	if issuer.count() != 0 {
+		t.Errorf("issued %d challenges, want 0", issuer.count())
+	}
+	if _, ok := cookieNames(t, w)["m8_test"]; !ok {
+		t.Error("no session cookie minted — the demo account did not get in")
+	}
+}
+
+// The allowlist must not widen. Everyone NOT named is still challenged, which
+// is the property that makes this safe to ship at all.
+func TestCompleteForProvider_NonDemoAccount_StillRequiresOTP(t *testing.T) {
+	for _, other := range []string{
+		"someone@e.com",   // different local part, same domain
+		"u@other.com",     // same local part, different domain
+		"xu@e.com",        // superstring
+		"u@e.com.evil.io", // suffix attack
+	} {
+		t.Run(other, func(t *testing.T) {
+			issuer := &stubIssuer{}
+			svc := newDemoOTPService(t, &stubDevices{isNew: true}, issuer, "u@e.com")
+			w := httptest.NewRecorder()
+
+			lc := loginCtx()
+			lc.Email = other
+			res, err := svc.CompleteForProvider(context.Background(), w, lc)
+			if err != nil {
+				t.Fatalf("CompleteForProvider: %v", err)
+			}
+			if !res.EmailOTPRequired {
+				t.Errorf("%q skipped the OTP; the allowlist matched more than it names", other)
+			}
+			if issuer.count() != 1 {
+				t.Errorf("issued %d challenges, want 1", issuer.count())
+			}
+		})
+	}
+}
+
+// Case and surrounding whitespace must not decide whether a gate applies.
+func TestCompleteForProvider_DemoMatchIsCaseAndSpaceInsensitive(t *testing.T) {
+	issuer := &stubIssuer{}
+	svc := newDemoOTPService(t, &stubDevices{isNew: true}, issuer, "  U@E.CoM  ")
+	w := httptest.NewRecorder()
+
+	res, err := svc.CompleteForProvider(context.Background(), w, loginCtx())
+	if err != nil {
+		t.Fatalf("CompleteForProvider: %v", err)
+	}
+	if res.EmailOTPRequired {
+		t.Error("a differently-cased allowlist entry did not match")
+	}
+}
+
+// An unset or blank allowlist must change nothing at all.
+func TestCompleteForProvider_EmptyDemoListChangesNothing(t *testing.T) {
+	for name, demo := range map[string][]string{
+		"nil":    nil,
+		"empty":  {},
+		"blanks": {"", "   ", ","},
+	} {
+		t.Run(name, func(t *testing.T) {
+			issuer := &stubIssuer{}
+			svc := newDemoOTPService(t, &stubDevices{isNew: true}, issuer, demo...)
+			w := httptest.NewRecorder()
+
+			res, err := svc.CompleteForProvider(context.Background(), w, loginCtx())
+			if err != nil {
+				t.Fatalf("CompleteForProvider: %v", err)
+			}
+			if !res.EmailOTPRequired {
+				t.Error("an empty demo list disabled the OTP gate")
+			}
+		})
+	}
+}
+
+// MFA is a separate control and the demo bypass must not touch it. An account
+// with TOTP enrolled still gets the MFA challenge.
+func TestCompleteForProvider_DemoAccountStillHonoursMFA(t *testing.T) {
+	issuer := &stubIssuer{}
+	sm, err := session.NewManager(session.Config{
+		CookieName: "m8_test", Domain: "localhost", Secure: false, EncryptKey: testKey,
+	})
+	if err != nil {
+		t.Fatalf("session manager: %v", err)
+	}
+	fgaFake := authz.NewFake()
+	fgaFake.SetMembership("user-1", "tenant-uuid-1")
+	svc := NewService(Config{
+		FGA: fgaFake, Sessions: sm, Policy: fastPolicy,
+		Devices: &stubDevices{isNew: true}, EmailOTP: issuer,
+		MFA:        stubMFA{enabled: true},
+		DemoEmails: []string{"u@e.com"},
+	})
+
+	res, err := svc.CompleteForProvider(context.Background(), httptest.NewRecorder(), loginCtx())
+	if err != nil {
+		t.Fatalf("CompleteForProvider: %v", err)
+	}
+	if !res.MFARequired {
+		t.Error("MFARequired = false; the demo bypass leaked into the MFA gate")
+	}
+}

@@ -248,6 +248,17 @@ covered by the DPA. This scales with every new store.
   `cmd/webhook-replay` lists what is stuck and puts chosen events back in front of the
   resolver. **The 31 stuck events are recovered by running that tool** — `-list` first.
 
+  **Found while fixing it: `customer.updated` had never been dispatched, in any
+  environment.** Its object IS the customer, so the id is at `data.object.id` and there is
+  no `customer` field — and both routing lookups (the handler's and the resolver's
+  separately-maintained copy) read only `data.object.customer`. Every one of these events
+  resolved to no store, took the orphan path, was answered 200, and retried to the
+  manual-review cap, so it is likely a large share of the 31. The handler it never reached
+  is `handleCustomerUpdated`, which mirrors the merchant's billing address onto
+  `store_subscriptions.email` and tracks `has_default_payment_method` — a NULL email makes
+  every mailer refuse to send, and `cmd/backfill-email` is the only reason any are
+  populated. Extraction now lives once, in `webhookevents.CustomerIDFromPayload`.
+
 ### Email
 - **No "you have a new order" email to the merchant** — the only signal is in-app + device
   push, and the ICP is Instagram sellers who may never install the app. Payment-failure

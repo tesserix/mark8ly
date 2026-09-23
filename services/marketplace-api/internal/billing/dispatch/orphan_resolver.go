@@ -2,8 +2,6 @@ package dispatch
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 
@@ -114,7 +112,7 @@ func (r *OrphanResolver) resolveOne(ctx context.Context, e webhookevents.StripeW
 // resolveStore looks the event's Stripe customer up against
 // store_subscriptions and records the result on the row.
 func (r *OrphanResolver) resolveStore(ctx context.Context, e webhookevents.StripeWebhookEvent) (uuid.UUID, error) {
-	storeID, tenantID, ok := lookupStoreByStripeCustomerPayload(ctx, r.cfg.DB, []byte(e.Payload))
+	storeID, tenantID, ok := lookupStoreByStripeCustomerPayload(ctx, r.cfg.DB, e.EventType, []byte(e.Payload))
 	if !ok {
 		return uuid.Nil, fmt.Errorf("orphan: no subscription for event_id=%s", e.EventID)
 	}
@@ -124,45 +122,17 @@ func (r *OrphanResolver) resolveStore(ctx context.Context, e webhookevents.Strip
 	return storeID, nil
 }
 
-// lookupStoreByStripeCustomerPayload parses customer ID from raw event JSON and
-// resolves (store_id, tenant_id) via store_subscriptions.stripe_customer_id.
-// Duplicates the logic from handlers/webhooks/stripe.go rather than importing
-// it to avoid a dispatcher <- handlers import cycle.
-func lookupStoreByStripeCustomerPayload(ctx context.Context, db *gorm.DB, payload []byte) (uuid.UUID, uuid.UUID, bool) {
-	var e struct {
-		Data struct {
-			Object struct {
-				Customer string `json:"customer"`
-			} `json:"object"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(payload, &e); err != nil || e.Data.Object.Customer == "" {
+// lookupStoreByStripeCustomerPayload resolves an event's customer to a store.
+//
+// This used to hold its own copy of the payload parsing, duplicated from
+// handlers/webhooks/stripe.go to dodge an import cycle — and both copies read
+// only data.object.customer, so neither could resolve a customer.updated
+// event and both retried it to the manual-review cap. The extraction now
+// lives once, in webhookevents, which both packages already import.
+func lookupStoreByStripeCustomerPayload(ctx context.Context, db *gorm.DB, eventType string, payload []byte) (uuid.UUID, uuid.UUID, bool) {
+	customerID := webhookevents.CustomerIDFromPayload(eventType, payload)
+	if customerID == "" {
 		return uuid.Nil, uuid.Nil, false
 	}
-	var row struct {
-		StoreID  string `gorm:"column:store_id"`
-		TenantID string `gorm:"column:tenant_id"`
-	}
-	err := db.WithContext(ctx).Raw(
-		`SELECT store_id::text AS store_id, tenant_id::text AS tenant_id
-         FROM store_subscriptions
-         WHERE stripe_customer_id = ?
-         LIMIT 1`,
-		e.Data.Object.Customer,
-	).Scan(&row).Error
-	if err != nil || row.StoreID == "" {
-		return uuid.Nil, uuid.Nil, false
-	}
-	sid, err := uuid.Parse(row.StoreID)
-	if err != nil {
-		return uuid.Nil, uuid.Nil, false
-	}
-	tid, err := uuid.Parse(row.TenantID)
-	if err != nil {
-		return uuid.Nil, uuid.Nil, false
-	}
-	return sid, tid, true
+	return webhookevents.LookupStoreByCustomer(ctx, db, customerID)
 }
-
-// Sentinel for documentation — callers check nil-ness of returned uuid.
-var _ = errors.New

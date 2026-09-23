@@ -5,7 +5,6 @@ package webhooks
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -72,11 +71,16 @@ func NewStripeHandler(cfg StripeHandlerConfig) *StripeHandler {
 // Handle processes an inbound Stripe webhook POST. It:
 //  1. Caps request body at MaxBodyBytes to prevent OOM attacks.
 //  2. Verifies the Stripe-Signature header on the raw bytes.
-//  3. Inserts the event idempotently — duplicates return 200 "duplicate".
-//  4. Skips dispatch for event types not in AllowedTypes — returns 200 "persisted".
-//  5. Resolves stripe_customer_id → store_id, acquires advisory lock, dispatches.
-//  6. On dispatch error bumps retry_count and returns 200 "retry_scheduled".
-//  7. On success stamps processed_at and returns 200 "processed".
+//  3. Inserts the event idempotently. A redelivery of an event that already
+//     processed returns 200 "duplicate"; a redelivery of one that never
+//     processed is dispatched again.
+//  4. Skips dispatch for event types not in AllowedTypes — stamps them
+//     processed and returns 200 "persisted".
+//  5. Resolves stripe_customer_id → store_id, acquires advisory lock,
+//     dispatches, and stamps processed_at in the same transaction.
+//  6. On dispatch error bumps retry_count and returns 503 so Stripe
+//     redelivers; past MaxRetries it flags manual review and returns 200 so
+//     Stripe stops.
 //
 // All log calls use sanitized fields only — the raw body is never logged.
 func (h *StripeHandler) Handle(c *gin.Context) {
@@ -170,11 +174,9 @@ func (h *StripeHandler) Handle(c *gin.Context) {
 	// Orphan path: if the stripe_customer_id has no matching store_subscriptions row yet
 	// (e.g. checkout.session.completed arrives before the DB row is fully committed),
 	// dispatchLocked returns an error. We route through IncrementRetry so the event
-	// stays with processed_at = NULL and the cron can retry it once the row exists.
-	// This is intentionally different from the "return nil" variant in the plan comment:
-	// returning an error here means the cron will find it via GetUnprocessedOrphans
-	// because store_id remains NULL and processing_error captures the orphan reason,
-	// giving operators visibility. MarkProcessed is NOT called, satisfying the SLA.
+	// stays with processed_at = NULL, store_id NULL, and processing_error carrying the
+	// orphan reason — visible to the resolver via GetUnprocessed and to an operator.
+	// MarkProcessed is NOT called, satisfying the SLA.
 	if err := h.dispatchLocked(c.Request.Context(), evt); err != nil {
 		count, _ := h.cfg.Repo.IncrementRetry(
 			c.Request.Context(), h.cfg.DB, eventID, billingstripe.SanitizeForLog(err))
@@ -223,7 +225,7 @@ func (h *StripeHandler) maxRetries() int {
 // through IncrementRetry — the event stays with processed_at = NULL and
 // store_id = NULL, making it visible to the cron retrier via GetUnprocessedOrphans.
 func (h *StripeHandler) dispatchLocked(ctx context.Context, evt webhookevents.StripeWebhookEvent) error {
-	storeID, tenantID, ok := lookupStoreByStripeCustomer(ctx, h.cfg.DB, []byte(evt.Payload))
+	storeID, tenantID, ok := lookupStoreByStripeCustomer(ctx, h.cfg.DB, evt.EventType, []byte(evt.Payload))
 	if !ok {
 		// Orphan: no store_subscriptions row for this stripe_customer_id yet.
 		// Return an error rather than nil so that IncrementRetry is called in Handle,
@@ -267,41 +269,18 @@ func (h *StripeHandler) dispatchLocked(ctx context.Context, evt webhookevents.St
 	return nil
 }
 
-// lookupStoreByStripeCustomer parses the customer ID from the event payload
-// and returns (store_id, tenant_id, true) if the store_subscriptions table
-// has a matching row. Returns (Nil, Nil, false) on any parse or lookup failure.
-func lookupStoreByStripeCustomer(ctx context.Context, db *gorm.DB, payload []byte) (uuid.UUID, uuid.UUID, bool) {
-	var e struct {
-		Data struct {
-			Object struct {
-				Customer string `json:"customer"`
-			} `json:"object"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(payload, &e); err != nil || e.Data.Object.Customer == "" {
+// lookupStoreByStripeCustomer resolves the event's customer to a store.
+// Returns (Nil, Nil, false) when the payload carries no customer id or no
+// subscription matches it.
+//
+// The extraction lives in webhookevents.CustomerIDFromPayload, shared with
+// the orphan resolver. The two used to keep separate copies of this parsing —
+// and both copies read only data.object.customer, so neither could route a
+// customer.updated event, whose object IS the customer.
+func lookupStoreByStripeCustomer(ctx context.Context, db *gorm.DB, eventType string, payload []byte) (uuid.UUID, uuid.UUID, bool) {
+	customerID := webhookevents.CustomerIDFromPayload(eventType, payload)
+	if customerID == "" {
 		return uuid.Nil, uuid.Nil, false
 	}
-	var row struct {
-		StoreID  string `gorm:"column:store_id"`
-		TenantID string `gorm:"column:tenant_id"`
-	}
-	err := db.WithContext(ctx).Raw(
-		`SELECT store_id::text AS store_id, tenant_id::text AS tenant_id
-         FROM store_subscriptions
-         WHERE stripe_customer_id = ?
-         LIMIT 1`,
-		e.Data.Object.Customer,
-	).Scan(&row).Error
-	if err != nil || row.StoreID == "" {
-		return uuid.Nil, uuid.Nil, false
-	}
-	storeUUID, err := uuid.Parse(row.StoreID)
-	if err != nil {
-		return uuid.Nil, uuid.Nil, false
-	}
-	tenantUUID, err := uuid.Parse(row.TenantID)
-	if err != nil {
-		return uuid.Nil, uuid.Nil, false
-	}
-	return storeUUID, tenantUUID, true
+	return webhookevents.LookupStoreByCustomer(ctx, db, customerID)
 }

@@ -306,6 +306,50 @@ func TestStripeWebhook_RedeliveryOfUnprocessedEvent_DispatchesAgain(t *testing.T
 	require.Equal(t, 2, calls, "an already-processed event must never dispatch again")
 }
 
+// TestStripeWebhook_CustomerUpdated_ReachesItsHandler is a regression test
+// for a defect the retry work surfaced: customer.updated had never been
+// dispatched, in any environment, ever.
+//
+// Its object IS the customer, so the id is data.object.id and there is no
+// `customer` field — and the routing lookup read only data.object.customer.
+// Every one of these resolved to no store, took the orphan path, was
+// answered 200, and then retried to the manual-review cap. The handler it
+// never reached is the one that mirrors the merchant's billing email onto
+// store_subscriptions.
+func TestStripeWebhook_CustomerUpdated_ReachesItsHandler(t *testing.T) {
+	db := testdb.NewDB(t, "stripe_webhook_events", "store_subscriptions")
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, db, tenantID, storeID)
+	require.NoError(t, db.Create(&subscription.StoreSubscription{
+		TenantID:         tenantID,
+		StoreID:          storeID,
+		StripeCustomerID: "cus_selfref",
+		Plan:             subscription.PlanStarter,
+		Status:           subscription.StatusSignup,
+	}).Error)
+
+	dispatched := false
+	h := newHandler(t, db, func(_ context.Context, _ *gorm.DB, _ webhookevents.StripeWebhookEvent) error {
+		dispatched = true
+		return nil
+	})
+
+	payload := []byte(`{"id":"evt_selfref","type":"customer.updated","data":{"object":{"id":"cus_selfref","object":"customer","email":"merchant@example.com"}}}`)
+	sig := billingstripe.BuildSignatureForTesting(payload, testSecret, fixedNow)
+
+	w := post(t, h, payload, sig)
+	require.Equal(t, 200, w.Code)
+	require.Contains(t, w.Body.String(), "processed")
+	require.True(t, dispatched, "customer.updated must reach the dispatcher")
+
+	var e webhookevents.StripeWebhookEvent
+	require.NoError(t, db.First(&e, "event_id = ?", "evt_selfref").Error)
+	require.NotNil(t, e.StoreID, "the customer must resolve to its store")
+	require.Equal(t, storeID, *e.StoreID)
+	require.NotNil(t, e.ProcessedAt)
+}
+
 // TestStripeWebhook_PastTheRetryCap_StopsAskingStripe — an event that fails
 // the same way every time must stop churning: flagged for a human, 200 to
 // Stripe so it gives up, and visible to cmd/webhook-replay.

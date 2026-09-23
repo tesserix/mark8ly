@@ -90,9 +90,14 @@ above it did.
   `AUDIT_INGEST_SECRET` still default to `""` and no-op their middleware.
   `platformauth.RequireInternalAuth` has the same shape —
   `RequireInternalAuthStrict` exists, 503s instead, and nothing uses it.
-- **`reconciliation-cron`** exists in `cmd/` and is in no Dockerfile or
-  CronJob, so `StripeReconciliationDrift` can never fire. Same class as the
-  `webhook-replay` omission #908 fixed; worth doing next.
+- ~~**`reconciliation-cron`**~~ **— fixed.** It was worse than "not in the
+  image": the counter it emits is registered on the in-process default
+  registry, so a short-lived Job could never deliver it — nothing scrapes a
+  pod that exits in minutes and the estate has no Pushgateway. Shipping the
+  binary and a CronJob would have produced a job that runs and an alert that
+  still cannot fire. The pass now runs in-process inside marketplace-api,
+  which IS scraped, under an advisory lock; `cmd/reconciliation-cron` is
+  deleted rather than left as a second way to run it.
 - **`CONSOLE_CATALOG_MODE` fails open** to the compiled test-mode catalog.
 - **Email:** no merchant "new order" notification, no "subscription cancelled"
   confirmation.
@@ -324,8 +329,8 @@ covered by the DPA. This scales with every new store.
 - **Fail-open secrets not required at boot**: `MARKETPLACE_STOREFRONT_KEY` and
   `AUDIT_INGEST_SECRET` both no-op their middleware when empty, opening the storefront API,
   audit ingest, and the destructive tenant purge.
-- **`reconciliation-cron` is not in the Docker image** and has no CronJob — while the live
-  `StripeReconciliationDrift` alert depends on it and can therefore never fire.
+- ~~**`reconciliation-cron` is not in the Docker image**~~ — fixed, and the diagnosis was
+  incomplete: a CronJob could never have delivered the metric either. See §0.5.
 - **No startup key-mode/account assertion**, and `CONSOLE_CATALOG_MODE` **fails open**: an
   unknown value 404s, falls back to the *compiled* test-mode catalog, and serves baked test
   amounts against a live account. The chart renders it with no `| default`, and envconfig's

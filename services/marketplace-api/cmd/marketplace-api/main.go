@@ -106,6 +106,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/promo"
 	"github.com/mark8ly/marketplace-api/internal/push"
 	"github.com/mark8ly/marketplace-api/internal/pushevents"
+	"github.com/mark8ly/marketplace-api/internal/reconciliation"
 	"github.com/mark8ly/marketplace-api/internal/refund"
 	"github.com/mark8ly/marketplace-api/internal/review"
 	"github.com/mark8ly/marketplace-api/internal/shipmentcancel"
@@ -2276,9 +2277,40 @@ func main() {
 		}
 	}
 
+	// P17 T10 — daily Stripe reconciliation, in-process rather than the
+	// CronJob its cmd/ tool was written for.
+	//
+	// The counter it emits (mark8ly_subscription_reconciliation_drift_total)
+	// is registered on the in-process default registry, and the recording
+	// rule subscription:reconciliation_drift:rate1h reads it. A short-lived
+	// Job cannot deliver that: nothing scrapes a pod that exits in minutes,
+	// and the estate has no Pushgateway. So the alert StripeReconciliationDrift
+	// could never fire, whatever the Dockerfile and manifests said — verified
+	// against live Prometheus, which holds zero series for that metric.
+	//
+	// This process is already scraped (prometheus.io/scrape on the pod), so
+	// running the pass here puts the counter where the rule is looking.
+	// RunWithLock, not RunOnce: two replicas serve this deployment and the
+	// SKIP LOCKED in the fetch query does not serialise them.
+	if billingStripeClient != nil {
+		reconciler := reconciliation.New(conn, billingStripeClient, auditEmitter, log)
+		if _, err := trialScheduler.AddFunc(reconciliation.Spec, func() {
+			drift, err := reconciler.RunWithLock(workerCtx)
+			if err != nil {
+				log.Error("reconciliation cron failed", "err", err)
+				return
+			}
+			log.Info("reconciliation cron complete", "drift_count", drift)
+		}); err != nil {
+			log.Error("register reconciliation cron", "err", err)
+		}
+	} else {
+		log.Warn("reconciliation cron not registered — no Stripe client configured")
+	}
+
 	trialScheduler.Start()
 	defer trialScheduler.Stop()
-	log.Info("P5 crons started", "count", 5)
+	log.Info("P5 crons started", "count", 6)
 
 	// P6 dunning + SCA recovery crons. Emails route through the real
 	// template client as of #381 — recipients come from

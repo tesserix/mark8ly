@@ -35,8 +35,12 @@ import (
 
 const (
 	// batchSize is the number of subscriptions fetched per reconciliation tick.
-	// SKIP LOCKED means multiple pods can run concurrently without double-processing.
 	batchSize = 500
+
+	// cronLockKey names the advisory lock that keeps one pass running at a
+	// time across replicas. See RunOnce for why the FOR UPDATE SKIP LOCKED in
+	// the fetch query is not that guarantee.
+	cronLockKey = "subscription_reconciliation_cron"
 
 	// DriftTypeStatusMismatch is emitted when Stripe's status differs from ours.
 	DriftTypeStatusMismatch = "status_mismatch"
@@ -137,8 +141,14 @@ func New(db *gorm.DB, stripe *billingstripe.Client, emitter *audit.Emitter, logg
 }
 
 // RunOnce processes up to batchSize subscriptions and returns the count of
-// drift events detected. It is safe to call concurrently — SKIP LOCKED
-// prevents double-processing across pods.
+// drift events detected.
+//
+// Callers that can run on more than one replica must hold the cron lock —
+// RunWithLock does. The FOR UPDATE SKIP LOCKED in the fetch query below does
+// NOT provide that, whatever the comments here used to say: the SELECT runs
+// in auto-commit, so the row locks are released the moment it returns and a
+// second pod selects exactly the same rows. Row locks last for a
+// transaction, and there is no transaction here.
 func (r *Reconciler) RunOnce(ctx context.Context) (int, error) {
 	if r.stripe == nil {
 		r.logger.Warn("reconciliation: no Stripe client — skipping")
@@ -155,7 +165,9 @@ func (r *Reconciler) RunOnce(ctx context.Context) (int, error) {
 	// reason — that NULL is precisely the locally_missing signal — provided
 	// we hold a customer id to ask Stripe about.
 	//
-	// SKIP LOCKED ensures concurrent replicas don't race.
+	// FOR UPDATE SKIP LOCKED is kept for the case it does cover — another
+	// writer holding these rows in a real transaction — but it is not what
+	// serialises replicas. RunWithLock is. See the note on RunOnce.
 	var rows []row
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT store_id,

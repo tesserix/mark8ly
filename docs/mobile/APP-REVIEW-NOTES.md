@@ -72,6 +72,27 @@ account is configured for email and password.
 This account is exempt from the new-device verification code that ordinary
 merchant accounts receive, so no email inbox is needed to complete sign-in.
 
+**Account registration, sign-in and deletion**
+
+*Registration is not in the app.* Merchants create an account and their first
+store on mark8ly.com, in a browser. The app is for merchants who already have
+one. A signed-in user with no store is shown a "No store yet" screen with a
+link out to the web; there is no in-app sign-up to demonstrate.
+
+*Sign-in is in the app*, by email and password, Sign in with Google, or Sign
+in with Apple.
+
+*Account deletion is in the app*, under More → Account. It requires typing a
+confirmation word and then confirming a second dialog that states the account
+and — for a store owner — the store and all its products, orders and
+customers are permanently removed.
+
+The review account is an **admin**, not the store owner, so the final
+deletion step is restricted for it by design: only an owner may delete a
+tenant. The screen recording shows the flow as far as the confirmation
+dialog and then cancels, because completing it would destroy the very demo
+store these credentials are for.
+
 **5. External services used to deliver core functionality**
 
 - **Zitadel** — identity and authentication (self-hosted). Handles email and

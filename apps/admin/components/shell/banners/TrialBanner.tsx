@@ -11,7 +11,7 @@
  * Design (Paper · Ink · Moss):
  *   - Tone 'info' — trial is a positive state, never warning/danger.
  *   - No urgency. No "!". No emoji.
- *   - CTA → Stripe Customer Portal via useOpenPortal.
+ *   - CTA → Stripe Customer Portal via usePortalCta (reports failures).
  *
  * Wiring: Task 28 (BannerStack) handles injection into the layout.
  * Do NOT wire this directly into PageShell here.
@@ -20,8 +20,8 @@
 
 import * as React from 'react'
 import { BannerShell } from './BannerShell'
+import { usePortalCta } from './usePortalCta'
 import { useTrialStatus } from '@/lib/api/subscription/hooks/useTrial'
-import { useOpenPortal } from '@/lib/api/subscription/hooks/useBilling'
 import { subscriptionCopy } from '@/lib/copy/subscription'
 import { formatBillingDate } from '@/lib/format/date'
 import type { TrialBannerVariant } from '@/lib/api/subscription/hooks/useTrial'
@@ -87,7 +87,7 @@ export function useTrialBannerActive(storeId: string): boolean {
 
 export function TrialBanner({ storeId }: TrialBannerProps) {
   const { bannerVariant, trialEndsAt } = useTrialStatus(storeId)
-  const openPortal = useOpenPortal(storeId)
+  const portal = usePortalCta(storeId)
 
   if (bannerVariant === 'none') return null
 
@@ -102,7 +102,7 @@ export function TrialBanner({ storeId }: TrialBannerProps) {
         body={copy.body}
         cta={{
           label: bannerCopy.cta,
-          onClick: () => openPortal.mutate(),
+          onClick: () => portal.open(),
         }}
       />
     </div>

@@ -18,8 +18,8 @@
 
 import * as React from 'react'
 import { BannerShell } from './BannerShell'
+import { usePortalCta } from './usePortalCta'
 import { usePastDueState } from '@/lib/api/subscription/hooks/useDunning'
-import { useOpenPortal } from '@/lib/api/subscription/hooks/useBilling'
 import { subscriptionCopy } from '@/lib/copy/subscription'
 import { formatBillingDate } from '@/lib/format/date'
 
@@ -46,7 +46,7 @@ export function useFailedPaymentBannerActive(storeId: string): boolean {
 
 export function FailedPaymentBanner({ storeId }: FailedPaymentBannerProps) {
   const { isPastDue, retryAt } = usePastDueState(storeId)
-  const openPortal = useOpenPortal(storeId)
+  const portal = usePortalCta(storeId)
 
   if (!isPastDue) return null
 
@@ -55,7 +55,7 @@ export function FailedPaymentBanner({ storeId }: FailedPaymentBannerProps) {
   const bodyText = copy.bodyTemplate(retryDateStr)
 
   function handleCtaClick() {
-    openPortal.mutate()
+    portal.open()
   }
 
   return (

@@ -24,6 +24,11 @@ export const subscriptionCopy = {
         `Your most recent payment did not go through. We'll retry on ${retryDate}.`,
       cta: 'Add a new card',
     },
+    // Shown when the billing portal cannot be opened. The detail line
+    // carries the underlying error, because "something went wrong" on a
+    // billing control is indistinguishable from the button being broken.
+    portalError: "Couldn't open billing",
+
     /**
      * Read-only terminal states: expired, store_closed, pending_hard_delete.
      *

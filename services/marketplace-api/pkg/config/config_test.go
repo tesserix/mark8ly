@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"os"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -579,5 +581,81 @@ func TestValidateLeavesDevAloneWithoutTheStorefrontKey(t *testing.T) {
 		if err := cfg.Validate(); err != nil {
 			t.Fatalf("mode=%q: dev must not require secrets: %v", m, err)
 		}
+	}
+}
+
+// Every credential-shaped field must arrive trimmed, whatever it is called.
+//
+// STRIPE_BILLING_SECRET_KEY reached production with a trailing LF from GCP
+// Secret Manager and went straight into an Authorization header, so every
+// Stripe API call failed with:
+//
+//	net/http: invalid header field value for "Authorization"
+//
+// It surfaced as "Add a card" doing nothing and no store ever acquiring a
+// stripe_customer_id. The trim existed at the time — as a hand-kept list of
+// eleven fields in a struct that had twenty-one.
+//
+// This test walks the struct instead of naming fields, so a secret added
+// tomorrow is covered without anyone remembering this file exists.
+func TestLoad_TrimsEveryCredentialShapedField(t *testing.T) {
+	cfgType := reflect.TypeOf(Config{})
+
+	var checked int
+	for i := 0; i < cfgType.NumField(); i++ {
+		field := cfgType.Field(i)
+		if field.Type.Kind() != reflect.String || !isSecretFieldName(field.Name) {
+			continue
+		}
+		envName, _, _ := strings.Cut(field.Tag.Get("envconfig"), ",")
+		if envName == "" {
+			continue
+		}
+
+		t.Run(field.Name, func(t *testing.T) {
+			prodEnv(t)
+			// A value that is valid apart from the newline GCP SM appends.
+			t.Setenv(envName, "sk_live_abcdef0123456789\n")
+
+			cfg, err := Load()
+			if err != nil {
+				// Some fields feed validation that rejects a dummy value;
+				// the trim still has to have happened before that ran.
+				t.Skipf("Load rejected the probe value for %s: %v", envName, err)
+			}
+			got := reflect.ValueOf(*cfg).FieldByName(field.Name).String()
+			if strings.TrimSpace(got) != got {
+				t.Errorf("%s (%s) kept surrounding whitespace: %q", field.Name, envName, got)
+			}
+			if got != "sk_live_abcdef0123456789" {
+				t.Errorf("%s (%s) = %q, want the trimmed value", field.Name, envName, got)
+			}
+		})
+		checked++
+	}
+
+	// A guard on the guard: if the struct is refactored so nothing matches,
+	// this test would pass while checking nothing.
+	if checked < 15 {
+		t.Fatalf("only %d credential-shaped fields found; the matcher has drifted", checked)
+	}
+}
+
+// The specific regression, named so it is greppable from the incident.
+func TestLoad_TrimsStripeBillingSecretKey(t *testing.T) {
+	prodEnv(t)
+	t.Setenv("STRIPE_BILLING_SECRET_KEY", "sk_live_trailing_newline\n")
+	t.Setenv("STRIPE_BILLING_WEBHOOK_SECRET", "whsec_trailing_newline\n")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.StripeBillingSecretKey != "sk_live_trailing_newline" {
+		t.Errorf("StripeBillingSecretKey = %q; a newline here fails every Stripe call "+
+			"with 'invalid header field value for Authorization'", cfg.StripeBillingSecretKey)
+	}
+	if cfg.StripeBillingWebhookSecret != "whsec_trailing_newline" {
+		t.Errorf("StripeBillingWebhookSecret = %q, want trimmed", cfg.StripeBillingWebhookSecret)
 	}
 }

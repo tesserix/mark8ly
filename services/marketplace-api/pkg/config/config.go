@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -446,18 +447,29 @@ func Load() (*Config, error) {
 	// MARKETPLACE_PLATFORM_API_SECRET. Trimming here makes the binary
 	// robust to future GCP-SM trailing-LF cases without requiring SM-side
 	// cleanups.
-	cfg.InternalAuthSecret = strings.TrimSpace(cfg.InternalAuthSecret)
-	cfg.PlatformAPISecret = strings.TrimSpace(cfg.PlatformAPISecret)
-	cfg.AuditIngestSecret = strings.TrimSpace(cfg.AuditIngestSecret)
-	cfg.PlatformAdminSecret = strings.TrimSpace(cfg.PlatformAdminSecret)
-	// Provider API keys go straight into Authorization headers — a
-	// trailing LF from GCP SM would make net/http reject every request
-	// with "invalid header field value".
-	cfg.SendGridAPIKey = strings.TrimSpace(cfg.SendGridAPIKey)
-	cfg.ResendWebhookSecret = strings.TrimSpace(cfg.ResendWebhookSecret)
-	cfg.ResendAPIKey = strings.TrimSpace(cfg.ResendAPIKey)
-	cfg.CustomerSessionSecret = strings.TrimSpace(cfg.CustomerSessionSecret)
-	cfg.EncryptionKey = strings.TrimSpace(cfg.EncryptionKey)
+	// Trimmed BY REFLECTION over every string field whose name ends in
+	// Secret, Key, Token or Password, rather than by a hand-kept list.
+	//
+	// The list was the bug. It named eleven fields and the struct held
+	// twenty-one, and the ten it missed included StripeBillingSecretKey —
+	// which arrives from GCP SM with a trailing LF and goes straight into
+	// an Authorization header. Every Stripe API call in production failed:
+	//
+	//   Post "https://api.stripe.com/v1/billing_portal/sessions":
+	//   net/http: invalid header field value for "Authorization"
+	//
+	// which surfaced as "Add a card" doing nothing, "Add payment method"
+	// returning a 500, and no store ever acquiring a stripe_customer_id.
+	// The comment this replaces predicted that failure in those words, for
+	// SendGrid and Resend, while the Stripe key twenty-five lines above it
+	// in the same struct went unlisted. The 2026-05-05 bondi incident
+	// (~25h of storefront 404s) was the same class on
+	// MARKETPLACE_PLATFORM_API_SECRET.
+	//
+	// A rule that covers the whole shape cannot be forgotten by the next
+	// person to add a secret, which is the only property that actually
+	// prevents a third occurrence.
+	trimSecretFields(&cfg)
 	cfg.EncryptionMode = strings.ToLower(strings.TrimSpace(cfg.EncryptionMode))
 	// Same trailing-LF risk as the secrets above, for the same GCP Secret
 	// Manager reason: ZitadelIssuer feeds OIDC discovery (a padded issuer
@@ -696,4 +708,45 @@ func LoadCarrierSecretJob() (*CarrierSecretJobConfig, error) {
 		EncryptionMode:      strings.ToLower(strings.TrimSpace(env.EncryptionMode)),
 		EncryptionKey:       strings.TrimSpace(env.EncryptionKey),
 	}, nil
+}
+
+// secretFieldSuffixes names the shapes that carry credentials. A field whose
+// name ends in one of these has its value trimmed by trimSecretFields.
+//
+// Suffix matching, not an allowlist of names, deliberately: the failure mode
+// being prevented is somebody adding a secret and not knowing there is a list
+// to add it to.
+var secretFieldSuffixes = []string{"Secret", "Key", "Token", "Password"}
+
+// isSecretFieldName reports whether a struct field name looks like a
+// credential.
+func isSecretFieldName(name string) bool {
+	for _, suffix := range secretFieldSuffixes {
+		if strings.HasSuffix(name, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// trimSecretFields strips leading and trailing whitespace from every settable
+// string field on cfg whose name looks like a credential.
+//
+// Whitespace is never meaningful in a credential, and GCP Secret Manager
+// routinely hands back a trailing LF — a file written with a final newline is
+// the normal case, not an error. Trimming at the boundary means no consumer
+// has to remember.
+func trimSecretFields(cfg *Config) {
+	value := reflect.ValueOf(cfg).Elem()
+	structType := value.Type()
+	for i := 0; i < structType.NumField(); i++ {
+		field := value.Field(i)
+		if field.Kind() != reflect.String || !field.CanSet() {
+			continue
+		}
+		if !isSecretFieldName(structType.Field(i).Name) {
+			continue
+		}
+		field.SetString(strings.TrimSpace(field.String()))
+	}
 }

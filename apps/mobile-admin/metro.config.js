@@ -12,6 +12,18 @@
 // mapping. Each was arrived at by debugging a specific failure.
 const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 
+// `getSentryExpoConfig` must be handed THIS app's `getDefaultConfig`. Left to
+// itself it does a bare `require('expo/metro-config')` from its own location,
+// and npm hoists `@sentry/react-native` to the monorepo root — where
+// mobile-storefront's Expo SDK 52 lives. Metro then transforms this app's
+// React Native 0.85 sources with the SDK 52 toolchain, whose hermes-parser
+// (0.23.1) predates Flow's `match` expression, and the bundle dies on
+// react-native/src/private/components/virtualview/VirtualView.js:119
+// with "';' expected" — a parse error in a file nobody here wrote.
+// The `require` below resolves from this directory, i.e. Expo SDK 56 and
+// hermes-parser 0.33.3.
+const { getDefaultConfig } = require('expo/metro-config');
+
 // NativeWind's tailwindcss@3 requirement is satisfied by a symlink created in
 // the `postinstall` (scripts/link-nativewind-tailwind.js): npm hoists
 // `nativewind` to the monorepo root where the web apps' tailwindcss@4 lives, so
@@ -26,7 +38,7 @@ const path = require('path');
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
 
-const config = getSentryExpoConfig(projectRoot);
+const config = getSentryExpoConfig(projectRoot, { getDefaultConfig });
 
 config.watchFolders = [monorepoRoot];
 config.resolver.nodeModulesPaths = [

@@ -58,6 +58,28 @@ type Config struct {
 	// Must be at least 16 bytes. Empty disables the email-OTP gate.
 	EmailOTPPepper string `envconfig:"EMAIL_OTP_PEPPER"`
 
+	// DemoLoginEmails lists accounts that skip the new-device email-OTP
+	// step-up. Comma-separated, matched case-insensitively on the exact
+	// address. Empty — the default — changes nothing.
+	//
+	// This exists for ONE thing: the Demo Store account handed to sales
+	// leads. That account is deliberately shared, so every prospect signs
+	// in from an unrecognised device, and the step-up mails a code to an
+	// inbox the prospect cannot read. The gate is working exactly as
+	// designed and the outcome is a demo nobody can open.
+	//
+	// It is an allowlist of identities rather than a fixed code on
+	// purpose. A hardcoded OTP would be a static credential valid at a
+	// gate reached by EVERY account, so one scoping mistake or one leak
+	// makes it a master key to any merchant signing in from a new
+	// machine. An allowlist can only ever weaken the accounts it names,
+	// fails closed when unset, and is greppable in one place.
+	//
+	// Exact addresses only — no wildcards, no domain suffixes. A rule
+	// like "@mark8ly.com" would silently cover staff accounts that are
+	// not demos.
+	DemoLoginEmails string `envconfig:"DEMO_LOGIN_EMAILS"`
+
 	// Zitadel (#524 phase 2). All optional and unread unless ZitadelEnabled
 	// is set — but Zitadel is now the only auth provider, so a deployment
 	// with it disabled mounts no login route at all.

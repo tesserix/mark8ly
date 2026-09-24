@@ -122,3 +122,29 @@ describe('BannerShell', () => {
     ).not.toBeInTheDocument()
   })
 })
+
+describe('BannerShell tone weight', () => {
+  // danger used to differ from warning by the colour of a 3px left stripe and
+  // nothing else — same background, same heading colour. Across a full-width
+  // bar that is not a distinction anyone can see, so the loudest tone in the
+  // system was functionally identical to the middle one.
+  it('gives danger a surface and heading treatment warning does not', () => {
+    const warning = render(
+      <BannerShell tone="warning" heading="Heads up" body="Body" />,
+    )
+    const warningEl = warning.getByTestId('banner-shell')
+    const warningClass = warningEl.className
+    const warningHeading = warning.getByText('Heads up').className
+    warning.unmount()
+
+    const danger = render(
+      <BannerShell tone="danger" heading="Heads up" body="Body" />,
+    )
+    const dangerEl = danger.getByTestId('banner-shell')
+
+    expect(dangerEl.className).not.toBe(warningClass)
+    expect(dangerEl.className).toContain('--danger')
+    expect(danger.getByText('Heads up').className).not.toBe(warningHeading)
+    expect(danger.getByText('Heads up').className).toContain('--danger')
+  })
+})

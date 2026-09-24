@@ -7,8 +7,17 @@
  *   - CTA right-aligned, Source Sans, underline on hover, moss-700 text.
  *   - Tone variants:
  *       warning  → amber-bronze left border (3px, --warning token)
- *       danger   → oxblood left border (3px, --danger token)
+ *       danger   → oxblood left border (3px, --danger token) PLUS a 6%
+ *                  oxblood wash and an oxblood heading
  *       info     → ink-400 hairline left border only (no accent)
+ *
+ *     danger originally differed from warning by the COLOUR OF A 3px LEFT
+ *     STRIPE and nothing else — every tone shared the same paper-200
+ *     background. Across a full-width bar that is not a distinction anyone
+ *     can see, which made the loudest tone in the system functionally
+ *     identical to the middle one. The wash is deliberately faint (6%) and
+ *     the shell is otherwise unchanged: still no box, no shadow, no icon.
+ *     It should read as "this one is different", not as an alert dialog.
  *   - Dismissible variant: X button at far right with aria-label "Dismiss".
  *   - Icon-free: no lucide icons, no emoji.
  *   - Responsive: single row on desktop, two rows on narrow widths.
@@ -54,8 +63,20 @@ const TONE_BORDER: Record<BannerTone, string> = {
 
 const TONE_BG: Record<BannerTone, string> = {
   warning: 'bg-[var(--paper-200)]',
-  danger: 'bg-[var(--paper-200)]',
+  // Faint oxblood wash over paper. The only tone that changes the surface,
+  // because it is the only one describing a state the merchant cannot trade
+  // in. Matches the bg-[color:var(--x)]/alpha pattern used elsewhere.
+  danger: 'bg-[color:var(--danger)]/[0.06]',
   info: 'bg-[var(--paper-200)]',
+}
+
+// Heading colour. Only danger departs from ink-900 — the heading is the
+// shortest thing in the banner and the first thing read, so it is where the
+// tone earns its keep.
+const TONE_HEADING: Record<BannerTone, string> = {
+  warning: 'text-[var(--ink-900)]',
+  danger: 'text-[color:var(--danger)]',
+  info: 'text-[var(--ink-900)]',
 }
 
 // ---------------------------------------------------------------------------
@@ -86,8 +107,10 @@ export function BannerShell({
         {/* Left: heading + body */}
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span
-            className="font-serif text-sm font-semibold leading-snug text-[var(--ink-900)]"
-
+            className={[
+              'font-serif text-sm font-semibold leading-snug',
+              TONE_HEADING[tone],
+            ].join(' ')}
           >
             {heading}
           </span>

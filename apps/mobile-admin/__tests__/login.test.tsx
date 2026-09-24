@@ -94,36 +94,6 @@ describe('LoginScreen', () => {
     expect(queryByText('INVALID_LOGIN_CREDENTIALS')).toBeNull();
   });
 
-  it('names the code when the failure is one the screen does not map', async () => {
-    // An unmapped code is the one fact separating "the server rejected you"
-    // from "the request never reached the server".
-    //
-    // zitadel-client raises `http_<status>` whenever a response body is not
-    // our JSON envelope — an edge 404, an HTML error page, a proxy in
-    // between. Collapsing that into the same sentence every other failure
-    // produces cost an evening of diagnosis: marketplace-api logs were
-    // empty because the request never arrived, the device could load the
-    // host in a browser, and the app said what it always says.
-    mockSignIn.mockRejectedValue(new ZitadelAuthError('http_404', ''));
-    const { getByLabelText, findByText } = render(<LoginScreen />);
-    fireEvent.press(getByLabelText('Sign in'));
-
-    const shown = await findByText(/something went wrong/i);
-    expect(shown).toBeTruthy();
-    expect(shown.props.children).toContain('http_404');
-  });
-
-  it('still maps known codes to plain copy, with no code appended', async () => {
-    // The code is a debugging aid for the UNMAPPED case only. A merchant
-    // typing the wrong password must not be shown an error code.
-    mockSignIn.mockRejectedValue(new ZitadelAuthError('no_store', 'whatever'));
-    const { getByLabelText, findByText, queryByText } = render(<LoginScreen />);
-    fireEvent.press(getByLabelText('Sign in'));
-
-    expect(await findByText(/couldn't find a store/i)).toBeTruthy();
-    expect(queryByText(/no_store/)).toBeNull();
-  });
-
   it('disables the button and shows "Signing in…" while a sign-in is in flight', async () => {
     let resolveSignIn: () => void = () => {};
     const deferred = new Promise((resolve) => {

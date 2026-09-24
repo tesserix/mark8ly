@@ -134,9 +134,11 @@ module.exports = {
       'expo-notifications',
       ['expo-build-properties', { ios: { newArchEnabled: true, useFrameworks: 'static' } }],
       // Must come after expo-build-properties: it edits the Podfile that
-      // plugin's `post_install` block lives in. Without it the iOS archive
-      // fails compiling RNSentryReplay.mm on a missing folly/coro/Coroutine.h.
-      './plugins/with-sentry-folly-coroutines',
+      // plugin's `post_install` block lives in. Without it @sentry/react-native
+      // builds against the monorepo root's React Native 0.76.9 rather than this
+      // app's 0.85.3, and the iOS archive fails inside RNSentry — on a missing
+      // folly/coro/Coroutine.h, then on the pre-0.81 Hermes profiler API.
+      './plugins/with-sentry-monorepo-hoisting',
       ...(USE_DEMO_AUTH
         ? []
         : [

@@ -2,18 +2,20 @@
  * BannerStack unit tests.
  *
  * Tests:
- *   1.  All three hooks return false → renders null (nothing).
+ *   1.  All four hooks return false → renders null (nothing).
  *   2.  Only trial active → renders TrialBanner, not the others.
  *   3.  Only past_due active → renders FailedPaymentBanner.
  *   4.  Trial AND past_due both active → renders FailedPaymentBanner only
  *       (past_due outranks trial).
- *   5.  All three active → renders PaymentActionRequiredBanner only
- *       (highest priority wins).
+ *   5.  All active below read-only → renders PaymentActionRequiredBanner only.
+ *   5b. Read-only active → outranks everything, including
+ *       payment_action_required. These are the states where the merchant
+ *       cannot trade at all, so nothing else is worth saying first.
  *   6.  role="region" wrapper is present with aria-label="System notification"
  *       when a banner is active.
  *   7.  role="region" wrapper is absent when no banner is active (returns null).
  *
- * Strategy: mock the three isActive hooks and the three banner components at
+ * Strategy: mock the four isActive hooks and the four banner components at
  * the module boundary. The banner components are replaced with minimal stubs
  * so we verify WHICH component mounts without needing a QueryProvider.
  */
@@ -26,9 +28,15 @@ import { BannerStack } from '@/components/shell/banners/BannerStack'
 // Mock the isActive hooks
 // ---------------------------------------------------------------------------
 
+const mockIsReadOnly = vi.fn<[], boolean>(() => false)
 const mockIsPaymentActionRequired = vi.fn<[], boolean>(() => false)
 const mockIsFailedPayment = vi.fn<[], boolean>(() => false)
 const mockIsTrial = vi.fn<[], boolean>(() => false)
+
+vi.mock('@/components/shell/banners/ReadOnlyBanner', () => ({
+  useReadOnlyBannerActive: (...args: unknown[]) => mockIsReadOnly(...(args as [])),
+  ReadOnlyBanner: () => <div data-testid="read-only-banner" />,
+}))
 
 vi.mock('@/components/shell/banners/PaymentActionRequiredBanner', () => ({
   usePaymentActionRequiredBannerActive: (...args: unknown[]) =>
@@ -66,6 +74,7 @@ function renderStack() {
 describe('BannerStack', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockIsReadOnly.mockReturnValue(false)
     mockIsPaymentActionRequired.mockReturnValue(false)
     mockIsFailedPayment.mockReturnValue(false)
     mockIsTrial.mockReturnValue(false)
@@ -140,5 +149,30 @@ describe('BannerStack', () => {
     expect(
       screen.queryByRole('region', { name: 'System notification' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('read-only outranks every other banner, including payment_action_required', () => {
+    // A merchant in expired / store_closed / pending_hard_delete cannot
+    // trade at all. Telling them their bank needs to confirm a payment, or
+    // that their trial has 15 days left, is at best noise and at worst
+    // contradicts the state they are actually in.
+    mockIsReadOnly.mockReturnValue(true)
+    mockIsPaymentActionRequired.mockReturnValue(true)
+    mockIsFailedPayment.mockReturnValue(true)
+    mockIsTrial.mockReturnValue(true)
+
+    renderStack()
+
+    expect(screen.getByTestId('read-only-banner')).toBeInTheDocument()
+    expect(screen.queryByTestId('payment-action-required-banner')).toBeNull()
+    expect(screen.queryByTestId('failed-payment-banner')).toBeNull()
+    expect(screen.queryByTestId('trial-banner')).toBeNull()
+  })
+
+  it('renders the read-only banner inside the notification landmark', () => {
+    mockIsReadOnly.mockReturnValue(true)
+    renderStack()
+    const region = screen.getByRole('region', { name: 'System notification' })
+    expect(region).toContainElement(screen.getByTestId('read-only-banner'))
   })
 })

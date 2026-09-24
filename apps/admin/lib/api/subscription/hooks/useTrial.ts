@@ -15,6 +15,8 @@
  * row's created_at ISO string, which is the signup timestamp).
  * daysUntilTrialEnd is computed from trialEndsAt when available; falls back
  * to (90 - daysSinceSignup) using the 90-day trial length from spec §1/§5.
+ * The banner variant is chosen from daysUntilTrialEnd, so a trial whose end
+ * has been moved counts down to the date the merchant is actually shown.
  */
 'use client'
 
@@ -82,7 +84,7 @@ export function deriveTrialStatus(
         )
       : Math.max(0, TRIAL_LENGTH_DAYS - daysSinceSignup)
 
-  const bannerVariant = resolveBannerVariant(daysSinceSignup)
+  const bannerVariant = resolveBannerVariant(daysUntilTrialEnd)
 
   return {
     isTrialing: true,
@@ -93,10 +95,35 @@ export function deriveTrialStatus(
   }
 }
 
-function resolveBannerVariant(daysSinceSignup: number): TrialBannerVariant {
-  if (daysSinceSignup >= 85) return 'day85'
-  if (daysSinceSignup >= 75) return 'day75'
-  if (daysSinceSignup >= 60) return 'day60'
+/**
+ * Chooses the banner from days REMAINING, not days since signup.
+ *
+ * The variant names are milestones of the default 90-day trial — day60 is
+ * "30 days left", day75 is "2 weeks left", day85 is "5 days left" — and the
+ * thresholds below are those same milestones expressed the way the copy
+ * actually reads.
+ *
+ * It used to switch on daysSinceSignup, which silently assumed every trial
+ * is exactly TRIAL_LENGTH_DAYS long starting at the subscription row's
+ * created_at. Any trial whose end had been moved therefore got a countdown
+ * computed from a date nobody had changed, while the BODY of the same banner
+ * rendered the real trialEndsAt. The result was a banner contradicting
+ * itself in one sentence:
+ *
+ *   "5 days left in your trial
+ *    Your trial ends 31 December 2027. Add a payment method today to avoid
+ *    losing access."
+ *
+ * This is the same defect #353 fixed on the server: the reminder cron used
+ * to "work backwards from a fixed trial length and bucket on created_at,
+ * which meant an operator-extended trial kept its original reminder schedule
+ * and got nothing before its real end". The cron was corrected to work from
+ * the effective end; this banner was not, and kept the old assumption.
+ */
+function resolveBannerVariant(daysUntilTrialEnd: number): TrialBannerVariant {
+  if (daysUntilTrialEnd <= 5) return 'day85'
+  if (daysUntilTrialEnd <= 15) return 'day75'
+  if (daysUntilTrialEnd <= 30) return 'day60'
   return 'none'
 }
 

@@ -2395,6 +2395,19 @@ func main() {
 		log.Error("register trial reminders cron", "err", err)
 	}
 
+	// Publish a zero for every label these crons can emit.
+	//
+	// A CounterVec with no children exports nothing, so until the first send
+	// each of these counters is ABSENT from Prometheus — and absent is
+	// indistinguishable from "the cron is dead". The trial ladder is the
+	// sharp case: its first live window is a merchant's T-15, so the metric
+	// would stay absent for weeks on a perfectly healthy deployment.
+	dunning.PublishZeroSeries(
+		metrics.TrialRemindersSentTotal,
+		metrics.PaymentActionRemindersSentTotal,
+		metrics.DunningEmailsSentTotal,
+	)
+
 	log.Info("P6 dunning crons registered", "count", 4)
 
 	// P11 lifecycle crons — post-cancellation pipeline + win-back + GDPR portal.

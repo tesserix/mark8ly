@@ -134,7 +134,7 @@ func (s *SendDunningEmails) runForDay(ctx context.Context, now time.Time, t dunn
 		return fmt.Errorf("dunning emails day %d: query: %w", t.Day, err)
 	}
 
-	dayLabel := fmt.Sprintf("day_%d", t.Day)
+	label := dayLabel(t.Day)
 	periodKey := targetDay.Format("2006-01-02")
 
 	for _, r := range rows {
@@ -192,7 +192,7 @@ func (s *SendDunningEmails) runForDay(ctx context.Context, now time.Time, t dunn
 			continue
 		}
 		if s.counter != nil {
-			s.counter.WithDay(dayLabel).Inc()
+			s.counter.WithDay(label).Inc()
 		}
 	}
 	return nil

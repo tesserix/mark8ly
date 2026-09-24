@@ -123,10 +123,20 @@ module.exports = {
         { organization: 'tesserix', project: 'mark8ly-mobile-admin' },
       ],
       'expo-font',
+      // expo-image ships a config plugin as of 56.0.13 and `expo install
+      // --check` now expects it declared. It only writes the Podfile property
+      // `expo-image.disable-libdav1d`, and we want its default, so this is a
+      // no-op today — it is here so the doctor check passes cleanly rather
+      // than because anything depends on it.
+      'expo-image',
       'expo-secure-store',
       'expo-image-picker',
       'expo-notifications',
       ['expo-build-properties', { ios: { newArchEnabled: true, useFrameworks: 'static' } }],
+      // Must come after expo-build-properties: it edits the Podfile that
+      // plugin's `post_install` block lives in. Without it the iOS archive
+      // fails compiling RNSentryReplay.mm on a missing folly/coro/Coroutine.h.
+      './plugins/with-sentry-folly-coroutines',
       ...(USE_DEMO_AUTH
         ? []
         : [

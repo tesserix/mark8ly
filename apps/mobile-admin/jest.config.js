@@ -77,6 +77,28 @@ module.exports = {
     // require is injected rather than written. Pin the virtual modules to this
     // app's install, which does have them.
     '^expo/virtual/(.*)$': '<rootDir>/node_modules/expo/virtual/$1',
+    // Eighth instance, and the first where pinning the *importer* is not an
+    // option. Raising expo-image-picker/-manipulator to their SDK 56 versions
+    // let npm hoist them to the monorepo root — they have no app-local copy at
+    // all now — and from there they resolve `expo-asset` to the root's 11.0.5
+    // (SDK 52), which does not export `setCustomSourceTransformer` the way
+    // this app's react-native expects. Requiring either one throws
+    // "setCustomSourceTransformer is not a function" at import time, the same
+    // signature expo-haptics produced above. There is no app-local path to map
+    // those two packages to, so pin the mismatched dependency itself; every
+    // consumer then lands on the SDK 56 expo-asset regardless of where npm put
+    // the package doing the requiring.
+    '^expo-asset$': '<rootDir>/node_modules/expo-asset',
+    '^expo-asset/(.*)$': '<rootDir>/node_modules/expo-asset/$1',
+    // ...and `expo` itself, for the same reason and the same two packages:
+    // from the root, expo-image-picker resolves `expo` to the root's 52.0.49,
+    // which has no `createPermissionHook`. Pinning the two mismatched
+    // dependencies (`expo-asset` above, `expo` here) covers every root-hoisted
+    // requirer at once, which is what the per-package pins above cannot do.
+    // This must stay BELOW the `expo/virtual/` entry: moduleNameMapper takes
+    // the first matching pattern, and both would match `expo/virtual/env`.
+    '^expo$': '<rootDir>/node_modules/expo',
+    '^expo/(.*)$': '<rootDir>/node_modules/expo/$1',
     '^@gorhom/bottom-sheet$': '<rootDir>/lib/test-support/gorhom-bottom-sheet-mock',
   },
 };

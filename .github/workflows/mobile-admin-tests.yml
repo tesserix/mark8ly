@@ -1,0 +1,72 @@
+name: Mobile Admin Tests
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+# =============================================================================
+# Runs the mobile-admin Jest suite on every PR that touches it.
+#
+# 132 test files and 1720 assertions lived in apps/mobile-admin and CI ran
+# none of them. The two existing mobile workflows are release paths — they
+# trigger on `mobile-admin-v*` tags and workflow_dispatch — and neither has a
+# test step, so no mobile regression could ever fail a check. The suite was
+# not broken and had not rotted: it passes clean in 13s. It was simply never
+# asked to run, which is the worst version of this, because the tests read as
+# coverage while proving nothing about any build that shipped.
+#
+# This is a separate workflow rather than a job in ci.yml on purpose. That
+# caller is capped at 181 meaningful lines by the CI contract, with the cap
+# documented as "the caller stays thin: product policy only" — inlining a
+# node/jest job is exactly the growth the cap exists to refuse. The standalone
+# guards (pii-leak-guard, logging-smoke, the e2e workflows) are the shape the
+# repo already uses for this.
+#
+# Both triggers filter on the same paths, and the list includes this file, so
+# a PR editing the workflow is a PR that runs it. That property is borrowed
+# from the e2e path contract (#858) — which globs `e2e-*.yml` and so does not
+# reach here — because the failure it prevents does not care what the file is
+# called: e2e-onboarding.yml reached review having never once executed.
+# =============================================================================
+on:
+  pull_request:
+    paths:
+      - "apps/mobile-admin/**"
+      - "package-lock.json"
+      - ".github/workflows/mobile-admin-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile-admin/**"
+      - "package-lock.json"
+      - ".github/workflows/mobile-admin-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  jest:
+    name: Jest (mobile-admin)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # 24 to match the major the app Dockerfiles ship. The CI contract holds
+      # every Node gate to that, after CI ran on 22 while production ran 24
+      # and left two Node-24-only failures green (#857).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      # Root install: the mobile app is an npm workspace and its dependencies
+      # resolve against the root lockfile. No credential — every @tesserix/*
+      # package comes from the public registry.
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Run Jest
+        working-directory: apps/mobile-admin
+        run: npx jest --ci

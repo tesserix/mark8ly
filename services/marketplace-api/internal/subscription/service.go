@@ -280,6 +280,35 @@ func (s *Service) CreatePortalSession(ctx context.Context, tenantID, storeID uui
 		return "", err
 	}
 
+	// A portal session is FOR a customer, so one has to exist.
+	//
+	// Since #827 a subscription row is deliberately created WITHOUT a Stripe
+	// customer — a free trial must not depend on a payment provider being
+	// reachable — and the customer is attached later, at the first point
+	// money is actually discussed. Opening the billing portal is one of
+	// those points and was not doing it: this read sub.StripeCustomerID,
+	// found "", and handed the empty string to Stripe, which rejects it.
+	//
+	// Every store on the platform is in that state, so "Add a card",
+	// "Add payment method" and "Manage in portal" all returned 500. The
+	// trailing-LF in the Stripe key (#923) hid this behind an earlier
+	// failure; fixing that exposed it rather than caused it.
+	//
+	// EnsureStripeCustomer is idempotent and supplies deterministic
+	// fallbacks when email or name are blank, so this is safe to call on
+	// every portal open.
+	if sub.StripeCustomerID == "" {
+		email := ""
+		if sub.Email != nil {
+			email = *sub.Email
+		}
+		withCustomer, err := s.EnsureStripeCustomer(ctx, tenantID, storeID, email, "")
+		if err != nil {
+			return "", err
+		}
+		sub = withCustomer
+	}
+
 	url, err := s.stripe.CreatePortalSession(ctx, sub.StripeCustomerID, returnURL)
 	if err != nil {
 		return "", fmt.Errorf("stripe portal session: %w", err)

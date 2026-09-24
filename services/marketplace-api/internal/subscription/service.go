@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/billing/pricing"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -155,6 +156,16 @@ func (s *Service) Bootstrap(ctx context.Context, in BootstrapInput) (*StoreSubsc
 	}
 	if cur := strings.ToLower(strings.TrimSpace(in.BillingCurrency)); cur != "" {
 		row.BillingCurrency = &cur
+		// price_tier is derived here because this is the only place the
+		// merchant's currency is known at row creation, and nothing else in
+		// the codebase ever wrote the column: it took its `developed` default
+		// and kept it for the row's whole life. The effect was invisible in
+		// the data — billing_currency said inr while every price lookup
+		// resolved the developed Price — and only became money at the first
+		// charge, because lookupKeyFor consults the currency ONLY on the PPP
+		// tier. Three Indian stores were set to be billed USD 19 instead of
+		// INR 999.
+		row.PriceTier = PriceTier(pricing.TierForCurrency(cur))
 	}
 	// Both or neither: a tax id without its country cannot be validated (the
 	// validator dispatches on country) and cannot be rendered on a

@@ -32,6 +32,7 @@ package pricing
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // Plan identifies a billing plan.
@@ -294,6 +295,33 @@ func LookupKeyFor(p Plan, period Period, tier Tier, currency string) (string, bo
 		return d.LookupKey, true
 	}
 	return "", false
+}
+
+// TierForCurrency resolves the tier a merchant billed in the given currency
+// belongs to, by ASKING THE CATALOG rather than restating a country list.
+//
+// The catalog already encodes the answer: a currency has a PPP Price object
+// if and only if it is a PPP-tier currency, so a second list of countries or
+// currencies kept alongside it could only ever drift out of agreement with
+// the prices actually published to Stripe. Adding a PPP currency to
+// catalog_data.go is therefore all that is needed for stores billed in it to
+// start resolving the PPP tier.
+//
+// An unknown or empty currency resolves to TierDeveloped. That is the
+// conservative direction: the developed Price carries currency_options for
+// all seven developed-market currencies, so an unrecognised currency falls
+// back to a real price rather than to nothing.
+func TierForCurrency(currency string) Tier {
+	c := strings.ToLower(strings.TrimSpace(currency))
+	if c == "" {
+		return TierDeveloped
+	}
+	for _, d := range allDescriptors {
+		if d.Tier == TierPPP && d.Currency == c {
+			return TierPPP
+		}
+	}
+	return TierDeveloped
 }
 
 func MustGetDescriptor(p Plan, period Period, tier Tier) PriceDescriptor {

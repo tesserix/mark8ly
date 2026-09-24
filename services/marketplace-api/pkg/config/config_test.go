@@ -598,6 +598,13 @@ func TestValidateLeavesDevAloneWithoutTheStorefrontKey(t *testing.T) {
 //
 // This test walks the struct instead of naming fields, so a secret added
 // tomorrow is covered without anyone remembering this file exists.
+//
+// The probe values deliberately do NOT look like real credentials. An
+// earlier version used a live-looking Stripe key prefix and tripped
+// gitleaks four times, failing the secret scan on every branch carrying
+// the file. What is under test is whitespace handling; the shape of the
+// value is irrelevant, and a fixture shaped like a real credential is a
+// liability with no upside.
 func TestLoad_TrimsEveryCredentialShapedField(t *testing.T) {
 	cfgType := reflect.TypeOf(Config{})
 
@@ -615,7 +622,7 @@ func TestLoad_TrimsEveryCredentialShapedField(t *testing.T) {
 		t.Run(field.Name, func(t *testing.T) {
 			prodEnv(t)
 			// A value that is valid apart from the newline GCP SM appends.
-			t.Setenv(envName, "sk_live_abcdef0123456789\n")
+			t.Setenv(envName, "probe-credential-value\n")
 
 			cfg, err := Load()
 			if err != nil {
@@ -627,7 +634,7 @@ func TestLoad_TrimsEveryCredentialShapedField(t *testing.T) {
 			if strings.TrimSpace(got) != got {
 				t.Errorf("%s (%s) kept surrounding whitespace: %q", field.Name, envName, got)
 			}
-			if got != "sk_live_abcdef0123456789" {
+			if got != "probe-credential-value" {
 				t.Errorf("%s (%s) = %q, want the trimmed value", field.Name, envName, got)
 			}
 		})
@@ -644,18 +651,18 @@ func TestLoad_TrimsEveryCredentialShapedField(t *testing.T) {
 // The specific regression, named so it is greppable from the incident.
 func TestLoad_TrimsStripeBillingSecretKey(t *testing.T) {
 	prodEnv(t)
-	t.Setenv("STRIPE_BILLING_SECRET_KEY", "sk_live_trailing_newline\n")
-	t.Setenv("STRIPE_BILLING_WEBHOOK_SECRET", "whsec_trailing_newline\n")
+	t.Setenv("STRIPE_BILLING_SECRET_KEY", "stripe-key-probe\n")
+	t.Setenv("STRIPE_BILLING_WEBHOOK_SECRET", "stripe-webhook-probe\n")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.StripeBillingSecretKey != "sk_live_trailing_newline" {
+	if cfg.StripeBillingSecretKey != "stripe-key-probe" {
 		t.Errorf("StripeBillingSecretKey = %q; a newline here fails every Stripe call "+
 			"with 'invalid header field value for Authorization'", cfg.StripeBillingSecretKey)
 	}
-	if cfg.StripeBillingWebhookSecret != "whsec_trailing_newline" {
+	if cfg.StripeBillingWebhookSecret != "stripe-webhook-probe" {
 		t.Errorf("StripeBillingWebhookSecret = %q, want trimmed", cfg.StripeBillingWebhookSecret)
 	}
 }

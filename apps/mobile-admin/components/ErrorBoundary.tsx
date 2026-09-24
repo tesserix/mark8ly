@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 import { Text } from './ui/Text';
+import { captureException } from '../lib/crash-reporting';
 
 interface Props {
   children: ReactNode;
@@ -23,12 +24,15 @@ export class ErrorBoundary extends Component<Props, State> {
     this.reportError(error);
   }
 
-  // Single telemetry seam. Today it only logs to the console; when a crash
-  // reporter is adopted (e.g. Sentry / Crashlytics) wire the capture call HERE
-  // and nowhere else. No such SDK is installed yet, so we deliberately do not
-  // import one.
+  // Single telemetry seam, as designed. The crash reporter is wired HERE and
+  // nowhere else; nothing outside lib/crash-reporting imports the SDK.
+  //
+  // The console line stays: it is what a developer sees in Metro, and it
+  // still works when no DSN is configured (dev, demo builds, and the test
+  // suite all run without one).
   private reportError(error: Error) {
     console.error('[mobile-admin] render error', error);
+    captureException(error, 'render-error-boundary');
   }
 
   // Clear the caught error so the subtree re-mounts. Lets the user retry in

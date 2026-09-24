@@ -109,6 +109,19 @@ module.exports = {
     },
     plugins: [
       'expo-router',
+      // Adds the native crash handler and, at build time, uploads the JS
+      // source maps EAS produces — without those a JS stack trace arrives
+      // as minified bundle offsets and is no more useful than Apple's.
+      //
+      // organization/project are identifiers, not secrets, so they live here
+      // rather than in an EAS secret. The credential that pairs with them is
+      // SENTRY_AUTH_TOKEN, which the build reads from the environment and
+      // which must never be written into this repo or a sentry.properties
+      // file — it can write releases across the whole org.
+      [
+        '@sentry/react-native',
+        { organization: 'tesserix', project: 'mark8ly-mobile-admin' },
+      ],
       'expo-font',
       'expo-secure-store',
       'expo-image-picker',

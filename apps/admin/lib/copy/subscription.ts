@@ -24,6 +24,40 @@ export const subscriptionCopy = {
         `Your most recent payment did not go through. We'll retry on ${retryDate}.`,
       cta: 'Add a new card',
     },
+    /**
+     * Read-only terminal states: expired, store_closed, pending_hard_delete.
+     *
+     * These were the only billing states with NO banner, which is the
+     * reason an expired merchant saw a generic "Something went wrong"
+     * instead of being told what had happened. Highest priority in
+     * BannerStack: every other banner describes a state you can trade in,
+     * and these describe one you cannot.
+     *
+     * Voice unchanged -- calm and factual. The merchant has lost access to
+     * their own shop; urgency language on top of that reads as gloating.
+     */
+    readOnly: {
+      expired: {
+        heading: 'Your trial has ended',
+        body:
+          'Your store is read-only. You can still view your orders, products ' +
+          'and customers, and export your data. Add a card to start selling again.',
+      },
+      storeClosed: {
+        heading: 'Your store is closed',
+        body:
+          'Your storefront is no longer serving customers and your admin is ' +
+          'read-only. Your data is intact — add a card to reopen the store.',
+      },
+      pendingHardDelete: {
+        heading: 'Your store is scheduled for deletion',
+        body:
+          'Your admin is read-only and this store is queued for permanent ' +
+          'deletion. Add a card to restore it, or export your data while it ' +
+          'is still available.',
+      },
+      cta: 'Add a card',
+    },
     paymentActionRequired: {
       heading: 'Your bank needs to confirm this payment',
       bodyTemplate: (daysLeft: number) =>

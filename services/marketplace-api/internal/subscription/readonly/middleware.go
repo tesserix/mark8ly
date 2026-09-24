@@ -47,9 +47,16 @@ func RequireActive(cfg Config) gin.HandlerFunc {
 			return
 		}
 
+		// `message` is part of the shape every admin client expects
+		// (apps/admin ApiError is {error, message, details?}). Omitting it
+		// made every one of the 23 server-side fetch helpers render
+		// `402: unknown error`, because they read errBody?.message and
+		// fell back. The status stays a separate machine-readable field;
+		// the message is for the human reading a log or a toast.
 		c.AbortWithStatusJSON(http.StatusPaymentRequired, gin.H{
-			"error":  "subscription_inactive",
-			"status": string(status),
+			"error":   "subscription_inactive",
+			"status":  string(status),
+			"message": readOnlyMessage(status),
 		})
 	}
 }
@@ -124,4 +131,21 @@ func patternMatches(pattern, full string) bool {
 		return strings.HasPrefix(full, prefix)
 	}
 	return false
+}
+
+// readOnlyMessage explains, in one sentence a merchant could read, why the
+// request was refused. Kept next to the statuses rather than in the client so
+// every consumer -- browser, server component, mobile, a curl in an incident
+// -- gets the same explanation.
+func readOnlyMessage(status subscription.SubscriptionStatus) string {
+	switch status {
+	case subscription.StatusExpired:
+		return "your trial has ended — this store is read-only until a card is added"
+	case subscription.StatusStoreClosed:
+		return "this store is closed and read-only until a card is added"
+	case subscription.StatusPendingHardDelete:
+		return "this store is scheduled for deletion and is read-only"
+	default:
+		return "this store's subscription is not active — it is read-only"
+	}
 }

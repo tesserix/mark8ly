@@ -1,6 +1,7 @@
 package readonly_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -202,6 +203,39 @@ func TestRequireActive_NonAdminRoutesAreNotSweptIn(t *testing.T) {
 			target = strings.Replace(target, ":storeId", "s1", 1)
 			w := doReq(r, http.MethodPost, target)
 			require.Equal(t, http.StatusPaymentRequired, w.Code)
+		})
+	}
+}
+
+// The 402 body must carry a human-readable `message`, because that is the
+// field every admin client reads. Its absence is why the UI logged
+// "402: unknown error" and showed a generic error boundary instead of
+// saying the trial had ended.
+func TestRequireActive_402BodyExplainsItself(t *testing.T) {
+	for _, tc := range []struct {
+		status subscription.SubscriptionStatus
+		expect string
+	}{
+		{subscription.StatusExpired, "trial has ended"},
+		{subscription.StatusStoreClosed, "store is closed"},
+		{subscription.StatusPendingHardDelete, "scheduled for deletion"},
+	} {
+		t.Run(string(tc.status), func(t *testing.T) {
+			r := makeRouter(tc.status, http.MethodPost, "/admin/stores/:storeId/products")
+			w := doReq(r, http.MethodPost, "/admin/stores/s1/products")
+			require.Equal(t, http.StatusPaymentRequired, w.Code)
+
+			var body struct {
+				Error   string `json:"error"`
+				Status  string `json:"status"`
+				Message string `json:"message"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+			require.Equal(t, "subscription_inactive", body.Error)
+			require.Equal(t, string(tc.status), body.Status)
+			require.Contains(t, body.Message, tc.expect,
+				"the message field is what admin clients render; "+
+					"without it they show 'unknown error'")
 		})
 	}
 }

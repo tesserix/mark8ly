@@ -109,6 +109,10 @@ module.exports = {
     },
     plugins: [
       'expo-router',
+      // Adds the native crash handler and, at build time, uploads the JS
+      // source maps EAS produces — without those a JS stack trace arrives
+      // as minified bundle offsets and is no more useful than Apple's.
+      '@sentry/react-native',
       'expo-font',
       'expo-secure-store',
       'expo-image-picker',

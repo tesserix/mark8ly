@@ -21,6 +21,12 @@ import { useTenantStore } from '@repo/mobile-shared/stores/tenant-store';
 import { ApiError } from '@repo/mobile-shared/api/client';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { fontMap } from '../lib/fonts';
+import { initCrashReporting } from '../lib/crash-reporting';
+
+// Before anything else renders, so a crash during startup is still reported.
+// No-ops when EXPO_PUBLIC_SENTRY_DSN is unset, which is every dev, demo and
+// test run.
+initCrashReporting();
 
 SplashScreen.preventAutoHideAsync();
 

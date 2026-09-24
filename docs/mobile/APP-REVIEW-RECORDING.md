@@ -18,7 +18,7 @@ three of the four, and the shot list below covers each one explicitly.
 | Account registration, login, deletion | Login screen; More → Account | 2, 9 |
 | Paid content, purchase or subscription flows | **Not in this app** — see below | — |
 | User-generated content, reporting and blocking | Reviews; customer blocking | 7, 8 |
-| Prompts for sensitive data or device capabilities | Photos, camera, notifications | 5, 6 |
+| Prompts for sensitive data or device capabilities | Notifications — the only one the app raises | 6 |
 
 There are no in-app purchases and no subscription flow in this app. Billing is
 handled on the web, by the store owner, outside the app — `ITSAppUsesNonExemptEncryption`
@@ -37,9 +37,10 @@ Notes field rather than leaving the reviewer to wonder why it is missing.
   re-reads the AASA at install, so a fresh install of the new build is also
   the only way to see link handling work.
 - **Sign out first**, so shot 2 starts from the real login screen.
-- **Reset the two permissions** you are going to be asked for, or they will
-  never prompt on camera: Settings → Mark8ly Admin → toggle Photos and
-  Notifications off, or delete and reinstall the app.
+- **Reset the notification permission**, or it will never prompt on camera:
+  Settings → Mark8ly Admin → Notifications off, or delete and reinstall. That
+  is the *only* permission prompt the app raises — see shot 5 for why photos
+  does not, and do not go looking for a camera prompt that cannot happen.
 - **Do Not Disturb on**, so a notification banner does not cover the app.
 - Record **one continuous take** if you can. Apple is checking that the app
   runs, and cuts invite the suspicion that something was hidden between them.
@@ -69,6 +70,10 @@ Type the demo email and password by hand, slowly enough to be legible:
 demo+appreview@mark8ly.com
 ```
 
+Sign-in takes a few seconds — longer than you will want to sit through. Let it
+finish rather than cutting; a jump from the login screen to a populated
+dashboard reads as an edit.
+
 This account is on `DEMO_LOGIN_EMAILS`, so it skips the new-device email code
 that ordinary merchants get. There is no inbox to check and no MFA screen. If
 a verification screen *does* appear, stop — that is a real regression and the
@@ -92,21 +97,27 @@ to the list.
 Three orders exist on the demo store. That is enough to show the flow; do not
 go hunting for a fourth.
 
-**5. Products, and the photo permission prompt (1:20)**
+**5. Products, and adding a photo (1:20)**
 
 Bottom tab → **Products**. Show the catalogue — a dozen live products — then
 open one and scroll the detail: variants, pricing, stock, images.
 
-Then go back and tap **+** to add a product, and tap the image area to add
-media. **iOS will prompt for photo library access.** Let the prompt sit on
-screen for a beat, then allow it, and let the picker open. This is one of the
-"prompts requesting access to sensitive data" Apple listed.
+Then add media to a product and pick an image. The system photo picker opens
+**straight away, with no permission dialog and no camera option**, and that is
+correct rather than a bug: the app calls `launchImageLibraryAsync`, which on
+iOS is PHPicker. PHPicker runs out of process and needs no library permission,
+and `use-product-media-handlers.ts` deliberately does not ask for one — asking
+opts into the legacy flow, where choosing "Limited Access" strands the user in
+iOS's library-management sheet and the real picker never opens. There is a
+regression test pinning that behaviour.
 
-If you want the camera prompt too, choose the camera option instead — the
-purpose strings are `Take product photos for your store` and `Select product
-images from your library`. Showing one of the two is enough.
+So: do not wait for a prompt here, and do not hunt for a camera button. The
+app ships `NSCameraUsageDescription`, but the only component that calls
+`launchCameraAsync` is `ProductMediaPicker`, which no route renders — the
+camera is unreachable in the shipped app.
 
-Back out without saving the new product.
+Let the picker open, choose an image, let the system cropper appear, and back
+out without saving.
 
 **6. Notifications permission (2:00)**
 

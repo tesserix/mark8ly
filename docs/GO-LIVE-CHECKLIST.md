@@ -64,7 +64,7 @@ Apple rejected under Guideline 2.1 — *information needed*, not a defect.
 | C2 | Demo account shows real content | the account has products and orders | **done** — `demo@mark8ly.com` owns The Bondi Store: 12 live products, 3 orders, 5 customers, 7 reviews |
 | C3 | App Review Notes filled (items 2–7) | the field in App Store Connect matches `docs/mobile/APP-REVIEW-NOTES.md` | not done — the live field still holds a 562-character version predating #931, and it miscalls the bottom tab "Settings" (it is **More**). Pasting the repo doc over it fixes both |
 | C4 | Screen recording on a physical device | attached to the submission | not done — only you can do this; shot list in `docs/mobile/APP-REVIEW-RECORDING.md` (#944) |
-| C5 | Purpose strings give an example of use | read `NSCameraUsageDescription` against guideline 5.1.1 | present but thin |
+| C5 | Purpose strings give an example of use | read `NSCameraUsageDescription` against guideline 5.1.1 | present but thin — and `NSCameraUsageDescription` describes a camera the app cannot open: the only `launchCameraAsync` caller is `components/ProductMediaPicker.tsx`, which no route renders. Adding a product image goes straight to PHPicker, which prompts for nothing. Either wire the camera up or drop the string |
 | C6 | Universal links resolve | `/.well-known/apple-app-site-association` returns 200 | **done** (#936) — verified live: 200, `application/json`, 0 redirects, 14 components |
 | C7 | Mobile tests run in CI | a red test blocks a build | **done** (#937) — 134 suites / 1730 tests gate every PR touching `apps/mobile-admin` |
 | C8 | Crash reporting | a forced crash appears in a dashboard | **wired** (#939/#940) — Sentry ships inert until the DSN resolves; unproven until a build runs on a device |

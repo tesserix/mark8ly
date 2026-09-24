@@ -53,8 +53,12 @@ configuration are required — the account is pre-populated with a live
 storefront's data (231 products, existing orders and customers), so every
 screen has real content on first launch.
 
-> Email: appreview@mark8ly.com
+> Email: demo+appreview@mark8ly.com
 > Password: [FILL IN]
+
+The address is plus-addressed off the demo owner's inbox, so it delivers
+somewhere we already read. It is a distinct account with its own
+credentials, not an alias of the owner.
 
 The account has the **admin** role on a demo store. That grants full access
 to everything listed in item 3. It deliberately excludes deleting the store,

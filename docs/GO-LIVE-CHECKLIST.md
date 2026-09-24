@@ -62,12 +62,14 @@ Apple rejected under Guideline 2.1 — *information needed*, not a defect.
 |---|---|---|---|
 | C1 | Reviewer can sign in | a fresh device signs in without an emailed code | **done** — `demo+appreview@mark8ly.com` created 2026-09-24; login proven end to end against the live API |
 | C2 | Demo account shows real content | the account has products and orders | **done** — `demo@mark8ly.com` owns The Bondi Store: 12 live products, 3 orders, 5 customers, 7 reviews |
-| C3 | App Review Notes filled (items 2–7) | the field is non-empty in App Store Connect | not done |
-| C4 | Screen recording on a physical device | attached to the submission | not done — only you can do this |
+| C3 | App Review Notes filled (items 2–7) | the field in App Store Connect matches `docs/mobile/APP-REVIEW-NOTES.md` | not done — the live field still holds a 562-character version predating #931, and it miscalls the bottom tab "Settings" (it is **More**). Pasting the repo doc over it fixes both |
+| C4 | Screen recording on a physical device | attached to the submission | not done — only you can do this; shot list in `docs/mobile/APP-REVIEW-RECORDING.md` (#944) |
 | C5 | Purpose strings give an example of use | read `NSCameraUsageDescription` against guideline 5.1.1 | present but thin |
 | C6 | Universal links resolve | `/.well-known/apple-app-site-association` returns 200 | **done** (#936) — verified live: 200, `application/json`, 0 redirects, 14 components |
-| C7 | Mobile tests run in CI | a red test blocks a build | **done** (#937) — 133 suites / 1727 tests gate every PR touching `apps/mobile-admin` |
+| C7 | Mobile tests run in CI | a red test blocks a build | **done** (#937) — 134 suites / 1730 tests gate every PR touching `apps/mobile-admin` |
 | C8 | Crash reporting | a forced crash appears in a dashboard | **wired** (#939/#940) — Sentry ships inert until the DSN resolves; unproven until a build runs on a device |
+| C9 | App Privacy declares crash data | the Data Types list in App Store Connect includes Diagnostics | **not done** — the declaration was published 2026-07, lists 7 types (User ID, Physical Address, Device ID, Email, Phone, Name, Photos/Videos) and no Diagnostics category. #939 added Sentry on 2026-09-24, so the app now collects crash data the declaration does not mention |
+| C10 | The submission points at the current build | the Build shown on the version page is the newest TestFlight build | **not done** — still 1.0.0 (12), built 2026-08-14 from `25a7434`, i.e. before Sentry, the AASA fix and the header fix |
 
 ### What C1 actually required
 

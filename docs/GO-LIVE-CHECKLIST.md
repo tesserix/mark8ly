@@ -60,14 +60,32 @@ Apple rejected under Guideline 2.1 — *information needed*, not a defect.
 
 | # | Item | Verify by | Status |
 |---|---|---|---|
-| C1 | Reviewer can sign in | a fresh device signs in without an emailed code | **done** — `DEMO_LOGIN_EMAILS` covers the mobile path via `autologin.CompleteForProvider` |
+| C1 | Reviewer can sign in | a fresh device signs in without an emailed code | **done** — `demo+appreview@mark8ly.com` created 2026-09-24; login proven end to end against the live API |
 | C2 | Demo account shows real content | the account has products and orders | **done** — `demo@mark8ly.com` owns The Bondi Store: 12 live products, 3 orders, 5 customers, 7 reviews |
 | C3 | App Review Notes filled (items 2–7) | the field is non-empty in App Store Connect | not done |
 | C4 | Screen recording on a physical device | attached to the submission | not done — only you can do this |
 | C5 | Purpose strings give an example of use | read `NSCameraUsageDescription` against guideline 5.1.1 | present but thin |
-| C6 | Universal links resolve | `/.well-known/apple-app-site-association` returns 200 | **404** — declared in `associatedDomains`, not served |
-| C7 | Mobile tests run in CI | a red test blocks a build | **130 test files, zero run** |
-| C8 | Crash reporting | a forced crash appears in a dashboard | none |
+| C6 | Universal links resolve | `/.well-known/apple-app-site-association` returns 200 | **done** (#936) — verified live: 200, `application/json`, 0 redirects, 14 components |
+| C7 | Mobile tests run in CI | a red test blocks a build | **done** (#937) — 133 suites / 1727 tests gate every PR touching `apps/mobile-admin` |
+| C8 | Crash reporting | a forced crash appears in a dashboard | **wired** (#939/#940) — Sentry ships inert until the DSN resolves; unproven until a build runs on a device |
+
+### What C1 actually required
+
+Three separate grants, and missing any one fails differently — recorded because
+two of them were found only by testing on a device:
+
+1. A Zitadel user.
+2. A Zitadel **user grant** on the app project with role `mark8ly.staff`.
+   Without it the password is accepted and the OIDC exchange then 403s;
+   auth-bff logs `"positive decision, exchange failed"`. Creating a user and
+   entitling one are separate operations.
+3. An OpenFGA tuple keyed by **lowercased email**, not user id. Tenant
+   resolution runs BEFORE authentication, so no user id exists yet. An
+   id-keyed tuple alone yields `no_store` — "We couldn't find a store for this
+   account". `demo@mark8ly.com` carries both forms; copy that shape.
+
+The reviewer password is deliberately not in this repo: it is a live credential
+and belongs in App Store Connect, not in git history.
 
 No in-app purchases exist (no StoreKit, no `react-native-iap`), so guideline
 3.1.2 does not apply — say so in the Notes rather than leaving it inferred.
@@ -78,6 +96,28 @@ Recorded so nobody rediscovers them as surprises: Ireland silently dropped
 from the country list, the second-store country gate, multi-store switching,
 the unenforced 14-day tax window, and a CRM holding 259 leads with no
 templates. See punchlist §3.
+
+Found 2026-09-24, real, and deliberately not fixed before submission:
+
+**Refresh tokens are dead.** Both OIDC apps carry `grant_types: {0}` —
+authorization_code only — so Zitadel ignores the `offline_access` scope
+auth-bff correctly requests, and issues none. Every merchant, web and mobile,
+is signed out after ~1 hour with no silent refresh. The code does its half and
+the app config declines; nothing errors.
+
+**The collapsing header animates `height`** while the `Animated.ScrollView` is
+its sibling in a flex column, so the list re-lays-out on every frame of the
+collapse — the "shaky" animation reported from a device. The title *ghost* was
+fixed (#941); this is the other half, and the fix is an absolute overlay plus
+a static top inset across the eleven screens using `CollapsingHeader`.
+
+**OTel cannot scrape mark8ly.** ~20 rejections per 10 minutes on :9090,
+because `observability` sits outside the ambient mesh: its traffic is
+plaintext, so neither `principals:` nor `namespaces:` can ever match it, and
+no AuthorizationPolicy edit can fix it from the mark8ly side. **No data is
+lost** — Prometheus already scrapes those same endpoints successfully. The fix
+belongs in `observability`: either drop mark8ly from OTel's scrape config, or
+enrol that namespace in ambient.
 
 ---
 

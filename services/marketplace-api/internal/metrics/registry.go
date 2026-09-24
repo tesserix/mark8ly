@@ -32,15 +32,6 @@ var (
 		[]string{"store_id"},
 	)
 
-	// WebhookReceivedTotal counts webhook events by provider and type.
-	WebhookReceivedTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "webhook_received_total",
-			Help: "Total webhook events received.",
-		},
-		[]string{"provider", "event_type"},
-	)
-
 	// OutboxEventsPublishedTotal counts outbox events published.
 	OutboxEventsPublishedTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
@@ -278,7 +269,6 @@ func init() {
 		HTTPRequestsTotal,
 		HTTPRequestDuration,
 		OrdersCreatedTotal,
-		WebhookReceivedTotal,
 		OutboxEventsPublishedTotal,
 		OutboxEventsFailedTotal,
 		TrialSignupAnomalyAlertsTotal,

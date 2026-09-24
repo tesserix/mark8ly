@@ -290,7 +290,27 @@ func (s *Service) completeLogin(ctx context.Context, w http.ResponseWriter, id I
 	// is why it runs even when the login is about to be challenged —
 	// the attempt is what the account holder needs to hear about.
 	newDevice := false
-	if s.devices != nil {
+	switch {
+	case s.isDemoAccount(id.Email):
+		// A demo account is shared by design: every prospect arrives on an
+		// unrecognised device, so the step-up mails a code to an inbox they
+		// cannot read and the alert mails the owner about a stranger who is
+		// the intended audience. Both are noise here, and Evaluate is what
+		// produces both — so it is skipped outright rather than called and
+		// its verdict discarded.
+		//
+		// Nothing is lost by not calling it. Evaluate only READS history;
+		// the row that records this device is the session registry row
+		// written further down, which still happens.
+		//
+		// Logged loudly because an account weaker than the rest of the
+		// platform should be visible in the logs, not only in config.
+		if s.logger != nil {
+			s.logger.Warn("autologin: demo account — new-device check and email OTP skipped",
+				"email", id.Email, "user_id", id.UID,
+				"tenant_id", req.WorkspaceTenant, "ip", req.IPAddress)
+		}
+	case s.devices != nil:
 		isNew, err := s.devices.Evaluate(ctx, deviceguard.Login{
 			UserID:      id.UID,
 			Email:       id.Email,
@@ -309,19 +329,6 @@ func (s *Service) completeLogin(ctx context.Context, w http.ResponseWriter, id I
 	// Step 2d: an unrecognised device must prove control of the account's
 	// email before it gets a session. This is what makes signing in on a
 	// second device safe rather than merely possible.
-	if newDevice && s.emailOTP != nil && s.isDemoAccount(id.Email) {
-		// A demo account is shared by design, so every prospect arrives on
-		// an unrecognised device and the step-up mails a code to an inbox
-		// they cannot read. Skipping it is the point; logging it loudly is
-		// how it stays visible that this account is weaker than the rest.
-		if s.logger != nil {
-			s.logger.Warn("autologin: demo account — new-device email OTP skipped",
-				"email", id.Email, "user_id", id.UID,
-				"tenant_id", req.WorkspaceTenant, "ip", req.IPAddress)
-		}
-		newDevice = false
-	}
-
 	if newDevice && s.emailOTP != nil {
 		if err := s.emailOTP.IssueChallenge(ctx, id.Email, req.IPAddress); err != nil {
 			if s.logger != nil {

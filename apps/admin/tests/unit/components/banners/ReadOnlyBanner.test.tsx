@@ -87,6 +87,32 @@ describe('ReadOnlyBanner', () => {
     expect(mockMutate).toHaveBeenCalledTimes(1)
   })
 
+  it('escalates tone for the states that stopped the shop, not just billing', () => {
+    // expired: the trial lapsed but the shop is recoverable and nothing is
+    // lost — same weight as a failed payment.
+    const expired = withStatus('expired')
+    expect(
+      expired.container
+        .querySelector('[data-testid="banner-shell"]')
+        ?.getAttribute('data-tone'),
+    ).toBe('warning')
+    expired.unmount()
+
+    // store_closed and pending_hard_delete are different in kind: the
+    // storefront has stopped serving customers, and the data is on a
+    // deletion clock.
+    for (const status of ['store_closed', 'pending_hard_delete']) {
+      const { container, unmount } = withStatus(status)
+      expect(
+        container
+          .querySelector('[data-testid="banner-shell"]')
+          ?.getAttribute('data-tone'),
+        `${status} should use the danger tone`,
+      ).toBe('danger')
+      unmount()
+    }
+  })
+
   it('tags the rendered banner with its status for debugging', () => {
     const { container } = withStatus('expired')
     expect(

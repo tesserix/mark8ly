@@ -11,9 +11,22 @@
  * Priority: highest in BannerStack. Every other banner describes a state you
  * can still trade in; these describe one you cannot.
  *
- * Tone `warning` rather than anything louder, and the copy stays calm. The
- * merchant has just lost access to their own shop; urgency language on top
- * of that reads as gloating.
+ * Tone is per-state, not one value for all three:
+ *
+ *   expired             → warning  the trial lapsed; the shop is recoverable
+ *                                  and nothing has been lost yet
+ *   store_closed        → danger   the storefront has STOPPED serving
+ *                                  customers — a different kind of fact from
+ *                                  "your card needs updating"
+ *   pending_hard_delete → danger   the data is on a deletion clock
+ *
+ * `danger` is oxblood rather than amber, and BannerShell has defined it all
+ * along with almost nothing using it. These are the states it was for.
+ *
+ * The copy stays calm at both tones, and the shell stays the shell — no box,
+ * no shadow, no icon. The merchant has just lost access to their own shop;
+ * shouting on top of that reads as gloating, and a banner that looks unlike
+ * anything else in the admin reads as a bug.
  *
  * Returns null for every other status, including `past_due` and
  * `payment_action_required` — those have their own banners and, importantly,
@@ -86,6 +99,11 @@ function copyFor(status: ReadOnlyStatus) {
   }
 }
 
+/** See the tone table in this file's header for why these differ. */
+function toneFor(status: ReadOnlyStatus): 'warning' | 'danger' {
+  return status === 'expired' ? 'warning' : 'danger'
+}
+
 export function ReadOnlyBanner({ storeId }: ReadOnlyBannerProps) {
   const status = useReadOnlyStatus(storeId)
   const openPortal = useOpenPortal(storeId)
@@ -97,7 +115,7 @@ export function ReadOnlyBanner({ storeId }: ReadOnlyBannerProps) {
   return (
     <div data-testid="read-only-banner" data-status={status}>
       <BannerShell
-        tone="warning"
+        tone={toneFor(status)}
         heading={copy.heading}
         body={copy.body}
         cta={{

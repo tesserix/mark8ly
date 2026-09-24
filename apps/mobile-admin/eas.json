@@ -5,6 +5,7 @@
   },
   "build": {
     "local-sim": {
+      "environment": "development",
       "developmentClient": false,
       "distribution": "internal",
       "ios": {
@@ -21,6 +22,7 @@
       }
     },
     "development": {
+      "environment": "development",
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
@@ -40,6 +42,7 @@
       }
     },
     "preview": {
+      "environment": "preview",
       "distribution": "internal",
       "channel": "preview",
       "ios": {
@@ -56,6 +59,7 @@
       }
     },
     "production": {
+      "environment": "production",
       "channel": "production",
       "autoIncrement": true,
       "ios": {

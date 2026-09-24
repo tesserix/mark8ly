@@ -349,3 +349,55 @@ func TestBootstrap_CreatesARowTheExpiryCronCanSee(t *testing.T) {
 		t.Fatalf("status = %q, want trialing", sub.Status)
 	}
 }
+
+// The tier is derived at Bootstrap because this is the only point where the
+// merchant's currency is known at row creation. Before #904 nothing wrote the
+// column at all: it took its 'developed' DEFAULT and kept it, so a store
+// recorded as billing in INR still resolved the developed Price — the USD
+// baseline, since INR is not one of its seven currency_options.
+func TestBootstrap_DerivesThePPPTierFromAPPPCurrency(t *testing.T) {
+	repo := &bootstrapRepo{}
+	svc := newSvc(repo, nil)
+
+	in := bootstrapInput()
+	in.BillingCurrency = "inr"
+	sub, err := svc.Bootstrap(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	if sub.PriceTier != subscription.PriceTierPPP {
+		t.Errorf("PriceTier = %q, want %q — an INR store billed on the developed "+
+			"tier is charged USD 19 instead of INR 999",
+			sub.PriceTier, subscription.PriceTierPPP)
+	}
+}
+
+func TestBootstrap_KeepsTheDevelopedTierForADevelopedCurrency(t *testing.T) {
+	svc := newSvc(&bootstrapRepo{}, nil)
+
+	in := bootstrapInput()
+	in.BillingCurrency = "aud"
+	sub, err := svc.Bootstrap(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	// AUD is a currency_option on the developed Price, so the developed tier
+	// is the correct and only answer for it.
+	if sub.PriceTier != subscription.PriceTierDeveloped {
+		t.Errorf("PriceTier = %q, want %q", sub.PriceTier, subscription.PriceTierDeveloped)
+	}
+}
+
+// No currency means no basis to derive a tier, so the column keeps its
+// default rather than guessing.
+func TestBootstrap_LeavesTheTierAtTheDefaultWhenNoCurrencyIsSupplied(t *testing.T) {
+	svc := newSvc(&bootstrapRepo{}, nil)
+
+	sub, err := svc.Bootstrap(context.Background(), bootstrapInput())
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	if sub.PriceTier != "" && sub.PriceTier != subscription.PriceTierDeveloped {
+		t.Errorf("PriceTier = %q, want empty or %q", sub.PriceTier, subscription.PriceTierDeveloped)
+	}
+}

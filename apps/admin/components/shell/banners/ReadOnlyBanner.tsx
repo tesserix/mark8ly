@@ -36,7 +36,8 @@
 
 import * as React from 'react'
 import { BannerShell } from './BannerShell'
-import { useCurrentPlan, useOpenPortal } from '@/lib/api/subscription/hooks/useBilling'
+import { usePortalCta } from './usePortalCta'
+import { useCurrentPlan } from '@/lib/api/subscription/hooks/useBilling'
 import { subscriptionCopy } from '@/lib/copy/subscription'
 
 // ---------------------------------------------------------------------------
@@ -106,7 +107,7 @@ function toneFor(status: ReadOnlyStatus): 'warning' | 'danger' {
 
 export function ReadOnlyBanner({ storeId }: ReadOnlyBannerProps) {
   const status = useReadOnlyStatus(storeId)
-  const openPortal = useOpenPortal(storeId)
+  const portal = usePortalCta(storeId)
 
   if (status === null) return null
 
@@ -120,7 +121,7 @@ export function ReadOnlyBanner({ storeId }: ReadOnlyBannerProps) {
         body={copy.body}
         cta={{
           label: subscriptionCopy.banners.readOnly.cta,
-          onClick: () => openPortal.mutate(),
+          onClick: () => portal.open(),
         }}
       />
     </div>

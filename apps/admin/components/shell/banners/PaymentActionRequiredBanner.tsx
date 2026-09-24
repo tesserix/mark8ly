@@ -26,6 +26,7 @@
 
 import * as React from 'react'
 import { BannerShell } from './BannerShell'
+import { useToast } from '@/components/feedback/Toaster'
 import {
   usePaymentActionRequiredState,
   useCompleteActionUrl,
@@ -74,6 +75,7 @@ export function PaymentActionRequiredBanner({
   const { isPending, hostedInvoiceUrl, daysSinceFlagged } =
     usePaymentActionRequiredState(storeId)
   const completeActionMutation = useCompleteActionUrl(storeId)
+  const { toast } = useToast()
 
   if (!isPending) return null
 
@@ -95,7 +97,15 @@ export function PaymentActionRequiredBanner({
     : {
         label: copy.cta,
         onClick: () => {
-          completeActionMutation.mutate()
+          // onError, because this mutation only acts on success (it opens a
+          // tab) — without it a failure is indistinguishable from a dead
+          // button, which is exactly how a live billing outage went
+          // unreported from the banners.
+          completeActionMutation.mutate(undefined, {
+            onError: (err: Error) => {
+              toast.error(subscriptionCopy.banners.portalError, err.message)
+            },
+          })
         },
       }
 

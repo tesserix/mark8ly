@@ -453,3 +453,45 @@ func TestCompleteForProvider_DemoAccountStillHonoursMFA(t *testing.T) {
 		t.Error("MFARequired = false; the demo bypass leaked into the MFA gate")
 	}
 }
+
+// The demo bypass must skip the device EVALUATION, not just its verdict.
+// Evaluate is what dispatches the new-device alert, so calling it and then
+// discarding the result would still mail the owner about every prospect —
+// on an account whose whole purpose is being handed to strangers.
+func TestCompleteForProvider_DemoAccount_SkipsDeviceEvaluationEntirely(t *testing.T) {
+	devices := &stubDevices{isNew: true}
+	issuer := &stubIssuer{}
+	svc := newDemoOTPService(t, devices, issuer, "u@e.com")
+
+	if _, err := svc.CompleteForProvider(
+		context.Background(), httptest.NewRecorder(), loginCtx(),
+	); err != nil {
+		t.Fatalf("CompleteForProvider: %v", err)
+	}
+
+	if devices.calls != 0 {
+		t.Errorf("Evaluate called %d times for a demo account; it dispatches the "+
+			"new-device alert, so every prospect would email the owner", devices.calls)
+	}
+	if issuer.count() != 0 {
+		t.Errorf("issued %d challenges, want 0", issuer.count())
+	}
+}
+
+// ...and a normal account must still be evaluated, which is what sends the
+// alert that makes a real unrecognised login visible.
+func TestCompleteForProvider_NonDemoAccount_StillEvaluatesDevice(t *testing.T) {
+	devices := &stubDevices{isNew: true}
+	issuer := &stubIssuer{}
+	svc := newDemoOTPService(t, devices, issuer, "someone-else@e.com")
+
+	if _, err := svc.CompleteForProvider(
+		context.Background(), httptest.NewRecorder(), loginCtx(),
+	); err != nil {
+		t.Fatalf("CompleteForProvider: %v", err)
+	}
+
+	if devices.calls != 1 {
+		t.Errorf("Evaluate called %d times, want 1 — the demo bypass widened", devices.calls)
+	}
+}

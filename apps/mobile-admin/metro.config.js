@@ -1,4 +1,16 @@
-const { getDefaultConfig } = require('expo/metro-config');
+// getSentryExpoConfig is a thin wrapper around expo's getDefaultConfig: it
+// adds a Debug ID to the bundle so the source maps uploaded at build time can
+// be matched to the JS that actually crashed. Without it a stack trace
+// arrives as minified bundle offsets, which is no more useful than the native
+// frames Apple already gives us — i.e. the whole reason for the SDK is lost.
+//
+// Swapped by hand rather than by `npx @sentry/wizard`. The wizard rewrites
+// this file, and everything below is load-bearing: the NativeWind symlink
+// resolution, package-exports staying off (enabling it crashed
+// setUpDefaultReactNativeEnvironment at launch), hierarchical lookup staying
+// on (disabling it broke nested resolution outright), and the @expo/ui
+// mapping. Each was arrived at by debugging a specific failure.
+const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 
 // NativeWind's tailwindcss@3 requirement is satisfied by a symlink created in
 // the `postinstall` (scripts/link-nativewind-tailwind.js): npm hoists
@@ -14,7 +26,7 @@ const path = require('path');
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
 
-const config = getDefaultConfig(projectRoot);
+const config = getSentryExpoConfig(projectRoot);
 
 config.watchFolders = [monorepoRoot];
 config.resolver.nodeModulesPaths = [

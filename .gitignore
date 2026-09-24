@@ -92,3 +92,10 @@ infra/dev/docker-compose.override.yml
 # Written by infra/dev/zitadel-bootstrap.py at stack-up time (#858).
 infra/dev/.env.zitadel
 infra/dev/.pat.tmp
+
+# Sentry CLI credentials. `npx @sentry/wizard` writes SENTRY_AUTH_TOKEN into
+# these, and that token can write releases across the whole org. The build
+# reads it from the environment instead (an EAS secret), so these files should
+# never exist here — ignored so that a stray wizard run cannot commit one.
+sentry.properties
+.sentryclirc

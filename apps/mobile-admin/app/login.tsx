@@ -248,21 +248,7 @@ export default function LoginScreen() {
         // stays for its real case.
         return 'This app version needs an update to finish signing in.';
       default:
-        // An UNMAPPED code is a real signal, not noise, so it is shown
-        // rather than swallowed into one sentence.
-        //
-        // zitadel-client raises `http_<status>` whenever a response body is
-        // not our JSON envelope — an edge 404, an HTML error page, a proxy
-        // in between. Collapsing that into "Something went wrong" cost an
-        // evening: the server logs were empty (the request never reached
-        // marketplace-api), the device could load the host in a browser,
-        // and the app said the same thing it says for every other unmapped
-        // failure. The code is the one fact that separates those cases.
-        //
-        // Kept short and non-technical up to the colon so the sentence
-        // still reads as copy, with the code appended for whoever is
-        // debugging — including a merchant reading it down a phone line.
-        return `${GENERIC_AUTH_ERROR} (${e.code})`;
+        return GENERIC_AUTH_ERROR;
     }
   }
 

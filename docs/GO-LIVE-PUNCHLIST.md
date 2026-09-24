@@ -36,6 +36,11 @@ path-filtered check permanently blocks any PR that does not touch those paths.
 
 ---
 
+> **A checklist now lives beside this document.**
+> `GO-LIVE-CHECKLIST.md` is the list you tick, with a verification method
+> against each item. This file stays what it has been: the findings log and
+> the reasoning. Status below is accurate to 2026-09-24.
+
 ## 0.5 Open items as of 2026-09-23, end of session
 
 Scoped to mark8ly. Estate-wide problems found on the way (a Document AI

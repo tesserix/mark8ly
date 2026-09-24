@@ -44,6 +44,7 @@ import { act, fireEvent, render, within } from "@testing-library/react-native";
 import type { ReactTestInstance } from "react-test-renderer";
 import type { SharedValue } from "react-native-reanimated";
 import {
+  COLLAPSE_DISTANCE,
   COLLAPSED_TITLE_LINES,
   COLLAPSED_TITLE_MIN_SCALE,
   CollapsingHeader,
@@ -172,6 +173,28 @@ describe("CollapsingHeader", () => {
     );
     expect(opacityOf(getByTestId("collapsing-header-collapsed"))).toBe(1);
     expect(opacityOf(getByTestId("collapsing-header-expanded"))).toBe(0);
+  });
+
+  /**
+   * The ghost. Both layers draw the same string at two sizes and positions,
+   * so a linear `1 - p` / `p` cross-fade leaves BOTH at 0.5 through the
+   * middle of the scroll and the title renders as a doubled, offset image —
+   * reported from a device as "there is a store name shadow when I swipe up".
+   *
+   * Asserted as a bound rather than an exact value so the ramps can be
+   * retuned without rewriting the test; 0.5 (the old linear behaviour) fails
+   * it, which is the point.
+   */
+  it("never shows both title layers at once", () => {
+    const { getByTestId } = render(
+      <CollapsingHeader title="Orders" scrollY={sharedValue(COLLAPSE_DISTANCE / 2)} />,
+    );
+    const expanded = opacityOf(getByTestId("collapsing-header-expanded")) ?? 0;
+    const collapsed = opacityOf(getByTestId("collapsing-header-collapsed")) ?? 0;
+    expect(expanded).toBeLessThanOrEqual(0.15);
+    expect(collapsed).toBeLessThanOrEqual(0.15);
+    // ...and the header is never blank: one layer is always arriving.
+    expect(expanded + collapsed).toBeGreaterThan(0);
   });
 
   it("renders the title in both the expanded and collapsed layers", () => {

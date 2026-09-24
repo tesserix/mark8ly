@@ -522,8 +522,29 @@ export function CollapsingHeader({
     [heights.expanded, heights.collapsed],
   );
 
-  const expandedStyle = useAnimatedStyle(() => ({ opacity: 1 - progress.value }));
-  const collapsedStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
+  /**
+   * The cross-fade is deliberately NOT a linear `1 - p` / `p` pair.
+   *
+   * Both layers draw the SAME string, at two sizes and two positions. A
+   * linear pair puts both at 0.5 through the middle of the scroll, so the
+   * title renders as a doubled, offset image — it reads as a ghost or a
+   * rendering fault rather than as a transition, and it is most visible on
+   * the dashboard where the title is the store's own name.
+   *
+   * Steepening each ramp and overlapping them only slightly keeps both
+   * layers near-invisible where they coincide (~0.09 each at the midpoint)
+   * without ever leaving the header blank: the fades still overlap between
+   * 0.45 and 0.55, so one layer is always on its way in as the other leaves.
+   *
+   * The endpoints are unchanged — fully expanded is 1/0, fully collapsed is
+   * 0/1 — which is what every caller and the layout tests depend on.
+   */
+  const expandedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0, 0.55], [1, 0], Extrapolation.CLAMP),
+  }));
+  const collapsedStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0.45, 1], [0, 1], Extrapolation.CLAMP),
+  }));
 
   /**
    * The nav row grows from `navRowHeightFor(fontScale)` (a band at the top of

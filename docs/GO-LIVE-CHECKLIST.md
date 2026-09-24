@@ -47,7 +47,7 @@ header, so nothing could have been subscribed even by hand.
 |---|---|---|---|
 | B1 | Funnel instrumentation | `grep -r '\.track(' apps/` returns hits | **zero repo-wide** |
 | B2 | Sentry receiving events | an error appears in the Sentry UI | DSN injected, read by nothing |
-| B3 | Log aggregation | a pod log line older than the ring buffer is still readable | not built |
+| B3 | Log aggregation | a pod log line older than the ring buffer is still readable | **done** — GKE ships workload logs to Cloud Logging, 30-day retention |
 | B4 | Alert delivery | a test alert arrives in `#falco-events` | routing **fixed** (#1081); delivery unproven |
 | B5 | Backup restore test | a restore into a scratch cluster returns real rows | never done; 3-day retention |
 | B6 | Replication supervised | a failover drill | async, unsupervised |
@@ -110,6 +110,38 @@ for m in mark8ly_subscription_reconciliation_drift_total \
   # expect a non-zero count; ABSENT means the series does not exist
 done
 ```
+
+## Finding a real error in the logs
+
+B3 was recorded as "not built" while it was working the whole time. The
+cluster has `loggingConfig.enableComponents: SYSTEM_COMPONENTS, WORKLOADS`,
+`fluentbit-gke` on every node, and 30-day retention — measured 2026-09-24,
+with 109 application errors queryable across the previous 24 hours.
+
+The reason it reads as missing is that the obvious query returns noise. GKE
+maps anything a container writes to **stderr** onto `ERROR` severity,
+whatever level the application itself assigned, so `severity>=ERROR` surfaces
+openfga's INFO chatter and buries the real failures. Filter on the structured
+field the Go services actually set:
+
+```bash
+gcloud logging read 'resource.type="k8s_container"
+  AND resource.labels.namespace_name="mark8ly"
+  AND jsonPayload.level="ERROR"' \
+  --project tesseracthub-480811 --freshness=24h \
+  --format='value(timestamp, resource.labels.container_name, jsonPayload.msg)'
+```
+
+Note the project: `gcloud` may default to another one, and querying the wrong
+project returns PERMISSION_DENIED — which reads exactly like "there are no
+logs" and is how this item came to be marked missing.
+
+This is also why B2 (server-side Sentry) is not a launch blocker. Detection
+is Prometheus, investigation is the query above, and request paths are in the
+OTel traces. What Sentry would add over those is grouping and
+release-regression detection. Mobile crash reporting is the real gap: a crash
+on a merchant's phone reaches none of this, and for React Native, Apple's own
+reports carry bridge frames rather than application JS.
 
 ## The deployment check that actually works
 

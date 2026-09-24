@@ -55,20 +55,61 @@ func RequireActive(cfg Config) gin.HandlerFunc {
 }
 
 func routeAllowed(c *gin.Context, allowlist []AllowedRoute) bool {
+	// Matched against the path from "/admin/" onward, NOT against
+	// c.FullPath() directly.
+	//
+	// Production mounts this group under a base prefix —
+	// admin.RegisterAdmin(r.Group("/api/v1"), ...) — so FullPath() is
+	// "/api/v1/admin/stores/:storeId/orders". Every pattern in
+	// DefaultAllowlist is written as "/admin/...", and the view-only rule
+	// used HasPrefix(FullPath(), "/admin/"). Neither could ever match.
+	//
+	// The effect was total rather than partial. A merchant in expired,
+	// store_closed or pending_hard_delete lost every GET (the view-only
+	// rule), order export, the tax-ID fix, auth — and, worst, POST
+	// subscription and POST billing, which are the routes this package's
+	// own doc comment calls out as "always allowed so merchants can
+	// recover". An expired trial had no in-product way back to paying.
+	//
+	// It survived because every test in this package mounted its routes at
+	// "/admin/..." with no base group, so the suite asserted the behaviour
+	// of a path shape production never produces.
+	admin := adminSuffix(c.FullPath())
+	if admin == "" {
+		return false
+	}
+
 	// All GET /admin/** are always allowed (view-only).
-	if c.Request.Method == http.MethodGet && strings.HasPrefix(c.FullPath(), "/admin/") {
+	if c.Request.Method == http.MethodGet {
 		return true
 	}
-	full := c.FullPath()
 	for _, r := range allowlist {
 		if r.Method != "" && r.Method != c.Request.Method {
 			continue
 		}
-		if patternMatches(r.Pattern, full) {
+		if patternMatches(r.Pattern, admin) {
 			return true
 		}
 	}
 	return false
+}
+
+// adminSuffix returns the route path from its "/admin/" segment onward, or ""
+// when the route is not under an admin group.
+//
+// Prefix-agnostic on purpose: the allowlist should keep working if the group
+// is ever remounted under a different base, and a rule that silently stops
+// matching is exactly what this function exists to stop repeating.
+//
+// Segment-anchored, so "/api/v1/store-admin/x" does NOT match — the leading
+// slash in the search string is load-bearing.
+func adminSuffix(full string) string {
+	const marker = "/admin/"
+	idx := strings.Index(full, marker)
+	if idx < 0 {
+		return ""
+	}
+	return full[idx:]
 }
 
 // patternMatches supports exact match + a trailing `*path` wildcard. §17.3

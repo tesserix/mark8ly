@@ -474,6 +474,35 @@ class ReusableCIContract(unittest.TestCase):
             + "\n".join(f"  {n}: {v}" for n, v in drifted.items()),
         )
 
+    def test_a_workflow_actually_runs_the_mobile_admin_suite(self) -> None:
+        """Some workflow must execute apps/mobile-admin's tests (#C7).
+
+        132 test files and 1720 assertions sat in that app while CI ran none
+        of them: both mobile workflows are release paths triggered by
+        `mobile-admin-v*` tags, and neither had a test step. Nothing was
+        broken and nothing had rotted — the suite passes clean — so there was
+        no failure anywhere to notice. Tests that are never asked to run read
+        as coverage while proving nothing about any build that shipped, which
+        is worse than having none.
+
+        Asserted by behaviour rather than by filename: a test naming
+        mobile-admin-tests.yml would pass if that file were renamed and its
+        job deleted. What must stay true is that SOME workflow invokes jest
+        with apps/mobile-admin as its working directory.
+        """
+        workflows = sorted((ROOT / ".github/workflows").glob("*.yml"))
+        runners = [
+            wf.name
+            for wf in workflows
+            if "apps/mobile-admin" in (text := wf.read_text())
+            and "jest" in text
+        ]
+        self.assertTrue(
+            runners,
+            "no workflow runs the mobile-admin Jest suite -- 132 test files "
+            "would again be present and never executed",
+        )
+
     def test_e2e_workflows_pr_and_push_watch_the_same_paths(self) -> None:
         """Every e2e workflow must filter both triggers on one path list (#858).
 

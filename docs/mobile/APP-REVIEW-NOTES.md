@@ -50,8 +50,8 @@ Core features:
 
 Sign in with the demo credentials below. No setup, sample files or
 configuration are required — the account is pre-populated with a live
-storefront's data (231 products, existing orders and customers), so every
-screen has real content on first launch.
+storefront's data (around a dozen products, with real orders, customers and
+reviews), so every screen has real content on first launch.
 
 > Email: demo+appreview@mark8ly.com
 > Password: [FILL IN]

@@ -61,7 +61,7 @@ Apple rejected under Guideline 2.1 — *information needed*, not a defect.
 | # | Item | Verify by | Status |
 |---|---|---|---|
 | C1 | Reviewer can sign in | a fresh device signs in without an emailed code | **done** — `DEMO_LOGIN_EMAILS` covers the mobile path via `autologin.CompleteForProvider` |
-| C2 | Demo account shows real content | the account has products and orders | **done** — `demo@mark8ly.com` owns The Bondi Store, 231 products |
+| C2 | Demo account shows real content | the account has products and orders | **done** — `demo@mark8ly.com` owns The Bondi Store: 12 live products, 3 orders, 5 customers, 7 reviews |
 | C3 | App Review Notes filled (items 2–7) | the field is non-empty in App Store Connect | not done |
 | C4 | Screen recording on a physical device | attached to the submission | not done — only you can do this |
 | C5 | Purpose strings give an example of use | read `NSCameraUsageDescription` against guideline 5.1.1 | present but thin |

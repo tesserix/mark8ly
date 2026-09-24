@@ -695,5 +695,12 @@ function isStaticOrHealthPath(pathname: string): boolean {
 export const config = {
   // Match every route except Next internals and static files. The
   // public-prefix check inside middleware() handles /login etc.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  //
+  // .well-known is excluded here rather than added to PUBLIC_PREFIXES
+  // because that list is consulted only after the canonical-host branches
+  // above, several of which redirect or 404. Apple treats ANY redirect on
+  // /.well-known/apple-app-site-association as a failure and declines to
+  // register the associated domain, so the document has to be unreachable
+  // by middleware at all, not merely allowed by it.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|\\.well-known).*)"],
 };

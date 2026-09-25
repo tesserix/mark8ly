@@ -32,17 +32,33 @@ function walk(dir: string): string[] {
  * any external mark8ly-admin:// link) leaves the stack holding only the nested
  * route — so Back exits the tab and the list screen becomes unreachable.
  *
- * Layouts WITHOUT a sibling index.tsx are correctly exempt: `more/settings` owns
- * no index and its screens are leaves reached through the More menu, which
- * anchors instead. The ROOT app/_layout.tsx is also exempt — it owns no index
- * and its children are (tabs)/login/notifications.
+ * Layouts WITHOUT a sibling index.tsx are NOT exempt — that exemption was the
+ * hole this suite used to have. `more/settings` was a bare <Stack> with no
+ * index and no anchor, so popping its only screen left the navigator holding
+ * NOTHING. An empty stack cannot render: Back fell out to the Dashboard and
+ * the More tab was left showing nothing when navigated to. Reported from a
+ * device as "notification screen takes back to dashboard not prev screen and
+ * more screen becomes inaccessible". The layout was deleted; those screens now
+ * sit in the More stack, which is anchored.
+ *
+ * So the rule is: a <Stack> layout must have a floor route beneath whatever it
+ * pushes. Owning an index and anchoring to it is how; owning no index at all
+ * is the failure, not the exemption.
+ *
+ * The ROOT app/_layout.tsx is the one real exception: it owns no index, but it
+ * is the bottom of the tree and nothing ever pops it empty — its children are
+ * (tabs)/login/notifications.
  */
-const STACK_LAYOUTS_WITH_INDEX = walk(APP_DIR).filter((file) => {
+const ROOT_LAYOUT = path.join(APP_DIR, "_layout.tsx");
+
+const STACK_LAYOUTS = walk(APP_DIR).filter((file) => {
   const src = fs.readFileSync(file, "utf8") as string;
-  const rendersStack = /<Stack[\s/>]/.test(src);
-  const hasIndexSibling = fs.existsSync(path.join(path.dirname(file), "index.tsx"));
-  return rendersStack && hasIndexSibling;
+  return /<Stack[\s/>]/.test(src) && file !== ROOT_LAYOUT;
 });
+
+const STACK_LAYOUTS_WITH_INDEX = STACK_LAYOUTS.filter((file) =>
+  fs.existsSync(path.join(path.dirname(file), "index.tsx")),
+);
 
 describe("every tab stack that owns an index route declares it as the anchor", () => {
   it("found the stack layouts to check (guards against the corpus silently emptying)", () => {
@@ -50,6 +66,17 @@ describe("every tab stack that owns an index route declares it as the anchor", (
     // vacuous — the exact "test that cannot fail" shape this repo has already
     // been bitten by. Pin a floor instead.
     expect(STACK_LAYOUTS_WITH_INDEX.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("no Stack layout is left without a floor route to pop back to", () => {
+    // The device bug in one assertion: a <Stack> whose directory owns no
+    // index has nothing beneath its pushed screens, so popping the last one
+    // empties the navigator.
+    const floorless = STACK_LAYOUTS.filter(
+      (f) => !fs.existsSync(path.join(path.dirname(f), "index.tsx")),
+    ).map((f) => path.relative(APP_ROOT, f));
+
+    expect(floorless).toEqual([]);
   });
 
   it.each(STACK_LAYOUTS_WITH_INDEX.map((f) => [path.relative(APP_ROOT, f), f]))(

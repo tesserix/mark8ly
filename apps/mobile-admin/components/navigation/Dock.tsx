@@ -145,10 +145,19 @@ export function Dock({ state, descriptors, navigation }: DockProps) {
               target: route.key,
               canPreventDefault: true,
             });
-            if (!isActive && !event.defaultPrevented) {
-              void adminHaptics.selectionChanged();
-              navigation.navigate(route.name);
-            }
+            if (event.defaultPrevented) return;
+            // Haptics only for a real tab change — re-tapping the tab you are
+            // already on is a "take me to the top", not a selection.
+            if (!isActive) void adminHaptics.selectionChanged();
+            // Navigate even when this tab is already active. It used to return
+            // early, which made the dock button a NO-OP for the focused tab —
+            // so any state where `state.index` disagreed with what is actually
+            // on screen was unrecoverable: the tab you wanted was "already
+            // selected", the button did nothing, and you could not get back to
+            // it. Reported from a device as "More screen becomes
+            // inaccessible". Navigating to the focused tab also pops its stack
+            // to the anchor route, which is what every other tab bar does.
+            navigation.navigate(route.name);
           };
 
           return (

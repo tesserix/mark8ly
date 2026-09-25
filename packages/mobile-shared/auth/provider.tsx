@@ -31,6 +31,16 @@ interface AuthState {
    * from the API before treating the session as terminated.
    */
   refreshToken: () => Promise<string | null>;
+  /**
+   * Bumped whenever this provider starts or ends a session.
+   *
+   * Under Zitadel `user` stays null forever — that field belongs to the
+   * Firebase SDK — so a consumer watching auth state has nothing to react to.
+   * Signing out cleared the tokens and changed no rendered value, which left
+   * route guards reading a stale answer until something else happened to
+   * re-run them. Depend on this to be told.
+   */
+  sessionEpoch: number;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -142,8 +152,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return unsubscribe;
   }, [backend]);
 
+  // Not a boolean: two sign-outs in a row must each be observable, and a
+  // counter cannot miss an edge the way a flag toggled back and forth can.
+  const [sessionEpoch, setSessionEpoch] = useState(0);
+
   const signIn = async (email: string, password: string) => {
     await backend.signIn(email, password);
+    setSessionEpoch((n) => n + 1);
   };
 
   const signOut = async () => {
@@ -155,13 +170,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // back to the dashboard.
     await zitadelSession.clear();
     await backend.signOut();
+    // Last, so the epoch never advertises a session as ended while a token is
+    // still readable — a guard that re-checked in between would send the user
+    // straight back in.
+    setSessionEpoch((n) => n + 1);
   };
 
   const getToken = () => backend.getIdToken();
   const refreshToken = () => backend.getIdTokenForced();
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut, getToken, refreshToken }}>
+    <AuthContext.Provider
+      value={{ user, loading, signIn, signOut, getToken, refreshToken, sessionEpoch }}
+    >
       {children}
     </AuthContext.Provider>
   );

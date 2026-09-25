@@ -52,6 +52,19 @@ export interface SupportClientConfig {
   loadSessionToken?: () => Promise<string | null> | string | null;
   /** Persists the otto session token when otto mints a new one. */
   saveSessionToken?: (token: string) => Promise<void> | void;
+  /**
+   * The tenant this caller is acting as, sent as `X-Acting-Tenant-Id`.
+   *
+   * The admin platform-support routes sit behind `requireTenant`, and with
+   * GIP gone no bearer token carries a tenant claim — the FGA-validated
+   * header is the ONLY way a tenant reaches them. Without it the group 404s,
+   * which the screen renders as "no store linked to this account": a real
+   * store, a signed-in admin, and a header nobody sent.
+   *
+   * Optional because the storefront surface is store-scoped by its basePath
+   * and has no acting tenant to state.
+   */
+  getActingTenantId?: () => string | null;
 }
 
 export interface ResumeResult {
@@ -95,6 +108,12 @@ export function createSupportClient(config: SupportClientConfig) {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
     if (session) headers["X-Otto-Session"] = session;
+    // Only when actually known. An empty-string header is NOT equivalent to
+    // an absent one: the server treats a present value as a stated tenant and
+    // fails it against FGA, turning "not resolved yet" into a hard refusal.
+    // Same rule api/client.ts states for the same header.
+    const actingTenantId = config.getActingTenantId?.() ?? null;
+    if (actingTenantId) headers["X-Acting-Tenant-Id"] = actingTenantId;
     let payload: string | undefined;
     if (body !== undefined) {
       headers["Content-Type"] = "application/json";

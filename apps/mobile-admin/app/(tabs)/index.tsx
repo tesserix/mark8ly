@@ -27,7 +27,7 @@ import { QueueRow } from "@/components/dashboard/QueueRow";
 import { MetricsCard } from "@/components/dashboard/MetricsCard";
 import { QueueEmptyState } from "@/components/dashboard/QueueEmptyState";
 import { SourceErrorRow } from "@/components/dashboard/SourceErrorRow";
-import { TenantMonogram } from "@/components/dashboard/TenantMonogram";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 import {
   CancelReasonSheet,
   type CancelReasonSheetHandle,
@@ -562,7 +562,7 @@ export default function DashboardScreen() {
         // on, and the mockup does not shout it.
         eyebrowPreset="caption"
         title={storeName ?? "Your store"}
-        rightSlot={<TenantMonogram storeName={storeName} />}
+        rightSlot={<NotificationBell />}
         scrollY={scrollY}
       />
 

@@ -10,13 +10,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { SlidersHorizontal } from "lucide-react-native";
 import { useNotifications, useMarkAllRead } from "@/lib/hooks/use-notifications";
 import {
   BackHeader,
   EmptyState,
   Hairline,
-  IconButton,
   Screen,
   Text,
 } from "@/components/ui";
@@ -95,6 +93,16 @@ function NotificationItem({
   );
 }
 
+// NO settings shortcut here. This screen is a ROOT route that sits ABOVE the
+// tabs, so `router.push("/(tabs)/more/settings/notification-settings")` was a
+// cross-hierarchy push: it planted the settings screen in the MORE tab's
+// stack from outside it. Back then fell through to the Dashboard and the More
+// tab reopened settings ever after, because the tab was faithfully showing the
+// top of the stack something else had pushed onto it. Reported from a device,
+// and the same shape `(tabs)/more/_layout.tsx` already records once.
+//
+// Notification settings live at More > Notification settings, which is inside
+// the tab that owns them and reaches them without crossing navigators.
 export default function NotificationsScreen() {
   const { data, isLoading, isRefetching, refetch } = useNotifications();
   const markAllRead = useMarkAllRead();
@@ -135,16 +143,6 @@ export default function NotificationsScreen() {
                 </Text>
               </Pressable>
             ) : null}
-            <IconButton
-              onPress={() => router.push("/(tabs)/more/settings/notification-settings")}
-              accessibilityLabel="Notification settings"
-            >
-              <SlidersHorizontal
-                size={20}
-                color={theme.colors.text}
-                strokeWidth={1.75}
-              />
-            </IconButton>
           </View>
         }
       />

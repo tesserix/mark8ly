@@ -36,7 +36,19 @@ permissions:
 
 jobs:
   release:
-    uses: tesserix/tesserix-workflows/.github/workflows/expo-ios-release.yml@v2.3.0
+    # TEMPORARY — diagnostic branch, revert to @v2.3.0 once resolved.
+    #
+    # Build 20 went green and shipped with NO JS source maps: dSYMs uploaded,
+    # but no com.mark8ly.admin@1.0.0+20 release exists anywhere in the Sentry
+    # org. The cause is not visible from here, because the GitHub log only
+    # carries xcpretty-FILTERED xcodebuild output and Sentry's bundle phase
+    # reports its outcome on stdout, which xcpretty drops. "sentry-cli ran and
+    # uploaded nothing" and "sentry-cli never ran" look identical.
+    #
+    # This branch is v2.3.0 plus two steps that keep the unfiltered xcodebuild
+    # log `eas build --local` already writes, and upload it as an artifact.
+    # Diff against v2.3.0 is those steps and nothing else.
+    uses: tesserix/tesserix-workflows/.github/workflows/expo-ios-release.yml@diag/xcode-log-visibility
     with:
       working_directory: apps/mobile-admin
       # Root, not apps/mobile-admin: this is an npm-workspaces monorepo with a

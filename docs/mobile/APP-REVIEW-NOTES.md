@@ -54,7 +54,7 @@ storefront's data (around a dozen products, with real orders, customers and
 reviews), so every screen has real content on first launch.
 
 > Email: demo+appreview@mark8ly.com
-> Password: [FILL IN]
+> Password: as given in the Sign-In Information fields above.
 
 The address is plus-addressed off the demo owner's inbox, so it delivers
 somewhere we already read. It is a distinct account with its own
@@ -131,15 +131,21 @@ All content shown in the app is the merchant's own — their products, their
 images, their customer records. The demo account's data is our own sample
 storefront. No third-party protected material is included.
 
-**Purpose strings**
+**Purpose strings and permission prompts**
 
-- **Camera** — used only when a merchant photographs a product to add an
-  image to their own catalogue listing.
-- **Photo library** — used only to choose an existing photo to attach to a
-  product listing.
+The app asks for **one** permission: notifications. It is requested only when
+the merchant turns push on under More → Settings → Notifications, never at
+launch, and the app is fully usable if it is denied.
 
-Neither is requested at launch. Both are requested at the point the merchant
-taps to add a product image, and the app is fully usable if both are denied.
+Adding a product image does **not** prompt. It opens the iOS system photo
+picker (PHPicker), which runs outside the app and needs no photo-library
+permission, so no dialog appears and the app never gains access to the
+library. `NSPhotoLibraryUsageDescription` is declared because the binary links
+the image-picker framework.
+
+`NSCameraUsageDescription` is declared for product photo capture. That path is
+not reachable from any screen in this build, so the camera is never opened and
+no camera prompt appears.
 
 **In-app purchases**
 

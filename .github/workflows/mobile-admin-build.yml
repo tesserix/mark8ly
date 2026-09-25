@@ -5,6 +5,13 @@
 # This workflow stays for Android (Play needs an .aab, and there is no free
 # Linux path to one that also handles signing) and for on-demand iOS builds
 # someone explicitly asks for via workflow_dispatch.
+#
+# WHERE AN ANDROID SUBMIT LANDS: eas.json sends it to the PRODUCTION track as a
+# DRAFT release. It reaches nobody until someone opens Play Console and rolls it
+# out, so this is still a human gate — but the artifact now sits on the track it
+# is actually destined for instead of in internal testing, where three
+# successive builds accumulated unnoticed while production served a four-month-
+# old binary.
 name: Mobile Admin - EAS Build (cloud)
 
 on:

@@ -14,6 +14,13 @@
 jest.mock("@gorhom/bottom-sheet", () => {
   const React = require("react");
   return {
+    // FieldInput asks whether it is inside a sheet and swaps to gorhom's own
+    // input when it is — without that the keyboard covers the field and you
+    // cannot type (see sheet-inputs-are-typeable.test.tsx). These components
+    // ARE sheets, so answer as the real package would.
+    useBottomSheetInternal: () => ({ mocked: true }),
+    BottomSheetTextInput: (props: Record<string, unknown>) =>
+      require("react").createElement(require("react-native").TextInput, props),
     __esModule: true,
     BottomSheetModal: React.forwardRef(
       ({ children }: { children?: React.ReactNode }, ref: React.Ref<unknown>) => {

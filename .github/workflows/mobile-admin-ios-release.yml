@@ -53,11 +53,26 @@ jobs:
       node_version: "24"
       profile: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'production' }}
       submit: ${{ github.event_name != 'workflow_dispatch' || inputs.submit }}
+      # Fail a production build in seconds when the Sentry token is missing,
+      # rather than after a full native build. Sentry's own Xcode phase does
+      # fail the build, but only at the very end — the run that found this
+      # spent 19 minutes compiling before reporting "Auth token is required".
+      require_sentry_for_production: true
     secrets:
       expo_token: ${{ secrets.EXPO_TOKEN }}
       # @tesserix/otto-widget is on GitHub Packages, so `npm ci` 401s without
       # this. Not optional for this repo despite being optional in the callee.
       package_read_token: ${{ secrets.GHCR_PAT }}
+      # Source-map upload. sentry-cli runs inside the Xcode "Bundle React
+      # Native code and images" phase and needs this; without it the archive
+      # fails at the end, and with SENTRY_ALLOW_FAILURE it would instead ship
+      # a release whose every stack trace is minified offsets.
+      #
+      # EAS also holds this token, but the callee exports
+      # `SENTRY_AUTH_TOKEN: ${{ secrets.sentry_auth_token }}` unconditionally —
+      # so leaving it unset exported an EMPTY value that shadowed the EAS one.
+      # Passing it here is what actually reaches sentry-cli.
+      sentry_auth_token: ${{ secrets.SENTRY_AUTH_TOKEN }}
       # asc_* are deliberately NOT passed. The callee requires all three or
       # none, and none are set here — so `eas submit` uses the App Store
       # Connect key stored with Expo, exactly as kora's release does.

@@ -58,18 +58,11 @@ func TestFullWebhookFlow_AllAllowlistedEvents(t *testing.T) {
 	}).Error)
 
 	dispatcher := dispatch.New(nil)
-	allowed := map[string]bool{
-		"checkout.session.completed":      true,
-		"customer.subscription.updated":   true,
-		"customer.subscription.deleted":   true,
-		"invoice.paid":                    true,
-		"invoice.payment_failed":          true,
-		"invoice.payment_action_required": true,
-		"customer.updated":                true,
-		"charge.refunded":                 true,
-		"payment_method.attached":         true,
-		"payment_method.detached":         true,
-		"radar.early_fraud_warning":       true,
+	// Derived, not copied. A hand-written literal here agreed with itself
+	// while production's allowlist and handler map disagreed with each other.
+	allowed := map[string]bool{}
+	for _, et := range dispatcher.HandledEventTypes() {
+		allowed[et] = true
 	}
 	now := time.Unix(1_712_000_000, 0)
 	h := webhooks.NewStripeHandler(webhooks.StripeHandlerConfig{

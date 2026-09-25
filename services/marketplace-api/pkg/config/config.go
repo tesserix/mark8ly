@@ -143,7 +143,7 @@ type Config struct {
 	// not_configured rather than 404, so a missing secret is diagnosable
 	// instead of looking like a wrong URL.
 	ResendWebhookSecret     string        `envconfig:"RESEND_WEBHOOK_SECRET" default:""`
-	StripeAllowedEventTypes []string      `envconfig:"STRIPE_ALLOWED_EVENT_TYPES" default:"checkout.session.completed,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed,invoice.payment_action_required,customer.updated,charge.refunded,payment_method.attached,payment_method.detached,radar.early_fraud_warning"`
+	StripeAllowedEventTypes []string      `envconfig:"STRIPE_ALLOWED_EVENT_TYPES" default:"checkout.session.completed,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.finalized,invoice.payment_failed,invoice.payment_action_required,customer.updated,charge.refunded,payment_method.attached,payment_method.detached,radar.early_fraud_warning.created,radar.early_fraud_warning.updated"`
 	WebhookMaxBodyBytes     int64         `envconfig:"WEBHOOK_MAX_BODY_BYTES" default:"524288"`
 	OrphanRetryMaxCount     int           `envconfig:"ORPHAN_RETRY_MAX_COUNT" default:"6"`
 	OrphanRetryInterval     time.Duration `envconfig:"ORPHAN_RETRY_INTERVAL" default:"5m"`

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -88,13 +89,41 @@ func New(em *audit.Emitter) *Dispatcher {
 	// radar.early_fraud_warning is a method for the same reason
 	// charge.refunded is: it emits through d.emitter, and it needs d.charges
 	// to attribute the charge to a store (#704).
-	d.handlers["radar.early_fraud_warning"] = d.handleFraudWarning
+	//
+	// Registered under BOTH real event names. Stripe has no bare
+	// `radar.early_fraud_warning` event — only `.created` and `.updated` —
+	// and Dispatch looks handlers up by exact EventType, so the bare key
+	// this used to carry could never match anything Stripe sends. The
+	// endpoint subscribed to the two suffixed names, the allowlist held the
+	// bare one, and every fraud warning was stamped processed and dropped at
+	// the allowlist gate without ever reaching #704's attribution.
+	d.handlers["radar.early_fraud_warning.created"] = d.handleFraudWarning
+	d.handlers["radar.early_fraud_warning.updated"] = d.handleFraudWarning
 	// Methods — state mutations routed through statemachine.Transition.
 	d.handlers["checkout.session.completed"] = d.handleCheckoutSessionCompleted
 	d.handlers["customer.subscription.deleted"] = d.handleSubscriptionDeleted
 	d.handlers["invoice.payment_failed"] = d.handleInvoicePaymentFailed
 	d.handlers["invoice.payment_action_required"] = d.handleInvoicePaymentActionRequired
 	return d
+}
+
+// HandledEventTypes returns every Stripe event type this dispatcher can
+// route, sorted. It exists so that the webhook allowlist and the tests that
+// exercise it are DERIVED from the handler map rather than hand-copied
+// beside it: the two lists drifted apart once already (`invoice.finalized`
+// handled but never allowed, `radar.early_fraud_warning` allowed under a
+// name Stripe does not emit) and a copied list cannot catch that.
+//
+// Call it on the fully-built dispatcher. The optional builders register
+// handlers too — WithReverseChargeAnnotator is what adds invoice.finalized —
+// so a bare New() reports a smaller set than production runs.
+func (d *Dispatcher) HandledEventTypes() []string {
+	out := make([]string, 0, len(d.handlers))
+	for t := range d.handlers {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ChargeGetter reads a single Stripe charge. Narrow by design: the only

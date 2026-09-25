@@ -312,8 +312,21 @@ func TestHandleFraudWarning_MalformedReturnsNil(t *testing.T) {
 }
 
 func TestFraudWarningHandlerIsRegistered(t *testing.T) {
-	if _, ok := New(nil).handlers["radar.early_fraud_warning"]; !ok {
-		t.Fatal("radar.early_fraud_warning must stay registered")
+	// Both suffixed names, because those are the only two Stripe emits.
+	// This test used to assert the bare `radar.early_fraud_warning`, which
+	// passed while the handler was unreachable in production: Dispatch keys
+	// on the exact EventType and no such event type exists.
+	d := New(nil)
+	for _, et := range []string{
+		"radar.early_fraud_warning.created",
+		"radar.early_fraud_warning.updated",
+	} {
+		if _, ok := d.handlers[et]; !ok {
+			t.Fatalf("%s must stay registered", et)
+		}
+	}
+	if _, ok := d.handlers["radar.early_fraud_warning"]; ok {
+		t.Fatal("the bare radar.early_fraud_warning is not a Stripe event type")
 	}
 }
 

@@ -1,64 +1,35 @@
-# Cloud EAS builds, which consume the account's EAS build quota.
-#
-# iOS RELEASES DO NOT COME FROM HERE ANY MORE. `mobile-admin-ios-release.yml`
-# builds the IPA locally on a free macOS runner and submits it to TestFlight.
-# This workflow stays for Android (Play needs an .aab, and there is no free
-# Linux path to one that also handles signing) and for on-demand iOS builds
-# someone explicitly asks for via workflow_dispatch.
-#
-# WHERE AN ANDROID SUBMIT LANDS: eas.json sends it to the PRODUCTION track as a
-# DRAFT release. It reaches nobody until someone opens Play Console and rolls it
-# out, so this is still a human gate — but the artifact now sits on the track it
-# is actually destined for instead of in internal testing, where three
-# successive builds accumulated unnoticed while production served a four-month-
-# old binary.
-name: Mobile Admin - EAS Build (cloud)
-
+name: Transfer Expo token to Roamie
 on:
-  push:
-    tags:
-      - "mobile-admin-v*"
   workflow_dispatch:
-    inputs:
-      platform:
-        description: Target platform
-        type: choice
-        options: [ios, android, all]
-        default: ios
-      profile:
-        description: EAS build profile
-        type: choice
-        options: [preview, production, development]
-        default: production
-      submit:
-        description: Submit the completed build to the configured store
-        type: boolean
-        default: false
-
 permissions:
   contents: read
-
-concurrency:
-  group: mobile-admin-eas-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  build:
-    name: EAS build (mobile-admin)
-    uses: tesserix/tesserix-workflows/.github/workflows/expo-eas-build.yml@v2.2.1
-    with:
-      working_directory: apps/mobile-admin
-      install_directory: .
-      lockfile_path: package-lock.json
-      node_version: "24"
-      # A tag push builds ANDROID only: mobile-admin-ios-release.yml answers
-      # the same tag with a local iOS build, and leaving this at 'all' would
-      # build and submit iOS twice — once here on EAS quota, once there for
-      # free — racing each other to TestFlight with the same build number.
-      platform: ${{ inputs.platform || 'android' }}
-      profile: ${{ inputs.profile || 'production' }}
-      no_wait: true
-      auto_submit: ${{ github.event_name == 'push' || inputs.submit }}
-    secrets:
-      expo_token: ${{ secrets.EXPO_TOKEN }}
-      package_read_token: ${{ secrets.GHCR_PAT }}
+  encrypt:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install sealed-box encryption
+        run: sudo apt-get update -qq && sudo apt-get install -y python3-nacl
+      - name: Encrypt existing token for Roamie only
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          DESTINATION_KEY: MzBEZdtJNiBVP1z7bfwoq5ywzVw8ciO+KZ6fbMmN5kQ=
+          DESTINATION_KEY_ID: '3380204578043523366'
+        run: |
+          /usr/bin/python3 - <<'PYTHON'
+          import base64, json, os
+          from nacl.public import PublicKey, SealedBox
+          token = os.environ['EXPO_TOKEN'].strip()
+          if not token:
+              raise SystemExit('Source EXPO_TOKEN is missing.')
+          encrypted = SealedBox(PublicKey(base64.b64decode(os.environ['DESTINATION_KEY']))).encrypt(token.encode())
+          with open('roamie-expo-token.sealed.json', 'w') as output:
+              json.dump({'key_id': os.environ['DESTINATION_KEY_ID'], 'encrypted_value': base64.b64encode(encrypted).decode()}, output)
+          print('Created ciphertext for the Roamie repository public key.')
+          PYTHON
+      - name: Upload encrypted transfer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: roamie-expo-token-sealed
+          path: roamie-expo-token.sealed.json
+          retention-days: 1
+          if-no-files-found: error

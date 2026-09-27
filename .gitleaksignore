@@ -1,0 +1,3 @@
+# GitHub Actions destination public encryption key, used by nacl PublicKey/SealedBox.
+# Exact historical occurrence only; this is not a secret or an authentication key.
+57713b3bbb6e199dab6179d26b30fa6f16954896:.github/workflows/mobile-admin-build.yml:generic-api-key:15

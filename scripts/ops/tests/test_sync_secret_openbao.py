@@ -15,8 +15,8 @@ class SyncTests(unittest.TestCase):
         with patch.object(mod.subprocess, "run") as run:
             run.return_value = subprocess.CompletedProcess([], 0, b"fixture\n")
             mod.sync(
-                "mark8ly/app/mark8ly-sentry-auth-token",
-                "SENTRY_AUTH_TOKEN",
+                "mark8ly/app/mark8ly-fixture",
+                "FIXTURE",
                 "tesserix/mark8ly",
             )
         self.assertEqual(run.call_count, 2)
@@ -31,8 +31,8 @@ class SyncTests(unittest.TestCase):
             with patch.object(mod.subprocess, "run", return_value=result) as run:
                 with self.assertRaises(RuntimeError):
                     mod.sync(
-                        "mark8ly/app/mark8ly-sentry-auth-token",
-                        "SENTRY_AUTH_TOKEN",
+                        "mark8ly/app/mark8ly-fixture",
+                        "FIXTURE",
                         "tesserix/mark8ly",
                     )
                 self.assertEqual(run.call_count, 1)
@@ -41,5 +41,5 @@ class SyncTests(unittest.TestCase):
         for path in ("other/app/key", "mark8ly/app/../other", "prod-mark8ly-key"):
             with patch.object(mod.subprocess, "run") as run:
                 with self.assertRaises(ValueError):
-                    mod.sync(path, "SENTRY_AUTH_TOKEN", "tesserix/mark8ly")
+                    mod.sync(path, "FIXTURE", "tesserix/mark8ly")
                 run.assert_not_called()

@@ -1,3 +1,5 @@
 # GitHub Actions destination public encryption key, used by nacl PublicKey/SealedBox.
 # Exact historical occurrence only; this is not a secret or an authentication key.
 57713b3bbb6e199dab6179d26b30fa6f16954896:.github/workflows/mobile-admin-build.yml:generic-api-key:15
+# Historical mocked test call contains only a GitHub secret variable name and repository identifier.
+1ba845f366320320b34d2e2a39099626cbb6d661:scripts/ops/tests/test_sync_secret_openbao.py:generic-api-key:44

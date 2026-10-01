@@ -124,7 +124,7 @@ func TestInboxActionExecutorsRegistersOnlyWhatItCanReach(t *testing.T) {
 // pointer: that would pass inboxActionExecutors' nil check and register an
 // executor that panics on the first click.
 func TestNewCustomerEraserReturnsAnUntypedNilWithoutADatabase(t *testing.T) {
-	eraser, err := newCustomerEraser(nil, nil)
+	eraser, err := newCustomerEraser(nil, nil, nil, "")
 	require.NoError(t, err)
 	require.Nil(t, eraser)
 	require.Nil(t, inboxActionExecutors(nil, eraser))

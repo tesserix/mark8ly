@@ -38,10 +38,15 @@ type MetadataSetter interface {
 // expected storage keys via Register() before invoking service code.
 type FakeUploader struct {
 	attrs map[string]*Attrs
+	// deleted counts Delete calls per key, so a test can assert the blob
+	// was destroyed rather than only that its row was (#961).
+	deleted map[string]int
 }
 
 // NewFakeUploader returns a FakeUploader with an empty registry.
-func NewFakeUploader() *FakeUploader { return &FakeUploader{attrs: map[string]*Attrs{}} }
+func NewFakeUploader() *FakeUploader {
+	return &FakeUploader{attrs: map[string]*Attrs{}, deleted: map[string]int{}}
+}
 
 // Register seeds the fake with an attrs record.
 func (f *FakeUploader) Register(a Attrs) {

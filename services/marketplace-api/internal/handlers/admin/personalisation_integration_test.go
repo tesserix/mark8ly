@@ -60,10 +60,16 @@ func TestAPI_Personalisation_SelectArrivesWithItsValuesOrNotAtAll(t *testing.T) 
 	pid, _, _ := seedProductViaService(t, env, storeID, tenantID)
 
 	// No values: refused.
+	//
+	// 400, not 422: this estate maps apperrors.CodeValidationFailed to
+	// StatusBadRequest for every admin endpoint
+	// (internal/handlers/admin/errors.go:17). CI caught this file
+	// asserting 422 on three cases — the mapping is the contract the
+	// admin client already codes against, so the tests moved, not it.
 	w := request(t, env.router, http.MethodPost, fieldsURL(storeID, pid), map[string]any{
 		"key": "finish", "label": "Finish", "kind": "select",
 	}, authHeaders(userID, tenantID))
-	require.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 
 	// With values: created, and the deltas come back.
 	w = request(t, env.router, http.MethodPost, fieldsURL(storeID, pid), map[string]any{
@@ -184,7 +190,7 @@ func TestAPI_Personalisation_SelectKeepsAtLeastOneValue(t *testing.T) {
 	// select would start rejecting every checkout of itself.
 	w = request(t, env.router, http.MethodDelete,
 		fieldsURL(storeID, pid)+"/"+fieldID+"/options/"+secondID, nil, authHeaders(userID, tenantID))
-	require.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 }
 
 func TestAPI_Personalisation_DeletingFieldCascadesItsOptions(t *testing.T) {
@@ -312,7 +318,7 @@ func TestAPI_Personalisation_AbsoluteCeilingApplies(t *testing.T) {
 	w := request(t, env.router, http.MethodPost, fieldsURL(storeID, pid), map[string]any{
 		"key": "one_too_many", "label": "F", "kind": "text",
 	}, authHeaders(userID, tenantID))
-	require.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
 }
 
 // TestPersonalisation_DatabaseBacksTheGoValidation proves the CHECK

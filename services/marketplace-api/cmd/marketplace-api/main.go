@@ -852,6 +852,7 @@ func main() {
 		categoryHandler := admin.NewCategoryHandler(categorySvc, categoryRepo, log)
 		variantHandler := admin.NewVariantHandler(productSvc, log)
 		mediaHandler := admin.NewMediaHandler(productSvc, uploader, log)
+		personalisationHandler := admin.NewPersonalisationHandler(productSvc, log)
 
 		// Orders slice 1 wiring (M2/M4).
 		orderRepo := order.NewRepository()
@@ -1254,6 +1255,8 @@ func main() {
 		// resolver, so wired via setter; see apps/onboarding plan doc
 		// 2026-04-20-plangate-enforcement-gaps.md §P1.1.
 		mediaHandler.SetPlanGate(planResolver, subscriptionRepo, conn)
+		// Per-plan personalisation-fields cap (#962), same setter reason.
+		personalisationHandler.SetPlanGate(planResolver, subscriptionRepo, conn)
 
 		// P5 — Trial billing subscribe handler (deferred-charge card-add §5.3).
 		var trialBillingHandler *admin.TrialBillingHandler
@@ -1524,6 +1527,7 @@ func main() {
 			CategoryHandler:          categoryHandler,
 			VariantHandler:           variantHandler,
 			MediaHandler:             mediaHandler,
+			PersonalisationHandler:   personalisationHandler,
 			OrdersHandler:            ordersHandler,
 			ReturnsHandler:           returnsHandler,
 			AbandonedCartsHandler:    abandonedCartsHandler,

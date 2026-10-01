@@ -51,6 +51,20 @@ type Repository interface {
 	ReplaceMediaInTx(ctx context.Context, tx *gorm.DB, productID string, media []Media) error
 	InsertMediaInTx(ctx context.Context, tx *gorm.DB, m *Media) error
 	UpdateMediaInTx(ctx context.Context, tx *gorm.DB, productID, mediaID, storeID, tenantID string, fields map[string]any) error
+
+	// Personalisation — what a buyer may supply on a product (#962).
+	// Scoped by store_id AND tenant_id on the row itself; see
+	// repository_personalisation.go.
+	ListPersonalisationFields(ctx context.Context, productID, storeID, tenantID string) ([]PersonalisationField, error)
+	GetPersonalisationField(ctx context.Context, fieldID, storeID, tenantID string) (*PersonalisationField, error)
+	CountPersonalisationFields(ctx context.Context, productID, storeID, tenantID string) (int64, error)
+	InsertPersonalisationFieldInTx(ctx context.Context, tx *gorm.DB, f *PersonalisationField) error
+	UpdatePersonalisationField(ctx context.Context, fieldID, storeID, tenantID string, fields map[string]any) error
+	DeletePersonalisationField(ctx context.Context, fieldID, storeID, tenantID string) error
+	CountPersonalisationOptions(ctx context.Context, fieldID string) (int64, error)
+	InsertPersonalisationOptionInTx(ctx context.Context, tx *gorm.DB, o *PersonalisationOption) error
+	UpdatePersonalisationOption(ctx context.Context, fieldID, optionID, storeID, tenantID string, fields map[string]any) error
+	DeletePersonalisationOption(ctx context.Context, fieldID, optionID, storeID, tenantID string) error
 	DeleteMediaInTx(ctx context.Context, tx *gorm.DB, productID, mediaID, storeID, tenantID string) error
 	UpdateVariantStockInTx(ctx context.Context, tx *gorm.DB, variantID, locationID string, quantity int) error
 	// SetVariantStockByLocationInTx writes per-warehouse stock and clears

@@ -41,7 +41,8 @@ type Deps struct {
 	// C4 wishlists.
 	WishlistHandler *WishlistHandler
 	// #232 server-side stock holds.
-	CartHoldsHandler *CartHoldsHandler
+	CartHoldsHandler              *CartHoldsHandler
+	PersonalisationUploadsHandler *PersonalisationUploadsHandler
 	// B1 branding.
 	BrandingHandler *BrandingHandler
 	// Content pages.
@@ -101,6 +102,22 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 		// middleware as the rest of the storefront surface; the handler
 		// additionally checks each variant belongs to THIS store, because
 		// the shared key is not a per-store credential.
+		// Buyer artwork (#963). Public like the rest of this surface: the
+		// cart token is the whole of the authorisation, because most
+		// buyers are guests. Absent when no private bucket is configured
+		// — the handler is nil and the routes do not exist, rather than
+		// existing and writing to the public product-media bucket.
+		if deps.PersonalisationUploadsHandler != nil {
+			p := group.Group("/personalisation")
+			{
+				p.POST("/upload-url", deps.PersonalisationUploadsHandler.CreateUploadURL)
+				p.POST("/uploads/:uploadId/confirm", deps.PersonalisationUploadsHandler.Confirm)
+				p.PATCH("/uploads/:uploadId/crop", deps.PersonalisationUploadsHandler.PrepareCrop)
+				p.GET("/uploads/:uploadId/preview", deps.PersonalisationUploadsHandler.Preview)
+				p.DELETE("/uploads/:uploadId", deps.PersonalisationUploadsHandler.Delete)
+			}
+		}
+
 		if deps.CartHoldsHandler != nil {
 			group.POST("/cart/holds", deps.CartHoldsHandler.Place)
 			group.DELETE("/cart/holds/:cartToken", deps.CartHoldsHandler.Release)

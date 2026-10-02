@@ -33,6 +33,21 @@ type Config struct {
 	// dev FakeUploader to a real GCS-backed implementation. Empty keeps
 	// `make dev` working without GCS credentials.
 	GCSBucket string `envconfig:"MARKETPLACE_GCS_BUCKET" default:""`
+	// PrivateGCSBucket holds BUYER-supplied artwork (#963) and must NOT be
+	// the same bucket as GCSBucket.
+	//
+	// Objects in GCSBucket are served from storage.googleapis.com and are
+	// public-read — that is how product images reach shoppers. A
+	// photograph a buyer uploads for a figurine is a different category of
+	// object, and under uniform bucket-level access a "private prefix" in
+	// a public bucket is not private.
+	//
+	// Empty DISABLES buyer uploads: the endpoints return 501 rather than
+	// falling back to the public bucket. Failing closed is the whole point
+	// — a fallback would put a photograph of someone's child somewhere
+	// anyone holding the URL could read, which is exactly the outcome a
+	// separate bucket exists to prevent. See #960.
+	PrivateGCSBucket string `envconfig:"MARKETPLACE_PRIVATE_GCS_BUCKET" default:""`
 	// GCSSignerSAEmail is the service-account email used to sign V4 GCS
 	// upload URLs via the IAM Credentials API. Required on GKE Workload
 	// Identity, where Application Default Credentials do not include a

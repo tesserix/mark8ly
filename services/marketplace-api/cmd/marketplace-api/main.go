@@ -101,6 +101,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/page"
 	"github.com/mark8ly/marketplace-api/internal/payment"
 	"github.com/mark8ly/marketplace-api/internal/payment/stripewebhook"
+	"github.com/mark8ly/marketplace-api/internal/personalisationupload"
 	"github.com/mark8ly/marketplace-api/internal/plangate"
 	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/promo"
@@ -1884,6 +1885,56 @@ func main() {
 		// P11 — Customer portal (GDPR order-history + erasure §15.4).
 		customerPortalHandler := customerportal.NewHandler(conn, log)
 
+		// Buyer artwork (#963). Nil unless a PRIVATE bucket is configured,
+		// and nil means the routes are never registered.
+		//
+		// This deliberately does NOT reuse `uploader`. That one writes to
+		// MARKETPLACE_GCS_BUCKET, whose objects are served from
+		// storage.googleapis.com and are public-read — correct for product
+		// photos, catastrophic for a photograph a buyer uploaded. Falling
+		// back to it would publish exactly the thing the separate bucket
+		// exists to protect, so there is no fallback: no private bucket,
+		// no uploads. See #960.
+		var personalisationUploadsHandler *storefront.PersonalisationUploadsHandler
+		if cfg.PrivateGCSBucket != "" {
+			if cfg.PrivateGCSBucket == cfg.GCSBucket {
+				log.Error("personalisation uploads: MARKETPLACE_PRIVATE_GCS_BUCKET must not be the public media bucket",
+					"bucket", cfg.PrivateGCSBucket)
+				os.Exit(1)
+			}
+			privCtx, privCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			privClient, pErr := storage.NewClient(privCtx)
+			privCancel()
+			if pErr != nil {
+				log.Error("personalisation uploads: private gcs client", "err", pErr)
+				os.Exit(1)
+			}
+			var privUploader media.Uploader = media.NewGCSUploader(privClient, cfg.PrivateGCSBucket)
+			if cfg.GCSSignerSAEmail != "" {
+				signCtx, signCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				signed, sErr := media.NewGCSUploaderWithIAMSigner(
+					signCtx, privClient, cfg.PrivateGCSBucket, cfg.GCSSignerSAEmail)
+				signCancel()
+				if sErr != nil {
+					log.Error("personalisation uploads: private gcs iam signer", "err", sErr)
+					os.Exit(1)
+				}
+				privUploader = signed
+			}
+			uploadSvc := personalisationupload.NewService(personalisationupload.Config{
+				DB:       conn,
+				Repo:     personalisationupload.NewRepository(conn),
+				Products: product.NewRepository(conn),
+				Uploader: privUploader,
+				Bucket:   cfg.PrivateGCSBucket,
+				Logger:   log,
+			})
+			personalisationUploadsHandler = storefront.NewPersonalisationUploadsHandler(uploadSvc, log)
+			log.Info("personalisation uploads: enabled", "bucket", cfg.PrivateGCSBucket)
+		} else {
+			log.Info("personalisation uploads: disabled (MARKETPLACE_PRIVATE_GCS_BUCKET is empty)")
+		}
+
 		storefrontDeps = storefront.Deps{
 			Handler:                storefrontHandler,
 			CheckoutHandler:        checkoutHandler,
@@ -1910,7 +1961,8 @@ func main() {
 			WishlistHandler: wishlistHandler,
 			// #232 — server-side stock holds. Placed at cart-add for
 			// HoldTTL, committed inside the order transaction at checkout.
-			CartHoldsHandler: storefront.NewCartHoldsHandler(conn, stockhold.NewRepository(), log),
+			CartHoldsHandler:              storefront.NewCartHoldsHandler(conn, stockhold.NewRepository(), log),
+			PersonalisationUploadsHandler: personalisationUploadsHandler,
 			// B1 branding.
 			BrandingHandler:       sfBrandingHandler,
 			PagesHandler:          sfPagesHandler,

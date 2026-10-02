@@ -41,6 +41,16 @@
 //   - order_items, order_tax_lines, return_items, loyalty_transactions,
 //     gift_card_transactions and referrals hold no personal column; they
 //     survive attached to rows that have been anonymised.
+//   - personalisation_uploads (000140) holds a buyer's photograph but no
+//     customer column at all: it is owned by a CART token, because most
+//     buyers are guests and there is no customer row to attach it to. It
+//     is therefore not reachable from a (store, email) subject, and the
+//     coverage guard does not flag it. It self-destructs 72 hours after
+//     upload regardless (personalisation-upload-sweep-cron), so the
+//     window in which an unerasable photograph exists is bounded by that
+//     rather than by anyone's retention policy. Once checkout claims one
+//     onto an order it becomes reachable through orders.customer_email,
+//     and THAT is where a step belongs — see #967.
 //
 // JSONB COLUMNS. #435 audited the nine blobs that can embed a customer email
 // or address and resolved each one:

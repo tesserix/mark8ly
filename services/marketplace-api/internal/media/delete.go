@@ -73,6 +73,15 @@ func (u *GCSUploader) Delete(ctx context.Context, storageKey string) error {
 var ownedPrefixes = []string{
 	"tenants/",
 	"users/",
+	// Buyer-supplied artwork (#963). Lives in the PRIVATE bucket, under a
+	// prefix of its own so it can never be confused with product media by
+	// a reaper, a lifecycle rule, or a human reading a bucket listing.
+	//
+	// Listing it here makes the prefix recognisable as ours; it does not
+	// by itself make it reachable. A reaper is bound to one bucket, and
+	// the tenant-purge reaper is bound to the public one — see the note
+	// on the purge path.
+	"buyer-uploads/",
 }
 
 // publicURLHost is the only host a stored URL may use to be considered

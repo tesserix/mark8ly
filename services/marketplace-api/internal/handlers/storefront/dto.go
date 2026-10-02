@@ -35,6 +35,10 @@ type StorefrontProductResponse struct {
 	TaxRateOverride *decimal.Decimal `json:"tax_rate_override,omitempty"`
 	TaxCategory     *string          `json:"tax_category,omitempty"`
 	PublishedAt     time.Time        `json:"published_at"`
+	// Personalisation is present on the DETAIL response only (#965).
+	// Deliberately absent from list responses: a grid does not render a
+	// form, and loading fields per product would make a listing N+1.
+	Personalisation []StorefrontPersonalisationField `json:"personalisation,omitempty"`
 }
 
 // StorefrontProductOption is one option axis on a product.

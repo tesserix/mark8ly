@@ -93,6 +93,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/blobreap"
+
 	"github.com/mark8ly/marketplace-api/internal/order"
 )
 
@@ -122,6 +124,10 @@ type TableResult struct {
 type Report struct {
 	Tables    []TableResult `json:"tables"`
 	TotalRows int64         `json:"total_rows"`
+	// Blobs is what happened to the GCS objects those rows pointed at
+	// (#961). Zero on a purge run without a reaper wired, which is the
+	// pre-#961 behaviour and is reported rather than implied.
+	Blobs blobreap.Outcome `json:"blobs"`
 }
 
 // Purge deletes every row belonging to tenantID across every
@@ -140,6 +146,28 @@ type Report struct {
 // rows on a second run and the sequence drops use IF EXISTS, so calling
 // Purge twice for the same tenant is safe and returns nil both times.
 func Purge(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string) (Report, error) {
+	return PurgeWithReaper(ctx, db, tenantID, storeIDs, nil)
+}
+
+// PurgeWithReaper is Purge, plus destruction of the GCS objects the
+// deleted rows referenced (#961).
+//
+// A nil reaper keeps the SQL-only behaviour and reports every reference
+// as skipped, so a deployment with no bucket says so in its report
+// instead of showing a clean zero.
+//
+// The objects are destroyed AFTER the transaction commits, and a failure
+// there does not fail the purge: the rows are already gone, which is the
+// part the deletion request was about, and re-running would re-report
+// zero rows. The outcome lands on the Report instead, where an operator
+// can see exactly how many objects outlived their rows.
+func PurgeWithReaper(
+	ctx context.Context,
+	db *gorm.DB,
+	tenantID string,
+	storeIDs []string,
+	reaper *blobreap.Reaper,
+) (Report, error) {
 	if db == nil {
 		return Report{}, fmt.Errorf("tenantpurge: db must not be nil")
 	}
@@ -150,9 +178,21 @@ func Purge(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string)
 	steps := purgePlan(tenantID, storeIDs)
 	rep := Report{Tables: make([]TableResult, 0, len(steps))}
 
+	// Collected inside the transaction and consumed after it commits: the
+	// rows naming these objects are about to be deleted.
+	var blobRefs []string
+
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		rep.Tables = rep.Tables[:0]
 		rep.TotalRows = 0
+		blobRefs = nil
+
+		refs, cErr := collectBlobRefs(ctx, tx, tenantID)
+		if cErr != nil {
+			return cErr
+		}
+		blobRefs = refs
+
 		for _, step := range steps {
 			res := tx.Exec(step.sql, step.args...)
 			if res.Error != nil {
@@ -171,6 +211,13 @@ func Purge(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string)
 	if err != nil {
 		return Report{}, err
 	}
+
+	// Objects last, and only after the commit — blobreap asks the
+	// database what SURVIVES, and inside the transaction the answer would
+	// still contain the rows just deleted, so nothing would ever be
+	// reaped.
+	rep.Blobs = reaper.Reap(ctx, blobRefs)
+
 	return rep, nil
 }
 
@@ -207,14 +254,25 @@ func Count(ctx context.Context, db *gorm.DB, tenantID string, storeIDs []string)
 // internal/handlers/platformadmin) to return one of its interface types —
 // the dependency runs the other way. *GormPurger satisfies any consumer's
 // locally-declared Purge/Count interface structurally.
-type GormPurger struct{ db *gorm.DB }
+type GormPurger struct {
+	db     *gorm.DB
+	reaper *blobreap.Reaper
+}
 
 // NewGormPurger constructs a GormPurger bound to db.
 func NewGormPurger(db *gorm.DB) *GormPurger { return &GormPurger{db: db} }
 
+// WithReaper wires object destruction (#961). Without it a purge deletes
+// rows only — the pre-#961 behaviour — and every referenced object is
+// reported as skipped rather than quietly left behind.
+func (g *GormPurger) WithReaper(r *blobreap.Reaper) *GormPurger {
+	g.reaper = r
+	return g
+}
+
 // Purge delegates to the package-level Purge with the bound db.
 func (g *GormPurger) Purge(ctx context.Context, tenantID string, storeIDs []string) (Report, error) {
-	return Purge(ctx, g.db, tenantID, storeIDs)
+	return PurgeWithReaper(ctx, g.db, tenantID, storeIDs, g.reaper)
 }
 
 // Count delegates to the package-level Count with the bound db.

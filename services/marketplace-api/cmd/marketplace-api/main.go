@@ -50,6 +50,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/billing/tenantdiscount"
 	"github.com/mark8ly/marketplace-api/internal/billing/trial"
 	"github.com/mark8ly/marketplace-api/internal/billingarchive"
+	"github.com/mark8ly/marketplace-api/internal/blobreap"
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/breakglass"
 	"github.com/mark8ly/marketplace-api/internal/campaign"
@@ -352,6 +353,11 @@ func main() {
 		log.Error("db open", "err", err)
 		os.Exit(1)
 	}
+
+	// Declared here rather than beside the uploader because the block
+	// that builds the uploader and the blocks that wire tenant purge are
+	// siblings inside main (#961).
+	var purgeReaper *blobreap.Reaper
 
 	// Journal "coming soon" page email capture (#153). Built here,
 	// unconditionally, rather than inside the admin-only wiring block
@@ -806,6 +812,20 @@ func main() {
 		} else {
 			uploader = media.NewFakeUploader()
 			log.Info("media: using fake uploader (MARKETPLACE_GCS_BUCKET is empty)")
+		}
+
+		// Object reaping for tenant purge (#961). The uploader doubles as
+		// the deleter; the fake implements it too, so dev wiring is
+		// identical and a test can assert on it.
+		//
+		// Nil without a bucket, which keeps a purge SQL-only and makes it
+		// report every referenced object as skipped rather than showing a
+		// clean zero.
+		if d, ok := uploader.(media.Deleter); ok && cfg.GCSBucket != "" {
+			purgeReaper = blobreap.New(conn, d, cfg.GCSBucket, log)
+			log.Info("tenantpurge: object reaping enabled", "bucket", cfg.GCSBucket)
+		} else {
+			log.Warn("tenantpurge: no GCS bucket — rows will be purged but objects will not")
 		}
 
 		// Platform client — real HTTP client when MARKETPLACE_PLATFORM_API_URL
@@ -2412,7 +2432,8 @@ func main() {
 	// P11 lifecycle crons — post-cancellation pipeline + win-back + GDPR portal.
 	// All registered on the shared trialScheduler (same thread pool as P5/P6).
 	p11SubscriptionRepo := subscription.NewRepository()
-	p11HardDeleteRunner := harddelete.NewRunner(conn, billingStripeClient, auditEmitter, log)
+	p11HardDeleteRunner := harddelete.NewRunner(conn, billingStripeClient, auditEmitter, log).
+		WithReaper(purgeReaper)
 
 	// P15 delivery path (#702). The finalize cron used to emit
 	// subscription.pro_app_cancelled and then log that it "would notify"
@@ -2710,7 +2731,7 @@ func main() {
 			TrialExtender:           trial.NewExtender(trialStripe),
 			TenantDiscount:          tenantDiscounter,
 			TenantTeardown:          tenantTeardownClient,
-			Purger:                  tenantpurge.NewGormPurger(conn),
+			Purger:                  tenantpurge.NewGormPurger(conn).WithReaper(purgeReaper),
 			Inbox:                   inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 			InboxItems:              inboxItemSource(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 			InboxActionExecutors:    inboxActionExecutors(migrationRepo, customerEraser),
@@ -2822,7 +2843,7 @@ func main() {
 		// must match what VendorClient.PurgeTenant signs with, NOT
 		// AuditIngestSecret (different caller, different secret).
 		internalsvc.NewTenantPurgeHandler(func(ctx context.Context, tenantID string, storeIDs []string) error {
-			_, err := tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+			_, err := tenantpurge.PurgeWithReaper(ctx, conn, tenantID, storeIDs, purgeReaper)
 			return err
 		}).Register(r.Group("/internal"), cfg.InternalAuthSecret)
 		if stripeBillingWebhookHandler != nil {
@@ -2887,7 +2908,7 @@ func main() {
 				TrialExtender:           trial.NewExtender(trialStripe),
 				TenantDiscount:          tenantDiscounter,
 				TenantTeardown:          tenantTeardownClient,
-				Purger:                  tenantpurge.NewGormPurger(conn),
+				Purger:                  tenantpurge.NewGormPurger(conn).WithReaper(purgeReaper),
 				Inbox:                   inboxDep(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 				InboxItems:              inboxItemSource(newInboxAggregator(conn, onboardingFunnelClient, 0)),
 				InboxActionExecutors:    inboxActionExecutors(migrationRepo, customerEraser),
@@ -3002,7 +3023,7 @@ func main() {
 			// must match what VendorClient.PurgeTenant signs with, NOT
 			// AuditIngestSecret (different caller, different secret).
 			internalsvc.NewTenantPurgeHandler(func(ctx context.Context, tenantID string, storeIDs []string) error {
-				_, err := tenantpurge.Purge(ctx, conn, tenantID, storeIDs)
+				_, err := tenantpurge.PurgeWithReaper(ctx, conn, tenantID, storeIDs, purgeReaper)
 				return err
 			}).Register(engine.Group("/internal"), cfg.InternalAuthSecret)
 			// Reverse custom-domain lookup (domain → slug). The admin

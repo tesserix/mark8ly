@@ -13,6 +13,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	billingstripe "github.com/mark8ly/marketplace-api/internal/billing/stripe"
 	"github.com/mark8ly/marketplace-api/internal/billingarchive"
+	"github.com/mark8ly/marketplace-api/internal/blobreap"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 	"github.com/mark8ly/marketplace-api/internal/subscription/statemachine"
 )
@@ -32,6 +33,17 @@ type Runner struct {
 	emitter        *audit.Emitter
 	logger         *slog.Logger
 	archiveBuilder *billingarchive.Builder
+	// reaper destroys the GCS objects the swept rows pointed at (#961).
+	// Nil keeps the SQL-only behaviour.
+	reaper *blobreap.Reaper
+}
+
+// WithReaper wires object destruction (#961). Without it a hard delete
+// removes rows only and leaves their objects in the bucket, which is what
+// this service did before that issue.
+func (r *Runner) WithReaper(br *blobreap.Reaper) *Runner {
+	r.reaper = br
+	return r
 }
 
 // NewRunner constructs a Runner. stripeClient may be nil (Stripe delete is skipped
@@ -58,9 +70,41 @@ func (r *Runner) Run(ctx context.Context, row *subscription.StoreSubscription) e
 		return fmt.Errorf("harddelete: runner: expected pending_hard_delete, got %s", row.Status)
 	}
 
-	return subscription.WithAdvisoryLock(ctx, r.db, row.StoreID, func(tx *gorm.DB) error {
+	// Collected inside the transaction and consumed after it commits: the
+	// rows naming these objects are about to be swept.
+	var blobRefs []string
+
+	err := subscription.WithAdvisoryLock(ctx, r.db, row.StoreID, func(tx *gorm.DB) error {
+		blobRefs = nil
+		refs, cErr := collectBlobRefs(ctx, tx, row.StoreID)
+		if cErr != nil {
+			return cErr
+		}
+		blobRefs = refs
 		return r.runLocked(ctx, tx, row)
 	})
+	if err != nil {
+		return err
+	}
+
+	// Objects last, after the commit. blobreap asks what SURVIVES, and
+	// inside the transaction the answer would still include the rows just
+	// swept, so nothing would ever be reaped.
+	//
+	// A failure here does NOT fail the hard delete: the rows are gone,
+	// which is the part the 150-day obligation is about, and re-running
+	// would re-report an empty sweep. The outcome is logged instead.
+	if out := r.reaper.Reap(ctx, blobRefs); !out.Empty() {
+		r.logger.Info("harddelete: objects",
+			"store_id", row.StoreID,
+			"deleted", out.Deleted,
+			"skipped_not_ours", out.SkippedNotOurs,
+			"skipped_still_referenced", out.SkippedStillReferenced,
+			"failed", out.Failed,
+			"unreaped", out.Unreaped,
+		)
+	}
+	return nil
 }
 
 func (r *Runner) runLocked(ctx context.Context, tx *gorm.DB, row *subscription.StoreSubscription) error {

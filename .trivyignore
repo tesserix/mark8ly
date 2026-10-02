@@ -15,3 +15,31 @@
 # scanner; when vitest/jest bump their declared picomatch range to
 # ^4.0.4 upstream, remove this entry.
 CVE-2026-33671
+
+# CVE-2026-102276, CVE-2026-102278 — brace-expansion DoS.
+# CVE-2026-19534 — undici DoS via unrequested WebSocket.
+#
+# The same min-range-version behaviour described above, and the resolved
+# versions in the shipped image are all patched. Trivy reports what the
+# declarations say, not what npm installed:
+#
+#            Trivy "installed"   actually resolved   CVE fixed in
+#   brace-expansion  5.0.9       5.0.12 and 1.1.21   5.0.10 / 1.1.19
+#   undici           6.28.0      6.28.1, 7.29.1,     6.28.1 / 7.29.1
+#                                8.10.2              / 8.10.2
+#
+# Verify with, rather than trusting this table:
+#   python3 -c "import json;L=json.load(open('package-lock.json'));
+#   print([(p,m['version']) for p,m in L['packages'].items()
+#   if p.endswith(('node_modules/brace-expansion','node_modules/undici'))])"
+#
+# brace-expansion reached these versions in the same change that patched
+# the npm-audit side of this batch (GHSA-6j4f-fj2g-mc7p and friends); the
+# declaration lower bounds that Trivy reads live in transitive packages'
+# package.json and cannot be moved from here. undici was already on a
+# patched line and needed nothing.
+#
+# Remove each entry once the declaring packages raise their ranges.
+CVE-2026-102276
+CVE-2026-102278
+CVE-2026-19534

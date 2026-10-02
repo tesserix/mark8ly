@@ -24,7 +24,9 @@ import {
   subtotal,
   count,
   type CartItem,
+  type CartLineKey,
 } from "@/lib/cart";
+import { readCart, writeCart } from "@/lib/cart-storage";
 import { placeCartHolds, releaseCartHolds } from "@/lib/api/checkout-api";
 
 // ---------------------------------------------------------------------------
@@ -34,8 +36,13 @@ import { placeCartHolds, releaseCartHolds } from "@/lib/api/checkout-api";
 interface CartContextValue {
   items: CartItem[];
   add: (item: CartItem) => void;
-  remove: (productId: string, variantId: string) => void;
-  updateQty: (productId: string, variantId: string, qty: number) => void;
+  /**
+   * key is lineKey(item) (#964) — NOT a variant id. Two personalisations
+   * of one variant are two lines, so a variant no longer identifies a
+   * row. Call sites get the key from the item they are rendering.
+   */
+  remove: (key: CartLineKey) => void;
+  updateQty: (key: CartLineKey, qty: number) => void;
   clear: () => void;
   count: number;
   subtotal: number;
@@ -61,8 +68,8 @@ export function useCart(): CartContextValue {
 
 type Action =
   | { type: "ADD"; item: CartItem }
-  | { type: "REMOVE"; productId: string; variantId: string }
-  | { type: "SET_QTY"; productId: string; variantId: string; qty: number }
+  | { type: "REMOVE"; key: CartLineKey }
+  | { type: "SET_QTY"; key: CartLineKey; qty: number }
   | { type: "CLEAR" }
   | { type: "HYDRATE"; items: CartItem[] };
 
@@ -71,9 +78,9 @@ function reducer(state: CartItem[], action: Action): CartItem[] {
     case "ADD":
       return addItem(state, action.item);
     case "REMOVE":
-      return removeItem(state, action.productId, action.variantId);
+      return removeItem(state, action.key);
     case "SET_QTY":
-      return setQty(state, action.productId, action.variantId, action.qty);
+      return setQty(state, action.key, action.qty);
     case "CLEAR":
       return [];
     case "HYDRATE":
@@ -84,32 +91,6 @@ function reducer(state: CartItem[], action: Action): CartItem[] {
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
-
-function storageKey(storeSlug: string): string {
-  return `mark8ly.cart.${storeSlug}`;
-}
-
-function readFromStorage(slug: string): CartItem[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(storageKey(slug));
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed as CartItem[];
-  } catch {
-    return [];
-  }
-}
-
-function writeToStorage(slug: string, items: CartItem[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(storageKey(slug), JSON.stringify(items));
-  } catch {
-    // Storage full or blocked — silently degrade.
-  }
-}
 
 export interface CartProviderProps {
   storeSlug: string;
@@ -137,7 +118,7 @@ export function CartProvider({ storeSlug, children }: CartProviderProps) {
 
   // Hydrate from localStorage on mount (client-only).
   useEffect(() => {
-    dispatch({ type: "HYDRATE", items: readFromStorage(storeSlug) });
+    dispatch({ type: "HYDRATE", items: readCart(storeSlug) });
     setHydrated(true);
   }, [storeSlug]);
 
@@ -149,7 +130,7 @@ export function CartProvider({ storeSlug, children }: CartProviderProps) {
       clearTimeout(persistTimerRef.current);
     }
     persistTimerRef.current = setTimeout(() => {
-      writeToStorage(storeSlug, items);
+      writeCart(storeSlug, items);
       persistTimerRef.current = null;
     }, PERSIST_DEBOUNCE_MS);
     return () => {
@@ -167,7 +148,7 @@ export function CartProvider({ storeSlug, children }: CartProviderProps) {
       if (persistTimerRef.current !== null) {
         clearTimeout(persistTimerRef.current);
         persistTimerRef.current = null;
-        writeToStorage(storeSlug, items);
+        writeCart(storeSlug, items);
       }
     };
     const onVisibility = () => {
@@ -226,13 +207,11 @@ export function CartProvider({ storeSlug, children }: CartProviderProps) {
     [],
   );
   const remove = useCallback(
-    (productId: string, variantId: string) =>
-      dispatch({ type: "REMOVE", productId, variantId }),
+    (key: CartLineKey) => dispatch({ type: "REMOVE", key }),
     [],
   );
   const updateQty = useCallback(
-    (productId: string, variantId: string, qty: number) =>
-      dispatch({ type: "SET_QTY", productId, variantId, qty }),
+    (key: CartLineKey, qty: number) => dispatch({ type: "SET_QTY", key, qty }),
     [],
   );
   const clear = useCallback(() => dispatch({ type: "CLEAR" }), []);

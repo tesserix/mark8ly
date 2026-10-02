@@ -17,11 +17,25 @@ type Feature string
 
 const (
 	// Limits.
-	FeatureStores                 Feature = "stores"
-	FeatureImagesPerProduct       Feature = "images_per_product"
-	FeatureAuditRetentionDays     Feature = "audit_retention_days"
-	FeatureCampaignEmailsPerMonth Feature = "campaign_emails_per_month"
-	FeatureTransactionalEmails    Feature = "transactional_emails"
+	FeatureStores           Feature = "stores"
+	FeatureImagesPerProduct Feature = "images_per_product"
+	// FeaturePersonalisationFields caps the fields a buyer can be asked to
+	// fill in on one product (#962). Enforced at creation only, mirroring
+	// FeatureImagesPerProduct: a downgrade does not retroactively break a
+	// product a merchant already sells.
+	//
+	// It is a limit rather than a boolean because the maker this feature
+	// courts is exactly who the Trial has to work for — gating
+	// personalisation off the entry plan would undercut the
+	// ecommerce-for-makers funnel it was built to serve.
+	FeaturePersonalisationFields Feature = "personalisation_fields"
+	// FeaturePersonalisationUploadMB caps one buyer-supplied image, in
+	// megabytes. Shopper-driven storage spend, so unlike every other limit
+	// here it is not bounded by merchant behaviour.
+	FeaturePersonalisationUploadMB Feature = "personalisation_upload_mb"
+	FeatureAuditRetentionDays      Feature = "audit_retention_days"
+	FeatureCampaignEmailsPerMonth  Feature = "campaign_emails_per_month"
+	FeatureTransactionalEmails     Feature = "transactional_emails"
 	// FeatureWebhookSubscriptions caps outbound webhook subscriptions per
 	// STORE (not per tenant) — #586. Dispatch fan-out is
 	// `outbox rows × matching subscriptions`, so an unbounded count turns
@@ -80,6 +94,8 @@ const (
 var allFeatures = []Feature{
 	FeatureStores,
 	FeatureImagesPerProduct,
+	FeaturePersonalisationFields,
+	FeaturePersonalisationUploadMB,
 	FeatureAuditRetentionDays,
 	FeatureCampaignEmailsPerMonth,
 	FeatureTransactionalEmails,
@@ -163,12 +179,14 @@ type planLimits map[Feature]int
 // platform routes bypass plangate entirely.
 var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 	subscription.PlanTrial: {
-		FeatureStores:                 1,
-		FeatureImagesPerProduct:       25,
-		FeatureAuditRetentionDays:     90,
-		FeatureCampaignEmailsPerMonth: 5_000,
-		FeatureTransactionalEmails:    Unlimited, // ∞ with 100k/mo fair-use (§9)
-		FeatureWebhookSubscriptions:   5,
+		FeatureStores:                  1,
+		FeatureImagesPerProduct:        25,
+		FeaturePersonalisationFields:   1,
+		FeaturePersonalisationUploadMB: 5,
+		FeatureAuditRetentionDays:      90,
+		FeatureCampaignEmailsPerMonth:  5_000,
+		FeatureTransactionalEmails:     Unlimited, // ∞ with 100k/mo fair-use (§9)
+		FeatureWebhookSubscriptions:    5,
 
 		FeatureCustomDomain:        1,
 		FeatureFullColorPalette:    1,
@@ -202,12 +220,14 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		FeatureNamedCSM:             Disabled,
 	},
 	subscription.PlanStarter: {
-		FeatureStores:                 2,
-		FeatureImagesPerProduct:       25,
-		FeatureAuditRetentionDays:     90,
-		FeatureCampaignEmailsPerMonth: 15_000,
-		FeatureTransactionalEmails:    Unlimited,
-		FeatureWebhookSubscriptions:   10,
+		FeatureStores:                  2,
+		FeatureImagesPerProduct:        25,
+		FeaturePersonalisationFields:   5,
+		FeaturePersonalisationUploadMB: 15,
+		FeatureAuditRetentionDays:      90,
+		FeatureCampaignEmailsPerMonth:  15_000,
+		FeatureTransactionalEmails:     Unlimited,
+		FeatureWebhookSubscriptions:    10,
 
 		FeatureCustomDomain:        1,
 		FeatureFullColorPalette:    1,
@@ -242,12 +262,14 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		FeatureNamedCSM:             Disabled,
 	},
 	subscription.PlanStudio: {
-		FeatureStores:                 5,
-		FeatureImagesPerProduct:       50,
-		FeatureAuditRetentionDays:     365,
-		FeatureCampaignEmailsPerMonth: 50_000,
-		FeatureTransactionalEmails:    Unlimited,
-		FeatureWebhookSubscriptions:   25,
+		FeatureStores:                  5,
+		FeatureImagesPerProduct:        50,
+		FeaturePersonalisationFields:   10,
+		FeaturePersonalisationUploadMB: 25,
+		FeatureAuditRetentionDays:      365,
+		FeatureCampaignEmailsPerMonth:  50_000,
+		FeatureTransactionalEmails:     Unlimited,
+		FeatureWebhookSubscriptions:    25,
 
 		FeatureCustomDomain:        1,
 		FeatureFullColorPalette:    1,
@@ -273,11 +295,13 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 		FeatureNamedCSM:             Disabled,
 	},
 	subscription.PlanPro: {
-		FeatureStores:                 10,
-		FeatureImagesPerProduct:       Unlimited,
-		FeatureAuditRetentionDays:     Unlimited, // "Forever" (§9)
-		FeatureCampaignEmailsPerMonth: Negotiated,
-		FeatureTransactionalEmails:    Negotiated, // "Negotiated ceiling" (§9)
+		FeatureStores:                  10,
+		FeatureImagesPerProduct:        Unlimited,
+		FeaturePersonalisationFields:   Unlimited,
+		FeaturePersonalisationUploadMB: 50,
+		FeatureAuditRetentionDays:      Unlimited, // "Forever" (§9)
+		FeatureCampaignEmailsPerMonth:  Negotiated,
+		FeatureTransactionalEmails:     Negotiated, // "Negotiated ceiling" (§9)
 		// 100, deliberately under the ~132 subscriptions that overflowed
 		// Postgres's 65535-parameter limit in the original fan-out outage
 		// (#562 chunked the insert; this keeps even the top tier away from

@@ -42,11 +42,19 @@ const queryClient = new QueryClient({
 });
 
 function AuthGate() {
-  const { user, loading } = useAuth();
+  const { user, loading, sessionEpoch } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   // Re-read the token whenever the route changes, so completing the OTP
-  // screen is noticed without waiting for a remount.
+  // screen is noticed without waiting for a remount — and whenever the
+  // provider starts or ends a session, because signing out changes NO route.
+  //
+  // Without the epoch, Sign Out cleared the tokens and left this effect
+  // unrun: `zitadelSignedIn` stayed true, the guard below saw a signed-in
+  // user and never redirected, so you sat on the Account screen already
+  // signed out. Pressing Back changed the route, which is why Back "worked".
+  // `lib/api-client.ts` signs out the same way on a 401, so an expired
+  // session was stranded identically.
   const segmentsKey = segments.join('/');
   // Under Zitadel `user` is ALWAYS null — that field belongs to the Firebase
   // SDK and this provider never populates it. Signed-in-ness comes from the
@@ -71,7 +79,7 @@ function AuthGate() {
     return () => {
       cancelled = true;
     };
-  }, [segmentsKey]);
+  }, [segmentsKey, sessionEpoch]);
   const qc = useQueryClient();
   const hydrate = useTenantStore((s) => s.hydrate);
   const clearTenant = useTenantStore((s) => s.clear);

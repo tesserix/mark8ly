@@ -26,6 +26,7 @@ type Deps struct {
 	CategoryHandler         *CategoryHandler
 	VariantHandler          *VariantHandler
 	MediaHandler            *MediaHandler
+	PersonalisationHandler  *PersonalisationHandler
 	OrdersHandler           *OrdersHandler
 	ReturnsHandler          *ReturnsHandler
 	AbandonedCartsHandler   *AbandonedCartsHandler
@@ -311,6 +312,37 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			mediaGroup.POST("/:mediaId/recrop",
 				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
 				deps.MediaHandler.Recrop)
+		}
+
+		// Personalisation — what a buyer may supply on this product (#962).
+		// Reads are RoleStaff (anyone who can see the catalog), writes are
+		// RoleAdmin: a field carries money, via a checkbox or a select's
+		// option deltas.
+		if deps.PersonalisationHandler != nil {
+			fieldsGroup := storeRoute.Group("/products/:id/personalisation-fields")
+			{
+				fieldsGroup.GET("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleStaff),
+					deps.PersonalisationHandler.List)
+				fieldsGroup.POST("",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.PersonalisationHandler.Create)
+				fieldsGroup.PATCH("/:fieldId",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.PersonalisationHandler.Patch)
+				fieldsGroup.DELETE("/:fieldId",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.PersonalisationHandler.Delete)
+				fieldsGroup.POST("/:fieldId/options",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.PersonalisationHandler.AddOption)
+				fieldsGroup.PATCH("/:fieldId/options/:optionId",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.PersonalisationHandler.PatchOption)
+				fieldsGroup.DELETE("/:fieldId/options/:optionId",
+					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin),
+					deps.PersonalisationHandler.DeleteOption)
+			}
 		}
 
 		// Orders — role policy from internal/authz/orders_roles.go.

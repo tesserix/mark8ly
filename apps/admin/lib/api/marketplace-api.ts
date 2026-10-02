@@ -2573,3 +2573,243 @@ export async function setVariantStockByLocation(
   }
   return { ok: true, data: (await res.json()) as AdminVariantResponse };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Personalisation fields (#962)
+//
+// What a buyer may supply on a product: an image for a figurine, a name
+// to engrave, a choice that changes the price. Catalog side only — these
+// describe the controls, not anything a buyer has filled in.
+//
+// The wire shape omits columns that do not apply to the field's kind
+// rather than sending them as null, so the editor can drive its form off
+// presence instead of repeating the kind rules.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type PersonalisationKind =
+  | "image"
+  | "text"
+  | "textarea"
+  | "select"
+  | "checkbox";
+
+export interface PersonalisationPrintArea {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface PersonalisationOption {
+  id: string;
+  value: string;
+  label: string;
+  /** Decimal string. What choosing this adds to the line. */
+  price_delta: string;
+  position: number;
+}
+
+export interface PersonalisationField {
+  id: string;
+  product_id: string;
+  key: string;
+  label: string;
+  kind: PersonalisationKind;
+  required: boolean;
+  position: number;
+  help_text?: string;
+  max_length?: number;
+  max_images?: number;
+  min_px?: number;
+  mockup_storage_key?: string;
+  print_area?: PersonalisationPrintArea;
+  price_delta?: string;
+  options?: PersonalisationOption[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePersonalisationFieldInput {
+  key: string;
+  label: string;
+  kind: PersonalisationKind;
+  required?: boolean;
+  position?: number;
+  help_text?: string;
+  max_length?: number;
+  max_images?: number;
+  min_px?: number;
+  mockup_storage_key?: string;
+  print_area?: PersonalisationPrintArea;
+  price_delta?: string;
+  options?: Array<{
+    value: string;
+    label: string;
+    price_delta?: string;
+    position?: number;
+  }>;
+}
+
+export interface UpdatePersonalisationFieldInput {
+  label?: string;
+  required?: boolean;
+  position?: number;
+  help_text?: string;
+  max_length?: number;
+  max_images?: number;
+  min_px?: number;
+  mockup_storage_key?: string;
+  print_area?: PersonalisationPrintArea;
+  price_delta?: string;
+}
+
+function personalisationUrl(storeId: string, productId: string): string {
+  return `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}/personalisation-fields`;
+}
+
+/**
+ * Reads a product's personalisation fields.
+ *
+ * Returns [] on 401/403/404 rather than throwing, matching
+ * listWarehouses: the product page must still render for a merchant
+ * whose role cannot see this section, and a product that has no fields
+ * is the overwhelmingly common case.
+ */
+export async function listPersonalisationFields(
+  storeId: string,
+  productId: string,
+  session: SessionHeaders,
+): Promise<PersonalisationField[]> {
+  const res = await fetch(personalisationUrl(storeId, productId), {
+    cache: "no-store",
+    headers: readHeaders(session),
+  });
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return [];
+  }
+  if (!res.ok) {
+    throw new Error(`marketplace-api: listPersonalisationFields ${res.status}`);
+  }
+  const body = (await res.json()) as { fields: PersonalisationField[] };
+  return body.fields ?? [];
+}
+
+export async function createPersonalisationField(
+  storeId: string,
+  productId: string,
+  body: CreatePersonalisationFieldInput,
+  session: SessionHeaders,
+): Promise<MutationResult<PersonalisationField>> {
+  const res = await fetch(personalisationUrl(storeId, productId), {
+    method: "POST",
+    cache: "no-store",
+    headers: { ...readHeaders(session), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as PersonalisationField };
+}
+
+export async function updatePersonalisationField(
+  storeId: string,
+  productId: string,
+  fieldId: string,
+  body: UpdatePersonalisationFieldInput,
+  session: SessionHeaders,
+): Promise<MutationResult<PersonalisationField>> {
+  const res = await fetch(`${personalisationUrl(storeId, productId)}/${fieldId}`, {
+    method: "PATCH",
+    cache: "no-store",
+    headers: { ...readHeaders(session), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as PersonalisationField };
+}
+
+export async function deletePersonalisationField(
+  storeId: string,
+  productId: string,
+  fieldId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(`${personalisationUrl(storeId, productId)}/${fieldId}`, {
+    method: "DELETE",
+    cache: "no-store",
+    headers: readHeaders(session),
+  });
+  if (res.status === 204 || res.ok) {
+    return { ok: true, data: true };
+  }
+  return { ok: false, error: await parseMutationError(res) };
+}
+
+export async function addPersonalisationOption(
+  storeId: string,
+  productId: string,
+  fieldId: string,
+  body: { value: string; label: string; price_delta?: string; position?: number },
+  session: SessionHeaders,
+): Promise<MutationResult<PersonalisationField>> {
+  const res = await fetch(
+    `${personalisationUrl(storeId, productId)}/${fieldId}/options`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: { ...readHeaders(session), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as PersonalisationField };
+}
+
+export async function updatePersonalisationOption(
+  storeId: string,
+  productId: string,
+  fieldId: string,
+  optionId: string,
+  body: { value?: string; label?: string; price_delta?: string; position?: number },
+  session: SessionHeaders,
+): Promise<MutationResult<PersonalisationField>> {
+  const res = await fetch(
+    `${personalisationUrl(storeId, productId)}/${fieldId}/options/${optionId}`,
+    {
+      method: "PATCH",
+      cache: "no-store",
+      headers: { ...readHeaders(session), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as PersonalisationField };
+}
+
+export async function deletePersonalisationOption(
+  storeId: string,
+  productId: string,
+  fieldId: string,
+  optionId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<PersonalisationField>> {
+  const res = await fetch(
+    `${personalisationUrl(storeId, productId)}/${fieldId}/options/${optionId}`,
+    {
+      method: "DELETE",
+      cache: "no-store",
+      headers: readHeaders(session),
+    },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as PersonalisationField };
+}

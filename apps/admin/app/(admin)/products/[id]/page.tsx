@@ -6,7 +6,11 @@
 import { notFound } from "next/navigation";
 
 import { getServerSessionContext } from "@/lib/auth/serverSession";
-import { getProduct, listCategories } from "@/lib/api/marketplace-api";
+import {
+  getProduct,
+  listCategories,
+  listPersonalisationFields,
+} from "@/lib/api/marketplace-api";
 import { listWarehouses } from "@/lib/api/warehouses-api";
 import { Breadcrumbs } from "@/components/layout";
 import { ProductForm } from "@/components/products/ProductForm";
@@ -24,12 +28,15 @@ export default async function ProductDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  const [product, categories, warehouses] = await Promise.all([
+  const [product, categories, warehouses, personalisationFields] = await Promise.all([
     getProduct(currentStore.id, id, { userId, tenantId }),
     listCategories(currentStore.id, { userId, tenantId }),
     // Drives the per-warehouse stock editor (#177 PR 5e). With fewer than
     // two the form renders exactly as it did before.
     listWarehouses(currentStore.id, { userId, tenantId }),
+    // Personalisation fields (#962). Returns [] for a role that cannot
+    // see them, so the page still renders.
+    listPersonalisationFields(currentStore.id, id, { userId, tenantId }),
   ]);
 
   if (!product) {
@@ -56,6 +63,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
         session={{ userId, tenantId }}
         storeSlug={currentStore.slug}
         warehouses={warehouses}
+        initialPersonalisationFields={personalisationFields}
       />
     </main>
   );

@@ -10,7 +10,7 @@
 # unnecessary. K8s securityContext overrides the image's USER, so the
 # binaries are world-executable (mode 0755 from `go build`).
 
-FROM ghcr.io/tesserix/base-go-builder:20260919@sha256:f60d710e75afce7cffbcb63e1bbbf5dd7236d16bfff882ba050fb1f7ded3ed21 AS build
+FROM ghcr.io/tesserix/base-go-builder:20260926@sha256:7ac7a7ccf1c0038f3a28621c64c0b53e6f14c23cae1e05026047cb05429279d2 AS build
 USER 0:0
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -21,7 +21,7 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server \
 
 # Single runtime stage carries both binaries so the K8s init pattern
 # can override ENTRYPOINT to /migrate without pulling a second image.
-FROM ghcr.io/tesserix/base-distroless-static:20260912@sha256:98b997f450dc0c45cc6fbf4b717ae399c03b3312873d515e3e0438fc1f5d628b AS server
+FROM ghcr.io/tesserix/base-distroless-static:20260926@sha256:29dff281f52c6e95f5c5a2f2224c9ee99c0c7aa6326620cb1a2c56a14c7d970f AS server
 COPY --from=build --chown=10001:10001 /out/server /server
 COPY --from=build --chown=10001:10001 /out/migrate /migrate
 EXPOSE 8080
@@ -29,6 +29,6 @@ CMD ["/server"]
 
 # Legacy single-purpose stage retained for local docker-compose flows
 # that build with --target migrate.
-FROM ghcr.io/tesserix/base-distroless-static:20260912@sha256:98b997f450dc0c45cc6fbf4b717ae399c03b3312873d515e3e0438fc1f5d628b AS migrate
+FROM ghcr.io/tesserix/base-distroless-static:20260926@sha256:29dff281f52c6e95f5c5a2f2224c9ee99c0c7aa6326620cb1a2c56a14c7d970f AS migrate
 COPY --from=build --chown=10001:10001 /out/migrate /migrate
 CMD ["/migrate"]

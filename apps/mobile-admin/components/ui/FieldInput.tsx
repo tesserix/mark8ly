@@ -1,4 +1,8 @@
 import { TextInput, View, StyleSheet, type TextInputProps } from "react-native";
+import {
+  BottomSheetTextInput,
+  useBottomSheetInternal,
+} from "@gorhom/bottom-sheet";
 import { Text } from "./Text";
 import { theme } from "@/lib/theme";
 import { BODY_FONT_FAMILY } from "@/lib/fonts";
@@ -21,10 +25,25 @@ interface FieldInputProps extends TextInputProps {
  * one on elevated and one on surfaceAlt).
  */
 export function FieldInput({ label, style, multiline, ...rest }: FieldInputProps) {
+  // Inside a bottom sheet this MUST be gorhom's own input. `keyboardBehavior`
+  // only moves the sheet for an input gorhom knows about — it learns that from
+  // BottomSheetTextInput registering focus on the internal context. A plain
+  // react-native TextInput never registers, so the sheet stays put and the
+  // keyboard covers the field: you can see the input but cannot type into it.
+  //
+  // Nine sheets render this component (block customer, refund, cancel reason,
+  // review reply, category picker, option builder, variant value, email label,
+  // new product), so the swap lives here rather than at each call site — a
+  // per-sheet opt-in is one someone forgets on the tenth.
+  //
+  // `useBottomSheetInternal(true)` is the unsafe overload: it returns null
+  // outside a sheet instead of throwing, which is what makes this safe to call
+  // unconditionally from a component used on ordinary screens too.
+  const Input = useBottomSheetInternal(true) ? BottomSheetTextInput : TextInput;
   return (
     <View style={styles.wrap}>
       {label ? <FieldLabel label={label} /> : null}
-      <TextInput
+      <Input
         style={[styles.input, multiline ? styles.multiline : null, style]}
         placeholderTextColor={theme.colors.textTertiary}
         multiline={multiline}

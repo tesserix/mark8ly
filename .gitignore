@@ -99,3 +99,7 @@ infra/dev/.pat.tmp
 # never exist here — ignored so that a stray wizard run cannot commit one.
 sentry.properties
 .sentryclirc
+
+# Python operational helper bytecode
+__pycache__/
+*.pyc

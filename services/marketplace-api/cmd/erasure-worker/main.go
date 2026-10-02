@@ -32,9 +32,11 @@ import (
 	"os"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/google/uuid"
 
 	"github.com/mark8ly/marketplace-api/internal/customererasure"
+	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/pkg/db"
 )
 
@@ -89,6 +91,28 @@ func main() {
 	if err != nil {
 		log.Error("erasure-worker: executor could not be built", "err", err)
 		os.Exit(exitUsageOrInfra)
+	}
+
+	// Object deletion (#961). Without a bucket the worker erases rows
+	// only — which is what it did before — and every referenced object is
+	// reported as skipped in the receipt rather than silently forgotten.
+	//
+	// A bucket that is configured but unreachable is fatal here, not a
+	// warning: running an erasure that cannot destroy objects while
+	// believing it can is the failure mode this issue exists to remove.
+	if bucket := os.Getenv("MARKETPLACE_GCS_BUCKET"); bucket != "" {
+		gcsCtx, gcsCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		sc, gErr := storage.NewClient(gcsCtx)
+		gcsCancel()
+		if gErr != nil {
+			log.Error("erasure-worker: gcs client", "err", gErr)
+			os.Exit(exitUsageOrInfra)
+		}
+		defer func() { _ = sc.Close() }()
+		executor = executor.WithBlobDeleter(media.NewGCSUploader(sc, bucket), bucket)
+		log.Info("erasure-worker: object deletion enabled", "bucket", bucket)
+	} else {
+		log.Warn("erasure-worker: MARKETPLACE_GCS_BUCKET is empty — rows will be erased but objects will not")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)

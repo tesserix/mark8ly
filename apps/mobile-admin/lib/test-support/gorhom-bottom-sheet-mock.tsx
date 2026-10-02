@@ -9,7 +9,40 @@
 // a factory throws "module factory is not allowed to reference any
 // out-of-scope variables". A plain required module has no such hoisting
 // constraint.
-import { Fragment } from "react";
+import { Fragment, createContext, useContext } from "react";
+import { TextInput } from "react-native";
+
+/**
+ * The real package hands components an internal context and `BottomSheetTextInput`
+ * registers its focus on it — that registration is what makes `keyboardBehavior`
+ * move the sheet. FieldInput therefore decides which input to render by asking
+ * `useBottomSheetInternal(true)` whether it is inside a sheet.
+ *
+ * A mock that always answered "no" would let FieldInput silently fall back to a
+ * plain TextInput in every test, so the regression it guards against would be
+ * invisible here — the shape this repo has been bitten by before. Provide a real
+ * context instead, so a component rendered inside the mocked modal gets the same
+ * answer it gets on a device.
+ */
+const InternalContext = createContext<object | null>(null);
+
+export function useBottomSheetInternal(unsafe?: boolean) {
+  const ctx = useContext(InternalContext);
+  if (unsafe !== true && ctx === null) {
+    throw "'useBottomSheetInternal' cannot be used out of the BottomSheet!";
+  }
+  return ctx;
+}
+
+/** Distinguishable from react-native's TextInput so a test can assert the swap. */
+export function BottomSheetTextInput(props: Record<string, unknown>) {
+  return <TextInput {...props} />;
+}
+
+/** BlockReasonSheet imports this; without it the backdrop renderer is undefined. */
+export function BottomSheetBackdrop() {
+  return null;
+}
 
 /**
  * `dismiss()` invokes the `onDismiss` prop, as the real modal does.
@@ -32,7 +65,11 @@ export const BottomSheetModal = require("react").forwardRef(
       () => ({ present: () => {}, dismiss: () => onDismiss?.() }),
       [onDismiss],
     );
-    return children ?? null;
+    return (
+      <InternalContext.Provider value={{ mocked: true }}>
+        {children ?? null}
+      </InternalContext.Provider>
+    );
   },
 );
 

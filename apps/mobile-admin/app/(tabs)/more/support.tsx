@@ -17,6 +17,7 @@ import {
 import { secureStoreKV } from "@repo/mobile-shared/support/storage";
 import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { useAuthNoticeStore } from "@repo/mobile-shared/stores/auth-notice";
+import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
 import { useEnvironment } from "@repo/mobile-shared/config/env";
 
 import { BackHeader, Screen } from "@/components/ui";
@@ -38,6 +39,10 @@ const SESSION_KEY = "otto_platform_support_session";
 export default function PlatformSupportScreen() {
   const { user, getToken, refreshToken, signOut } = useAuth();
   const env = useEnvironment();
+  // Platform support rides `requireTenant`, and no bearer token carries a
+  // tenant claim any more — without this header the group 404s and the screen
+  // says "no store linked to this account" for an account that has one.
+  const tenantId = useTenantStore((s) => s.tenantId);
 
   const client = useMemo(
     () =>
@@ -55,8 +60,9 @@ export default function PlatformSupportScreen() {
         },
         loadSessionToken: () => SecureStore.getItemAsync(SESSION_KEY),
         saveSessionToken: (t) => SecureStore.setItemAsync(SESSION_KEY, t),
+        getActingTenantId: () => tenantId ?? null,
       }),
-    [env.apiBaseUrl, getToken, refreshToken, signOut],
+    [env.apiBaseUrl, getToken, refreshToken, signOut, tenantId],
   );
 
   const chat = useSupportChat({ client, storage: secureStoreKV });

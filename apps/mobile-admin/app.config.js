@@ -132,7 +132,24 @@ module.exports = {
       'expo-secure-store',
       'expo-image-picker',
       'expo-notifications',
-      ['expo-build-properties', { ios: { newArchEnabled: true, useFrameworks: 'static' } }],
+      [
+        'expo-build-properties',
+        {
+          ios: { newArchEnabled: true, useFrameworks: 'static' },
+          // R8. Play rejected nothing without it, but it warned on every
+          // upload that the bundle carries no deobfuscation file — with
+          // minification off there is no mapping.txt for AGP to embed, so
+          // Play-side crashes and ANRs arrive as unreadable frames. AGP puts
+          // the mapping into the AAB itself once this is on, which is the only
+          // route Play accepts for an app bundle.
+          //
+          // shrinkResources is deliberately NOT enabled alongside it. It
+          // strips resources reachable only by name, which is exactly how
+          // react-native resolves drawables, and the size win is not worth
+          // debugging a missing icon in a release build.
+          android: { enableMinifyInReleaseBuilds: true },
+        },
+      ],
       // Must come after expo-build-properties: it edits the Podfile that
       // plugin's `post_install` block lives in. Without it @sentry/react-native
       // builds against the monorepo root's React Native 0.76.9 rather than this

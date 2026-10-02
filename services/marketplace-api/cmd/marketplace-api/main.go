@@ -20,7 +20,6 @@ import (
 	"syscall"
 	"time"
 
-	secretmanagerclient "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -853,6 +852,7 @@ func main() {
 		categoryHandler := admin.NewCategoryHandler(categorySvc, categoryRepo, log)
 		variantHandler := admin.NewVariantHandler(productSvc, log)
 		mediaHandler := admin.NewMediaHandler(productSvc, uploader, log)
+		personalisationHandler := admin.NewPersonalisationHandler(productSvc, log)
 
 		// Orders slice 1 wiring (M2/M4).
 		orderRepo := order.NewRepository()
@@ -1255,6 +1255,8 @@ func main() {
 		// resolver, so wired via setter; see apps/onboarding plan doc
 		// 2026-04-20-plangate-enforcement-gaps.md §P1.1.
 		mediaHandler.SetPlanGate(planResolver, subscriptionRepo, conn)
+		// Per-plan personalisation-fields cap (#962), same setter reason.
+		personalisationHandler.SetPlanGate(planResolver, subscriptionRepo, conn)
 
 		// P5 — Trial billing subscribe handler (deferred-charge card-add §5.3).
 		var trialBillingHandler *admin.TrialBillingHandler
@@ -1309,7 +1311,11 @@ func main() {
 		// bug and is fatal: degrading to a 501 here would present a broken
 		// deployment as a deliberate "not implemented", which is exactly the
 		// misreading this action was added to remove.
-		customerEraser, err = newCustomerEraser(conn, log)
+		// The uploader doubles as the object deleter when it is the real
+		// GCS one; the fake implements Deleter too, so dev wiring is
+		// identical and a test can assert on it.
+		blobDeleter, _ := uploader.(media.Deleter)
+		customerEraser, err = newCustomerEraser(conn, log, blobDeleter, cfg.GCSBucket)
 		if err != nil {
 			log.Error("marketplace-api: customer erasure executor could not be built", "err", err)
 			os.Exit(1)
@@ -1369,24 +1375,16 @@ func main() {
 		_ = apiKeysCache    // referenced by middleware once the public API router mounts
 		_ = apiKeysLastUsed // see above
 
-		// P15 — white-label app credential store + purchase/upload handlers.
-		// GCP Secret Manager when APPCREDS_PROJECT_ID is set; FakeSM dev
-		// fallback when empty. The advancer + lifecycle cron are wired
-		// further down (near trialScheduler); we share this Service via
-		// the hoisted wlAppCredsSvc var.
-		var wlAppCredsSM appcredspkg.SM
-		if cfg.AppCredsProjectID != "" {
-			if smClient, err := secretmanagerclient.NewClient(context.Background()); err != nil {
-				log.Error("init secret manager client for appcreds", "err", err)
-			} else {
-				defer smClient.Close()
-				wlAppCredsSM = appcredspkg.NewGCPSM(smClient, cfg.AppCredsProjectID)
-			}
+		appCredsBao, err := bao.New(bao.Config{
+			Address:        cfg.OpenBaoAddr,
+			Mount:          cfg.OpenBaoKVMount,
+			KubernetesRole: cfg.OpenBaoRole,
+		})
+		if err != nil {
+			log.Error("init openbao client for app credentials", "err", err)
+			os.Exit(1)
 		}
-		if wlAppCredsSM == nil {
-			wlAppCredsSM = appcredspkg.NewFakeSM()
-			log.Warn("P15 appcreds using FakeSM — set APPCREDS_PROJECT_ID for production")
-		}
+		wlAppCredsSM := appcredspkg.NewBaoSM(appCredsBao, cfg.AppCredsProjectID)
 		wlAppCredsSvc = appcredspkg.NewService(appcredspkg.Config{
 			ProjectID: cfg.AppCredsProjectID,
 			SM:        wlAppCredsSM,
@@ -1533,6 +1531,7 @@ func main() {
 			CategoryHandler:          categoryHandler,
 			VariantHandler:           variantHandler,
 			MediaHandler:             mediaHandler,
+			PersonalisationHandler:   personalisationHandler,
 			OrdersHandler:            ordersHandler,
 			ReturnsHandler:           returnsHandler,
 			AbandonedCartsHandler:    abandonedCartsHandler,

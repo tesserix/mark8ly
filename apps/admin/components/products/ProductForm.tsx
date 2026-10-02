@@ -29,6 +29,7 @@ import {
 import type {
   AdminProduct,
   AdminCategory,
+  PersonalisationField,
   SessionHeaders,
 } from "@/lib/api/marketplace-api";
 import {
@@ -48,6 +49,7 @@ import { useUnsavedGuard } from "@/lib/hooks/useUnsavedGuard";
 import type { Warehouse } from "@/lib/api/warehouses-api";
 import { OptionsTab } from "./form/OptionsTab";
 import { MediaTab } from "./form/MediaTab";
+import { PersonalisationEditor } from "./personalisation/PersonalisationEditor";
 import { TaxSection } from "./form/TaxSection";
 import { ProductSection } from "./form/ProductSection";
 import { DetailsSection } from "./form/DetailsSection";
@@ -82,6 +84,12 @@ export interface ProductFormProps {
    * warehouse must see exactly what it saw before.
    */
   warehouses?: Warehouse[];
+  /**
+   * The product's personalisation fields (#962). Fetched server-side so
+   * the section renders filled on first paint; the editor then owns them
+   * and applies each change immediately, outside the form's Save.
+   */
+  initialPersonalisationFields?: PersonalisationField[];
 }
 
 export function ProductForm({
@@ -95,6 +103,7 @@ export function ProductForm({
   session,
   storeSlug,
   warehouses = [],
+  initialPersonalisationFields = [],
 }: ProductFormProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -734,6 +743,24 @@ export function ProductForm({
                   storeId={storeId}
                   productId={initialProduct.id}
                   session={session}
+                />
+              </ProductSection>
+            )}
+
+            {/* Personalisation needs a product to hang off, and each
+                change is its own request — so like Media it is absent on
+                create rather than present-and-disabled. */}
+            {mode === "edit" && initialProduct && (
+              <ProductSection
+                id="personalisation"
+                title="Personalisation"
+                description="What the buyer fills in — a photo to print, a name to engrave, a finish to pick. Their answers arrive with the order."
+              >
+                <PersonalisationEditor
+                  storeId={storeId}
+                  productId={initialProduct.id}
+                  currencyCode={currencyCode}
+                  initialFields={initialPersonalisationFields}
                 />
               </ProductSection>
             )}

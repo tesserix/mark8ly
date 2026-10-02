@@ -145,8 +145,13 @@ func TestAllFeatureLimits_EveryFeaturePresentForEveryPlan(t *testing.T) {
 // feature list stays aligned with the spec §9 count. Bumping the count
 // should be deliberate — update this assertion when a new Feature lands.
 func TestAllFeatures_IncludesAllConstants(t *testing.T) {
-	require.Equal(t, 26, len(plangate.AllFeatures()),
-		"expected 25 feature constants per §9 — update this count if new ones are added")
+	// The message deliberately does not restate the number: it said 25
+	// while the assertion said 26, because one of them was updated and the
+	// other was not. #962 took it to 28 (personalisation_fields and
+	// personalisation_upload_mb).
+	require.Equal(t, 28, len(plangate.AllFeatures()),
+		"the canonical feature list changed — bump this deliberately, and check "+
+			"every plan row declares the new feature (TestMatrix_EveryPlanDeclaresEveryFeature)")
 }
 
 // TestMatrix_IsAllowedRoundTrip asserts that every (plan, feature) pair

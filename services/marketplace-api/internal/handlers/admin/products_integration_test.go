@@ -64,6 +64,8 @@ func (stubClient) GetStoreBySlug(_ context.Context, _ string) (*stores.Store, er
 // whole class rather than one test's literal.
 var productsTables = []string{
 	"outbox_events",
+	"product_personalisation_options",
+	"product_personalisation_fields",
 	"promo_redemptions",
 	"promo_codes",
 	"product_media",
@@ -156,17 +158,21 @@ func setupTestRouter(t *testing.T) *testEnv {
 
 	r := gin.New()
 	admin.RegisterAdmin(r.Group("/api/v1"), admin.Deps{
-		ProductHandler:      handler,
-		CategoryHandler:     catHandler,
-		VariantHandler:      variantHandler,
-		MediaHandler:        mediaHandler,
-		SubscriptionHandler: subHandler,
-		PromoHandler:        promoHandler,
-		WarehousesHandler:   admin.NewWarehousesHandler(db, nil),
-		WebhooksHandler:     webhooksHandler,
-		StoresMiddleware:    storeMW,
-		AuthzMiddleware:     authzMW,
-		InternalSecret:      "",
+		ProductHandler:  handler,
+		CategoryHandler: catHandler,
+		VariantHandler:  variantHandler,
+		MediaHandler:    mediaHandler,
+		// Plan gate deliberately NOT wired: these tests exercise the
+		// service's absolute ceiling and the scoping, and a seeded store
+		// has no subscription row. The per-plan cap has its own test.
+		PersonalisationHandler: admin.NewPersonalisationHandler(svc, nil),
+		SubscriptionHandler:    subHandler,
+		PromoHandler:           promoHandler,
+		WarehousesHandler:      admin.NewWarehousesHandler(db, nil),
+		WebhooksHandler:        webhooksHandler,
+		StoresMiddleware:       storeMW,
+		AuthzMiddleware:        authzMW,
+		InternalSecret:         "",
 	})
 
 	return &testEnv{router: r, uploader: uploader, fga: fga, db: db}

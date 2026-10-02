@@ -106,6 +106,29 @@ jobs:
       # still fails. Revisit on the next react-native bump: drop these two
       # ids and see whether the chain has been patched upstream.
       #
+      # GHSA-86w9-cpqp-85rv joins them on the SAME criterion, published
+      # 2026-10-02 and red on main within the hour. It is reported against
+      # @react-native/dev-middleware and @react-native/community-cli-plugin
+      # but the vulnerable package is node-forge (RSA PKCS#1 v1.5
+      # signature verification accepts extra nested DigestAlgorithm
+      # elements), reached two ways, both dev tooling:
+      #   apps/mobile-admin -> expo -> @expo/cli -> node-forge
+      #   packages/mobile-shared -> react-native
+      #     -> @react-native/community-cli-plugin
+      #     -> @react-native/dev-middleware -> selfsigned -> node-forge
+      # selfsigned mints the Metro dev server's HTTPS certificate; @expo/cli
+      # signs development manifests. Neither runs in a deployed service
+      # image nor ships inside an app binary.
+      #
+      # Nothing to upgrade to, verified rather than assumed: the advisory
+      # covers node-forge <= 1.4.0 with first patched version NONE, and
+      # 1.4.0 IS the latest release. npm offers `react-native@0.87.1` /
+      # `expo@44.0.6` as the fix, and both are a semver-major move that
+      # would not fix it — node-forge 1.4.0 is already present under
+      # mobile-admin's expo 56 / react-native 0.85.3.
+      #
+      # Drop this id the moment node-forge publishes 1.4.1 or later.
+      #
       # The six ids that used to sit here alongside image-size were the
       # 2026-09-08 batch tracked by #864. They are gone rather than
       # allowlisted: #867/#868 patched them, and #869 regenerated the
@@ -123,7 +146,7 @@ jobs:
       # upper bounds matter, because an unbounded >=1.1.21 resolves a
       # CommonJS consumer onto brace-expansion 5.x.
       audit_allowlist: >-
-        GHSA-w3rx-r6r6-pgpr GHSA-5p2g-fcmc-qvqq
+        GHSA-w3rx-r6r6-pgpr GHSA-5p2g-fcmc-qvqq GHSA-86w9-cpqp-85rv
     secrets:
       package_read_token: ${{ secrets.GHCR_PAT }}
 

@@ -39,6 +39,18 @@ func NewCustomerAccountHandler(
 	}
 }
 
+// acceptAvatarURLUpdate decides what a customer may write to
+// customer_profiles.avatar_url. It returns the value to store and whether
+// the write is allowed.
+//
+// Only clearing is allowed. See the comment at the call site for why: no
+// endpoint in this estate mints a customer avatar key, so any non-empty
+// value names an object the customer does not own.
+func acceptAvatarURLUpdate(raw string) (string, bool) {
+	av := strings.TrimSpace(raw)
+	return av, av == ""
+}
+
 // GetProfile handles GET /storefront/stores/:storeSlug/account.
 func (h *CustomerAccountHandler) GetProfile(c *gin.Context) {
 	profile := h.mustGetProfile(c)
@@ -75,12 +87,36 @@ func (h *CustomerAccountHandler) UpdateProfile(c *gin.Context) {
 	if req.Phone != nil {
 		updates["phone"] = strings.TrimSpace(*req.Phone)
 	}
+	// Clearing an avatar is allowed; setting one is not (#971).
+	//
+	// The old check was HasPrefix("https://storage.googleapis.com/") and
+	// nothing more — any bucket, any object. Nothing in this estate mints a
+	// customer avatar key (there is no storefront upload endpoint; compare
+	// buildAvatarStorageKey, which is staff-only), so every value this
+	// column could receive names an object the customer does not own. A
+	// shopper could point their avatar at a merchant's product image in our
+	// own public media bucket and have the storefront serve it as theirs.
+	//
+	// It was nearly worse: #961 added object deletion on erasure, and a
+	// URL-trusting deleter would have destroyed whatever object the shopper
+	// named. That is held off by media.KeyFromOwnBucketURL, which refuses
+	// anything outside our bucket and our own key prefixes — but the write
+	// path is the actual hole, and this is it closed.
+	//
+	// Rejecting outright costs nothing: no client sends this field. The web
+	// form PATCHes first_name, last_name, phone and marketing_opt_in
+	// (apps/storefront/components/account/ProfileForm.tsx) and
+	// apps/mobile-storefront does not reference it at all.
+	//
+	// Re-open this when a storefront upload endpoint mints the key, at
+	// which point accept only keys it produced — see #971.
 	if req.AvatarURL != nil {
-		av := strings.TrimSpace(*req.AvatarURL)
-		if av != "" && !strings.HasPrefix(av, "https://storage.googleapis.com/") {
+		av, ok := acceptAvatarURLUpdate(*req.AvatarURL)
+		if !ok {
 			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "validation_error",
-				"message": "avatar_url must be a Google Cloud Storage URL",
+				"error": "validation_error",
+				"message": "avatar_url cannot be set directly. " +
+					"Send an empty value to remove an existing avatar.",
 			})
 			return
 		}

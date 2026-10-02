@@ -112,6 +112,16 @@ jobs:
       # lockfile without --legacy-peer-deps so the fixes actually resolve.
       # Measured on 2026-09-09 across all three Next.js workspaces: the only
       # high-or-above advisories remaining are the two image-size ids below.
+      #
+      # The 2026-10-01 batch is likewise patched, not allowlisted:
+      # GHSA-vcvr-r3jv-pc5j (CRITICAL, RCE in next/og ImageResponse,
+      # affecting next 16.2.0-16.3.5) by moving the three Next apps to
+      # ^16.3.8, and the three brace-expansion DoS ids by raising the
+      # existing override floors — >=5.0.12 <6 for the ^5.x consumers and a
+      # new >=1.1.21 <2 for minimatch@3's ^1.1.7, which had no override and
+      # was sitting on 1.1.18. Both are patch bumps inside their majors; the
+      # upper bounds matter, because an unbounded >=1.1.21 resolves a
+      # CommonJS consumer onto brace-expansion 5.x.
       audit_allowlist: >-
         GHSA-w3rx-r6r6-pgpr GHSA-5p2g-fcmc-qvqq
     secrets:

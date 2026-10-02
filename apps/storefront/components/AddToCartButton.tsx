@@ -9,7 +9,7 @@
 import { useCallback } from "react";
 import Link from "next/link";
 import { useCart } from "./CartProvider";
-import type { CartItemTaxCategory } from "@/lib/cart";
+import { lineKey, type CartItemTaxCategory } from "@/lib/cart";
 
 export interface AddToCartButtonProps {
   productId: string;
@@ -60,9 +60,15 @@ export function AddToCartButton({
   // added" flag: the quantity then survives navigation and matches the
   // cart badge, instead of reverting to "Add to cart" after 1.5s and
   // leaving the shopper unsure whether the click registered.
-  const inCart = items.find(
-    (i) => i.productId === productId && i.variantId === variantId,
-  );
+  // This button carries no personalisation yet (#965 adds the form), so
+  // its line identity is the variant with an empty fingerprint — which is
+  // exactly what lineKey produces for a stored item that has none. The
+  // two keys therefore match, and this control keeps working unchanged.
+  //
+  // When the form does ship, this has to pass the buyer's answers in, or
+  // it will always find the plain line and never the personalised one.
+  const thisLineKey = lineKey({ productId, variantId });
+  const inCart = items.find((i) => lineKey(i) === thisLineKey);
 
   const handleClick = useCallback(() => {
     add({
@@ -138,7 +144,7 @@ export function AddToCartButton({
   // adjust in place instead of clicking "Add to cart" repeatedly and
   // guessing how many they now have.
   if (inCart) {
-    const setQty = (next: number) => updateQty(productId, variantId, next);
+    const setQty = (next: number) => updateQty(thisLineKey, next);
     return (
       <div className="mt-2 flex w-fit items-center gap-3">
         <div className="inline-flex items-center rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/15">

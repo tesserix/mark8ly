@@ -6,6 +6,7 @@
 // subtotal, and a disabled checkout button. Per-store via the
 // CartProvider's slug scoping.
 
+import { lineKey } from "@/lib/cart";
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
@@ -27,16 +28,21 @@ export default function CartPage() {
         ) : (
           <>
             <ul className="mt-8 divide-y divide-[color:var(--storefront-text,var(--ink-900))]/10">
-              {items.map((item) => (
-                <CartRow
-                  key={`${item.productId}-${item.variantId}`}
-                  item={item}
-                  onQtyChange={(qty) =>
-                    updateQty(item.productId, item.variantId, qty)
-                  }
-                  onRemove={() => remove(item.productId, item.variantId)}
-                />
-              ))}
+              {items.map((item) => {
+                // One key for both React's reconciliation and the cart's
+                // own identity (#964). A variant can now appear on several
+                // lines, so the old `productId-variantId` React key would
+                // have collided as soon as personalisation shipped.
+                const key = lineKey(item);
+                return (
+                  <CartRow
+                    key={key}
+                    item={item}
+                    onQtyChange={(qty) => updateQty(key, qty)}
+                    onRemove={() => remove(key)}
+                  />
+                );
+              })}
             </ul>
 
             <footer className="mt-8 border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-6">

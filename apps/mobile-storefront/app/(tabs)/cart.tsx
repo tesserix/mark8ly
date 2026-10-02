@@ -7,7 +7,7 @@ import {
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react-native";
-import { useCartStore, type CartLine } from "@/lib/cart-store";
+import { useCartStore, type CartLine, lineKey } from "@/lib/cart-store";
 import { Button, EmptyState, Hairline, PageHeader, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { formatMoney } from "@/lib/format";
@@ -46,17 +46,23 @@ export default function CartScreen() {
         <>
           <FlatList
             data={lines}
-            keyExtractor={(l) => l.variantId}
+            keyExtractor={(l) => lineKey(l)}
             ItemSeparatorComponent={() => <Hairline inset={theme.spacing.lg} />}
-            renderItem={({ item }) => (
-              <CartRow
-                line={item}
-                currency={currency}
-                onIncrement={() => setQuantity(item.variantId, item.quantity + 1)}
-                onDecrement={() => setQuantity(item.variantId, item.quantity - 1)}
-                onRemove={() => remove(item.variantId)}
-              />
-            )}
+            renderItem={({ item }) => {
+              // One key for the list and for the store (#964). A variant
+              // can appear on several lines once personalisation ships, so
+              // keying either on variantId alone would collide.
+              const key = lineKey(item);
+              return (
+                <CartRow
+                  line={item}
+                  currency={currency}
+                  onIncrement={() => setQuantity(key, item.quantity + 1)}
+                  onDecrement={() => setQuantity(key, item.quantity - 1)}
+                  onRemove={() => remove(key)}
+                />
+              );
+            }}
             contentContainerStyle={styles.list}
           />
 

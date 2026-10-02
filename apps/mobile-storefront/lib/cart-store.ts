@@ -1,7 +1,65 @@
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// The key name is historical. The schema version now lives in the stored
+// payload (see StoredCart) so a shape change can be detected and migrated
+// rather than guessed at from a key name — #964.
 const STORAGE_KEY = "mark8ly_cart_v1";
+
+// Bumped by #964, which made a line's identity its variant PLUS what the
+// buyer filled in. v1 is a bare array of lines, every one of which is a
+// valid v2 line, so the migration keeps carts rather than emptying them.
+const CART_SCHEMA_VERSION = 2;
+
+interface StoredCart {
+  v: number;
+  lines: CartLine[];
+}
+
+/**
+ * A line's identity, as an opaque token. Branded for the reason the web
+ * one is: a raw variantId is also a string, so without the brand every
+ * pre-#964 call site compiles and silently matches nothing.
+ */
+export type CartLineKey = string & { readonly __cartLineKey: unique symbol };
+
+/** One answer the buyer gave to a personalisation field (#962). */
+export interface CartLinePersonalisation {
+  fieldId: string;
+  uploadId?: string;
+  text?: string;
+  optionId?: string;
+  checked?: boolean;
+}
+
+/**
+ * The identity of a cart line.
+ *
+ * This store used to key on variantId alone, which cannot represent two
+ * personalisations of one variant — a mug printed "Asha" and the same mug
+ * printed "Ravi" are one variant and two lines. With no personalisation
+ * the fingerprint is empty and the key reduces to the variant, so nothing
+ * changes for products that ask the buyer for nothing.
+ */
+export function lineKey(
+  line: Pick<CartLine, "productId" | "variantId" | "personalisation">,
+): CartLineKey {
+  const entries = line.personalisation ?? [];
+  const canonical = entries
+    .map((e) => [
+      e.fieldId,
+      e.uploadId ?? "",
+      e.text ?? "",
+      e.optionId ?? "",
+      e.checked === undefined ? "" : String(e.checked),
+    ])
+    .sort((a, b) => (a[0]! < b[0]! ? -1 : a[0]! > b[0]! ? 1 : 0));
+  return JSON.stringify([
+    line.productId,
+    line.variantId,
+    entries.length === 0 ? "" : JSON.stringify(canonical),
+  ]) as CartLineKey;
+}
 
 export interface CartLine {
   productId: string;
@@ -13,6 +71,7 @@ export interface CartLine {
   currencyCode: string;
   imageUrl: string;
   quantity: number;
+  personalisation?: CartLinePersonalisation[];
 }
 
 interface CartState {
@@ -20,8 +79,9 @@ interface CartState {
   hydrated: boolean;
   hydrate: () => Promise<void>;
   add: (line: Omit<CartLine, "quantity">, quantity?: number) => void;
-  setQuantity: (variantId: string, quantity: number) => void;
-  remove: (variantId: string) => void;
+  /** key is lineKey(line) — NOT a variant id. See lineKey (#964). */
+  setQuantity: (key: CartLineKey, quantity: number) => void;
+  remove: (key: CartLineKey) => void;
   clear: () => void;
   itemCount: () => number;
   subtotalAmount: () => number;
@@ -29,7 +89,8 @@ interface CartState {
 
 async function persist(lines: CartLine[]) {
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lines));
+    const payload: StoredCart = { v: CART_SCHEMA_VERSION, lines };
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch {
     // Best-effort persistence — losing the cart on app kill is preferable
     // to crashing the app over a storage error.
@@ -49,8 +110,14 @@ export const useCartStore = create<CartState>((set, get) => ({
     if (get().hydrated) return;
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      const parsed = raw ? (JSON.parse(raw) as CartLine[]) : [];
-      set({ lines: parsed, hydrated: true });
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      // A bare array is v1 and migrates as-is; the envelope is v2.
+      const lines: CartLine[] = Array.isArray(parsed)
+        ? (parsed as CartLine[])
+        : isStoredCart(parsed) && parsed.v <= CART_SCHEMA_VERSION
+          ? parsed.lines
+          : [];
+      set({ lines, hydrated: true });
     } catch {
       set({ hydrated: true });
     }
@@ -58,7 +125,8 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   add: (line, quantity = 1) => {
     const lines = get().lines.slice();
-    const existing = lines.findIndex((l) => l.variantId === line.variantId);
+    const key = lineKey(line);
+    const existing = lines.findIndex((l) => lineKey(l) === key);
     if (existing >= 0) {
       lines[existing] = { ...lines[existing]!, quantity: lines[existing]!.quantity + quantity };
     } else {
@@ -68,16 +136,16 @@ export const useCartStore = create<CartState>((set, get) => ({
     persist(lines);
   },
 
-  setQuantity: (variantId, quantity) => {
+  setQuantity: (key, quantity) => {
     const lines = get().lines
-      .map((l) => (l.variantId === variantId ? { ...l, quantity } : l))
+      .map((l) => (lineKey(l) === key ? { ...l, quantity } : l))
       .filter((l) => l.quantity > 0);
     set({ lines });
     persist(lines);
   },
 
-  remove: (variantId) => {
-    const lines = get().lines.filter((l) => l.variantId !== variantId);
+  remove: (key) => {
+    const lines = get().lines.filter((l) => lineKey(l) !== key);
     set({ lines });
     persist(lines);
   },
@@ -91,3 +159,9 @@ export const useCartStore = create<CartState>((set, get) => ({
   subtotalAmount: () =>
     get().lines.reduce((sum, l) => sum + l.quantity * Number(l.unitPriceAmount), 0),
 }));
+
+function isStoredCart(value: unknown): value is StoredCart {
+  if (typeof value !== "object" || value === null) return false;
+  const c = value as Record<string, unknown>;
+  return typeof c.v === "number" && Array.isArray(c.lines);
+}

@@ -1311,7 +1311,11 @@ func main() {
 		// bug and is fatal: degrading to a 501 here would present a broken
 		// deployment as a deliberate "not implemented", which is exactly the
 		// misreading this action was added to remove.
-		customerEraser, err = newCustomerEraser(conn, log)
+		// The uploader doubles as the object deleter when it is the real
+		// GCS one; the fake implements Deleter too, so dev wiring is
+		// identical and a test can assert on it.
+		blobDeleter, _ := uploader.(media.Deleter)
+		customerEraser, err = newCustomerEraser(conn, log, blobDeleter, cfg.GCSBucket)
 		if err != nil {
 			log.Error("marketplace-api: customer erasure executor could not be built", "err", err)
 			os.Exit(1)

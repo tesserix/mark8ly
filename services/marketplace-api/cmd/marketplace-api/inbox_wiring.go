@@ -8,6 +8,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/customererasure"
 	"github.com/mark8ly/marketplace-api/internal/handlers/platformadmin"
 	"github.com/mark8ly/marketplace-api/internal/inbox"
+	"github.com/mark8ly/marketplace-api/internal/media"
 )
 
 // newInboxAggregator assembles the GET /admin/inbox aggregator (#280) from
@@ -105,13 +106,25 @@ func inboxActionExecutors(
 // The error from NewExecutor is not swallowed into a nil: a nil db is a
 // WIRING bug, and this returning nil silently would turn it into a 501 that
 // reads as a deliberate product decision rather than a broken deployment.
-func newCustomerEraser(db *gorm.DB, logger *slog.Logger) (platformadmin.CustomerEraser, error) {
+// blobs + bucket wire object deletion (#961). Both may be zero: a
+// deployment with no real bucket has no objects to destroy, and the
+// receipt then reports every referenced object as skipped rather than
+// claiming it was deleted.
+func newCustomerEraser(
+	db *gorm.DB,
+	logger *slog.Logger,
+	blobs media.Deleter,
+	bucket string,
+) (platformadmin.CustomerEraser, error) {
 	if db == nil {
 		return nil, nil
 	}
 	eraser, err := customererasure.NewExecutor(db, logger)
 	if err != nil {
 		return nil, err
+	}
+	if blobs != nil && bucket != "" {
+		eraser = eraser.WithBlobDeleter(blobs, bucket)
 	}
 	return eraser, nil
 }

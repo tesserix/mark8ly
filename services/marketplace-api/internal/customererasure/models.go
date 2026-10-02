@@ -76,8 +76,14 @@ type Receipt struct {
 	// and so needed no statement.
 	RetainedTables []string `json:"retained_tables"`
 	// RetentionBasis records WHY they survive, next to the fact that they do.
-	RetentionBasis string    `json:"retention_basis"`
-	CompletedAt    time.Time `json:"completed_at"`
+	RetentionBasis string `json:"retention_basis"`
+	// Blobs is the object half: the GCS objects the deleted rows pointed
+	// at (#961). Before that issue an erasure destroyed the row and left
+	// the customer's photograph in a public bucket, and the receipt had
+	// no way to say so. See blobs.go for why a failure here does not fail
+	// the erasure.
+	Blobs       BlobOutcome `json:"blobs"`
+	CompletedAt time.Time   `json:"completed_at"`
 }
 
 // RetentionBasis is the justification recorded in every receipt, and the same

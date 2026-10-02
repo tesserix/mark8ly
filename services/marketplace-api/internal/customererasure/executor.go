@@ -13,6 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
+	"github.com/mark8ly/marketplace-api/internal/media"
+
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
 
@@ -53,6 +55,11 @@ func newStepError(step Step, err error) *StepError {
 type Executor struct {
 	db     *gorm.DB
 	logger *slog.Logger
+	// blobs + blobBucket are optional and wired by WithBlobDeleter. Nil
+	// means rows only — the pre-#961 behaviour — and every referenced
+	// object is reported as skipped in the receipt rather than ignored.
+	blobs      media.Deleter
+	blobBucket string
 }
 
 // NewExecutor refuses a nil db at construction rather than deferring the
@@ -175,12 +182,24 @@ func (e *Executor) run(ctx context.Context, req Request) (Receipt, error) {
 		RetentionBasis: RetentionBasis,
 	}
 
+	// Collected inside the transaction and consumed after it commits. The
+	// rows are the only record of which objects they named, so this read
+	// has to happen before the delete statements run.
+	var blobURLs []string
+
 	err := subscription.WithAdvisoryLock(ctx, e.db, req.StoreID, func(tx *gorm.DB) error {
 		// Reset per attempt: WithAdvisoryLock's transaction can be retried by
 		// a caller, and counts accumulated across attempts would overstate
 		// what was destroyed.
 		clear(receipt.Deleted)
 		clear(receipt.Anonymised)
+		blobURLs = nil
+
+		urls, cErr := collectBlobURLs(ctx, tx, req.StoreID, req.CustomerEmail)
+		if cErr != nil {
+			return cErr
+		}
+		blobURLs = urls
 
 		for _, step := range steps {
 			res := tx.Exec(step.SQL, step.Args...)
@@ -213,6 +232,15 @@ func (e *Executor) run(ctx context.Context, req Request) (Receipt, error) {
 	})
 	if err != nil {
 		return Receipt{}, err
+	}
+
+	// Objects AFTER the rows, and after the commit. See blobs.go: the
+	// reverse order risks destroying an object for an erasure that then
+	// rolls back, and a failure here must not re-open a completed request.
+	receipt.Blobs = e.reapBlobs(ctx, blobURLs)
+	logBlobOutcome(e.logger, req.ID, receipt.Blobs)
+	if receipt.Blobs != (BlobOutcome{}) {
+		e.amendReceiptWithBlobs(ctx, req.ID, receipt)
 	}
 
 	// Counts and table names only — never the subject's address.

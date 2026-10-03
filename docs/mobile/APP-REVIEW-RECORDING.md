@@ -121,9 +121,23 @@ out without saving.
 
 **6. Notifications permission (2:00)**
 
-Bottom tab → **More** → **Settings** → **Notifications**. Toggle push
-notifications on. **iOS prompts for notification permission here** — not at
-launch, which is why it has to be reached deliberately. Allow it.
+Bottom tab → **More** → **Notification settings**. One tap, not two: there is
+no "Settings" entry in the More menu — the items are Branding, Team, Tickets,
+Audit log, Notification settings, Marketing, Notifications, Account, Tesserix
+Support, Legal. Settings were flattened up a level and never had a hub.
+
+Toggle push notifications on.
+
+**What happens depends on whether permission was ever denied.** On a device
+that has never been asked, iOS shows its permission dialog — that is the one
+prompt this app raises, and the one Apple asked to see. On a device that has
+already denied it, iOS will never show that dialog again: the app can only
+say "Notifications are turned off" and offer *Open Settings*, which deep-links
+to iOS Settings › Mark8ly Admin › Allow Notifications.
+
+Both are correct app behaviour and both demonstrate the permission. Only a
+fresh install produces the system dialog, so record on one if you want that
+specific frame.
 
 **7. Reviews — user-generated content and moderation (2:20)**
 

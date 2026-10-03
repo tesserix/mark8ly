@@ -193,8 +193,30 @@ func (h *StorefrontHandler) GetByHandle(c *gin.Context) {
 		return
 	}
 	refs := resolveStorefrontCategoryRefs(agg, catByID)
+
+	resp := ToStorefrontProductResponse(agg, refs)
+
+	// Personalisation fields, detail-only (#965). Loaded separately
+	// because they are deliberately not part of product.Aggregate — see
+	// internal/product/models_personalisation.go — and because a listing
+	// must not pay for them.
+	//
+	// A failure here does NOT fail the page. A product whose fields could
+	// not be read still sells as a plain product; refusing to render it
+	// would turn a read error on an optional section into a dead product
+	// page. The buyer simply sees no form, and the error is logged.
+	fields, fErr := h.productRepo.ListPersonalisationFields(
+		c.Request.Context(), agg.Product.ID, store.ID, agg.Product.TenantID)
+	if fErr != nil {
+		h.logger.ErrorContext(c.Request.Context(),
+			"storefront: personalisation fields unreadable; rendering product without them",
+			"product_id", agg.Product.ID, "err", fErr)
+	} else {
+		resp.Personalisation = ToStorefrontPersonalisationFields(fields)
+	}
+
 	setCacheHeaders(c, store, watermark)
-	c.JSON(http.StatusOK, ToStorefrontProductResponse(agg, refs))
+	c.JSON(http.StatusOK, resp)
 }
 
 // storeCategoryMap loads all active categories for the store into an

@@ -3,6 +3,7 @@ package order
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -176,6 +177,21 @@ func (s *ReturnService) Request(ctx context.Context, in RequestInput) (*Return, 
 	for _, oi := range orderItems {
 		byID[oi.ID] = oi
 	}
+	// Personalised lines are not self-serve returnable (#967).
+	//
+	// Nobody resells a mug with a stranger's child on it, so a made-to-
+	// order line has no resale value and the usual "send it back" economics
+	// do not apply. The merchant can still refund manually — this blocks
+	// only the customer-initiated path, which is the one that promises a
+	// refund the merchant may not want to give.
+	//
+	// Queried in one statement rather than per item: a return of eight
+	// lines should not be eight round trips.
+	personalisedItems, err := s.personalisedOrderItemIDs(ctx, in.OrderID)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	for _, ri := range in.Items {
 		oi, ok := byID[ri.OrderItemID]
 		if !ok {
@@ -183,6 +199,11 @@ func (s *ReturnService) Request(ctx context.Context, in RequestInput) (*Return, 
 		}
 		if ri.Quantity > oi.Quantity {
 			return nil, nil, apperrors.ReturnItemsExceedOrdered(oi.SKUSnapshot, ri.Quantity, oi.Quantity)
+		}
+		if _, personalised := personalisedItems[ri.OrderItemID]; personalised {
+			return nil, nil, apperrors.ValidationFailed("items",
+				"personalised items can't be returned through your account — "+
+					"contact the store and they'll help.")
 		}
 	}
 
@@ -424,4 +445,31 @@ func derefString(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// personalisedOrderItemIDs returns the order's lines that carry buyer
+// personalisation.
+//
+// A missing table is NOT an error here, and that is deliberate: this runs
+// on every return request, and a schema that predates #967 must not make
+// returns fail. An empty set means nothing is personalised, which is the
+// correct answer for an order placed before the feature existed.
+func (s *ReturnService) personalisedOrderItemIDs(
+	ctx context.Context, orderID uuid.UUID,
+) (map[uuid.UUID]struct{}, error) {
+	var ids []uuid.UUID
+	err := s.db.WithContext(ctx).
+		Table("order_item_personalisations AS p").
+		Distinct("p.order_item_id").
+		Joins("JOIN order_items AS i ON i.id = p.order_item_id").
+		Where("i.order_id = ?", orderID).
+		Pluck("p.order_item_id", &ids).Error
+	if err != nil {
+		return nil, fmt.Errorf("order: load personalised items: %w", err)
+	}
+	out := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		out[id] = struct{}{}
+	}
+	return out, nil
 }

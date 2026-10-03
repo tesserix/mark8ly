@@ -135,6 +135,47 @@ func erasurePlan(storeID uuid.UUID, email string, token string) []Step {
 		// ---- Group 1: DELETE. Rows that exist only to serve the customer.
 		// Children before parents.
 		{
+			// Pre-order artwork the subject uploaded but never bought
+			// with. Cart-scoped, so it carries no customer column and the
+			// coverage guard does not flag it — but an order's items DO
+			// name the uploads that became them, which is the only route
+			// from a person to their unclaimed work.
+			//
+			// ORDER MATTERS: this reads through order_item_personalisations
+			// to link a cart to a person, so it must run BEFORE the step
+			// below deletes those rows. An earlier draft had them the
+			// other way round and this one silently matched nothing.
+			Table:       "personalisation_uploads", // 000140
+			Disposition: DispositionDelete,
+			SQL: `DELETE FROM personalisation_uploads
+			       WHERE store_id = ? AND cart_token IN (
+			         SELECT DISTINCT u.cart_token FROM personalisation_uploads u
+			          JOIN order_item_personalisations oip
+			            ON oip.storage_key_original = u.storage_key_original
+			          JOIN order_items oi ON oi.id = oip.order_item_id
+			          WHERE oi.order_id IN (` + subjectOrders + `))`,
+			Args: []any{storeID, storeID, email},
+		},
+		{
+			// The buyer's own artwork, attached to their orders (#967).
+			//
+			// DELETED, not anonymised, for the same reason review_media
+			// is: a photograph is not aggregate-bearing, and it is very
+			// often a picture of a person. The order line survives — its
+			// money, title and SKU snapshots are the financial record —
+			// but what the buyer uploaded and typed goes.
+			//
+			// MUST run before the orders anonymisation, like every other
+			// step that locates rows through subjectOrders: afterwards
+			// the email is gone and these become unreachable.
+			Table:       "order_item_personalisations", // 000141
+			Disposition: DispositionDelete,
+			SQL: `DELETE FROM order_item_personalisations
+			       WHERE order_item_id IN (
+			         SELECT id FROM order_items WHERE order_id IN (` + subjectOrders + `))`,
+			Args: []any{storeID, email},
+		},
+		{
 			Table:       "review_reactions", // 000017
 			Disposition: DispositionDelete,
 			SQL:         `DELETE FROM review_reactions WHERE customer_profile_id IN (` + profileIDs + `)`,

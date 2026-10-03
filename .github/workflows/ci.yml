@@ -129,6 +129,24 @@ jobs:
       #
       # Drop this id the moment node-forge publishes 1.4.1 or later.
       #
+      # GHSA-vfj7-8cjw-p6xm joins them on the SAME criterion, published
+      # 2026-10-03 and red on main within hours, on an unchanged lockfile.
+      # Reported against a dozen jest and @react-native/* packages, but the
+      # vulnerable package is braces (stack exhaustion through deeply
+      # nested patterns), reached once:
+      #   apps/mobile-admin -> tailwindcss
+      #     -> chokidar / micromatch -> braces
+      # tailwind's file watcher and glob matcher, at build time. In no
+      # deployed service image and in no app binary; nothing in production
+      # feeds either one an untrusted glob.
+      #
+      # Nothing to upgrade to, verified rather than assumed: the advisory
+      # covers braces <= 3.0.3 with first patched version NONE, and 3.0.3
+      # IS the latest release. There is exactly one instance in the tree
+      # and it is already on it.
+      #
+      # Drop this id the moment braces publishes 3.0.4 or later.
+      #
       # The six ids that used to sit here alongside image-size were the
       # 2026-09-08 batch tracked by #864. They are gone rather than
       # allowlisted: #867/#868 patched them, and #869 regenerated the
@@ -146,7 +164,7 @@ jobs:
       # upper bounds matter, because an unbounded >=1.1.21 resolves a
       # CommonJS consumer onto brace-expansion 5.x.
       audit_allowlist: >-
-        GHSA-w3rx-r6r6-pgpr GHSA-5p2g-fcmc-qvqq GHSA-86w9-cpqp-85rv
+        GHSA-w3rx-r6r6-pgpr GHSA-5p2g-fcmc-qvqq GHSA-86w9-cpqp-85rv GHSA-vfj7-8cjw-p6xm
     secrets:
       package_read_token: ${{ secrets.GHCR_PAT }}
 

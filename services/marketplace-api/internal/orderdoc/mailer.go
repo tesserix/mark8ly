@@ -123,8 +123,30 @@ type DocumentInput struct {
 	// unattended noreply box. Empty falls back to the platform address.
 	StoreContactEmail string
 
+	// Personalisation echoes back what the buyer filled in (#968).
+	//
+	// On the confirmation email specifically, because this is the last
+	// moment a typo is cheap: once the merchant has engraved "Ashar"
+	// the mistake is a refund, and the buyer is the only person who can
+	// spot it. Empty for every order that asked for nothing.
+	Personalisation []PersonalisationLine
+
 	// Brand surface
 	Theme Theme
+}
+
+// PersonalisationLine is one buyer answer as it reads in an email.
+//
+// Already flattened to strings by the Service — templates do no
+// formatting, and an upload is described rather than linked: a signed
+// URL in an inbox outlives its own expiry and is not ours to forward.
+type PersonalisationLine struct {
+	// Item is the product title, repeated per answer so a template can
+	// render a flat list without nesting ranges.
+	Item  string
+	Label string
+	// Value is the buyer's text, or a description of the file they sent.
+	Value string
 }
 
 // Theme is the subset of store branding rendered in the email chrome.
@@ -230,6 +252,11 @@ type renderData struct {
 	// admin "Email to customer" resend flow supplies a non-empty
 	// message. Empty string suppresses the block.
 	AdminNote string
+
+	// Personalisation echoes the buyer's own answers back at them (#968).
+	// Nil suppresses the block. Passed through unformatted — the Service
+	// has already flattened it to strings.
+	Personalisation []PersonalisationLine
 
 	// Cancellation rendering
 	CancellationReason string
@@ -388,6 +415,7 @@ func buildRenderData(kind Kind, in DocumentInput, hasAttachment bool) renderData
 		ItemCount:          in.ItemCount,
 		HasAttachment:      hasAttachment,
 		AdminNote:          in.AdminNote,
+		Personalisation:    in.Personalisation,
 		CancellationReason: in.CancellationReason,
 		RefundAmount:       in.RefundAmount.StringFixed(2),
 		TotalRefunded:      in.TotalRefunded.StringFixed(2),

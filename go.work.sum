@@ -486,6 +486,7 @@ cloud.google.com/go/filestore v1.10.2/go.mod h1:w0Pr8uQeSRQfCPRsL0sYKW6NKyooRgix
 cloud.google.com/go/filestore v1.10.3 h1:3KZifUVTqGhNNv6MLeONYth1HjlVM4vDhaH+xrdPljU=
 cloud.google.com/go/filestore v1.10.3/go.mod h1:94ZGyLTx9j+aWKozPQ6Wbq1DuImie/L/HIdGMshtwac=
 cloud.google.com/go/firestore v1.9.0/go.mod h1:HMkjKHNTtRyZNiMzu7YAsLr9K3X2udY2AMwDaMEQiiE=
+cloud.google.com/go/firestore v1.21.0/go.mod h1:1xH6HNcnkf/gGyR8udd6pFO4Z7GWJSwLKQMx/u6UrP4=
 cloud.google.com/go/functions v1.6.0/go.mod h1:3H1UA3qiIPRWD7PeZKLvHZ9SaQhR26XIJcC0A5GbvAk=
 cloud.google.com/go/functions v1.7.0/go.mod h1:+d+QBcWM+RsrgZfV9xo6KfA1GlzJfxcfZcRPEhDDfzg=
 cloud.google.com/go/functions v1.8.0/go.mod h1:RTZ4/HsQjIqIYP9a9YPbU+QFoQsAlYgrwOXJWHn1POY=

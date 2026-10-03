@@ -360,6 +360,53 @@ func main() {
 	// siblings inside main (#961).
 	var purgeReaper *blobreap.Reaper
 
+	// Same reason as purgeReaper: the buyer WRITE side (storefront) and
+	// the merchant READ side (admin) are sibling blocks inside main, and
+	// both must sign against the same private bucket with the same signer
+	// (#968). Nil when MARKETPLACE_PRIVATE_GCS_BUCKET is unset.
+	var privateArtworkUploader media.Uploader
+
+	// Buyer artwork lives in a SEPARATE, PRIVATE bucket (#960/#963).
+	//
+	// This deliberately does NOT reuse `uploader`. That one writes to
+	// MARKETPLACE_GCS_BUCKET, whose objects are served from
+	// storage.googleapis.com and are public-read — correct for product
+	// photos, catastrophic for a photograph a buyer uploaded. Falling
+	// back to it would publish exactly the thing the separate bucket
+	// exists to protect, so there is no fallback: no private bucket,
+	// no uploads and no downloads.
+	//
+	// Constructed here, well above both consumers, because the buyer
+	// WRITE side (storefront, #963) and the merchant READ side (admin,
+	// #968) must sign against the same bucket with the same signer. Two
+	// constructions would be two chances to diverge.
+	if cfg.PrivateGCSBucket != "" {
+		if cfg.PrivateGCSBucket == cfg.GCSBucket {
+			log.Error("personalisation uploads: MARKETPLACE_PRIVATE_GCS_BUCKET must not be the public media bucket",
+				"bucket", cfg.PrivateGCSBucket)
+			os.Exit(1)
+		}
+		privCtx, privCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		privClient, pErr := storage.NewClient(privCtx)
+		privCancel()
+		if pErr != nil {
+			log.Error("personalisation uploads: private gcs client", "err", pErr)
+			os.Exit(1)
+		}
+		privateArtworkUploader = media.NewGCSUploader(privClient, cfg.PrivateGCSBucket)
+		if cfg.GCSSignerSAEmail != "" {
+			signCtx, signCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			signed, sErr := media.NewGCSUploaderWithIAMSigner(
+				signCtx, privClient, cfg.PrivateGCSBucket, cfg.GCSSignerSAEmail)
+			signCancel()
+			if sErr != nil {
+				log.Error("personalisation uploads: private gcs iam signer", "err", sErr)
+				os.Exit(1)
+			}
+			privateArtworkUploader = signed
+		}
+	}
+
 	// Journal "coming soon" page email capture (#153). Built here,
 	// unconditionally, rather than inside the admin-only wiring block
 	// below: unlike delhiveryWebhookHandler it has no admin-specific
@@ -874,6 +921,26 @@ func main() {
 		variantHandler := admin.NewVariantHandler(productSvc, log)
 		mediaHandler := admin.NewMediaHandler(productSvc, uploader, log)
 		personalisationHandler := admin.NewPersonalisationHandler(productSvc, log)
+
+		// Merchant access to buyer artwork on an order (#968).
+		//
+		// Nil unless the private bucket is configured AND its uploader can
+		// sign reads. The type assertion is not defensive noise: the fake
+		// uploader used by `make dev` does not sign, and handing the
+		// handler a signer-less uploader would make it 500 on every
+		// download instead of returning the honest 501 the nil path gives.
+		var orderPersonalisationHandler *admin.OrderPersonalisationHandler
+		if privateArtworkUploader != nil {
+			if signer, ok := privateArtworkUploader.(media.SignedReadURLGenerator); ok {
+				orderPersonalisationHandler = admin.
+					NewOrderPersonalisationHandler(conn, signer, log).
+					WithAudit(auditEmitter)
+				log.Info("order artwork: merchant downloads enabled",
+					"bucket", cfg.PrivateGCSBucket)
+			} else {
+				log.Warn("order artwork: private uploader cannot sign reads — merchant downloads disabled")
+			}
+		}
 
 		// Orders slice 1 wiring (M2/M4).
 		orderRepo := order.NewRepository()
@@ -1545,63 +1612,64 @@ func main() {
 		ssoLoginHandler = ssoLogin
 
 		adminDeps = admin.Deps{
-			BreakGlassLoginHandler:   breakGlassLoginHandler,
-			SSOConfigHandler:         ssoConfigHandler,
-			TenantGate:               adminTenantGateHandler,
-			ProductHandler:           productHandler,
-			CategoryHandler:          categoryHandler,
-			VariantHandler:           variantHandler,
-			MediaHandler:             mediaHandler,
-			PersonalisationHandler:   personalisationHandler,
-			OrdersHandler:            ordersHandler,
-			ReturnsHandler:           returnsHandler,
-			AbandonedCartsHandler:    abandonedCartsHandler,
-			StoresHandler:            storesHandler,
-			BulkHandler:              bulkHandler,
-			CSVImportsHandler:        csvImportsHandler,
-			PaymentSettingsHandler:   paymentSettingsHandler,
-			ShippingSettingsHandler:  shippingSettingsHandler,
-			WarehousesHandler:        admin.NewWarehousesHandler(conn, log),
-			ShipmentsHandler:         shipmentsHandler,
-			TaxSettingsHandler:       taxSettingsHandler,
-			SettingsMetaHandler:      settingsMetaHandler,
-			CouponHandler:            couponHandler,
-			GiftCardHandler:          giftCardHandler,
-			LoyaltyHandler:           loyaltyHandler,
-			CampaignHandler:          campaignHandler,
-			SegmentHandler:           segmentHandler,
-			CustomersHandler:         customersHandler,
-			ReviewsHandler:           reviewsHandler,
-			AccountHandler:           accountHandler,
-			DomainsHandler:           domainsHandler,
-			SubscriptionHandler:      subscriptionHandler,
-			PromoHandler:             promoHandler,
-			RefundHandler:            refundHandler,
-			ChangePlanHandler:        changePlanHandler,
-			CancelHandler:            cancelHandler,
-			TrialBillingHandler:      trialBillingHandler,
-			BillingWritesEnabled:     cfg.BillingWritesEnabled,
-			MigrationFastPathHandler: migrationHandler,
-			TaxHandler:               taxHandler,
-			APIKeysHandler:           apiKeysHandler,
-			APIKeysLogger:            log,
-			AppCredentialsHandler:    appCredentialsHandler,
-			AppAddOnHandler:          appAddOnHandler,
-			AuditLogsHandler:         auditLogsHandler,
-			NotificationsHandler:     notificationsHandler,
-			DashboardHandler:         dashboardHandler,
-			SetupProgressHandler:     setupProgressHandler,
-			TicketsHandler:           ticketsHandler,
-			BrandingHandler:          brandingHandler,
-			PagesHandler:             pagesHandler,
-			WebhooksHandler:          webhooksHandler,
-			PlanResolver:             planResolver,
-			StoresMiddleware:         storeMW,
-			SubscriptionStatusLoader: readonly.LoadStatus(readonly.StatusLoaderConfig{DB: conn, Repo: subscriptionRepo, Logger: log}),
-			SubscriptionReadOnlyGate: readonly.RequireActive(readonly.Config{}),
-			AuthzMiddleware:          authzMW,
-			InternalSecret:           cfg.InternalAuthSecret,
-			AuditIngestSecret:        cfg.AuditIngestSecret,
+			BreakGlassLoginHandler:      breakGlassLoginHandler,
+			SSOConfigHandler:            ssoConfigHandler,
+			TenantGate:                  adminTenantGateHandler,
+			ProductHandler:              productHandler,
+			CategoryHandler:             categoryHandler,
+			VariantHandler:              variantHandler,
+			MediaHandler:                mediaHandler,
+			PersonalisationHandler:      personalisationHandler,
+			OrdersHandler:               ordersHandler,
+			ReturnsHandler:              returnsHandler,
+			AbandonedCartsHandler:       abandonedCartsHandler,
+			StoresHandler:               storesHandler,
+			BulkHandler:                 bulkHandler,
+			CSVImportsHandler:           csvImportsHandler,
+			PaymentSettingsHandler:      paymentSettingsHandler,
+			ShippingSettingsHandler:     shippingSettingsHandler,
+			WarehousesHandler:           admin.NewWarehousesHandler(conn, log),
+			ShipmentsHandler:            shipmentsHandler,
+			OrderPersonalisationHandler: orderPersonalisationHandler,
+			TaxSettingsHandler:          taxSettingsHandler,
+			SettingsMetaHandler:         settingsMetaHandler,
+			CouponHandler:               couponHandler,
+			GiftCardHandler:             giftCardHandler,
+			LoyaltyHandler:              loyaltyHandler,
+			CampaignHandler:             campaignHandler,
+			SegmentHandler:              segmentHandler,
+			CustomersHandler:            customersHandler,
+			ReviewsHandler:              reviewsHandler,
+			AccountHandler:              accountHandler,
+			DomainsHandler:              domainsHandler,
+			SubscriptionHandler:         subscriptionHandler,
+			PromoHandler:                promoHandler,
+			RefundHandler:               refundHandler,
+			ChangePlanHandler:           changePlanHandler,
+			CancelHandler:               cancelHandler,
+			TrialBillingHandler:         trialBillingHandler,
+			BillingWritesEnabled:        cfg.BillingWritesEnabled,
+			MigrationFastPathHandler:    migrationHandler,
+			TaxHandler:                  taxHandler,
+			APIKeysHandler:              apiKeysHandler,
+			APIKeysLogger:               log,
+			AppCredentialsHandler:       appCredentialsHandler,
+			AppAddOnHandler:             appAddOnHandler,
+			AuditLogsHandler:            auditLogsHandler,
+			NotificationsHandler:        notificationsHandler,
+			DashboardHandler:            dashboardHandler,
+			SetupProgressHandler:        setupProgressHandler,
+			TicketsHandler:              ticketsHandler,
+			BrandingHandler:             brandingHandler,
+			PagesHandler:                pagesHandler,
+			WebhooksHandler:             webhooksHandler,
+			PlanResolver:                planResolver,
+			StoresMiddleware:            storeMW,
+			SubscriptionStatusLoader:    readonly.LoadStatus(readonly.StatusLoaderConfig{DB: conn, Repo: subscriptionRepo, Logger: log}),
+			SubscriptionReadOnlyGate:    readonly.RequireActive(readonly.Config{}),
+			AuthzMiddleware:             authzMW,
+			InternalSecret:              cfg.InternalAuthSecret,
+			AuditIngestSecret:           cfg.AuditIngestSecret,
 		}
 	}
 
@@ -1886,46 +1954,16 @@ func main() {
 		customerPortalHandler := customerportal.NewHandler(conn, log)
 
 		// Buyer artwork (#963). Nil unless a PRIVATE bucket is configured,
-		// and nil means the routes are never registered.
-		//
-		// This deliberately does NOT reuse `uploader`. That one writes to
-		// MARKETPLACE_GCS_BUCKET, whose objects are served from
-		// storage.googleapis.com and are public-read — correct for product
-		// photos, catastrophic for a photograph a buyer uploaded. Falling
-		// back to it would publish exactly the thing the separate bucket
-		// exists to protect, so there is no fallback: no private bucket,
-		// no uploads. See #960.
+		// and nil means the routes are never registered. See the
+		// privateArtworkUploader block above for why there is no fallback
+		// to the public media bucket.
 		var personalisationUploadsHandler *storefront.PersonalisationUploadsHandler
-		if cfg.PrivateGCSBucket != "" {
-			if cfg.PrivateGCSBucket == cfg.GCSBucket {
-				log.Error("personalisation uploads: MARKETPLACE_PRIVATE_GCS_BUCKET must not be the public media bucket",
-					"bucket", cfg.PrivateGCSBucket)
-				os.Exit(1)
-			}
-			privCtx, privCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			privClient, pErr := storage.NewClient(privCtx)
-			privCancel()
-			if pErr != nil {
-				log.Error("personalisation uploads: private gcs client", "err", pErr)
-				os.Exit(1)
-			}
-			var privUploader media.Uploader = media.NewGCSUploader(privClient, cfg.PrivateGCSBucket)
-			if cfg.GCSSignerSAEmail != "" {
-				signCtx, signCancel := context.WithTimeout(context.Background(), 5*time.Second)
-				signed, sErr := media.NewGCSUploaderWithIAMSigner(
-					signCtx, privClient, cfg.PrivateGCSBucket, cfg.GCSSignerSAEmail)
-				signCancel()
-				if sErr != nil {
-					log.Error("personalisation uploads: private gcs iam signer", "err", sErr)
-					os.Exit(1)
-				}
-				privUploader = signed
-			}
+		if privateArtworkUploader != nil {
 			uploadSvc := personalisationupload.NewService(personalisationupload.Config{
 				DB:       conn,
 				Repo:     personalisationupload.NewRepository(conn),
 				Products: product.NewRepository(conn),
-				Uploader: privUploader,
+				Uploader: privateArtworkUploader,
 				Bucket:   cfg.PrivateGCSBucket,
 				Logger:   log,
 			})

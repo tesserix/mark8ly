@@ -1009,6 +1009,45 @@ export type PaymentStatus =
   | "partially_refunded";
 export type FulfillmentStatus = "unfulfilled" | "partial" | "fulfilled";
 
+/**
+ * One thing the buyer filled in for a line (#968).
+ *
+ * No storage key: artwork is fetched through the audited download
+ * endpoint, never by addressing the object directly. `has_artwork` tells
+ * the UI whether a download button belongs on this row.
+ */
+export interface AdminOrderPersonalisation {
+  id: string;
+  field_key: string;
+  field_label: string;
+  kind: string; // "image" | "text" | "textarea" | "select" | "checkbox"
+  text_value?: string;
+  price_delta: string;
+  position: number;
+  has_artwork: boolean;
+  original_filename?: string;
+  content_type?: string;
+  size_bytes?: number;
+  /** Short code shared with the printed document, so paper matches file. */
+  reference: string;
+}
+
+/** A signed link to one buyer-supplied original (#968). */
+export interface AdminArtworkLink {
+  personalisation_id: string;
+  reference: string;
+  filename: string;
+  url: string;
+  expires_at: string;
+  /**
+   * The buyer's crop rectangle in ORIGINAL pixels, returned alongside the
+   * uncropped original rather than applied to it — the merchant's own
+   * tooling crops at full resolution. Printing the preview ships a blurry
+   * product.
+   */
+  crop?: { x: number; y: number; width: number; height: number };
+}
+
 export interface AdminOrderItem {
   id: string;
   product_id?: string;
@@ -1020,6 +1059,8 @@ export interface AdminOrderItem {
   quantity: number;
   line_total: string;
   currency_code: string;
+  /** Absent on every ordinary line, which is most of them (#968). */
+  personalisation?: AdminOrderPersonalisation[];
 }
 
 export interface AdminOrderAddress {
@@ -1167,6 +1208,48 @@ export async function getOrder(
     );
   }
   return (await res.json()) as AdminOrder;
+}
+
+/**
+ * Mint a short-lived signed link to one buyer-supplied original (#968).
+ *
+ * Not cached, and the link is not stored: it expires in minutes by
+ * design, so a cached one is a broken one. Every call writes an audit
+ * row server-side — fetch it when the merchant asks, not on page load.
+ */
+export async function getArtworkLink(
+  storeId: string,
+  orderId: string,
+  personalisationId: string,
+  session: SessionHeaders,
+): Promise<AdminArtworkLink | null> {
+  const url =
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}` +
+    `/personalisations/${personalisationId}/download`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: readHeaders(session),
+  });
+  if (!res.ok) return null;
+  return (await res.json()) as AdminArtworkLink;
+}
+
+/** Every original on the order, for a merchant batching a morning's work. */
+export async function getAllArtworkLinks(
+  storeId: string,
+  orderId: string,
+  session: SessionHeaders,
+): Promise<AdminArtworkLink[] | null> {
+  const url =
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}` +
+    `/personalisations/download`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: readHeaders(session),
+  });
+  if (!res.ok) return null;
+  const body = (await res.json()) as { artwork?: AdminArtworkLink[] };
+  return body.artwork ?? [];
 }
 
 // ─────────────────────────────────────────────────────────────────────────

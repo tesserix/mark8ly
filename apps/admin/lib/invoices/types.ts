@@ -2,12 +2,32 @@
 // Decoupled from the AdminOrder / Order wire types so the same generator
 // works from either app (admin or storefront).
 
+/**
+ * One buyer answer, as it appears on a printed document (#968).
+ *
+ * `reference` is set for uploads instead of a value: a sheet of paper
+ * cannot carry a photograph, but it can carry the short code that the
+ * merchant matches against the downloaded file.
+ */
+export interface DocumentPersonalisation {
+  label: string;
+  value?: string;
+  reference?: string;
+}
+
 export interface DocumentLine {
   description: string;
   sku?: string;
   quantity: number;
   unit_price: string;
   line_total: string;
+  /**
+   * What the buyer filled in (#968). Printed under the line because this
+   * document travels with the goods — it is the production brief for
+   * whoever packs the box, and an engraving spelled from memory is an
+   * engraving spelled wrong.
+   */
+  personalisation?: DocumentPersonalisation[];
 }
 
 export interface DocumentAddress {

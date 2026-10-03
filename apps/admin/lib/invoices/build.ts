@@ -76,6 +76,17 @@ function finalize(
       quantity: it.quantity,
       unit_price: it.unit_price,
       line_total: it.line_total,
+      personalisation: (it.personalisation ?? [])
+        .slice()
+        .sort((a, b) => a.position - b.position)
+        .map((pz) => ({
+          label: pz.field_label,
+          // Uploads print their reference code, not a filename: the
+          // merchant matches the code against the downloaded file, and a
+          // buyer's filename ("IMG_4821.jpg") identifies nothing.
+          value: pz.has_artwork ? undefined : (pz.text_value ?? undefined),
+          reference: pz.has_artwork ? pz.reference : undefined,
+        })),
     })),
     totals: {
       subtotal: order.subtotal,

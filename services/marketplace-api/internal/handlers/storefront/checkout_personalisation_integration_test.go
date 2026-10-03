@@ -30,9 +30,14 @@ func seedPersonalisedProduct(t *testing.T, db *gorm.DB, tenantID, storeID string
 	t.Helper()
 	ids = map[string]string{}
 	productID = uuid.NewString()
+	// published_at is NOT optional on an active product:
+	// products_published_requires_active (migration 000001) rejects
+	// status='active' with a null published_at. A sellable product is
+	// what these tests are about, so set both rather than dropping to
+	// draft.
 	require.NoError(t, db.Exec(
-		`INSERT INTO products (id, tenant_id, store_id, handle, title, status, vendor_id)
-		 VALUES (?, ?, ?, ?, 'Shirt', 'active', ?)`,
+		`INSERT INTO products (id, tenant_id, store_id, handle, title, status, vendor_id, published_at)
+		 VALUES (?, ?, ?, ?, 'Shirt', 'active', ?, now())`,
 		productID, tenantID, storeID, "shirt-"+productID[:8], uuid.NewString()).Error)
 
 	mk := func(key, kind string, required bool, extra map[string]any) string {

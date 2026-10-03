@@ -78,6 +78,9 @@ type BlobOutcome struct {
 var blobSources = []struct {
 	table string
 	sql   string
+	// binds is how many placeholders the query has, always an even
+	// number of (storeID, email). Zero means the common case, 2.
+	binds int
 }{
 	{
 		table: "review_media",
@@ -85,6 +88,27 @@ var blobSources = []struct {
 		       JOIN reviews r ON r.id = m.review_id
 		      WHERE r.store_id = ? AND r.customer_email = ?
 		        AND m.url IS NOT NULL AND m.url <> ''`,
+	},
+	{
+		// The buyer's artwork on their orders (#967). Lives in the
+		// PRIVATE bucket, so with today's single-bucket reaper every one
+		// of these is reported as skipped rather than destroyed — see
+		// #980. Listed now so that when the second reaper lands these are
+		// already covered, and so the receipt states plainly that a
+		// photograph was left behind rather than implying there was none.
+		table: "order_item_personalisations",
+		sql: `SELECT p.storage_key_original FROM order_item_personalisations p
+		       JOIN order_items i ON i.id = p.order_item_id
+		       JOIN orders o ON o.id = i.order_id
+		      WHERE o.store_id = ? AND o.customer_email = ?
+		        AND p.storage_key_original IS NOT NULL
+		      UNION
+		      SELECT p.storage_key FROM order_item_personalisations p
+		       JOIN order_items i ON i.id = p.order_item_id
+		       JOIN orders o ON o.id = i.order_id
+		      WHERE o.store_id = ? AND o.customer_email = ?
+		        AND p.storage_key IS NOT NULL`,
+		binds: 4,
 	},
 	{
 		table: "customer_profiles",
@@ -103,8 +127,16 @@ var blobSources = []struct {
 func collectBlobURLs(ctx context.Context, tx *gorm.DB, storeID uuid.UUID, email string) ([]string, error) {
 	var all []string
 	for _, src := range blobSources {
+		n := src.binds
+		if n <= 0 {
+			n = 2
+		}
+		bind := make([]any, 0, n)
+		for i := 0; i < n/2; i++ {
+			bind = append(bind, storeID, email)
+		}
 		var urls []string
-		if err := tx.WithContext(ctx).Raw(src.sql, storeID, email).Scan(&urls).Error; err != nil {
+		if err := tx.WithContext(ctx).Raw(src.sql, bind...).Scan(&urls).Error; err != nil {
 			// The table name is safe to report; the driver message is not
 			// — it can embed the bound email. Same rule as StepError.
 			return nil, fmt.Errorf("customererasure: collect object urls from %s", src.table)

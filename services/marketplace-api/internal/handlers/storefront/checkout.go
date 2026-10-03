@@ -85,6 +85,11 @@ type CheckoutItemRequest struct {
 	TaxCode         *string          `json:"tax_code"`
 	TaxRateOverride *decimal.Decimal `json:"tax_rate_override"`
 	TaxCategory     *string          `json:"tax_category"`
+	// Personalisation is what the buyer filled in (#967). Validated and
+	// priced server-side against the product's own fields — nothing here
+	// is trusted except as a lookup key. See
+	// checkout_personalisation.go.
+	Personalisation []CheckoutPersonalisationRequest `json:"personalisation"`
 }
 
 // CheckoutAddressRequest is a shipping/billing address.

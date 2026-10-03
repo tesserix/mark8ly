@@ -463,6 +463,26 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		return
 	}
 
+	// Validate what the buyer filled in and add the catalog's deltas to
+	// the price repriceItems just set (#967).
+	//
+	// AFTER repricing, never instead of it: the variant price is the
+	// base and this only ever adds. Before the subtotal is derived,
+	// because the subtotal has to include the surcharge.
+	//
+	// The cart token is the cookie's, not the request's — it is the only
+	// thing proving an upload belongs to this shopper.
+	resolvedPersonalisation, perErr := applyPersonalisation(
+		ctx, personalisationResolver{db: h.db}, store.ID, cartTokenForCheckout(c), req.Items)
+	if perErr != nil {
+		h.logWarn("checkout_ext: personalisation rejected", "store_id", store.ID, "err", perErr)
+		// The reason is the buyer's to see — "that image is no longer
+		// available", "Name is required" — because it is the only thing
+		// they can act on. It names no ids.
+		h.respondErr(c, apperrors.ValidationFailed("personalisation", perErr.Error()))
+		return
+	}
+
 	computedSubtotal := decimal.Zero
 	for _, it := range req.Items {
 		computedSubtotal = computedSubtotal.Add(it.LineTotal)
@@ -655,7 +675,25 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	stockLines := stockLinesFromItems(req.Items)
 	stockCartToken := cartTokenForCheckout(c)
 
+	// Built once and referenced by both the Create input and the
+	// in-transaction hook: CreateInTx fills in each row's ID, and the
+	// hook needs those ids to attach the buyer's answers.
+	serviceItems := checkoutToServiceItems(req.Items)
+
 	consumeDiscounts := func(tx *gorm.DB, o *order.Order) error {
+		// Snapshot the answers and claim the uploads, in the SAME
+		// transaction as the order. Separately, a crash between them
+		// would either charge for personalisation the order does not
+		// record, or leave a paid order's artwork for the 72-hour
+		// sweeper to destroy.
+		refs := make([]orderItemRef, len(serviceItems))
+		for i := range serviceItems {
+			refs[i] = orderItemRef{ID: serviceItems[i].ID.String()}
+		}
+		if err := persistPersonalisation(ctx, tx, refs, resolvedPersonalisation); err != nil {
+			return err
+		}
+
 		if h.stockHolds != nil {
 			if err := commitStock(ctx, tx, h.stockHolds, stockCartToken, o.ID.String(), storeID.String(), stockLines); err != nil {
 				return err
@@ -707,7 +745,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		CustomerID:      customerID,
 		CustomerEmail:   req.CustomerEmail,
 		CustomerName:    req.CustomerName,
-		Items:           checkoutToServiceItems(req.Items),
+		Items:           serviceItems,
 		Shipping:        checkoutToServiceAddress(req.ShippingAddress),
 		Billing:         checkoutToServiceAddress(billing),
 		Subtotal:        req.Subtotal,

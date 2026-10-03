@@ -138,12 +138,21 @@ func TestBlobSources_CoverEveryCustomerOwnedObjectColumn(t *testing.T) {
 	// merchant content and survive an erasure — they belong to tenant
 	// purge and the hard-delete sweeper.
 	//
-	// If a third customer-owned object column lands, add it here and the
+	// order_item_personalisations joined the list with #967: it holds the
+	// photograph a buyer attached to an order, which is as customer-owned
+	// as data gets. Its objects live in the PRIVATE bucket, so today's
+	// single-bucket reaper reports them as skipped rather than destroying
+	// them (#980) — listed anyway, so the receipt says a photograph was
+	// left behind instead of implying there was none.
+	//
+	// If a fourth customer-owned object column lands, add it here and the
 	// collect query with it. The erasure plan's own coverage test will
 	// catch the table; nothing but this catches the object.
 	tables := make([]string, 0, len(blobSources))
 	for _, s := range blobSources {
 		tables = append(tables, s.table)
 	}
-	require.ElementsMatch(t, []string{"review_media", "customer_profiles"}, tables)
+	require.ElementsMatch(t,
+		[]string{"review_media", "customer_profiles", "order_item_personalisations"},
+		tables)
 }

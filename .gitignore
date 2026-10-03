@@ -103,3 +103,6 @@ sentry.properties
 # Python operational helper bytecode
 __pycache__/
 *.pyc
+
+# Serena MCP server local project state — tool cache, not source.
+.serena/

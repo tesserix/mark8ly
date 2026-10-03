@@ -264,12 +264,66 @@ func (s *Service) buildInput(ctx context.Context, orderID uuid.UUID, asReceipt b
 		GrandTotal:        o.GrandTotal,
 		CurrencyCode:      o.CurrencyCode,
 		ItemCount:         len(items),
+		Personalisation:   s.loadPersonalisation(ctx, orderID, items),
 		Theme:             theme,
 	}
 	if asReceipt {
 		in.DeliveredAt = s.lookupDeliveredAt(ctx, orderID, o.UpdatedAt)
 	}
 	return in, nil
+}
+
+// loadPersonalisation flattens what the buyer filled in, for the email
+// to echo back (#968).
+//
+// Never returns an error. A confirmation email that does not arrive is
+// worse than one missing the personalisation block: the buyer has paid
+// and is waiting to hear that it worked. A read failure logs and yields
+// nothing, which the template suppresses.
+func (s *Service) loadPersonalisation(
+	ctx context.Context, orderID uuid.UUID, items []order.OrderItem,
+) []PersonalisationLine {
+	rows, err := order.ListPersonalisationsForOrder(ctx, s.db, orderID)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Warn("orderdoc: personalisation unreadable; email will omit it",
+				"order_id", orderID, "err", err)
+		}
+		return nil
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	titles := make(map[uuid.UUID]string, len(items))
+	for i := range items {
+		titles[items[i].ID] = items[i].TitleSnapshot
+	}
+	out := make([]PersonalisationLine, 0, len(rows))
+	for i := range rows {
+		p := &rows[i]
+		value := ""
+		switch {
+		case p.HasArtwork():
+			// Described, not linked. A signed URL pasted into an inbox
+			// outlives its own expiry as a dead link, and the buyer
+			// already saw their own upload at checkout.
+			value = "the image you uploaded"
+			if p.OriginalFilename != nil && *p.OriginalFilename != "" {
+				value = *p.OriginalFilename
+			}
+		case p.TextValue != nil:
+			value = *p.TextValue
+		}
+		if value == "" {
+			continue
+		}
+		out = append(out, PersonalisationLine{
+			Item:  titles[p.OrderItemID],
+			Label: p.FieldLabel,
+			Value: value,
+		})
+	}
+	return out
 }
 
 // lookupDeliveredAt returns the real shipment.delivered_at for the

@@ -116,6 +116,35 @@
           </tr>
           {{end}}
 
+          {{if .Personalisation}}
+          <!-- What the buyer filled in, echoed back (#968).
+               Above the download CTA on purpose: this is the last cheap
+               moment to catch a typo, and once it is engraved the fix
+               is a refund. -->
+          <tr>
+            <td class="m8-pad" style="padding:0 40px 8px 40px;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0" style="border-left:3px solid {{.Theme.ColorAccent}};background-color:{{.Theme.ColorBackground}};">
+                <tr>
+                  <td style="padding:14px 18px;">
+                    <p style="margin:0 0 8px 0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:{{.MutedCopy}};font-weight:600;">
+                      Your personalisation
+                    </p>
+                    {{range .Personalisation}}
+                    <p style="margin:0 0 6px 0;font-size:13px;line-height:1.6;color:{{$.Theme.ColorText}};">
+                      {{if .Item}}<span style="color:{{$.MutedCopy}};">{{.Item}} · </span>{{end}}{{.Label}}:
+                      <strong style="white-space:pre-line;">{{.Value}}</strong>
+                    </p>
+                    {{end}}
+                    <p style="margin:8px 0 0 0;font-size:12px;color:{{.MutedCopy}};line-height:1.5;">
+                      Spotted a mistake? Reply to this email straight away — we make these to order.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          {{end}}
+
           <!-- Document delivery — wording switches based on whether the
                PDF was successfully attached. When attached: surface that
                directly. When not (PDF render unreachable): point at the

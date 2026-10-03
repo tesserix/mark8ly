@@ -295,6 +295,12 @@ function ItemRow({ line, currency }: { line: DocumentLine; currency: string }) {
       <View style={styles.colDescription}>
         <Text style={styles.td}>{line.description}</Text>
         {line.sku && <Text style={styles.tdMuted}>{line.sku}</Text>}
+        {line.personalisation?.map((pz, i) => (
+          <Text key={`${pz.label}-${i}`} style={styles.tdMuted}>
+            {pz.label}:{" "}
+            {pz.reference ? `uploaded file (ref ${pz.reference})` : (pz.value ?? "—")}
+          </Text>
+        ))}
       </View>
       <Text style={[styles.td, styles.colQty]}>{line.quantity}</Text>
       <Text style={[styles.td, styles.colPrice]}>{formatCurrency(line.unit_price, currency)}</Text>

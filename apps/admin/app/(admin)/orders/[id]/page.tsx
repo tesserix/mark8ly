@@ -8,6 +8,7 @@ import { notFound } from "next/navigation";
 
 import { Breadcrumbs } from "@/components/layout";
 import { OrderActionsBar } from "@/components/orders/OrderActionsBar";
+import { OrderArtworkPanel } from "@/components/orders/OrderArtworkPanel";
 import { ShippingLabelPanel } from "@/components/orders/ShippingLabelPanel";
 import { OrderAddressCard } from "@/components/orders/OrderAddressCard";
 import { OrderDetailHeader } from "@/components/orders/OrderDetailHeader";
@@ -70,6 +71,16 @@ export default async function OrderDetailPage({ params }: PageProps) {
           <OrderItemsTable
             items={order.items}
             currencyCode={order.currency_code}
+          />
+          {/* Directly under the items, above the money: for a custom
+              order this is the production brief, and a merchant opening
+              the page to find out what to make should not have to scroll
+              past totals and addresses to reach it. Renders nothing when
+              no line carries buyer input (#968). */}
+          <OrderArtworkPanel
+            storeId={currentStore.id}
+            orderId={order.id}
+            items={order.items}
           />
           <div className="border-t border-border-subtle pt-6">
             <OrderTotalsCard order={order} />

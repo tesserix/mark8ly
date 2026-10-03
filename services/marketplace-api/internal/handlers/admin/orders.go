@@ -241,6 +241,25 @@ func (h *OrdersHandler) Get(c *gin.Context) {
 		return
 	}
 	resp := ToAdminOrderResponse(o, items, addrs)
+
+	// What the buyer supplied, per line (#968). Detail view only — the
+	// order LIST must not pay a query per order for a panel it does not
+	// render.
+	//
+	// A read failure does not fail the order page: a merchant who cannot
+	// see the artwork panel still needs the address, the totals and the
+	// fulfilment controls. The error is logged and the page ships
+	// without it, the same call the storefront product page makes.
+	if rows, pErr := order.ListPersonalisationsForOrder(c.Request.Context(), h.db, id); pErr != nil {
+		if h.logger != nil {
+			h.logger.ErrorContext(c.Request.Context(),
+				"admin: personalisation unreadable; rendering order without it",
+				"order_id", id.String(), "err", pErr)
+		}
+	} else {
+		AttachPersonalisation(&resp, rows)
+	}
+
 	// Hydrate the per-jurisdiction tax breakdown so the invoice/receipt
 	// PDFs (which fetch via this endpoint) can render CGST/SGST/IGST/VAT
 	// lines instead of a single aggregate tax_total. Empty for orders

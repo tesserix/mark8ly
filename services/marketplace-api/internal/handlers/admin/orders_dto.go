@@ -133,6 +133,9 @@ type AdminOrderItemResponse struct {
 	Quantity      int             `json:"quantity"`
 	LineTotal     decimal.Decimal `json:"line_total"`
 	CurrencyCode  string          `json:"currency_code"`
+	// Personalisation is what the buyer supplied for this line (#968).
+	// Absent on every ordinary line, which is most of them.
+	Personalisation []AdminPersonalisationResponse `json:"personalisation,omitempty"`
 }
 
 // AdminAddressResponse renders an OrderAddress.
@@ -207,6 +210,24 @@ type RefundOrderResponse struct {
 }
 
 // ToAdminOrderResponse renders the persistence types into the wire shape.
+// AttachPersonalisation hangs the buyer's answers onto the matching
+// lines (#968).
+//
+// A separate step rather than a parameter on ToAdminOrderResponse: that
+// function serves the order LIST as well, and a list must not pay a
+// query per order for something only the detail view renders.
+func AttachPersonalisation(resp *AdminOrderResponse, rows []order.ItemPersonalisation) {
+	if len(rows) == 0 {
+		return
+	}
+	byItem := ToAdminPersonalisations(rows)
+	for i := range resp.Items {
+		if answers, ok := byItem[resp.Items[i].ID]; ok {
+			resp.Items[i].Personalisation = answers
+		}
+	}
+}
+
 func ToAdminOrderResponse(o *order.Order, items []order.OrderItem, addrs []order.OrderAddress) AdminOrderResponse {
 	out := AdminOrderResponse{
 		ID:                o.ID.String(),

@@ -83,8 +83,12 @@ type Deps struct {
 	SetupProgressHandler   *SetupProgressHandler
 	TicketsHandler         *TicketsHandler
 	ShipmentsHandler       *ShipmentsHandler
-	BrandingHandler        *BrandingHandler
-	PagesHandler           *PagesHandler
+	// Merchant access to buyer artwork on an order (#968). Nil until a
+	// private bucket is configured (#960), which is also the only
+	// condition under which artwork can exist.
+	OrderPersonalisationHandler *OrderPersonalisationHandler
+	BrandingHandler             *BrandingHandler
+	PagesHandler                *PagesHandler
 	// Outbound webhooks (#562 task 7) — merchant-managed subscriptions,
 	// test sends and delivery replay. Available on every plan, so
 	// deliberately not gated behind PlanResolver like SSO above.
@@ -470,6 +474,22 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					deps.AuthzMiddleware.RequireTenantRelation(authz.ReturnsEditRole),
 					deps.ReturnsHandler.MarkRefunded)
 			}
+		}
+
+		// Buyer artwork on an order (#968). Mounted on storeRoute with the
+		// same :id param name the orders subtree uses, per gin's per-level
+		// uniqueness rule — the same reason Returns above does it this way.
+		//
+		// OrdersViewRole, not an edit role: this is reading the order, and
+		// anyone who can see the order needs to see what to make. Every
+		// read is audited regardless.
+		if deps.OrderPersonalisationHandler != nil {
+			storeRoute.GET("/orders/:id/personalisations/download",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
+				deps.OrderPersonalisationHandler.DownloadAll)
+			storeRoute.GET("/orders/:id/personalisations/:personalisationId/download",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
+				deps.OrderPersonalisationHandler.Download)
 		}
 
 		// Settings — payment, shipping, tax configuration.

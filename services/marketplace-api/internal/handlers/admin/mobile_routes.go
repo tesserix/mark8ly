@@ -286,6 +286,20 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 					deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
 					deps.OrdersHandler.EmailReceipt)
 
+				// Buyer artwork (#968). Mirrored rather than web-only: a
+				// merchant checking orders from a phone needs to see what
+				// the buyer asked for, and the download link opens in the
+				// phone's browser just as well. Same handler, same
+				// OrdersViewRole, same audit row.
+				if deps.OrderPersonalisationHandler != nil {
+					orders.GET("/:id/personalisations/download",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
+						deps.OrderPersonalisationHandler.DownloadAll)
+					orders.GET("/:id/personalisations/:personalisationId/download",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
+						deps.OrderPersonalisationHandler.Download)
+				}
+
 				// Shipments — mirror routes.go:312-355. Guarded on the
 				// handler so a deployment without shipping wired stays
 				// route-clean. Handler/service/DTO shared with web.

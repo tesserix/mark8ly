@@ -14,7 +14,12 @@ Order:        {{.OrderNumber}}
 Placed:       {{.PlacedAt}}
 Items:        {{.ItemCount}}
 Total:        {{.GrandTotal}} {{.CurrencyCode}}
-
+{{if .Personalisation}}
+YOUR PERSONALISATION
+{{range .Personalisation}}{{if .Item}}{{.Item}} · {{end}}{{.Label}}: {{.Value}}
+{{end}}
+Spotted a mistake? Reply to this email straight away — we make these to order.
+{{end}}
 {{if .HasAttachment}}Your invoice PDF is attached to this email.{{else}}Download your invoice: {{if .DocumentURL}}{{.DocumentURL}}{{else}}{{.OrderURL}}{{end}}{{end}}
 {{if .OrderURL}}View order online: {{.OrderURL}}{{end}}
 

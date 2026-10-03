@@ -43,6 +43,8 @@ RUN go build -trimpath -ldflags="-s -w" \
  && go build -trimpath -ldflags="-s -w" \
       -o /out/webhook-delivery-prune-cron ./cmd/webhook-delivery-prune-cron \
  && go build -trimpath -ldflags="-s -w" \
+      -o /out/personalisation-upload-sweep-cron ./cmd/personalisation-upload-sweep-cron \
+ && go build -trimpath -ldflags="-s -w" \
       -o /out/carrier-secrets-backfill ./cmd/carrier-secrets-backfill \
  && go build -trimpath -ldflags="-s -w" \
       -o /out/backfill-trial-start ./cmd/backfill-trial-start \
@@ -58,10 +60,11 @@ CMD ["/usr/local/bin/migrate"]
 # ─── runtime ────────────────────────────────────────────────────────────
 # Runtime image carries every binary — server (default ENTRYPOINT), the
 # migrate CLI at /usr/local/bin/migrate, the refund-sweep-cron, the
-# stock-hold-sweep-cron and the webhook-delivery-prune-cron — so the Helm
-# init container and the CronJobs can override ENTRYPOINT and run
-# migrations / the stuck-refund sweeper / the expired-hold sweeper / the
-# outbound-delivery pruner from the same image.
+# stock-hold-sweep-cron, the webhook-delivery-prune-cron and the
+# personalisation-upload-sweep-cron — so the Helm init container and the
+# CronJobs can override ENTRYPOINT and run migrations / the stuck-refund
+# sweeper / the expired-hold sweeper / the outbound-delivery pruner / the
+# abandoned-artwork reaper from the same image.
 #
 # webhook-delivery-prune-cron prunes webhook_deliveries (OUTBOUND merchant
 # webhooks). It is NOT internal/webhookprune, which prunes webhook_events
@@ -72,6 +75,13 @@ COPY --from=builder --chown=10001:10001 /out/migrate /usr/local/bin/migrate
 COPY --from=builder --chown=10001:10001 /out/refund-sweep-cron /usr/local/bin/refund-sweep-cron
 COPY --from=builder --chown=10001:10001 /out/stock-hold-sweep-cron /usr/local/bin/stock-hold-sweep-cron
 COPY --from=builder --chown=10001:10001 /out/webhook-delivery-prune-cron /usr/local/bin/webhook-delivery-prune-cron
+# personalisation-upload-sweep-cron reaps buyer artwork that was uploaded to
+# a cart and never checked out (#963). It MUST stay app-level rather than
+# become a GCS lifecycle rule: a claimed order's artwork is the very same
+# object under the very same buyer-uploads/ key — nothing is copied at
+# checkout — so an age-based bucket rule would delete the artwork of paid
+# orders. Only the database knows which objects are claimed.
+COPY --from=builder --chown=10001:10001 /out/personalisation-upload-sweep-cron /usr/local/bin/personalisation-upload-sweep-cron
 # carrier-secrets-backfill is a ONE-OFF migration tool, not a CronJob: it is
 # run by hand as a Job when credentials need moving from GCP Secret Manager to
 # OpenBao (mark8ly#319 phase 3). It defaults to --dry-run and refuses to run

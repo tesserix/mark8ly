@@ -86,7 +86,7 @@ export default async function StorefrontProductPage({
 
         <div className="grid gap-12 lg:grid-cols-2">
           <MediaGallery media={product.media} productTitle={product.title} />
-          <ProductDetails product={product} />
+          <ProductDetails product={product} storeSlug={slug} />
         </div>
 
         <ProductReviews

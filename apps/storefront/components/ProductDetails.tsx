@@ -14,12 +14,31 @@ import type {
 } from "@/lib/api/marketplace-api";
 import { VariantSelector } from "./VariantSelector";
 import { AddToCartButton } from "./AddToCartButton";
+import { PersonalisationForm } from "./personalisation/PersonalisationForm";
+import {
+  toCartPersonalisation,
+  validateAnswers,
+  type PersonalisationAnswers,
+} from "@/lib/personalisation";
 
 interface ProductDetailsProps {
   product: StorefrontProduct;
+  /** Needed by the upload routes; the page already resolved it. */
+  storeSlug: string;
 }
 
-export function ProductDetails({ product }: ProductDetailsProps) {
+export function ProductDetails({ product, storeSlug }: ProductDetailsProps) {
+  const [answers, setAnswers] = useState<PersonalisationAnswers>({});
+
+  const personalisationFields = product.personalisation ?? [];
+  const problems = validateAnswers(personalisationFields, answers);
+  const personalisation = toCartPersonalisation(personalisationFields, answers);
+
+  // Per-field errors appear once the buyer has started, not before.
+  // Marking fields red on a page someone just opened reads as an error
+  // they caused. The button says what is wrong from the start; the
+  // fields say where, once there is a "where" worth pointing at.
+  const started = Object.keys(answers).length > 0;
   const hasOptions = product.options.length > 0;
   const defaultVariant = product.variants[0] ?? null;
 
@@ -105,7 +124,28 @@ export function ProductDetails({ product }: ProductDetailsProps) {
         )}
       </div>
 
+      {personalisationFields.length > 0 && (
+        <PersonalisationForm
+          storeSlug={storeSlug}
+          productId={product.id}
+          fields={personalisationFields}
+          answers={answers}
+          onChange={setAnswers}
+          problems={started ? problems : []}
+        />
+      )}
+
+      {started && problems.length > 0 && (
+        <p id="personalisation-blocked" role="alert" className="text-sm text-[color:var(--storefront-danger)]">
+          {problems.length === 1
+            ? problems[0]!.message
+            : `${problems.length} things still need filling in above.`}
+        </p>
+      )}
+
       <AddToCartButton
+        personalisation={personalisation}
+        blockedReason={problems.length > 0 ? "Finish the details above" : undefined}
         productId={product.id}
         variantId={selectedVariant?.id ?? defaultVariant?.id ?? product.id}
         handle={product.handle}

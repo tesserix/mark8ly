@@ -96,6 +96,45 @@ export interface StorefrontProduct {
   tax_rate_override: string | null; // percentage as decimal string, e.g. "18.00"
   tax_category: StorefrontTaxCategory | null;
   published_at: string;
+  /**
+   * What this product asks the buyer to fill in (#962/#965).
+   *
+   * Detail responses only — a listing omits it, so the grid does not pay
+   * for fields it will never render. Absent on every product that asks
+   * for nothing, which is why it is optional rather than an empty array.
+   */
+  personalisation?: StorefrontPersonalisationField[];
+}
+
+/** One value of a choice field, as the buyer sees it. */
+export interface StorefrontPersonalisationOption {
+  id: string;
+  label: string;
+  /** Decimal string. What picking this adds to the line. */
+  price_delta: string;
+}
+
+/**
+ * One thing the buyer fills in.
+ *
+ * The API sends only the keys that apply to the kind, so presence is the
+ * signal — `max_length` on a text field, `min_px` on an image — and the
+ * form does not need its own copy of the kind rules.
+ */
+export interface StorefrontPersonalisationField {
+  id: string;
+  key: string;
+  label: string;
+  kind: "image" | "text" | "textarea" | "select" | "checkbox";
+  required: boolean;
+  position: number;
+  help_text?: string;
+  max_length?: number;
+  max_images?: number;
+  /** Below this, the buyer is warned their image may print soft. */
+  min_px?: number;
+  price_delta?: string;
+  options?: StorefrontPersonalisationOption[];
 }
 
 export interface StorefrontCategory {

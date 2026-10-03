@@ -9,7 +9,11 @@
 import { useCallback } from "react";
 import Link from "next/link";
 import { useCart } from "./CartProvider";
-import { lineKey, type CartItemTaxCategory } from "@/lib/cart";
+import {
+  lineKey,
+  type CartItemPersonalisation,
+  type CartItemTaxCategory,
+} from "@/lib/cart";
 
 export interface AddToCartButtonProps {
   productId: string;
@@ -33,6 +37,16 @@ export interface AddToCartButtonProps {
   lengthCm?: number;
   widthCm?: number;
   heightCm?: number;
+  /**
+   * The buyer's answers (#965), already validated by the parent. Present
+   * only on products that ask for something.
+   */
+  personalisation?: CartItemPersonalisation[];
+  /**
+   * Blocks the add when required fields are unanswered. The parent owns
+   * the rule; this control only reports it.
+   */
+  blockedReason?: string;
 }
 
 export function AddToCartButton({
@@ -53,6 +67,8 @@ export function AddToCartButton({
   lengthCm,
   widthCm,
   heightCm,
+  personalisation,
+  blockedReason,
 }: AddToCartButtonProps) {
   const { add, items, updateQty } = useCart();
 
@@ -60,14 +76,14 @@ export function AddToCartButton({
   // added" flag: the quantity then survives navigation and matches the
   // cart badge, instead of reverting to "Add to cart" after 1.5s and
   // leaving the shopper unsure whether the click registered.
-  // This button carries no personalisation yet (#965 adds the form), so
-  // its line identity is the variant with an empty fingerprint — which is
-  // exactly what lineKey produces for a stored item that has none. The
-  // two keys therefore match, and this control keeps working unchanged.
+  // The identity of the line THIS button would add — variant plus the
+  // buyer's current answers (#964/#965).
   //
-  // When the form does ship, this has to pass the buyer's answers in, or
-  // it will always find the plain line and never the personalised one.
-  const thisLineKey = lineKey({ productId, variantId });
+  // Passing the answers in is what makes the quantity stepper find the
+  // personalised line rather than a plain one of the same variant. Change
+  // an answer and this key changes with it, which is correct: that is a
+  // different line, and the stepper should go back to "Add to cart".
+  const thisLineKey = lineKey({ productId, variantId, personalisation });
   const inCart = items.find((i) => lineKey(i) === thisLineKey);
 
   const handleClick = useCallback(() => {
@@ -87,6 +103,7 @@ export function AddToCartButton({
       lengthCm,
       widthCm,
       heightCm,
+      personalisation,
     });
     // Lazy-import to keep the button dep-light on SSR.
     import("@/lib/toast").then(({ toast }) =>
@@ -124,6 +141,23 @@ export function AddToCartButton({
         className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm text-[color:var(--storefront-on-accent,var(--paper-200))] opacity-40 cursor-not-allowed"
       >
         Out of stock
+      </button>
+    );
+  }
+
+  // A product that asks for something the buyer has not supplied yet.
+  // Shown as a disabled button with the reason ON it, rather than a
+  // silent no-op, so the shopper knows what is missing before hunting
+  // for it — the form marks the individual fields.
+  if (blockedReason) {
+    return (
+      <button
+        type="button"
+        disabled
+        aria-describedby="personalisation-blocked"
+        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm text-[color:var(--storefront-on-accent,var(--paper-200))] opacity-40 cursor-not-allowed"
+      >
+        {blockedReason}
       </button>
     );
   }

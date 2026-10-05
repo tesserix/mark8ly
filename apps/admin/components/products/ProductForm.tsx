@@ -370,6 +370,22 @@ export function ProductForm({
           applyError(result.error);
         } else {
           accumulatedRemovedIdsRef.current = [];
+          // Re-baseline the form on what was just saved (#1001).
+          //
+          // react-hook-form's isDirty compares against the values the
+          // form was last reset with, NOT against the server — so
+          // without this it stays true forever after the first edit.
+          // That fed the unsaved-changes guard, which then raised
+          // "Leave site?" on every navigation for the life of the page,
+          // immediately after telling the merchant "Changes saved".
+          //
+          // Worse than an annoyance: it trains people to click through
+          // the browser's data-loss warning, so the one time it is
+          // telling the truth they dismiss that too.
+          //
+          // keepValues so the inputs do not flicker — only the dirty
+          // baseline moves.
+          methods.reset(values, { keepValues: true });
           toast.success("Changes saved");
           router.refresh();
         }

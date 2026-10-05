@@ -11,7 +11,7 @@
 // and reprices every delta from the catalog (#967). This governs what the
 // buyer is allowed to try, and what they are told before they try it.
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import type { StorefrontPersonalisationField } from "@/lib/api/marketplace-api";
 import {
@@ -23,6 +23,8 @@ import {
   deletePersonalisationUpload,
   uploadPersonalisationImage,
 } from "@/lib/personalisation-upload";
+import { MockupPreview } from "./MockupPreview";
+import { usePersonalisationPreviews } from "./usePersonalisationPreviews";
 import {
   PREVIEW_MAX_DIMENSION,
   prepareCrop,
@@ -61,6 +63,21 @@ export function PersonalisationForm({
   problems = [],
 }: PersonalisationFormProps) {
   const [uploads, setUploads] = useState<Record<string, UploadState>>({});
+
+  // Re-signed on render for the 2D composite (#966). The hook takes
+  // cart-line-shaped input, so the current answers are adapted into that
+  // shape — one request covering every image field on the page.
+  const previewLines = useMemo(
+    () => [
+      {
+        personalisation: fields.flatMap((f) =>
+          (answers[f.id]?.uploadIds ?? []).map((uploadId) => ({ uploadId })),
+        ),
+      },
+    ],
+    [fields, answers],
+  );
+  const previews = usePersonalisationPreviews(storeSlug, previewLines);
   // The upload currently being cropped, plus the signed GET for its
   // PRISTINE original to crop against. Null when no dialog is open.
   const [cropping, setCropping] = useState<{
@@ -261,6 +278,22 @@ export function PersonalisationForm({
                       Uploading…
                     </p>
                   )}
+                  {/* The merchant's mockup with the buyer's artwork
+                      composited in (#966). Rendered before they upload
+                      too — the outline alone shows WHERE the photo
+                      goes, which is most of the value up front. */}
+                  {field.mockup_url && field.print_area ? (
+                    <MockupPreview
+                      mockupUrl={field.mockup_url}
+                      printArea={field.print_area}
+                      fieldLabel={field.label}
+                      artworkUrl={
+                        (answer.uploadIds ?? [])
+                          .map((id) => previews.previews[id]?.url)
+                          .find(Boolean) ?? undefined
+                      }
+                    />
+                  ) : null}
                   {(answer.uploadIds ?? []).map((id) => (
                     <div key={id} className="flex items-center gap-3 text-xs">
                       <span className="opacity-70">Image added</span>

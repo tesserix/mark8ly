@@ -133,6 +133,16 @@ export interface StorefrontPersonalisationField {
   max_images?: number;
   /** Below this, the buyer is warned their image may print soft. */
   min_px?: number;
+  /**
+   * The merchant's mockup photograph and the rectangle the buyer's
+   * artwork occupies inside it, for the 2D composite (#966).
+   *
+   * Always both or neither — the server emits them as a pair, so one
+   * check is enough. print_area is in PERCENTAGES of the mockup's own
+   * dimensions, which is what makes the composite plain CSS.
+   */
+  mockup_url?: string;
+  print_area?: { x: number; y: number; w: number; h: number };
   price_delta?: string;
   options?: StorefrontPersonalisationOption[];
 }

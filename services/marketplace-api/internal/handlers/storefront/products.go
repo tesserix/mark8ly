@@ -29,6 +29,16 @@ type StorefrontHandler struct {
 	categoryRepo category.Repository
 	watermarks   stores.WatermarkReader
 	logger       *slog.Logger
+	// mediaBaseURL turns a mockup storage key into a fetchable URL for
+	// the 2D composite (#966). Empty simply omits the mockup.
+	mediaBaseURL string
+}
+
+// WithMediaBaseURL sets the public base for merchant media. Returns the
+// handler so it can be chained at construction.
+func (h *StorefrontHandler) WithMediaBaseURL(base string) *StorefrontHandler {
+	h.mediaBaseURL = base
+	return h
 }
 
 // NewStorefrontHandler constructs a handler. All deps are required.
@@ -212,7 +222,7 @@ func (h *StorefrontHandler) GetByHandle(c *gin.Context) {
 			"storefront: personalisation fields unreadable; rendering product without them",
 			"product_id", agg.Product.ID, "err", fErr)
 	} else {
-		resp.Personalisation = ToStorefrontPersonalisationFields(fields)
+		resp.Personalisation = ToStorefrontPersonalisationFields(fields, h.mediaBaseURL)
 	}
 
 	setCacheHeaders(c, store, watermark)

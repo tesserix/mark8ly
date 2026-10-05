@@ -761,6 +761,15 @@ export function ProductForm({
                   productId={initialProduct.id}
                   currencyCode={currencyCode}
                   initialFields={initialPersonalisationFields}
+                  // The product's own images are the mockup candidates:
+                  // a merchant photographs the blank shirt once and
+                  // marks where the print goes (#966).
+                  media={(initialProduct.media ?? []).map((m) => ({
+                    id: m.id,
+                    url: m.url,
+                    storage_key: m.storage_key,
+                    alt: m.alt ?? "",
+                  }))}
                 />
               </ProductSection>
             )}

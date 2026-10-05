@@ -68,8 +68,8 @@ export default async function CategoryLandingPage({
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
-      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
-        <StorefrontNav storeName={store.name} />
+      <StorefrontNav storeName={store.name} />
+      <div className="mx-auto max-w-6xl px-6 pb-8 sm:px-8">
         <header className="mb-10 flex flex-col gap-4 border-b border-[color:var(--storefront-text,var(--ink-900))]/10 pb-6">
           <Link
             href="/products"

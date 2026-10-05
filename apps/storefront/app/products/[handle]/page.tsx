@@ -75,8 +75,8 @@ export default async function StorefrontProductPage({
   return (
     <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
       <StructuredData data={buildProductJsonLd(store, product)} />
-      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
-        <StorefrontNav storeName={store.name} />
+      <StorefrontNav storeName={store.name} />
+      <div className="mx-auto max-w-6xl px-6 pb-8 sm:px-8">
         <Link
           href="/products"
           className="mb-8 inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--storefront-text,var(--ink-900))] opacity-60 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"

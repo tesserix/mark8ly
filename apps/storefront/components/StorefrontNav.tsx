@@ -25,26 +25,34 @@ const NAV_LINKS = [
 export function StorefrontNav({ storeName }: StorefrontNavProps) {
   const pathname = usePathname();
 
-  // Self-contained layout: the nav bar now sets its own max-width
-  // and gutters so pages like /cart, /account, and /gift-cards don't
-  // need to wrap it in a matching container to avoid overflow. The
-  // home page already wraps it in a `max-w-6xl` div — nesting a
-  // second max-width here is a no-op when the outer container is
-  // tighter, so this change is backwards compatible.
+  // The nav owns its own max-width and gutters, so pages must NOT wrap
+  // it in a second `px-6` container: on a 400px phone the two gutters
+  // together left ~304px for the brand and five controls, and the demo
+  // store's name rendered as "The B…" (tesserix/mark8ly#995). Place it
+  // as a direct child of <main>, before any content wrapper.
+  //
+  // Below `sm` the brand takes a row of its own and is allowed to wrap,
+  // so a long store name reads in full instead of shrinking to a few
+  // letters; the links sit in a compact row beneath it. From `sm` up
+  // the bar is the familiar single row with the brand on the left.
+  //
+  // The bell and account slots render nothing until the customer is
+  // signed in (or when the login URL is misconfigured). `empty:hidden`
+  // collapses those <li>s so they do not hold open a gap each.
   return (
     <nav
       aria-label="Store"
       className="mb-10 w-full border-b border-[color:var(--storefront-text,var(--ink-900))] border-opacity-10"
     >
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4 sm:px-8">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-1 px-6 py-3 sm:flex-nowrap sm:gap-4 sm:px-8 sm:py-4">
         <Link
           href="/"
-          className="max-w-[45%] truncate font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))] sm:max-w-[55%] md:max-w-none"
+          className="basis-full break-words font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))] empty:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))] sm:min-w-0 sm:max-w-[55%] sm:basis-auto sm:truncate md:max-w-none"
           title={storeName ?? undefined}
         >
           {storeName ?? "Store"}
         </Link>
-        <ul className="flex items-center gap-6 text-sm">
+        <ul className="flex items-center gap-4 text-sm sm:ml-auto sm:gap-6">
           {NAV_LINKS.map((link) => {
             const isActive = link.exact
               ? pathname === link.href
@@ -74,10 +82,10 @@ export function StorefrontNav({ storeName }: StorefrontNavProps) {
               </Suspense>
             </Link>
           </li>
-          <li className="min-h-[44px] flex items-center">
+          <li className="min-h-[44px] flex items-center empty:hidden">
             <CustomerNotificationBell />
           </li>
-          <li className="min-h-[44px] flex items-center">
+          <li className="min-h-[44px] flex items-center empty:hidden">
             <CustomerAccountMenu />
           </li>
         </ul>

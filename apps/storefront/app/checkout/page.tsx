@@ -743,12 +743,10 @@ export default function CheckoutPage() {
   if (items.length === 0 && !submitting) {
     return (
       <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
-        {/* Nav sits in a full-width wrapper so it renders at its own
-            max-width (matches home, products, cart, etc). The narrower
-            max-w-3xl is only for the checkout content below. */}
-        <div className="mx-auto max-w-6xl px-6 pt-8 sm:px-8">
-          <StorefrontNav storeName="" />
-        </div>
+        {/* The nav sets its own max-width and gutters (matches home,
+            products, cart, etc). The narrower max-w-3xl is only for the
+            checkout content below. */}
+        <StorefrontNav storeName="" />
         <div className="mx-auto max-w-3xl px-6 pb-8 sm:px-8">
           <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
             Checkout
@@ -771,9 +769,7 @@ export default function CheckoutPage() {
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
-      <div className="mx-auto max-w-6xl px-6 pt-8 sm:px-8">
-        <StorefrontNav storeName="" />
-      </div>
+      <StorefrontNav storeName="" />
       <div className="mx-auto max-w-3xl px-6 pb-8 sm:px-8">
         <Link
           href="/cart"

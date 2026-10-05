@@ -42,8 +42,8 @@ export default async function PageView({ params }: Props) {
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
-      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
-        <StorefrontNav storeName={store?.name} />
+      <StorefrontNav storeName={store?.name} />
+      <div className="mx-auto max-w-6xl px-6 pb-8 sm:px-8">
         <article className="mx-auto max-w-3xl py-10 sm:py-14">
           <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-serif))] text-4xl font-medium tracking-tight text-[color:var(--storefront-text,var(--ink-900))]">
             {page.title}

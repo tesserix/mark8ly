@@ -47,13 +47,25 @@ const MIGRATION_UI_ENABLED = migrationFlagMatch[1] === "true";
  * draft storage) live in the Go integration suite.
  */
 
+// Since #993 the tax ID and promo code sit behind a closed disclosure so a
+// phone reaches the submit button sooner. Open it the way a merchant would.
+async function openOptionalFields(page: import("@playwright/test").Page) {
+  const details = page.getByTestId("optional-fields");
+  if (!(await details.evaluate((el) => (el as HTMLDetailsElement).open))) {
+    await details.locator("summary").click();
+  }
+  await expect(page.locator("#taxId")).toBeVisible();
+}
+
 test.describe("tax ID field", () => {
-  test("renders with fallback help text when no country is selected", async ({
+  test("is behind a closed disclosure until opened, then shows fallback help text", async ({
     page,
   }) => {
     await page.goto("/onboarding");
 
     const taxField = page.locator("#taxId");
+    await expect(taxField).toBeHidden();
+    await openOptionalFields(page);
     await expect(taxField).toBeVisible();
 
     // Fallback hint: no country selected yet
@@ -66,6 +78,7 @@ test.describe("tax ID field", () => {
     page,
   }) => {
     await page.goto("/onboarding");
+    await openOptionalFields(page);
 
     await page.getByLabel(/country/i).click();
     await page.getByRole("option", { name: /united kingdom/i }).click();
@@ -77,6 +90,7 @@ test.describe("tax ID field", () => {
     page,
   }) => {
     await page.goto("/onboarding");
+    await openOptionalFields(page);
 
     await page.getByLabel(/country/i).click();
     await page.getByRole("option", { name: /india/i }).click();
@@ -88,6 +102,7 @@ test.describe("tax ID field", () => {
     page,
   }) => {
     await page.goto("/onboarding");
+    await openOptionalFields(page);
 
     await page.getByLabel(/country/i).click();
     await page.getByRole("option", { name: /united states/i }).click();

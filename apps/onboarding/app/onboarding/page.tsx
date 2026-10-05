@@ -3,6 +3,7 @@ import Link from "next/link";
 import { locations } from "@/lib/api/platform-api";
 import { OnboardingForm } from "@/components/onboarding/OnboardingForm";
 import { SlimFooter } from "@/components/onboarding/SlimFooter";
+import { signupCopy } from "@/lib/copy/signup";
 
 // Rendered per request so middleware's CSP nonce reaches the script
 // tags; a prerendered page under that policy would have them blocked.
@@ -40,6 +41,8 @@ const SUPPORTED_SHIPPING_COUNTRY_CODES = new Set([
   // Delhivery
   "IN",
 ]);
+
+const ROMAN = ["i.", "ii.", "iii.", "iv.", "v."] as const;
 
 /**
  * /onboarding — the single-page signup form.
@@ -82,58 +85,61 @@ export default async function OnboardingPage() {
         id="main"
         className="flex-1 motion-safe:animate-[fadeInUp_0.35s_ease-out_both]"
       >
-        <div className="mx-auto grid max-w-6xl gap-12 px-6 pb-20 pt-16 sm:pt-20 lg:grid-cols-[1fr_1.2fr] lg:gap-16">
-          <section>
-            <p className="eyebrow mb-5">Open your store</p>
-            <h1 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
-              Two minutes to a storefront.
+        {/*
+          Three grid items, placed so a phone reads heading \u2192 one sentence
+          \u2192 form \u2192 what happens next, and a desktop keeps the two-column
+          editorial layout with the form on the right spanning both rows
+          (tesserix/mark8ly#993). Before this the whole explanation
+          stacked above the form on a phone and the first field sat ~750px
+          down. `lg:grid-rows-[auto_1fr]` keeps the steps directly under
+          the intro instead of letting a tall form push them down.
+        */}
+        <div className="mx-auto grid max-w-6xl gap-x-16 gap-y-8 px-6 pb-20 pt-8 sm:pt-12 lg:grid-cols-[1fr_1.2fr] lg:grid-rows-[auto_1fr] lg:gap-y-12 lg:pt-20">
+          <section className="lg:col-start-1 lg:row-start-1">
+            <p className="eyebrow mb-4 lg:mb-5">{signupCopy.eyebrow}</p>
+            <h1 className="font-serif text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground sm:text-4xl">
+              {signupCopy.heading}
             </h1>
-            <p className="mt-6 max-w-md text-lg leading-[1.55] text-foreground-secondary">
-              Name, region, URL. We send a verification link to confirm your
-              email, then open your admin.
+            <p className="mt-4 max-w-md text-base leading-[1.55] text-foreground-secondary sm:text-lg lg:mt-6">
+              {signupCopy.intro}
             </p>
-
-            <ol className="mt-12 space-y-6 border-t border-border-subtle pt-10">
-              {[
-                {
-                  n: "i.",
-                  t: "Tell us about your shop.",
-                  d: "Business name, country, currency.",
-                },
-                {
-                  n: "ii.",
-                  t: "Verify your email.",
-                  d: "We\u2019ll send a link so you don\u2019t need a password yet.",
-                },
-                {
-                  n: "iii.",
-                  t: "Open the doors.",
-                  d: "You\u2019ll land in your admin, ready to go.",
-                },
-              ].map((step) => (
-                <li key={step.n} className="grid grid-cols-[auto_1fr] gap-6">
-                  <span className="font-serif text-xl text-moss-700">
-                    {step.n}
-                  </span>
-                  <div>
-                    <p className="font-serif text-lg text-foreground">
-                      {step.t}
-                    </p>
-                    <p className="mt-1 text-sm text-foreground-secondary">
-                      {step.d}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ol>
           </section>
 
-          <section>
+          <section className="lg:col-start-2 lg:row-start-1 lg:row-span-2">
             <OnboardingForm
               countries={countries}
               currencies={currencies}
               timezones={timezones}
             />
+          </section>
+
+          <section
+            aria-labelledby="onboarding-steps-heading"
+            className="lg:col-start-1 lg:row-start-2"
+          >
+            <h2 id="onboarding-steps-heading" className="sr-only">
+              What happens next
+            </h2>
+            <ol className="space-y-6 border-t border-border-subtle pt-8 lg:pt-10">
+              {signupCopy.steps.map((step, index) => (
+                <li
+                  key={step.title}
+                  className="grid grid-cols-[auto_1fr] gap-6"
+                >
+                  <span className="font-serif text-xl text-moss-700">
+                    {ROMAN[index]}
+                  </span>
+                  <div>
+                    <p className="font-serif text-lg text-foreground">
+                      {step.title}
+                    </p>
+                    <p className="mt-1 text-sm text-foreground-secondary">
+                      {step.detail}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
           </section>
         </div>
       </main>

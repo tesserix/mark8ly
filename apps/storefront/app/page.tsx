@@ -80,8 +80,8 @@ function StoreLanding({
         ...style,
       }}
     >
-      <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8">
-        <StorefrontNav storeName={store.name} />
+      <StorefrontNav storeName={store.name} />
+      <div className="mx-auto max-w-6xl px-6 pb-8 sm:px-8">
         <StorefrontLayoutRenderer store={store} theme={theme} content={content} />
         {/*
           Default FeaturedProducts strip only when the merchant hasn't authored

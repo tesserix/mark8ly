@@ -17,6 +17,15 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      testIgnore: /\.mobile\.spec\.ts$/,
+    },
+    {
+      // Phone-sized checks (tesserix/mark8ly#995). Only *.mobile.spec.ts
+      // files run here, so the desktop suite is not doubled; those specs
+      // set their own exact viewport widths on top of the device profile.
+      name: "mobile-chromium",
+      use: { ...devices["Pixel 7"] },
+      testMatch: /\.mobile\.spec\.ts$/,
     },
   ],
 });

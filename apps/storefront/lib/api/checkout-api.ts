@@ -161,6 +161,22 @@ export interface CheckoutResult {
   total: string;
 }
 
+/**
+ * One thing the buyer filled in, on their own order (#966).
+ *
+ * `preview_url` is a short-lived signed link and is ABSENT unless the
+ * caller is signed in and owns the order — the order endpoint also
+ * serves the anonymous post-checkout confirmation view, and those
+ * callers are told a photo exists without being handed one.
+ */
+export interface OrderPersonalisation {
+  field_label: string;
+  kind: string;
+  text_value?: string;
+  has_artwork: boolean;
+  preview_url?: string;
+}
+
 export interface OrderItem {
   title_snapshot: string;
   sku_snapshot: string;
@@ -170,6 +186,8 @@ export interface OrderItem {
   line_total: string;
   currency_code: string;
   image_url?: string;
+  /** Absent on every ordinary line, which is most of them (#966). */
+  personalisation?: OrderPersonalisation[];
 }
 
 export interface OrderAddress {

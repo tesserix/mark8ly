@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mark8ly/marketplace-api/internal/customer"
+	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
@@ -40,6 +41,10 @@ type OrderDetailHandler struct {
 	// initiated return requests emit notification.TypeReturnRequested so
 	// admins see them in their bell just like admin-initiated ones.
 	notify *notification.Service
+	// artwork signs reads of buyer-supplied images against the PRIVATE
+	// bucket (#966). Nil when no private bucket is configured, which is
+	// also the only condition under which no artwork can exist.
+	artwork media.SignedReadURLGenerator
 	// refunds is an optional refund coordinator. When set, a paid order
 	// is auto-refunded on customer self-cancel (spec §4). Nil-safe —
 	// without it, self-cancel simply skips the refund step (pre-existing
@@ -66,6 +71,17 @@ func (h *OrderDetailHandler) WithReturns(svc *order.ReturnService, repo order.Re
 // WithNotifier attaches the notification service so customer-initiated
 // return requests fire admin bell entries (notification.TypeReturnRequested).
 // Nil-safe; passing nil simply suppresses notifications on this path.
+// WithArtwork wires the signer for buyer-supplied images (#966).
+//
+// Nil-safe: without it the buyer's order still shows which fields they
+// filled in and that a photo was supplied, just no link to it. That is
+// the same degradation a deployment with no private bucket gets, and it
+// is honest rather than broken.
+func (h *OrderDetailHandler) WithArtwork(s media.SignedReadURLGenerator) *OrderDetailHandler {
+	h.artwork = s
+	return h
+}
+
 func (h *OrderDetailHandler) WithNotifier(n *notification.Service) *OrderDetailHandler {
 	h.notify = n
 	return h
@@ -206,6 +222,34 @@ type storefrontOrderItemResponse struct {
 	LineTotal     string `json:"line_total"`
 	CurrencyCode  string `json:"currency_code"`
 	ImageURL      string `json:"image_url,omitempty"`
+	// Personalisation is what the buyer supplied for this line (#966).
+	// Absent on every ordinary line, which is most of them.
+	Personalisation []storefrontPersonalisationResponse `json:"personalisation,omitempty"`
+}
+
+// storefrontPersonalisationResponse is one answer, as the BUYER sees it
+// on their own order (#966).
+//
+// Deliberately narrower than the merchant's view in
+// internal/handlers/admin: no storage keys, no upload id, no crop
+// rectangle. The buyer does not need them and this endpoint is reachable
+// without being signed in — see the PreviewURL comment.
+type storefrontPersonalisationResponse struct {
+	FieldLabel string `json:"field_label"`
+	Kind       string `json:"kind"`
+	TextValue  string `json:"text_value,omitempty"`
+	// HasArtwork says an image was supplied, without handing one over.
+	HasArtwork bool `json:"has_artwork"`
+	// PreviewURL is a short-lived signed GET, and is EMPTY unless the
+	// caller is signed in and owns this order.
+	//
+	// This endpoint allows anonymous, store-scoped reads so the
+	// post-checkout confirmation page works before anyone has an
+	// account. Minting a URL for those callers would hand anybody who
+	// learns an order id a link to a stranger's photograph — frequently
+	// a photograph of their child. So the anonymous view gets
+	// has_artwork and the field label, and nothing to click.
+	PreviewURL string `json:"preview_url,omitempty"`
 }
 
 type storefrontAddressResponse struct {
@@ -292,18 +336,44 @@ func (h *OrderDetailHandler) GetOrder(c *gin.Context) {
 	// read THEIR own order. Anonymous storefront-key reads (the post-checkout
 	// confirmation view) stay store-scoped. Same not_found on a mismatch so an
 	// order id can't be probed for existence.
-	if pid, email, ok := resolveCallerCustomer(c); ok && !orderMatchesCaller(o, pid, email) {
+	pid, email, identified := resolveCallerCustomer(c)
+	if identified && !orderMatchesCaller(o, pid, email) {
 		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
 			"error": "not_found", "message": "order not found",
 		})
 		return
 	}
 
+	// Whether this caller may be handed a LINK to the buyer's artwork, as
+	// opposed to merely being told it exists (#966).
+	//
+	// A session-backed customer profile only — deliberately NOT the
+	// X-Customer-Email path. That header is an assertion made by a caller
+	// holding the shared storefront key, and the shared key is not a
+	// per-customer credential; treating it as proof of identity would let
+	// anyone with it name any address and collect that person's
+	// photographs. Reading the order's text is already permitted on that
+	// basis and stays so; a signed URL to an image of someone's child is
+	// a higher bar.
+	artworkOwner := pid != "" && orderMatchesCaller(o, pid, "")
+
 	shipment := h.loadShipment(c.Request.Context(), orderID)
 	timeline := h.loadTimeline(c.Request.Context(), orderID)
 	taxLines := h.loadTaxLines(c.Request.Context(), orderID)
 
 	resp := mapOrderToStorefrontResponse(o, items, addrs)
+
+	// What the buyer supplied, on their own order (#966). A read failure
+	// does not fail the page: they came to see the order, and the
+	// delivery status matters more than a thumbnail.
+	if rows, pErr := order.ListPersonalisationsForOrder(c.Request.Context(), h.db, orderID); pErr != nil {
+		h.logger.Warn("storefront order: personalisation unreadable",
+			"order_id", orderID, "err", pErr)
+	} else {
+		attachStorefrontPersonalisation(
+			c.Request.Context(), &resp, items, rows, h.artwork, artworkOwner, h.logger)
+	}
+
 	resp.Shipment = shipment
 	resp.Shipments = h.loadShipments(c.Request.Context(), orderID)
 	resp.Timeline = timeline
@@ -521,6 +591,75 @@ func defaultTimelineDescription(kind string) string {
 		return "Delivery exception."
 	default:
 		return kind
+	}
+}
+
+// buyerArtworkTTL is how long a buyer's own preview link lives.
+//
+// Short, for the same reason the merchant's is (#968): it is a signed URL
+// to a private object that is usually a photograph of a person, and it
+// should stop working long before it could be forwarded or logged.
+const buyerArtworkTTL = 10 * time.Minute
+
+// attachStorefrontPersonalisation hangs the buyer's own answers onto the
+// matching lines (#966).
+//
+// `signer` is nil, or `owner` false, for a caller who may read this order
+// but is not provably the customer it belongs to. Those callers get the
+// label and has_artwork; they do not get a link. See
+// storefrontPersonalisationResponse.PreviewURL.
+func attachStorefrontPersonalisation(
+	ctx context.Context,
+	resp *storefrontOrderResponse,
+	items []order.OrderItem,
+	rows []order.ItemPersonalisation,
+	signer media.SignedReadURLGenerator,
+	owner bool,
+	logger *slog.Logger,
+) {
+	if len(rows) == 0 {
+		return
+	}
+	byItem := make(map[string][]order.ItemPersonalisation, len(rows))
+	for _, r := range rows {
+		byItem[r.OrderItemID.String()] = append(byItem[r.OrderItemID.String()], r)
+	}
+
+	for i := range items {
+		if i >= len(resp.Items) {
+			break
+		}
+		for _, r := range byItem[items[i].ID.String()] {
+			entry := storefrontPersonalisationResponse{
+				FieldLabel: r.FieldLabel,
+				Kind:       r.Kind,
+				HasArtwork: r.HasArtwork(),
+			}
+			if r.TextValue != nil {
+				entry.TextValue = *r.TextValue
+			}
+			if entry.HasArtwork && owner && signer != nil {
+				// Prefer the preview the buyer cropped; fall back to the
+				// original when they never cropped. Never hand over the
+				// original when a preview exists — it is the print
+				// source and can be very large.
+				key := *r.StorageKeyOriginal
+				if r.StorageKey != nil && *r.StorageKey != "" {
+					key = *r.StorageKey
+				}
+				url, _, err := signer.SignedReadURL(ctx, key, buyerArtworkTTL)
+				if err != nil {
+					// Their order still renders. A missing thumbnail is
+					// not a reason to fail the page they came to read.
+					if logger != nil {
+						logger.Warn("storefront order: artwork preview not signed", "err", err)
+					}
+				} else {
+					entry.PreviewURL = url
+				}
+			}
+			resp.Items[i].Personalisation = append(resp.Items[i].Personalisation, entry)
+		}
 	}
 }
 

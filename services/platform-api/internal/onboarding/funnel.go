@@ -122,6 +122,15 @@ type FunnelFilter struct {
 	// legitimately matches nothing. That is the honest answer, and it is now
 	// the DATABASE's answer rather than an invariant a consumer has to know.
 	TenantID string
+	// Classification, when non-empty, keeps only sessions in that bucket
+	// (#992): external, internal, test or demo. Applies to ListSessions and
+	// its count. GetFunnel ignores it — its all-sessions counts are the
+	// operational totals and are deliberately unchanged; the external view
+	// is a separate field in FunnelStats, not a filter on the whole.
+	//
+	// The handler only sets a value IsClassification accepts, and the
+	// repository binds it as a parameter, so it never reaches SQL as text.
+	Classification string
 }
 
 // SessionOrder names a permitted ordering for ListSessions.
@@ -215,6 +224,22 @@ type FunnelStats struct {
 	MedianCompletionSeconds *float64     `json:"median_completion_seconds"`
 	Last24h                 FunnelCounts `json:"last_24h"`
 	Window                  FunnelWindow `json:"window"`
+	// External is the same window's counts restricted to sessions
+	// classified external (#992) — the view that answers "did a campaign
+	// bring us merchants" without fixtures, dogfooding and the demo store
+	// in the numerator. The all-sessions counts above are untouched: they
+	// are the operational totals and keep their existing meaning.
+	External ExternalFunnelCounts `json:"external"`
+}
+
+// ExternalFunnelCounts is FunnelCounts over external sessions plus the
+// one number the campaign question actually needs: completed merchants
+// counted once each by email, however many sessions they started. A
+// merchant who abandons twice and completes on the third attempt is one
+// conversion, not three starts and one completion in the ratio.
+type ExternalFunnelCounts struct {
+	FunnelCounts
+	CompletedMerchants int64 `json:"completed_merchants"`
 }
 
 // SessionRow is one row of the onboarding sessions list, with Abandoned
@@ -234,6 +259,9 @@ type SessionRow struct {
 	// predicate uses, so the two fields can never disagree about which
 	// instant "now" is.
 	IdleHours float64 `json:"idle_hours"`
+	// Classification is the server-owned bucket (#992): external,
+	// internal, test or demo.
+	Classification string `json:"classification"`
 }
 
 // applyFunnelWindow scopes a query to onboarding_sessions.created_at within
@@ -268,6 +296,9 @@ func applySessionFilter(q *gorm.DB, f FunnelFilter) *gorm.DB {
 	if f.TenantID != "" {
 		q = q.Where("onboarding_sessions.tenant_id = ?", f.TenantID)
 	}
+	if f.Classification != "" {
+		q = q.Where("onboarding_sessions.classification = ?", f.Classification)
+	}
 	if f.IdleHoursMin != nil {
 		// The threshold is bound as a PARAMETER; only the column expression
 		// is interpolated, and that comes from idleHoursExpr, never from a
@@ -289,7 +320,19 @@ type funnelAggregateRow struct {
 	Abandoned               int64
 	InFlight                int64
 	MedianCompletionSeconds *float64
+	// External* are the same counters restricted to classification =
+	// 'external', from the same query so they observe the same state.
+	ExternalStarted            int64
+	ExternalEmailVerified      int64
+	ExternalCompleted          int64
+	ExternalAbandoned          int64
+	ExternalInFlight           int64
+	ExternalCompletedMerchants int64
 }
+
+// externalFilter is the SQL predicate the external view adds to every
+// counter. A literal, not a parameter: the value is a package constant.
+const externalFilter = "classification = '" + ClassificationExternal + "'"
 
 // GetFunnel returns the funnel counters for the given window: started,
 // email_verified, completed, in_flight, abandoned (all from ONE query with
@@ -310,6 +353,12 @@ func (r *gormRepository) GetFunnel(ctx context.Context, f FunnelFilter) (*Funnel
 		fmt.Sprintf("COUNT(*) FILTER (WHERE %s) AS abandoned", abandoned),
 		fmt.Sprintf("COUNT(*) FILTER (WHERE status <> 'completed' AND NOT (%s)) AS in_flight", abandoned),
 		"percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM completed_at - created_at)) FILTER (WHERE status = 'completed') AS median_completion_seconds",
+		fmt.Sprintf("COUNT(*) FILTER (WHERE %s) AS external_started", externalFilter),
+		fmt.Sprintf("COUNT(*) FILTER (WHERE %s AND email_verified_at IS NOT NULL) AS external_email_verified", externalFilter),
+		fmt.Sprintf("COUNT(*) FILTER (WHERE %s AND status = 'completed') AS external_completed", externalFilter),
+		fmt.Sprintf("COUNT(*) FILTER (WHERE %s AND %s) AS external_abandoned", externalFilter, abandoned),
+		fmt.Sprintf("COUNT(*) FILTER (WHERE %s AND status <> 'completed' AND NOT (%s)) AS external_in_flight", externalFilter, abandoned),
+		fmt.Sprintf("COUNT(DISTINCT lower(email)) FILTER (WHERE %s AND status = 'completed') AS external_completed_merchants", externalFilter),
 	).Scan(&row).Error
 	if err != nil {
 		return nil, fmt.Errorf("onboarding: get funnel: %w", err)
@@ -349,6 +398,16 @@ func (r *gormRepository) GetFunnel(ctx context.Context, f FunnelFilter) (*Funnel
 			From: formatWindowBound(f.CreatedFrom),
 			To:   formatWindowBound(f.CreatedTo),
 		},
+		External: ExternalFunnelCounts{
+			FunnelCounts: FunnelCounts{
+				Started:       row.ExternalStarted,
+				EmailVerified: row.ExternalEmailVerified,
+				Completed:     row.ExternalCompleted,
+				InFlight:      row.ExternalInFlight,
+				Abandoned:     row.ExternalAbandoned,
+			},
+			CompletedMerchants: row.ExternalCompletedMerchants,
+		},
 	}, nil
 }
 
@@ -364,6 +423,7 @@ type sessionRowScan struct {
 	CreatedAt       time.Time
 	Abandoned       bool
 	IdleHours       float64
+	Classification  string
 }
 
 // ListSessions returns a page of onboarding sessions plus the unpaginated
@@ -398,7 +458,7 @@ func (r *gormRepository) ListSessions(ctx context.Context, f FunnelFilter) ([]Se
 	err := pageQ.
 		Select(
 			"id", "email", "status", "email_verified_at", "tenant_id",
-			"completed_at", "last_activity_at", "created_at",
+			"completed_at", "last_activity_at", "created_at", "classification",
 			fmt.Sprintf("(%s) AS abandoned", abandoned),
 			fmt.Sprintf("(%s) AS idle_hours", idleHours),
 		).
@@ -423,6 +483,7 @@ func (r *gormRepository) ListSessions(ctx context.Context, f FunnelFilter) ([]Se
 			CreatedAt:       raw.CreatedAt,
 			Abandoned:       raw.Abandoned,
 			IdleHours:       raw.IdleHours,
+			Classification:  raw.Classification,
 		})
 	}
 	return rows, total, nil

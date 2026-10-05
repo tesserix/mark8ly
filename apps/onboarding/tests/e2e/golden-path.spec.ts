@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { fetchMagicLinkToken, uniqueEmail } from "./helpers";
+import {
+  fetchLatestOnboardingSession,
+  fetchMagicLinkToken,
+  uniqueEmail,
+} from "./helpers";
 
 /**
  * Phase G — Golden path.
@@ -20,7 +24,14 @@ test("golden path: landing → form → magic link → welcome", async ({
   const { email, slug, businessName, password, name } = uniqueEmail();
 
   // 1. Landing page renders and the primary CTA goes to /onboarding.
-  await page.goto("/");
+  //
+  // Arrive tagged (#992): the campaign values must still be against the
+  // completed merchant at the end, having crossed a server action, the
+  // verification step and completion. The stray `token` parameter must
+  // NOT: only the allowlisted keys may leave the browser.
+  await page.goto(
+    "/?utm_source=e2e&utm_medium=spec&utm_campaign=attribution&utm_content=hero&token=must-not-persist",
+  );
   await expect(
     // Pins both halves of the H1. The offer half is the point of
     // tesserix/mark8ly#599: the <title> leads with the offer, so an H1
@@ -33,8 +44,11 @@ test("golden path: landing → form → magic link → welcome", async ({
     }),
   ).toBeVisible();
 
-  // 2. Onboarding form.
-  await page.goto("/onboarding");
+  // 2. Onboarding form, reached the way a visitor reaches it: through the
+  //    hero CTA, whose href carries no query string. The attribution
+  //    survives that hop because it lives in the browser, not the URL.
+  await page.getByRole("link", { name: /open your store/i }).first().click();
+  await expect(page).toHaveURL(/\/onboarding$/);
   await expect(
     page.getByRole("heading", { name: /start your store/i }),
   ).toBeVisible();
@@ -82,4 +96,21 @@ test("golden path: landing → form → magic link → welcome", async ({
   await page.locator("#password").fill(password);
   await page.getByRole("button", { name: /create account/i }).click();
   await expect(page).toHaveURL(/\/welcome/, { timeout: 15_000 });
+
+  // 7. The campaign is against the completed merchant, server-side (#992),
+  //    sanitised: the allowlisted values survive, the stray token does not,
+  //    and an @example.com signup is classified test, not external.
+  const session = await fetchLatestOnboardingSession(request, email);
+  expect(session.status).toBe("completed");
+  expect(session.tenant_id).toBeTruthy();
+  expect(session.classification).toBe("test");
+  expect(session.acquisition?.first).toMatchObject({
+    utm_source: "e2e",
+    utm_medium: "spec",
+    utm_campaign: "attribution",
+    utm_content: "hero",
+    landing_path: "/",
+  });
+  expect(JSON.stringify(session.acquisition)).not.toContain("must-not-persist");
+  expect(JSON.stringify(session.acquisition)).not.toContain("token");
 });

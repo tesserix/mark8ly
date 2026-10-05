@@ -21,6 +21,12 @@ type Repository interface {
 	// CompleteInTx marks the session completed and links it to a tenant.
 	// Called inside the onboarding completion transaction.
 	CompleteInTx(ctx context.Context, tx *gorm.DB, id, tenantID string) error
+	// SetClassificationInTx rewrites the session's classification (#992).
+	// Only Complete calls it, when a demo slug reclassifies a session.
+	SetClassificationInTx(ctx context.Context, tx *gorm.DB, id, classification string) error
+	// LatestByEmail returns the most recently created session for an
+	// email, or a NotFound error. Exists for the e2e test helper route.
+	LatestByEmail(ctx context.Context, email string) (*Session, error)
 	// GetFunnel returns the onboarding funnel counters for the given
 	// window (see funnel.go).
 	GetFunnel(ctx context.Context, f FunnelFilter) (*FunnelStats, error)
@@ -43,6 +49,35 @@ func (r *gormRepository) Create(ctx context.Context, s *Session) error {
 		return fmt.Errorf("onboarding: create session: %w", err)
 	}
 	return nil
+}
+
+func (r *gormRepository) SetClassificationInTx(ctx context.Context, tx *gorm.DB, id, classification string) error {
+	if !IsClassification(classification) {
+		return fmt.Errorf("onboarding: set classification: %q is not a classification", classification)
+	}
+	err := tx.WithContext(ctx).
+		Model(&Session{}).
+		Where("id = ?", id).
+		Update("classification", classification).Error
+	if err != nil {
+		return fmt.Errorf("onboarding: set classification: %w", err)
+	}
+	return nil
+}
+
+func (r *gormRepository) LatestByEmail(ctx context.Context, email string) (*Session, error) {
+	var s Session
+	err := r.db.WithContext(ctx).
+		Where("lower(email) = lower(?)", email).
+		Order("created_at DESC, id DESC").
+		First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, apperrors.NotFound("session_not_found", fmt.Sprintf("no onboarding session for %q", email))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("onboarding: latest session for %q: %w", email, err)
+	}
+	return &s, nil
 }
 
 func (r *gormRepository) GetByID(ctx context.Context, id string) (*Session, error) {

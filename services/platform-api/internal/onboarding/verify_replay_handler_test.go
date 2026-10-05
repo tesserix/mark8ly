@@ -42,6 +42,12 @@ func (r *replaySessionRepo) GetFunnel(context.Context, FunnelFilter) (*FunnelSta
 func (r *replaySessionRepo) ListSessions(context.Context, FunnelFilter) ([]SessionRow, int64, error) {
 	return nil, 0, nil
 }
+func (r *replaySessionRepo) SetClassificationInTx(context.Context, *gorm.DB, string, string) error {
+	return nil
+}
+func (r *replaySessionRepo) LatestByEmail(context.Context, string) (*Session, error) {
+	return r.sess, nil
+}
 
 // replayTokenRepo serves one already-consumed, unexpired token.
 type replayTokenRepo struct{ tok *verification.Token }

@@ -210,9 +210,15 @@ func main() {
 		panic(ownerProvErr)
 	}
 
+	onboardingRepo := onboarding.NewRepository(conn)
 	onboardingSvc := onboarding.NewService(onboarding.Config{
-		DB:                    conn,
-		Repo:                  onboarding.NewRepository(conn),
+		DB:   conn,
+		Repo: onboardingRepo,
+		Classifier: onboarding.NewClassifier(
+			cfg.OnboardingInternalEmailDomains,
+			cfg.OnboardingDemoEmails,
+			cfg.OnboardingDemoSlugs,
+		),
 		TenantRepo:            tenantRepo,
 		StoreRepo:             storeRepo,
 		Sender:                sender,
@@ -418,7 +424,11 @@ func main() {
 	// a way to grab the latest magic-link token for an email without
 	// reading the inbox.
 	if tokenRecorder != nil {
-		testhelper.NewHandler(tokenRecorder, invitationRec).Register(v1)
+		testhelper.NewHandler(tokenRecorder, invitationRec).
+			WithOnboardingSessionLookup(func(ctx context.Context, email string) (any, error) {
+				return onboardingRepo.LatestByEmail(ctx, email)
+			}).
+			Register(v1)
 	}
 
 	// ─── Lifecycle ─────────────────────────────────────────────────────

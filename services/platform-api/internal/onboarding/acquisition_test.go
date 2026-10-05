@@ -105,17 +105,17 @@ func TestClassifier_ByEmail(t *testing.T) {
 		nil,
 	)
 	cases := map[string]string{
-		"founder@gmail.com":          ClassificationExternal,
-		"e2e-abc@example.com":        ClassificationTest,
-		"x@sub.example.org":          ClassificationExternal, // only the bare reserved domains
-		"x@store.test":               ClassificationTest,
-		"x@dev.localhost":            ClassificationTest,
-		"ops@tesserix.app":           ClassificationInternal,
-		"OPS@MARK8LY.COM":            ClassificationInternal,
-		"demo@shop.example.com":      ClassificationDemo, // demo wins over test domain
-		"bondi@mark8ly.com":          ClassificationDemo, // demo wins over internal
-		"no-at-sign":                 ClassificationExternal,
-		"":                           ClassificationExternal,
+		"founder@gmail.com":     ClassificationExternal,
+		"e2e-abc@example.com":   ClassificationTest,
+		"x@sub.example.org":     ClassificationExternal, // only the bare reserved domains
+		"x@store.test":          ClassificationTest,
+		"x@dev.localhost":       ClassificationTest,
+		"ops@tesserix.app":      ClassificationInternal,
+		"OPS@MARK8LY.COM":       ClassificationInternal,
+		"demo@shop.example.com": ClassificationDemo, // demo wins over test domain
+		"bondi@mark8ly.com":     ClassificationDemo, // demo wins over internal
+		"no-at-sign":            ClassificationExternal,
+		"":                      ClassificationExternal,
 	}
 	for email, want := range cases {
 		if got := c.ByEmail(email); got != want {

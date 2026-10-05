@@ -131,6 +131,17 @@ export function AddToCartButton({
     lengthCm,
     widthCm,
     heightCm,
+    // MUST be here. handleClick reads `personalisation`, and without it
+    // in the deps the callback keeps the value from the FIRST render —
+    // undefined, before the buyer had uploaded anything — so every
+    // personalised line was added to the cart with the buyer's answers
+    // silently dropped (#966).
+    //
+    // It looked fine from the outside: blockedReason is a prop and is
+    // recomputed every render, so the button correctly flipped from
+    // "Finish the details above" to "Add to cart" the moment the upload
+    // landed. Only the thing it then added was stale.
+    personalisation,
   ]);
 
   if (!inStock) {

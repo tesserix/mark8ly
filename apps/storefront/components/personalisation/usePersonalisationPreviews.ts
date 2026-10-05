@@ -24,14 +24,17 @@ export function usePersonalisationPreviews(
   storeSlug: string,
   lines: readonly { personalisation?: readonly { uploadId?: string }[] }[],
 ): PreviewLookup {
-  const ids = useMemo(() => collectUploadIds(lines).sort(), [lines]);
   // A stable primitive so the effect does not refire on a new array with
-  // identical contents.
-  const idKey = ids.join(",");
+  // identical contents — a caller passing a fresh array literal would
+  // otherwise re-sign the whole cart on every render.
+  const idKey = useMemo(() => collectUploadIds(lines).sort().join(","), [lines]);
 
   const [lookup, setLookup] = useState<PreviewLookup>(emptyPreviewLookup);
 
   useEffect(() => {
+    // Derived from idKey rather than captured from above, so the key is
+    // the effect's ONLY id input and the dependency list is honest.
+    const ids = idKey === "" ? [] : idKey.split(",");
     if (ids.length === 0) {
       setLookup(emptyPreviewLookup);
       return;
@@ -46,8 +49,9 @@ export function usePersonalisationPreviews(
     return () => {
       live = false;
     };
-    // ids is covered by idKey; listing it too would defeat the point.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // idKey is a stable serialisation of ids, so listing ids as well
+    // would refire this on every render with an identical set — which is
+    // the thing the key exists to prevent.
   }, [storeSlug, idKey]);
 
   return lookup;

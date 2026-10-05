@@ -28,6 +28,8 @@ import {
 import { AddPersonalisationField } from "./AddPersonalisationField";
 import { PersonalisationFieldCard } from "./PersonalisationFieldCard";
 
+import type { MockupMedia } from "./MockupConfig";
+
 export interface PersonalisationEditorDeps {
   createField?: (
     storeId: string,
@@ -64,6 +66,8 @@ export interface PersonalisationEditorProps extends PersonalisationEditorDeps {
   productId: string;
   currencyCode: string;
   initialFields: PersonalisationField[];
+  /** The product's images, offered as the mockup for the 2D preview (#966). */
+  media?: readonly MockupMedia[];
 }
 
 export function PersonalisationEditor({
@@ -71,6 +75,7 @@ export function PersonalisationEditor({
   productId,
   currencyCode,
   initialFields,
+  media,
   createField = defaultCreate,
   updateField = defaultUpdate,
   deleteField = defaultDelete,
@@ -148,6 +153,12 @@ export function PersonalisationEditor({
           key={field.id}
           field={field}
           currencyCode={currencyCode}
+          media={media}
+          onSaveMockup={(patch) =>
+            run(field.id, field.id, () =>
+              updateField(storeId, productId, field.id, patch),
+            )
+          }
           busy={pending && busyFieldId === field.id}
           error={errors[field.id]}
           onPatch={(patch) =>

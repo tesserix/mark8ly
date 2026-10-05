@@ -14,9 +14,26 @@ import type { PersonalisationField } from "@/lib/api/marketplace-api";
 import { Field } from "@/components/products/form/Field";
 import { fieldSummary, inputClass, keyFromLabel, kindLabel } from "./kinds";
 
+import {
+  MockupConfig,
+  type MockupMedia,
+  type PrintAreaValue,
+} from "./MockupConfig";
+
 export interface PersonalisationFieldCardProps {
   field: PersonalisationField;
   currencyCode: string;
+  /**
+   * The product's own images, offered as the mockup for the 2D preview
+   * (#966). Empty simply hides the control.
+   */
+  media?: readonly MockupMedia[];
+  /** Saves the mockup pair. Separate from onPatch: it writes two
+   *  nullable columns together and is its own action, not a field edit. */
+  onSaveMockup?: (patch: {
+    mockup_storage_key: string | null;
+    print_area: PrintAreaValue | null;
+  }) => void;
   busy: boolean;
   error?: string;
   onPatch: (patch: {
@@ -35,6 +52,8 @@ export interface PersonalisationFieldCardProps {
 
 export function PersonalisationFieldCard({
   field,
+  media,
+  onSaveMockup,
   currencyCode,
   busy,
   error,
@@ -181,6 +200,18 @@ export function PersonalisationFieldCard({
               </Field>
             </div>
           )}
+
+          {field.kind === "image" && onSaveMockup ? (
+            <div className="rounded-md border border-[var(--ink-100)] p-3">
+              <MockupConfig
+                media={media ?? []}
+                mockupStorageKey={field.mockup_storage_key}
+                printArea={field.print_area}
+                busy={busy}
+                onSave={onSaveMockup}
+              />
+            </div>
+          ) : null}
 
           {(field.kind === "text" || field.kind === "textarea") && (
             <Field label="Character limit">

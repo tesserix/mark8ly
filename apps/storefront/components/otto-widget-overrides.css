@@ -1,19 +1,81 @@
-/* Otto support widget — post-close feedback survey scroll fix.
+/* Otto support widget — host overrides, loaded after the widget stylesheet.
  *
- * @tesserix/otto-widget@0.5.1 renders the feedback survey in the panel's
- * fixed-height (560px) slot, but unlike .otto-widget__messages the
- * .otto-widget__feedback view has no flex/scroll. On short viewports its
- * lower fields and the Submit button get clipped and become unreachable.
- * Give it the same scroll behaviour as the messages view. Loaded after
- * the widget stylesheet; !important guards against bundle-order changes.
- * Remove once the upstream widget package ships the fix. */
-/* The post-close feedback survey AND the multi-field intake / OTP-verify
- * forms overflow the fixed-height panel. Make them scroll. Scope the form
- * rule to forms that contain field labels (intake/verify) via :has() so the
- * short chat composer (no field labels) is NOT forced to grow. */
+ * Resolved package: @tesserix/otto-widget 0.6.0, shipped as source. It
+ * exposes no placement, launcher or open-state props — only a `style`
+ * passthrough on the root — so the supported way to adapt it is this
+ * stylesheet over its scoped class names. `!important` guards against
+ * bundle-order changes. Each block names the upstream gap it covers;
+ * drop a block when the package ships the fix.
+ */
+
+/* 1. The post-close feedback survey AND the multi-field intake / OTP-verify
+ * forms overflow the fixed-height (560px) panel. Make them scroll. Scope
+ * the form rule to forms that contain field labels (intake/verify) via
+ * :has() so the short chat composer (no field labels) is NOT forced to
+ * grow. */
 .otto-widget__feedback,
 .otto-widget__form:has(.otto-widget__field-label) {
   flex: 1 1 auto !important;
   min-height: 0 !important;
   overflow-y: auto !important;
+}
+
+/* 2. Phones (below Tailwind's `sm`, matching StorefrontNav's breakpoint).
+ *
+ * Upstream pins a 160px "Chat with support" pill 24px from the corner. On
+ * a 400px screen that is 40% of the width, sitting on the hero copy and
+ * its call to action (tesserix/mark8ly#995). Collapse it to a 48px circle
+ * — the accessible name is the button's aria-label, so hiding the text
+ * costs screen readers nothing — and respect the device's safe areas.
+ *
+ * The open panel is 360×560 anchored to that corner, clipped by
+ * max-height: calc(100vh - 96px). On a short viewport or with the
+ * keyboard up that leaves the composer off screen. Below `sm` the panel
+ * takes the whole viewport instead, with dvh so it follows the keyboard. */
+@media (max-width: 639px) {
+  .otto-widget {
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important;
+    right: calc(16px + env(safe-area-inset-right, 0px)) !important;
+  }
+
+  .otto-widget__launcher {
+    position: relative !important;
+    width: 48px !important;
+    height: 48px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    /* Collapses the label text node; the glyph below sets its own size. */
+    font-size: 0 !important;
+    line-height: 0 !important;
+  }
+
+  .otto-widget__launcher::after {
+    content: "?";
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .otto-widget__launcher-dot {
+    position: absolute !important;
+    top: 2px !important;
+    right: 2px !important;
+    width: 10px !important;
+    height: 10px !important;
+    box-shadow: 0 0 0 2px var(--otto-primary) !important;
+  }
+
+  .otto-widget__panel {
+    position: fixed !important;
+    inset: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+  }
 }

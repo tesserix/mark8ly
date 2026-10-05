@@ -20,9 +20,13 @@ vi.mock("react-easy-crop", () => ({
   },
 }));
 
-import { cropToBlob as mockCropToBlob } from "./cropImage";
+// Mocked at the SHARED module, not at ./cropImage: the dialog was lifted
+// to @repo/ui (#966) and imports the canonical helper directly, so a mock
+// on the local re-export would no longer intercept — the real
+// cropToBlob would run against jsdom, find no 2d context, and throw.
+import { cropToBlob as mockCropToBlob } from "@repo/ui/crop-image";
 
-vi.mock("./cropImage", () => ({
+vi.mock("@repo/ui/crop-image", () => ({
   cropToBlob: vi.fn(async () => new Blob(["x"], { type: "image/jpeg" })),
   loadImage: vi.fn(async () => ({ naturalWidth: 800, naturalHeight: 600 } as HTMLImageElement)),
 }));

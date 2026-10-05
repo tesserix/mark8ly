@@ -34,6 +34,12 @@ import { placeCartHolds, releaseCartHolds } from "@/lib/api/checkout-api";
 // ---------------------------------------------------------------------------
 
 interface CartContextValue {
+  /**
+   * The store this cart belongs to. Exposed because consumers need it to
+   * call store-scoped endpoints — re-signing the buyer's artwork
+   * previews, for one (#966) — and the provider already has it.
+   */
+  storeSlug: string;
   items: CartItem[];
   add: (item: CartItem) => void;
   /**
@@ -218,6 +224,7 @@ export function CartProvider({ storeSlug, children }: CartProviderProps) {
 
   const value = useMemo<CartContextValue>(
     () => ({
+      storeSlug,
       items,
       add,
       remove,
@@ -227,7 +234,7 @@ export function CartProvider({ storeSlug, children }: CartProviderProps) {
       subtotal: subtotal(items),
       holdExpiresAt,
     }),
-    [items, add, remove, updateQty, clear, holdExpiresAt],
+    [storeSlug, items, add, remove, updateQty, clear, holdExpiresAt],
   );
 
   return <CartContext value={value}>{children}</CartContext>;

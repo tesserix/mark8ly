@@ -6,14 +6,24 @@
 // subtotal, and a disabled checkout button. Per-store via the
 // CartProvider's slug scoping.
 
-import { lineKey } from "@/lib/cart";
+import { lineKey, type CartItemPersonalisation } from "@/lib/cart";
 import Image from "next/image";
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
 import { StorefrontNav } from "@/components/StorefrontNav";
+import {
+  PersonalisationSummary,
+  hasExpiredUpload,
+} from "@/components/personalisation/PersonalisationSummary";
+import { usePersonalisationPreviews } from "@/components/personalisation/usePersonalisationPreviews";
+import { emptyPreviewLookup, type PreviewLookup } from "@/lib/personalisation-previews";
 
 export default function CartPage() {
-  const { items, updateQty, remove, subtotal, count, clear } = useCart();
+  const { storeSlug, items, updateQty, remove, subtotal, count, clear } = useCart();
+  // One request for the whole cart, re-signed on render because the URLs
+  // expire in minutes and cannot be stored alongside the line (#966).
+  const previews = usePersonalisationPreviews(storeSlug, items);
+  const blockedLines = items.filter((i) => hasExpiredUpload(i.personalisation, previews)).length;
 
   return (
     <div className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
@@ -38,6 +48,7 @@ export default function CartPage() {
                   <CartRow
                     key={key}
                     item={item}
+                    previews={previews}
                     onQtyChange={(qty) => updateQty(key, qty)}
                     onRemove={() => remove(key)}
                   />
@@ -58,13 +69,40 @@ export default function CartPage() {
                 </p>
               </div>
 
-              <div className="mt-6 flex items-center gap-4">
-                <Link
-                  href="/checkout"
-                  className="rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity duration-150 hover:opacity-90 active:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+              {/* The explanation lives on the offending LINE, not here
+                  (#966). This only says where to look: a buyer who has
+                  decided to pay needs to be sent to the thing that is
+                  wrong, not told something is wrong. Checkout is still
+                  withheld, because the server will reject the whole cart
+                  for one expired upload and a failed payment attempt is a
+                  worse way to find that out. */}
+              {blockedLines > 0 ? (
+                <p
+                  role="status"
+                  className="mt-4 text-sm text-[color:var(--storefront-accent,var(--moss-700))]"
                 >
-                  Checkout
-                </Link>
+                  {blockedLines === 1
+                    ? "One item needs its photo uploaded again before you can check out."
+                    : `${blockedLines} items need their photos uploaded again before you can check out.`}
+                </p>
+              ) : null}
+
+              <div className="mt-6 flex items-center gap-4">
+                {blockedLines > 0 ? (
+                  <span
+                    aria-disabled="true"
+                    className="cursor-not-allowed rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] opacity-40"
+                  >
+                    Checkout
+                  </span>
+                ) : (
+                  <Link
+                    href="/checkout"
+                    className="rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm font-medium text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity duration-150 hover:opacity-90 active:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+                  >
+                    Checkout
+                  </Link>
+                )}
                 <button
                   type="button"
                   onClick={clear}
@@ -111,12 +149,14 @@ interface CartRowProps {
     currencyCode: string;
     qty: number;
     imageUrl?: string;
+    personalisation?: readonly CartItemPersonalisation[];
   };
+  previews?: PreviewLookup;
   onQtyChange: (qty: number) => void;
   onRemove: () => void;
 }
 
-function CartRow({ item, onQtyChange, onRemove }: CartRowProps) {
+function CartRow({ item, previews = emptyPreviewLookup, onQtyChange, onRemove }: CartRowProps) {
   const lineTotal = Number.parseFloat(item.priceAmount) * item.qty;
 
   return (
@@ -150,6 +190,14 @@ function CartRow({ item, onQtyChange, onRemove }: CartRowProps) {
             {formatSubtotal(lineTotal, item.currencyCode)}
           </p>
         </div>
+
+        {/* What the buyer chose, with their own thumbnail. Without this
+            two personalised lines of one variant are the same row, and
+            the stepper they just pressed could have been either (#966). */}
+        <PersonalisationSummary
+          entries={item.personalisation}
+          previews={previews}
+        />
 
         <div className="mt-2 flex items-center gap-3">
           <label className="sr-only" htmlFor={`qty-${item.variantId}`}>

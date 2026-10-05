@@ -115,16 +115,18 @@ describe("toCartPersonalisation", () => {
   it("records an unticked box as absent and a ticked one as true", () => {
     const box = [field({ kind: "checkbox" })];
     expect(toCartPersonalisation(box, { f1: { checked: false } })).toBeUndefined();
+    // fieldLabel is snapshotted for display (#966): the cart renders
+    // from localStorage and has no field definitions to look it up in.
     expect(toCartPersonalisation(box, { f1: { checked: true } })).toEqual([
-      { fieldId: "f1", checked: true },
+      { fieldId: "f1", fieldLabel: "Name", checked: true },
     ]);
   });
 
   it("emits one entry per uploaded image", () => {
     const img = [field({ kind: "image", max_images: 3 })];
     expect(toCartPersonalisation(img, { f1: { uploadIds: ["u1", "u2"] } })).toEqual([
-      { fieldId: "f1", uploadId: "u1" },
-      { fieldId: "f1", uploadId: "u2" },
+      { fieldId: "f1", fieldLabel: "Name", uploadId: "u1" },
+      { fieldId: "f1", fieldLabel: "Name", uploadId: "u2" },
     ]);
   });
 

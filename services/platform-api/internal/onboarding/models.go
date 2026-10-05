@@ -60,6 +60,16 @@ type Session struct {
 	LastActivityAt  time.Time       `gorm:"column:last_activity_at;not null;default:now()"            json:"last_activity_at"`
 	CreatedAt       time.Time       `gorm:"column:created_at;not null;default:now()"                  json:"created_at"`
 	UpdatedAt       time.Time       `gorm:"column:updated_at;not null;default:now()"                  json:"updated_at"`
+	// Acquisition is the sanitised campaign context the merchant arrived
+	// with (#992), or NULL when none was captured. See acquisition.go for
+	// the shape and SanitizeAcquisition for what is allowed in. `default:null`
+	// makes GORM omit a nil value from the INSERT so the column stays NULL
+	// rather than receiving an empty string jsonb cannot parse.
+	Acquisition json.RawMessage `gorm:"column:acquisition;type:jsonb;default:null" json:"acquisition,omitempty"`
+	// Classification is server-owned: external, internal, test or demo.
+	// Set from the email at creation and re-checked against demo slugs at
+	// completion. The funnel's external view filters on it.
+	Classification string `gorm:"column:classification;type:varchar(16);not null;default:'external'" json:"classification"`
 }
 
 // TableName overrides GORM's default pluralization.

@@ -19,7 +19,10 @@
 //     tenant with multiple stores has multiple slugs.
 package tenant
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Tenant is a merchant company on Mark8ly.
 type Tenant struct {
@@ -30,6 +33,12 @@ type Tenant struct {
 	Status      string    `gorm:"column:status;type:varchar(20);not null;default:'active'" json:"status"`
 	CreatedAt   time.Time `gorm:"column:created_at;not null;default:now()"                 json:"created_at"`
 	UpdatedAt   time.Time `gorm:"column:updated_at;not null;default:now()"                 json:"updated_at"`
+	// Acquisition is the campaign context the founding onboarding session
+	// carried (mark8ly#992), copied here at completion so the merchant
+	// keeps it after the session row is gone. Sanitised and allowlisted
+	// upstream in internal/onboarding; NULL for tenants that predate it or
+	// arrived untagged. `default:null` keeps a nil value out of the INSERT.
+	Acquisition json.RawMessage `gorm:"column:acquisition;type:jsonb;default:null" json:"acquisition,omitempty"`
 }
 
 // TableName overrides GORM's default pluralization.

@@ -57,6 +57,14 @@ func (f *fakeSessionRepo) ListSessions(context.Context, FunnelFilter) ([]Session
 	f.t.Fatal("ListSessions called")
 	return nil, 0, nil
 }
+func (f *fakeSessionRepo) SetClassificationInTx(context.Context, *gorm.DB, string, string) error {
+	f.t.Fatal("SetClassificationInTx called — completion should have aborted before the transaction")
+	return nil
+}
+func (f *fakeSessionRepo) LatestByEmail(context.Context, string) (*Session, error) {
+	f.t.Fatal("LatestByEmail called")
+	return nil, nil
+}
 
 // recordingProvisioner captures the arguments Complete passes and
 // answers with a fixed result.

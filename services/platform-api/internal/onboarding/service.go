@@ -89,6 +89,7 @@ type Service struct {
 	storefrontURLTemplate string
 	vendorClient          VendorEnsurer
 	provisioner           OwnerProvisioner
+	classifier            Classifier
 }
 
 // Config holds Service dependencies.
@@ -117,11 +118,16 @@ type Config struct {
 	// project grant during Complete. Nil on the GIP path — see
 	// OwnerProvisioner's doc.
 	Provisioner OwnerProvisioner
+	// Classifier decides each session's classification (#992). The zero
+	// value is safe: reserved test domains become test, everything else
+	// external.
+	Classifier Classifier
 }
 
 // NewService constructs a Service.
 func NewService(cfg Config) *Service {
 	return &Service{
+		classifier:            cfg.Classifier,
 		db:                    cfg.DB,
 		repo:                  cfg.Repo,
 		tenantRepo:            cfg.TenantRepo,
@@ -140,6 +146,10 @@ func NewService(cfg Config) *Service {
 // CreateRequest is the input to Create.
 type CreateRequest struct {
 	Email string `json:"email"`
+	// Acquisition is the browser-captured campaign context (#992). It is
+	// optional, untrusted until sanitised, and can never fail the request:
+	// a malformed value is dropped and the session is created without it.
+	Acquisition json.RawMessage `json:"acquisition,omitempty"`
 }
 
 // Create starts a new onboarding session for the given email. Idempotent
@@ -160,10 +170,13 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*Session, erro
 		return nil, err
 	}
 
+	acquisition, _ := SanitizeAcquisition(req.Acquisition)
 	sess := &Session{
-		Email:  email,
-		Draft:  json.RawMessage(`{}`),
-		Status: StatusInProgress,
+		Email:          email,
+		Draft:          json.RawMessage(`{}`),
+		Status:         StatusInProgress,
+		Acquisition:    acquisition,
+		Classification: s.classifier.ByEmail(email),
 	}
 	if err := s.repo.Create(ctx, sess); err != nil {
 		return nil, err
@@ -414,7 +427,13 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		// uniqueness check and the lower(owner_email) index compare on.
 		OwnerEmail: ownerEmail,
 		Status:     tenant.StatusActive,
+		// The campaign context travels from the session to the merchant it
+		// produced (#992); the session row is not the long-lived record.
+		Acquisition: sess.Acquisition,
 	}
+	// The slug is the one fact about a demo store the email cannot tell
+	// us, so classification is settled here rather than at creation.
+	classification := s.classifier.AtCompletion(sess.Classification, req.Slug)
 	st := &store.Store{
 		Slug:            req.Slug,
 		Name:            req.BusinessName,
@@ -439,6 +458,11 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 		}
 		if err := s.repo.CompleteInTx(ctx, tx, req.SessionID, t.ID); err != nil {
 			return err
+		}
+		if classification != sess.Classification {
+			if err := s.repo.SetClassificationInTx(ctx, tx, req.SessionID, classification); err != nil {
+				return err
+			}
 		}
 		// Phase D outbox event — owner tuple on the tenant. Store-
 		// level tuples come with Phase R (store-level invites).

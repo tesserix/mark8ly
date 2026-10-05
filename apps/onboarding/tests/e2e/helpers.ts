@@ -83,3 +83,28 @@ export async function fetchMagicLinkToken(
     `magic-link token never appeared for ${email} (last status ${lastStatus})`,
   );
 }
+
+/** What platform-api persisted for the newest session of an email (#992):
+ * the sanitised acquisition record and the server-owned classification.
+ * Served by the same non-prod test group as the magic-link helper. */
+export async function fetchLatestOnboardingSession(
+  request: APIRequestContext,
+  email: string,
+): Promise<{
+  id: string;
+  email: string;
+  status: string;
+  tenant_id?: string | null;
+  classification?: string;
+  acquisition?: {
+    first?: Record<string, string>;
+    last?: Record<string, string>;
+  };
+}> {
+  const res = await request.get(
+    `${API_URL}/api/v1/test/onboarding/sessions/latest?email=${encodeURIComponent(email)}`,
+  );
+  expect(res.ok(), `session lookup failed: ${res.status()}`).toBeTruthy();
+  const body = (await res.json()) as { data: Awaited<ReturnType<typeof fetchLatestOnboardingSession>> };
+  return body.data;
+}

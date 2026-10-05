@@ -25,6 +25,7 @@ import {
 } from "@/app/onboarding/actions";
 import { promoMessage, type PromoMessage } from "@/lib/promo/message";
 import { signupCopy } from "@/lib/copy/signup";
+import { readStoredAcquisition } from "@/lib/acquisition";
 
 interface Props {
   countries: Country[];
@@ -353,6 +354,9 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
         values.migrationType === "migrating"
           ? values.screenshotUrl?.trim() || undefined
           : undefined,
+      // Read at submit, not at mount: the merchant may have arrived on
+      // this tab before the campaign link and the record is per-browser.
+      acquisition: readStoredAcquisition(),
     };
 
     startTransition(async () => {

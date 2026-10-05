@@ -8,6 +8,7 @@
 // the throw in a try/catch and return a discriminated union to the client.
 
 import { config } from "@/lib/config";
+import type { Acquisition } from "@/lib/acquisition";
 import type {
   Country,
   Currency,
@@ -66,10 +67,13 @@ export const locations = {
 
 // ─── Onboarding sessions ────────────────────────────────────────────────
 export const onboarding = {
-  createSession: (email: string) =>
+  // acquisition is the browser-captured campaign context (#992). Optional,
+  // and the server treats it as untrusted input it sanitises or drops; it
+  // can never make the create fail.
+  createSession: (email: string, acquisition?: Acquisition) =>
     request<OnboardingSession>("/api/v1/onboarding/sessions", {
       method: "POST",
-      body: JSON.stringify({ email }),
+      body: JSON.stringify(acquisition ? { email, acquisition } : { email }),
     }),
 
   getSession: (sessionId: string) =>

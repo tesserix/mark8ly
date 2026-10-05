@@ -50,6 +50,15 @@ type Config struct {
 	// Dev: http://localhost:4201; prod: https://mark8ly.com.
 	OnboardingBaseURL string `envconfig:"ONBOARDING_BASE_URL" default:"http://localhost:4201"`
 
+	// Onboarding session classification (mark8ly#992). Sessions whose
+	// email domain is listed here are "internal" rather than "external";
+	// emails listed in OnboardingDemoEmails, and completions whose slug is
+	// in OnboardingDemoSlugs, are "demo". IANA-reserved example domains and
+	// local TLDs are always "test" and need no listing. Comma-separated.
+	OnboardingInternalEmailDomains []string `envconfig:"ONBOARDING_INTERNAL_EMAIL_DOMAINS" default:"tesserix.app,tesserix.com,mark8ly.com"`
+	OnboardingDemoEmails           []string `envconfig:"ONBOARDING_DEMO_EMAILS" default:""`
+	OnboardingDemoSlugs            []string `envconfig:"ONBOARDING_DEMO_SLUGS" default:"the-bondi-store"`
+
 	// AdminResetBaseURL is the fully-qualified origin for the admin
 	// password-reset landing page. Flat (not per-slug) because the
 	// link carries the oobCode and lands on the canonical admin host;

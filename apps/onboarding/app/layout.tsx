@@ -4,6 +4,7 @@ import { Source_Sans_3, Source_Serif_4 } from "next/font/google";
 import { SkipLink } from "@repo/ui/skip-link";
 import { ChunkRecovery } from "@repo/ui/chunk-recovery";
 import { Analytics } from "./analytics";
+import { AcquisitionCapture } from "@/components/AcquisitionCapture";
 
 import "./globals.css";
 
@@ -125,6 +126,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
         {children}
         <ChunkRecovery />
         <Analytics />
+        <AcquisitionCapture />
       </body>
     </html>
   );

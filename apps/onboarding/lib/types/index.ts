@@ -67,6 +67,10 @@ export interface OnboardingSession {
   last_activity_at: string;
   created_at: string;
   updated_at: string;
+  /** Sanitised campaign context (#992); absent when none was captured. */
+  acquisition?: import("@/lib/acquisition").Acquisition;
+  /** Server-owned bucket (#992). */
+  classification?: "external" | "internal" | "test" | "demo";
 }
 
 export interface CompleteResult {

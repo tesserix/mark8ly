@@ -28,6 +28,7 @@ import { onboarding, tenants, PlatformApiError } from "@/lib/api/platform-api";
 import { config } from "@/lib/config";
 import { allowPromoCheck } from "@/lib/promo/rateLimit";
 import type { PromoCheck } from "@/lib/promo/message";
+import type { Acquisition } from "@/lib/acquisition";
 
 type Result<T> =
   | { ok: true; data: T }
@@ -115,13 +116,17 @@ interface SubmitInput {
   // screenshot_url is the GCS URL returned by the upload helper; the
   // raw File object never reaches the server action.
   screenshotUrl?: string;
+  // #992 — what the browser remembers about how the merchant arrived.
+  // Travels with the session create so it survives verification on another
+  // device and reaches the tenant on completion. Optional; never required.
+  acquisition?: Acquisition;
 }
 
 export async function submitOnboarding(
   input: SubmitInput,
 ): Promise<Result<{ sessionId: string }>> {
   try {
-    const sess = await onboarding.createSession(input.email);
+    const sess = await onboarding.createSession(input.email, input.acquisition);
 
     // Persist the business fields into the session draft so the
     // /onboarding/set-password page (reached after the magic link click)

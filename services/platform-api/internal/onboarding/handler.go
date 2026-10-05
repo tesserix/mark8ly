@@ -368,6 +368,11 @@ func parseFunnelFilter(c *gin.Context) FunnelFilter {
 		}
 	}
 	f.TenantID = strings.TrimSpace(c.Query("tenant_id"))
+	// `classification` is allowlisted here (#992): an unknown value takes
+	// the default (no filter), like every other parameter in this function.
+	if v := strings.TrimSpace(c.Query("classification")); IsClassification(v) {
+		f.Classification = v
+	}
 	return f
 }
 

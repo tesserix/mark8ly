@@ -22,9 +22,41 @@
 
 import * as React from "react";
 import { useCallback, useEffect, useState } from "react";
-import Cropper from "react-easy-crop";
+import CropperImport from "react-easy-crop";
+import type { CropperProps } from "react-easy-crop";
 
 import { cropToBlob, loadImage, type CropBox } from "./crop-image";
+
+// react-easy-crop's CommonJS type entry is `export type * from
+// './index.d.mts'` — TYPE-only, so the default export (a class, i.e. a
+// value) is not re-exported. This package resolves with NodeNext, which
+// picks that CJS entry, so the bare default import comes through as the
+// module NAMESPACE and TypeScript refuses it as a JSX component.
+//
+// apps/admin never hit this because Next resolves with `bundler` and
+// gets index.d.mts, where the default export is declared properly.
+//
+// Narrowed here rather than switching this package to bundler
+// resolution, which would quietly change how every other import in it
+// resolves, and rather than widening the tsconfig for one dependency's
+// packaging bug.
+//
+// CropperProps marks seventeen keys required that the class supplies
+// through `static defaultProps` — aspect, zoom, rotation, minZoom,
+// cropShape, style and the rest. JSX honours those defaults for a class
+// component, so admin can omit them; a bare
+// ComponentType<CropperProps> cannot express that and reports every one
+// as missing.
+//
+// So: everything optional, except the two the component genuinely cannot
+// work without. Derived this way rather than by listing the seventeen,
+// which would rot the moment upstream adds a default, and rather than
+// reading `typeof CropperImport.defaultProps` — that needs the value
+// binding this cast exists to recover in the first place.
+type CropperComponentProps = Partial<CropperProps> &
+  Pick<CropperProps, "crop" | "onCropChange">;
+
+const Cropper = CropperImport as unknown as React.ComponentType<CropperComponentProps>;
 
 export interface AspectOption {
   label: string;

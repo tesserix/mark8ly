@@ -387,11 +387,11 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
   }
 
   return (
-    <div className="w-full max-w-lg mx-auto lg:mx-0">
+    <div className="mx-auto w-full min-w-0 max-w-lg lg:mx-0">
       <form
         onSubmit={handleSubmit(onValid, onInvalid)}
         noValidate
-        className="space-y-5"
+        className="min-w-0 space-y-5"
       >
         {/* Email */}
         <Field
@@ -447,6 +447,12 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
               placeholder="acme"
               spellCheck={false}
               autoComplete="off"
+              // A text input's intrinsic width is ~20 characters and a flex
+              // item will not shrink below it. At 320px that plus the
+              // ".mark8ly.com" suffix outgrew the column and pushed every
+              // field past the right edge (#993). `size={1}` drops the
+              // intrinsic width so `flex-1 min-w-0` can actually shrink it.
+              size={1}
               aria-invalid={
                 errors.slug || slugAvailability.state === "taken"
                   ? true
@@ -459,16 +465,16 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
                   e.target.value = e.target.value.toLowerCase();
                 },
               })}
-              className="flex-1 bg-transparent px-3 py-2.5 text-sm text-foreground focus:outline-none"
+              className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm text-foreground focus:outline-none"
             />
-            <span className="flex items-center border-l border-border bg-paper-100 px-3 text-sm font-medium text-foreground-secondary">
+            <span className="flex shrink-0 items-center border-l border-border bg-paper-100 px-3 text-sm font-medium text-foreground-secondary">
               .mark8ly.com
             </span>
           </div>
         </Field>
 
         {/* Country + Currency */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
           <Field
             id="country"
             label="Country"
@@ -815,7 +821,9 @@ function Field({ id, label, error, hint, hintState, children }: FieldProps) {
         : "text-foreground-tertiary";
 
   return (
-    <div className="space-y-1.5">
+    // min-w-0: as a grid or flex item a field must be allowed to shrink
+    // to the column, or its content's minimum width widens the whole form.
+    <div className="min-w-0 space-y-1.5">
       <Label htmlFor={id} className="text-foreground">
         {label}
       </Label>

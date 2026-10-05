@@ -36,7 +36,7 @@ test("golden path: landing → form → magic link → welcome", async ({
   // 2. Onboarding form.
   await page.goto("/onboarding");
   await expect(
-    page.getByRole("heading", { name: /two minutes to a storefront/i }),
+    page.getByRole("heading", { name: /start your store/i }),
   ).toBeVisible();
 
   await page.getByLabel(/email address/i).fill(email);

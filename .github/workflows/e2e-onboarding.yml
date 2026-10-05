@@ -18,8 +18,10 @@ env:
 # the merge. It also means this workflow can never again reach main without
 # having executed: the PR that changes it is a PR that runs it.
 #
-# Runs the WHOLE onboarding suite: all 7 spec files, 16 tests, gated on
-# exactly 11 passed and 5 skipped.
+# Runs the WHOLE onboarding suite: all 8 spec files across two Playwright
+# projects, 21 tests, gated on exactly 16 passed and 5 skipped. The
+# desktop project runs 16 (11 pass, 5 skip); the mobile-chromium project
+# runs the 5 in onboarding-form.mobile.spec.ts (#993).
 #
 # The 5 skips are tax-id-migration's migration-UI tests, which skip
 # themselves while MIGRATION_UI_ENABLED is false
@@ -200,8 +202,8 @@ jobs:
             echo "::error::a test is FLAKY (passed only on retry) — the exact pass count below will also fail; fix the intermittency rather than re-running"
             fail=1
           fi
-          grep -qE '(^|[^0-9])11 passed' <<<"$out" || {
-            echo "::error::did not see exactly 11 passed — the onboarding suite is not actually executing and passing"
+          grep -qE '(^|[^0-9])16 passed' <<<"$out" || {
+            echo "::error::did not see exactly 16 passed — the onboarding suite is not actually executing and passing"
             fail=1
           }
           if grep -qE '(^|[^0-9])[0-9]+ (failed|timed out)' <<<"$out"; then

@@ -14,11 +14,26 @@ const WIDTHS = [320, 375, 400] as const;
 const HEIGHT = 606;
 
 async function noHorizontalOverflow(page: Page, width: number) {
-  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-  expect(scrollWidth, `page overflows horizontally at ${width}px`).toBeLessThanOrEqual(clientWidth);
+  const { scrollWidth, clientWidth, offenders } = await page.evaluate(() => {
+    const vw = document.documentElement.clientWidth;
+    const offenders = [...document.querySelectorAll("body *")]
+      .filter((el) => el.getBoundingClientRect().right > vw + 1)
+      .slice(0, 8)
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        const id = el.id ? `#${el.id}` : "";
+        return `${el.tagName.toLowerCase()}${id} right=${Math.round(r.right)}`;
+      });
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: vw,
+      offenders,
+    };
+  });
+  expect(
+    scrollWidth,
+    `page overflows horizontally at ${width}px; past the edge: ${offenders.join(", ") || "none found"}`,
+  ).toBeLessThanOrEqual(clientWidth);
 }
 
 test.describe("signup form on a phone", () => {

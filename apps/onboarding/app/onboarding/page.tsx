@@ -95,7 +95,7 @@ export default async function OnboardingPage() {
           the intro instead of letting a tall form push them down.
         */}
         <div className="mx-auto grid max-w-6xl gap-x-16 gap-y-8 px-6 pb-20 pt-8 sm:pt-12 lg:grid-cols-[1fr_1.2fr] lg:grid-rows-[auto_1fr] lg:gap-y-12 lg:pt-20">
-          <section className="lg:col-start-1 lg:row-start-1">
+          <section className="min-w-0 lg:col-start-1 lg:row-start-1">
             <p className="eyebrow mb-4 lg:mb-5">{signupCopy.eyebrow}</p>
             <h1 className="font-serif text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground sm:text-4xl">
               {signupCopy.heading}
@@ -105,7 +105,7 @@ export default async function OnboardingPage() {
             </p>
           </section>
 
-          <section className="lg:col-start-2 lg:row-start-1 lg:row-span-2">
+          <section className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
             <OnboardingForm
               countries={countries}
               currencies={currencies}
@@ -115,7 +115,7 @@ export default async function OnboardingPage() {
 
           <section
             aria-labelledby="onboarding-steps-heading"
-            className="lg:col-start-1 lg:row-start-2"
+            className="min-w-0 lg:col-start-1 lg:row-start-2"
           >
             <h2 id="onboarding-steps-heading" className="sr-only">
               What happens next

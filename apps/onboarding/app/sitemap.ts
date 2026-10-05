@@ -27,31 +27,38 @@ const SITE_URL = "https://mark8ly.com";
  * in git, not plausible-looking dates picked to fill the field. Keep it that
  * way: when you change a page's content, move its date here in the same
  * commit. `git log -1 --format=%cs -- app/<route>/page.tsx` is where these
- * came from and is how to check one.
+ * came from and is how to check one. `%cs` is the committer's own calendar
+ * date, so a change committed at 23:11 UTC on 2 September from Australia is
+ * listed as 2026-09-03 — the date its author would recognise — not the UTC
+ * one. tests/unit/sitemap-freshness.spec.ts re-runs that command for every
+ * route and fails when a page has moved on and this table has not: three of
+ * the comparison pages sat a month stale after #616 (tesserix/mark8ly#994).
  *
  * Purely visual or structural edits — a shared stylesheet, the footer, a
  * schema tweak — are deliberately NOT reflected here. `lastmod` is a claim
  * about the content a searcher would read, and inflating it for a CSS change
- * is the same lie in slower motion.
+ * is the same lie in slower motion. When such a commit is the latest one on
+ * a page, add its hash to CONTENT_NEUTRAL_COMMITS in the freshness test so
+ * the guard looks past it instead of demanding a date bump.
  *
  * /guides is absent on purpose: the hub's content IS the guide list, so its
  * date is derived from the guides themselves below and cannot drift.
  */
 const LAST_MODIFIED: Readonly<Record<string, string>> = {
-  "/": "2026-09-03",
-  "/about": "2026-08-11",
+  "/": "2026-09-05",
+  "/about": "2026-09-03",
   "/contact": "2026-09-02",
-  "/help": "2026-09-02",
+  "/help": "2026-09-03",
   "/integrations": "2026-09-02",
 
-  "/shopify-alternative": "2026-08-11",
-  "/ecommerce-for-makers": "2026-08-11",
+  "/shopify-alternative": "2026-09-03",
+  "/ecommerce-for-makers": "2026-09-03",
   "/sell-online-india": "2026-09-03",
-  "/etsy-alternative": "2026-08-11",
+  "/etsy-alternative": "2026-09-03",
 
   "/legal": "2026-09-02",
   "/privacy": "2026-09-02",
-  "/terms": "2026-09-02",
+  "/terms": "2026-09-05",
   "/acceptable-use": "2026-09-02",
   "/cookies": "2026-09-02",
   "/refunds": "2026-09-02",

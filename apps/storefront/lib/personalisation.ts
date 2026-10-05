@@ -128,6 +128,13 @@ export function validateAnswers(
  * Only answers that mean something survive: an untouched optional field
  * contributes nothing, so two buyers who skipped it get the same line key
  * rather than two lines that differ by an empty string.
+ *
+ * The field label — and for a select, the chosen option's label — are
+ * snapshotted alongside (#966). The cart renders from localStorage with
+ * no access to the product's field definitions, so without them it can
+ * show a thumbnail and a value but not what either is FOR. They are
+ * display-only and sit outside personalisationFingerprint, so they do
+ * not change any line's identity.
  */
 export function toCartPersonalisation(
   fields: readonly StorefrontPersonalisationField[] | undefined,
@@ -143,23 +150,34 @@ export function toCartPersonalisation(
     switch (field.kind) {
       case "image":
         for (const uploadId of answer.uploadIds ?? []) {
-          out.push({ fieldId: field.id, uploadId });
+          out.push({ fieldId: field.id, fieldLabel: field.label, uploadId });
         }
         break;
       case "text":
       case "textarea": {
         const value = (answer.text ?? "").trim();
-        if (value !== "") out.push({ fieldId: field.id, text: value });
+        if (value !== "")
+          out.push({ fieldId: field.id, fieldLabel: field.label, text: value });
         break;
       }
       case "select":
-        if (answer.optionId) out.push({ fieldId: field.id, optionId: answer.optionId });
+        if (answer.optionId) {
+          out.push({
+            fieldId: field.id,
+            fieldLabel: field.label,
+            optionId: answer.optionId,
+            // Resolved here, where the options are in hand. A bare
+            // optionId on a cart line is a uuid the buyer cannot read.
+            optionLabel: field.options?.find((o) => o.id === answer.optionId)?.label,
+          });
+        }
         break;
       case "checkbox":
         // Only a TICKED box is an answer. An unticked optional add-on is
         // the same as not having one, and recording `false` would split
         // the cart line from an identical item someone left alone.
-        if (answer.checked === true) out.push({ fieldId: field.id, checked: true });
+        if (answer.checked === true)
+          out.push({ fieldId: field.id, fieldLabel: field.label, checked: true });
         break;
     }
   }

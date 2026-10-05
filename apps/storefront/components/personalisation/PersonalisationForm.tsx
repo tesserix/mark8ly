@@ -23,6 +23,14 @@ import {
   deletePersonalisationUpload,
   uploadPersonalisationImage,
 } from "@/lib/personalisation-upload";
+import {
+  PREVIEW_MAX_DIMENSION,
+  prepareCrop,
+  uploadCropPreview,
+  type CropRect,
+} from "@/lib/personalisation-crop";
+import { ImageCropDialog } from "@repo/ui/image-crop-dialog";
+import type { CropBox } from "@repo/ui/crop-image";
 
 export interface PersonalisationFormProps {
   storeSlug: string;
@@ -53,6 +61,14 @@ export function PersonalisationForm({
   problems = [],
 }: PersonalisationFormProps) {
   const [uploads, setUploads] = useState<Record<string, UploadState>>({});
+  // The upload currently being cropped, plus the signed GET for its
+  // PRISTINE original to crop against. Null when no dialog is open.
+  const [cropping, setCropping] = useState<{
+    field: StorefrontPersonalisationField;
+    uploadId: string;
+    sourceUrl: string;
+    uploadUrl: string;
+  } | null>(null);
 
   const problemFor = useCallback(
     (fieldId: string) => problems.find((p) => p.fieldId === fieldId)?.message,
@@ -119,6 +135,78 @@ export function PersonalisationForm({
     [answers, onChange, storeSlug],
   );
 
+  // Opening the dialog is itself a server round trip: PrepareCrop stores
+  // the rectangle and hands back a signed GET for the original and a
+  // signed PUT for the preview. Opened with the buyer's current crop (or
+  // the whole image first time) so the rectangle is recorded even if they
+  // abandon the dialog.
+  const beginCrop = useCallback(
+    async (field: StorefrontPersonalisationField, uploadId: string) => {
+      setUploads((u) => ({ ...u, [field.id]: { busy: true } }));
+      try {
+        // A zero-origin, whole-image rectangle is a safe opening value:
+        // the server validates it as positive, and the real one replaces
+        // it the moment the buyer applies a crop.
+        const { sourceUrl, uploadUrl } = await prepareCrop(storeSlug, uploadId, {
+          x: 0,
+          y: 0,
+          w: 1,
+          h: 1,
+          rotation: 0,
+        });
+        setCropping({ field, uploadId, sourceUrl, uploadUrl });
+        setUploads((u) => ({ ...u, [field.id]: { busy: false } }));
+      } catch (err) {
+        setUploads((u) => ({
+          ...u,
+          [field.id]: {
+            busy: false,
+            error: err instanceof Error ? err.message : "That crop could not be started.",
+          },
+        }));
+      }
+    },
+    [storeSlug],
+  );
+
+  // box arrives in ORIGINAL pixels and is what gets persisted; blob is a
+  // ~1024px preview and is disposable. Getting that round the wrong way
+  // is how a figurine ships with a blurry face — see
+  // lib/personalisation-crop.ts.
+  const applyCrop = useCallback(
+    async (blob: Blob, box: CropBox, rotation: number) => {
+      if (!cropping) return;
+      const { field, uploadId, uploadUrl } = cropping;
+      const rect: CropRect = {
+        x: Math.round(box.x),
+        y: Math.round(box.y),
+        w: Math.round(box.width),
+        h: Math.round(box.height),
+        rotation,
+      };
+      setCropping(null);
+      setUploads((u) => ({ ...u, [field.id]: { busy: true } }));
+      try {
+        // Rectangle first, preview second. The rectangle is the durable
+        // record of what the buyer chose; a preview that fails to upload
+        // leaves a correct crop with a stale thumbnail rather than a lost
+        // choice, which is why the PUT is not rolled back on failure.
+        await prepareCrop(storeSlug, uploadId, rect);
+        await uploadCropPreview(uploadUrl, blob);
+        setUploads((u) => ({ ...u, [field.id]: { busy: false } }));
+      } catch (err) {
+        setUploads((u) => ({
+          ...u,
+          [field.id]: {
+            busy: false,
+            error: err instanceof Error ? err.message : "That crop could not be saved.",
+          },
+        }));
+      }
+    },
+    [cropping, storeSlug],
+  );
+
   if (fields.length === 0) return null;
 
   return (
@@ -176,6 +264,13 @@ export function PersonalisationForm({
                   {(answer.uploadIds ?? []).map((id) => (
                     <div key={id} className="flex items-center gap-3 text-xs">
                       <span className="opacity-70">Image added</span>
+                      <button
+                        type="button"
+                        onClick={() => void beginCrop(field, id)}
+                        className="underline opacity-70 hover:opacity-100"
+                      >
+                        Crop
+                      </button>
                       <button
                         type="button"
                         onClick={() => removeUpload(field, id)}
@@ -282,6 +377,26 @@ export function PersonalisationForm({
             </div>
           );
         })}
-    </section>
+    
+      {cropping ? (
+        <ImageCropDialog
+          sourceUrl={cropping.sourceUrl}
+          onApply={applyCrop}
+          onCancel={() => setCropping(null)}
+          title="Crop your photo"
+          applyLabel="Use this crop"
+          // The blob is a PREVIEW. The pristine original stays in the
+          // bucket and is what the merchant prints from.
+          previewMaxDimension={PREVIEW_MAX_DIMENSION}
+          // The merchant's own min_px for this field, not a fixed house
+          // number — it is what the buyer was told on the form.
+          lowResolutionWarning={(w, h) =>
+            cropping.field.min_px && Math.min(w, h) < cropping.field.min_px
+              ? `This crop is smaller than ${cropping.field.min_px}px, so it may look soft when printed.`
+              : null
+          }
+        />
+      ) : null}
+</section>
   );
 }

@@ -55,6 +55,8 @@ export default defineConfig({
       "@repo/ui/auth/zitadel-totp-code": path.resolve(__dirname, "../../packages/ui/src/auth/zitadel-totp-code.ts"),
       "@repo/ui/auth/link-provider-prompt": path.resolve(__dirname, "../../packages/ui/src/auth/link-provider-prompt.tsx"),
       "@repo/ui/field": path.resolve(__dirname, "../../packages/ui/src/field.tsx"),
+      "@repo/ui/image-crop-dialog": path.resolve(__dirname, "../../packages/ui/src/image-crop-dialog.tsx"),
+      "@repo/ui/crop-image": path.resolve(__dirname, "../../packages/ui/src/crop-image.ts"),
       "@repo/ui/google-mark": path.resolve(__dirname, "../../packages/ui/src/google-mark.tsx"),
       "@repo/ui/apple-mark": path.resolve(__dirname, "../../packages/ui/src/apple-mark.tsx"),
       "@repo/ui": path.resolve(__dirname, "../../packages/ui/src/index.ts"),

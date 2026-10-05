@@ -5,6 +5,7 @@
   "exports": {
     "./styles/*.css": "./src/styles/*.css",
     "./storefront-theme": "./src/storefront-theme.ts",
+    "./crop-image": "./src/crop-image.ts",
     "./subscription": "./src/subscription/index.ts",
     "./subscription/*": "./src/subscription/*.tsx",
     "./auth/exchange-code": "./src/auth/exchange-code.ts",
@@ -31,6 +32,7 @@
   },
   "dependencies": {
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-easy-crop": "^6.0.2"
   }
 }

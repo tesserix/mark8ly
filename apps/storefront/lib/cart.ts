@@ -36,6 +36,27 @@ export interface CartItemPersonalisation {
   text?: string;
   optionId?: string;
   checked?: boolean;
+  /**
+   * Display-only snapshots taken at add-to-cart (#966).
+   *
+   * The cart has to render "Name to engrave: Asha" without a network
+   * call — it is a client component reading localStorage, and the
+   * product's field definitions are not there. So the labels come along
+   * for the ride, the same way title and priceAmount already do.
+   *
+   * DELIBERATELY OUTSIDE personalisationFingerprint. That function is an
+   * explicit positional tuple rather than a serialisation of this whole
+   * object, which is what makes adding these safe: a label is not part
+   * of a line's identity, and folding it in would change every existing
+   * key and silently stop quantity merging for carts already in
+   * localStorage.
+   *
+   * Optional because carts stored before this shipped do not have them.
+   * The UI renders the value alone in that case rather than inventing a
+   * label.
+   */
+  fieldLabel?: string;
+  optionLabel?: string;
 }
 
 export interface CartItem {

@@ -476,10 +476,17 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		ctx, personalisationResolver{db: h.db}, store.ID, cartTokenForCheckout(c), req.Items)
 	if perErr != nil {
 		h.logWarn("checkout_ext: personalisation rejected", "store_id", store.ID, "err", perErr)
-		// The reason is the buyer's to see — "that image is no longer
-		// available", "Name is required" — because it is the only thing
-		// they can act on. It names no ids.
-		h.respondErr(c, apperrors.ValidationFailed("personalisation", perErr.Error()))
+		// The reason is the buyer's to see — "The image for "Your photo"
+		// is no longer available", "Name is required" — because it is the
+		// only thing they can act on. It names no ids.
+		//
+		// The envelope now also carries line_index, field_key and a
+		// machine `problem` code (#966), so the storefront can put the
+		// message on the offending cart line and disable THAT line rather
+		// than the pay button. An expired upload is the case that matters:
+		// uploads are swept at 72h, carts live in localStorage
+		// indefinitely, and the buyer has already decided to buy.
+		h.respondErr(c, AsPersonalisationError(perErr))
 		return
 	}
 

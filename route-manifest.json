@@ -453,6 +453,7 @@
         "POST /api/v1/storefront/stores/:storeSlug/orders/:id/cancel",
         "POST /api/v1/storefront/stores/:storeSlug/orders/:id/returns",
         "POST /api/v1/storefront/stores/:storeSlug/orders/:id/verify-payment",
+        "POST /api/v1/storefront/stores/:storeSlug/personalisation/previews",
         "POST /api/v1/storefront/stores/:storeSlug/personalisation/upload-url",
         "POST /api/v1/storefront/stores/:storeSlug/personalisation/uploads/:uploadId/confirm",
         "POST /api/v1/storefront/stores/:storeSlug/products/:handle/reviews-guest",

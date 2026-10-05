@@ -114,8 +114,11 @@ func (r personalisationResolver) resolveLine(
 
 		if len(supplied) == 0 {
 			if f.Required {
-				return nil, surcharge, fmt.Errorf(
-					"storefront: %q is required on this product", f.Label)
+				return nil, surcharge, &personalisationProblem{
+					FieldKey: f.Key, FieldLabel: f.Label,
+					Code:   ProblemRequired,
+					Reason: fmt.Sprintf("%q is required on this product.", f.Label),
+				}
 			}
 			continue
 		}
@@ -127,14 +130,21 @@ func (r personalisationResolver) resolveLine(
 				max = *f.MaxImages
 			}
 			if len(supplied) > max {
-				return nil, surcharge, fmt.Errorf(
-					"storefront: %q takes at most %d image(s)", f.Label, max)
+				return nil, surcharge, &personalisationProblem{
+					FieldKey: f.Key, FieldLabel: f.Label,
+					Code:   ProblemInvalid,
+					Reason: fmt.Sprintf("%q takes at most %d image(s).", f.Label, max),
+				}
 			}
 			for pos, a := range supplied {
 				if a.UploadID == nil || *a.UploadID == "" {
-					return nil, surcharge, fmt.Errorf("storefront: %q needs an image", f.Label)
+					return nil, surcharge, &personalisationProblem{
+						FieldKey: f.Key, FieldLabel: f.Label,
+						Code:   ProblemRequired,
+						Reason: fmt.Sprintf("%q needs an image.", f.Label),
+					}
 				}
-				up, uErr := r.loadUpload(ctx, *a.UploadID, cartToken, storeID, f.ID)
+				up, uErr := r.loadUpload(ctx, *a.UploadID, cartToken, storeID, f.ID, f.Key, f.Label)
 				if uErr != nil {
 					return nil, surcharge, uErr
 				}
@@ -155,15 +165,27 @@ func (r personalisationResolver) resolveLine(
 		case product.PersonalisationKindText, product.PersonalisationKindTextarea:
 			a := supplied[0]
 			if a.Text == nil {
-				return nil, surcharge, fmt.Errorf("storefront: %q needs a value", f.Label)
+				return nil, surcharge, &personalisationProblem{
+					FieldKey: f.Key, FieldLabel: f.Label,
+					Code:   ProblemRequired,
+					Reason: fmt.Sprintf("%q needs a value.", f.Label),
+				}
 			}
 			value := strings.TrimSpace(*a.Text)
 			if value == "" && f.Required {
-				return nil, surcharge, fmt.Errorf("storefront: %q is required", f.Label)
+				return nil, surcharge, &personalisationProblem{
+					FieldKey: f.Key, FieldLabel: f.Label,
+					Code:   ProblemRequired,
+					Reason: fmt.Sprintf("%q is required.", f.Label),
+				}
 			}
 			if f.MaxLength != nil && len([]rune(value)) > *f.MaxLength {
-				return nil, surcharge, fmt.Errorf(
-					"storefront: %q must be %d characters or fewer", f.Label, *f.MaxLength)
+				return nil, surcharge, &personalisationProblem{
+					FieldKey: f.Key, FieldLabel: f.Label,
+					Code: ProblemInvalid,
+					Reason: fmt.Sprintf(
+						"%q must be %d characters or fewer.", f.Label, *f.MaxLength),
+				}
 			}
 			if value == "" {
 				continue
@@ -177,7 +199,11 @@ func (r personalisationResolver) resolveLine(
 		case product.PersonalisationKindSelect:
 			a := supplied[0]
 			if a.OptionID == nil || *a.OptionID == "" {
-				return nil, surcharge, fmt.Errorf("storefront: %q needs a choice", f.Label)
+				return nil, surcharge, &personalisationProblem{
+					FieldKey: f.Key, FieldLabel: f.Label,
+					Code:   ProblemRequired,
+					Reason: fmt.Sprintf("%q needs a choice.", f.Label),
+				}
 			}
 			var picked *product.PersonalisationOption
 			for j := range f.Options {
@@ -207,7 +233,11 @@ func (r personalisationResolver) resolveLine(
 			a := supplied[0]
 			if a.Checked == nil || !*a.Checked {
 				if f.Required {
-					return nil, surcharge, fmt.Errorf("storefront: %q must be accepted", f.Label)
+					return nil, surcharge, &personalisationProblem{
+						FieldKey: f.Key, FieldLabel: f.Label,
+						Code:   ProblemRequired,
+						Reason: fmt.Sprintf("%q must be accepted.", f.Label),
+					}
 				}
 				continue
 			}
@@ -237,7 +267,7 @@ func (r personalisationResolver) resolveLine(
 // exist — and belong to the field being answered, so a photo uploaded for
 // one field cannot be reattached to another.
 func (r personalisationResolver) loadUpload(
-	ctx context.Context, uploadID, cartToken, storeID, fieldID string,
+	ctx context.Context, uploadID, cartToken, storeID, fieldID, fieldKey, fieldLabel string,
 ) (*personalisationupload.Upload, error) {
 	var up personalisationupload.Upload
 	err := r.db.WithContext(ctx).
@@ -245,10 +275,22 @@ func (r personalisationResolver) loadUpload(
 			uploadID, cartToken, storeID, fieldID, personalisationupload.StateVerified).
 		Take(&up).Error
 	if err != nil {
-		// One message for every failure mode — wrong cart, wrong field,
+		// One REASON for every failure mode — wrong cart, wrong field,
 		// wrong store, not yet verified, does not exist. Distinguishing
 		// them would tell a prober which uploads are real.
-		return nil, fmt.Errorf("storefront: that image is no longer available")
+		//
+		// The FIELD is named, though (#966). The buyer filled that form
+		// in, so it leaks nothing, and without it an expired upload is a
+		// flat "that image is no longer available" on a cart with three
+		// personalised lines — after they have already decided to buy.
+		// The upload id is still never echoed.
+		return nil, &personalisationProblem{
+			FieldKey:   fieldKey,
+			FieldLabel: fieldLabel,
+			Code:       ProblemUploadUnavailable,
+			Reason: fmt.Sprintf(
+				"The image for %q is no longer available — please upload it again.", fieldLabel),
+		}
 	}
 	return &up, nil
 }
@@ -302,7 +344,10 @@ func applyPersonalisation(
 
 		answers, surcharge, err := r.resolveLine(ctx, storeID, productID, cartToken, it.Personalisation)
 		if err != nil {
-			return nil, fmt.Errorf("cart line %d: %w", i, err)
+			// Stamps the line index onto a problem raised deeper down,
+			// where only the field was known. The storefront needs both
+			// to put the message on the right cart line (#966).
+			return nil, withLine(i, err)
 		}
 		resolved[i] = answers
 

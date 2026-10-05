@@ -114,6 +114,11 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 				p.POST("/uploads/:uploadId/confirm", deps.PersonalisationUploadsHandler.Confirm)
 				p.PATCH("/uploads/:uploadId/crop", deps.PersonalisationUploadsHandler.PrepareCrop)
 				p.GET("/uploads/:uploadId/preview", deps.PersonalisationUploadsHandler.Preview)
+				// One request for a whole cart's thumbnails (#966).
+				// POST because a cart's worth of uuids does not belong in
+				// a query string, where access logs and referrer headers
+				// would keep them.
+				p.POST("/previews", deps.PersonalisationUploadsHandler.PreviewBatch)
 				p.DELETE("/uploads/:uploadId", deps.PersonalisationUploadsHandler.Delete)
 			}
 		}

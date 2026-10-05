@@ -160,6 +160,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/outbox/... \
 	    ./internal/page/... \
 	    ./internal/payment/... \
+	    ./internal/personalisationupload/... \
 	    ./internal/product/... \
 	    ./internal/promo/... \
 	    ./internal/reconciliation/... \

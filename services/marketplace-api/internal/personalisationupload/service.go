@@ -322,6 +322,20 @@ func (s *Service) PreviewURL(ctx context.Context, id, cartToken string) (string,
 	if !ok {
 		return "", time.Time{}, ErrUploadsDisabled
 	}
+	// Renew the lease (#966). Looking at the preview is the only evidence
+	// this service gets that a cart is still live — carts sit in
+	// localStorage indefinitely while uploads are swept at 72 hours, so a
+	// shopper who takes four days to decide would otherwise come back to
+	// a cart that renders perfectly and cannot be bought.
+	//
+	// Best-effort on purpose: the buyer asked to see their photo, and
+	// failing that because a housekeeping UPDATE missed would be the
+	// wrong trade. The sweeper is the backstop either way.
+	if err := s.repo.ExtendLease(ctx, id, cartToken, TTL); err != nil && s.logger != nil {
+		s.logger.Warn("personalisationupload: lease not renewed on preview",
+			"upload_id", id, "err", err)
+	}
+
 	// Prefer the preview; fall back to the original when no crop happened.
 	key := up.StorageKeyOriginal
 	if up.StorageKey != nil && *up.StorageKey != "" {

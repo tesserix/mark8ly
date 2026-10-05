@@ -338,13 +338,44 @@ func combineOriginRates(perGroup [][]shipping.Rate) []shipping.Rate {
 // free-shipping threshold is met. ok is false only when rates is empty,
 // so the caller can fall back rather than charge nothing for an order
 // that has a real cost.
+// ratesInCurrency keeps only rates the store can actually charge.
+//
+// A rate with an EMPTY currency is kept: the flat-rate and
+// store-configured paths build rates without one and are store-currency
+// by construction. Only a rate that names a different currency is
+// refused, which is the case that loses money.
+func ratesInCurrency(rates []shipping.Rate, storeCurrency string) []shipping.Rate {
+	if storeCurrency == "" {
+		return rates
+	}
+	out := make([]shipping.Rate, 0, len(rates))
+	for _, r := range rates {
+		if r.CurrencyCode == "" || strings.EqualFold(r.CurrencyCode, storeCurrency) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 func selectShippingPrice(
 	rates []shipping.Rate,
 	service string,
 	handlingFee decimal.Decimal,
 	freeShippingMin *decimal.Decimal,
 	subtotal decimal.Decimal,
+	storeCurrency string,
 ) (price decimal.Decimal, ok bool) {
+	// Drop anything the store cannot charge in (#1007). A carrier that
+	// answers in a different currency to the one it was asked for is a
+	// misconfiguration, and adding its number to the order at 1:1 is a
+	// silent discount: DHL quoted £178.95 on an AUD store and the buyer
+	// was charged A$178.95, roughly half what it cost.
+	//
+	// Dropping rather than converting, because converting needs an FX
+	// rate recorded against the order to be defensible, and dropping
+	// leaves the merchant's own configured fallback — which is already
+	// in store currency — to price the order.
+	rates = ratesInCurrency(rates, storeCurrency)
 	if len(rates) == 0 {
 		return decimal.Zero, false
 	}

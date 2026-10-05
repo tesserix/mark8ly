@@ -1080,7 +1080,7 @@ func (h *CheckoutExtHandler) calculateShipping(
 		if sErr != nil {
 			return decimal.Zero, "", fmt.Errorf("carrier.GetRates (split origin): %w", sErr)
 		}
-		if price, ok := selectShippingPrice(combined, req.ShippingService, cfg.HandlingFee, cfg.FreeShippingMin, req.Subtotal); ok {
+		if price, ok := selectShippingPrice(combined, req.ShippingService, cfg.HandlingFee, cfg.FreeShippingMin, req.Subtotal, store.CurrencyCode); ok {
 			return price, cfg.Provider, nil
 		}
 		// Empty intersection: no (carrier, service) pair can ship every

@@ -47,11 +47,13 @@ import tseslint from "typescript-eslint";
  *
  * # Inline suppressions are still honoured, for now
  *
- * Turning them off surfaces three pre-existing
- * `eslint-disable-next-line react-hooks/exhaustive-deps` comments in the
- * storefront, at least one of which looks like a real stale value in the
- * checkout tax path. Those deserve their own change by someone who knows
- * that code, not a drive-by in a lint-infrastructure commit.
+ * Turning them off surfaces TEN pre-existing
+ * `eslint-disable-next-line react-hooks/exhaustive-deps` comments across
+ * the storefront, admin and onboarding — not the three a storefront-only
+ * measurement suggested. The storefront's three are fixed (#1000); the
+ * rest are in code whose owners should judge them one at a time, and
+ * several are URL-pushing effects where naively satisfying the rule
+ * creates a re-render loop rather than removing a bug.
  *
  * The bug that prompted all this carried no disable comment, so this
  * gate would have caught it as it stands. Tightening to

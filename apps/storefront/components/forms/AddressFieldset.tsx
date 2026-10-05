@@ -104,8 +104,10 @@ export function AddressFieldset({
     if (!value.country && defaultCountryCode) {
       onChange({ ...value, country: defaultCountryCode });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultCountryCode]);
+    // value and onChange are real dependencies. The `!value.country`
+    // guard means the extra runs do nothing once the default has been
+    // applied, so listing them is honest and cannot loop (#1000).
+  }, [defaultCountryCode, value, onChange]);
 
   useEffect(() => {
     let cancelled = false;

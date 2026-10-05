@@ -352,8 +352,12 @@ export default function CheckoutPage() {
     ) {
       setAddress((prev) => ({ ...prev, country_code: shipsToCountries[0]! }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shipsToCountries]);
+    // address.country_code is a real dependency and is now listed. It
+    // costs one extra evaluation after the country is set, which the
+    // `!address.country_code` guard above turns into a no-op — so this
+    // cannot loop, and the suppression was hiding a true statement
+    // rather than protecting anything (#1000).
+  }, [shipsToCountries, address.country_code]);
 
   // Derive whether the current address is already in the book.
   const addressKey = (line1: string, postal: string, country: string): string =>

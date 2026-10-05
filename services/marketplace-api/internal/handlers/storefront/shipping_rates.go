@@ -345,6 +345,12 @@ func (h *ShippingRatesHandler) GetRates(c *gin.Context) {
 			return
 		}
 
+		// Never offer a rate the store cannot charge in (#1007). Showing
+		// "£178.95" beside an A$ total is confusing even when the maths
+		// is right, and checkout refuses these anyway — so the buyer
+		// would pick one and then be unable to pay.
+		combined = h.dropForeignCurrencyRates(combined, store.CurrencyCode, cfg.Provider)
+
 		result := make([]shippingRateResponse, 0, len(combined))
 		for _, r := range combined {
 			result = append(result, shippingRateResponse{
@@ -411,6 +417,9 @@ func (h *ShippingRatesHandler) GetRates(c *gin.Context) {
 	// whether the caller has already exceeded the threshold. For now, we
 	// apply handling fee to all rates; the checkout handler will re-check.
 	_ = cartSubtotal
+
+	// Same currency guard as the split-origin branch above (#1007).
+	rates = h.dropForeignCurrencyRates(rates, store.CurrencyCode, cfg.Provider)
 
 	// Apply handling fee and free-shipping threshold.
 	result := make([]shippingRateResponse, 0, len(rates))
@@ -512,4 +521,25 @@ func (h *ShippingRatesHandler) resolveWarehouseAddress(ctx context.Context, cfg 
 		CountryCode: wh.CountryCode,
 		Phone:       wh.Phone,
 	}
+}
+
+// dropForeignCurrencyRates removes rates the store cannot charge in, and
+// says so loudly.
+//
+// A carrier answering in a currency other than the one it was asked for
+// is a misconfiguration at the carrier account, not something a shopper
+// can fix — so this logs at ERROR with the provider named. Silence here
+// is how £178.95 became A$178.95 on a live store (#1007).
+func (h *ShippingRatesHandler) dropForeignCurrencyRates(
+	rates []shipping.Rate, storeCurrency, provider string,
+) []shipping.Rate {
+	kept := ratesInCurrency(rates, storeCurrency)
+	if len(kept) != len(rates) && h.logger != nil {
+		h.logger.Error("shipping_rates: carrier quoted a currency this store cannot charge",
+			"provider", provider,
+			"store_currency", storeCurrency,
+			"dropped", len(rates)-len(kept),
+			"kept", len(kept))
+	}
+	return kept
 }

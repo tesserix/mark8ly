@@ -5,6 +5,42 @@
 // them plain, scannable, and free of exclamation marks.
 
 export const signupCopy = {
+  // ─── Page framing (#993) ────────────────────────────────────────────
+  //
+  // The page used to promise "Two minutes to a storefront" and that the
+  // merchant would "land in your admin". The implemented path is: form,
+  // verification link, choose a password, sign in. Say that, and nothing
+  // the flow does not do. No setup-time promise: we have not measured one.
+  eyebrow: "Open your store",
+  heading: "Start your store.",
+  intro:
+    "Add your details, verify your email, then choose a password and sign in.",
+  steps: [
+    {
+      title: "Tell us about your shop.",
+      detail: "Business name, country, currency.",
+    },
+    {
+      title: "Verify your email.",
+      detail: "We send you a link. Open it to confirm it’s you.",
+    },
+    {
+      title: "Choose a password and sign in.",
+      detail: "Set a password, then sign in to your admin.",
+    },
+  ],
+
+  /** The homepage's own qualified trial line (see SeoLanding), repeated at
+   *  the point of commitment so the merchant does not have to scroll back
+   *  to remember what they are agreeing to. Not a new promise. */
+  trialReassurance: "Free for ninety days. No card required.",
+  pricingLink: "See the pricing",
+  pricingHref: "/#pricing",
+
+  /** Disclosure that keeps the two optional fields out of the first-screen
+   *  path on a phone. Their validation and submission are unchanged. */
+  optionalSummary: "Tax ID or promo code (optional)",
+
   taxIdLabel: "Tax ID (optional)",
 
   // ─── Promo code (#620) ──────────────────────────────────────────────

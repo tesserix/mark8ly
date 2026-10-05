@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm, Controller } from "react-hook-form";
+import { useForm, Controller, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -136,6 +137,10 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     null,
   );
   const screenshotInputRef = useRef<HTMLInputElement>(null);
+  // Tax ID and promo code live behind a disclosure so a phone reaches the
+  // submit button sooner (#993). Closed by default; opened by the merchant,
+  // or by us when one of those fields has something to say.
+  const [optionalOpen, setOptionalOpen] = useState(false);
 
   const {
     register,
@@ -265,6 +270,22 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
     return () => clearTimeout(handle);
   }, [watchedPromoCode, watchedEmail, watchedCurrency]);
 
+  // A field the merchant cannot see must never be the one holding the
+  // error. When validation or the server flags the tax ID or promo code,
+  // or the promo check refuses a code, open the disclosure and put focus
+  // on the field so the message is read in context.
+  const taxIdError = errors.taxId?.message;
+  const promoCodeError = errors.promoCode?.message;
+  const promoRefused = promoStatus?.tone === "refused";
+  useEffect(() => {
+    if (!taxIdError && !promoCodeError && !promoRefused) return;
+    setOptionalOpen(true);
+    if (taxIdError || promoCodeError) {
+      const id = taxIdError ? "taxId" : "promoCode";
+      requestAnimationFrame(() => document.getElementById(id)?.focus());
+    }
+  }, [taxIdError, promoCodeError, promoRefused]);
+
   // Clear migration evidence when switching back to "new store".
   useEffect(() => {
     if (!isMigrating) {
@@ -294,6 +315,16 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
   // disabled buttons must explain themselves) — instead, submitting
   // with an unavailable slug surfaces the error and focuses the field.
   const canSubmit = !pending && !screenshotUploading;
+
+  // react-hook-form focuses the first invalid field before calling this,
+  // which silently fails for a field inside a closed <details>. Open it
+  // and focus again once it is rendered.
+  function onInvalid(invalid: FieldErrors<FormValues>) {
+    if (!invalid.taxId && !invalid.promoCode) return;
+    setOptionalOpen(true);
+    const id = invalid.taxId ? "taxId" : "promoCode";
+    requestAnimationFrame(() => document.getElementById(id)?.focus());
+  }
 
   function onValid(values: FormValues) {
     setSubmitError(null);
@@ -356,11 +387,11 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
   }
 
   return (
-    <div className="w-full max-w-lg mx-auto lg:mx-0">
+    <div className="mx-auto w-full min-w-0 max-w-lg lg:mx-0">
       <form
-        onSubmit={handleSubmit(onValid)}
+        onSubmit={handleSubmit(onValid, onInvalid)}
         noValidate
-        className="space-y-5"
+        className="min-w-0 space-y-5"
       >
         {/* Email */}
         <Field
@@ -416,6 +447,12 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
               placeholder="acme"
               spellCheck={false}
               autoComplete="off"
+              // A text input's intrinsic width is ~20 characters and a flex
+              // item will not shrink below it. At 320px that plus the
+              // ".mark8ly.com" suffix outgrew the column and pushed every
+              // field past the right edge (#993). `size={1}` drops the
+              // intrinsic width so `flex-1 min-w-0` can actually shrink it.
+              size={1}
               aria-invalid={
                 errors.slug || slugAvailability.state === "taken"
                   ? true
@@ -428,16 +465,16 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
                   e.target.value = e.target.value.toLowerCase();
                 },
               })}
-              className="flex-1 bg-transparent px-3 py-2.5 text-sm text-foreground focus:outline-none"
+              className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm text-foreground focus:outline-none"
             />
-            <span className="flex items-center border-l border-border bg-paper-100 px-3 text-sm font-medium text-foreground-secondary">
+            <span className="flex shrink-0 items-center border-l border-border bg-paper-100 px-3 text-sm font-medium text-foreground-secondary">
               .mark8ly.com
             </span>
           </div>
         </Field>
 
         {/* Country + Currency */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
           <Field
             id="country"
             label="Country"
@@ -495,58 +532,77 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
           </Field>
         </div>
 
-        {/* ── Tax ID (§5.2) ─────────────────────────────────── */}
-        <div className="border-t border-border-subtle pt-5">
-          <Field
-            id="taxId"
-            label={signupCopy.taxIdLabel}
-            hint={taxIdHelp}
-            hintState="default"
-            error={errors.taxId?.message}
-          >
-            <Input
-              id="taxId"
-              type="text"
-              placeholder="e.g. GB123456789"
-              autoComplete="off"
-              spellCheck={false}
-              aria-invalid={errors.taxId ? true : undefined}
-              aria-describedby={
-                errors.taxId ? "taxId-error" : "taxId-hint"
-              }
-              {...register("taxId")}
-            />
-          </Field>
-        </div>
+        {/* ── Optional: tax ID (§5.2) and promo code (#620) ──────────
+            A native <details> so the toggle is a real button to the
+            keyboard and a disclosure to a screen reader, with nothing
+            to script. `open` is controlled so validation can pop it. */}
+        <details
+          className="group rounded-md border border-border-subtle"
+          open={optionalOpen}
+          onToggle={(event) =>
+            setOptionalOpen((event.currentTarget as HTMLDetailsElement).open)
+          }
+          data-testid="optional-fields"
+        >
+          <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-moss-700">
+            {signupCopy.optionalSummary}
+            <span
+              aria-hidden="true"
+              className="text-foreground-tertiary transition-transform group-open:rotate-180"
+            >
+              &#9662;
+            </span>
+          </summary>
 
-        {/* ── Promo code (#620) ─────────────────────────────── */}
-        <div className="border-t border-border-subtle pt-5">
-          <Field
-            id="promoCode"
-            label={signupCopy.promoLabel}
-            hint={promoChecking ? signupCopy.promoChecking : promoStatus?.text}
-            hintState={
-              promoStatus?.tone === "accepted"
-                ? "success"
-                : promoStatus?.tone === "refused"
-                  ? "error"
-                  : // "unknown" stays neutral on purpose: we could not check,
-                    // which is not the merchant's problem and not a refusal.
-                    "default"
-            }
-          >
-            <Input
+          <div className="space-y-5 border-t border-border-subtle px-4 pb-4 pt-5">
+            <Field
+              id="taxId"
+              label={signupCopy.taxIdLabel}
+              hint={taxIdHelp}
+              hintState="default"
+              error={errors.taxId?.message}
+            >
+              <Input
+                id="taxId"
+                type="text"
+                placeholder="e.g. GB123456789"
+                autoComplete="off"
+                spellCheck={false}
+                aria-invalid={errors.taxId ? true : undefined}
+                aria-describedby={
+                  errors.taxId ? "taxId-error" : "taxId-hint"
+                }
+                {...register("taxId")}
+              />
+            </Field>
+
+            <Field
               id="promoCode"
-              type="text"
-              placeholder={signupCopy.promoPlaceholder}
-              autoComplete="off"
-              autoCapitalize="characters"
-              spellCheck={false}
-              aria-describedby="promoCode-hint"
-              {...register("promoCode")}
-            />
-          </Field>
-        </div>
+              label={signupCopy.promoLabel}
+              hint={promoChecking ? signupCopy.promoChecking : promoStatus?.text}
+              hintState={
+                promoStatus?.tone === "accepted"
+                  ? "success"
+                  : promoStatus?.tone === "refused"
+                    ? "error"
+                    : // "unknown" stays neutral on purpose: we could not check,
+                      // which is not the merchant's problem and not a refusal.
+                      "default"
+              }
+            >
+              <Input
+                id="promoCode"
+                type="text"
+                placeholder={signupCopy.promoPlaceholder}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                aria-describedby="promoCode-hint"
+                {...register("promoCode")}
+              />
+            </Field>
+          </div>
+        </details>
 
         {/* ── Migration fast-path (§5.1.1) ──────────────────── */}
         {MIGRATION_UI_ENABLED && (
@@ -686,6 +742,22 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
           </p>
         )}
 
+        {/* The homepage's trial line, repeated where the decision is made
+            (#993). Same words as the hero and the landing pages; the link
+            goes to the existing pricing section, not a new claim. */}
+        <p
+          className="text-sm text-foreground-secondary"
+          data-testid="trial-reassurance"
+        >
+          {signupCopy.trialReassurance}{" "}
+          <Link
+            href={signupCopy.pricingHref}
+            className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
+          >
+            {signupCopy.pricingLink}
+          </Link>
+        </p>
+
         <button
           type="submit"
           disabled={!canSubmit}
@@ -749,7 +821,9 @@ function Field({ id, label, error, hint, hintState, children }: FieldProps) {
         : "text-foreground-tertiary";
 
   return (
-    <div className="space-y-1.5">
+    // min-w-0: as a grid or flex item a field must be allowed to shrink
+    // to the column, or its content's minimum width widens the whole form.
+    <div className="min-w-0 space-y-1.5">
       <Label htmlFor={id} className="text-foreground">
         {label}
       </Label>

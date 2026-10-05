@@ -31,6 +31,22 @@
 // Both are batch queries, not per-key ones: a tenant with a large
 // catalogue can present thousands of candidates, and a query per object
 // would make a purge quadratic in its own size.
+//
+// # Objects live in more than one bucket (#980)
+//
+// Product media is public-read; buyer-supplied artwork is in a separate
+// private bucket, because a photograph of someone's child is not the same
+// category of object as a product shot. A Reaper therefore holds a SET of
+// targets, each a (bucket, deleter, prefixes) triple, and routes every
+// reference to exactly one of them by key prefix.
+//
+// Routing by prefix rather than by "try each bucket" is the whole point.
+// "buyer-uploads/..." is a well-formed key under a prefix this service
+// mints, so a bucket-blind check accepts it against the PUBLIC bucket —
+// and GCS answers a delete for a missing object with success, by design,
+// because deletion is idempotent. The reap would report Deleted and the
+// photograph would still be sitting in the private bucket. A wrong answer
+// that looks like a right one.
 package blobreap
 
 import (
@@ -78,12 +94,28 @@ type Outcome struct {
 // Empty reports whether anything at all happened.
 func (o Outcome) Empty() bool { return o == Outcome{} }
 
-// Reaper destroys objects. Construct with New; a zero Reaper deletes
-// nothing and reports every candidate as skipped, which is the correct
-// behaviour for a deployment with no bucket configured.
+// Target is one bucket, the deleter that can reach it, and the key
+// prefixes that live in it.
+//
+// Prefixes is not decoration and must not be widened to "everything we
+// mint". It is what stops an artwork key being deleted against the public
+// bucket — see the package doc.
+type Target struct {
+	Bucket   string
+	Deleter  media.Deleter
+	Prefixes []string
+}
+
+func (t Target) usable() bool {
+	return t.Bucket != "" && t.Deleter != nil && len(t.Prefixes) > 0
+}
+
+// Reaper destroys objects. Construct with New or NewTargets; a Reaper
+// with no usable target deletes nothing and reports every candidate as
+// skipped, which is the correct behaviour for a deployment with no
+// bucket configured.
 type Reaper struct {
-	deleter media.Deleter
-	bucket  string
+	targets []Target
 	db      *gorm.DB
 	logger  *slog.Logger
 	max     int
@@ -94,14 +126,49 @@ type Reaper struct {
 	checkRefs func(ctx context.Context, keys []string) (map[string]struct{}, error)
 }
 
-// New builds a Reaper. deleter and bucket may be zero — see Reap.
+// New builds a Reaper over the PUBLIC media bucket only. deleter and
+// bucket may be zero — see Reap.
+//
+// Kept for callers that only ever deal with product media. Note that it
+// now accepts only media.ProductPrefixes: before #980 it also accepted
+// artwork keys and would have issued their deletes against this bucket,
+// which is the bug rather than a feature worth preserving.
 func New(db *gorm.DB, deleter media.Deleter, bucket string, logger *slog.Logger) *Reaper {
+	return NewTargets(db, logger, Target{
+		Bucket:   bucket,
+		Deleter:  deleter,
+		Prefixes: media.ProductPrefixes,
+	})
+}
+
+// NewTargets builds a Reaper over several buckets. Unusable targets — no
+// bucket, no deleter, or no prefixes — are dropped, so a deployment with
+// only a public bucket configured behaves exactly as New.
+func NewTargets(db *gorm.DB, logger *slog.Logger, targets ...Target) *Reaper {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	r := &Reaper{deleter: deleter, bucket: bucket, db: db, logger: logger, max: DefaultMaxObjects}
+	keep := make([]Target, 0, len(targets))
+	for _, t := range targets {
+		if t.usable() {
+			keep = append(keep, t)
+		}
+	}
+	r := &Reaper{targets: keep, db: db, logger: logger, max: DefaultMaxObjects}
 	r.checkRefs = r.survivingReferences
 	return r
+}
+
+// Buckets returns the buckets this reaper can reach, for logging.
+func (r *Reaper) Buckets() []string {
+	if r == nil {
+		return nil
+	}
+	out := make([]string, 0, len(r.targets))
+	for _, t := range r.targets {
+		out = append(out, t.Bucket)
+	}
+	return out
 }
 
 // WithMax overrides the per-reap cap. Zero or negative restores the default.
@@ -130,7 +197,7 @@ func (r *Reaper) Reap(ctx context.Context, refs []string) Outcome {
 	if len(refs) == 0 {
 		return out
 	}
-	if r == nil || r.deleter == nil || r.bucket == "" {
+	if r == nil || len(r.targets) == 0 {
 		// No bucket wired: say so in the report rather than reporting a
 		// clean zero, which would be indistinguishable from "there was
 		// nothing to delete".
@@ -140,19 +207,32 @@ func (r *Reaper) Reap(ctx context.Context, refs []string) Outcome {
 
 	// Resolve to keys we own, collapsing duplicates. Order is preserved
 	// so a capped run is deterministic and a re-run makes progress.
+	//
+	// Keys are deduplicated per (bucket, key): the same key in two
+	// buckets is two objects, and nothing guarantees the prefixes stay
+	// disjoint if someone adds a third bucket later.
+	type candidate struct {
+		key    string
+		target *Target
+	}
 	seen := make(map[string]struct{}, len(refs))
-	keys := make([]string, 0, len(refs))
+	cands := make([]candidate, 0, len(refs))
 	for _, ref := range refs {
-		key, ok := r.resolve(ref)
+		key, t, ok := r.resolve(ref)
 		if !ok {
 			out.SkippedNotOurs++
 			continue
 		}
-		if _, dup := seen[key]; dup {
+		dedup := t.Bucket + "\x00" + key
+		if _, dup := seen[dedup]; dup {
 			continue
 		}
-		seen[key] = struct{}{}
-		keys = append(keys, key)
+		seen[dedup] = struct{}{}
+		cands = append(cands, candidate{key: key, target: t})
+	}
+	keys := make([]string, 0, len(cands))
+	for _, c := range cands {
+		keys = append(keys, c.key)
 	}
 	if len(keys) == 0 {
 		return out
@@ -160,6 +240,7 @@ func (r *Reaper) Reap(ctx context.Context, refs []string) Outcome {
 	if len(keys) > r.max {
 		out.Unreaped = len(keys) - r.max
 		keys = keys[:r.max]
+		cands = cands[:r.max]
 	}
 
 	live, err := r.checkRefs(ctx, keys)
@@ -174,17 +255,22 @@ func (r *Reaper) Reap(ctx context.Context, refs []string) Outcome {
 		return out
 	}
 
-	for _, key := range keys {
-		if _, still := live[key]; still {
+	for _, c := range cands {
+		if _, still := live[c.key]; still {
 			out.SkippedStillReferenced++
 			continue
 		}
-		if err := r.deleter.Delete(ctx, key); err != nil {
+		// Through the owning target's deleter, never a default one. A
+		// delete issued at the wrong bucket succeeds — GCS treats a
+		// missing object as already deleted — so getting this wrong is
+		// silent.
+		if err := c.target.Deleter.Delete(ctx, c.key); err != nil {
 			out.Failed++
 			// The key is a tenant id and a content hash — no personal
 			// data — so naming it is safe and is what makes the failure
 			// actionable.
-			r.logger.Error("blobreap: object outlived its rows", "storage_key", key, "err", err)
+			r.logger.Error("blobreap: object outlived its rows",
+				"bucket", c.target.Bucket, "storage_key", c.key, "err", err)
 			continue
 		}
 		out.Deleted++
@@ -198,18 +284,29 @@ func (r *Reaper) Reap(ctx context.Context, refs []string) Outcome {
 // public URL; storage_key, gcs_path_original and mockup_storage_key hold a
 // bare key. Both are checked against the same ownership rule, so a bare
 // key outside our prefixes is refused exactly as a foreign URL is.
-func (r *Reaper) resolve(ref string) (string, bool) {
+func (r *Reaper) resolve(ref string) (string, *Target, bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return "", false
+		return "", nil, false
 	}
-	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
-		return media.KeyFromOwnBucketURL(r.bucket, ref)
+	isURL := strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://")
+	for i := range r.targets {
+		t := &r.targets[i]
+		candidate := ref
+		if !isURL {
+			// A bare key. Rebuild the URL the column would have held so
+			// the ownership gate is applied in one place rather than
+			// duplicated here.
+			candidate = "https://storage.googleapis.com/" + t.Bucket + "/" + ref
+		}
+		// Checked against THIS target's prefixes, not the global set: a
+		// URL naming the public bucket with an artwork key belongs to
+		// neither target and must be refused, not reassigned.
+		if key, ok := media.KeyFromBucketURLWithPrefixes(t.Bucket, candidate, t.Prefixes); ok {
+			return key, t, true
+		}
 	}
-	// A bare key. Run it through the same gate by rebuilding the URL the
-	// column would have held, so the prefix allowlist is applied in one
-	// place rather than duplicated here.
-	return media.KeyFromOwnBucketURL(r.bucket, "https://storage.googleapis.com/"+r.bucket+"/"+ref)
+	return "", nil, false
 }
 
 // referenceSources are the columns a SURVIVING row could still point at a
@@ -232,6 +329,21 @@ var referenceSources = []struct {
 	{"product_media", "gcs_path_original"},
 	{"product_media", "url"},
 	{"order_items", "image_url"},
+
+	// Buyer artwork (#980). One uploaded object is referenced TWICE once
+	// an order claims it: personalisation_uploads keeps the cart-side row
+	// and order_item_personalisations snapshots the same storage key onto
+	// the order. The two cascade from different parents — stores and
+	// order_items — so a delete that removes one can easily leave the
+	// other alive, and the object still belongs to whoever is left.
+	//
+	// Both columns per table, because storage_key_original is the
+	// pristine upload and storage_key is the preview, and they are
+	// separate objects that are reaped independently.
+	{"personalisation_uploads", "storage_key_original"},
+	{"personalisation_uploads", "storage_key"},
+	{"order_item_personalisations", "storage_key_original"},
+	{"order_item_personalisations", "storage_key"},
 }
 
 // survivingReferences returns the subset of keys that some remaining row
@@ -240,9 +352,14 @@ func (r *Reaper) survivingReferences(ctx context.Context, keys []string) (map[st
 	live := make(map[string]struct{})
 
 	// URL columns store the public form, so compare against both shapes.
-	urls := make([]string, 0, len(keys))
-	for _, k := range keys {
-		urls = append(urls, "https://storage.googleapis.com/"+r.bucket+"/"+k)
+	// Once per bucket: the same key could be stored as a URL naming
+	// either, and asking only about one would miss a live reference and
+	// delete an object somebody is still showing.
+	urls := make([]string, 0, len(keys)*len(r.targets))
+	for _, t := range r.targets {
+		for _, k := range keys {
+			urls = append(urls, "https://storage.googleapis.com/"+t.Bucket+"/"+k)
+		}
 	}
 
 	for _, src := range referenceSources {
@@ -258,7 +375,7 @@ func (r *Reaper) survivingReferences(ctx context.Context, keys []string) (map[st
 			return nil, fmt.Errorf("blobreap: scan %s.%s: %w", src.table, src.column, err)
 		}
 		for _, f := range found {
-			if key, ok := r.resolve(f); ok {
+			if key, _, ok := r.resolve(f); ok {
 				live[key] = struct{}{}
 			}
 		}

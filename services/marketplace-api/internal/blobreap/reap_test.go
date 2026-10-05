@@ -25,7 +25,10 @@ func quiet() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)
 func newTestReaper(t *testing.T, live ...string) (*Reaper, *media.FakeUploader) {
 	t.Helper()
 	fake := media.NewFakeUploader()
-	r := &Reaper{deleter: fake, bucket: bucket, logger: quiet(), max: DefaultMaxObjects}
+	r := &Reaper{
+		targets: []Target{{Bucket: bucket, Deleter: fake, Prefixes: media.ProductPrefixes}},
+		logger:  quiet(), max: DefaultMaxObjects,
+	}
 	set := make(map[string]struct{}, len(live))
 	for _, k := range live {
 		set[k] = struct{}{}
@@ -94,7 +97,10 @@ func TestReap_FailsClosedWhenItCannotTellWhatSurvives(t *testing.T) {
 	// errored and deleted anyway would destroy another tenant's
 	// catalogue, which is the whole thing this prevents.
 	fake := media.NewFakeUploader()
-	r := &Reaper{deleter: fake, bucket: bucket, logger: quiet(), max: DefaultMaxObjects}
+	r := &Reaper{
+		targets: []Target{{Bucket: bucket, Deleter: fake, Prefixes: media.ProductPrefixes}},
+		logger:  quiet(), max: DefaultMaxObjects,
+	}
 	r.checkRefs = func(context.Context, []string) (map[string]struct{}, error) {
 		return nil, errors.New("connection reset")
 	}
@@ -106,7 +112,7 @@ func TestReap_FailsClosedWhenItCannotTellWhatSurvives(t *testing.T) {
 func TestReap_CountsDeleteFailuresWithoutAbortingTheRest(t *testing.T) {
 	r, _ := newTestReaper(t)
 	bad := "tenants/t1/boom.jpg"
-	r.deleter = failingDeleter{bad: bad}
+	r.targets[0].Deleter = failingDeleter{bad: bad}
 	out := r.Reap(context.Background(), []string{
 		url("tenants/t1/ok1.jpg"), url(bad), url("tenants/t1/ok2.jpg"),
 	})

@@ -87,6 +87,40 @@ var blobSources = []struct {
 		       JOIN stores s ON s.id = b.store_id
 		      WHERE s.tenant_id = ? AND b.logo_url IS NOT NULL`,
 	},
+	// Buyer artwork (#980). Lives in the PRIVATE bucket, so these
+	// references are only reachable when the reaper has a target for it;
+	// without one blobreap reports them as not-ours rather than deleting
+	// them against the wrong bucket.
+	//
+	// Both columns: storage_key_original is the pristine upload the
+	// merchant prints from, storage_key is the preview. Two objects, and
+	// leaving the preview behind would leave a recognisable photograph of
+	// a person behind.
+	//
+	// order_item_personalisations is reached through order_items because
+	// it carries no tenant or store column of its own by design — the
+	// snapshot has no FK back to the catalog so it survives the merchant
+	// renaming or deleting the field it came from.
+	{
+		table: "personalisation_uploads",
+		sql: `SELECT storage_key_original FROM personalisation_uploads
+		      WHERE tenant_id = ?
+		      UNION
+		      SELECT storage_key FROM personalisation_uploads
+		      WHERE tenant_id = ? AND storage_key IS NOT NULL`,
+	},
+	{
+		table: "order_item_personalisations",
+		sql: `SELECT p.storage_key_original FROM order_item_personalisations p
+		       JOIN order_items i ON i.id = p.order_item_id
+		       JOIN orders o ON o.id = i.order_id
+		      WHERE o.tenant_id = ? AND p.storage_key_original IS NOT NULL
+		      UNION
+		      SELECT p.storage_key FROM order_item_personalisations p
+		       JOIN order_items i ON i.id = p.order_item_id
+		       JOIN orders o ON o.id = i.order_id
+		      WHERE o.tenant_id = ? AND p.storage_key IS NOT NULL`,
+	},
 }
 
 // collectBlobRefs reads every object reference the tenant's rows hold.

@@ -64,25 +64,39 @@ func (u *GCSUploader) Delete(ctx context.Context, storageKey string) error {
 	return fmt.Errorf("media: delete object: %w", err)
 }
 
-// ownedPrefixes are the key prefixes this service generates. A key
-// outside all of them was not minted here, whatever a stored URL claims.
+// ProductPrefixes live in the PUBLIC media bucket.
 //
 // Keep in step with the key builders: BuildStorageKey (product media,
 // "tenants/<id>/products/media/..."), buildAvatarStorageKey
 // ("users/<id>/avatar/..."), and the branding logo path.
-var ownedPrefixes = []string{
+var ProductPrefixes = []string{
 	"tenants/",
 	"users/",
-	// Buyer-supplied artwork (#963). Lives in the PRIVATE bucket, under a
-	// prefix of its own so it can never be confused with product media by
-	// a reaper, a lifecycle rule, or a human reading a bucket listing.
-	//
-	// Listing it here makes the prefix recognisable as ours; it does not
-	// by itself make it reachable. A reaper is bound to one bucket, and
-	// the tenant-purge reaper is bound to the public one — see the note
-	// on the purge path.
+}
+
+// ArtworkPrefixes live in the PRIVATE bucket (#963).
+//
+// Buyer-supplied artwork gets a prefix of its own so it can never be
+// confused with product media by a reaper, by a human reading a bucket
+// listing, or by a lifecycle rule someone adds later.
+//
+// Separated from ProductPrefixes by #980 because the prefix alone is not
+// enough: "buyer-uploads/..." is a key in the private bucket and a key
+// that does not exist in the public one, and a reaper that knows the
+// prefix but not the bucket will cheerfully issue the delete against the
+// wrong bucket, report success, and leave the photograph where it is.
+//
+// Callers that delete must therefore pair a prefix set with the bucket it
+// belongs to — see blobreap.Target and customererasure's blobTarget —
+// rather than reaching for ownedPrefixes.
+var ArtworkPrefixes = []string{
 	"buyer-uploads/",
 }
+
+// ownedPrefixes is every prefix this service mints, in any bucket. Used
+// by callers that ask only "did we make this key" and already know which
+// bucket they are talking to.
+var ownedPrefixes = append(append([]string{}, ProductPrefixes...), ArtworkPrefixes...)
 
 // publicURLHost is the only host a stored URL may use to be considered
 // ours. A CDN alias would need adding here deliberately — and would need
@@ -105,6 +119,16 @@ const publicURLHost = "https://storage.googleapis.com/"
 //   - a key outside ownedPrefixes
 //   - path traversal, or a key that is empty after the bucket segment
 func KeyFromOwnBucketURL(bucket, rawURL string) (string, bool) {
+	return KeyFromBucketURLWithPrefixes(bucket, rawURL, ownedPrefixes)
+}
+
+// KeyFromBucketURLWithPrefixes is KeyFromOwnBucketURL with the accepted
+// prefix set supplied by the caller.
+//
+// Exists for #980: a multi-bucket reaper must be able to ask "is this a
+// key in THIS bucket, under a prefix that belongs in THIS bucket", which
+// the single global prefix list cannot express.
+func KeyFromBucketURLWithPrefixes(bucket, rawURL string, prefixes []string) (string, bool) {
 	if bucket == "" {
 		return "", false
 	}
@@ -131,7 +155,7 @@ func KeyFromOwnBucketURL(bucket, rawURL string) (string, bool) {
 		return "", false
 	}
 
-	for _, p := range ownedPrefixes {
+	for _, p := range prefixes {
 		if strings.HasPrefix(key, p) {
 			return key, true
 		}

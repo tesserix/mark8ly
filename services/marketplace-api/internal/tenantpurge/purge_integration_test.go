@@ -44,9 +44,14 @@ type seededTenant struct {
 var domainTablesToCleanup = []string{
 	// group 1 — financial leaves
 	"refund_transactions", "coupon_usage", "payment_transactions", "shipments",
-	// group 2 — order children -> orders
+	// group 2 — order children -> orders. order_item_personalisations
+	// before order_items: it cascades from there, and listing it
+	// explicitly keeps the cleanup honest if that FK ever changes (#980).
+	"order_item_personalisations",
 	"order_items", "returns", "orders", "abandoned_carts",
-	// group 3 — product/review subtree
+	// group 3 — product/review subtree. The artwork tables cascade from
+	// stores and products respectively; named here for the same reason.
+	"personalisation_uploads", "product_personalisation_fields",
 	"reviews", "wishlists", "products", "categories",
 	// group 4 — vendors
 	"vendors",

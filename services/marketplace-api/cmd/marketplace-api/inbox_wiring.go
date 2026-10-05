@@ -106,15 +106,21 @@ func inboxActionExecutors(
 // The error from NewExecutor is not swallowed into a nil: a nil db is a
 // WIRING bug, and this returning nil silently would turn it into a 501 that
 // reads as a deliberate product decision rather than a broken deployment.
-// blobs + bucket wire object deletion (#961). Both may be zero: a
-// deployment with no real bucket has no objects to destroy, and the
-// receipt then reports every referenced object as skipped rather than
-// claiming it was deleted.
+// blobs + bucket wire object deletion (#961). artwork + artworkBucket
+// wire the PRIVATE bucket a buyer's uploads live in (#980) — a separate
+// pair because it is a separate bucket, and a delete issued at the wrong
+// one succeeds without deleting anything.
+//
+// All four may be zero: a deployment with no real bucket has no objects
+// to destroy, and the receipt then reports every referenced object as
+// skipped rather than claiming it was deleted.
 func newCustomerEraser(
 	db *gorm.DB,
 	logger *slog.Logger,
 	blobs media.Deleter,
 	bucket string,
+	artwork media.Deleter,
+	artworkBucket string,
 ) (platformadmin.CustomerEraser, error) {
 	if db == nil {
 		return nil, nil
@@ -125,6 +131,9 @@ func newCustomerEraser(
 	}
 	if blobs != nil && bucket != "" {
 		eraser = eraser.WithBlobDeleter(blobs, bucket)
+	}
+	if artwork != nil && artworkBucket != "" {
+		eraser = eraser.WithArtworkDeleter(artwork, artworkBucket)
 	}
 	return eraser, nil
 }

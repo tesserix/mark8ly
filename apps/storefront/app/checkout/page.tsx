@@ -38,6 +38,12 @@ import {
   type CheckoutAddressBody,
 } from "@/lib/api/checkout-api";
 import { fallbackParcelWeight } from "@/lib/checkout/parcel-weight";
+import { lineKey } from "@/lib/cart";
+import {
+  PersonalisationSummary,
+  hasExpiredUpload,
+} from "@/components/personalisation/PersonalisationSummary";
+import { usePersonalisationPreviews } from "@/components/personalisation/usePersonalisationPreviews";
 
 // ---------------------------------------------------------------------------
 // Store slug — client-side resolution via hostname + fallback
@@ -171,6 +177,14 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { items, subtotal, count, clear, holdExpiresAt } = useCart();
   const storeSlug = useMemo(() => resolveSlugClient(), []);
+  // Re-signed on render: the URLs are short-lived and uncacheable, so the
+  // review shows the buyer their own artwork rather than a dead link
+  // (#966). One request for the whole order summary.
+  const previews = usePersonalisationPreviews(storeSlug, items);
+  // A line whose upload was swept cannot be bought. The server rejects
+  // the whole cart for one of them, so stopping here is kinder than
+  // letting someone reach a payment that cannot succeed.
+  const expiredLines = items.filter((i) => hasExpiredUpload(i.personalisation, previews)).length;
   const currencyCode = items[0]?.currencyCode ?? "USD";
 
   // Form state
@@ -244,6 +258,17 @@ export default function CheckoutPage() {
   submitBlockers.push(...getAddressBlockers(address));
   if (selectedShipping === "") submitBlockers.push("Choose a shipping method");
   if (selectedProvider === "") submitBlockers.push("Choose a payment method");
+  // An upload swept at 72h (#966). Checkout would reject the whole cart
+  // for one of these, so catching it here turns a failed payment into a
+  // sentence the buyer can act on. The per-line detail is in the order
+  // summary beside the affected item; this is the pointer to it.
+  if (expiredLines > 0) {
+    submitBlockers.push(
+      expiredLines === 1
+        ? "Re-upload the photo for the item marked in your order summary"
+        : `Re-upload the photos for the ${expiredLines} items marked in your order summary`,
+    );
+  }
   const canSubmit = submitBlockers.length === 0 && !submitting;
 
   // Fetch payment methods on mount
@@ -787,7 +812,11 @@ export default function CheckoutPage() {
               const lineTotal = Number.parseFloat(item.priceAmount) * item.qty;
               return (
                 <li
-                  key={`${item.productId}-${item.variantId}`}
+                  // lineKey, not productId-variantId (#964). Two
+                  // personalisations of one variant are two lines, so the
+                  // old pair collided here — the cart page was fixed when
+                  // personalisation shipped and this summary was missed.
+                  key={lineKey(item)}
                   className="flex gap-4 py-4"
                 >
                   {item.imageUrl ? (
@@ -811,6 +840,14 @@ export default function CheckoutPage() {
                       <p className="mt-0.5 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
                         Qty {item.qty}
                       </p>
+                      {/* The buyer saw their artwork on the cart; losing
+                          it on the page where they pay is where a wrong
+                          order gets confirmed (#966). */}
+                      <PersonalisationSummary
+                        entries={item.personalisation}
+                        previews={previews}
+                        size="compact"
+                      />
                     </div>
                     <p
                       className="text-sm text-[color:var(--storefront-text,var(--ink-900))]"

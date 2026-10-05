@@ -1840,7 +1840,10 @@ func main() {
 		}
 		slugFlight := &singleflight.Group{}
 		slugCache := stores.NewSlugCache(storesRepoSF, storefrontPlatformClient, slugFlight, 5*time.Minute)
-		storefrontHandler := storefront.NewStorefrontHandler(productRepoSF, categoryRepoSF, storesRepoSF, log)
+		storefrontHandler := storefront.NewStorefrontHandler(productRepoSF, categoryRepoSF, storesRepoSF, log).
+			// Public base for the merchant mockup behind the 2D composite
+			// (#966). Same value product_media.url is already built with.
+			WithMediaBaseURL(cfg.MediaPublicBaseURL)
 
 		// Orders M5 — public checkout endpoint. Storefront mode does not
 		// run the outbox publisher (admin mode owns that), but it DOES

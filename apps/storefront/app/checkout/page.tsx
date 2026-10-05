@@ -39,6 +39,7 @@ import {
 } from "@/lib/api/checkout-api";
 import { fallbackParcelWeight } from "@/lib/checkout/parcel-weight";
 import { lineKey } from "@/lib/cart";
+import { toCheckoutPersonalisation } from "@/lib/personalisation";
 import {
   PersonalisationSummary,
   hasExpiredUpload,
@@ -437,6 +438,7 @@ export default function CheckoutPage() {
         tax_code: i.taxCode,
         tax_rate_override: i.taxRateOverride,
         tax_category: i.taxCategory,
+        personalisation: toCheckoutPersonalisation(i.personalisation),
       }));
       const result = await fetchTaxPreview(storeSlug, {
         items: checkoutItems,
@@ -532,6 +534,9 @@ export default function CheckoutPage() {
       tax_code: i.taxCode,
       tax_rate_override: i.taxRateOverride,
       tax_category: i.taxCategory,
+      // Without this the server sees no answers and correctly reports a
+      // required field as missing, making the product unbuyable (#966).
+      personalisation: toCheckoutPersonalisation(i.personalisation),
     }));
 
     const body: CheckoutBody = {

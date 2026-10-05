@@ -105,6 +105,25 @@ export interface CheckoutItemBody {
   tax_code?: string;
   tax_rate_override?: string; // percentage as decimal string, e.g. "18.00"
   tax_category?: "standard" | "reduced" | "zero_rated" | "exempt";
+  /**
+   * What the buyer filled in for this line (#966).
+   *
+   * MUST be forwarded. The server revalidates every answer against the
+   * catalog and reprices the deltas, so omitting it does not "skip"
+   * personalisation — it makes a product with a required field
+   * unbuyable, because the server correctly reports the field as
+   * missing.
+   */
+  personalisation?: CheckoutPersonalisationBody[];
+}
+
+/** One answer, in the shape the checkout endpoint expects. */
+export interface CheckoutPersonalisationBody {
+  field_id: string;
+  upload_id?: string;
+  text?: string;
+  option_id?: string;
+  checked?: boolean;
 }
 
 export interface CheckoutAddressBody {

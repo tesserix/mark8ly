@@ -10,6 +10,7 @@
 // this governs is whether the buyer is allowed to *try*, and what they
 // are told before they do.
 
+import type { CheckoutPersonalisationBody } from "@/lib/api/checkout-api";
 import type {
   CartItemPersonalisation,
 } from "./cart";
@@ -228,4 +229,29 @@ export function isBelowMinimumResolution(
   if (!field.min_px || !dimensions) return false;
   if (dimensions.width <= 0 || dimensions.height <= 0) return false;
   return Math.min(dimensions.width, dimensions.height) < field.min_px;
+}
+
+/**
+ * Converts a cart line's answers into the checkout request shape (#966).
+ *
+ * The cart's own entries carry display-only extras — fieldLabel,
+ * optionLabel — that the server has no use for and would reject nothing
+ * over. This strips to exactly the keys CheckoutPersonalisationRequest
+ * declares, so the wire stays the contract rather than whatever the cart
+ * happened to accumulate.
+ *
+ * Undefined for a line with nothing on it, so an ordinary product does
+ * not send an empty array.
+ */
+export function toCheckoutPersonalisation(
+  entries: readonly CartItemPersonalisation[] | undefined,
+): CheckoutPersonalisationBody[] | undefined {
+  if (!entries || entries.length === 0) return undefined;
+  return entries.map((e) => ({
+    field_id: e.fieldId,
+    upload_id: e.uploadId,
+    text: e.text,
+    option_id: e.optionId,
+    checked: e.checked,
+  }));
 }

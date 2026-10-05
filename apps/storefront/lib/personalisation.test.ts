@@ -4,6 +4,7 @@ import {
   isBelowMinimumResolution,
   personalisationSurcharge,
   toCartPersonalisation,
+  toCheckoutPersonalisation,
   validateAnswers,
   type PersonalisationAnswers,
 } from "./personalisation";
@@ -184,5 +185,51 @@ describe("isBelowMinimumResolution", () => {
     expect(isBelowMinimumResolution({ min_px: undefined }, { width: 1, height: 1 })).toBe(false);
     expect(isBelowMinimumResolution({ min_px: 1200 }, null)).toBe(false);
     expect(isBelowMinimumResolution({ min_px: 1200 }, { width: 0, height: 0 })).toBe(false);
+  });
+});
+
+// Regression for the bug that made personalised products unbuyable
+// (#966). The cart carried the buyer's answers and the checkout request
+// dropped them, so the server correctly reported the required field as
+// missing and the order could never be placed.
+//
+// Third instance of one shape: the data exists and is not forwarded.
+describe("toCheckoutPersonalisation", () => {
+  it("forwards an image answer in the shape the server declares", () => {
+    expect(
+      toCheckoutPersonalisation([
+        { fieldId: "f1", fieldLabel: "Your photo", uploadId: "u1" },
+      ]),
+    ).toEqual([
+      { field_id: "f1", upload_id: "u1", text: undefined, option_id: undefined, checked: undefined },
+    ]);
+  });
+
+  it("drops the display-only labels the cart carries", () => {
+    // fieldLabel and optionLabel exist so the cart can render without a
+    // network call. The server reprices every answer from the catalog
+    // and has no use for them.
+    const out = toCheckoutPersonalisation([
+      { fieldId: "f1", fieldLabel: "Finish", optionId: "o1", optionLabel: "Matte" },
+    ]);
+    const keys = Object.keys(out![0]!).sort();
+    expect(keys).toEqual(["checked", "field_id", "option_id", "text", "upload_id"]);
+  });
+
+  it("is undefined for a line with nothing on it", () => {
+    expect(toCheckoutPersonalisation(undefined)).toBeUndefined();
+    expect(toCheckoutPersonalisation([])).toBeUndefined();
+  });
+
+  it("carries text and checkbox answers too", () => {
+    expect(
+      toCheckoutPersonalisation([
+        { fieldId: "f1", text: "Asha" },
+        { fieldId: "f2", checked: true },
+      ]),
+    ).toEqual([
+      { field_id: "f1", upload_id: undefined, text: "Asha", option_id: undefined, checked: undefined },
+      { field_id: "f2", upload_id: undefined, text: undefined, option_id: undefined, checked: true },
+    ]);
   });
 });

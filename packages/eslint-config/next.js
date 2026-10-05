@@ -55,7 +55,7 @@ export const nextJsConfig = [
     },
   },
   {
-    files: ["**/*.{jsx,tsx}"],
+    files: ["**/*.{js,jsx,ts,tsx}"],
     plugins: {
       "react-hooks": pluginReactHooks,
     },
@@ -64,6 +64,18 @@ export const nextJsConfig = [
       ...pluginReactHooks.configs.recommended.rules,
       // React scope no longer necessary with new JSX transform.
       "react/react-in-jsx-scope": "off",
+
+      // These are reported here but CANNOT fail a build: base.js loads
+      // eslint-plugin-only-warn, which downgrades every rule in this
+      // config to a warning. Setting them to "error" here would look
+      // like a gate and be nothing of the kind.
+      //
+      // The gate that does fail lives in ./react-hooks-strict.js, which
+      // deliberately does not extend the base. See its doc comment for
+      // why, and for the bug that prompted it.
+      //
+      // The files glob above covers .ts as well as .tsx because custom
+      // hooks live in plain .ts files.
     },
   },
 ];

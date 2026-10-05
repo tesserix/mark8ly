@@ -341,7 +341,9 @@ function CommentsThread({
     parentReplyId?: string,
   ) => Promise<{ ok: boolean; error?: string } | void>;
 }) {
-  const replies = review.replies ?? [];
+  // Memoised because `?? []` builds a NEW array whenever replies is
+  // undefined, which made the useMemo below recompute on every render.
+  const replies = useMemo(() => review.replies ?? [], [review.replies]);
   const [open, setOpen] = useState<boolean>(replies.length > 0);
   const [composer, setComposer] = useState("");
   const [replyingTo, setReplyingTo] = useState<string | null>(null);

@@ -6,12 +6,13 @@
     "dev": "next dev --port 4202",
     "build": "next build",
     "start": "next start --port 4202",
-    "lint": "echo 'lint stub \u2014 migrate to ESLint flat config (next lint removed in Next 16)'",
+    "lint": "npm run lint:hooks",
     "check-types": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:a11y:unit": "vitest run tests/unit/a11y"
+    "test:a11y:unit": "vitest run tests/unit/a11y",
+    "lint:hooks": "eslint . -c eslint.hooks.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

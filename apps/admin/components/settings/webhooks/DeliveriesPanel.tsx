@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { Button, Badge } from "@tesserix/web";
 
 import type { WebhookDelivery, DeliveryStatus } from "@/lib/api/webhooks";
@@ -38,7 +38,11 @@ export function DeliveriesPanel({ webhookId, editable }: DeliveriesPanelProps) {
   >(null);
   const [replayingId, setReplayingId] = useState<string | null>(null);
 
-  function load() {
+  // useCallback rather than a plain function: a plain one is redefined
+  // every render, so it can never be an honest effect dependency and the
+  // rule had to be suppressed. Keyed on webhookId, which is the only
+  // thing the load actually depends on.
+  const load = useCallback(() => {
     startLoad(async () => {
       const result = await listDeliveriesAction(webhookId);
       if (!result.ok) {
@@ -48,12 +52,11 @@ export function DeliveriesPanel({ webhookId, editable }: DeliveriesPanelProps) {
       setError(null);
       setDeliveries(result.data);
     });
-  }
+  }, [webhookId]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     load();
-  }, [webhookId]);
+  }, [load]);
 
   function handleTestSend() {
     setTestResult(null);

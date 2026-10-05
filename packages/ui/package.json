@@ -17,9 +17,10 @@
     "./*": "./src/*.tsx"
   },
   "scripts": {
-    "lint": "eslint . --max-warnings 0",
+    "lint": "eslint . --max-warnings 0 && npm run lint:hooks",
     "generate:component": "turbo gen react-component",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "lint:hooks": "eslint . -c eslint.hooks.mjs"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",

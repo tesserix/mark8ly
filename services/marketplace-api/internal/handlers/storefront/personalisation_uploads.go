@@ -16,8 +16,10 @@ package storefront
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -215,6 +217,81 @@ func (h *PersonalisationUploadsHandler) Preview(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"url": url, "expires_at": expiresAt})
+}
+
+// PreviewBatchRequest asks for several previews at once.
+type PreviewBatchRequest struct {
+	UploadIDs []string `json:"upload_ids"`
+}
+
+// maxPreviewBatch bounds one batch.
+//
+// Generous against any real cart and small enough that the endpoint
+// cannot be turned into a bulk URL-signing oracle. Every id is still
+// cart-scoped, so a prober learns nothing from a miss either way.
+const maxPreviewBatch = 50
+
+// PreviewBatch handles POST .../personalisation/previews.
+//
+// One request for a whole cart (#966). The cart page renders a thumbnail
+// per personalised line and the URLs are short-lived signed GETs that
+// cannot be cached, so the alternative is a round trip per line on every
+// render.
+//
+// Unknown or expired ids are OMITTED from the response rather than
+// erroring. That is the point: the caller is rendering a cart that may
+// contain a line whose upload was swept, and it needs to know WHICH one
+// so it can show "your photo expired" on that line alone. A 404 for the
+// whole batch would tell it only that something, somewhere, was wrong.
+//
+// POST rather than GET because the id list goes in a body: a cart's worth
+// of uuids in a query string is a privacy problem in access logs and
+// referrer headers.
+func (h *PersonalisationUploadsHandler) PreviewBatch(c *gin.Context) {
+	token := h.cartTokenFrom(c, c.Query("cart_token"))
+	if token == "" {
+		return
+	}
+	var req PreviewBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.respond(c, apperrors.ValidationFailed("upload_ids", "a list of upload ids is required"))
+		return
+	}
+	if len(req.UploadIDs) > maxPreviewBatch {
+		h.respond(c, apperrors.ValidationFailed("upload_ids",
+			fmt.Sprintf("at most %d previews may be requested at once", maxPreviewBatch)))
+		return
+	}
+
+	type previewEntry struct {
+		URL       string    `json:"url"`
+		ExpiresAt time.Time `json:"expires_at"`
+	}
+	out := make(map[string]previewEntry, len(req.UploadIDs))
+	expired := make([]string, 0)
+	seen := make(map[string]struct{}, len(req.UploadIDs))
+
+	for _, id := range req.UploadIDs {
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+
+		url, expiresAt, err := h.svc.PreviewURL(c.Request.Context(), id, token)
+		if err != nil {
+			// Not fatal, and not distinguished: swept, never existed, or
+			// another cart's all land here. The caller only needs to know
+			// this line cannot be previewed.
+			expired = append(expired, id)
+			continue
+		}
+		out[id] = previewEntry{URL: url, ExpiresAt: expiresAt}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"previews": out, "unavailable": expired})
 }
 
 // Delete handles DELETE .../personalisation/uploads/:uploadId.

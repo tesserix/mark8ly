@@ -24,6 +24,9 @@ type Repository interface {
 	SetCrop(ctx context.Context, id, cartToken string, previewKey string, crop []byte) error
 	DeleteForCart(ctx context.Context, id, cartToken string) (*Upload, error)
 	CountForCart(ctx context.Context, cartToken string) (int64, error)
+	// ExtendLease pushes expires_at out to now()+TTL for an upload the
+	// buyer is demonstrably still using (#966).
+	ExtendLease(ctx context.Context, id, cartToken string, ttl time.Duration) error
 	// ClaimExpired moves up to limit expired, unclaimed rows out of the
 	// table and returns them so their objects can be destroyed.
 	ClaimExpired(ctx context.Context, now time.Time, limit int) ([]Upload, error)
@@ -101,6 +104,34 @@ func (r *gormRepository) SetCrop(ctx context.Context, id, cartToken, previewKey 
 	}
 	if res.RowsAffected == 0 {
 		return apperrors.NotFound("personalisation_upload")
+	}
+	return nil
+}
+
+// ExtendLease renews an upload's 72-hour lease.
+//
+// Called when the buyer looks at their own preview, which is the only
+// evidence this service gets that a cart is still live. Carts sit in
+// localStorage indefinitely while uploads are swept at 72 hours, so
+// without this a shopper who takes four days to decide returns to a cart
+// that renders fine and cannot be bought.
+//
+// Deliberately NOT applied to a claimed upload: an order owns it, the
+// sweeper already ignores it, and moving its expiry would imply the
+// lease still means something.
+//
+// A miss is not an error. The row may have been swept between the read
+// and this write, and the caller's job — handing over a preview URL —
+// does not depend on the renewal succeeding.
+func (r *gormRepository) ExtendLease(ctx context.Context, id, cartToken string, ttl time.Duration) error {
+	res := r.db.WithContext(ctx).Model(&Upload{}).
+		Where("id = ? AND cart_token = ? AND state <> ?", id, cartToken, StateClaimed).
+		Updates(map[string]any{
+			"expires_at": gorm.Expr("now() + (? * interval '1 second')", int64(ttl.Seconds())),
+			"updated_at": gorm.Expr("now()"),
+		})
+	if res.Error != nil {
+		return fmt.Errorf("personalisationupload: extend lease: %w", res.Error)
 	}
 	return nil
 }

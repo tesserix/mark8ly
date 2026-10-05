@@ -6,10 +6,11 @@
     "dev": "next dev --port 4201",
     "build": "next build",
     "start": "next start --port 4201",
-    "lint": "echo 'lint stub \u2014 migrate to ESLint flat config (next lint removed in Next 16)'",
+    "lint": "npm run lint:hooks",
     "check-types": "tsc --noEmit",
     "test": "playwright test --config=playwright.unit.config.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "lint:hooks": "eslint . -c eslint.hooks.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

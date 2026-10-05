@@ -396,7 +396,14 @@ export default function CheckoutPage() {
     setShippingRates(rates);
     if (rates.length === 1) setSelectedShipping(rates[0]!.service);
     setLoadingRates(false);
-  }, [address, items, storeSlug]);
+    // fallbackWeightGrams is derived from shippingOptions, which loads
+    // asynchronously after mount. Without it here, fetchRates kept the
+    // value computed from an empty options list and quoted every rate
+    // against the wrong parcel weight — the exact cost the "that is a
+    // guess, and a wrong one costs you the difference on every order"
+    // comment above warns about. Including it re-creates fetchRates when
+    // the options land, and the debounced effect below re-quotes.
+  }, [address, items, storeSlug, fallbackWeightGrams]);
 
   useEffect(() => {
     if (isAddressFilled(address)) {
@@ -451,7 +458,6 @@ export default function CheckoutPage() {
       clearTimeout(timer);
       setTaxLoading(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, items, shippingTotal, couponFreeShipping, storeSlug, subtotal]);
 
   // Fetch loyalty program + balance when email is entered. Debounced so we

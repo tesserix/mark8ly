@@ -60,6 +60,13 @@ type Executor struct {
 	// object is reported as skipped in the receipt rather than ignored.
 	blobs      media.Deleter
 	blobBucket string
+	// artwork + artworkBucket reach the PRIVATE bucket (#980). Separate
+	// from blobs because they are a different bucket with a different
+	// access posture, and because a delete issued at the wrong bucket
+	// succeeds — GCS treats a missing object as already gone — so one
+	// field used for both would fail silently.
+	artwork       media.Deleter
+	artworkBucket string
 }
 
 // NewExecutor refuses a nil db at construction rather than deferring the

@@ -862,18 +862,53 @@ func main() {
 			log.Info("media: using fake uploader (MARKETPLACE_GCS_BUCKET is empty)")
 		}
 
-		// Object reaping for tenant purge (#961). The uploader doubles as
-		// the deleter; the fake implements it too, so dev wiring is
-		// identical and a test can assert on it.
+		// Object reaping for tenant purge (#961) across BOTH buckets
+		// (#980). The uploader doubles as the deleter; the fake
+		// implements it too, so dev wiring is identical and a test can
+		// assert on it.
 		//
-		// Nil without a bucket, which keeps a purge SQL-only and makes it
-		// report every referenced object as skipped rather than showing a
-		// clean zero.
+		// Two targets, each declaring the prefixes that live in its own
+		// bucket. The artwork target is what #980 was about: without it
+		// a purge deleted the rows naming a buyer's photograph and left
+		// the photograph itself in the private bucket, with the 72h
+		// sweeper's reach removed along with the rows. Routing is by
+		// prefix precisely because a delete issued at the wrong bucket
+		// SUCCEEDS — GCS treats a missing object as already gone — so
+		// the mistake reports Deleted and leaves the object behind.
+		//
+		// No targets at all keeps a purge SQL-only and makes it report
+		// every reference as skipped rather than showing a clean zero.
+		var reapTargets []blobreap.Target
 		if d, ok := uploader.(media.Deleter); ok && cfg.GCSBucket != "" {
-			purgeReaper = blobreap.New(conn, d, cfg.GCSBucket, log)
-			log.Info("tenantpurge: object reaping enabled", "bucket", cfg.GCSBucket)
+			reapTargets = append(reapTargets, blobreap.Target{
+				Bucket:   cfg.GCSBucket,
+				Deleter:  d,
+				Prefixes: media.ProductPrefixes,
+			})
+		}
+		if privateArtworkUploader != nil {
+			if d, ok := privateArtworkUploader.(media.Deleter); ok {
+				reapTargets = append(reapTargets, blobreap.Target{
+					Bucket:   cfg.PrivateGCSBucket,
+					Deleter:  d,
+					Prefixes: media.ArtworkPrefixes,
+				})
+			} else {
+				log.Warn("tenantpurge: private artwork uploader cannot delete — buyer artwork will outlive a purge",
+					"bucket", cfg.PrivateGCSBucket)
+			}
+		}
+		if len(reapTargets) > 0 {
+			purgeReaper = blobreap.NewTargets(conn, log, reapTargets...)
+			log.Info("tenantpurge: object reaping enabled", "buckets", purgeReaper.Buckets())
 		} else {
 			log.Warn("tenantpurge: no GCS bucket — rows will be purged but objects will not")
+		}
+		if privateArtworkUploader == nil && cfg.GCSBucket != "" {
+			// Worth saying out loud: artwork references will be collected
+			// and then reported as not-ours, which is correct but is not
+			// the same as "there was none".
+			log.Warn("tenantpurge: no private artwork bucket — buyer artwork cannot be reaped")
 		}
 
 		// Platform client — real HTTP client when MARKETPLACE_PLATFORM_API_URL
@@ -1403,7 +1438,15 @@ func main() {
 		// GCS one; the fake implements Deleter too, so dev wiring is
 		// identical and a test can assert on it.
 		blobDeleter, _ := uploader.(media.Deleter)
-		customerEraser, err = newCustomerEraser(conn, log, blobDeleter, cfg.GCSBucket)
+		// And the private artwork bucket (#980). Without this a subject's
+		// own erasure request left their photograph in the bucket and the
+		// receipt said "skipped" — honest, and not good enough.
+		var artworkDeleter media.Deleter
+		if privateArtworkUploader != nil {
+			artworkDeleter, _ = privateArtworkUploader.(media.Deleter)
+		}
+		customerEraser, err = newCustomerEraser(
+			conn, log, blobDeleter, cfg.GCSBucket, artworkDeleter, cfg.PrivateGCSBucket)
 		if err != nil {
 			log.Error("marketplace-api: customer erasure executor could not be built", "err", err)
 			os.Exit(1)

@@ -115,6 +115,30 @@ func main() {
 		log.Warn("erasure-worker: MARKETPLACE_GCS_BUCKET is empty — rows will be erased but objects will not")
 	}
 
+	// Buyer artwork lives in a different, private bucket (#980). Wired
+	// separately for the same reason as everywhere else: a delete issued
+	// at the wrong bucket succeeds without deleting anything, so one
+	// client used for both would fail silently.
+	//
+	// Fatal if configured but unreachable, matching the public bucket
+	// above: a worker that believes it can destroy a subject's
+	// photograph and cannot is the failure this is meant to remove.
+	if artworkBucket := os.Getenv("MARKETPLACE_PRIVATE_GCS_BUCKET"); artworkBucket != "" {
+		artCtx, artCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		asc, aErr := storage.NewClient(artCtx)
+		artCancel()
+		if aErr != nil {
+			log.Error("erasure-worker: private gcs client", "err", aErr)
+			os.Exit(exitUsageOrInfra)
+		}
+		defer func() { _ = asc.Close() }()
+		executor = executor.WithArtworkDeleter(
+			media.NewGCSUploader(asc, artworkBucket), artworkBucket)
+		log.Info("erasure-worker: artwork deletion enabled", "bucket", artworkBucket)
+	} else {
+		log.Warn("erasure-worker: MARKETPLACE_PRIVATE_GCS_BUCKET is empty — buyer artwork will outlive an erasure")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 

@@ -34,6 +34,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -91,11 +92,19 @@ var blobSources = []struct {
 	},
 	{
 		// The buyer's artwork on their orders (#967). Lives in the
-		// PRIVATE bucket, so with today's single-bucket reaper every one
-		// of these is reported as skipped rather than destroyed — see
-		// #980. Listed now so that when the second reaper lands these are
-		// already covered, and so the receipt states plainly that a
-		// photograph was left behind rather than implying there was none.
+		// PRIVATE bucket and is now destroyed from it, via the artwork
+		// target wired by WithArtworkDeleter (#980).
+		//
+		// These two columns hold a BARE KEY, not a URL — unlike every
+		// other source in this list. That is why resolveRef accepts both
+		// shapes: before #980 these went through KeyFromOwnBucketURL,
+		// which requires the public-URL prefix, so a subject's
+		// photograph was refused as "not ours" and survived their own
+		// erasure request.
+		//
+		// A deployment with no private bucket still reports these as
+		// skipped, so the receipt says a photograph was left behind
+		// rather than implying there was none.
 		table: "order_item_personalisations",
 		sql: `SELECT p.storage_key_original FROM order_item_personalisations p
 		       JOIN order_items i ON i.id = p.order_item_id
@@ -157,37 +166,88 @@ func (e *Executor) reapBlobs(ctx context.Context, urls []string) BlobOutcome {
 	if len(urls) == 0 {
 		return out
 	}
-	if e.blobs == nil || e.blobBucket == "" {
+	targets := e.blobTargets()
+	if len(targets) == 0 {
 		out.SkippedNotOurs = len(urls)
 		return out
 	}
 
-	// Deduplicate: two rows may name the same object, and deleting it
-	// twice would report two deletions of one thing.
+	// Deduplicate on (bucket, key): two rows may name the same object,
+	// and deleting it twice would report two deletions of one thing.
 	seen := make(map[string]struct{}, len(urls))
 	for _, raw := range urls {
-		key, ok := media.KeyFromOwnBucketURL(e.blobBucket, raw)
+		key, t, ok := resolveRef(raw, targets)
 		if !ok {
 			out.SkippedNotOurs++
 			continue
 		}
-		if _, dup := seen[key]; dup {
+		dedup := t.bucket + "\x00" + key
+		if _, dup := seen[dedup]; dup {
 			continue
 		}
-		seen[key] = struct{}{}
+		seen[dedup] = struct{}{}
 
-		if err := e.blobs.Delete(ctx, key); err != nil {
+		if err := t.deleter.Delete(ctx, key); err != nil {
 			out.Failed++
 			// The key is ours and carries no personal data — a tenant id
 			// and a content hash — so it is safe to name, and naming it is
 			// what makes the failure actionable.
 			e.logger.Error("customer erasure: object outlived its row",
-				"storage_key", key, "err", err)
+				"bucket", t.bucket, "storage_key", key, "err", err)
 			continue
 		}
 		out.Deleted++
 	}
 	return out
+}
+
+// blobTarget is one bucket, its deleter, and the prefixes that live in it.
+type blobTarget struct {
+	bucket   string
+	deleter  media.Deleter
+	prefixes []string
+}
+
+func (e *Executor) blobTargets() []blobTarget {
+	var out []blobTarget
+	if e.blobs != nil && e.blobBucket != "" {
+		out = append(out, blobTarget{e.blobBucket, e.blobs, media.ProductPrefixes})
+	}
+	if e.artwork != nil && e.artworkBucket != "" {
+		out = append(out, blobTarget{e.artworkBucket, e.artwork, media.ArtworkPrefixes})
+	}
+	return out
+}
+
+// resolveRef routes one column value to the bucket that owns it.
+//
+// Handles BOTH shapes, which is the other half of #980. The *_url columns
+// hold a public URL; the artwork columns —
+// order_item_personalisations.storage_key_original and .storage_key —
+// hold a BARE KEY. The pre-#980 code called KeyFromOwnBucketURL directly,
+// which requires the https://storage.googleapis.com/ prefix, so every
+// artwork reference was refused as "not ours" and a subject's photograph
+// survived their own erasure request.
+func resolveRef(ref string, targets []blobTarget) (string, *blobTarget, bool) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "", nil, false
+	}
+	isURL := strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://")
+	for i := range targets {
+		t := &targets[i]
+		candidate := ref
+		if !isURL {
+			candidate = "https://storage.googleapis.com/" + t.bucket + "/" + ref
+		}
+		// This target's prefixes, not the global set: a URL naming the
+		// public bucket with an artwork key belongs to neither and must
+		// be refused rather than reassigned.
+		if key, ok := media.KeyFromBucketURLWithPrefixes(t.bucket, candidate, t.prefixes); ok {
+			return key, t, true
+		}
+	}
+	return "", nil, false
 }
 
 // amendReceiptWithBlobs rewrites the stored receipt once the object half
@@ -234,6 +294,19 @@ func (e *Executor) amendReceiptWithBlobs(ctx context.Context, requestID uuid.UUI
 func (e *Executor) WithBlobDeleter(d media.Deleter, bucket string) *Executor {
 	e.blobs = d
 	e.blobBucket = bucket
+	return e
+}
+
+// WithArtworkDeleter wires deletion of buyer-supplied artwork from the
+// PRIVATE bucket (#980).
+//
+// Separate from WithBlobDeleter because it is a separate bucket. Without
+// it, a subject's artwork is reported as skipped in the receipt — which
+// is honest, and is still a photograph of a person surviving an erasure
+// request, so the receipt saying so is the floor rather than the goal.
+func (e *Executor) WithArtworkDeleter(d media.Deleter, bucket string) *Executor {
+	e.artwork = d
+	e.artworkBucket = bucket
 	return e
 }
 

@@ -1977,9 +1977,25 @@ func main() {
 		refundCoordinatorSF := orderrefund.NewCoordinator(conn, refundResolverSF, paymentSvcSF, orderSvcSF, orderRepoSF, refundGatewayEnabledSF).WithLogger(log)
 		log.Info("refund coordinator wired (storefront)", "gateway_enabled", refundGatewayEnabledSF)
 
+		// The buyer's own artwork on their order page (#966). Signs reads
+		// against the PRIVATE bucket, and only ever for a signed-in
+		// customer who owns the order — see the handler.
+		//
+		// The type assertion is not defensive noise: the fake uploader
+		// used by `make dev` cannot sign, and handing the handler a
+		// signer-less uploader would make it log a warning per line
+		// instead of simply omitting the link.
+		var buyerArtworkSigner media.SignedReadURLGenerator
+		if privateArtworkUploader != nil {
+			if sg, ok := privateArtworkUploader.(media.SignedReadURLGenerator); ok {
+				buyerArtworkSigner = sg
+			}
+		}
+
 		orderDetailHandler := storefront.NewOrderDetailHandler(conn, orderRepoSF, orderSvcSF, orderDocSvcSF, log).
 			WithReturns(returnSvcSF, returnRepoSF).
 			WithNotifier(notificationSvc).
+			WithArtwork(buyerArtworkSigner).
 			WithRefunds(refundCoordinatorSF)
 
 		// Support tickets — public contact form endpoint. Shares the

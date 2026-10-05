@@ -225,6 +225,47 @@ function OrderItemRow({ item }: { item: OrderItem }) {
           <p className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
             {item.title_snapshot}
           </p>
+          {/* What the buyer asked for, on their own order (#966).
+              Without it two personalised lines of one variant are the
+              same row, and they cannot tell which photo went where. */}
+          {item.personalisation && item.personalisation.length > 0 && (
+            <ul
+              role="list"
+              className="mt-2 flex flex-col gap-1.5 text-xs text-[color:var(--storefront-text,var(--ink-900))]/70"
+            >
+              {item.personalisation.map((p, i) => (
+                <li key={`${p.field_label}-${i}`} className="flex items-start gap-2">
+                  {p.has_artwork && p.preview_url ? (
+                    <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded border border-[color:var(--storefront-text,var(--ink-900))]/10">
+                      {/* unoptimized: the bucket is private and the URL
+                          is signed and short-lived, so Next's optimiser
+                          would cache a link that outlives its own
+                          signature. */}
+                      <Image
+                        src={p.preview_url}
+                        alt={`Your image for ${p.field_label}`}
+                        fill
+                        sizes="32px"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    </span>
+                  ) : null}
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="font-medium">{p.field_label}</span>
+                    {p.text_value ? (
+                      // pre-wrap: the buyer's line breaks are theirs.
+                      <span className="whitespace-pre-wrap break-words">
+                        {p.text_value}
+                      </span>
+                    ) : p.has_artwork ? (
+                      <span className="opacity-70">Your photo</span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
           {item.option_summary && (
             <p className="mt-0.5 text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
               {item.option_summary}

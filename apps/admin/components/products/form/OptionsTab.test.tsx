@@ -16,12 +16,15 @@ function Harness({ options, variantError }: HarnessProps): ReactElement {
       options: (options ?? []) as never,
     } as Partial<ProductFormValues> as ProductFormValues,
   });
+  const { setError } = methods;
   useEffect(() => {
     if (variantError) {
-      methods.setError("variants", { type: "manual", message: variantError });
+      setError("variants", { type: "manual", message: variantError });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variantError]);
+    // Bound rather than called as `methods.setError(...)`: a CALLED member
+    // expression depends on its receiver, so the rule wanted all of
+    // `methods`. setError is stable on a useForm instance (#1000).
+  }, [variantError, setError]);
   return (
     <FormProvider {...methods}>
       <OptionsTab />

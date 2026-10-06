@@ -4,7 +4,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   Bold,
   Italic,
@@ -43,13 +43,20 @@ export function CampaignEditor({ content, onChange }: CampaignEditorProps) {
     },
   });
 
+  // Latest-ref so this reacts to the content PROP and never to the
+  // editor's own HTML (#1000). The tiptap editor object changes identity
+  // as the user types; naming it would re-run this on every keystroke and
+  // overwrite what they are writing. A ref is stable, so `[content]` is
+  // now honest rather than suppressed.
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+
   // Sync external content changes (e.g. template selection).
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
-      editor.commands.setContent(content);
+    const ed = editorRef.current;
+    if (ed && content !== ed.getHTML()) {
+      ed.commands.setContent(content);
     }
-    // Only react to content prop changes, not editor HTML.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content]);
 
   if (!editor) return null;

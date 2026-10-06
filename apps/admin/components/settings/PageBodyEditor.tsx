@@ -70,16 +70,24 @@ export function PageBodyEditor({ markdown, onChange, editable }: PageBodyEditorP
     immediatelyRender: false,
   });
 
+  // Latest-ref so this reacts to the markdown PROP and never to
+  // editor-internal updates (#1000). The tiptap editor object changes
+  // identity as the user types; naming it as a dependency would re-run
+  // this on every keystroke and fight the user's own edits. A ref is
+  // stable, so `[markdown]` is now an honest dependency list rather than
+  // a suppressed one.
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+
   // Respond to external markdown resets (e.g. form reset).
   useEffect(() => {
-    if (!editor) return;
-    const currentMd = htmlToMarkdown(editor.getHTML());
+    const ed = editorRef.current;
+    if (!ed) return;
+    const currentMd = htmlToMarkdown(ed.getHTML());
     if (currentMd.trim() !== (markdown ?? "").trim()) {
       const nextHtml = markdown ? (marked.parse(markdown, { async: false }) as string) : "";
-      editor.commands.setContent(nextHtml, { emitUpdate: false });
+      ed.commands.setContent(nextHtml, { emitUpdate: false });
     }
-    // Only react to markdown prop changes — not editor-internal updates.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [markdown]);
 
   useEffect(() => {

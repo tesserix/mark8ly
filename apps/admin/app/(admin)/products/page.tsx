@@ -118,6 +118,11 @@ export default async function ProductsPage({
             // cost is a full page load instead of a client transition.
             // The general defect is #1019; do not quietly restore <Link>
             // here while that is open.
+            //
+            // The rule below exists to stop accidental full page loads.
+            // This one is deliberate and measured, so it is suppressed
+            // narrowly rather than switched off.
+            // eslint-disable-next-line @next/next/no-html-link-for-pages
             <a
               href="/products/new"
               className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"

@@ -29,7 +29,11 @@ export function ProductsListEmpty({
             /products (#979): a <Link> clicked before the client router is
             ready has its click silently discarded, and this is the first
             thing a brand-new merchant clicks on a page they have just
-            landed on. General defect: #1019. */}
+            landed on. General defect: #1019.
+
+            no-html-link-for-pages exists to stop accidental full page
+            loads; this one is deliberate and measured. */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a
           href="/products/new"
           className="mt-1 inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"

@@ -19,7 +19,7 @@ jest.mock("expo-secure-store", () => {
 const mem = (jest.requireMock("expo-secure-store") as { __mem: Record<string, string> }).__mem;
 
 function respond(body: unknown, status = 200) {
-  global.fetch = jest.fn(() =>
+  globalThis.fetch = jest.fn(() =>
     Promise.resolve({
       ok: status < 300,
       status,

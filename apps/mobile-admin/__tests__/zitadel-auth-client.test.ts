@@ -12,7 +12,7 @@ function jsonResponse(status: number, body: unknown) {
 type FetchMock = jest.Mock<Promise<Response>, [string, RequestInit]>;
 
 function clientWith(fetchImpl: FetchMock) {
-  global.fetch = fetchImpl as unknown as typeof fetch;
+  globalThis.fetch = fetchImpl as unknown as typeof fetch;
   return createZitadelAuthClient({ baseUrl: "https://api.mark8ly.com" });
 }
 

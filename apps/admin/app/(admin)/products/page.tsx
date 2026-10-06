@@ -100,13 +100,31 @@ export default async function ProductsPage({
             </Link>
           ) : null}
           {canCreate ? (
-            <Link
+            // Deliberately a plain <a>, not next/link (#979).
+            //
+            // A <Link> clicked before the client router is ready has its
+            // click DISCARDED — not queued, not replayed, and not allowed
+            // to fall through to the href. The navigation never happens
+            // and nothing is logged; the user clicks again.
+            //
+            // Measured under CDP CPU throttling, which reproduces it
+            // deterministically: <Link> 0/9 at 10x/16x/20x, plain <a> 9/9.
+            // 55 seconds of waiting never recovers it, so it is a lost
+            // click rather than a slow one, and prefetch={false} makes no
+            // difference — it is not the prefetch cache.
+            //
+            // This is the primary CTA on a list page a merchant lands on
+            // and clicks immediately, which is exactly the window. The
+            // cost is a full page load instead of a client transition.
+            // The general defect is #1019; do not quietly restore <Link>
+            // here while that is open.
+            <a
               href="/products/new"
               className="inline-flex items-center gap-2 rounded-md bg-[color:var(--ink-900)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] transition-colors hover:bg-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               New product
-            </Link>
+            </a>
           ) : null}
         </div>
       }

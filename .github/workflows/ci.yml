@@ -163,8 +163,35 @@ jobs:
       # was sitting on 1.1.18. Both are patch bumps inside their majors; the
       # upper bounds matter, because an unbounded >=1.1.21 resolves a
       # CommonJS consumer onto brace-expansion 5.x.
+      # GHSA-hp3w-g68c-fv3c joins them on the SAME criterion, published
+      # 2026-10-06 and red on every open PR within hours, on an unchanged
+      # lockfile. Reported against a dozen jest, metro and @react-native/*
+      # packages, but the vulnerable package is sprintf-js, reached twice
+      # and both times through dev tooling:
+      #   apps/mobile-admin -> @react-native/jest-preset -> babel-jest
+      #     -> babel-plugin-istanbul -> @istanbuljs/load-nyc-config
+      #     -> js-yaml -> argparse -> sprintf-js
+      #   packages/mobile-shared -> react-native
+      #     -> @react-native/community-cli-plugin -> metro-config
+      #     -> cosmiconfig -> js-yaml -> argparse -> sprintf-js
+      # Jest's coverage instrumentation and Metro's config loader. Neither
+      # runs in a deployed service image nor ships inside an app binary.
+      #
+      # Nothing to upgrade to, verified rather than assumed: the advisory
+      # covers sprintf-js <= 1.1.3 with first patched version NONE, and
+      # 1.1.3 IS the latest release. npm offers expo@44.0.6 as the fix,
+      # which is a semver-major move that would not fix it — the reachable
+      # copy is sprintf-js 1.0.3 pinned under argparse 1.0.10, which
+      # neither expo nor react-native controls.
+      #
+      # Drop this id the moment sprintf-js publishes 1.1.4 or later.
+      #
+      # GHSA-68fv-2mgg-jv7q arrived in the same batch and is deliberately
+      # NOT here: source-map-js 1.2.2 IS the patched release, so it is
+      # fixed by an override in package.json rather than allowlisted.
+      # Allowlist only what genuinely has no fix.
       audit_allowlist: >-
-        GHSA-w3rx-r6r6-pgpr GHSA-5p2g-fcmc-qvqq GHSA-86w9-cpqp-85rv GHSA-vfj7-8cjw-p6xm
+        GHSA-w3rx-r6r6-pgpr GHSA-5p2g-fcmc-qvqq GHSA-86w9-cpqp-85rv GHSA-vfj7-8cjw-p6xm GHSA-hp3w-g68c-fv3c
     secrets:
       package_read_token: ${{ secrets.GHCR_PAT }}
 

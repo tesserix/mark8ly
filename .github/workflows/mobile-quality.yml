@@ -1,0 +1,124 @@
+name: Mobile quality
+
+# =============================================================================
+# mark8ly#1016 — typecheck and the Rules of Hooks for the two Expo apps.
+#
+# Until this existed, `apps/mobile-storefront/**` triggered NOTHING. No lint,
+# no typecheck, no tests. `mobile-admin` had Jest (mobile-admin-tests.yml) and
+# nothing else, so neither app was typechecked or linted anywhere.
+#
+# Worse than absent: it looked covered. A mobile-only PR still shows ~18
+# checks — Go quality, Next.js, containers, secret scan — and not one of them
+# reads a file under apps/mobile-*. The signal was there; it just never
+# touched the code that changed.
+#
+# What that cost, measured rather than assumed:
+#
+#   - #1016: mobile checkout re-quoted shipping on `selectedAddress?.id` and
+#     `checkoutLines.length` instead of on the values that form the request.
+#     Edit your address (same id, new country) or swap a line without changing
+#     the count, and the buyer paid a stale quote. The file carried an
+#     `eslint-disable-next-line react-hooks/exhaustive-deps` that suppressed
+#     nothing, because no eslint config resolved for the app at all.
+#   - mobile-admin's `check-types` had never passed: four `Cannot find name
+#     'global'` errors in __tests__, fixed by using `globalThis`.
+#   - mobile-admin's `lint` script was an echo stub whose text described the
+#     missing flat config rather than supplying one.
+#
+# This is the #858 shape again — a mechanism present, reading as correct, and
+# producing nothing. Same answer: run what genuinely passes, and name what
+# does not.
+#
+# HOOKS ARE GATED FOR mobile-storefront ONLY, and that is the honest scope.
+# mobile-admin reports 36 react-hooks/exhaustive-deps errors today. They are
+# NOT 36 bugs — most are a deliberate, commented pattern of depending on the
+# two stable callbacks off a `busy` object rather than the object itself,
+# whose identity changes on every transition. Naively satisfying the rule
+# there would re-derive every row's actions on each mutation: a performance
+# regression dressed up as a fix.
+#
+# Triaging them one at a time is mark8ly#1017. Raise this gate to cover
+# mobile-admin when that lands — never by demoting the rule.
+# =============================================================================
+on:
+  # Keep these two path lists identical. A path that can break the job but
+  # only appears under `push` is a path whose breakage is found after merge.
+  pull_request:
+    paths:
+      - "apps/mobile-storefront/**"
+      - "apps/mobile-admin/**"
+      - "packages/mobile-shared/**"
+      - "packages/eslint-config/**"
+      - "package-lock.json"
+      - ".github/workflows/mobile-quality.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile-storefront/**"
+      - "apps/mobile-admin/**"
+      - "packages/mobile-shared/**"
+      - "packages/eslint-config/**"
+      - "package-lock.json"
+      - ".github/workflows/mobile-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Types — ${{ matrix.workspace }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - workspace: mobile-storefront
+            path: apps/mobile-storefront
+          - workspace: mobile-admin
+            path: apps/mobile-admin
+          - workspace: mobile-shared
+            path: packages/mobile-shared
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+      - name: Install workspace dependencies
+        run: npm ci
+      - name: tsc --noEmit
+        working-directory: ${{ matrix.path }}
+        run: npx tsc --noEmit
+
+  hooks:
+    name: Rules of Hooks — mobile-storefront
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+      - name: Install workspace dependencies
+        run: npm ci
+
+      # An eslint config that resolves but matches no files exits 0 and
+      # prints nothing — indistinguishable from a clean run, and precisely
+      # the state this workflow exists to end. So count the files first and
+      # fail if the gate is inspecting nothing.
+      - name: Prove the gate is reading files, not passing vacuously
+        working-directory: apps/mobile-storefront
+        run: |
+          n=$(npx eslint . --format json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
+          echo "eslint matched $n files"
+          if [ "$n" -lt 20 ]; then
+            echo "::error::eslint matched only $n files — the config is not reaching the app"
+            exit 1
+          fi
+
+      - name: react-hooks/exhaustive-deps and rules-of-hooks
+        working-directory: apps/mobile-storefront
+        run: npx eslint .

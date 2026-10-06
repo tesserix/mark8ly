@@ -18,7 +18,7 @@ function jsonResponse(body: unknown) {
 
 function clientWith(actingTenantId: string | null, storeId: string | null = null) {
   const fetchMock = jest.fn(() => jsonResponse({ data: [] }));
-  global.fetch = fetchMock as unknown as typeof fetch;
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
   const client = createApiClient({
     baseUrl: "https://api.mark8ly.com",
     getToken: async () => "tok",
@@ -68,7 +68,7 @@ it("sends the tenant id, never the store id", async () => {
 // claim, is byte-for-byte unchanged.
 it("omits the header when no resolver is configured at all", async () => {
   const fetchMock = jest.fn(() => jsonResponse({ data: [] }));
-  global.fetch = fetchMock as unknown as typeof fetch;
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
   const client = createApiClient({
     baseUrl: "https://api.mark8ly.com",
     getToken: async () => "tok",

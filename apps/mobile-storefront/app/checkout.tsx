@@ -102,12 +102,33 @@ export default function CheckoutScreen() {
 
   const selectedAddress = addresses.data?.items?.find((a) => a.id === selectedAddressId) ?? null;
 
-  // Fetch shipping rates whenever address or cart changes.
+  // mutate is referentially stable in react-query, so naming it here lets
+  // the effect below declare an honest dependency list instead of
+  // suppressing the rule — the whole mutation object is NOT stable and
+  // would re-quote on every render.
+  const { mutate: requestShippingRates } = shippingRates;
+
+  // Fetch shipping rates whenever the address or the cart changes.
+  //
+  // Keyed on the CONTENT of both, not their identity. This previously
+  // depended on `selectedAddress?.id` and `checkoutLines.length`, which
+  // misses the two changes that matter most:
+  //
+  //   - the buyer edits the selected address. Same id, new postcode or
+  //     country, and the quote never refreshes — they are charged
+  //     shipping for where they used to live.
+  //   - a line is swapped for a different product, or its quantity moves
+  //     in a way that leaves the count unchanged. Same length, different
+  //     parcel, same stale price.
+  //
+  // Both fail silently and look correct, which is how #1007 priced an
+  // order from a foreign-currency rate. The web storefront already keys
+  // on the full address and items for exactly this reason.
   useEffect(() => {
     if (!selectedAddress || checkoutLines.length === 0) return;
     setRates([]);
     setSelectedRateId(null);
-    shippingRates.mutate(
+    requestShippingRates(
       {
         shipping_address: stripAddress(selectedAddress),
         line_items: checkoutLines,
@@ -119,8 +140,7 @@ export default function CheckoutScreen() {
         },
       },
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAddress?.id, checkoutLines.length]);
+  }, [selectedAddress, checkoutLines, requestShippingRates]);
 
   const selectedRate = rates.find((r) => r.id === selectedRateId) ?? null;
 

@@ -34,6 +34,26 @@ import {
   SITE_URL,
 } from "@/lib/seo/site-json-ld";
 
+/**
+ * How long the edge may serve a marketing page before asking us again.
+ *
+ * Without this, every statically prerendered route under this layout ships
+ * `cache-control: s-maxage=31536000` — Next's default for a page with no
+ * revalidation period — and Cloudflare honours the year. On 2026-10-06 the
+ * homepage was still the previous build two hours after a rollout, and the
+ * sitemap fix the day before needed a manual purge to reach crawlers at all.
+ *
+ * 300 seconds makes the pages incremental-static: still prerendered, still
+ * served from cache, regenerated in the background at most every five
+ * minutes, so a deploy reaches visitors within that window with no purge.
+ * Routes that declare `dynamic = "force-dynamic"` (the whole /onboarding
+ * funnel) are unaffected; they were never cached.
+ *
+ * If the edge still holds pages longer than this, the override is a
+ * Cloudflare cache rule, not the app — see docs and the memory note.
+ */
+export const revalidate = 300;
+
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {

@@ -27,13 +27,19 @@ export function useAddOptionHandler(
   product: ProductDetail | undefined,
   updateMutation: ReturnType<typeof useUpdateProduct>,
 ) {
+  // react-query's `mutate` is stable; the mutation OBJECT is not, and a
+  // CALLED member expression depends on its receiver — which is why
+  // listing `updateMutation.mutate` did not satisfy exhaustive-deps.
+  // Bind it once so the dependency can be honest (mark8ly#1017).
+  const { mutate: updateProduct } = updateMutation;
+
   return useCallback(
     (option: UpdateProductOptionBody) => {
       if (!product) return;
       try {
         const existing = toOptionRequestBodies(product.options);
         const { options, variants } = buildOptionMatrix(product, [...existing, option]);
-        updateMutation.mutate(
+        updateProduct(
           { id, body: { options, variants } },
           {
             onSuccess: () => {
@@ -54,7 +60,6 @@ export function useAddOptionHandler(
         );
       }
     },
-    // `updateMutation` is a new object every render; `.mutate` is stable.
-    [id, product, updateMutation.mutate],
+    [id, product, updateProduct],
   );
 }

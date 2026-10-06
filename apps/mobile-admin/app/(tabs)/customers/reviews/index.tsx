@@ -110,6 +110,15 @@ export default function ReviewsScreen() {
   );
 
   const busy = useBusyIds();
+  // Destructured rather than used as `x` (mark8ly#1017). These are
+  // all stable `useCallback`s from useBusyIds, but a CALLED member
+  // expression depends on its RECEIVER, so exhaustive-deps demanded
+  // `busy` itself — whose identity changes on every busy transition.
+  // Naming it would have re-derived every row's actions on each
+  // mutation, which is exactly what the old suppressions were
+  // protecting against. Binding the functions keeps that property and
+  // makes the dependency list honest at the same time.
+  const { dismissFailure, failure, isBusy, markBusy, settleCallbacks } = busy;
   const approveReview = useApproveReview();
   const rejectReview = useRejectReview();
   // The review whose long-press menu is open. Also the only thing keeping the
@@ -127,26 +136,26 @@ export default function ReviewsScreen() {
 
   const approve = useCallback(
     (review: Review) => {
-      busy.markBusy(review.id);
+      markBusy(review.id);
       // The action label is what turns a bare failure haptic into "Couldn't
       // approve this review — <the server's reason>". Without it a failed
       // moderation and a successful one look identical: the badge simply
       // stays where it was.
-      approveReview.mutate(review.id, busy.settleCallbacks(review.id, "approve this review"));
+      approveReview.mutate(review.id, settleCallbacks(review.id, "approve this review"));
     },
     // The two STABLE callbacks off `busy`, not the whole object: its identity
     // changes on every busy transition, so depending on it would re-derive
     // this callback — and therefore every row's actions — each time a
     // mutation starts or settles.
-    [approveReview, busy.markBusy, busy.settleCallbacks],
+    [approveReview, markBusy, settleCallbacks],
   );
 
   const reject = useCallback(
     (review: Review) => {
-      busy.markBusy(review.id);
-      rejectReview.mutate(review.id, busy.settleCallbacks(review.id, "reject this review"));
+      markBusy(review.id);
+      rejectReview.mutate(review.id, settleCallbacks(review.id, "reject this review"));
     },
-    [rejectReview, busy.markBusy, busy.settleCallbacks],
+    [rejectReview, markBusy, settleCallbacks],
   );
 
   /**
@@ -232,7 +241,7 @@ export default function ReviewsScreen() {
           // Gated on the SAME busy set as the swipe below: the menu is a
           // second route onto the row, and `SwipeRow.enabled` does not reach
           // this handler.
-          onLongPress={busy.isBusy(item.id) ? undefined : setMenuReview}
+          onLongPress={isBusy(item.id) ? undefined : setMenuReview}
         />
       );
       // A moderated review gets NO gesture container at all — see `actionsFor`.
@@ -244,13 +253,13 @@ export default function ReviewsScreen() {
           trailingActions={actions.trailing}
           // Suppressed while THIS row's own request is open, so a
           // still-visible row can't be fired at twice.
-          enabled={!busy.isBusy(item.id)}
+          enabled={!isBusy(item.id)}
         >
           {row}
         </SwipeRow>
       );
     },
-    [actionsFor, handlePress, busy.isBusy],
+    [actionsFor, handlePress, isBusy],
   );
 
   return (
@@ -345,7 +354,7 @@ export default function ReviewsScreen() {
       {/* Why the last swipe changed nothing. Floats above the dock and
           replaces itself, so a merchant moderating several rows gets one
           readable message rather than a stack. */}
-      <ActionFailureNotice failure={busy.failure} onDismiss={busy.dismissFailure} />
+      <ActionFailureNotice failure={failure} onDismiss={dismissFailure} />
     </Screen>
   );
 }

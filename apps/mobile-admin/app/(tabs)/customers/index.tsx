@@ -152,6 +152,15 @@ export default function CustomersScreen() {
   );
 
   const busy = useBusyIds();
+  // Destructured rather than used as `x` (mark8ly#1017). These are
+  // all stable `useCallback`s from useBusyIds, but a CALLED member
+  // expression depends on its RECEIVER, so exhaustive-deps demanded
+  // `busy` itself — whose identity changes on every busy transition.
+  // Naming it would have re-derived every row's actions on each
+  // mutation, which is exactly what the old suppressions were
+  // protecting against. Binding the functions keeps that property and
+  // makes the dependency list honest at the same time.
+  const { dismissFailure, failure, isBusy, markBusy, settleCallbacks } = busy;
   const blockCustomer = useBlockCustomer();
   const unblockCustomer = useUnblockCustomer();
 
@@ -212,21 +221,21 @@ export default function CustomersScreen() {
 
   const unblock = useCallback(
     (customer: Customer) => {
-      busy.markBusy(customer.id);
+      markBusy(customer.id);
       unblockCustomer.mutate(
         customer.id,
         // The action label matters more here than anywhere else in the app:
         // `CustomerRow` carries no status badge, so under the default "All"
         // filter a failed unblock and a successful one render IDENTICALLY.
         // Without a message the only difference is a haptic.
-        busy.settleCallbacks(customer.id, "unblock this customer"),
+        settleCallbacks(customer.id, "unblock this customer"),
       );
     },
     // The two STABLE callbacks off `busy`, not the whole object: its identity
     // changes on every busy transition, so depending on it would re-derive
     // this callback — and therefore every row's actions — each time a
     // mutation starts or settles.
-    [unblockCustomer, busy.markBusy, busy.settleCallbacks],
+    [unblockCustomer, markBusy, settleCallbacks],
   );
 
   /**
@@ -289,11 +298,11 @@ export default function CustomersScreen() {
         // Suppressed while THIS row's own request is open, so a still-visible
         // row can't be fired at twice. Not a claim about the data — see the
         // screen's doc comment.
-        onLongPress={busy.isBusy(item.id) ? undefined : setMenuCustomer}
+        onLongPress={isBusy(item.id) ? undefined : setMenuCustomer}
         currencyCode={currencyCode}
       />
     ),
-    [handlePress, currencyCode, busy.isBusy],
+    [handlePress, currencyCode, isBusy],
   );
 
   return (
@@ -411,7 +420,7 @@ export default function CustomersScreen() {
       {/* Why the last action changed nothing — the one signal this screen
           has, since its rows carry no status badge to flip. Floats above the
           dock and replaces itself rather than stacking. */}
-      <ActionFailureNotice failure={busy.failure} onDismiss={busy.dismissFailure} />
+      <ActionFailureNotice failure={failure} onDismiss={dismissFailure} />
 
       <BlockReasonSheet
         ref={blockSheetRef}

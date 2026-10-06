@@ -24,6 +24,11 @@ export default function AccountScreen() {
   const [storeSelectorVisible, setStoreSelectorVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const deleteMutation = useDeleteAccount();
+  // react-query's `mutate` is stable; the mutation OBJECT is not, and a
+  // CALLED member expression depends on its receiver — which is why
+  // listing `x.mutate` did not satisfy exhaustive-deps. Bind it once so
+  // the dependency can be honest (mark8ly#1017).
+  const { mutate: deleteMutate } = deleteMutation;
   // NativeWind's JSX interop doesn't resolve a function `style` prop the way
   // it resolves a plain array — press state is tracked explicitly instead.
   const [logoutPressed, setLogoutPressed] = useState(false);
@@ -50,12 +55,12 @@ export default function AccountScreen() {
         {
           text: "Delete account",
           style: "destructive",
-          onPress: () => deleteMutation.mutate(),
+          onPress: () => deleteMutate(),
         },
       ],
     );
     // `deleteMutation` is a new object every render; `.mutate` is stable.
-  }, [deleteMutation.mutate]);
+  }, [deleteMutate]);
 
   return (
     <Screen>

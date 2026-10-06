@@ -168,6 +168,15 @@ export default function TicketsScreen() {
   );
 
   const busy = useBusyIds();
+  // Destructured rather than used as `x` (mark8ly#1017). These are
+  // all stable `useCallback`s from useBusyIds, but a CALLED member
+  // expression depends on its RECEIVER, so exhaustive-deps demanded
+  // `busy` itself — whose identity changes on every busy transition.
+  // Naming it would have re-derived every row's actions on each
+  // mutation, which is exactly what the old suppressions were
+  // protecting against. Binding the functions keeps that property and
+  // makes the dependency list honest at the same time.
+  const { dismissFailure, failure, isBusy, markBusy, settleCallbacks } = busy;
   const updateStatus = useUpdateTicketStatus();
   // The ticket whose long-press menu is open. Also the only thing keeping the
   // menu mounted — `ActionSheet` is a controlled component.
@@ -184,20 +193,20 @@ export default function TicketsScreen() {
 
   const closeTicket = useCallback(
     (ticket: Ticket) => {
-      busy.markBusy(ticket.id);
+      markBusy(ticket.id);
       updateStatus.mutate(
         { id: ticket.id, status: TERMINAL_STATUS },
         // The action label matters more here than on any other screen in the
         // increment: a 409 is a refusal the merchant can genuinely hit, and
         // without a message it is a haptic and a badge that still reads Open.
-        busy.settleCallbacks(ticket.id, "close this ticket"),
+        settleCallbacks(ticket.id, "close this ticket"),
       );
     },
     // The two STABLE callbacks off `busy`, not the whole object: its identity
     // changes on every busy transition, so depending on it would re-derive
     // this callback — and therefore every row's actions — each time a
     // mutation starts or settles.
-    [updateStatus, busy.markBusy, busy.settleCallbacks],
+    [updateStatus, markBusy, settleCallbacks],
   );
 
   /**
@@ -291,7 +300,7 @@ export default function TicketsScreen() {
           // Gated on the SAME busy set as the swipe below: the menu is a
           // second route onto the row, and `SwipeRow.enabled` does not reach
           // this handler.
-          onLongPress={busy.isBusy(item.id) ? undefined : setMenuTicket}
+          onLongPress={isBusy(item.id) ? undefined : setMenuTicket}
         />
       );
       // A closed ticket gets NO gesture container at all — see `actionsFor`.
@@ -303,13 +312,13 @@ export default function TicketsScreen() {
           trailingActions={actions.trailing}
           // Suppressed while THIS row's own request is open, so a
           // still-visible row can't be fired at twice.
-          enabled={!busy.isBusy(item.id)}
+          enabled={!isBusy(item.id)}
         >
           {row}
         </SwipeRow>
       );
     },
-    [actionsFor, handlePress, busy.isBusy],
+    [actionsFor, handlePress, isBusy],
   );
 
   return (
@@ -398,7 +407,7 @@ export default function TicketsScreen() {
 
       {/* Why the last close changed nothing — the 409 this screen's gate
           exists to avoid is the one refusal a merchant can genuinely hit. */}
-      <ActionFailureNotice failure={busy.failure} onDismiss={busy.dismissFailure} />
+      <ActionFailureNotice failure={failure} onDismiss={dismissFailure} />
     </Screen>
   );
 }

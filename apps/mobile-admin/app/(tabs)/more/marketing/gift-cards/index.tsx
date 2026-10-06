@@ -101,6 +101,15 @@ export default function GiftCardsScreen() {
   const { scrollY, onScroll } = useCollapsingScroll();
   const [filter, setFilter] = useState<FilterKey>("all");
   const busy = useBusyIds();
+  // Destructured rather than used as `x` (mark8ly#1017). These are
+  // all stable `useCallback`s from useBusyIds, but a CALLED member
+  // expression depends on its RECEIVER, so exhaustive-deps demanded
+  // `busy` itself — whose identity changes on every busy transition.
+  // Naming it would have re-derived every row's actions on each
+  // mutation, which is exactly what the old suppressions were
+  // protecting against. Binding the functions keeps that property and
+  // makes the dependency list honest at the same time.
+  const { dismissFailure, failure, isBusy, markBusy, settleCallbacks } = busy;
   const setStatus = useSetGiftCardStatus();
   // The card whose long-press menu is open. Also the only thing keeping the
   // menu mounted — `ActionSheet` is a controlled component.
@@ -130,20 +139,20 @@ export default function GiftCardsScreen() {
 
   const setCardStatus = useCallback(
     (card: GiftCard, status: GiftCardStatusTarget) => {
-      busy.markBusy(card.id);
+      markBusy(card.id);
       setStatus.mutate(
         { id: card.id, status },
         // The action label is what turns a bare failure haptic into
         // "Couldn't disable this gift card — <the server's reason>". Without
         // it the merchant is left staring at an unchanged badge.
-        busy.settleCallbacks(card.id, ACTION_FOR_TARGET[status]),
+        settleCallbacks(card.id, ACTION_FOR_TARGET[status]),
       );
     },
     // The two STABLE callbacks off `busy`, not the whole object: its identity
     // changes on every busy transition, so depending on it would re-derive
     // this callback — and therefore every row's actions — each time a
     // mutation starts or settles.
-    [setStatus, busy.markBusy, busy.settleCallbacks],
+    [setStatus, markBusy, settleCallbacks],
   );
 
   /**
@@ -235,7 +244,7 @@ export default function GiftCardsScreen() {
           // Gated on the SAME busy set as the swipe below: the menu is an
           // independent second route onto the row, and `SwipeRow.enabled`
           // does not reach this handler.
-          onLongPress={busy.isBusy(item.id) ? undefined : setMenuCard}
+          onLongPress={isBusy(item.id) ? undefined : setMenuCard}
         />
       );
       const actions = actionsFor(item);
@@ -248,13 +257,13 @@ export default function GiftCardsScreen() {
           // Suppressed while THIS row's own request is open, so a
           // still-visible row can't be fired at twice. Not a claim about the
           // data — see the screen's doc comment.
-          enabled={!busy.isBusy(item.id)}
+          enabled={!isBusy(item.id)}
         >
           {row}
         </SwipeRow>
       );
     },
-    [actionsFor, handlePress, busy.isBusy],
+    [actionsFor, handlePress, isBusy],
   );
 
   return (
@@ -346,7 +355,7 @@ export default function GiftCardsScreen() {
           replaces itself, so a merchant firing several rows gets one
           readable message rather than a stack. No `bottomOffset`: unlike
           Products, nothing else floats at this screen's bottom edge. */}
-      <ActionFailureNotice failure={busy.failure} onDismiss={busy.dismissFailure} />
+      <ActionFailureNotice failure={failure} onDismiss={dismissFailure} />
     </Screen>
   );
 }

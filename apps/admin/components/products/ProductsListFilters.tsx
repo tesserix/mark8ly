@@ -31,6 +31,23 @@ export function ProductsListFilters() {
 
   // Debounce search → URL navigation. The URL is the source of truth so
   // a hard reload or shared link restores the same filtered view.
+  //
+  // The no-op guard is load-bearing (#1019). searchDraft is INITIALISED
+  // from the URL, so on first render this effect computed the URL the
+  // page is already on and pushed it anyway — every single view of
+  // /products fired a redundant client navigation 300ms after mount.
+  //
+  // That is what made links on this page lose clicks: a user clicking
+  // while that spurious push is in flight had their own navigation
+  // dropped, silently and permanently. Measured — a plain <Link> on
+  // /products is stuck 4/4 under CPU throttling while the identical link
+  // on /dashboard, which mounts no filter bar, navigates 2/2.
+  //
+  // Comparing the target to the current URL also makes the full
+  // dependency list safe: re-running on a searchParams change now
+  // recomputes, sees nothing to do, and returns instead of pushing
+  // again. That is why there is no exhaustive-deps suppression here
+  // anymore (#1000).
   useEffect(() => {
     const handler = setTimeout(() => {
       const params = new URLSearchParams(searchParams.toString());
@@ -41,11 +58,12 @@ export function ProductsListFilters() {
       }
       params.delete("page");
       const qs = params.toString();
-      router.push(qs ? `${pathname}?${qs}` : pathname);
+      const target = qs ? `${pathname}?${qs}` : pathname;
+      if (target === `${pathname}${window.location.search}`) return;
+      router.push(target);
     }, 300);
     return () => clearTimeout(handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchDraft]);
+  }, [searchDraft, pathname, router, searchParams]);
 
   const buildStatusHref = (next: StatusValue): string => {
     const params = new URLSearchParams();

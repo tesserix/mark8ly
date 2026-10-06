@@ -30,6 +30,14 @@ export function CustomersListFilters() {
   const hasFilters = !!status || !!searchDraft || !!tagDraft;
 
   // Debounce search → URL navigation. The URL is the source of truth.
+  //
+  // The no-op guard matters (#1019): searchDraft and tagDraft are both
+  // INITIALISED from the URL, so on first render each effect computed
+  // the URL the page is already on and pushed it anyway. /customers
+  // therefore fired TWO redundant client navigations 300ms after every
+  // mount, and a user clicking a link while either was in flight had
+  // their own navigation silently dropped. Same defect as
+  // ProductsListFilters, measured and fixed there first.
   useEffect(() => {
     const handler = setTimeout(() => {
       const params = new URLSearchParams(searchParams.toString());
@@ -40,11 +48,12 @@ export function CustomersListFilters() {
       }
       params.delete("page");
       const qs = params.toString();
-      router.push(qs ? `${pathname}?${qs}` : pathname);
+      const target = qs ? `${pathname}?${qs}` : pathname;
+      if (target === `${pathname}${window.location.search}`) return;
+      router.push(target);
     }, 300);
     return () => clearTimeout(handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchDraft]);
+  }, [searchDraft, pathname, router, searchParams]);
 
   // Debounce tag input similarly.
   useEffect(() => {
@@ -57,11 +66,12 @@ export function CustomersListFilters() {
       }
       params.delete("page");
       const qs = params.toString();
-      router.push(qs ? `${pathname}?${qs}` : pathname);
+      const target = qs ? `${pathname}?${qs}` : pathname;
+      if (target === `${pathname}${window.location.search}`) return;
+      router.push(target);
     }, 300);
     return () => clearTimeout(handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tagDraft]);
+  }, [tagDraft, pathname, router, searchParams]);
 
   const buildStatusHref = (next: StatusValue): string => {
     const params = new URLSearchParams();

@@ -108,6 +108,15 @@ export default function CampaignsScreen() {
   );
 
   const busy = useBusyIds();
+  // Destructured rather than used as `x` (mark8ly#1017). These are
+  // all stable `useCallback`s from useBusyIds, but a CALLED member
+  // expression depends on its RECEIVER, so exhaustive-deps demanded
+  // `busy` itself — whose identity changes on every busy transition.
+  // Naming it would have re-derived every row's actions on each
+  // mutation, which is exactly what the old suppressions were
+  // protecting against. Binding the functions keeps that property and
+  // makes the dependency list honest at the same time.
+  const { dismissFailure, failure, isBusy, markBusy, settleCallbacks } = busy;
   const deleteCampaign = useDeleteCampaign();
   // The campaign whose long-press menu is open. Also the only thing keeping
   // the menu mounted — `ActionSheet` is a controlled component.
@@ -124,21 +133,21 @@ export default function CampaignsScreen() {
 
   const removeCampaign = useCallback(
     (campaign: Campaign) => {
-      busy.markBusy(campaign.id);
+      markBusy(campaign.id);
       deleteCampaign.mutate(
         campaign.id,
         // The action label is what turns a bare failure haptic into
         // "Couldn't delete this campaign — <the server's reason>". Without it
         // a refusal is indistinguishable from a delete still in flight: no
         // optimistic hide runs, so the row looks identical either way.
-        busy.settleCallbacks(campaign.id, "delete this campaign"),
+        settleCallbacks(campaign.id, "delete this campaign"),
       );
     },
     // The two STABLE callbacks off `busy`, not the whole object: its identity
     // changes on every busy transition, so depending on it would re-derive
     // this callback — and therefore every row's actions — each time a
     // mutation starts or settles.
-    [deleteCampaign, busy.markBusy, busy.settleCallbacks],
+    [deleteCampaign, markBusy, settleCallbacks],
   );
 
   /**
@@ -204,10 +213,10 @@ export default function CampaignsScreen() {
         // Suppressed while THIS row's own request is open, so a still-visible
         // row can't be fired at twice — and a delete is exactly the action
         // where a double fire produces a 404 on the second call.
-        onLongPress={busy.isBusy(item.id) ? undefined : setMenuCampaign}
+        onLongPress={isBusy(item.id) ? undefined : setMenuCampaign}
       />
     ),
-    [handlePress, busy.isBusy],
+    [handlePress, isBusy],
   );
 
   return (
@@ -301,7 +310,7 @@ export default function CampaignsScreen() {
           optimistically, so a refusal and a delete still in flight render
           IDENTICALLY — this strip is the only difference between them. It
           floats above the dock and replaces itself rather than stacking. */}
-      <ActionFailureNotice failure={busy.failure} onDismiss={busy.dismissFailure} />
+      <ActionFailureNotice failure={failure} onDismiss={dismissFailure} />
     </Screen>
   );
 }

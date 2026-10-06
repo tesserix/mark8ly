@@ -82,6 +82,15 @@ export default function SegmentsScreen() {
   const segments = useMemo(() => data?.data ?? [], [data]);
 
   const busy = useBusyIds();
+  // Destructured rather than used as `x` (mark8ly#1017). These are
+  // all stable `useCallback`s from useBusyIds, but a CALLED member
+  // expression depends on its RECEIVER, so exhaustive-deps demanded
+  // `busy` itself — whose identity changes on every busy transition.
+  // Naming it would have re-derived every row's actions on each
+  // mutation, which is exactly what the old suppressions were
+  // protecting against. Binding the functions keeps that property and
+  // makes the dependency list honest at the same time.
+  const { dismissFailure, failure, isBusy, markBusy, settleCallbacks } = busy;
   const deleteSegment = useDeleteSegment();
   // The segment whose long-press menu is open. Also the only thing keeping
   // the menu mounted — `ActionSheet` is a controlled component.
@@ -94,7 +103,7 @@ export default function SegmentsScreen() {
 
   const removeSegment = useCallback(
     (segment: Segment) => {
-      busy.markBusy(segment.id);
+      markBusy(segment.id);
       deleteSegment.mutate(
         segment.id,
         // The action label is what carries the server's refusal onto the
@@ -102,14 +111,14 @@ export default function SegmentsScreen() {
         // campaigns and cannot be deleted." Omit it and the only signal a
         // blocked delete produces is a haptic, against a row that looks the
         // same either way.
-        busy.settleCallbacks(segment.id, "delete this segment"),
+        settleCallbacks(segment.id, "delete this segment"),
       );
     },
     // The two STABLE callbacks off `busy`, not the whole object: its identity
     // changes on every busy transition, so depending on it would re-derive
     // this callback — and therefore every row's actions — each time a
     // mutation starts or settles.
-    [deleteSegment, busy.markBusy, busy.settleCallbacks],
+    [deleteSegment, markBusy, settleCallbacks],
   );
 
   /**
@@ -175,10 +184,10 @@ export default function SegmentsScreen() {
         // Suppressed while THIS row's own request is open, so a still-visible
         // row can't be fired at twice — and a delete is exactly the action
         // where a double fire produces a 404 on the second call.
-        onLongPress={busy.isBusy(item.id) ? undefined : setMenuSegment}
+        onLongPress={isBusy(item.id) ? undefined : setMenuSegment}
       />
     ),
-    [handlePress, busy.isBusy],
+    [handlePress, isBusy],
   );
 
   return (
@@ -258,7 +267,7 @@ export default function SegmentsScreen() {
           The row is never hidden optimistically, so a refusal and a delete
           still in flight render IDENTICALLY; this strip is the only
           difference between them. It replaces itself rather than stacking. */}
-      <ActionFailureNotice failure={busy.failure} onDismiss={busy.dismissFailure} />
+      <ActionFailureNotice failure={failure} onDismiss={dismissFailure} />
     </Screen>
   );
 }

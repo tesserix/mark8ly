@@ -50,13 +50,31 @@ function usePushSetup() {
   const client = useApiClient();
   const notificationsApi = createNotificationsApi(client);
 
+  // Latest-ref, deliberately (mark8ly#1017). Push registration and the
+  // response listener are mount-once by design: re-running them would
+  // re-register the device and re-attach the listener. But
+  // `notificationsApi` is rebuilt every render and `client` changes on a
+  // store switch, so naming either as a dependency would do exactly that.
+  //
+  // Refs are stable, so `[]` below is now an HONEST empty dependency list
+  // rather than a suppressed one, and the effect still reads the current
+  // values when a notification actually arrives.
+  const notificationsApiRef = useRef(notificationsApi);
+  notificationsApiRef.current = notificationsApi;
+  const routerRef = useRef(router);
+  routerRef.current = router;
+
   useEffect(() => {
     // Respect the device-level opt-out from Settings > Notifications: skip
     // registration entirely when the user has turned push off.
     (async () => {
       if (!(await tokenStorage.getPushEnabled())) return;
       await registerForPushNotifications(async (token, platform, deviceId) => {
-        const res = await notificationsApi.registerPushToken(token, platform, deviceId);
+        const res = await notificationsApiRef.current.registerPushToken(
+          token,
+          platform,
+          deviceId,
+        );
         if (res?.id) await tokenStorage.setPushTokenId(res.id);
       });
     })().catch(console.warn);
@@ -68,7 +86,7 @@ function usePushSetup() {
         );
         // Fail safe: an unrecognised or malformed target is ignored rather
         // than pushed, so a bad payload can never crash or misroute the app.
-        if (target) router.push(target as never);
+        if (target) routerRef.current.push(target as never);
       });
 
     return () => {

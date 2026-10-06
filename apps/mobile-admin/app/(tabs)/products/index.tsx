@@ -185,6 +185,15 @@ export default function ProductsScreen() {
   const total = data?.pages[0]?.meta?.total ?? 0;
 
   const busy = useBusyIds();
+  // Destructured rather than used as `x` (mark8ly#1017). These are
+  // all stable `useCallback`s from useBusyIds, but a CALLED member
+  // expression depends on its RECEIVER, so exhaustive-deps demanded
+  // `busy` itself — whose identity changes on every busy transition.
+  // Naming it would have re-derived every row's actions on each
+  // mutation, which is exactly what the old suppressions were
+  // protecting against. Binding the functions keeps that property and
+  // makes the dependency list honest at the same time.
+  const { dismissFailure, failure, isBusy, markBusy, settleCallbacks } = busy;
   const setStatus = useSetProductStatus();
   const quickEdit = useQuickEditVariant();
   // The product whose long-press menu is open. Also the only thing keeping
@@ -225,20 +234,20 @@ export default function ProductsScreen() {
     // owns the definition of what the backend accepts (and the comment
     // explaining why "inactive" is not in it).
     (product: Product, status: ProductStatus) => {
-      busy.markBusy(product.id);
+      markBusy(product.id);
       setStatus.mutate(
         { id: product.id, status },
         // The action label is what turns a bare failure haptic into "Couldn't
         // archive this product — <the server's reason>". Without it the
         // merchant is left staring at an unchanged row.
-        busy.settleCallbacks(product.id, ACTION_FOR_STATUS[status]),
+        settleCallbacks(product.id, ACTION_FOR_STATUS[status]),
       );
     },
     // The two STABLE callbacks off `busy`, not the whole object: its identity
     // changes on every busy transition, so depending on it would re-derive
     // this callback — and therefore every row's actions — each time a
     // mutation starts or settles.
-    [setStatus, busy.markBusy, busy.settleCallbacks],
+    [setStatus, markBusy, settleCallbacks],
   );
 
   /**
@@ -317,8 +326,8 @@ export default function ProductsScreen() {
   const submitVariantValue = useCallback(
     (target: VariantEditTarget, value: number) => {
       const { product, variant, field } = target;
-      const settle = busy.settleCallbacks(product.id, FIELD_FAILURE_ACTION[field]);
-      busy.markBusy(product.id);
+      const settle = settleCallbacks(product.id, FIELD_FAILURE_ACTION[field]);
+      markBusy(product.id);
       setEditError(null);
       quickEdit.mutate(
         { productId: product.id, variantId: variant.id, field, value },
@@ -334,7 +343,7 @@ export default function ProductsScreen() {
         },
       );
     },
-    [quickEdit, busy.markBusy, busy.settleCallbacks],
+    [quickEdit, markBusy, settleCallbacks],
   );
 
   /**
@@ -461,7 +470,7 @@ export default function ProductsScreen() {
           // Gated on the SAME busy set as the swipe below: the menu is a
           // second route onto the row, and Archive is not idempotent in the
           // way a merchant experiences it.
-          onLongPress={busy.isBusy(item.id) ? undefined : setMenuProduct}
+          onLongPress={isBusy(item.id) ? undefined : setMenuProduct}
         />
       );
       return (
@@ -474,14 +483,14 @@ export default function ProductsScreen() {
             // Suppressed while THIS row's own request is open, so a
             // still-visible row can't be fired at twice. Not a claim about
             // the data — see the screen's doc comment.
-            enabled={!busy.isBusy(item.id)}
+            enabled={!isBusy(item.id)}
           >
             {row}
           </SwipeRow>
         </View>
       );
     },
-    [actionsFor, handlePress, busy.isBusy],
+    [actionsFor, handlePress, isBusy],
   );
 
   return (
@@ -650,8 +659,8 @@ export default function ProductsScreen() {
           `useDockClearance()` bottom, and without this the add-product button
           would sit squarely on the strip's dismiss control. */}
       <ActionFailureNotice
-        failure={busy.failure}
-        onDismiss={busy.dismissFailure}
+        failure={failure}
+        onDismiss={dismissFailure}
         bottomOffset={FAB_SIZE + theme.spacing.md}
       />
 

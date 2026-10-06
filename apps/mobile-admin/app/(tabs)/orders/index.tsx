@@ -166,6 +166,15 @@ export default function OrdersScreen() {
   // the increment (see `lib/use-busy-ids.ts` for why the set is the whole
   // point). Nothing here infers list contents from mutation state.
   const busy = useBusyIds();
+  // Destructured rather than used as `x` (mark8ly#1017). These are
+  // all stable `useCallback`s from useBusyIds, but a CALLED member
+  // expression depends on its RECEIVER, so exhaustive-deps demanded
+  // `busy` itself — whose identity changes on every busy transition.
+  // Naming it would have re-derived every row's actions on each
+  // mutation, which is exactly what the old suppressions were
+  // protecting against. Binding the functions keeps that property and
+  // makes the dependency list honest at the same time.
+  const { dismissFailure, failure, isBusy, markBusy, settleCallbacks } = busy;
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
   const [refundTarget, setRefundTarget] = useState<Order | null>(null);
   const [emailTarget, setEmailTarget] = useState<
@@ -331,10 +340,10 @@ export default function OrdersScreen() {
                 tone: "accent",
                 icon: <Check size={ICON_SIZE} color={theme.colors.inverse} strokeWidth={2} />,
                 onPress: () => {
-                  busy.markBusy(order.id);
+                  markBusy(order.id);
                   confirmOrder.mutate(
                     { id: order.id },
-                    busy.settleCallbacks(order.id, "approve this order"),
+                    settleCallbacks(order.id, "approve this order"),
                   );
                 },
               },
@@ -359,7 +368,7 @@ export default function OrdersScreen() {
     // callback — and therefore `renderItem` and every row's actions — each
     // time a mutation starts or settles. Behaviour is identical either way;
     // this is the template screen the rest of the increment copies.
-    [confirmOrder, busy.markBusy, busy.settleCallbacks, openCancelSheet],
+    [confirmOrder, markBusy, settleCallbacks, openCancelSheet],
   );
 
   /**
@@ -382,10 +391,10 @@ export default function OrdersScreen() {
         label: "Fulfil",
         disabled: target.status !== "confirmed",
         onPress: () => {
-          busy.markBusy(target.id);
+          markBusy(target.id);
           fulfillOrder.mutate(
             target.id,
-            busy.settleCallbacks(target.id, "fulfil this order"),
+            settleCallbacks(target.id, "fulfil this order"),
           );
         },
       },
@@ -422,8 +431,8 @@ export default function OrdersScreen() {
     shipment,
     fulfillOrder,
     // Stable callbacks, not the whole `busy` object — see `actionsFor`.
-    busy.markBusy,
-    busy.settleCallbacks,
+    markBusy,
+    settleCallbacks,
     openRefundSheet,
     openCancelSheet,
   ]);
@@ -443,7 +452,7 @@ export default function OrdersScreen() {
           // template increment 3's menus copy, and Archive, Delete and
           // Disable are NOT idempotent the same way. Guard the control, not
           // the outcome.
-          onLongPress={busy.isBusy(item.id) ? undefined : setMenuOrder}
+          onLongPress={isBusy(item.id) ? undefined : setMenuOrder}
           currencyCode={currencyCode}
         />
       );
@@ -458,7 +467,7 @@ export default function OrdersScreen() {
               // Suppressed while THIS row's own request is open, so a
               // still-visible row can't be fired at twice. Not a claim about
               // the data — see the screen's doc comment.
-              enabled={!busy.isBusy(item.id)}
+              enabled={!isBusy(item.id)}
             >
               {row}
             </SwipeRow>
@@ -468,7 +477,7 @@ export default function OrdersScreen() {
         </View>
       );
     },
-    [actionsFor, handleOrderPress, currencyCode, busy.isBusy],
+    [actionsFor, handleOrderPress, currencyCode, isBusy],
   );
 
   const showError = listQuery.isError && orders.length === 0;
@@ -604,7 +613,7 @@ export default function OrdersScreen() {
           (approve, fulfil) report here — cancel and refund own their own
           inline sheet errors, which keep the typed input on screen next to
           the message and must not be duplicated behind the sheet. */}
-      <ActionFailureNotice failure={busy.failure} onDismiss={busy.dismissFailure} />
+      <ActionFailureNotice failure={failure} onDismiss={dismissFailure} />
 
       <CancelReasonSheet
         ref={cancelSheetRef}

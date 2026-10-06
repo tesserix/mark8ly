@@ -211,11 +211,21 @@ export default function OrderDetailScreen() {
   const apiClient = useApiClient();
 
   const confirmMutation = useConfirmOrder();
+  const { mutate: confirmMutate } = confirmMutation;
   const fulfillMutation = useFulfillOrder();
+  const { mutate: fulfillMutate } = fulfillMutation;
   const cancelMutation = useCancelOrder();
+  // react-query's `mutate` is stable; the mutation OBJECT is not, and a
+  // CALLED member expression depends on its receiver — which is why
+  // listing `x.mutate` did not satisfy exhaustive-deps. Bind it once so
+  // the dependency can be honest (mark8ly#1017).
+  const { mutate: cancelMutate } = cancelMutation;
   const refundMutation = useRefundOrder();
+  const { mutate: refundMutate } = refundMutation;
   const emailInvoiceMutation = useEmailInvoice();
+  const { mutate: emailInvoiceMutate } = emailInvoiceMutation;
   const emailReceiptMutation = useEmailReceipt();
+  const { mutate: emailReceiptMutate } = emailReceiptMutation;
   const cancelSheetRef = useRef<CancelReasonSheetHandle>(null);
   const refundSheetRef = useRef<RefundSheetHandle>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -251,16 +261,16 @@ export default function OrderDetailScreen() {
   const handleConfirm = useCallback(() => {
     Alert.alert("Confirm order", "Mark this order as confirmed?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Confirm", onPress: () => confirmMutation.mutate({ id }, confirmCallbacks()) },
+      { text: "Confirm", onPress: () => confirmMutate({ id }, confirmCallbacks()) },
       {
         text: "Confirm & mark paid",
         onPress: () =>
-          confirmMutation.mutate({ id, body: { payment_status: "paid" } }, confirmCallbacks()),
+          confirmMutate({ id, body: { payment_status: "paid" } }, confirmCallbacks()),
       },
     ]);
     // `confirmMutation` is a new object every render; `.mutate` is stable.
     // `confirmCallbacks` is itself a stable `useCallback`.
-  }, [id, confirmMutation.mutate, confirmCallbacks]);
+  }, [id, confirmMutate, confirmCallbacks]);
 
   const handleFulfill = useCallback(() => {
     Alert.alert("Mark fulfilled", "Mark this order as fulfilled?", [
@@ -268,7 +278,7 @@ export default function OrderDetailScreen() {
       {
         text: "Fulfill",
         onPress: () =>
-          fulfillMutation.mutate(id, {
+          fulfillMutate(id, {
             onSuccess: () => {
               clearFailure();
               void adminHaptics.actionSucceeded();
@@ -281,12 +291,12 @@ export default function OrderDetailScreen() {
       },
     ]);
     // `fulfillMutation` is a new object every render; `.mutate` is stable.
-  }, [id, fulfillMutation.mutate, reportFailure, clearFailure]);
+  }, [id, fulfillMutate, reportFailure, clearFailure]);
 
   const handleCancelSubmit = useCallback(
     (reason: string) => {
       setCancelError(null);
-      cancelMutation.mutate(
+      cancelMutate(
         { id, reason },
         {
           onError: (err) => {
@@ -327,13 +337,13 @@ export default function OrderDetailScreen() {
       );
     },
     // `cancelMutation` is a new object every render; `.mutate` is stable.
-    [id, cancelMutation.mutate, apiClient],
+    [id, cancelMutate, apiClient],
   );
 
   const handleRefundSubmit = useCallback(
     ({ amount, refundRequestId }: { amount?: number; refundRequestId: string }) => {
       setRefundError(null);
-      refundMutation.mutate(
+      refundMutate(
         { id, body: { amount, refund_request_id: refundRequestId } },
         {
           onError: (err) => {
@@ -354,11 +364,11 @@ export default function OrderDetailScreen() {
       );
     },
     // `refundMutation` is a new object every render; `.mutate` is stable.
-    [id, refundMutation.mutate],
+    [id, refundMutate],
   );
 
   const handleEmailInvoice = useCallback(() => {
-    emailInvoiceMutation.mutate(
+    emailInvoiceMutate(
       { orderId: id },
       {
         onSuccess: (res) =>
@@ -376,10 +386,10 @@ export default function OrderDetailScreen() {
     );
     // `emailInvoiceMutation` is a new object every render; `.mutate` is
     // stable.
-  }, [id, emailInvoiceMutation.mutate]);
+  }, [id, emailInvoiceMutate]);
 
   const handleEmailReceipt = useCallback(() => {
-    emailReceiptMutation.mutate(
+    emailReceiptMutate(
       { orderId: id },
       {
         onSuccess: (res) =>
@@ -399,7 +409,7 @@ export default function OrderDetailScreen() {
     );
     // `emailReceiptMutation` is a new object every render; `.mutate` is
     // stable.
-  }, [id, emailReceiptMutation.mutate]);
+  }, [id, emailReceiptMutate]);
 
   const openCancelSheet = useCallback(() => {
     setCancelError(null);

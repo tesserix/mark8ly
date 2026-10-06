@@ -29,16 +29,19 @@ name: Mobile quality
 # producing nothing. Same answer: run what genuinely passes, and name what
 # does not.
 #
-# HOOKS ARE GATED FOR mobile-storefront ONLY, and that is the honest scope.
-# mobile-admin reports 36 react-hooks/exhaustive-deps errors today. They are
-# NOT 36 bugs — most are a deliberate, commented pattern of depending on the
-# two stable callbacks off a `busy` object rather than the object itself,
-# whose identity changes on every transition. Naively satisfying the rule
-# there would re-derive every row's actions on each mutation: a performance
-# regression dressed up as a fix.
+# BOTH apps are gated. mobile-admin joined at mark8ly#1017, which cleared all
+# 36 of its react-hooks/exhaustive-deps errors without demoting the rule and
+# without a single new suppression.
 #
-# Triaging them one at a time is mark8ly#1017. Raise this gate to cover
-# mobile-admin when that lands — never by demoting the rule.
+# Worth knowing why they were there, because the same shape will recur: a
+# CALLED member expression depends on its RECEIVER. `busy.settleCallbacks(id)`
+# and `updateMutation.mutate(body)` make the rule demand `busy` and
+# `updateMutation` — the unstable objects — even when the function itself is
+# a stable useCallback and is already named in the deps. Binding the function
+# once (`const { mutate: updateProduct } = updateMutation`) satisfies the rule
+# AND keeps the stable identity the old suppressions were protecting.
+#
+# If this gate goes red, fix the hook. Do not demote the rule.
 # =============================================================================
 on:
   # Keep these two path lists identical. A path that can break the job but
@@ -95,8 +98,18 @@ jobs:
         run: npx tsc --noEmit
 
   hooks:
-    name: Rules of Hooks — mobile-storefront
+    name: Rules of Hooks — ${{ matrix.workspace }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - workspace: mobile-storefront
+            path: apps/mobile-storefront
+            min_files: 20
+          - workspace: mobile-admin
+            path: apps/mobile-admin
+            min_files: 200
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -110,15 +123,15 @@ jobs:
       # the state this workflow exists to end. So count the files first and
       # fail if the gate is inspecting nothing.
       - name: Prove the gate is reading files, not passing vacuously
-        working-directory: apps/mobile-storefront
+        working-directory: ${{ matrix.path }}
         run: |
           n=$(npx eslint . --format json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
           echo "eslint matched $n files"
-          if [ "$n" -lt 20 ]; then
+          if [ "$n" -lt ${{ matrix.min_files }} ]; then
             echo "::error::eslint matched only $n files — the config is not reaching the app"
             exit 1
           fi
 
       - name: react-hooks/exhaustive-deps and rules-of-hooks
-        working-directory: apps/mobile-storefront
+        working-directory: ${{ matrix.path }}
         run: npx eslint .

@@ -130,6 +130,15 @@ export default function CouponsScreen() {
   );
 
   const busy = useBusyIds();
+  // Destructured rather than used as `x` (mark8ly#1017). These are
+  // all stable `useCallback`s from useBusyIds, but a CALLED member
+  // expression depends on its RECEIVER, so exhaustive-deps demanded
+  // `busy` itself — whose identity changes on every busy transition.
+  // Naming it would have re-derived every row's actions on each
+  // mutation, which is exactly what the old suppressions were
+  // protecting against. Binding the functions keeps that property and
+  // makes the dependency list honest at the same time.
+  const { dismissFailure, failure, isBusy, markBusy, settleCallbacks } = busy;
   const patchCoupon = usePatchCoupon();
   // The coupon whose long-press menu is open. Also the only thing keeping the
   // menu mounted — `ActionSheet` is a controlled component.
@@ -146,19 +155,19 @@ export default function CouponsScreen() {
 
   const setCouponStatus = useCallback(
     (coupon: Coupon, status: ToggleStatus) => {
-      busy.markBusy(coupon.id);
+      markBusy(coupon.id);
       patchCoupon.mutate(
         { id: coupon.id, body: { status } },
         // The action label is what turns a bare failure haptic into
         // "Couldn't switch this coupon off — <the server's reason>".
-        busy.settleCallbacks(coupon.id, ACTION_FOR_STATUS[status]),
+        settleCallbacks(coupon.id, ACTION_FOR_STATUS[status]),
       );
     },
     // The two STABLE callbacks off `busy`, not the whole object: its identity
     // changes on every busy transition, so depending on it would re-derive
     // this callback — and therefore every row's actions — each time a
     // mutation starts or settles.
-    [patchCoupon, busy.markBusy, busy.settleCallbacks],
+    [patchCoupon, markBusy, settleCallbacks],
   );
 
   /**
@@ -254,7 +263,7 @@ export default function CouponsScreen() {
           // Gated on the SAME busy set as the swipe below: the menu is a
           // second route onto the row, and `SwipeRow.enabled` does not reach
           // this handler.
-          onLongPress={busy.isBusy(item.id) ? undefined : setMenuCoupon}
+          onLongPress={isBusy(item.id) ? undefined : setMenuCoupon}
         />
       );
       // A scheduled or expired coupon gets NO gesture container at all.
@@ -266,13 +275,13 @@ export default function CouponsScreen() {
           trailingActions={actions.trailing}
           // Suppressed while THIS row's own request is open, so a
           // still-visible row can't be fired at twice.
-          enabled={!busy.isBusy(item.id)}
+          enabled={!isBusy(item.id)}
         >
           {row}
         </SwipeRow>
       );
     },
-    [actionsFor, currency, handlePress, busy.isBusy],
+    [actionsFor, currency, handlePress, isBusy],
   );
 
   return (
@@ -366,7 +375,7 @@ export default function CouponsScreen() {
 
       {/* Why the last swipe changed nothing. Floats above the dock and
           replaces itself rather than stacking. */}
-      <ActionFailureNotice failure={busy.failure} onDismiss={busy.dismissFailure} />
+      <ActionFailureNotice failure={failure} onDismiss={dismissFailure} />
     </Screen>
   );
 }

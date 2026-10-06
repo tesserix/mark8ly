@@ -125,7 +125,13 @@ export default function CustomerDetailScreen() {
   const currencyCode = useTenantStore((s) => s.activeStore?.currency_code);
 
   const blockMutation = useBlockCustomer();
+  // react-query's `mutate` is stable; the mutation OBJECT is not, and a
+  // CALLED member expression depends on its receiver — which is why
+  // listing `x.mutate` did not satisfy exhaustive-deps. Bind it once so
+  // the dependency can be honest (mark8ly#1017).
+  const { mutate: blockMutate } = blockMutation;
   const unblockMutation = useUnblockCustomer();
+  const { mutate: unblockMutate } = unblockMutation;
   const blockSheetRef = useRef<BlockReasonSheetHandle>(null);
   // Local, NOT `blockMutation.error`. react-query never resets a mutation
   // error, so binding the sheet straight to it means one failed block greets
@@ -155,7 +161,7 @@ export default function CustomerDetailScreen() {
     if (isBlocked) {
       Alert.alert("Unblock Customer", "This customer will be able to place orders again.", [
         { text: "Cancel", style: "cancel" },
-        { text: "Unblock", onPress: () => unblockMutation.mutate(customer.id) },
+        { text: "Unblock", onPress: () => unblockMutate(customer.id) },
       ]);
       return;
     }
@@ -166,7 +172,7 @@ export default function CustomerDetailScreen() {
     // `unblockMutation` is a NEW object every render (`useMutation`'s
     // return value is not referentially stable) — depend on `.mutate`,
     // which is, or this callback rebuilds on every render regardless.
-  }, [customer, isBlocked, unblockMutation.mutate]);
+  }, [customer, isBlocked, unblockMutate]);
 
   const handleBlockSubmit = useCallback(
     (reason: string) => {
@@ -174,7 +180,7 @@ export default function CustomerDetailScreen() {
       // The sheet no longer closes itself on submit — it stays open with a
       // spinner until this settles, so a failed block keeps the typed reason
       // instead of discarding it silently.
-      blockMutation.mutate(
+      blockMutate(
         { id: customer.id, reason },
         {
           onSuccess: () => blockSheetRef.current?.dismiss(),
@@ -184,7 +190,7 @@ export default function CustomerDetailScreen() {
     },
     // Same reason as `handleBlockToggle` above: `.mutate`, not the mutation
     // object, is the stable dependency.
-    [customer, blockMutation.mutate],
+    [customer, blockMutate],
   );
 
   if (error) {

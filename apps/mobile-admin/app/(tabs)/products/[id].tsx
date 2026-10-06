@@ -60,8 +60,14 @@ export default function ProductDetailScreen() {
   const { data: product, isLoading, error } = useProduct(id);
 
   const updateMutation = useUpdateProduct();
+  // react-query's `mutate` is stable; the mutation OBJECT is not, and a
+  // CALLED member expression depends on its receiver — which is why
+  // listing `x.mutate` did not satisfy exhaustive-deps. Bind it once so
+  // the dependency can be honest (mark8ly#1017).
+  const { mutate: updateMutate } = updateMutation;
   const deleteMediaMutation = useDeleteMedia();
   const updateVariantMutation = useUpdateVariant();
+  const { mutate: updateVariantMutate } = updateVariantMutation;
   const addMediaMutation = useAddProductMedia();
   const updateMediaMutation = useUpdateMedia();
   const createCategory = useCreateCategory();
@@ -101,7 +107,7 @@ export default function ProductDetailScreen() {
       Alert.alert("Validation", "Product title is required.");
       return;
     }
-    updateMutation.mutate(
+    updateMutate(
       {
         id,
         body: {
@@ -138,21 +144,19 @@ export default function ProductDetailScreen() {
         },
       },
     );
-    // `updateMutation` is a new object every render; `.mutate` is the
-    // stable part of it, and the correct dependency.
-  }, [id, title, description, isActive, updateMutation.mutate]);
+  }, [id, title, description, isActive, updateMutate]);
 
   const { handleAddMedia, handleDeleteExistingMedia, handleReorderMedia, handleAltChange } =
     useProductMediaHandlers({ id, product, addMediaMutation, deleteMediaMutation, updateMediaMutation });
 
   const handleVariantUpdate = useCallback(
     (variantId: string, body: UpdateVariantBody) => {
-      updateVariantMutation.mutate(
+      updateVariantMutate(
         { productId: id, variantId, body },
         alertOnError("Failed to save variant. Please try again."),
       );
     },
-    [id, updateVariantMutation.mutate],
+    [id, updateVariantMutate],
   );
 
   // Options and categories both route through UpdateAggregate (products.go:172).
@@ -161,23 +165,23 @@ export default function ProductDetailScreen() {
   // anything it omits.
   const handleOptionsChange = useCallback(
     (options: UpdateProductOptionBody[]) => {
-      updateMutation.mutate(
+      updateMutate(
         { id, body: { options } },
         alertOnError("Failed to update options. Please try again."),
       );
     },
-    [id, updateMutation.mutate],
+    [id, updateMutate],
   );
 
   const handleAddOption = useAddOptionHandler(id, product, updateMutation);
   const handleCategoriesChange = useCallback(
     (category_ids: string[]) => {
-      updateMutation.mutate(
+      updateMutate(
         { id, body: { category_ids } },
         alertOnError("Failed to update categories. Please try again."),
       );
     },
-    [id, updateMutation.mutate],
+    [id, updateMutate],
   );
 
   if (error) {

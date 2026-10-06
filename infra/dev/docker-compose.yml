@@ -36,7 +36,21 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dev"]
+      # -h 127.0.0.1 is load-bearing (mark8ly#1025). Without a host,
+      # pg_isready checks the UNIX SOCKET, and the postgres image runs a
+      # temporary socket-only server during initdb so it can execute init
+      # scripts. Measured on a cold volume: that server answers
+      # `pg_isready -U dev` with 0 (accepting) for ~250ms while TCP still
+      # answers 2 (no response).
+      #
+      # Compose then marks this healthy, every `condition: service_healthy`
+      # dependant starts, and each one connects over TCP to a listener that
+      # does not exist yet. Zitadel's start-from-init dies on it with
+      # "connection refused" and the whole Tier-D stack fails to come up,
+      # which reds every e2e workflow without running a single test.
+      #
+      # Forcing TCP makes the check test the thing the consumers use.
+      test: ["CMD-SHELL", "pg_isready -U dev -h 127.0.0.1 -p 5432"]
       interval: 2s
       timeout: 3s
       retries: 30

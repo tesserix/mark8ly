@@ -41,7 +41,7 @@ test("compact launcher keeps clear of the hero and nav; panel fits the screen", 
     email: `support-mobile-${suffix}@example.com`,
     slug: `support-mobile-${suffix}`.replace(/[^a-z0-9-]/g, "").slice(0, 60),
     businessName: `Support Mobile ${suffix}`,
-    password: "e2e-test-password-123",
+    password: "E2e-test-password-123!",
   };
   await onboardStore(page, request, merchant);
 

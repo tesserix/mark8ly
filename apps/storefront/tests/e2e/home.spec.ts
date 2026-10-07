@@ -34,7 +34,7 @@ test("onboarded store renders on the storefront", async ({
     email: `storefront-e2e-${stamp}@example.com`,
     slug: `storefront-${stamp}`.replace(/[^a-z0-9-]/g, "").slice(0, 60),
     businessName: `Storefront ${stamp}`,
-    password: "e2e-test-password-123",
+    password: "E2e-test-password-123!",
   };
 
   // Drive the onboarding form quickly.
@@ -51,7 +51,7 @@ test("onboarded store renders on the storefront", async ({
     await currencyTrigger.click();
     await page.getByRole("option", { name: /usd/i }).first().click();
   }
-  await page.getByRole("button", { name: /get my store ready/i }).click();
+  await page.getByRole("button", { name: /send verification link/i }).click();
   await expect(page).toHaveURL(/\/onboarding\/check-inbox/, {
     timeout: 10_000,
   });
@@ -68,6 +68,9 @@ test("onboarded store renders on the storefront", async ({
   await expect(page).toHaveURL(/\/onboarding\/set-password/, {
     timeout: 15_000,
   });
+  // The set-password form requires an owner name; without it the
+  // submit is blocked and the flow never reaches /welcome.
+  await page.locator("#name").fill(details.businessName);
   await page.locator("#password").fill(details.password);
   await page.getByRole("button", { name: /create account/i }).click();
   await expect(page).toHaveURL(/\/welcome/, { timeout: 15_000 });
@@ -98,7 +101,7 @@ test("storefront reflects saved admin layout preset", async ({
     email: `storefront-layout-${stamp}@example.com`,
     slug: `storefront-layout-${stamp}`.replace(/[^a-z0-9-]/g, "").slice(0, 60),
     businessName: `Storefront Layout ${stamp}`,
-    password: "e2e-test-password-123",
+    password: "E2e-test-password-123!",
   };
 
   const onboardingCtx = await browser.newContext();
@@ -117,7 +120,7 @@ test("storefront reflects saved admin layout preset", async ({
     await currencyTrigger.click();
     await onboardingPage.getByRole("option", { name: /usd/i }).first().click();
   }
-  await onboardingPage.getByRole("button", { name: /get my store ready/i }).click();
+  await onboardingPage.getByRole("button", { name: /send verification link/i }).click();
   await expect(onboardingPage).toHaveURL(/\/onboarding\/check-inbox/, {
     timeout: 10_000,
   });
@@ -132,6 +135,9 @@ test("storefront reflects saved admin layout preset", async ({
   await expect(onboardingPage).toHaveURL(/\/onboarding\/set-password/, {
     timeout: 15_000,
   });
+  // The set-password form requires an owner name; without it the
+  // submit is blocked and the flow never reaches /welcome.
+  await onboardingPage.locator("#name").fill(details.businessName);
   await onboardingPage.locator("#password").fill(details.password);
   await onboardingPage.getByRole("button", { name: /create account/i }).click();
   await expect(onboardingPage).toHaveURL(/\/welcome/, { timeout: 15_000 });

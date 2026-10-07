@@ -25,7 +25,7 @@ test("brand reads in full and nothing overflows on narrow screens", async ({
     email: `nav-mobile-${suffix}@example.com`,
     slug: `nav-mobile-${suffix}`.replace(/[^a-z0-9-]/g, "").slice(0, 60),
     businessName: LONG_NAME,
-    password: "e2e-test-password-123",
+    password: "E2e-test-password-123!",
   };
   await onboardStore(page, request, merchant);
 

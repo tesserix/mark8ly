@@ -8,11 +8,14 @@ import {
   Alert,
   ActivityIndicator,
   StyleSheet,
+  Linking,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { MoreHorizontal } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTenantStore } from "@repo/mobile-shared/stores/tenant-store";
+import { createOrdersApi } from "@repo/mobile-shared/api/orders";
+import type { OrderPersonalisation } from "@repo/mobile-shared/api/schemas/orders";
 import { useOrder } from "../../../lib/hooks/use-orders";
 import {
   useConfirmOrder,
@@ -106,7 +109,86 @@ function Lifecycle({ status }: { status: string }) {
   );
 }
 
-function ItemRow({ item, currency }: { item: OrderItem; currency: string }) {
+/**
+ * What the buyer asked for on this line (mark8ly#969).
+ *
+ * Text answers inline, because "a mug that says Asha" is the thing the
+ * merchant needs before they touch anything else. Artwork is a tap, not
+ * an inline image: the signed URL lives ten minutes, so one fetched with
+ * the order would be dead before a merchant scrolled to it.
+ *
+ * Read-only by design — mobile views and opens, it does not author.
+ */
+function PersonalisationRow({
+  orderId,
+  entry,
+}: {
+  orderId: string;
+  entry: OrderPersonalisation;
+}) {
+  const client = useApiClient();
+  const [busy, setBusy] = useState(false);
+
+  const openArtwork = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const link = await createOrdersApi(client).artworkLink(orderId, entry.id);
+      await Linking.openURL(link.url);
+    } catch {
+      // The merchant can retry; a failed open is not worth a dead end.
+      Alert.alert("Couldn't open artwork", "Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, client, orderId, entry.id]);
+
+  if (entry.has_artwork) {
+    return (
+      <Pressable
+        onPress={openArtwork}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={`Open artwork for ${entry.field_label}`}
+        style={styles.personalisationRow}
+      >
+        <Text preset="caption" color="textSecondary">
+          {entry.field_label}
+        </Text>
+        <View style={styles.personalisationValue}>
+          <Text preset="caption" color="accent">
+            {entry.reference ? `Artwork · ${entry.reference}` : "Artwork"}
+          </Text>
+          {busy ? <ActivityIndicator size="small" /> : null}
+        </View>
+      </Pressable>
+    );
+  }
+
+  // Everything else is a text answer the merchant reads, never taps.
+  const value = entry.text_value?.trim();
+  if (!value) return null;
+  return (
+    <View style={styles.personalisationRow}>
+      <Text preset="caption" color="textSecondary">
+        {entry.field_label}
+      </Text>
+      <Text preset="caption" color="text" style={styles.personalisationValue}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function ItemRow({
+  item,
+  currency,
+  orderId,
+}: {
+  item: OrderItem;
+  currency: string;
+  orderId: string;
+}) {
   return (
     <View style={styles.item}>
       <View style={styles.itemInfo}>
@@ -121,6 +203,15 @@ function ItemRow({ item, currency }: { item: OrderItem; currency: string }) {
         <Text preset="caption" color="textSecondary">
           {item.quantity} × {formatMoney(item.unit_price, currency)} · {item.sku_snapshot}
         </Text>
+        {(item.personalisation ?? []).length > 0 ? (
+          <View style={styles.personalisation}>
+            {[...(item.personalisation ?? [])]
+              .sort((a, b) => a.position - b.position)
+              .map((entry) => (
+                <PersonalisationRow key={entry.id} orderId={orderId} entry={entry} />
+              ))}
+          </View>
+        ) : null}
       </View>
       <Text preset="bodyEmphasis" color="text">
         {formatMoney(item.line_total, currency)}
@@ -522,7 +613,7 @@ export default function OrderDetailScreen() {
           {order.items.map((item, i) => (
             <View key={item.id}>
               {i > 0 ? <Hairline /> : null}
-              <ItemRow item={item} currency={currency} />
+              <ItemRow item={item} currency={currency} orderId={id} />
             </View>
           ))}
         </View>
@@ -744,6 +835,22 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     paddingVertical: theme.spacing.md,
     gap: theme.spacing.md,
+  },
+  personalisation: {
+    marginTop: 6,
+    gap: 2,
+  },
+  personalisationRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  personalisationValue: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 1,
   },
   itemInfo: { flex: 1, gap: 2 },
   totalRow: {

@@ -55,8 +55,11 @@ export function VerifyMagicLink() {
         setError(err instanceof Error ? err.message : "Something went wrong.");
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // Full deps are safe BECAUSE of the ranRef guard above: the token is
+    // single-use, so this must fire exactly once. If a dependency changes
+    // the effect re-runs, sees ranRef and returns immediately — identical
+    // behaviour, honest list (#1000).
+  }, [token, reset, router]);
 
   if (error) {
     return (

@@ -222,6 +222,16 @@ export function ProductForm({
 
   const accumulatedRemovedIdsRef = useRef<string[]>([]);
 
+  // Latest-ref for the watched options (#1000). optionsSignature is what
+  // this effect is MEANT to fire on — it is the debounced, stable view of
+  // the same data — while `options` changes identity on every keystroke.
+  // Naming `options` as a dependency would re-derive the whole variant
+  // matrix per character typed, which is the regression optionsSignature
+  // exists to prevent. A ref is stable, so the list below is honest and
+  // the trigger is unchanged.
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
   const optionsSignature = useMemo(() => {
     if (!options) return "";
     return JSON.stringify(
@@ -251,6 +261,7 @@ export function ProductForm({
   const derivationHasRun = useRef(false);
 
   useEffect(() => {
+    const options = optionsRef.current;
     if (!options) return;
     if (!derivationHasRun.current) {
       derivationHasRun.current = true;
@@ -322,9 +333,12 @@ export function ProductForm({
         message: err instanceof Error ? err.message : "Too many variants",
       });
     }
-    // Intentionally only depends on the signature.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [optionsSignature]);
+    // Still fires only on the signature. Everything else named here is
+    // stable by contract — setValue/setError/clearErrors/getValues come
+    // off a useForm instance and do not change identity — so listing them
+    // changes nothing at runtime and lets the dependency list be honest
+    // rather than suppressed (#1000).
+  }, [optionsSignature, setValue, setError, clearErrors, getValues]);
 
   // --- Submit / delete ---------------------------------------------------
   const applyError = (err: {

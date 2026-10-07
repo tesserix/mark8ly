@@ -1,7 +1,9 @@
 import type { createApiClient } from "./client";
 import {
+  artworkLinkSchema,
   orderDetailSchema,
   orderListSchema,
+  type ArtworkLink,
   type Order,
   type OrderDetail,
   type OrderListResponse,
@@ -56,6 +58,23 @@ export function createOrdersApi(client: ReturnType<typeof createApiClient>) {
     /** CancelOrderRequest.reason is REQUIRED (binding) — omitting it is a 400. */
     cancel: (id: string, reason: string) =>
       client.post<OrderDetail>(`/orders/${id}/cancel`, { reason }, orderDetailSchema),
+    /**
+     * A signed, short-lived link to one buyer's artwork (mark8ly#969).
+     *
+     * Fetched on TAP, not with the order: the URL expires in ten minutes
+     * (DownloadURLTTL), so one baked into a cached order payload would be
+     * dead by the time a merchant scrolled to it.
+     *
+     * Every call is audited server-side as order.artwork.downloaded —
+     * this is a merchant reading a customer's photograph, and the audit
+     * trail is the point, not a side effect.
+     */
+    artworkLink: (orderId: string, personalisationId: string) =>
+      client.get<ArtworkLink>(
+        `/orders/${orderId}/personalisations/${personalisationId}/download`,
+        undefined,
+        artworkLinkSchema,
+      ),
     /** refund_request_id is REQUIRED; amount omitted ⇒ full remaining balance. */
     refund: (id: string, body: RefundOrderBody) => client.post(`/orders/${id}/refund`, body),
     /**

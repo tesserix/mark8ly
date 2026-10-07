@@ -64,6 +64,50 @@ export type OrderListResponse = z.infer<typeof orderListSchema>;
  * `line_items`, `shipping_address`, `timeline`, `tracking_number`,
  * `payment_method`, `payment_transaction_id` — are deliberately absent.
  */
+/**
+ * One personalisation answer on an order line, as the MERCHANT sees it
+ * (mark8ly#969). Mirrors AdminPersonalisationResponse in
+ * internal/handlers/admin/order_personalisation.go.
+ *
+ * The image itself is never on this payload — only whether artwork exists
+ * and the short `reference` that also appears on the packing slip, so a
+ * merchant holding paper can match it to a file. Fetching the bytes is a
+ * separate, audited request; see `artworkLink` in ../orders.ts.
+ */
+export const orderPersonalisationSchema = z.object({
+  id: z.string(),
+  field_key: z.string(),
+  field_label: z.string(),
+  kind: z.string(),
+  text_value: z.string().optional(),
+  price_delta: z.string(),
+  position: z.number(),
+  // image only
+  has_artwork: z.boolean().optional().default(false),
+  original_filename: z.string().optional(),
+  content_type: z.string().optional(),
+  size_bytes: z.number().optional(),
+  reference: z.string().optional(),
+});
+export type OrderPersonalisation = z.infer<typeof orderPersonalisationSchema>;
+
+/**
+ * The signed, short-lived link to one buyer's artwork.
+ *
+ * The URL is pre-signed, so opening it needs no auth header — which is
+ * what lets mobile hand it straight to Linking.openURL. It expires
+ * quickly (DownloadURLTTL, 10 minutes), so it is fetched on tap rather
+ * than alongside the order.
+ */
+export const artworkLinkSchema = z.object({
+  personalisation_id: z.string(),
+  reference: z.string(),
+  filename: z.string(),
+  url: z.string(),
+  expires_at: z.string(),
+});
+export type ArtworkLink = z.infer<typeof artworkLinkSchema>;
+
 export const orderItemSchema = z.object({
   id: z.string(),
   product_id: z.string().optional(),
@@ -75,6 +119,8 @@ export const orderItemSchema = z.object({
   quantity: z.number(),
   line_total: money,
   currency_code: z.string(),
+  // omitempty on the wire: absent entirely for a plain product.
+  personalisation: z.array(orderPersonalisationSchema).optional(),
 });
 export type OrderItem = z.infer<typeof orderItemSchema>;
 

@@ -56,7 +56,7 @@ async function onboardStore(
     await currencyTrigger.click();
     await page.getByRole("option", { name: /usd/i }).first().click();
   }
-  await page.getByRole("button", { name: /get my store ready/i }).click();
+  await page.getByRole("button", { name: /send verification link/i }).click();
   await expect(page).toHaveURL(/\/onboarding\/check-inbox/, {
     timeout: 10_000,
   });
@@ -72,6 +72,9 @@ async function onboardStore(
   await expect(page).toHaveURL(/\/onboarding\/set-password/, {
     timeout: 15_000,
   });
+  // The set-password form requires an owner name; without it the
+  // submit is blocked and the flow never reaches /welcome.
+  await page.locator("#name").fill(details.businessName);
   await page.locator("#password").fill(details.password);
   await page.getByRole("button", { name: /create account/i }).click();
   await expect(page).toHaveURL(/\/welcome/, { timeout: 15_000 });
@@ -90,7 +93,7 @@ test("customer cookie Domain is the exact request host (not .mark8ly.com)", asyn
     email: `iso-merchant-${stamp}@example.com`,
     slug: `iso-${stamp}`.replace(/[^a-z0-9-]/g, "").slice(0, 60),
     businessName: `Iso ${stamp}`,
-    password: "e2e-test-password-123",
+    password: "E2e-test-password-123!",
   };
   await onboardStore(page, request, merchant);
 
@@ -136,7 +139,7 @@ test("sign-out clears the customer cookie", async ({ page, request }) => {
     email: `iso-merchant-out-${stamp}@example.com`,
     slug: `iso-out-${stamp}`.replace(/[^a-z0-9-]/g, "").slice(0, 60),
     businessName: `IsoOut ${stamp}`,
-    password: "e2e-test-password-123",
+    password: "E2e-test-password-123!",
   };
   await onboardStore(page, request, merchant);
 

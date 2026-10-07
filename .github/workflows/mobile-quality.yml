@@ -110,6 +110,14 @@ jobs:
           - workspace: mobile-admin
             path: apps/mobile-admin
             min_files: 200
+          # mobile-shared sat outside BOTH apps' eslint base paths, so the
+          # rule reported "File ignored because outside of base path" and
+          # ran against none of it. Not an empty gap: useSupportChat.ts
+          # carried two suppressions, one hiding a self-referential
+          # useCallback and one a socket-opening effect (mark8ly#1000).
+          - workspace: mobile-shared
+            path: packages/mobile-shared
+            min_files: 50
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5

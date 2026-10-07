@@ -27,13 +27,16 @@ export function FinalConfirmStep({ storeId, reason, feedback }: FinalConfirmStep
   const router = useRouter()
   const { toast } = useToast()
   const submit = useSubmitCancellation(storeId)
+  // react-query's `mutate` is stable; the mutation object is not, and a
+  // CALLED member expression depends on its receiver (#1017).
+  const { mutate: submitCancellation } = submit
   const firedRef = useRef(false)
 
   useEffect(() => {
     if (firedRef.current) return
     firedRef.current = true
 
-    submit.mutate(
+    submitCancellation(
       { survey_reason: reason || undefined, accept_save_offer: false },
       {
         onSuccess: () => {
@@ -44,9 +47,11 @@ export function FinalConfirmStep({ storeId, reason, feedback }: FinalConfirmStep
         },
       },
     )
-    // Only fire once on mount — exhaustive-deps is intentionally not satisfied.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    // Full deps are safe BECAUSE of the firedRef guard above: this submits
+    // a cancellation and must fire exactly once. If a dependency changes
+    // the effect re-runs, sees firedRef and returns immediately —
+    // identical behaviour, honest list (#1000).
+  }, [submitCancellation, reason, toast])
 
   // ── Loading ──────────────────────────────────────────────────────────────
   if (submit.isPending) {

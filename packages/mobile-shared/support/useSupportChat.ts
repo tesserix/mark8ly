@@ -119,10 +119,15 @@ export function useSupportChat({
     [storage],
   );
 
-  const scheduleDrain = (delay: number) => {
+  // scheduleDrain and drainOutbox call each other, so neither could name
+  // the other as a dependency. Routing one side through a ref breaks the
+  // cycle without changing when a drain is scheduled — same treatment as
+  // `connect` below (mark8ly#1000).
+  const drainOutboxRef = useRef<(() => Promise<void>) | null>(null);
+  const scheduleDrain = useCallback((delay: number) => {
     if (retryRef.current) clearTimeout(retryRef.current);
-    retryRef.current = setTimeout(() => void drainOutbox(), delay);
-  };
+    retryRef.current = setTimeout(() => void drainOutboxRef.current?.(), delay);
+  }, []);
 
   const drainOutbox = useCallback(async () => {
     if (drainingRef.current) return;
@@ -154,7 +159,8 @@ export function useSupportChat({
     } finally {
       drainingRef.current = false;
     }
-  }, [client, persistOutbox]);
+  }, [client, persistOutbox, scheduleDrain]);
+  drainOutboxRef.current = drainOutbox;
 
   const sendMessage = useCallback(
     async (body: string) => {
@@ -207,6 +213,24 @@ export function useSupportChat({
     setConnectedBoth(false);
   }, []);
 
+  // `connect` retries by calling itself, which made it its own dependency
+  // and was unnameable — hence the old suppression. Routing the retry
+  // through a ref breaks the cycle without changing when a reconnect
+  // happens (mark8ly#1000).
+  const connectRef = useRef<((id: string) => Promise<void>) | null>(null);
+
+  // Declared above `connect` so it can be a real dependency of it
+  // rather than a forward reference (mark8ly#1000).
+  const refresh = useCallback(async () => {
+    if (!convIdRef.current) return;
+    try {
+      const msgs = await client.listMessages(convIdRef.current);
+      setServerMessages((prev) => mergeMessages(prev, msgs));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "refresh failed");
+    }
+  }, [client]);
+
   const connect = useCallback(
     async (conversationId: string) => {
       closedByUsRef.current = false;
@@ -216,7 +240,7 @@ export function useSupportChat({
         const delay = Math.min(MAX_BACKOFF_MS, 1000 * 2 ** (attempt - 1));
         clearReconnect();
         reconnectRef.current = setTimeout(() => {
-          if (convIdRef.current) void connect(convIdRef.current);
+          if (convIdRef.current) void connectRef.current?.(convIdRef.current);
         }, delay);
       };
       const onOpen = () => {
@@ -286,19 +310,9 @@ export function useSupportChat({
         reconnect();
       };
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [client, teardownSocket, drainOutbox],
+    [client, teardownSocket, drainOutbox, refresh],
   );
-
-  const refresh = useCallback(async () => {
-    if (!convIdRef.current) return;
-    try {
-      const msgs = await client.listMessages(convIdRef.current);
-      setServerMessages((prev) => mergeMessages(prev, msgs));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "refresh failed");
-    }
-  }, [client]);
+  connectRef.current = connect;
 
   const adoptConversation = useCallback(
     async (conv: SupportConversation, initial: SupportMessage[]) => {
@@ -352,8 +366,20 @@ export function useSupportChat({
     teardownSocket();
   }, [client, teardownSocket]);
 
-  // Resume on mount.
+  // Resume on mount — and ONLY on mount (mark8ly#1000).
+  //
+  // Latest-refs rather than dependencies. This opens a socket and returns
+  // a teardown; naming `client`, `adoptConversation` or `teardownSocket`
+  // would tear the socket down and re-resume the conversation whenever any
+  // of them changed identity, which is a visible behaviour change in a
+  // live chat rather than a lint fix. Refs are stable, so `[]` below is an
+  // honest empty list and the effect still reads current values.
+  const resumeRef = useRef({ client, adoptConversation, teardownSocket, autoResume });
+  resumeRef.current = { client, adoptConversation, teardownSocket, autoResume };
+
   useEffect(() => {
+    const { client, adoptConversation, teardownSocket, autoResume } =
+      resumeRef.current;
     let cancelled = false;
     if (!autoResume) {
       setStatus("idle");
@@ -377,7 +403,6 @@ export function useSupportChat({
       teardownSocket();
       if (retryRef.current) clearTimeout(retryRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Foreground reconnect.

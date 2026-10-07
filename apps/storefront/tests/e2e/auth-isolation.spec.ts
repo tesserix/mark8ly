@@ -1,84 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-const API_URL = process.env.API_URL ?? "http://localhost:8086";
-const ONBOARDING_URL =
-  process.env.ONBOARDING_URL ?? "http://localhost:4201";
-const STOREFRONT_URL =
-  process.env.STOREFRONT_BASE_URL ?? "http://localhost:4203";
+import { STOREFRONT_URL, onboardStore } from "./helpers";
 
-/**
- * Phase 1 — per-host customer cookie scoping.
- *
- * Browser-level cross-host isolation (cookie not sent to other store /
- * not sent to admin) requires real DNS subdomains and is verified in
- * prod smoke testing. In localhost dev with `?slug=...` routing every
- * request shares one host, so we can only assert what the cookie
- * Domain attribute is at set time.
- *
- * The regression we're guarding against: cookie Domain reverts to
- * `.mark8ly.com` (parent scope) which would let a cookie set at
- * store-a be sent to every mark8ly subdomain.
- *
- * Note on `?slug=` routing: the homepage (/) accepts ?slug= to target a
- * specific store. The /create-account and /sign-in pages resolve the store
- * from the Host header (then DEFAULT_STORE_SLUG env var for localhost).
- * The onboardStore helper below ensures a real merchant store exists;
- * the dev stack must have DEFAULT_STORE_SLUG pointing to a live store for
- * the customer sign-up/sign-in assertions to succeed. What we CAN assert
- * here in all environments — including localhost — is the cookie Domain
- * attribute and sign-out clearing.
- *
- * What goes to manual prod smoke testing (requires real subdomains / DNS):
- *   - Cookie not sent to a different store's subdomain.
- *   - Cookie not sent to the admin subdomain.
- *   - Custom domain cookie isolation.
- */
 
-async function onboardStore(
-  page: import("@playwright/test").Page,
-  request: import("@playwright/test").APIRequestContext,
-  details: {
-    email: string;
-    slug: string;
-    businessName: string;
-    password: string;
-  },
-): Promise<void> {
-  await page.goto(`${ONBOARDING_URL}/onboarding`);
-  await page.getByLabel(/email address/i).fill(details.email);
-  await page.getByLabel(/business name/i).fill(details.businessName);
-  await page.locator("#slug").fill(details.slug);
-  await expect(page.getByText(/✓ available/i)).toBeVisible({ timeout: 5000 });
-  await page.getByLabel(/country/i).click();
-  await page.getByRole("option", { name: /united states/i }).click();
-  const currencyTrigger = page.getByLabel(/currency/i);
-  if ((await currencyTrigger.textContent())?.includes("Select")) {
-    await currencyTrigger.click();
-    await page.getByRole("option", { name: /usd/i }).first().click();
-  }
-  await page.getByRole("button", { name: /send verification link/i }).click();
-  await expect(page).toHaveURL(/\/onboarding\/check-inbox/, {
-    timeout: 10_000,
-  });
-
-  const tokenRes = await request.get(
-    `${API_URL}/api/v1/test/verification/latest?email=${encodeURIComponent(details.email)}`,
-  );
-  expect(tokenRes.ok()).toBeTruthy();
-  const tokenBody = (await tokenRes.json()) as { data: { token: string } };
-  await page.goto(
-    `${ONBOARDING_URL}/onboarding/verify?token=${encodeURIComponent(tokenBody.data.token)}`,
-  );
-  await expect(page).toHaveURL(/\/onboarding\/set-password/, {
-    timeout: 15_000,
-  });
-  // The set-password form requires an owner name; without it the
-  // submit is blocked and the flow never reaches /welcome.
-  await page.locator("#name").fill(details.businessName);
-  await page.locator("#password").fill(details.password);
-  await page.getByRole("button", { name: /create account/i }).click();
-  await expect(page).toHaveURL(/\/welcome/, { timeout: 15_000 });
-}
 
 test("customer cookie Domain is the exact request host (not .mark8ly.com)", async ({
   page,

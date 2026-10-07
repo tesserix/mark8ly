@@ -11,4 +11,12 @@ export default defineConfig({
     exclude: ["node_modules/**"],
     environment: "node",
   },
+  resolve: {
+    alias: {
+      // See test/react-native-stub.ts — vitest cannot transform
+      // react-native's Flow source, and useSupportChat imports AppState.
+      "react-native": new URL("./test/react-native-stub.ts", import.meta.url)
+        .pathname,
+    },
+  },
 });

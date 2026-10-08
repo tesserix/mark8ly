@@ -42,8 +42,11 @@ type MobileDeps struct {
 	NotifyMeHandler  *NotifyMeHandler
 	// Support chat — bridges to the otto service (customer→merchant).
 	SupportHandler *MobileSupportHandler
-	DevMode        bool
-	Logger         *slog.Logger
+	// Buyer artwork (#969). Nil when no private bucket is configured, in
+	// which case the routes are not mounted — same rule as routes.go.
+	PersonalisationUploadsHandler *PersonalisationUploadsHandler
+	DevMode                       bool
+	Logger                        *slog.Logger
 }
 
 // RegisterMobileStorefront mounts the mobile storefront routes on the given
@@ -99,6 +102,27 @@ func RegisterMobileStorefront(router *gin.RouterGroup, deps MobileDeps) {
 		// Loyalty — public program info.
 		if deps.LoyaltyHandler != nil {
 			group.GET("/loyalty/program", deps.LoyaltyHandler.GetProgram)
+		}
+
+		// Buyer artwork (#969) — the same six routes the web storefront
+		// mounts, and public for the same reason: the cart token is the
+		// whole of the authorisation, because most buyers are guests. The
+		// web client gets that token from the mk_cart_token cookie the
+		// Next proxy sets; a native app has no proxy, so it mints its own
+		// and sends it in the body (upload-url, confirm) or the query
+		// (preview, previews, delete) — both of which cartTokenFrom
+		// already reads. The bytes themselves go straight to the signed
+		// GCS URL and never pass through here.
+		if deps.PersonalisationUploadsHandler != nil {
+			p := group.Group("/personalisation")
+			{
+				p.POST("/upload-url", deps.PersonalisationUploadsHandler.CreateUploadURL)
+				p.POST("/uploads/:uploadId/confirm", deps.PersonalisationUploadsHandler.Confirm)
+				p.PATCH("/uploads/:uploadId/crop", deps.PersonalisationUploadsHandler.PrepareCrop)
+				p.GET("/uploads/:uploadId/preview", deps.PersonalisationUploadsHandler.Preview)
+				p.POST("/previews", deps.PersonalisationUploadsHandler.PreviewBatch)
+				p.DELETE("/uploads/:uploadId", deps.PersonalisationUploadsHandler.Delete)
+			}
 		}
 	}
 

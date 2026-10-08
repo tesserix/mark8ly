@@ -111,18 +111,20 @@ type CheckoutAddressRequest struct {
 // present and matching an open abandoned_carts row, the row's
 // converted_order_id is set in the same tx as the order create.
 type CheckoutRequest struct {
-	IdempotencyKey string                 `json:"idempotency_key" binding:"required"`
-	CartSessionID  *string                `json:"cart_session_id"`
-	CustomerEmail  string                 `json:"customer_email"  binding:"required,email"`
-	CustomerName   *string                `json:"customer_name"`
-	Items          []CheckoutItemRequest  `json:"items"           binding:"required,min=1"`
-	Shipping       CheckoutAddressRequest `json:"shipping"        binding:"required"`
-	Billing        CheckoutAddressRequest `json:"billing"         binding:"required"`
-	Subtotal       decimal.Decimal        `json:"subtotal"        binding:"required"`
-	ShippingTotal  decimal.Decimal        `json:"shipping_total"`
-	TaxTotal       decimal.Decimal        `json:"tax_total"`
-	DiscountTotal  decimal.Decimal        `json:"discount_total"`
-	GrandTotal     decimal.Decimal        `json:"grand_total"     binding:"required"`
+	IdempotencyKey string  `json:"idempotency_key" binding:"required"`
+	CartSessionID  *string `json:"cart_session_id"`
+	// CartToken — see CheckoutExtRequest.CartToken.
+	CartToken     *string                `json:"cart_token"`
+	CustomerEmail string                 `json:"customer_email"  binding:"required,email"`
+	CustomerName  *string                `json:"customer_name"`
+	Items         []CheckoutItemRequest  `json:"items"           binding:"required,min=1"`
+	Shipping      CheckoutAddressRequest `json:"shipping"        binding:"required"`
+	Billing       CheckoutAddressRequest `json:"billing"         binding:"required"`
+	Subtotal      decimal.Decimal        `json:"subtotal"        binding:"required"`
+	ShippingTotal decimal.Decimal        `json:"shipping_total"`
+	TaxTotal      decimal.Decimal        `json:"tax_total"`
+	DiscountTotal decimal.Decimal        `json:"discount_total"`
+	GrandTotal    decimal.Decimal        `json:"grand_total"     binding:"required"`
 }
 
 // CheckoutResponse is the storefront-safe order projection. Deliberately
@@ -226,7 +228,7 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 	// same last unit.
 	if h.stockHolds != nil {
 		lines := stockLinesFromItems(req.Items)
-		cartToken := cartTokenForCheckout(c)
+		cartToken := cartTokenForCheckout(c, req.CartToken)
 		in.WithinTx = func(tx *gorm.DB, o *order.Order) error {
 			return commitStock(c.Request.Context(), tx, h.stockHolds, cartToken, o.ID.String(), storeID.String(), lines)
 		}

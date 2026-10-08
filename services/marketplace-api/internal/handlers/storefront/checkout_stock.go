@@ -490,16 +490,30 @@ func stockLinesFromItems(items []CheckoutItemRequest) []stockLine {
 	return lines
 }
 
-// cartTokenForCheckout returns the cart identity to commit holds against.
+// cartTokenForCheckout returns the cart identity to commit holds against,
+// and to claim the buyer's personalisation uploads with (#967).
 //
-// A checkout arriving without one — an API client, or a storefront build
+// The web storefront carries it in the mk_cart_token cookie, set by the
+// Next proxy. A native app has no cookie jar it can rely on, so the mobile
+// storefront sends the same token in the request body instead (#969) —
+// the way the upload endpoints already accept it, see cartTokenFrom in
+// personalisation_uploads.go. Cookie first: a web client never sends the
+// body field, and a client that sends both is telling us the same thing
+// twice.
+//
+// A checkout arriving with neither — an API client, or a storefront build
 // predating #232 — gets a fresh token, so the hold-then-commit path still
 // enforces availability for it. Enforcement must not depend on the caller
 // having cooperated.
-func cartTokenForCheckout(c *gin.Context) string {
+func cartTokenForCheckout(c *gin.Context, fromBody *string) string {
 	if ck, err := c.Cookie(CartTokenCookie); err == nil {
 		if _, perr := uuid.Parse(ck); perr == nil {
 			return ck
+		}
+	}
+	if fromBody != nil {
+		if _, perr := uuid.Parse(*fromBody); perr == nil {
+			return *fromBody
 		}
 	}
 	return uuid.NewString()

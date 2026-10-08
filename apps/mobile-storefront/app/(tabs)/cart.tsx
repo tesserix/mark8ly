@@ -8,6 +8,7 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react-native";
 import { useCartStore, type CartLine, lineKey } from "@/lib/cart-store";
+import { describeCartPersonalisation } from "@/lib/personalisation";
 import { Button, EmptyState, Hairline, PageHeader, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { formatMoney } from "@/lib/format";
@@ -121,6 +122,14 @@ function CartRow({
             {line.variantTitle}
           </Text>
         ) : null}
+        {/* What the buyer asked for (#969), from the snapshots on the line.
+            A photo is named, not shown: its preview is a ten-minute signed
+            URL that would be dead by the time they scrolled here. */}
+        {describeCartPersonalisation(line.personalisation).map((p, i) => (
+          <Text key={`${p.label}-${i}`} preset="caption" color="textSecondary" numberOfLines={2}>
+            {p.label}: {p.value}
+          </Text>
+        ))}
         <Text preset="price" color="text">
           {formatMoney(Number(line.unitPriceAmount) * line.quantity, currency)}
         </Text>

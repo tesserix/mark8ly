@@ -244,8 +244,13 @@ func (h *CheckoutExtHandler) SetLoyaltyService(svc *loyalty.Service) {
 
 // CheckoutExtRequest is the wire body for the extended checkout endpoint.
 type CheckoutExtRequest struct {
-	IdempotencyKey  string                  `json:"idempotency_key"  binding:"required"`
-	CartSessionID   *string                 `json:"cart_session_id"`
+	IdempotencyKey string  `json:"idempotency_key"  binding:"required"`
+	CartSessionID  *string `json:"cart_session_id"`
+	// CartToken is the mobile storefront's stand-in for the mk_cart_token
+	// cookie (#969): the identity its personalisation uploads were created
+	// under, and the one its stock holds are committed against. Ignored
+	// when the cookie is present. See cartTokenForCheckout.
+	CartToken       *string                 `json:"cart_token"`
 	CustomerEmail   string                  `json:"customer_email"   binding:"required,email"`
 	CustomerName    *string                 `json:"customer_name"`
 	Items           []CheckoutItemRequest   `json:"items"            binding:"required,min=1"`
@@ -470,10 +475,11 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	// base and this only ever adds. Before the subtotal is derived,
 	// because the subtotal has to include the surcharge.
 	//
-	// The cart token is the cookie's, not the request's — it is the only
-	// thing proving an upload belongs to this shopper.
+	// The cart token is the one the uploads were created under — the
+	// cookie on web, the body field on mobile — and it is the only thing
+	// proving an upload belongs to this shopper.
 	resolvedPersonalisation, perErr := applyPersonalisation(
-		ctx, personalisationResolver{db: h.db}, store.ID, cartTokenForCheckout(c), req.Items)
+		ctx, personalisationResolver{db: h.db}, store.ID, cartTokenForCheckout(c, req.CartToken), req.Items)
 	if perErr != nil {
 		h.logWarn("checkout_ext: personalisation rejected", "store_id", store.ID, "err", perErr)
 		// The reason is the buyer's to see — "The image for "Your photo"
@@ -680,7 +686,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	// ext handler whenever it is wired — so enforcement living only on the
 	// simple CheckoutHandler would have fixed nothing.
 	stockLines := stockLinesFromItems(req.Items)
-	stockCartToken := cartTokenForCheckout(c)
+	stockCartToken := cartTokenForCheckout(c, req.CartToken)
 
 	// Built once and referenced by both the Create input and the
 	// in-transaction hook: CreateInTx fills in each row's ID, and the

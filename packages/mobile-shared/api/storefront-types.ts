@@ -37,9 +37,45 @@ export interface StorefrontProductOption {
   values: string[];
 }
 
+/** One value of a choice field. */
+export interface StorefrontPersonalisationOption {
+  id: string;
+  label: string;
+  price_delta: string;
+}
+
+/**
+ * One thing the buyer fills in before a product can be added to the cart
+ * (#962, #965). Mirrors marketplace-api's StorefrontPersonalisationField
+ * exactly; the server sends only the keys that apply to a kind, so
+ * presence is the signal — `max_length` on a text field, `min_px` on an
+ * image.
+ */
+export interface StorefrontPersonalisationField {
+  id: string;
+  key: string;
+  label: string;
+  kind: "image" | "text" | "textarea" | "select" | "checkbox";
+  required: boolean;
+  position: number;
+  help_text?: string;
+  max_length?: number;
+  max_images?: number;
+  /** Below this short-edge size the buyer is warned their image may print soft. */
+  min_px?: number;
+  /** The merchant's mockup and the rectangle, in PERCENTAGES, the artwork occupies in it (#966). Both or neither. */
+  mockup_url?: string;
+  print_area?: { x: number; y: number; w: number; h: number };
+  /** Advisory only: checkout re-reads every delta from the catalog (#967). */
+  price_delta?: string;
+  options?: StorefrontPersonalisationOption[];
+}
+
 export interface StorefrontProductDetail extends StorefrontProduct {
   variants: StorefrontVariant[];
   options: StorefrontProductOption[];
+  /** Detail-only; absent on a product that asks the buyer for nothing. */
+  personalisation?: StorefrontPersonalisationField[];
 }
 
 export interface StorefrontCategory {
@@ -50,10 +86,28 @@ export interface StorefrontCategory {
   product_count: number;
 }
 
+/** One answer, in the shape the checkout endpoint validates and prices (#967). */
+export interface CheckoutLinePersonalisation {
+  field_id: string;
+  upload_id?: string;
+  text?: string;
+  option_id?: string;
+  checked?: boolean;
+}
+
 export interface CheckoutLineItem {
   product_id: string;
   variant_id: string;
   quantity: number;
+  /** Omitted, not empty, for a line with nothing on it. */
+  personalisation?: CheckoutLinePersonalisation[];
+}
+
+/** The signed PUT marketplace-api issues for one buyer image (#963). */
+export interface PersonalisationUploadURL {
+  upload_id: string;
+  url: string;
+  expires_at: string;
 }
 
 export interface ShippingRate {
@@ -89,6 +143,13 @@ export interface CheckoutSubmitBody {
   loyalty_points?: number;
   idempotency_key: string;
   save_address?: boolean;
+  /**
+   * The cart identity the buyer's uploads were created under (#969). The
+   * web storefront carries this in a cookie; a native app has no cookie
+   * jar it can rely on, so it travels in the body. Without it checkout
+   * cannot claim the artwork, and the 72h sweeper destroys it.
+   */
+  cart_token?: string;
 }
 
 export interface CheckoutResult {

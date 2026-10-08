@@ -131,6 +131,17 @@ module.exports = {
       "expo-router",
       "expo-secure-store",
       "expo-notifications",
+      // Buyer photo upload for personalised products (#969). Library
+      // only: there is no camera flow, and declaring a permission the app
+      // never uses is a question App Review asks.
+      [
+        "expo-image-picker",
+        {
+          photosPermission: `Choose a photo from your library to personalise your ${merchant.name} order.`,
+          cameraPermission: false,
+          microphonePermission: false,
+        },
+      ],
     ],
     // `extra` is the runtime side of the merchant config — every value
     // here lands in Constants.expoConfig.extra at runtime so the app can

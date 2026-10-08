@@ -27,6 +27,7 @@ import type {
   StorefrontAddress,
 } from "@repo/mobile-shared/api/storefront-types";
 import { useCartStore } from "@/lib/cart-store";
+import { toCheckoutPersonalisation } from "@/lib/personalisation";
 import { useAddresses } from "@/lib/hooks/use-account";
 import {
   usePaymentMethods,
@@ -59,13 +60,22 @@ export default function CheckoutScreen() {
   const subtotalAmount = useCartStore((s) => s.subtotalAmount());
   const clearCart = useCartStore((s) => s.clear);
 
+  // The cart identity the buyer's uploads were created under (#969).
+  // Null when nothing was ever uploaded, and then omitted: the server
+  // mints its own for the stock commit, and there is nothing to claim.
+  const cartToken = useCartStore((s) => s.cartToken);
+
   const checkoutLines = useMemo<CheckoutLineItem[]>(
     () =>
-      lines.map((l) => ({
-        product_id: l.productId,
-        variant_id: l.variantId,
-        quantity: l.quantity,
-      })),
+      lines.map((l) => {
+        const personalisation = toCheckoutPersonalisation(l.personalisation);
+        return {
+          product_id: l.productId,
+          variant_id: l.variantId,
+          quantity: l.quantity,
+          ...(personalisation ? { personalisation } : {}),
+        };
+      }),
     [lines],
   );
   const currency = lines[0]?.currencyCode ?? "USD";
@@ -184,6 +194,7 @@ export default function CheckoutScreen() {
         shipping_rate_id: selectedRate.id,
         payment_provider: selectedProvider,
         ...(appliedCoupon ? { coupon_code: appliedCoupon.code } : {}),
+        ...(cartToken ? { cart_token: cartToken } : {}),
         idempotency_key: idempotencyKey,
       },
       {

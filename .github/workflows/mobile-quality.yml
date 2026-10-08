@@ -143,3 +143,43 @@ jobs:
       - name: react-hooks/exhaustive-deps and rules-of-hooks
         working-directory: ${{ matrix.path }}
         run: npx eslint .
+
+  # Unit tests for the two vitest workspaces (mark8ly#969). mobile-admin's
+  # Jest suite has its own workflow; these two had test runners and no job
+  # that ran them, which is the estate's recurring failure mode: configured,
+  # correct-looking, emitting nothing. Both are pure-logic suites — upload
+  # and picker flows take injected dependencies — so no simulator is needed.
+  tests:
+    name: Tests — ${{ matrix.workspace }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - workspace: mobile-storefront
+            path: apps/mobile-storefront
+            min_tests: 20
+          - workspace: mobile-shared
+            path: packages/mobile-shared
+            min_tests: 50
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+      - name: Install workspace dependencies
+        run: npm ci
+
+      # Same guard as the hooks job, for the same reason: a vitest include
+      # pattern that matches nothing passes. Count what ran and fail if it
+      # is fewer than the suite is known to hold.
+      - name: vitest, and prove it ran something
+        working-directory: ${{ matrix.path }}
+        run: |
+          npx vitest run --reporter=default --reporter=json --outputFile=/tmp/vitest.json
+          n=$(python3 -c 'import json; print(json.load(open("/tmp/vitest.json"))["numTotalTests"])')
+          echo "vitest ran $n tests"
+          if [ "$n" -lt ${{ matrix.min_tests }} ]; then
+            echo "::error::vitest ran only $n tests — the include pattern is not reaching the suite"
+            exit 1
+          fi

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -21,6 +21,15 @@ import { useAuth } from "@repo/mobile-shared/auth/provider";
 import { Button, EmptyState, Hairline, Screen, Text } from "@/components/ui";
 import { theme } from "@/lib/theme";
 import { formatMoney } from "@/lib/format";
+import {
+  personalisationSurcharge,
+  sortFields,
+  toCartPersonalisation,
+  validateAnswers,
+  type PersonalisationAnswers,
+  type PersonalisationProblem,
+} from "@/lib/personalisation";
+import { PersonalisationForm } from "@/components/personalisation/PersonalisationForm";
 import type {
   StorefrontProductDetail,
   StorefrontVariant,
@@ -40,6 +49,20 @@ export default function ProductDetailScreen() {
   const inWishlist = wishlistCheck.data?.in_wishlist === true;
 
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+
+  // What the merchant asks the buyer to fill in (#969). Detail-only on
+  // the API, so absent until the product loads, and empty for an
+  // ordinary product — in which case the form renders nothing.
+  const fields = useMemo(() => sortFields(product?.personalisation), [product?.personalisation]);
+  const [answers, setAnswersState] = useState<PersonalisationAnswers>({});
+  const [problems, setProblems] = useState<PersonalisationProblem[]>([]);
+  const setAnswers = useCallback((next: PersonalisationAnswers) => {
+    setAnswersState(next);
+    // An edit is an attempt to fix; the old message would be shouting
+    // about a state that no longer exists.
+    setProblems([]);
+  }, []);
+  const surcharge = personalisationSurcharge(fields, answers);
 
   const matchedVariant = useMemo<StorefrontVariant | null>(() => {
     if (!product) return null;
@@ -79,9 +102,12 @@ export default function ProductDetailScreen() {
     product.compare_at_price &&
     Number(product.compare_at_price) > Number(product.price_amount);
 
-  const variantPrice = matchedVariant
-    ? formatMoney(matchedVariant.price_amount, product.currency_code)
-    : formatMoney(product.price_amount, product.currency_code);
+  // The buyer's choices can add to the unit price (a gloss finish, gift
+  // wrap). Shown here so the button matches the receipt; the server
+  // recomputes it from the catalog and never trusts this (#967).
+  const baseUnitPrice = Number(matchedVariant?.price_amount ?? product.price_amount);
+  const unitPrice = (baseUnitPrice + surcharge).toFixed(2);
+  const variantPrice = formatMoney(unitPrice, product.currency_code);
 
   const canAddToCart =
     product.variants.length === 0 ||
@@ -89,6 +115,13 @@ export default function ProductDetailScreen() {
 
   const handleAdd = () => {
     if (!canAddToCart) return;
+    // Every missing field at once, next to its control, rather than one
+    // alert per attempt.
+    const found = validateAnswers(fields, answers);
+    if (found.length > 0) {
+      setProblems(found);
+      return;
+    }
     const variant = matchedVariant ?? product.variants[0];
     addToCart({
       productId: product.id,
@@ -99,9 +132,12 @@ export default function ProductDetailScreen() {
         variant && Object.keys(variant.option_values ?? {}).length
           ? Object.values(variant.option_values).join(" · ")
           : "",
-      unitPriceAmount: variant?.price_amount ?? product.price_amount,
+      unitPriceAmount: unitPrice,
       currencyCode: product.currency_code,
       imageUrl: product.images?.[0]?.url ?? "",
+      // Labels snapshotted here, where the field definitions are in
+      // hand; the cart screen has no access to them (#966).
+      personalisation: toCartPersonalisation(fields, answers),
     });
     router.push("/cart");
   };
@@ -221,6 +257,15 @@ export default function ProductDetailScreen() {
               </View>
             </View>
           ))}
+
+          <PersonalisationForm
+            productId={product.id}
+            currencyCode={product.currency_code}
+            fields={fields}
+            answers={answers}
+            onChange={setAnswers}
+            problems={problems}
+          />
 
           {product.description ? (
             <View style={{ marginTop: theme.spacing.lg, gap: theme.spacing.sm }}>

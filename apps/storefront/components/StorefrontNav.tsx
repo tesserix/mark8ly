@@ -11,9 +11,16 @@ import { usePathname } from "next/navigation";
 import { CartCountBadge } from "./CartCountBadge";
 import { CustomerAccountMenu } from "./CustomerAccountMenu";
 import { CustomerNotificationBell } from "./CustomerNotificationBell";
+import { useStore } from "./StoreProvider";
+import { resolveBrandName } from "@/lib/brand-name";
 
 export interface StorefrontNavProps {
-  /** Optional store name shown as the left-hand brand slot. */
+  /**
+   * Store name for the left-hand brand slot. Optional: when a page does
+   * not pass one, the layout's resolved store supplies it (StoreProvider),
+   * so a client page like the cart cannot fall back to the literal
+   * "Store" just by forgetting the prop.
+   */
   storeName?: string;
 }
 
@@ -24,6 +31,7 @@ const NAV_LINKS = [
 
 export function StorefrontNav({ storeName }: StorefrontNavProps) {
   const pathname = usePathname();
+  const brandName = resolveBrandName(storeName, useStore().name);
 
   // The nav owns its own max-width and gutters, so pages must NOT wrap
   // it in a second `px-6` container: on a 400px phone the two gutters
@@ -48,9 +56,9 @@ export function StorefrontNav({ storeName }: StorefrontNavProps) {
         <Link
           href="/"
           className="basis-full break-words font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))] empty:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))] sm:min-w-0 sm:max-w-[55%] sm:basis-auto sm:truncate md:max-w-none"
-          title={storeName ?? undefined}
+          title={brandName}
         >
-          {storeName ?? "Store"}
+          {brandName}
         </Link>
         <ul className="flex items-center gap-4 text-sm sm:ml-auto sm:gap-6">
           {NAV_LINKS.map((link) => {

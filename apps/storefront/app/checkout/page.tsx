@@ -761,7 +761,7 @@ export default function CheckoutPage() {
         {/* The nav sets its own max-width and gutters (matches home,
             products, cart, etc). The narrower max-w-3xl is only for the
             checkout content below. */}
-        <StorefrontNav storeName="" />
+        <StorefrontNav />
         <div className="mx-auto max-w-3xl px-6 pb-8 sm:px-8">
           <h1 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">
             Checkout
@@ -784,7 +784,7 @@ export default function CheckoutPage() {
 
   return (
     <main id="main" className="min-h-screen bg-[color:var(--storefront-background,var(--paper-200))]">
-      <StorefrontNav storeName="" />
+      <StorefrontNav />
       <div className="mx-auto max-w-3xl px-6 pb-8 sm:px-8">
         <Link
           href="/cart"

@@ -90,10 +90,17 @@ async function searchGeoapify(
     });
     // null, not [], so a quota or key failure falls back to Photon rather
     // than looking like "no such address".
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Logged so a dead key or a spent quota shows up in the logs instead
+      // of as a silently slow lookup. Status only: the URL carries the key.
+      console.warn(`address autocomplete: Geoapify ${res.status}, using Photon`);
+      return null;
+    }
     const body = (await res.json()) as GeoapifyResponse;
     return (body.results ?? []).map(fromGeoapify);
-  } catch {
+  } catch (err) {
+    const reason = err instanceof Error ? err.name : "error";
+    console.warn(`address autocomplete: Geoapify ${reason}, using Photon`);
     return null;
   }
 }

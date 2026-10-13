@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { isIndia, isInPhoneValid } from "@/lib/checkout/phone";
+import { SelectMenu } from "./SelectMenu";
 
 import type { Country, State } from "@/lib/api/platform-api";
 
@@ -87,6 +88,10 @@ export function AddressFieldset({
 
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searching, setSearching] = useState(false);
+  // Photon answers in 3–5 s, so a reply to an older query can land after
+  // a newer one. Only the latest query may set suggestions.
+  const querySeqRef = useRef(0);
   const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -152,11 +157,15 @@ export function AddressFieldset({
     update("line1", text);
     if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
     if (text.trim().length < 3) {
+      querySeqRef.current++;
       setSuggestions([]);
       setShowSuggestions(false);
+      setSearching(false);
       return;
     }
     fetchTimerRef.current = setTimeout(async () => {
+      const seq = ++querySeqRef.current;
+      setSearching(true);
       const params = new URLSearchParams({ q: text });
       if (value.country) params.set("country", value.country);
       try {
@@ -164,22 +173,32 @@ export function AddressFieldset({
           `/api/locations/autocomplete?${params.toString()}`,
           { cache: "no-store" },
         );
-        if (!res.ok) return;
+        if (!res.ok || seq !== querySeqRef.current) return;
         const body = (await res.json()) as { data: AddressSuggestion[] };
+        if (seq !== querySeqRef.current) return;
         setSuggestions(body.data ?? []);
         setShowSuggestions(true);
       } catch {
         // Silent — autocomplete is best-effort.
+      } finally {
+        if (seq === querySeqRef.current) setSearching(false);
       }
     }, 250);
   }
 
   function selectSuggestion(s: AddressSuggestion) {
+    // Photon names the state ("New South Wales"); the state menu is keyed
+    // by code ("NSW"). Passing the name through left the menu on "Select
+    // state" after every pick.
+    const wanted = s.region.trim().toLowerCase();
+    const state = states.find(
+      (st) => st.name.toLowerCase() === wanted || st.code.toLowerCase() === wanted,
+    );
     onChange({
       ...value,
       line1: s.line1 || value.line1,
       city: s.city || value.city,
-      region: s.region || value.region,
+      region: state ? state.code : stateInUse ? value.region : s.region || value.region,
       postal: s.postal || value.postal,
       country: lockCountry ? value.country : s.country || value.country,
     });
@@ -238,6 +257,14 @@ export function AddressFieldset({
             }}
             className={inputClass}
           />
+          {searching && !(showSuggestions && suggestions.length > 0) && (
+            <p
+              aria-live="polite"
+              className="mt-1 text-xs text-[color:var(--storefront-text,var(--ink-900))]/50"
+            >
+              Looking up addresses…
+            </p>
+          )}
           {showSuggestions && suggestions.length > 0 && (
             <ul
               role="listbox"
@@ -317,24 +344,19 @@ export function AddressFieldset({
               </span>
             </div>
           ) : (
-            <select
+            <SelectMenu
               id={`${idPrefix}-country`}
-              name="country"
-              autoComplete={ac("country")}
               value={value.country}
+              options={countries.map((c) => ({
+                value: c.code,
+                label: c.name,
+                icon: c.flag_emoji,
+              }))}
+              onChange={updateCountry}
+              placeholder={countries.length === 0 ? "Loading…" : "Select country"}
               disabled={disabled || countries.length === 0}
-              onChange={(e) => updateCountry(e.target.value)}
               className={inputClass}
-            >
-              <option value="">
-                {countries.length === 0 ? "Loading…" : "Select country"}
-              </option>
-              {countries.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.flag_emoji} {c.name}
-                </option>
-              ))}
-            </select>
+            />
           )}
         </div>
 
@@ -346,22 +368,15 @@ export function AddressFieldset({
             State / Region
           </label>
           {stateInUse ? (
-            <select
+            <SelectMenu
               id={`${idPrefix}-region`}
-              name="address-level1"
-              autoComplete={ac("address-level1")}
               value={value.region}
+              options={states.map((s) => ({ value: s.code, label: s.name }))}
+              onChange={(code) => update("region", code)}
+              placeholder="Select state"
               disabled={disabled}
-              onChange={(e) => update("region", e.target.value)}
               className={inputClass}
-            >
-              <option value="">Select state</option>
-              {states.map((s) => (
-                <option key={s.id} value={s.code}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            />
           ) : (
             <input
               id={`${idPrefix}-region`}

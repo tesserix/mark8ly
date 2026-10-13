@@ -11,7 +11,7 @@
 // and reprices every delta from the catalog (#967). This governs what the
 // buyer is allowed to try, and what they are told before they try it.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { StorefrontPersonalisationField } from "@/lib/api/marketplace-api";
 import {
@@ -77,7 +77,22 @@ export function PersonalisationForm({
     ],
     [fields, answers],
   );
-  const previews = usePersonalisationPreviews(storeSlug, previewLines);
+  // A crop keeps its upload id, so the hook is told to re-sign after one
+  // lands. Until it has, the cropped blob itself is shown — the buyer just
+  // made it and should see it at once, not after two round trips.
+  const [cropVersion, setCropVersion] = useState(0);
+  const previews = usePersonalisationPreviews(storeSlug, previewLines, cropVersion);
+  const [localCrops, setLocalCrops] = useState<Record<string, string>>({});
+  const localCropsRef = useRef(localCrops);
+  localCropsRef.current = localCrops;
+  useEffect(
+    () => () => Object.values(localCropsRef.current).forEach((u) => URL.revokeObjectURL(u)),
+    [],
+  );
+  const previewUrl = useCallback(
+    (uploadId: string) => localCrops[uploadId] ?? previews.previews[uploadId]?.url,
+    [localCrops, previews],
+  );
   // The upload currently being cropped, plus the signed GET for its
   // PRISTINE original to crop against. Null when no dialog is open.
   const [cropping, setCropping] = useState<{
@@ -202,6 +217,11 @@ export function PersonalisationForm({
         rotation,
       };
       setCropping(null);
+      const local = URL.createObjectURL(blob);
+      setLocalCrops((m) => {
+        if (m[uploadId]) URL.revokeObjectURL(m[uploadId]);
+        return { ...m, [uploadId]: local };
+      });
       setUploads((u) => ({ ...u, [field.id]: { busy: true } }));
       try {
         // Rectangle first, preview second. The rectangle is the durable
@@ -210,6 +230,7 @@ export function PersonalisationForm({
         // choice, which is why the PUT is not rolled back on failure.
         await prepareCrop(storeSlug, uploadId, rect);
         await uploadCropPreview(uploadUrl, blob);
+        setCropVersion((v) => v + 1);
         setUploads((u) => ({ ...u, [field.id]: { busy: false } }));
       } catch (err) {
         setUploads((u) => ({
@@ -324,7 +345,7 @@ export function PersonalisationForm({
                       fieldLabel={field.label}
                       artworkUrl={
                         (answer.uploadIds ?? [])
-                          .map((id) => previews.previews[id]?.url)
+                          .map((id) => previewUrl(id))
                           .find(Boolean) ?? undefined
                       }
                     />

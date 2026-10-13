@@ -23,6 +23,10 @@ import {
 export function usePersonalisationPreviews(
   storeSlug: string,
   lines: readonly { personalisation?: readonly { uploadId?: string }[] }[],
+  // Bumped by a caller that changed an upload's CONTENT without changing
+  // its id — a crop rewrites the preview object in place, so the id set
+  // alone would keep showing the uncropped image.
+  refreshKey = 0,
 ): PreviewLookup {
   // A stable primitive so the effect does not refire on a new array with
   // identical contents — a caller passing a fresh array literal would
@@ -52,7 +56,7 @@ export function usePersonalisationPreviews(
     // idKey is a stable serialisation of ids, so listing ids as well
     // would refire this on every render with an identical set — which is
     // the thing the key exists to prevent.
-  }, [storeSlug, idKey]);
+  }, [storeSlug, idKey, refreshKey]);
 
   return lookup;
 }

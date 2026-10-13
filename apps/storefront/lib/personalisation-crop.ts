@@ -51,8 +51,9 @@ async function defaultPut(url: string, blob: Blob) {
   const res = await fetch(url, {
     method: "PUT",
     body: blob,
-    // Must match what the URL was signed for or GCS rejects it.
-    headers: { "Content-Type": "image/jpeg" },
+    // Must match what the URL was signed for or GCS rejects it. The blob
+    // was encoded in that type (see PreparedCrop.contentType).
+    headers: { "Content-Type": blob.type || "image/jpeg" },
   });
   return { ok: res.ok };
 }
@@ -61,6 +62,12 @@ export interface PreparedCrop {
   /** Signed GET for the PRISTINE original, to crop against. */
   sourceUrl: string;
   uploadUrl: string;
+  /**
+   * What uploadUrl was signed for, and so what the preview must be
+   * encoded as. PNG for PNG/WebP originals so a transparent logo stays
+   * transparent; JPEG otherwise, and when an older API says nothing.
+   */
+  contentType: "image/jpeg" | "image/png";
 }
 
 /**
@@ -90,11 +97,19 @@ export async function prepareCrop(
   if (!res.ok) {
     throw new CropError("prepare", "That crop could not be saved. Please try again.");
   }
-  const body = (await res.json()) as { source_url?: string; upload_url?: string };
+  const body = (await res.json()) as {
+    source_url?: string;
+    upload_url?: string;
+    content_type?: string;
+  };
   if (!body.source_url || !body.upload_url) {
     throw new CropError("prepare", "That crop could not be saved. Please try again.");
   }
-  return { sourceUrl: body.source_url, uploadUrl: body.upload_url };
+  return {
+    sourceUrl: body.source_url,
+    uploadUrl: body.upload_url,
+    contentType: body.content_type === "image/png" ? "image/png" : "image/jpeg",
+  };
 }
 
 /**

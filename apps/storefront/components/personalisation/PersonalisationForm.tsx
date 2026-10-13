@@ -99,6 +99,10 @@ export function PersonalisationForm({
     field: StorefrontPersonalisationField;
     uploadId: string;
     sourceUrl: string;
+    // The preview's encoding, as the server will sign it. Read from the
+    // dialog-opening call; the apply call signs the same type because both
+    // derive it from the same original.
+    contentType: "image/jpeg" | "image/png";
   } | null>(null);
 
   const problemFor = useCallback(
@@ -178,14 +182,14 @@ export function PersonalisationForm({
         // A zero-origin, whole-image rectangle is a safe opening value:
         // the server validates it as positive, and the real one replaces
         // it the moment the buyer applies a crop.
-        const { sourceUrl } = await prepareCrop(storeSlug, uploadId, {
+        const { sourceUrl, contentType } = await prepareCrop(storeSlug, uploadId, {
           x: 0,
           y: 0,
           w: 1,
           h: 1,
           rotation: 0,
         });
-        setCropping({ field, uploadId, sourceUrl });
+        setCropping({ field, uploadId, sourceUrl, contentType });
         setUploads((u) => ({ ...u, [field.id]: { busy: false } }));
       } catch (err) {
         setUploads((u) => ({
@@ -477,6 +481,9 @@ export function PersonalisationForm({
           onCancel={() => setCropping(null)}
           title="Crop your photo"
           applyLabel="Use this crop"
+          // PNG keeps a transparent logo transparent; JPEG would paint the
+          // empty pixels black.
+          sourceMimeType={cropping.contentType}
           // The blob is a PREVIEW. The pristine original stays in the
           // bucket and is what the merchant prints from.
           previewMaxDimension={PREVIEW_MAX_DIMENSION}

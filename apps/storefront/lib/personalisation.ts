@@ -27,6 +27,9 @@ import type {
  */
 export interface PersonalisationAnswer {
   text?: string;
+  /** text fields that offer styling: the buyer's picks. */
+  font?: string;
+  colour?: string;
   optionId?: string;
   checked?: boolean;
   uploadIds?: string[];
@@ -157,8 +160,17 @@ export function toCartPersonalisation(
       case "text":
       case "textarea": {
         const value = (answer.text ?? "").trim();
-        if (value !== "")
-          out.push({ fieldId: field.id, fieldLabel: field.label, text: value });
+        if (value === "") break;
+        const style = resolveTextStyle(field, answer);
+        out.push({
+          fieldId: field.id,
+          fieldLabel: field.label,
+          text: value,
+          ...(style.font ? { font: style.font } : {}),
+          ...(style.colour
+            ? { colour: style.colour.label, colourHex: style.colour.hex }
+            : {}),
+        });
         break;
       }
       case "select":
@@ -253,5 +265,26 @@ export function toCheckoutPersonalisation(
     text: e.text,
     option_id: e.optionId,
     checked: e.checked,
+    font: e.font,
+    colour: e.colour,
   }));
+}
+
+/**
+ * The font and colour a text answer will be produced in: the buyer's
+ * pick when it is still on offer, else the first the field lists. Mirrors
+ * checkout's resolveTextStyle, so the preview, the cart and the order all
+ * agree on what "no pick" means.
+ */
+export function resolveTextStyle(
+  field: Pick<StorefrontPersonalisationField, "text_fonts" | "text_colours">,
+  answer: Pick<PersonalisationAnswer, "font" | "colour"> | undefined,
+): { font?: string; colour?: { label: string; hex: string } } {
+  const fonts = field.text_fonts ?? [];
+  const colours = field.text_colours ?? [];
+  const font =
+    answer?.font && fonts.includes(answer.font) ? answer.font : fonts[0];
+  const colour =
+    colours.find((c) => c.label === answer?.colour) ?? colours[0];
+  return { font, colour };
 }

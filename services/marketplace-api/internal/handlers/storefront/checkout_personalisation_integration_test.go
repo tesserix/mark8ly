@@ -316,3 +316,47 @@ func TestIntegration_Personalisation_SnapshotsTheLabelNotTheValue(t *testing.T) 
 
 func pStr(s string) *string { return &s }
 func pBool(b bool) *bool    { return &b }
+
+// ─── text style (migration 000142) ───────────────────────────────────────
+
+// The buyer's font and colour reach the resolved line from the catalog,
+// and a style the database would refuse never gets that far.
+func TestIntegration_Personalisation_ResolvesTheBuyersTextStyle(t *testing.T) {
+	f := newPersonalisationFixture(t)
+	require.NoError(t, f.db.Exec(
+		`UPDATE product_personalisation_fields
+		    SET text_fonts = ARRAY['script','classic'],
+		        text_colours = '[{"label":"Gold foil","hex":"#C9A227"},{"label":"White","hex":"#FFFFFF"}]'
+		  WHERE id = ?`, f.ids["name"]).Error)
+
+	items := []CheckoutItemRequest{{
+		VariantID: &f.variantID,
+		Quantity:  1,
+		UnitPrice: decimal.RequireFromString("25.00"),
+		Personalisation: []CheckoutPersonalisationRequest{
+			{FieldID: f.ids["name"], Text: pStr("Asha"), Font: pStr("classic"), Colour: pStr("white")},
+		},
+	}}
+	resolved, err := applyPersonalisation(
+		context.Background(), personalisationResolver{db: f.db}, f.storeID, f.cartToken, items)
+	require.NoError(t, err)
+	require.Len(t, resolved[0], 1)
+	got := resolved[0][0]
+	require.Equal(t, "classic", *got.TextFont)
+	require.Equal(t, "White", *got.TextColourLabel)
+	require.Equal(t, "#FFFFFF", *got.TextColourHex, "hex from the catalog, not the request")
+
+	// The snapshot columns accept exactly what the resolver produced.
+	require.NoError(t, f.db.Exec(
+		`SELECT CAST(? AS varchar(40)), CAST(? AS varchar(60)), CAST(? AS char(7)) ~ '^#[0-9A-F]{6}$'`,
+		*got.TextFont, *got.TextColourLabel, *got.TextColourHex).Error)
+
+	// A text field may now carry a mockup; a checkbox still may not.
+	require.NoError(t, f.db.Exec(
+		`UPDATE product_personalisation_fields
+		    SET mockup_storage_key = 'm.png', print_area = '{"x":10,"y":10,"w":50,"h":20}'
+		  WHERE id = ?`, f.ids["name"]).Error)
+	require.Error(t, f.db.Exec(
+		`UPDATE product_personalisation_fields SET mockup_storage_key = 'm.png' WHERE id = ?`,
+		f.ids["gift_wrap"]).Error)
+}

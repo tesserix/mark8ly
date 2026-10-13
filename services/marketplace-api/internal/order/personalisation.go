@@ -29,6 +29,12 @@ type ItemPersonalisation struct {
 	FieldLabel  string    `gorm:"column:field_label;type:varchar(120);not null"`
 	Kind        string    `gorm:"column:kind;type:varchar(20);not null"`
 	TextValue   *string   `gorm:"column:text_value;type:text"`
+	// How the buyer asked for the text to be produced (migration 000142).
+	// Snapshots from the catalog at checkout; nil when the field offered
+	// no choice.
+	TextFont        *string `gorm:"column:text_font;type:varchar(40)"`
+	TextColourLabel *string `gorm:"column:text_colour_label;type:varchar(60)"`
+	TextColourHex   *string `gorm:"column:text_colour_hex;type:char(7)"`
 
 	PriceDelta decimal.Decimal `gorm:"column:price_delta;type:numeric(12,2)"`
 

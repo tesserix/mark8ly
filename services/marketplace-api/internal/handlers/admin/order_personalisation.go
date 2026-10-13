@@ -20,6 +20,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/media"
 	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
 
@@ -41,8 +42,15 @@ type AdminPersonalisationResponse struct {
 	FieldLabel string  `json:"field_label"`
 	Kind       string  `json:"kind"`
 	TextValue  *string `json:"text_value,omitempty"`
-	PriceDelta string  `json:"price_delta"`
-	Position   int     `json:"position"`
+	// How the buyer asked for the text to be produced. Font is the
+	// catalogue id and FontLabel its name; the hex is only the preview's
+	// approximation of the named colour.
+	TextFont        *string `json:"text_font,omitempty"`
+	TextFontLabel   *string `json:"text_font_label,omitempty"`
+	TextColourLabel *string `json:"text_colour_label,omitempty"`
+	TextColourHex   *string `json:"text_colour_hex,omitempty"`
+	PriceDelta      string  `json:"price_delta"`
+	Position        int     `json:"position"`
 
 	// image only
 	HasArtwork       bool    `json:"has_artwork"`
@@ -72,12 +80,21 @@ func ToAdminPersonalisations(rows []order.ItemPersonalisation) map[string][]Admi
 	out := make(map[string][]AdminPersonalisationResponse)
 	for i := range rows {
 		p := &rows[i]
+		var fontLabel *string
+		if p.TextFont != nil && *p.TextFont != "" {
+			l := product.TextFontLabel(*p.TextFont)
+			fontLabel = &l
+		}
 		out[p.OrderItemID.String()] = append(out[p.OrderItemID.String()], AdminPersonalisationResponse{
 			ID:               p.ID.String(),
 			FieldKey:         p.FieldKey,
 			FieldLabel:       p.FieldLabel,
 			Kind:             p.Kind,
 			TextValue:        p.TextValue,
+			TextFont:         p.TextFont,
+			TextFontLabel:    fontLabel,
+			TextColourLabel:  p.TextColourLabel,
+			TextColourHex:    p.TextColourHex,
 			PriceDelta:       p.PriceDelta.String(),
 			Position:         p.Position,
 			HasArtwork:       p.HasArtwork(),

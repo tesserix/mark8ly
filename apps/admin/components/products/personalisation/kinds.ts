@@ -74,8 +74,15 @@ export function fieldSummary(
       return parts.join(" · ");
     }
     case "text":
-    case "textarea":
-      return `up to ${field.max_length ?? 0} characters`;
+    case "textarea": {
+      const parts: string[] = [`up to ${field.max_length ?? 0} characters`];
+      const fonts = field.text_fonts?.length ?? 0;
+      const colours = field.text_colours?.length ?? 0;
+      if (fonts > 0) parts.push(fonts === 1 ? "one font" : `${fonts} fonts`);
+      if (colours > 0) parts.push(colours === 1 ? "one colour" : `${colours} colours`);
+      if (field.mockup_storage_key) parts.push("previewed on your mockup");
+      return parts.join(" · ");
+    }
     case "select": {
       const options = field.options ?? [];
       if (options.length === 0) return "no choices yet";

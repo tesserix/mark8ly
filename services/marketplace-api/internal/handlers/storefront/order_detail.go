@@ -23,6 +23,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
 	"github.com/mark8ly/marketplace-api/internal/orderrefund"
+	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/tax"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
@@ -238,6 +239,9 @@ type storefrontPersonalisationResponse struct {
 	FieldLabel string `json:"field_label"`
 	Kind       string `json:"kind"`
 	TextValue  string `json:"text_value,omitempty"`
+	// TextStyle is the buyer's own font and colour choice, described
+	// ("Script, Gold foil"). Empty when the field offered none.
+	TextStyle string `json:"text_style,omitempty"`
 	// HasArtwork says an image was supplied, without handing one over.
 	HasArtwork bool `json:"has_artwork"`
 	// PreviewURL is a short-lived signed GET, and is EMPTY unless the
@@ -638,6 +642,7 @@ func attachStorefrontPersonalisation(
 			if r.TextValue != nil {
 				entry.TextValue = *r.TextValue
 			}
+			entry.TextStyle = product.DescribeTextStyle(r.TextFont, r.TextColourLabel)
 			if entry.HasArtwork && owner && signer != nil {
 				// Prefer the preview the buyer cropped; fall back to the
 				// original when they never cropped. Never hand over the

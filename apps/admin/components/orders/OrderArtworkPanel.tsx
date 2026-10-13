@@ -224,9 +224,23 @@ export function OrderArtworkPanel({
                       // because a buyer's textarea is theirs to lay out,
                       // and an engraving that loses its line breaks is
                       // the wrong engraving.
-                      <span className="whitespace-pre-wrap break-words">
-                        {a.text_value ?? "—"}
-                      </span>
+                      <>
+                        <span className="whitespace-pre-wrap break-words">
+                          {a.text_value ?? "—"}
+                        </span>
+                        {(a.text_font_label || a.text_colour_label) && (
+                          <span className="flex items-center gap-1.5 text-xs text-foreground-secondary">
+                            {a.text_colour_hex && (
+                              <span
+                                aria-hidden
+                                className="inline-block h-3 w-3 rounded-full border border-[color:var(--ink-900)]/20"
+                                style={{ backgroundColor: a.text_colour_hex }}
+                              />
+                            )}
+                            {[a.text_font_label, a.text_colour_label].filter(Boolean).join(" · ")}
+                          </span>
+                        )}
+                      </>
                     )}
                   </dd>
                   <dd className="sm:justify-self-end">

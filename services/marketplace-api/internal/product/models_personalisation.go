@@ -15,8 +15,10 @@
 package product
 
 import (
+	"encoding/json"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/shopspring/decimal"
 	"gorm.io/datatypes"
 )
@@ -64,10 +66,17 @@ type PersonalisationField struct {
 
 	// text, textarea
 	MaxLength *int `gorm:"column:max_length"  json:"max_length,omitempty"`
+	// TextFonts are catalogue ids (see TextFonts); TextColours is a jsonb
+	// array of TextColour. Both nil means the field offers no styling.
+	TextFonts   pq.StringArray  `gorm:"column:text_fonts;type:text[]"    json:"text_fonts,omitempty"`
+	TextColours *datatypes.JSON `gorm:"column:text_colours;type:jsonb"   json:"text_colours,omitempty"`
 
 	// image
-	MaxImages        *int            `gorm:"column:max_images"                json:"max_images,omitempty"`
-	MinPx            *int            `gorm:"column:min_px"                    json:"min_px,omitempty"`
+	MaxImages *int `gorm:"column:max_images"                json:"max_images,omitempty"`
+	MinPx     *int `gorm:"column:min_px"                    json:"min_px,omitempty"`
+
+	// image, text, textarea: the merchant's mockup and where on it the
+	// buyer's artwork or text sits (migration 000142 opened it to text).
 	MockupStorageKey *string         `gorm:"column:mockup_storage_key;type:text" json:"mockup_storage_key,omitempty"`
 	PrintArea        *datatypes.JSON `gorm:"column:print_area;type:jsonb"     json:"print_area,omitempty"`
 
@@ -120,4 +129,19 @@ type PrintAreaRect struct {
 	Y float64 `json:"y"`
 	W float64 `json:"w"`
 	H float64 `json:"h"`
+}
+
+// DecodeTextColours reads the field's colour list. A malformed column
+// yields nil, which offers no colours rather than failing the read: the
+// column is written only by encodeTextColours, so a bad value was written
+// by hand, and the merchant should still be able to fix the field.
+func (f *PersonalisationField) DecodeTextColours() []TextColour {
+	if f.TextColours == nil {
+		return nil
+	}
+	var out []TextColour
+	if err := json.Unmarshal(*f.TextColours, &out); err != nil {
+		return nil
+	}
+	return out
 }

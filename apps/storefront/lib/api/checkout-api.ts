@@ -124,6 +124,9 @@ export interface CheckoutPersonalisationBody {
   text?: string;
   option_id?: string;
   checked?: boolean;
+  /** text fields: a catalogue font id and a colour LABEL. */
+  font?: string;
+  colour?: string;
 }
 
 export interface CheckoutAddressBody {
@@ -192,6 +195,8 @@ export interface OrderPersonalisation {
   field_label: string;
   kind: string;
   text_value?: string;
+  /** The buyer's font and colour, described: "Script, Gold foil". */
+  text_style?: string;
   has_artwork: boolean;
   preview_url?: string;
 }

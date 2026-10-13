@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/lib/pq"
 	"github.com/shopspring/decimal"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -83,6 +84,10 @@ type CreatePersonalisationFieldRequest struct {
 	PrintArea        *PrintAreaRect
 	PriceDelta       *decimal.Decimal
 
+	// text, textarea. Nil or empty means the field offers no choice.
+	TextFonts   []string
+	TextColours []TextColour
+
 	Options []PersonalisationOptionSpec
 }
 
@@ -106,6 +111,10 @@ type UpdatePersonalisationFieldRequest struct {
 	MockupStorageKey *string
 	PrintArea        *PrintAreaRect
 	PriceDelta       *decimal.Decimal
+
+	// Nil leaves the list alone; a pointer to an empty slice clears it.
+	TextFonts   *[]string
+	TextColours *[]TextColour
 }
 
 // ListPersonalisationFields returns a product's fields in author order.
@@ -374,25 +383,30 @@ func validateCreateField(req *CreatePersonalisationFieldRequest) (*Personalisati
 			}
 			row.MinPx = req.MinPx
 		}
-		if req.PrintArea != nil && (req.MockupStorageKey == nil || strings.TrimSpace(*req.MockupStorageKey) == "") {
-			return nil, apperrors.ValidationFailed("personalisation_field.print_area",
-				"a print area needs a mockup image to sit inside")
+		if err := applyMockup(req, row); err != nil {
+			return nil, err
 		}
-		if req.MockupStorageKey != nil && strings.TrimSpace(*req.MockupStorageKey) != "" {
-			row.MockupStorageKey = req.MockupStorageKey
-		}
-		if req.PrintArea != nil {
-			encoded, err := encodePrintArea(*req.PrintArea)
-			if err != nil {
-				return nil, err
-			}
-			row.PrintArea = encoded
+		if err := rejectTextStyle(req); err != nil {
+			return nil, err
 		}
 
 	case PersonalisationKindText, PersonalisationKindTextarea:
-		if err := rejectImageOnly(req); err != nil {
+		if err := rejectImageSizing(req); err != nil {
 			return nil, err
 		}
+		if err := applyMockup(req, row); err != nil {
+			return nil, err
+		}
+		fonts, err := normaliseTextFonts(req.TextFonts)
+		if err != nil {
+			return nil, err
+		}
+		row.TextFonts = fonts
+		colours, err := encodeTextColours(req.TextColours)
+		if err != nil {
+			return nil, err
+		}
+		row.TextColours = colours
 		if err := rejectForKind(req, req.Kind, req.PriceDelta == nil, "price_delta"); err != nil {
 			return nil, err
 		}
@@ -416,6 +430,9 @@ func validateCreateField(req *CreatePersonalisationFieldRequest) (*Personalisati
 
 	case PersonalisationKindSelect:
 		if err := rejectImageOnly(req); err != nil {
+			return nil, err
+		}
+		if err := rejectTextStyle(req); err != nil {
 			return nil, err
 		}
 		if err := rejectForKind(req, "select", req.MaxLength == nil, "max_length"); err != nil {
@@ -447,6 +464,9 @@ func validateCreateField(req *CreatePersonalisationFieldRequest) (*Personalisati
 
 	case PersonalisationKindCheckbox:
 		if err := rejectImageOnly(req); err != nil {
+			return nil, err
+		}
+		if err := rejectTextStyle(req); err != nil {
 			return nil, err
 		}
 		if err := rejectForKind(req, "checkbox", req.MaxLength == nil, "max_length"); err != nil {
@@ -535,13 +555,13 @@ func validateUpdateField(kind string, req UpdatePersonalisationFieldRequest) (ma
 		fields["min_px"] = *req.MinPx
 	}
 	if req.MockupStorageKey != nil {
-		if !isImage {
+		if !isImage && !isText {
 			return nil, kindMismatch("mockup_storage_key", kind)
 		}
 		fields["mockup_storage_key"] = strings.TrimSpace(*req.MockupStorageKey)
 	}
 	if req.PrintArea != nil {
-		if !isImage {
+		if !isImage && !isText {
 			return nil, kindMismatch("print_area", kind)
 		}
 		encoded, err := encodePrintArea(*req.PrintArea)
@@ -549,6 +569,34 @@ func validateUpdateField(kind string, req UpdatePersonalisationFieldRequest) (ma
 			return nil, err
 		}
 		fields["print_area"] = encoded
+	}
+	if req.TextFonts != nil {
+		if !isText {
+			return nil, kindMismatch("text_fonts", kind)
+		}
+		fonts, err := normaliseTextFonts(*req.TextFonts)
+		if err != nil {
+			return nil, err
+		}
+		if fonts == nil {
+			fields["text_fonts"] = gorm.Expr("NULL")
+		} else {
+			fields["text_fonts"] = fonts
+		}
+	}
+	if req.TextColours != nil {
+		if !isText {
+			return nil, kindMismatch("text_colours", kind)
+		}
+		colours, err := encodeTextColours(*req.TextColours)
+		if err != nil {
+			return nil, err
+		}
+		if colours == nil {
+			fields["text_colours"] = gorm.Expr("NULL")
+		} else {
+			fields["text_colours"] = *colours
+		}
 	}
 	if req.PriceDelta != nil {
 		if kind != PersonalisationKindCheckbox {
@@ -582,13 +630,117 @@ func validateOptionSpec(o PersonalisationOptionSpec, _ int) error {
 	return nil
 }
 
-// rejectImageOnly refuses the four image-only columns on a non-image kind.
-func rejectImageOnly(req *CreatePersonalisationFieldRequest) error {
+// rejectImageSizing refuses the two columns only an image field has.
+func rejectImageSizing(req *CreatePersonalisationFieldRequest) error {
 	if req.MaxImages != nil {
 		return kindMismatch("max_images", req.Kind)
 	}
 	if req.MinPx != nil {
 		return kindMismatch("min_px", req.Kind)
+	}
+	return nil
+}
+
+// rejectTextStyle refuses fonts and colours on a kind that has no text.
+func rejectTextStyle(req *CreatePersonalisationFieldRequest) error {
+	if len(req.TextFonts) > 0 {
+		return kindMismatch("text_fonts", req.Kind)
+	}
+	if len(req.TextColours) > 0 {
+		return kindMismatch("text_colours", req.Kind)
+	}
+	return nil
+}
+
+// applyMockup validates the mockup pair and sets it on row. Shared by the
+// image and text kinds (migration 000142).
+func applyMockup(req *CreatePersonalisationFieldRequest, row *PersonalisationField) error {
+	if req.PrintArea != nil && (req.MockupStorageKey == nil || strings.TrimSpace(*req.MockupStorageKey) == "") {
+		return apperrors.ValidationFailed("personalisation_field.print_area",
+			"a print area needs a mockup image to sit inside")
+	}
+	if req.MockupStorageKey != nil && strings.TrimSpace(*req.MockupStorageKey) != "" {
+		row.MockupStorageKey = req.MockupStorageKey
+	}
+	if req.PrintArea != nil {
+		encoded, err := encodePrintArea(*req.PrintArea)
+		if err != nil {
+			return err
+		}
+		row.PrintArea = encoded
+	}
+	return nil
+}
+
+// normaliseTextFonts checks every id against the catalogue and drops
+// duplicates, keeping the merchant's order. Empty in, nil out: no fonts
+// stored means none offered.
+func normaliseTextFonts(in []string) (pq.StringArray, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	if len(in) > MaxTextFontsPerField {
+		return nil, apperrors.ValidationFailed("personalisation_field.text_fonts",
+			"a text field may offer at most 6 fonts")
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make(pq.StringArray, 0, len(in))
+	for _, id := range in {
+		id = strings.TrimSpace(id)
+		if !IsTextFont(id) {
+			return nil, apperrors.ValidationFailed("personalisation_field.text_fonts",
+				"unknown font "+strings.TrimSpace(id))
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// encodeTextColours validates the colour list and marshals it for jsonb.
+// Labels must be unique: the label is what the buyer's choice is matched
+// on at checkout and what the merchant reads off the order.
+func encodeTextColours(in []TextColour) (*datatypes.JSON, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	if len(in) > MaxTextColoursPerField {
+		return nil, apperrors.ValidationFailed("personalisation_field.text_colours",
+			"a text field may offer at most 12 colours")
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]TextColour, 0, len(in))
+	for _, c := range in {
+		n, ok := NormaliseTextColour(c)
+		if !ok {
+			return nil, apperrors.ValidationFailed("personalisation_field.text_colours",
+				"each colour needs a name of 60 characters or fewer and a hex like #C9A227")
+		}
+		key := strings.ToLower(n.Label)
+		if _, dup := seen[key]; dup {
+			return nil, apperrors.ValidationFailed("personalisation_field.text_colours",
+				"colour names must be unique within the field")
+		}
+		seen[key] = struct{}{}
+		out = append(out, n)
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return nil, apperrors.ValidationFailed("personalisation_field.text_colours",
+			"colours could not be encoded")
+	}
+	j := datatypes.JSON(b)
+	return &j, nil
+}
+
+// rejectImageOnly refuses every image-only column, the mockup pair
+// included, on a kind that has neither artwork nor text to place.
+func rejectImageOnly(req *CreatePersonalisationFieldRequest) error {
+	if err := rejectImageSizing(req); err != nil {
+		return err
 	}
 	if req.MockupStorageKey != nil {
 		return kindMismatch("mockup_storage_key", req.Kind)

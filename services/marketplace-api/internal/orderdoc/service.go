@@ -14,6 +14,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/branding"
 	"github.com/mark8ly/marketplace-api/internal/order"
+	"github.com/mark8ly/marketplace-api/internal/product"
 	"github.com/mark8ly/marketplace-api/internal/storeidentity"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 )
@@ -313,6 +314,11 @@ func (s *Service) loadPersonalisation(
 			}
 		case p.TextValue != nil:
 			value = *p.TextValue
+			// The slip is what the merchant produces from, so the font and
+			// colour travel with the words.
+			if style := product.DescribeTextStyle(p.TextFont, p.TextColourLabel); style != "" {
+				value += " (" + style + ")"
+			}
 		}
 		if value == "" {
 			continue

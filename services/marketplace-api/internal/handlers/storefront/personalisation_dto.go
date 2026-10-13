@@ -68,6 +68,13 @@ type StorefrontPersonalisationField struct {
 
 	// text / textarea
 	MaxLength *int `json:"max_length,omitempty"`
+	// TextFonts and TextColours are what the buyer may choose between for
+	// how their text is produced. The first of each is the default, so a
+	// buyer who ignores the pickers still gets a defined result — and the
+	// preview shows it. Font ids are catalogue ids (product.TextFonts);
+	// the storefront owns the font files.
+	TextFonts   []string             `json:"text_fonts,omitempty"`
+	TextColours []product.TextColour `json:"text_colours,omitempty"`
 
 	// image
 	MaxImages *int `json:"max_images,omitempty"`
@@ -127,6 +134,10 @@ func ToStorefrontPersonalisationFields(
 			MinPx:      f.MinPx,
 			PriceDelta: f.PriceDelta,
 		}
+		if len(f.TextFonts) > 0 {
+			item.TextFonts = []string(f.TextFonts)
+		}
+		item.TextColours = f.DecodeTextColours()
 		// The mockup pair. Emitted together or not at all — see the
 		// field comments. A key with no base URL is dropped rather than
 		// turned into a relative path the browser would resolve against

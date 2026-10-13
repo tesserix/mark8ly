@@ -18,6 +18,9 @@
 
 import Image from "next/image";
 
+import { personalisationFontStyle } from "@/lib/personalisation-fonts";
+import { fitTextSize } from "@/lib/personalisation-text-fit";
+
 export interface PrintArea {
   x: number;
   y: number;
@@ -32,6 +35,11 @@ export interface MockupPreviewProps {
   artworkUrl?: string;
   /** The field's label, for the alt text. */
   fieldLabel: string;
+  /**
+   * A text field's answer, drawn into the print area instead of a photo.
+   * Present (even empty) is what makes this a text preview.
+   */
+  text?: { value: string; font?: string; colourHex?: string };
 }
 
 /** Clamps a percentage into [0, 100] so a bad rectangle cannot escape. */
@@ -45,6 +53,7 @@ export function MockupPreview({
   printArea,
   artworkUrl,
   fieldLabel,
+  text,
 }: MockupPreviewProps) {
   // Clamped rather than trusted. The rectangle is merchant-authored and
   // round-trips through jsonb; a negative or >100 value would position
@@ -68,7 +77,31 @@ export function MockupPreview({
           className="h-auto w-full object-contain"
         />
 
-        {artworkUrl ? (
+        {text && text.value.trim() !== "" ? (
+          <span
+            className="absolute flex items-center justify-center overflow-hidden"
+            style={{
+              left: `${left}%`,
+              top: `${top}%`,
+              width: `${width}%`,
+              height: `${height}%`,
+              containerType: "size",
+            }}
+          >
+            <span
+              // The buyer's own words, so it is real text, not an image:
+              // readable by a screen reader and selectable.
+              className="whitespace-pre text-center leading-[1.1]"
+              style={{
+                ...personalisationFontStyle(text.font),
+                color: text.colourHex ?? "currentColor",
+                fontSize: fitTextSize(text.value, text.font),
+              }}
+            >
+              {text.value}
+            </span>
+          </span>
+        ) : artworkUrl ? (
           <span
             className="absolute overflow-hidden"
             style={{
@@ -108,9 +141,13 @@ export function MockupPreview({
         )}
       </div>
       <figcaption className="text-xs text-[color:var(--storefront-text,var(--ink-900))]/60">
-        {artworkUrl
-          ? "A preview of how your photo will be printed."
-          : "Your photo will be printed in the marked area."}
+        {text
+          ? text.value.trim() !== ""
+            ? "A preview of how your text will look. The final product may differ slightly."
+            : "Your text will appear in the marked area."
+          : artworkUrl
+            ? "A preview of how your photo will be printed."
+            : "Your photo will be printed in the marked area."}
       </figcaption>
     </figure>
   );

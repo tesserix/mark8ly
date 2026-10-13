@@ -237,15 +237,90 @@ func TestValidateCreateField_NonImageKindsRejectImageColumns(t *testing.T) {
 		_, err = validateCreateField(&req)
 		requireFieldError(t, err, "personalisation_field.min_px")
 
-		req = baseReq(kind)
+	}
+}
+
+// A mockup has somewhere to put an image or text, and nothing to put for a
+// choice or a tick box (migration 000142).
+func TestValidateCreateField_OnlyKindsWithContentTakeAMockup(t *testing.T) {
+	for _, kind := range []string{PersonalisationKindSelect, PersonalisationKindCheckbox} {
+		req := baseReq(kind)
 		req.MockupStorageKey = strp("k")
-		_, err = validateCreateField(&req)
+		_, err := validateCreateField(&req)
 		requireFieldError(t, err, "personalisation_field.mockup_storage_key")
 
 		req = baseReq(kind)
 		req.PrintArea = &PrintAreaRect{X: 0, Y: 0, W: 10, H: 10}
 		_, err = validateCreateField(&req)
 		requireFieldError(t, err, "personalisation_field.print_area")
+	}
+	for _, kind := range []string{PersonalisationKindText, PersonalisationKindTextarea} {
+		req := baseReq(kind)
+		req.MockupStorageKey = strp("k")
+		req.PrintArea = &PrintAreaRect{X: 10, Y: 20, W: 50, H: 30}
+		row, err := validateCreateField(&req)
+		require.NoError(t, err)
+		require.NotNil(t, row.MockupStorageKey)
+		require.NotNil(t, row.PrintArea)
+
+		req = baseReq(kind)
+		req.PrintArea = &PrintAreaRect{X: 0, Y: 0, W: 10, H: 10}
+		_, err = validateCreateField(&req)
+		requireFieldError(t, err, "personalisation_field.print_area")
+	}
+}
+
+func TestValidateCreateField_TextFontsComeFromTheCatalogue(t *testing.T) {
+	req := baseReq(PersonalisationKindText)
+	req.TextFonts = []string{"script", "classic", "script"}
+	row, err := validateCreateField(&req)
+	require.NoError(t, err)
+	require.Equal(t, []string{"script", "classic"}, []string(row.TextFonts),
+		"duplicates dropped, merchant's order kept")
+
+	req = baseReq(PersonalisationKindText)
+	req.TextFonts = []string{"Comic Sans"}
+	_, err = validateCreateField(&req)
+	requireFieldError(t, err, "personalisation_field.text_fonts")
+
+	req = baseReq(PersonalisationKindText)
+	req.TextFonts = []string{"classic", "modern", "script", "handwritten", "block", "typewriter", "classic"}
+	_, err = validateCreateField(&req)
+	requireFieldError(t, err, "personalisation_field.text_fonts")
+}
+
+func TestValidateCreateField_TextColoursAreNamedHexSwatches(t *testing.T) {
+	req := baseReq(PersonalisationKindText)
+	req.TextColours = []TextColour{{Label: " Gold foil ", Hex: "#c9a227"}}
+	row, err := validateCreateField(&req)
+	require.NoError(t, err)
+	require.JSONEq(t, `[{"label":"Gold foil","hex":"#C9A227"}]`, string(*row.TextColours))
+
+	for _, bad := range [][]TextColour{
+		{{Label: "Gold", Hex: "gold"}},
+		{{Label: "", Hex: "#FFFFFF"}},
+		{{Label: "White", Hex: "#FFFFFF"}, {Label: "white", Hex: "#FEFEFE"}},
+	} {
+		req = baseReq(PersonalisationKindText)
+		req.TextColours = bad
+		_, err = validateCreateField(&req)
+		requireFieldError(t, err, "personalisation_field.text_colours")
+	}
+}
+
+func TestValidateCreateField_TextStyleOnlyOnText(t *testing.T) {
+	for _, kind := range []string{
+		PersonalisationKindImage, PersonalisationKindSelect, PersonalisationKindCheckbox,
+	} {
+		req := baseReq(kind)
+		req.TextFonts = []string{"classic"}
+		_, err := validateCreateField(&req)
+		requireFieldError(t, err, "personalisation_field.text_fonts")
+
+		req = baseReq(kind)
+		req.TextColours = []TextColour{{Label: "Gold", Hex: "#C9A227"}}
+		_, err = validateCreateField(&req)
+		requireFieldError(t, err, "personalisation_field.text_colours")
 	}
 }
 

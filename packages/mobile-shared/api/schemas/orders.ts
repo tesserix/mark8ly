@@ -80,6 +80,12 @@ export const orderPersonalisationSchema = z.object({
   field_label: z.string(),
   kind: z.string(),
   text_value: z.string().optional(),
+  // How the buyer asked for the text to be produced. Absent when the
+  // field offered no choice, and on servers older than migration 000142.
+  text_font: z.string().optional(),
+  text_font_label: z.string().optional(),
+  text_colour_label: z.string().optional(),
+  text_colour_hex: z.string().optional(),
   price_delta: z.string(),
   position: z.number(),
   // image only

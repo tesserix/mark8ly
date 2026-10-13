@@ -41,6 +41,8 @@ export interface MockupConfigProps {
     mockup_storage_key: string | null;
     print_area: PrintAreaValue | null;
   }) => void;
+  /** What the buyer puts in the print area. Only changes the copy. */
+  subject?: "photo" | "text";
 }
 
 const DEFAULT_AREA: PrintAreaValue = { x: 25, y: 25, w: 50, h: 50 };
@@ -57,6 +59,7 @@ export function MockupConfig({
   printArea,
   busy = false,
   onSave,
+  subject = "photo",
 }: MockupConfigProps): React.ReactElement {
   const [selectedKey, setSelectedKey] = useState<string | undefined>(mockupStorageKey);
   const [area, setArea] = useState<PrintAreaValue>(printArea ?? DEFAULT_AREA);
@@ -84,8 +87,9 @@ export function MockupConfig({
           Mockup image
         </span>
         <p className="text-xs text-[var(--ink-500)]">
-          The photo the buyer sees their artwork on. Pick one of this
-          product&apos;s images.
+          {subject === "text"
+            ? "The photo the buyer sees their text on, as they type. Pick one of this product's images."
+            : "The photo the buyer sees their artwork on. Pick one of this product's images."}
         </p>
       </div>
 
@@ -115,8 +119,9 @@ export function MockupConfig({
               Print area
             </span>
             <p className="text-xs text-[var(--ink-500)]">
-              Percentages of the image. The dashed box is what the buyer&apos;s
-              photo will fill.
+              {subject === "text"
+                ? "Percentages of the image. The buyer's text is sized to fit inside the dashed box."
+                : "Percentages of the image. The dashed box is what the buyer's photo will fill."}
             </p>
           </div>
 

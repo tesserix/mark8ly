@@ -168,14 +168,32 @@ function PersonalisationRow({
   // Everything else is a text answer the merchant reads, never taps.
   const value = entry.text_value?.trim();
   if (!value) return null;
+  // The font and colour are part of what the merchant has to make, so
+  // they sit under the words rather than behind a tap.
+  const style = [entry.text_font_label, entry.text_colour_label].filter(Boolean).join(" · ");
   return (
     <View style={styles.personalisationRow}>
       <Text preset="caption" color="textSecondary">
         {entry.field_label}
       </Text>
-      <Text preset="caption" color="text" style={styles.personalisationValue}>
-        {value}
-      </Text>
+      <View style={styles.personalisationText}>
+        <Text preset="caption" color="text">
+          {value}
+        </Text>
+        {style ? (
+          <View style={styles.personalisationValue}>
+            {entry.text_colour_hex ? (
+              <View
+                accessible={false}
+                style={[styles.colourSwatch, { backgroundColor: entry.text_colour_hex }]}
+              />
+            ) : null}
+            <Text preset="caption" color="textSecondary">
+              {style}
+            </Text>
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -851,6 +869,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     flexShrink: 1,
+  },
+  personalisationText: { flexShrink: 1, alignItems: "flex-end", gap: 2 },
+  colourSwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.colors.border,
   },
   itemInfo: { flex: 1, gap: 2 },
   totalRow: {

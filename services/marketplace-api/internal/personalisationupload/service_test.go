@@ -90,3 +90,18 @@ func TestTTLIsLongEnoughToSleepOn(t *testing.T) {
 	// sleeping on the decision.
 	require.Equal(t, 72.0, TTL.Hours())
 }
+
+func TestPreviewFormat_KeepsTransparencyForPNGAndWebP(t *testing.T) {
+	cases := map[string]struct{ ct, ext string }{
+		"image/png":  {"image/png", ".png"},
+		"image/webp": {"image/png", ".png"},
+		"image/jpeg": {"image/jpeg", ".jpg"},
+		"":           {"image/jpeg", ".jpg"},
+	}
+	for in, want := range cases {
+		ct, ext := previewFormat(in)
+		if ct != want.ct || ext != want.ext {
+			t.Errorf("previewFormat(%q) = (%q, %q), want (%q, %q)", in, ct, ext, want.ct, want.ext)
+		}
+	}
+}

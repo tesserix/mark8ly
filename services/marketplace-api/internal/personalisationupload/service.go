@@ -257,9 +257,29 @@ type CropResult struct {
 	// SourceURL is a short-lived GET for the PRISTINE original, so the
 	// crop is always re-derived from full quality rather than compounding
 	// loss across repeated crops.
-	SourceURL string    `json:"source_url"`
-	UploadURL string    `json:"upload_url"`
-	ExpiresAt time.Time `json:"expires_at"`
+	SourceURL string `json:"source_url"`
+	UploadURL string `json:"upload_url"`
+	// ContentType is what UploadURL was signed for. The client must encode
+	// the preview in this format and send it as the Content-Type, or GCS
+	// rejects the PUT.
+	ContentType string    `json:"content_type"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+// previewFormat picks the preview's encoding from the original's.
+//
+// JPEG cannot hold transparency, so a transparent PNG logo came back from
+// the crop on a black square (2026-10-13, Bondi towel). PNG and WebP
+// originals therefore get a PNG preview. Not WebP: Safari's canvas cannot
+// encode it and silently hands back PNG bytes, which would then be stored
+// under a WebP name.
+func previewFormat(originalContentType string) (contentType, ext string) {
+	switch originalContentType {
+	case "image/png", "image/webp":
+		return "image/png", ".png"
+	default:
+		return "image/jpeg", ".jpg"
+	}
 }
 
 // PrepareCrop issues the pair of URLs the browser needs, and records the
@@ -285,8 +305,9 @@ func (s *Service) PrepareCrop(ctx context.Context, id, cartToken string, rect Cr
 		return nil, ErrUploadsDisabled
 	}
 
-	previewKey := up.StorageKeyOriginal + ".preview-" + uuid.NewString()[:8] + ".jpg"
-	putURL, expiresAt, err := putSigner.SignedUploadURL(ctx, previewKey, "image/jpeg", SignedURLTTL)
+	previewType, previewExt := previewFormat(up.ContentType)
+	previewKey := up.StorageKeyOriginal + ".preview-" + uuid.NewString()[:8] + previewExt
+	putURL, expiresAt, err := putSigner.SignedUploadURL(ctx, previewKey, previewType, SignedURLTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +323,7 @@ func (s *Service) PrepareCrop(ctx context.Context, id, cartToken string, rect Cr
 	if err := s.repo.SetCrop(ctx, id, cartToken, previewKey, encoded); err != nil {
 		return nil, err
 	}
-	return &CropResult{SourceURL: getURL, UploadURL: putURL, ExpiresAt: expiresAt}, nil
+	return &CropResult{SourceURL: getURL, UploadURL: putURL, ContentType: previewType, ExpiresAt: expiresAt}, nil
 }
 
 // PreviewURL hands the buyer a short-lived GET for their own image.

@@ -25,6 +25,7 @@ interface PhotonProperties {
   housenumber?: string;
   postcode?: string;
   city?: string;
+  district?: string;
   state?: string;
   country?: string;
   countrycode?: string;
@@ -48,9 +49,38 @@ interface AddressSuggestion {
   country: string;
 }
 
-function buildLine1(p: PhotonProperties): string {
-  const number = (p.housenumber ?? "").trim();
+// Photon answers a street ("Tagu Place") when the house itself is not in
+// OSM, and copying that over "5 Tagu pl" threw the number away. Keep the
+// number the shopper typed: "5", "12A", "3/15".
+const TYPED_NUMBER = /^(\d+[a-z]?(?:\/\d+[a-z]?)?)\s+\S/i;
+
+// Photon's `city` is the metro area in Australia and New Zealand
+// ("Sydney" for Kings Park), and carriers there validate the suburb, which
+// Photon calls `district`. Elsewhere `district` is a ward ("H/W Ward" in
+// Mumbai) and `city` is what a label needs.
+const SUBURB_COUNTRIES = new Set(["AU", "NZ"]);
+
+function buildCity(p: PhotonProperties): string {
+  const city = (p.city ?? "").trim();
+  const district = (p.district ?? "").trim();
+  if (SUBURB_COUNTRIES.has((p.countrycode ?? "").toUpperCase())) {
+    return district || city;
+  }
+  return city || district;
+}
+
+function typedNumberFor(street: string, q: string): string {
+  const m = q.trim().match(TYPED_NUMBER);
+  if (!m) return "";
+  // Only when this suggestion IS the street they are typing — "5" belongs
+  // on "Tagu Place" for "5 Tagu pl", not on "Platform 8".
+  const word = q.trim().slice(m[1]!.length).trim().split(/\s+/)[0]!.toLowerCase();
+  return street.toLowerCase().startsWith(word) ? m[1]! : "";
+}
+
+function buildLine1(p: PhotonProperties, q: string): string {
   const street = (p.street ?? p.name ?? "").trim();
+  const number = (p.housenumber ?? "").trim() || typedNumberFor(street, q);
   if (number && street) return `${number} ${street}`;
   return street || number;
 }
@@ -112,8 +142,8 @@ export async function GET(req: Request) {
       const p = f.properties;
       const s: AddressSuggestion = {
         description: "",
-        line1: buildLine1(p),
-        city: (p.city ?? "").trim(),
+        line1: buildLine1(p, q),
+        city: buildCity(p),
         region: (p.state ?? "").trim(),
         postal: (p.postcode ?? "").trim(),
         country: (p.countrycode ?? "").toUpperCase(),

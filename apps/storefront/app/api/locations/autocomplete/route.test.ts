@@ -41,6 +41,52 @@ describe("GET /api/locations/autocomplete", () => {
     expect(((await res.json()) as { data: unknown[] }).data).toEqual([]);
   });
 
+  it("gives the suburb, not the metro area, for an Australian address", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        photon([{ name: "Tagu Place", district: "Kings Park", city: "Sydney", state: "New South Wales", postcode: "2148", countrycode: "AU" }]),
+      ),
+    );
+
+    const res = await GET(new Request("http://x/api/locations/autocomplete?q=5+Tagu+pl&country=AU"));
+    const [s] = ((await res.json()) as { data: Array<{ city: string }> }).data;
+
+    expect(s?.city).toBe("Kings Park");
+  });
+
+  it("keeps the city for an Indian address, where district is a ward", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        photon([{ name: "Linking Road", district: "H/W Ward", city: "Mumbai", state: "Maharashtra", countrycode: "IN" }]),
+      ),
+    );
+
+    const res = await GET(new Request("http://x/api/locations/autocomplete?q=Linking+Road&country=IN"));
+    const [s] = ((await res.json()) as { data: Array<{ city: string }> }).data;
+
+    expect(s?.city).toBe("Mumbai");
+  });
+
+  it("keeps the house number the shopper typed when Photon only knows the street", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        photon([
+          { name: "Tagu Place", district: "Kings Park", city: "Sydney", countrycode: "AU" },
+          { name: "Platform 8", district: "Richmond", city: "Melbourne", countrycode: "AU" },
+          { housenumber: "7", street: "Tagu Place", district: "Kings Park", countrycode: "AU" },
+        ]),
+      ),
+    );
+
+    const res = await GET(new Request("http://x/api/locations/autocomplete?q=5+Tagu+pl&country=AU"));
+    const lines = ((await res.json()) as { data: Array<{ line1: string }> }).data.map((s) => s.line1);
+
+    expect(lines).toEqual(["5 Tagu Place", "Platform 8", "7 Tagu Place"]);
+  });
+
   it("does not restrict the search when no country is given", async () => {
     const fetchMock = vi.fn().mockResolvedValue(photon([]));
     vi.stubGlobal("fetch", fetchMock);

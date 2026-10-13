@@ -98,7 +98,7 @@ const EMPTY: Form = {
   is_default: false,
 };
 
-export function AddressBook() {
+export function AddressBook({ storeCountry }: { storeCountry?: string }) {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -127,7 +127,11 @@ export function AddressBook() {
       });
       return;
     }
-    setForm({ ...EMPTY, is_default: addresses.length === 0 });
+    setForm({
+      ...EMPTY,
+      country_code: storeCountry ?? "",
+      is_default: addresses.length === 0,
+    });
     setShowForm(true);
   }
 
@@ -141,7 +145,9 @@ export function AddressBook() {
       city: a.city,
       region: a.region ?? "",
       postal_code: a.postal_code ?? "",
-      country_code: a.country_code,
+      // A store sells into its own country, so an address saved elsewhere
+      // could never be shipped to. Editing it moves it onto the store's.
+      country_code: storeCountry ?? a.country_code,
       phone: a.phone ?? "",
       is_default: a.is_default ?? false,
     });
@@ -354,6 +360,7 @@ export function AddressBook() {
               })
             }
             disabled={saving}
+            lockCountry={Boolean(storeCountry)}
             idPrefix={form.id ? `book-edit-${form.id}` : "book-new"}
           />
           <label className="inline-flex items-center gap-2 text-sm">

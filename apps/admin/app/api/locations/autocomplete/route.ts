@@ -77,6 +77,12 @@ export async function GET(req: Request) {
   photonURL.searchParams.set("q", q);
   photonURL.searchParams.set("limit", "8");
   photonURL.searchParams.set("lang", "en");
+  // Restrict at the source, not only in the filter below. Photon ranks the
+  // whole world and returns its top `limit`, so filtering afterwards turns
+  // "5 Tagu Place" into eight Philippine streets and then into nothing.
+  if (/^[A-Z]{2}$/.test(countryFilter)) {
+    photonURL.searchParams.set("countrycode", countryFilter);
+  }
 
   let body: PhotonResponse;
   try {

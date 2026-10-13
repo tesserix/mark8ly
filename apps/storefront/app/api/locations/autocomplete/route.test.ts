@@ -24,7 +24,7 @@ describe("GET /api/locations/autocomplete", () => {
     const res = await GET(new Request("http://x/api/locations/autocomplete?q=5+Tagu+place&country=au"));
     const body = (await res.json()) as { data: Array<{ city: string; country: string }> };
 
-    const asked = new URL(fetchMock.mock.calls[0]![0] as string);
+    const asked = new URL(String(fetchMock.mock.calls[0]![0]));
     expect(asked.searchParams.get("countrycode")).toBe("AU");
     expect(body.data).toEqual([expect.objectContaining({ city: "Sydney", country: "AU" })]);
   });
@@ -93,7 +93,65 @@ describe("GET /api/locations/autocomplete", () => {
 
     await GET(new Request("http://x/api/locations/autocomplete?q=5+Tagu+place"));
 
-    const asked = new URL(fetchMock.mock.calls[0]![0] as string);
+    const asked = new URL(String(fetchMock.mock.calls[0]![0]));
     expect(asked.searchParams.has("countrycode")).toBe(false);
+  });
+});
+
+describe("GET /api/locations/autocomplete with Geoapify", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("uses Geoapify when the key is set, and reads its suburb as the suburb", async () => {
+    vi.stubEnv("GEOAPIFY_API_KEY", "k");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [{ housenumber: "5", street: "Tagu Place", suburb: "Kings Park", city: "Sydney", state: "New South Wales", postcode: "2148", country: "Australia", country_code: "au" }],
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await GET(new Request("http://x/api/locations/autocomplete?q=5+Tagu+pl&country=AU"));
+    const [s] = ((await res.json()) as { data: Array<{ line1: string; city: string; country: string }> }).data;
+
+    const asked = new URL(String(fetchMock.mock.calls[0]![0]));
+    expect(asked.host).toBe("api.geoapify.com");
+    expect(asked.searchParams.get("filter")).toBe("countrycode:au");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(s).toEqual(expect.objectContaining({ line1: "5 Tagu Place", city: "Kings Park", country: "AU" }));
+  });
+
+  it("falls back to Photon when Geoapify refuses, rather than showing nothing", async () => {
+    vi.stubEnv("GEOAPIFY_API_KEY", "k");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("quota", { status: 429 }))
+      .mockResolvedValueOnce(photon([{ name: "Tagu Place", district: "Kings Park", city: "Sydney", countrycode: "AU" }]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await GET(new Request("http://x/api/locations/autocomplete?q=5+Tagu+pl&country=AU"));
+    const [s] = ((await res.json()) as { data: Array<{ city: string }> }).data;
+
+    expect(new URL(String(fetchMock.mock.calls[1]![0])).host).toBe("photon.komoot.io");
+    expect(s?.city).toBe("Kings Park");
+  });
+
+  it("collapses the duplicate rows OSM keeps for one street", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        photon([
+          { name: "5th Avenue", city: "Taguig", postcode: "1634", countrycode: "PH", country: "Philippines" },
+          { name: "5th Avenue", city: "Taguig", postcode: "1634", countrycode: "PH", country: "Philippines" },
+        ]),
+      ),
+    );
+
+    const res = await GET(new Request("http://x/api/locations/autocomplete?q=5th+Ave"));
+    expect(((await res.json()) as { data: unknown[] }).data).toHaveLength(1);
   });
 });

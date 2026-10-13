@@ -171,7 +171,7 @@ export function ProductReviews({
 
   return (
     <section
-      className="border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-12"
+      className="mt-16 border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-12"
       aria-labelledby="reviews-heading"
     >
       <h2

@@ -201,7 +201,7 @@ export function ProductDetails({ product, storeSlug }: ProductDetailsProps) {
               <li key={c.slug}>
                 <Link
                   href={`/categories/${encodeURIComponent(c.slug)}`}
-                  className="rounded-full border border-[color:var(--storefront-text,var(--ink-900))]/15 px-3 py-1 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-80 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+                  className="inline-block rounded-full border border-[color:var(--storefront-text,var(--ink-900))]/15 px-3 py-1 text-sm text-[color:var(--storefront-text,var(--ink-900))] opacity-80 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
                 >
                   {c.name}
                 </Link>

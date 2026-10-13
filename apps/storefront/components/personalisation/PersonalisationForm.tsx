@@ -263,6 +263,10 @@ export function PersonalisationForm({
 
               {field.kind === "image" && (
                 <div className="flex flex-col gap-2">
+                  {/* The native input stays in the tab order and keeps its
+                      label, but is drawn as the large target below. The
+                      browser's "Choose file  No file chosen" read as fine
+                      print, and this is the one thing the buyer must do. */}
                   <input
                     id={field.id}
                     type="file"
@@ -270,11 +274,42 @@ export function PersonalisationForm({
                     disabled={state?.busy}
                     aria-invalid={problem ? true : undefined}
                     aria-describedby={describedBy}
-                    onChange={(e) => void handleFile(field, e.target.files?.[0])}
-                    className="text-sm"
+                    onChange={(e) => {
+                      void handleFile(field, e.target.files?.[0]);
+                      // Picking the same file again after Remove must fire.
+                      e.target.value = "";
+                    }}
+                    className="peer sr-only"
                   />
+                  <label
+                    htmlFor={field.id}
+                    aria-hidden
+                    className={`flex cursor-pointer items-center gap-3 rounded-md border border-dashed px-4 py-4 text-[color:var(--storefront-text,var(--ink-900))] transition-colors hover:border-[color:var(--storefront-accent,var(--moss-700))] hover:bg-[color:var(--storefront-accent,var(--moss-700))]/[0.04] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))] peer-disabled:cursor-wait peer-disabled:opacity-60 ${
+                      problem
+                        ? "border-[color:var(--storefront-danger)]"
+                        : "border-[color:var(--storefront-text,var(--ink-900))]/25"
+                    }`}
+                  >
+                    <svg viewBox="0 0 24 24" className="h-6 w-6 shrink-0 opacity-70" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <rect x="3" y="4" width="18" height="16" rx="2" />
+                      <circle cx="9" cy="10" r="2" />
+                      <path d="M21 16l-5-5-9 9" />
+                    </svg>
+                    <span className="flex flex-col">
+                      <span className="text-sm font-medium">
+                        {state?.busy
+                          ? "Uploading…"
+                          : (answer.uploadIds ?? []).length === 0
+                            ? "Choose a photo"
+                            : (field.max_images ?? 1) === 1
+                              ? "Choose a different photo"
+                              : "Add another photo"}
+                      </span>
+                      <span className="text-xs opacity-60">JPEG, PNG or WebP</span>
+                    </span>
+                  </label>
                   {state?.busy && (
-                    <p role="status" className="text-xs opacity-70">
+                    <p role="status" className="sr-only">
                       Uploading…
                     </p>
                   )}

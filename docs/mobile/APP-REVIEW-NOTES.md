@@ -38,7 +38,10 @@ wait for the owner to be at a computer.
 Core features:
 
 - **Dashboard** — revenue this month, today and this week, customer count
-- **Orders** — list and detail, fulfilment status, shipment tracking
+- **Orders** — list and detail, fulfilment status, shipment tracking, and
+  the personalisation a shopper asked for on an item: text (such as a name
+  to engrave) shown on the order line, and an uploaded photo that opens in
+  the browser through a short-lived link
 - **Products** — catalogue, variants, pricing, stock, product images
 - **Customers** — profiles, order history, and product reviews with replies
 - **Marketing** — email campaigns, coupons, gift cards, a loyalty programme
@@ -76,8 +79,9 @@ merchant accounts receive, so no email inbox is needed to complete sign-in.
 
 *Registration is not in the app.* Merchants create an account and their first
 store on mark8ly.com, in a browser. The app is for merchants who already have
-one. A signed-in user with no store is shown a "No store yet" screen with a
-link out to the web; there is no in-app sign-up to demonstrate.
+one. A signed-in user with no store is shown a "No store yet" screen telling
+them to ask the store owner for an invite. It has no link out to the web and
+no purchase path; there is no in-app sign-up to demonstrate.
 
 *Sign-in is in the app*, by email and password, Sign in with Google, or Sign
 in with Apple.

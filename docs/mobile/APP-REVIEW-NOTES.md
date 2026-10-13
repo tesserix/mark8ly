@@ -38,7 +38,10 @@ wait for the owner to be at a computer.
 Core features:
 
 - **Dashboard** — revenue this month, today and this week, customer count
-- **Orders** — list and detail, fulfilment status, shipment tracking
+- **Orders** — list and detail, fulfilment status, shipment tracking, and
+  the personalisation a shopper asked for on an item: text (such as a name
+  to engrave) shown on the order line, and an uploaded photo that opens in
+  the browser through a short-lived link
 - **Products** — catalogue, variants, pricing, stock, product images
 - **Customers** — profiles, order history, and product reviews with replies
 - **Marketing** — email campaigns, coupons, gift cards, a loyalty programme

@@ -77,7 +77,10 @@ export async function GET(req: Request) {
     const res = await fetch(photonURL.toString(), {
       headers: { "User-Agent": "mark8ly-storefront (+https://mark8ly.com)" },
       cache: "no-store",
-      signal: AbortSignal.timeout(4000),
+      // Public Photon takes 3–5 s per query (measured 2026-10-13, from the
+      // cluster and from Sydney alike). At 4 s most lookups were aborted
+      // and the shopper saw no suggestions at all.
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return NextResponse.json({ data: [] });
     body = (await res.json()) as PhotonResponse;

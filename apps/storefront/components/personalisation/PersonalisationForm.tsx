@@ -99,7 +99,6 @@ export function PersonalisationForm({
     field: StorefrontPersonalisationField;
     uploadId: string;
     sourceUrl: string;
-    uploadUrl: string;
   } | null>(null);
 
   const problemFor = useCallback(
@@ -179,14 +178,14 @@ export function PersonalisationForm({
         // A zero-origin, whole-image rectangle is a safe opening value:
         // the server validates it as positive, and the real one replaces
         // it the moment the buyer applies a crop.
-        const { sourceUrl, uploadUrl } = await prepareCrop(storeSlug, uploadId, {
+        const { sourceUrl } = await prepareCrop(storeSlug, uploadId, {
           x: 0,
           y: 0,
           w: 1,
           h: 1,
           rotation: 0,
         });
-        setCropping({ field, uploadId, sourceUrl, uploadUrl });
+        setCropping({ field, uploadId, sourceUrl });
         setUploads((u) => ({ ...u, [field.id]: { busy: false } }));
       } catch (err) {
         setUploads((u) => ({
@@ -208,7 +207,7 @@ export function PersonalisationForm({
   const applyCrop = useCallback(
     async (blob: Blob, box: CropBox, rotation: number) => {
       if (!cropping) return;
-      const { field, uploadId, uploadUrl } = cropping;
+      const { field, uploadId } = cropping;
       const rect: CropRect = {
         x: Math.round(box.x),
         y: Math.round(box.y),
@@ -228,7 +227,11 @@ export function PersonalisationForm({
         // record of what the buyer chose; a preview that fails to upload
         // leaves a correct crop with a stale thumbnail rather than a lost
         // choice, which is why the PUT is not rolled back on failure.
-        await prepareCrop(storeSlug, uploadId, rect);
+        // Upload to the URL THIS call returns. Every crop PATCH mints a new
+        // preview key and points the upload at it, so the URL from opening
+        // the dialog names an object nothing reads any more — the cart then
+        // showed a broken image for every cropped photo.
+        const { uploadUrl } = await prepareCrop(storeSlug, uploadId, rect);
         await uploadCropPreview(uploadUrl, blob);
         setCropVersion((v) => v + 1);
         setUploads((u) => ({ ...u, [field.id]: { busy: false } }));

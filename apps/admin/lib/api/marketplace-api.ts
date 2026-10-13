@@ -1022,6 +1022,12 @@ export interface AdminOrderPersonalisation {
   field_label: string;
   kind: string; // "image" | "text" | "textarea" | "select" | "checkbox"
   text_value?: string;
+  /** How the buyer asked for the text to be produced. */
+  text_font?: string;
+  text_font_label?: string;
+  text_colour_label?: string;
+  /** #RRGGBB: only the preview's approximation of the named colour. */
+  text_colour_hex?: string;
   price_delta: string;
   position: number;
   has_artwork: boolean;
@@ -2708,8 +2714,18 @@ export interface PersonalisationField {
   print_area?: PersonalisationPrintArea;
   price_delta?: string;
   options?: PersonalisationOption[];
+  /** text / textarea: catalogue font ids, in the order offered. */
+  text_fonts?: string[];
+  /** text / textarea: named swatches the merchant produces. */
+  text_colours?: PersonalisationTextColour[];
   created_at: string;
   updated_at: string;
+}
+
+export interface PersonalisationTextColour {
+  label: string;
+  /** #RRGGBB, how the buyer's preview approximates it. */
+  hex: string;
 }
 
 export interface CreatePersonalisationFieldInput {
@@ -2725,6 +2741,8 @@ export interface CreatePersonalisationFieldInput {
   mockup_storage_key?: string;
   print_area?: PersonalisationPrintArea;
   price_delta?: string;
+  text_fonts?: string[];
+  text_colours?: PersonalisationTextColour[];
   options?: Array<{
     value: string;
     label: string;
@@ -2744,6 +2762,9 @@ export interface UpdatePersonalisationFieldInput {
   mockup_storage_key?: string;
   print_area?: PersonalisationPrintArea;
   price_delta?: string;
+  /** [] clears; absent leaves alone. */
+  text_fonts?: string[];
+  text_colours?: PersonalisationTextColour[];
 }
 
 function personalisationUrl(storeId: string, productId: string): string {

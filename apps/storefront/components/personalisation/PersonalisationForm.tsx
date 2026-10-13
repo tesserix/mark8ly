@@ -24,6 +24,7 @@ import {
   uploadPersonalisationImage,
 } from "@/lib/personalisation-upload";
 import { MockupPreview } from "./MockupPreview";
+import { TextStylePicker } from "./TextStylePicker";
 import { usePersonalisationPreviews } from "./usePersonalisationPreviews";
 import {
   PREVIEW_MAX_DIMENSION,
@@ -460,6 +461,14 @@ export function PersonalisationForm({
                     {(answer.text ?? "").length}/{field.max_length}
                   </p>
                 )}
+
+              {(field.kind === "text" || field.kind === "textarea") && (
+                <TextStylePicker
+                  field={field}
+                  answer={answer}
+                  onChange={(patch) => setAnswer(field.id, patch)}
+                />
+              )}
 
               {problem && (
                 <p

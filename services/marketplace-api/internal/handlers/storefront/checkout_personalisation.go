@@ -39,6 +39,11 @@ type CheckoutPersonalisationRequest struct {
 	Text     *string `json:"text"`
 	OptionID *string `json:"option_id"`
 	Checked  *bool   `json:"checked"`
+	// text / textarea: how the buyer wants it produced. Lookup keys only —
+	// a font id from the field's text_fonts and a colour LABEL from its
+	// text_colours. The hex is read from the catalog, never the request.
+	Font   *string `json:"font"`
+	Colour *string `json:"colour"`
 }
 
 // resolvedPersonalisation is one validated answer, with every value taken
@@ -50,6 +55,11 @@ type resolvedPersonalisation struct {
 	TextValue  *string
 	PriceDelta decimal.Decimal
 	Position   int
+
+	// text / textarea, when the field offers them
+	TextFont        *string
+	TextColourLabel *string
+	TextColourHex   *string
 
 	// image only
 	StorageKeyOriginal *string
@@ -190,11 +200,21 @@ func (r personalisationResolver) resolveLine(
 			if value == "" {
 				continue
 			}
+			font, colour, styleErr := resolveTextStyle(f, a)
+			if styleErr != nil {
+				return nil, surcharge, styleErr
+			}
 			v := value
-			out = append(out, resolvedPersonalisation{
+			res := resolvedPersonalisation{
 				FieldKey: f.Key, FieldLabel: f.Label, Kind: f.Kind,
 				TextValue: &v, PriceDelta: decimal.Zero,
-			})
+				TextFont: font,
+			}
+			if colour != nil {
+				res.TextColourLabel = &colour.Label
+				res.TextColourHex = &colour.Hex
+			}
+			out = append(out, res)
 
 		case product.PersonalisationKindSelect:
 			a := supplied[0]
@@ -254,6 +274,62 @@ func (r personalisationResolver) resolveLine(
 	}
 
 	return out, surcharge, nil
+}
+
+// resolveTextStyle turns the buyer's font and colour into catalog values.
+//
+// A field that offers none of a thing records none, whatever was sent. A
+// field that does offer them always records one: an absent choice is the
+// first listed, which is also what the buyer's preview showed. A choice
+// the field does not offer fails the line, the same as an unknown option
+// id, because guessing would produce something nobody asked for.
+func resolveTextStyle(
+	f *product.PersonalisationField, a CheckoutPersonalisationRequest,
+) (*string, *product.TextColour, error) {
+	var font *string
+	if len(f.TextFonts) > 0 {
+		pick := f.TextFonts[0]
+		if a.Font != nil && *a.Font != "" {
+			pick = ""
+			for _, id := range f.TextFonts {
+				if id == *a.Font {
+					pick = id
+					break
+				}
+			}
+			if pick == "" {
+				return nil, nil, &personalisationProblem{
+					FieldKey: f.Key, FieldLabel: f.Label,
+					Code:   ProblemInvalid,
+					Reason: fmt.Sprintf("That font is not available for %q.", f.Label),
+				}
+			}
+		}
+		font = &pick
+	}
+
+	var colour *product.TextColour
+	if offered := f.DecodeTextColours(); len(offered) > 0 {
+		pick := offered[0]
+		if a.Colour != nil && *a.Colour != "" {
+			found := false
+			for _, c := range offered {
+				if strings.EqualFold(c.Label, strings.TrimSpace(*a.Colour)) {
+					pick, found = c, true
+					break
+				}
+			}
+			if !found {
+				return nil, nil, &personalisationProblem{
+					FieldKey: f.Key, FieldLabel: f.Label,
+					Code:   ProblemInvalid,
+					Reason: fmt.Sprintf("That colour is not available for %q.", f.Label),
+				}
+			}
+		}
+		colour = &pick
+	}
+	return font, colour, nil
 }
 
 // loadUpload fetches an upload and proves the caller may use it.

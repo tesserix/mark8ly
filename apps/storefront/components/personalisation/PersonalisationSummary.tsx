@@ -19,6 +19,8 @@
 
 import Image from "next/image";
 
+import { personalisationFontLabel } from "@repo/ui/personalisation-fonts";
+
 import type { CartItemPersonalisation } from "@/lib/cart";
 import { isExpired, type PreviewLookup } from "@/lib/personalisation-previews";
 import { answerText, EXPIRED_MESSAGE } from "@/lib/personalisation-summary";
@@ -121,7 +123,23 @@ export function PersonalisationSummary({
               ) : value ? (
                 // pre-wrap: the buyer's line breaks are theirs, and an
                 // engraving that loses them is the wrong engraving.
-                <span className="whitespace-pre-wrap break-words">{value}</span>
+                <>
+                  <span className="whitespace-pre-wrap break-words">{value}</span>
+                  {entry.font || entry.colour ? (
+                    <span className="flex items-center gap-1.5 opacity-80">
+                      {entry.colourHex ? (
+                        <span
+                          aria-hidden
+                          className="inline-block h-2.5 w-2.5 rounded-full border border-[color:var(--storefront-text,var(--ink-900))]/20"
+                          style={{ backgroundColor: entry.colourHex }}
+                        />
+                      ) : null}
+                      {[entry.font ? personalisationFontLabel(entry.font) : null, entry.colour]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  ) : null}
+                </>
               ) : entry.uploadId ? (
                 <span className="opacity-70">Your photo</span>
               ) : null}

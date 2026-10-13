@@ -255,9 +255,14 @@ function OrderItemRow({ item }: { item: OrderItem }) {
                     <span className="font-medium">{p.field_label}</span>
                     {p.text_value ? (
                       // pre-wrap: the buyer's line breaks are theirs.
-                      <span className="whitespace-pre-wrap break-words">
-                        {p.text_value}
-                      </span>
+                      <>
+                        <span className="whitespace-pre-wrap break-words">
+                          {p.text_value}
+                        </span>
+                        {p.text_style ? (
+                          <span className="opacity-70">{p.text_style}</span>
+                        ) : null}
+                      </>
                     ) : p.has_artwork ? (
                       <span className="opacity-70">Your photo</span>
                     ) : null}

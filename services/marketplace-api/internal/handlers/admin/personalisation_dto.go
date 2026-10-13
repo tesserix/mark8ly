@@ -51,7 +51,16 @@ type CreatePersonalisationFieldBody struct {
 	PrintArea        *PrintAreaDTO    `json:"print_area"`
 	PriceDelta       *decimal.Decimal `json:"price_delta"`
 
+	TextFonts   []string        `json:"text_fonts"`
+	TextColours []TextColourDTO `json:"text_colours"`
+
 	Options []PersonalisationOptionDTO `json:"options"`
+}
+
+// TextColourDTO is one named swatch a text field offers.
+type TextColourDTO struct {
+	Label string `json:"label"`
+	Hex   string `json:"hex"`
 }
 
 // PatchPersonalisationFieldBody is PATCH .../personalisation-fields/:fieldId.
@@ -68,6 +77,10 @@ type PatchPersonalisationFieldBody struct {
 	MockupStorageKey *string          `json:"mockup_storage_key"`
 	PrintArea        *PrintAreaDTO    `json:"print_area"`
 	PriceDelta       *decimal.Decimal `json:"price_delta"`
+
+	// Absent leaves the list alone; [] clears it.
+	TextFonts   *[]string        `json:"text_fonts"`
+	TextColours *[]TextColourDTO `json:"text_colours"`
 }
 
 // PatchPersonalisationOptionBody is PATCH .../options/:optionId. An
@@ -112,6 +125,9 @@ type PersonalisationFieldResponse struct {
 	PrintArea        *PrintAreaDTO    `json:"print_area,omitempty"`
 	PriceDelta       *decimal.Decimal `json:"price_delta,omitempty"`
 
+	TextFonts   []string        `json:"text_fonts,omitempty"`
+	TextColours []TextColourDTO `json:"text_colours,omitempty"`
+
 	Options []PersonalisationOptionResponse `json:"options,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
@@ -124,6 +140,18 @@ func toServicePrintArea(in *PrintAreaDTO) *product.PrintAreaRect {
 		return nil
 	}
 	return &product.PrintAreaRect{X: in.X, Y: in.Y, W: in.W, H: in.H}
+}
+
+// toServiceTextColours converts the wire swatches to the domain's.
+func toServiceTextColours(in []TextColourDTO) []product.TextColour {
+	if in == nil {
+		return nil
+	}
+	out := make([]product.TextColour, 0, len(in))
+	for _, c := range in {
+		out = append(out, product.TextColour{Label: c.Label, Hex: c.Hex})
+	}
+	return out
 }
 
 // toServiceOptionSpecs converts the wire option list to the domain's.
@@ -172,6 +200,12 @@ func ToPersonalisationFieldResponse(f *product.PersonalisationField) Personalisa
 		if err := json.Unmarshal(*f.PrintArea, &r); err == nil {
 			out.PrintArea = &r
 		}
+	}
+	if len(f.TextFonts) > 0 {
+		out.TextFonts = []string(f.TextFonts)
+	}
+	for _, c := range f.DecodeTextColours() {
+		out.TextColours = append(out.TextColours, TextColourDTO{Label: c.Label, Hex: c.Hex})
 	}
 	for _, o := range f.Options {
 		out.Options = append(out.Options, PersonalisationOptionResponse{

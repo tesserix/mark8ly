@@ -209,11 +209,13 @@ describe("toCheckoutPersonalisation", () => {
     // fieldLabel and optionLabel exist so the cart can render without a
     // network call. The server reprices every answer from the catalog
     // and has no use for them.
+    // colourHex is the same kind of extra: the server reads the hex from
+    // the catalog by the colour's label.
     const out = toCheckoutPersonalisation([
-      { fieldId: "f1", fieldLabel: "Finish", optionId: "o1", optionLabel: "Matte" },
+      { fieldId: "f1", fieldLabel: "Finish", optionId: "o1", optionLabel: "Matte", colourHex: "#FFFFFF" },
     ]);
     const keys = Object.keys(out![0]!).sort();
-    expect(keys).toEqual(["checked", "field_id", "option_id", "text", "upload_id"]);
+    expect(keys).toEqual(["checked", "colour", "field_id", "font", "option_id", "text", "upload_id"]);
   });
 
   it("is undefined for a line with nothing on it", () => {

@@ -6,6 +6,7 @@
     "./styles/*.css": "./src/styles/*.css",
     "./storefront-theme": "./src/storefront-theme.ts",
     "./crop-image": "./src/crop-image.ts",
+    "./personalisation-fonts": "./src/personalisation-fonts.ts",
     "./subscription": "./src/subscription/index.ts",
     "./subscription/*": "./src/subscription/*.tsx",
     "./auth/exchange-code": "./src/auth/exchange-code.ts",

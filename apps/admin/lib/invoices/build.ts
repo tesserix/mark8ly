@@ -84,7 +84,13 @@ function finalize(
           // Uploads print their reference code, not a filename: the
           // merchant matches the code against the downloaded file, and a
           // buyer's filename ("IMG_4821.jpg") identifies nothing.
-          value: pz.has_artwork ? undefined : (pz.text_value ?? undefined),
+          // The font and colour travel with the words: they are part of
+          // what the merchant has to produce.
+          value: pz.has_artwork
+            ? undefined
+            : pz.text_value === undefined
+              ? undefined
+              : [pz.text_value, styleOf(pz)].filter(Boolean).join(" — "),
           reference: pz.has_artwork ? pz.reference : undefined,
         })),
     })),
@@ -115,4 +121,9 @@ function finalize(
     },
     notes: kind === "receipt" ? RECEIPT_NOTE : INVOICE_NOTE,
   };
+}
+
+/** "Script, Gold foil", or "" when the field offered no choice. */
+function styleOf(pz: { text_font_label?: string; text_colour_label?: string }): string {
+  return [pz.text_font_label, pz.text_colour_label].filter(Boolean).join(", ");
 }

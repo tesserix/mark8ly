@@ -10,7 +10,10 @@
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
 
-import type { PersonalisationField } from "@/lib/api/marketplace-api";
+import type {
+  PersonalisationField,
+  PersonalisationTextColour,
+} from "@/lib/api/marketplace-api";
 import { Field } from "@/components/products/form/Field";
 import { fieldSummary, inputClass, keyFromLabel, kindLabel } from "./kinds";
 
@@ -19,6 +22,7 @@ import {
   type MockupMedia,
   type PrintAreaValue,
 } from "./MockupConfig";
+import { TextStyleConfig } from "./TextStyleConfig";
 
 export interface PersonalisationFieldCardProps {
   field: PersonalisationField;
@@ -44,6 +48,8 @@ export interface PersonalisationFieldCardProps {
     max_images?: number;
     min_px?: number;
     price_delta?: string;
+    text_fonts?: string[];
+    text_colours?: PersonalisationTextColour[];
   }) => void;
   onDelete: () => void;
   onAddOption: (input: { value: string; label: string; price_delta?: string }) => void;
@@ -73,6 +79,7 @@ export function PersonalisationFieldCard({
   const [newOption, setNewOption] = useState({ label: "", price_delta: "" });
 
   const options = field.options ?? [];
+  const isText = field.kind === "text" || field.kind === "textarea";
 
   function saveEdits(): void {
     const patch: Parameters<typeof onPatch>[0] = {};
@@ -201,7 +208,18 @@ export function PersonalisationFieldCard({
             </div>
           )}
 
-          {field.kind === "image" && onSaveMockup ? (
+          {isText && (
+            <div className="rounded-md border border-[var(--ink-100)] p-3">
+              <TextStyleConfig
+                fonts={field.text_fonts ?? []}
+                colours={field.text_colours ?? []}
+                busy={busy}
+                onSave={(patch) => onPatch(patch)}
+              />
+            </div>
+          )}
+
+          {(field.kind === "image" || isText) && onSaveMockup ? (
             <div className="rounded-md border border-[var(--ink-100)] p-3">
               <MockupConfig
                 media={media ?? []}
@@ -209,6 +227,7 @@ export function PersonalisationFieldCard({
                 printArea={field.print_area}
                 busy={busy}
                 onSave={onSaveMockup}
+                subject={isText ? "text" : "photo"}
               />
             </div>
           ) : null}

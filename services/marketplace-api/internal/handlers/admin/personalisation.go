@@ -98,6 +98,8 @@ func (h *PersonalisationHandler) Create(c *gin.Context) {
 		MockupStorageKey: body.MockupStorageKey,
 		PrintArea:        toServicePrintArea(body.PrintArea),
 		PriceDelta:       body.PriceDelta,
+		TextFonts:        body.TextFonts,
+		TextColours:      toServiceTextColours(body.TextColours),
 		Options:          toServiceOptionSpecs(body.Options),
 	})
 	if err != nil {
@@ -129,6 +131,8 @@ func (h *PersonalisationHandler) Patch(c *gin.Context) {
 		MockupStorageKey: body.MockupStorageKey,
 		PrintArea:        toServicePrintArea(body.PrintArea),
 		PriceDelta:       body.PriceDelta,
+		TextFonts:        body.TextFonts,
+		TextColours:      patchTextColours(body.TextColours),
 	})
 	if err != nil {
 		RespondErr(c, err, h.logger)
@@ -268,4 +272,17 @@ func respondFieldCap(c *gin.Context, plan subscription.SubscriptionPlan, limit, 
 		"current": current,
 		"plan":    string(plan),
 	})
+}
+
+// patchTextColours keeps the PATCH distinction between an absent list
+// (leave alone) and an empty one (clear).
+func patchTextColours(in *[]TextColourDTO) *[]product.TextColour {
+	if in == nil {
+		return nil
+	}
+	out := toServiceTextColours(*in)
+	if out == nil {
+		out = []product.TextColour{}
+	}
+	return &out
 }

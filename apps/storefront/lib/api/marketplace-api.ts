@@ -145,6 +145,21 @@ export interface StorefrontPersonalisationField {
   print_area?: { x: number; y: number; w: number; h: number };
   price_delta?: string;
   options?: StorefrontPersonalisationOption[];
+  /**
+   * text / textarea: what the buyer may choose for how the text is
+   * produced. Font ids are catalogue ids (@repo/ui/personalisation-fonts).
+   * The first of each is the default, and the preview shows it before any
+   * pick, which is also what checkout records when nothing is sent.
+   */
+  text_fonts?: string[];
+  text_colours?: StorefrontTextColour[];
+}
+
+/** A named colour the merchant produces, and how the preview shows it. */
+export interface StorefrontTextColour {
+  label: string;
+  /** #RRGGBB. The preview's approximation, not the product. */
+  hex: string;
 }
 
 export interface StorefrontCategory {

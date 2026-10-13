@@ -37,6 +37,12 @@ export interface CartItemPersonalisation {
   optionId?: string;
   checked?: boolean;
   /**
+   * The buyer's font id and colour label for a text answer. Part of the
+   * line's identity: "Asha" in gold and "Asha" in white are two products.
+   */
+  font?: string;
+  colour?: string;
+  /**
    * Display-only snapshots taken at add-to-cart (#966).
    *
    * The cart has to render "Name to engrave: Asha" without a network
@@ -57,6 +63,8 @@ export interface CartItemPersonalisation {
    */
   fieldLabel?: string;
   optionLabel?: string;
+  /** Display-only: the colour's swatch, for the cart row. */
+  colourHex?: string;
 }
 
 export interface CartItem {
@@ -126,13 +134,19 @@ export function personalisationFingerprint(
 ): string {
   if (!entries || entries.length === 0) return "";
   const canonical = entries
-    .map((e) => [
-      e.fieldId,
-      e.uploadId ?? "",
-      e.text ?? "",
-      e.optionId ?? "",
-      e.checked === undefined ? "" : String(e.checked),
-    ])
+    .map((e) => {
+      const tuple = [
+        e.fieldId,
+        e.uploadId ?? "",
+        e.text ?? "",
+        e.optionId ?? "",
+        e.checked === undefined ? "" : String(e.checked),
+      ];
+      // Appended only when present, so every line stored before styling
+      // existed keeps exactly the key it had and still merges.
+      if (e.font || e.colour) tuple.push(e.font ?? "", e.colour ?? "");
+      return tuple;
+    })
     .sort((a, b) => (a[0]! < b[0]! ? -1 : a[0]! > b[0]! ? 1 : 0));
   return JSON.stringify(canonical);
 }

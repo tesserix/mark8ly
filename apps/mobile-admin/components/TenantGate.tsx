@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   AppState,
   type AppStateStatus,
-  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -11,7 +10,6 @@ import {
 } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@repo/mobile-shared/api/client";
-import { useEnvironment } from "@repo/mobile-shared/config/env";
 import { useTenantResolver } from "@/lib/hooks/use-tenant-resolver";
 import { StorePicker } from "@/components/StorePicker";
 import { EmptyState, Screen, Text } from "@/components/ui";
@@ -22,12 +20,11 @@ import { theme } from "@/lib/theme";
  * resolved. Three states:
  *
  *   - resolving:        spinner while we fetch + auto-select a store.
- *   - needsOnboarding:  user has no stores → CTA to mark8ly.com to register.
+ *   - needsOnboarding:  user has no stores → ask the owner for an invite.
  *   - error:            fetch failed → retry button.
  *   - ready:            render children.
  */
 export function TenantGate({ children }: { children: ReactNode }) {
-  const env = useEnvironment();
   const queryClient = useQueryClient();
   const {
     resolving,
@@ -41,7 +38,6 @@ export function TenantGate({ children }: { children: ReactNode }) {
   // NativeWind's JSX interop doesn't resolve a function `style` prop the way
   // it resolves a plain array — press state is tracked explicitly instead.
   const [retryPressed, setRetryPressed] = useState(false);
-  const [createStorePressed, setCreateStorePressed] = useState(false);
 
   useEffect(() => {
     // Re-validate the session whenever the app comes back to foreground.
@@ -112,31 +108,17 @@ export function TenantGate({ children }: { children: ReactNode }) {
   }
 
   if (needsOnboarding) {
+    // No link out to the web here, deliberately. App Review reads any button
+    // to mark8ly.com from this screen as a call to action to buy a plan
+    // outside the app, and that is what Guideline 3.1.3(f) forbids. Staff
+    // reach a store by being invited to it, so the copy says that instead.
     return (
       <Screen>
         <View style={styles.center}>
-          {/* CENTRED for the same reason as the error gate above — a gate
-              screen with a centred CTA beneath it, not a list. */}
           <EmptyState
             title="No store yet"
-            message="Create your first store on mark8ly.com to start selling."
+            message="This account isn't part of a store. Ask the store owner to invite you, then sign in again."
           />
-          <Pressable
-            onPress={() => Linking.openURL(env.signupUrl)}
-            onPressIn={() => setCreateStorePressed(true)}
-            onPressOut={() => setCreateStorePressed(false)}
-            accessibilityRole="link"
-            accessibilityLabel="Open mark8ly.com to create a new store"
-            android_ripple={theme.press.rippleOnDark}
-            style={[
-              styles.primaryBtn,
-              createStorePressed && Platform.OS === "ios" ? { opacity: theme.press.opacitySolidFill } : null,
-            ]}
-          >
-            <Text preset="bodyEmphasis" color="inverse">
-              Create a new store
-            </Text>
-          </Pressable>
         </View>
       </Screen>
     );

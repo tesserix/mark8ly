@@ -76,8 +76,9 @@ merchant accounts receive, so no email inbox is needed to complete sign-in.
 
 *Registration is not in the app.* Merchants create an account and their first
 store on mark8ly.com, in a browser. The app is for merchants who already have
-one. A signed-in user with no store is shown a "No store yet" screen with a
-link out to the web; there is no in-app sign-up to demonstrate.
+one. A signed-in user with no store is shown a "No store yet" screen telling
+them to ask the store owner for an invite. It has no link out to the web and
+no purchase path; there is no in-app sign-up to demonstrate.
 
 *Sign-in is in the app*, by email and password, Sign in with Google, or Sign
 in with Apple.

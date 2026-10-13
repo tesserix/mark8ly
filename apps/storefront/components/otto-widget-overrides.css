@@ -79,3 +79,15 @@
     padding-bottom: env(safe-area-inset-bottom, 0px) !important;
   }
 }
+
+/* 3. Get out of the way of our own modals.
+ *
+ * Upstream pins the widget at z-index 2147483000, above every dialog the
+ * storefront owns. The full-screen photo crop puts "Use this crop" in the
+ * same bottom-right corner, and the launcher sat on top of it. A modal
+ * already owns the screen, so hide the widget for as long as one is open
+ * rather than racing its z-index. The guard on the widget's own panel
+ * keeps an open chat from hiding itself. */
+body:has([role="dialog"][aria-modal="true"]:not(.otto-widget *)) .otto-widget {
+  display: none !important;
+}

@@ -1,23 +1,16 @@
 // GET /api/locations/autocomplete?q=...&country=...
 //
-// Address-suggestion proxy backed by Photon (https://photon.komoot.io)
-// — Komoot's free OpenStreetMap geocoder. No API key, no billing
-// account, attribution requested in the UI.
-//
-// Why Photon and not Google Places: Photon is free at unlimited scale
-// and good enough for shipping-warehouse address entry where the
-// merchant types a partial street address and clicks the right hit.
-// Google Places + Maps JavaScript API would be higher-quality but
-// requires an API key, billing, and per-session pricing. We can swap
-// providers later by changing this single route.
-//
-// Response shape mirrors what `<AddressFieldset>` consumes — pre-parsed
-// AddressValue fragments so the client doesn't have to know about
-// Photon / OSM property names.
+// Address suggestions for the admin's address forms (warehouses, store address). Geoapify answers when
+// GEOAPIFY_API_KEY is set (~200 ms); otherwise, or if Geoapify fails,
+// public Photon does (free, 3–5 s). Both are OpenStreetMap data, so they
+// are normalised to Photon's field names and share everything below.
+// The key never reaches the browser — this route is the only caller.
 
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+
+const USER_AGENT = "mark8ly-admin (+https://mark8ly.com)";
 
 interface PhotonProperties {
   name?: string;
@@ -29,15 +22,27 @@ interface PhotonProperties {
   state?: string;
   country?: string;
   countrycode?: string;
-  type?: string;
-}
-
-interface PhotonFeature {
-  properties: PhotonProperties;
 }
 
 interface PhotonResponse {
-  features: PhotonFeature[];
+  features?: Array<{ properties: PhotonProperties }>;
+}
+
+interface GeoapifyResult {
+  name?: string;
+  street?: string;
+  housenumber?: string;
+  postcode?: string;
+  suburb?: string;
+  district?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  country_code?: string;
+}
+
+interface GeoapifyResponse {
+  results?: GeoapifyResult[];
 }
 
 interface AddressSuggestion {
@@ -49,15 +54,85 @@ interface AddressSuggestion {
   country: string;
 }
 
-// Photon answers a street ("Tagu Place") when the house itself is not in
-// OSM, and copying that over "5 Tagu pl" threw the number away. Keep the
+// Geoapify's `suburb` is what Photon calls `district` (Kings Park, Bondi);
+// map it there so buildCity treats both providers the same.
+function fromGeoapify(r: GeoapifyResult): PhotonProperties {
+  return {
+    name: r.name,
+    street: r.street,
+    housenumber: r.housenumber,
+    postcode: r.postcode,
+    city: r.city,
+    district: r.suburb ?? r.district,
+    state: r.state,
+    country: r.country,
+    countrycode: r.country_code,
+  };
+}
+
+async function searchGeoapify(
+  q: string,
+  country: string,
+  apiKey: string,
+): Promise<PhotonProperties[] | null> {
+  const url = new URL("https://api.geoapify.com/v1/geocode/autocomplete");
+  url.searchParams.set("text", q);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("limit", "8");
+  url.searchParams.set("lang", "en");
+  if (country) url.searchParams.set("filter", `countrycode:${country.toLowerCase()}`);
+  url.searchParams.set("apiKey", apiKey);
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT },
+      cache: "no-store",
+      signal: AbortSignal.timeout(3000),
+    });
+    // null, not [], so a quota or key failure falls back to Photon rather
+    // than looking like "no such address".
+    if (!res.ok) return null;
+    const body = (await res.json()) as GeoapifyResponse;
+    return (body.results ?? []).map(fromGeoapify);
+  } catch {
+    return null;
+  }
+}
+
+async function searchPhoton(q: string, country: string): Promise<PhotonProperties[]> {
+  const url = new URL("https://photon.komoot.io/api/");
+  url.searchParams.set("q", q);
+  url.searchParams.set("limit", "8");
+  url.searchParams.set("lang", "en");
+  // Restrict at the source, not only in the filter below. Photon ranks the
+  // whole world and returns its top `limit`, so filtering afterwards turns
+  // "5 Tagu Place" into eight Philippine streets and then into nothing.
+  if (country) url.searchParams.set("countrycode", country);
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT },
+      cache: "no-store",
+      // Public Photon takes 3–5 s per query (measured 2026-10-13, from the
+      // cluster and from Sydney alike). At 4 s most lookups were aborted
+      // and the shopper saw no suggestions at all.
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as PhotonResponse;
+    return (body.features ?? []).map((f) => f.properties);
+  } catch {
+    return [];
+  }
+}
+
+// A provider answers a street ("Tagu Place") when the house itself is not
+// in OSM, and copying that over "5 Tagu pl" threw the number away. Keep the
 // number the shopper typed: "5", "12A", "3/15".
 const TYPED_NUMBER = /^(\d+[a-z]?(?:\/\d+[a-z]?)?)\s+\S/i;
 
-// Photon's `city` is the metro area in Australia and New Zealand
-// ("Sydney" for Kings Park), and carriers there validate the suburb, which
-// Photon calls `district`. Elsewhere `district` is a ward ("H/W Ward" in
-// Mumbai) and `city` is what a label needs.
+// `city` is the metro area in Australia and New Zealand ("Sydney" for Kings
+// Park), and carriers there validate the suburb, which is `district` here.
+// Elsewhere `district` is a ward ("H/W Ward" in Mumbai) and `city` is what
+// a label needs.
 const SUBURB_COUNTRIES = new Set(["AU", "NZ"]);
 
 function buildCity(p: PhotonProperties): string {
@@ -95,51 +170,22 @@ function buildDescription(s: AddressSuggestion, p: PhotonProperties): string {
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim() ?? "";
-  const countryFilter = (url.searchParams.get("country") ?? "")
-    .trim()
-    .toUpperCase();
+  const countryParam = (url.searchParams.get("country") ?? "").trim().toUpperCase();
+  const country = /^[A-Z]{2}$/.test(countryParam) ? countryParam : "";
 
   if (q.length < 3) {
     return NextResponse.json({ data: [] });
   }
 
-  const photonURL = new URL("https://photon.komoot.io/api/");
-  photonURL.searchParams.set("q", q);
-  photonURL.searchParams.set("limit", "8");
-  photonURL.searchParams.set("lang", "en");
-  // Restrict at the source, not only in the filter below. Photon ranks the
-  // whole world and returns its top `limit`, so filtering afterwards turns
-  // "5 Tagu Place" into eight Philippine streets and then into nothing.
-  if (/^[A-Z]{2}$/.test(countryFilter)) {
-    photonURL.searchParams.set("countrycode", countryFilter);
-  }
+  const apiKey = process.env.GEOAPIFY_API_KEY?.trim();
+  const places =
+    (apiKey ? await searchGeoapify(q, country, apiKey) : null) ??
+    (await searchPhoton(q, country));
 
-  let body: PhotonResponse;
-  try {
-    const res = await fetch(photonURL.toString(), {
-      headers: { "User-Agent": "mark8ly-admin (+https://mark8ly.com)" },
-      cache: "no-store",
-      // Photon usually answers in <300ms; bound it.
-      // Public Photon takes 3–5 s per query (measured 2026-10-13, from the
-      // cluster and from Sydney alike). At 4 s most lookups were aborted
-      // and the shopper saw no suggestions at all.
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) {
-      return NextResponse.json({ data: [] });
-    }
-    body = (await res.json()) as PhotonResponse;
-  } catch {
-    return NextResponse.json({ data: [] });
-  }
-
-  const data: AddressSuggestion[] = (body.features ?? [])
-    .filter((f) => {
-      if (!countryFilter) return true;
-      return (f.properties.countrycode ?? "").toUpperCase() === countryFilter;
-    })
-    .map((f) => {
-      const p = f.properties;
+  const seen = new Set<string>();
+  const data: AddressSuggestion[] = places
+    .filter((p) => !country || (p.countrycode ?? "").toUpperCase() === country)
+    .map((p) => {
       const s: AddressSuggestion = {
         description: "",
         line1: buildLine1(p, q),
@@ -151,8 +197,14 @@ export async function GET(req: Request) {
       s.description = buildDescription(s, p);
       return s;
     })
-    // Drop empty rows that Photon occasionally returns for vague queries.
-    .filter((s) => s.description.length > 0 && (s.line1 || s.city));
+    // Drop empty rows, and the duplicates OSM holds for one street split
+    // into several ways (the screenshot that started this had five).
+    .filter((s) => {
+      if (s.description.length === 0 || !(s.line1 || s.city)) return false;
+      if (seen.has(s.description)) return false;
+      seen.add(s.description);
+      return true;
+    });
 
   return NextResponse.json({ data });
 }

@@ -60,9 +60,28 @@ export function TextStyleConfig({
     setDraft({ label: "", hex: draft.hex });
   }
 
+  // A colour typed into the add row but never added still counts. A
+  // merchant who names "Gold foil" and goes straight to Save means it, and
+  // dropping it silently left a field that saved fonts and no colours.
+  const pendingColour: PersonalisationTextColour | null = canAddColour
+    ? { label: draftLabel, hex: draft.hex.toUpperCase() }
+    : null;
+  const toSave = pendingColour ? [...colours, pendingColour] : colours;
+  // A name that cannot be added (a duplicate) would be dropped on save, so
+  // saving waits until the merchant fixes or clears it.
+  const draftBlocked = draftLabel !== "" && !canAddColour;
+
   const dirty =
     JSON.stringify(fonts) !== JSON.stringify(savedFonts) ||
-    JSON.stringify(colours) !== JSON.stringify(savedColours);
+    JSON.stringify(toSave) !== JSON.stringify(savedColours);
+
+  function save(): void {
+    if (pendingColour) {
+      setColours(toSave);
+      setDraft({ label: "", hex: draft.hex });
+    }
+    onSave({ text_fonts: fonts, text_colours: toSave });
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -176,8 +195,8 @@ export function TextStyleConfig({
       <div>
         <button
           type="button"
-          disabled={busy || !dirty}
-          onClick={() => onSave({ text_fonts: fonts, text_colours: colours })}
+          disabled={busy || !dirty || draftBlocked}
+          onClick={save}
           className="rounded-md bg-[var(--ink-900)] px-3 py-1.5 text-xs text-[var(--paper-200)] disabled:opacity-40"
         >
           Save fonts and colours

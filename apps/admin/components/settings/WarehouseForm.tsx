@@ -16,6 +16,11 @@ import {
 } from "@/components/forms/AddressFieldset";
 import type { Warehouse, WarehouseWriteInput } from "@/lib/api/warehouses-api";
 
+// Countries whose carriers refuse a rate request without a state. Mirrors
+// regionRequiredCountries in marketplace-api's warehouses handler, which is
+// the authority.
+const REGION_REQUIRED = new Set(["AU", "BR", "CA", "IN", "MX", "US"]);
+
 interface WarehouseFormProps {
   /** Absent when creating. */
   existing?: Warehouse;
@@ -60,6 +65,11 @@ export function WarehouseForm({
     if (!address.city.trim()) return "City is required.";
     if (!address.postal.trim()) return "Postcode is required.";
     if (address.country.trim().length !== 2) return "Select a country.";
+    // An empty state saved fine and then broke checkout: the carrier
+    // rejected every rate request and buyers saw no delivery options.
+    if (REGION_REQUIRED.has(address.country.trim().toUpperCase()) && !address.region.trim()) {
+      return "Select a state — carriers reject rate requests without one, and your storefront would show no delivery options.";
+    }
     // Not bureaucracy: a warehouse saved without a phone made every rate
     // request fail with a bare "valid from zip code" and no cause (#508).
     if (!address.phone.trim()) {

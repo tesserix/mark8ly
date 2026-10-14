@@ -40,6 +40,32 @@ describe("TextStyleConfig", () => {
     expect(screen.getByText("That name is already used.")).toBeInTheDocument();
   });
 
+  it("saves a colour that was typed but never added", () => {
+    const onSave = vi.fn();
+    render(<TextStyleConfig fonts={["script"]} colours={[]} onSave={onSave} />);
+
+    fireEvent.change(screen.getByLabelText("Swatch colour"), { target: { value: "#1096ea" } });
+    fireEvent.change(screen.getByLabelText("Colour name"), { target: { value: "Blue" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save fonts and colours" }));
+
+    expect(onSave).toHaveBeenCalledWith({
+      text_fonts: ["script"],
+      text_colours: [{ label: "Blue", hex: "#1096EA" }],
+    });
+    expect(screen.getByText("Blue")).toBeInTheDocument();
+    expect(screen.getByLabelText("Colour name")).toHaveValue("");
+  });
+
+  it("will not save while the typed colour name is a duplicate", () => {
+    render(
+      <TextStyleConfig fonts={["script"]} colours={[{ label: "White", hex: "#FFFFFF" }]} onSave={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Classic serif/ }));
+    fireEvent.change(screen.getByLabelText("Colour name"), { target: { value: "white" } });
+
+    expect(screen.getByRole("button", { name: "Save fonts and colours" })).toBeDisabled();
+  });
+
   it("cannot save until something changed", () => {
     render(<TextStyleConfig fonts={["script"]} colours={[]} onSave={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Save fonts and colours" })).toBeDisabled();

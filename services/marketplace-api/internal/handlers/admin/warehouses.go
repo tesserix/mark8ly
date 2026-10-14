@@ -332,7 +332,23 @@ func validateWarehouseWrite(req WarehouseWriteRequest) error {
 	if len(trimmed(req.CountryCode)) != 2 {
 		return apperrors.ValidationFailed("country_code", "country_code must be a 2-letter ISO code")
 	}
+	if regionRequired(req.CountryCode) && trimmed(req.Region) == "" {
+		return apperrors.ValidationFailed("region", "region is required for this country")
+	}
 	return nil
+}
+
+// regionRequiredCountries are the countries whose carriers refuse a rate
+// request without a state or province. A warehouse saved without one
+// broke checkout far from its cause: ShipEngine answered 400
+// "'state_province' should not be empty" and the buyer saw only "we
+// couldn't get a live rate". Mirrored in the admin's WarehouseForm.
+var regionRequiredCountries = map[string]bool{
+	"AU": true, "BR": true, "CA": true, "IN": true, "MX": true, "US": true,
+}
+
+func regionRequired(countryCode string) bool {
+	return regionRequiredCountries[strings.ToUpper(trimmed(countryCode))]
 }
 
 func applyWarehouseWrite(w warehouse.Warehouse, req WarehouseWriteRequest) warehouse.Warehouse {

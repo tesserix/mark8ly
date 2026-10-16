@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -157,6 +158,55 @@ func (w *Worker) Run(ctx context.Context, job CsvImportJob) {
 	successCount := job.SuccessCount
 	errorCount := job.ErrorCount
 	startRow := job.LastProcessedRow // resume from last checkpoint
+	lastCheckpoint := startRow
+
+	// Consecutive rows with one handle are one product, a row per
+	// variant, so rows are held until the handle changes. Checkpoints
+	// land only between products: a resume never starts mid-product.
+	idx := buildHeaderIndex(headers)
+	handleOf := func(row []string) string {
+		i, ok := idx[colHandle]
+		if !ok || i >= len(row) {
+			return ""
+		}
+		return strings.ToLower(strings.TrimSpace(row[i]))
+	}
+	var group []csvRow
+	groupKey := ""
+
+	// flush imports the held product; true means the job was cancelled.
+	flush := func() bool {
+		if len(group) == 0 {
+			return false
+		}
+		rows := group
+		group = nil
+		if errMsg := w.importProduct(ctx, headers, rows, tracker); errMsg != "" {
+			errorCount += len(rows)
+			for _, r := range rows {
+				if writeErr := errWriter.WriteRow(r.cells, errMsg); writeErr != nil {
+					log.Error("csvjob: write error row", "err", writeErr)
+				}
+			}
+		} else {
+			successCount += len(rows)
+		}
+
+		last := rows[len(rows)-1].num
+		if last-lastCheckpoint < 10 {
+			return false
+		}
+		lastCheckpoint = last
+		w.checkpoint(ctx, job.ID, last, successCount, errorCount)
+		cancelled, checkErr := w.isCancelled(ctx, job.ID)
+		if checkErr != nil {
+			log.Error("csvjob: check cancel", "err", checkErr)
+		}
+		if cancelled {
+			log.Info("csvjob: cancelled by user")
+		}
+		return cancelled
+	}
 
 	for {
 		row, err := reader.Read()
@@ -182,65 +232,29 @@ func (w *Worker) Run(ctx context.Context, job CsvImportJob) {
 			return
 		}
 
+		// A blank handle never joins the product above it.
+		key := handleOf(row)
+		if len(group) > 0 && (key == "" || key != groupKey) {
+			if flush() {
+				return
+			}
+		}
+
 		// Test hook: cancel after N rows for crash-recovery testing.
 		if w.TestCancelAfterRow > 0 && rowNum == startRow+w.TestCancelAfterRow {
 			log.Info("csvjob: test cancel after row", "row", rowNum)
+			if flush() {
+				return
+			}
 			w.checkpoint(ctx, job.ID, rowNum, successCount, errorCount)
 			return // simulate crash — do NOT set terminal status
 		}
 
-		// Parse and create product.
-		draft, parseErr := ParseRow(headers, row, rowNum, tracker)
-		if parseErr != nil {
-			errorCount++
-			if writeErr := errWriter.WriteRow(row, parseErr.Error()); writeErr != nil {
-				log.Error("csvjob: write error row", "err", writeErr)
-			}
-			continue
-		}
-
-		_, createErr := w.productSvc.Create(ctx, product.CreateRequest{
-			StoreID:     w.storeID,
-			TenantID:    w.tenantID,
-			Handle:      draft.Handle,
-			Title:       draft.Title,
-			Description: draft.Description,
-			Status:      draft.Status,
-			Variants: []product.VariantInput{{
-				SKU:          draft.SKU,
-				Price:        draft.BasePrice,
-				CurrencyCode: w.currencyCode,
-				InitialStock: draft.Stock,
-				WeightGrams:  draft.WeightGrams,
-				LengthCM:     draft.LengthCM,
-				WidthCM:      draft.WidthCM,
-				HeightCM:     draft.HeightCM,
-			}},
-		})
-		if createErr != nil {
-			errorCount++
-			if writeErr := errWriter.WriteRow(row, createErr.Error()); writeErr != nil {
-				log.Error("csvjob: write error row", "err", writeErr)
-			}
-			continue
-		}
-
-		successCount++
-
-		// Checkpoint every 10 rows.
-		if rowNum%10 == 0 {
-			w.checkpoint(ctx, job.ID, rowNum, successCount, errorCount)
-
-			// Check for cancellation.
-			cancelled, checkErr := w.isCancelled(ctx, job.ID)
-			if checkErr != nil {
-				log.Error("csvjob: check cancel", "err", checkErr)
-			}
-			if cancelled {
-				log.Info("csvjob: cancelled by user")
-				return
-			}
-		}
+		group = append(group, csvRow{num: rowNum, cells: row})
+		groupKey = key
+	}
+	if flush() {
+		return
 	}
 
 	// Final checkpoint.
@@ -313,6 +327,122 @@ func RecoverOrphanedJobs(ctx context.Context, repo Repository, staleDuration tim
 		}
 	}
 	return nil
+}
+
+// csvRow is one data row and its 1-based number.
+type csvRow struct {
+	num   int
+	cells []string
+}
+
+// importProduct creates one product from its rows and returns "" on
+// success, else the message written beside each of its rows.
+func (w *Worker) importProduct(ctx context.Context, headers []string, rows []csvRow, tracker *HandleTracker) string {
+	drafts := make([]ProductDraft, len(rows))
+	var errs []string
+	for i, r := range rows {
+		var err error
+		if i == 0 {
+			drafts[i], err = ParseRow(headers, r.cells, r.num, tracker)
+		} else {
+			drafts[i], err = ParseVariantRow(headers, r.cells, r.num)
+		}
+		if err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	if len(errs) > 0 {
+		return strings.Join(errs, "; ")
+	}
+
+	req, err := w.toCreateRequest(drafts, rows)
+	if err != nil {
+		return err.Error()
+	}
+	if _, err := w.productSvc.Create(ctx, req); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// toCreateRequest builds one product from its rows. The first row carries
+// the product fields and names the options; every row is a variant.
+func (w *Worker) toCreateRequest(drafts []ProductDraft, rows []csvRow) (product.CreateRequest, error) {
+	first := drafts[0]
+
+	var axes []int // option positions the first row names
+	for i, o := range first.Options {
+		if o.Name != "" {
+			axes = append(axes, i)
+		}
+	}
+	// Shopify writes a product without options as Title / Default Title.
+	if len(drafts) == 1 && len(axes) == 1 &&
+		strings.EqualFold(first.Options[axes[0]].Name, "Title") &&
+		strings.EqualFold(first.Options[axes[0]].Value, "Default Title") {
+		axes = nil
+		drafts[0].Options = [maxOptions]OptionPair{}
+	}
+
+	options := make([]product.OptionSpec, len(axes))
+	seen := make([]map[string]bool, len(axes))
+	for a, pos := range axes {
+		options[a].Name = first.Options[pos].Name
+		seen[a] = map[string]bool{}
+	}
+
+	variants := make([]product.VariantInput, len(drafts))
+	for i, d := range drafts {
+		for pos, o := range d.Options {
+			named := false
+			for _, a := range axes {
+				named = named || a == pos
+			}
+			if !named && o.Value != "" {
+				return product.CreateRequest{}, fmt.Errorf("row %d: %s is set but the product's first row has no %s",
+					rows[i].num, optionCols[pos][1], optionCols[pos][0])
+			}
+		}
+		refs := make([]product.OptionValueRef, len(axes))
+		for a, pos := range axes {
+			o := d.Options[pos]
+			if o.Value == "" {
+				return product.CreateRequest{}, fmt.Errorf("row %d: %s is required for every variant", rows[i].num, optionCols[pos][1])
+			}
+			if o.Name != "" && !strings.EqualFold(o.Name, options[a].Name) {
+				return product.CreateRequest{}, fmt.Errorf("row %d: %s %q does not match %q on the product's first row",
+					rows[i].num, optionCols[pos][0], o.Name, options[a].Name)
+			}
+			if !seen[a][o.Value] {
+				seen[a][o.Value] = true
+				options[a].Values = append(options[a].Values, product.OptionValueSpec{Value: o.Value})
+			}
+			refs[a] = product.OptionValueRef{OptionName: options[a].Name, Value: o.Value}
+		}
+		variants[i] = product.VariantInput{
+			SKU:          d.SKU,
+			Price:        d.BasePrice,
+			CurrencyCode: w.currencyCode,
+			InitialStock: d.Stock,
+			WeightGrams:  d.WeightGrams,
+			LengthCM:     d.LengthCM,
+			WidthCM:      d.WidthCM,
+			HeightCM:     d.HeightCM,
+			OptionValues: refs,
+			Position:     i,
+		}
+	}
+
+	return product.CreateRequest{
+		StoreID:     w.storeID,
+		TenantID:    w.tenantID,
+		Handle:      first.Handle,
+		Title:       first.Title,
+		Description: first.Description,
+		Status:      first.Status,
+		Options:     options,
+		Variants:    variants,
+	}, nil
 }
 
 // Ensure decimal import is used (referenced via ProductDraft.BasePrice in parser).

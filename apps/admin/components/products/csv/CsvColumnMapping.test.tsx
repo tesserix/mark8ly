@@ -115,7 +115,7 @@ describe("CsvColumnMapping", () => {
         "utf8",
       )
         .split("\n")
-        .map((line) => /^\s*col[A-Za-z]+\s*=\s*"([a-z_]+)"/.exec(line)?.[1])
+        .map((line) => /^\s*col[A-Za-z0-9]+\s*=\s*"([a-z0-9_]+)"/.exec(line)?.[1])
         .filter((v): v is string => Boolean(v)),
     );
 
@@ -151,6 +151,18 @@ describe("autoMapColumns", () => {
       "Length (cm)": "length_cm",
       "Width (cm)": "width_cm",
       "Height (cm)": "height_cm",
+    });
+  });
+
+  it("maps Shopify's option and weight headers", () => {
+    expect(
+      autoMapColumns(["Option1 Name", "Option1 Value", "Option2 Name", "Option2 Value", "Variant Grams"]),
+    ).toEqual({
+      "Option1 Name": "option1_name",
+      "Option1 Value": "option1_value",
+      "Option2 Name": "option2_name",
+      "Option2 Value": "option2_value",
+      "Variant Grams": "weight",
     });
   });
 

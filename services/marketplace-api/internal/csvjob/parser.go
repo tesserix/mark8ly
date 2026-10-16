@@ -23,7 +23,17 @@ type ProductDraft struct {
 	WidthCM       *decimal.Decimal
 	HeightCM      *decimal.Decimal
 	CategorySlugs []string
+	// Options are this row's option1..3 name/value pairs, by position;
+	// an unused option is empty. Each row is one variant; rows sharing a
+	// handle are one product.
+	Options [maxOptions]OptionPair
 }
+
+// OptionPair is one optionN_name / optionN_value cell pair.
+type OptionPair struct{ Name, Value string }
+
+// maxOptions matches the product service's three option axes.
+const maxOptions = 3
 
 // csvColumn is the canonical header name for each supported column.
 const (
@@ -39,7 +49,19 @@ const (
 	colWidthCM       = "width_cm"
 	colHeightCM      = "height_cm"
 	colCategorySlugs = "category_slugs"
+	colOption1Name   = "option1_name"
+	colOption1Value  = "option1_value"
+	colOption2Name   = "option2_name"
+	colOption2Value  = "option2_value"
+	colOption3Name   = "option3_name"
+	colOption3Value  = "option3_value"
 )
+
+var optionCols = [maxOptions][2]string{
+	{colOption1Name, colOption1Value},
+	{colOption2Name, colOption2Value},
+	{colOption3Name, colOption3Value},
+}
 
 // headerIndex maps canonical column names to their position in the CSV row.
 type headerIndex map[string]int
@@ -78,6 +100,17 @@ func (t *HandleTracker) Check(handle string, rowNum int) error {
 // headers is the first row of the CSV; row is the data row.
 // rowNum is 1-based for error messages. tracker detects handle dupes.
 func ParseRow(headers []string, row []string, rowNum int, tracker *HandleTracker) (ProductDraft, error) {
+	return parseRow(headers, row, rowNum, tracker, false)
+}
+
+// ParseVariantRow parses a row that continues the product above it (same
+// handle): another variant. Title may be blank, as in a Shopify export,
+// and the handle is not a duplicate.
+func ParseVariantRow(headers []string, row []string, rowNum int) (ProductDraft, error) {
+	return parseRow(headers, row, rowNum, nil, true)
+}
+
+func parseRow(headers []string, row []string, rowNum int, tracker *HandleTracker, continuation bool) (ProductDraft, error) {
 	idx := buildHeaderIndex(headers)
 	get := func(col string) string {
 		i, ok := idx[col]
@@ -92,7 +125,7 @@ func ParseRow(headers []string, row []string, rowNum int, tracker *HandleTracker
 
 	// Required: title
 	draft.Title = get(colTitle)
-	if draft.Title == "" {
+	if draft.Title == "" && !continuation {
 		errs = append(errs, "title is required")
 	}
 
@@ -168,6 +201,22 @@ func ParseRow(headers []string, row []string, rowNum int, tracker *HandleTracker
 			errs = append(errs, d.col+" must be greater than 0")
 		} else {
 			*d.dst = &v
+		}
+	}
+
+	// option1..3 — a name without a value, or the reverse, is a typo
+	// that would otherwise import as a different product shape.
+	for i, c := range optionCols {
+		name, value := get(c[0]), get(c[1])
+		switch {
+		case name == "" && value == "":
+			continue
+		case value == "":
+			errs = append(errs, fmt.Sprintf("%s %q has no %s", c[0], name, c[1]))
+		case name == "" && !continuation:
+			errs = append(errs, fmt.Sprintf("%s %q has no %s", c[1], value, c[0]))
+		default:
+			draft.Options[i] = OptionPair{Name: name, Value: value}
 		}
 	}
 

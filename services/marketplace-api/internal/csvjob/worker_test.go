@@ -209,3 +209,93 @@ func itoa(i int) string {
 func TestOrphanWindowIsFifteenMinutes(t *testing.T) {
 	require.Equal(t, 15*time.Minute, csvjob.OrphanWindow)
 }
+
+// runImport runs one import of csvContent and returns the job and fakes.
+func runImport(t *testing.T, csvContent string, creator *fakeProductCreator) (*csvjob.CsvImportJob, *fakeErrorWriterFactory) {
+	t.Helper()
+	repo := newFakeRepo()
+	job := &csvjob.CsvImportJob{ID: "job-o", StoreID: "store-1", UserID: "user-1",
+		GCSPath: "o.csv", ContentHash: "hash-o", Status: csvjob.StatusQueued}
+	require.NoError(t, repo.Create(context.Background(), job))
+	errFactory := newFakeErrorWriterFactory()
+	csvjob.NewWorker(csvjob.WorkerConfig{
+		Repo: repo, ProductSvc: creator, CSVReader: &fakeCSVReader{content: csvContent},
+		ErrFactory: errFactory, StoreID: "store-1", TenantID: "tenant-1", CurrencyCode: "AUD",
+	}).Run(context.Background(), *job)
+	final, err := repo.GetByID(context.Background(), job.ID)
+	require.NoError(t, err)
+	return final, errFactory
+}
+
+// Rows sharing a handle are one product, a variant per row, laid out the
+// way a Shopify export is: title and option names only on the first row.
+func TestWorker_RowsSharingAHandleAreOneProductWithVariants(t *testing.T) {
+	creator := &fakeProductCreator{}
+	final, errs := runImport(t, "title,handle,base_price,sku,stock,weight,option1_name,option1_value,option2_name,option2_value\n"+
+		"Mug,mug,45.00,MUG-S-SAND,3,400,Size,Small,Colour,Sand\n"+
+		",mug,45.00,MUG-S-BLUE,2,400,,Small,,Cornflower\n"+
+		",mug,52.00,MUG-L-SAND,1,550,,Large,,Sand\n"+
+		",mug,52.00,MUG-L-BLUE,0,550,,Large,,Cornflower\n"+
+		"Towel,towel,24.00,TOWEL,9,120,Title,Default Title,,\n", creator)
+
+	require.Equal(t, csvjob.StatusCompleted, final.Status)
+	require.Empty(t, errs.writer.rows)
+	require.Equal(t, 5, final.SuccessCount)
+	require.Len(t, creator.calls, 2)
+
+	mug := creator.calls[0]
+	require.Equal(t, "Mug", mug.Title)
+	require.Equal(t, []product.OptionSpec{
+		{Name: "Size", Values: []product.OptionValueSpec{{Value: "Small"}, {Value: "Large"}}},
+		{Name: "Colour", Values: []product.OptionValueSpec{{Value: "Sand"}, {Value: "Cornflower"}}},
+	}, mug.Options)
+	require.Len(t, mug.Variants, 4)
+	require.Equal(t, "MUG-L-BLUE", mug.Variants[3].SKU)
+	require.Equal(t, "52", mug.Variants[3].Price.String())
+	require.Equal(t, 550, *mug.Variants[3].WeightGrams)
+	require.Equal(t, []product.OptionValueRef{{OptionName: "Size", Value: "Large"}, {OptionName: "Colour", Value: "Cornflower"}},
+		mug.Variants[3].OptionValues)
+
+	// The real service accepts the shape: it rejects a gappy option grid.
+	specs := make([]product.VariantSpec, len(mug.Variants))
+	for i, v := range mug.Variants {
+		specs[i] = product.VariantSpec{SKU: v.SKU, OptionValues: v.OptionValues}
+	}
+	require.NoError(t, product.ValidateMatrix(mug.Options, specs))
+
+	// Shopify's placeholder for "no options" is not an option.
+	require.Empty(t, creator.calls[1].Options)
+	require.Empty(t, creator.calls[1].Variants[0].OptionValues)
+}
+
+// One bad variant row fails its whole product, and every row of it lands
+// in the error file, so the merchant re-imports the product, not a part.
+func TestWorker_ABadVariantRowFailsItsWholeProduct(t *testing.T) {
+	creator := &fakeProductCreator{}
+	final, errs := runImport(t, "title,handle,base_price,sku,option1_name,option1_value\n"+
+		"Mug,mug,45.00,MUG-SAND,Colour,Sand\n"+
+		",mug,45.00,MUG-BLUE,,\n"+
+		"Bowl,bowl,30.00,BOWL,,\n", creator)
+
+	require.Equal(t, 1, final.SuccessCount)
+	require.Equal(t, 2, final.ErrorCount)
+	require.Len(t, creator.calls, 1)
+	require.Equal(t, "Bowl", creator.calls[0].Title)
+	require.Len(t, errs.writer.rows, 2)
+	msg := errs.writer.rows[0][len(errs.writer.rows[0])-1]
+	require.Contains(t, msg, "row 2: option1_value is required for every variant")
+}
+
+// Rows join a product only while they are consecutive; the same handle
+// further down is a second product with that handle, which is refused.
+func TestWorker_AHandleReusedLaterIsADuplicate(t *testing.T) {
+	creator := &fakeProductCreator{}
+	final, errs := runImport(t, "title,handle,base_price,sku\n"+
+		"Mug,mug,45.00,M1\n"+
+		"Bowl,bowl,30.00,B1\n"+
+		"Mug again,mug,45.00,M2\n", creator)
+
+	require.Equal(t, 2, final.SuccessCount)
+	require.Equal(t, 1, final.ErrorCount)
+	require.Contains(t, errs.writer.rows[0][len(errs.writer.rows[0])-1], "duplicate handle")
+}

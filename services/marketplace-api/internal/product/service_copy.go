@@ -140,6 +140,9 @@ func (s *Service) Copy(ctx context.Context, req CopyRequest) (*Aggregate, error)
 			CostPrice:         sv.CostPrice,
 			CurrencyCode:      sv.CurrencyCode, // deliberate: SOURCE currency
 			WeightGrams:       sv.WeightGrams,
+			LengthCM:          sv.LengthCM,
+			WidthCM:           sv.WidthCM,
+			HeightCM:          sv.HeightCM,
 			InventoryPolicy:   sv.InventoryPolicy,
 			LowStockThreshold: sv.LowStockThreshold,
 			Position:          sv.Position,

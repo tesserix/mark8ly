@@ -19,6 +19,9 @@ type ProductDraft struct {
 	SKU           string
 	Stock         int
 	WeightGrams   *int
+	LengthCM      *decimal.Decimal
+	WidthCM       *decimal.Decimal
+	HeightCM      *decimal.Decimal
 	CategorySlugs []string
 }
 
@@ -32,6 +35,9 @@ const (
 	colSKU           = "sku"
 	colStock         = "stock"
 	colWeight        = "weight"
+	colLengthCM      = "length_cm"
+	colWidthCM       = "width_cm"
+	colHeightCM      = "height_cm"
 	colCategorySlugs = "category_slugs"
 )
 
@@ -143,6 +149,25 @@ func ParseRow(headers []string, row []string, rowNum int, tracker *HandleTracker
 			errs = append(errs, "weight must not be negative")
 		} else {
 			draft.WeightGrams = &g
+		}
+	}
+
+	// length_cm / width_cm / height_cm — the parcel size, in centimetres
+	for _, d := range []struct {
+		col string
+		dst **decimal.Decimal
+	}{{colLengthCM, &draft.LengthCM}, {colWidthCM, &draft.WidthCM}, {colHeightCM, &draft.HeightCM}} {
+		s := get(d.col)
+		if s == "" {
+			continue
+		}
+		v, err := decimal.NewFromString(s)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s %q is not a number of centimetres", d.col, s))
+		} else if !v.IsPositive() {
+			errs = append(errs, d.col+" must be greater than 0")
+		} else {
+			*d.dst = &v
 		}
 	}
 

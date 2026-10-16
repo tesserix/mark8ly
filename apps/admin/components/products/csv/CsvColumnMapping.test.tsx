@@ -145,6 +145,15 @@ describe("autoMapColumns", () => {
     });
   });
 
+  // A bare "Length" may be inches, so only the cm spelling auto-maps.
+  it("maps parcel size headers only when they say cm", () => {
+    expect(autoMapColumns(["Length (cm)", "Width (cm)", "Height (cm)", "Length"])).toEqual({
+      "Length (cm)": "length_cm",
+      "Width (cm)": "width_cm",
+      "Height (cm)": "height_cm",
+    });
+  });
+
   // The server rejects two headers claiming one field, so auto-mapping
   // must not produce a mapping that cannot be submitted.
   it("never maps two headers onto the same field", () => {

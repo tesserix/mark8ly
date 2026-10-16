@@ -22,6 +22,9 @@ export const PRODUCT_FIELDS = [
   "sku",
   "stock",
   "weight",
+  "length_cm",
+  "width_cm",
+  "height_cm",
   "category_slugs",
 ] as const;
 
@@ -39,6 +42,9 @@ const FIELD_LABELS: Record<ProductField, string> = {
   sku: "sku",
   stock: "stock",
   weight: "weight (grams)",
+  length_cm: "length (cm)",
+  width_cm: "width (cm)",
+  height_cm: "height (cm)",
   category_slugs: "categories (category_slugs)",
 };
 
@@ -126,6 +132,10 @@ const FIELD_ALIASES: Record<string, ProductField> = {
   "variant inventory qty": "stock",
   "body (html)": "description",
   categories: "category_slugs",
+  // Only the cm spellings: a bare "length" could be inches.
+  "length (cm)": "length_cm",
+  "width (cm)": "width_cm",
+  "height (cm)": "height_cm",
 };
 
 /**

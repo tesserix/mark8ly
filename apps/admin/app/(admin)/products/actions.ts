@@ -91,6 +91,7 @@ function buildVariants(
   currencyCode: string,
 ): CreateProductRequest["variants"] {
   const qty = Number.parseInt(values.inventoryQuantity, 10);
+  const dim = (v: string | undefined) => (v && v.length > 0 ? Number(v) : undefined);
   return [
     {
       sku: (values.sku && values.sku.length > 0 ? values.sku : `${slugFromTitle(values.title)}-default`),
@@ -98,6 +99,10 @@ function buildVariants(
       currency_code: currencyCode,
       inventory_quantity: Number.isFinite(qty) ? qty : 0,
       inventory_policy: values.alwaysInStock ? "continue" : "deny",
+      weight_grams: values.weightKg && values.weightKg.length > 0 ? Math.round(Number(values.weightKg) * 1000) : undefined,
+      length_cm: dim(values.lengthCm),
+      width_cm: dim(values.widthCm),
+      height_cm: dim(values.heightCm),
       position: 0,
     },
   ];
@@ -165,14 +170,15 @@ export async function updateProductAction(
   // them. M7b callers that don't populate the new arrays still work
   // because Zod `.default([])` fills them in.
   //
-  // Simple-product quirk: the RHF form only tracks variants when the
-  // user opens the Variants tab, so for title/price/status-only edits on
-  // a simple product, `parsed.data.variants` is empty. The Go aggregate
-  // service requires exactly one variant when there are no options, so
-  // an empty array is rejected with VariantMatrixMismatch. Synthesize a
-  // single variant from the scalar price/sku/stock fields, preserving
-  // the existing variant's id so the server replaces in-place rather
-  // than creating a duplicate.
+  // Simple product: no options and at most one variant. The merchant
+  // edits it through the scalar Pricing and Shipping fields, not the
+  // Variants tab, so the variant is built from those fields. The form
+  // also loads the saved variant into `parsed.data.variants`, unedited,
+  // and sending that instead silently threw away every price, stock,
+  // SKU, weight and size change. The Go aggregate service requires
+  // exactly one variant when there are no options, and keeping the
+  // existing id makes the server replace it in place rather than add a
+  // duplicate.
   const inventoryPolicy: "continue" | "deny" = parsed.data.alwaysInStock
     ? "continue"
     : "deny";
@@ -216,7 +222,7 @@ export async function updateProductAction(
     .filter((o) => o.name.length > 0 && o.values.length > 0);
 
   const hasOptions = filteredOptions.length > 0;
-  if (!hasOptions && variants.length === 0) {
+  if (!hasOptions && variants.length <= 1) {
     const existing = await getProduct(ctx.storeId, productId, {
       userId: ctx.userId,
       tenantId: ctx.tenantId,
@@ -226,7 +232,7 @@ export async function updateProductAction(
     const qty = Number.parseInt(parsed.data.inventoryQuantity, 10);
     variants = [
       {
-        id: firstVariant?.id,
+        id: variants[0]?.id ?? firstVariant?.id,
         sku: parsed.data.sku && parsed.data.sku.length > 0
           ? parsed.data.sku
           : firstVariant?.sku ?? `${slugFromTitle(parsed.data.title)}-default`,

@@ -17,6 +17,7 @@ vi.mock("next/cache", () => ({
 }));
 
 vi.mock("@/lib/api/marketplace-api", () => ({
+  getProduct: vi.fn(),
   updateProduct: vi.fn(),
   createProduct: vi.fn(),
   deleteProduct: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock("@/lib/api/marketplace-api", () => ({
 }));
 
 import {
+  createProductAction,
   updateProductAction,
   copyProductAction,
   bulkArchiveAction,
@@ -34,8 +36,10 @@ import {
   bulkDeleteAction,
   bulkAssignCategoryAction,
 } from "./actions";
-import { updateProduct, copyProduct, bulkProductAction } from "@/lib/api/marketplace-api";
+import { createProduct, getProduct, updateProduct, copyProduct, bulkProductAction } from "@/lib/api/marketplace-api";
 
+const mockedCreate = createProduct as unknown as ReturnType<typeof vi.fn>;
+const mockedGet = getProduct as unknown as ReturnType<typeof vi.fn>;
 const mockedUpdate = updateProduct as unknown as ReturnType<typeof vi.fn>;
 const mockedCopy = copyProduct as unknown as ReturnType<typeof vi.fn>;
 const mockedBulk = bulkProductAction as unknown as ReturnType<typeof vi.fn>;
@@ -121,6 +125,70 @@ describe("updateProductAction", () => {
     const result = await updateProductAction("s1", "p1", "USD", baseInput());
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("option_value_in_use");
+  });
+
+  // A product with no options still loads its one variant into the form,
+  // so the submit carries that variant as it was. The Pricing and Shipping
+  // fields are what the merchant edits, and they have to win.
+  it("saves the Pricing and Shipping fields of a product with no options", async () => {
+    mockedGet.mockResolvedValue({
+      variants: [{ id: "v1", sku: "MUG", price: "45.00", weight_grams: 0, length_cm: null }],
+    });
+    mockedUpdate.mockResolvedValue({ ok: true, data: { id: "p1", title: "T" } });
+
+    await updateProductAction("s1", "p1", "AUD", {
+      ...baseInput(),
+      price: "50.00",
+      inventoryQuantity: "7",
+      sku: "MUG-2",
+      weightKg: "0.5",
+      lengthCm: "15",
+      widthCm: "15",
+      heightCm: "15",
+      options: [],
+      variants: [
+        { id: "v1", key: "id:v1", price: "45.00", sku: "MUG", stock: 13, weight: 0, optionValues: [] },
+      ],
+      removed_variant_ids: [],
+    });
+
+    const body = mockedUpdate.mock.calls[0]![2];
+    expect(body.variants).toHaveLength(1);
+    expect(body.variants[0]).toMatchObject({
+      id: "v1",
+      price: "50.00",
+      inventory_quantity: 7,
+      sku: "MUG-2",
+      weight_grams: 500,
+      length_cm: 15,
+      width_cm: 15,
+      height_cm: 15,
+    });
+  });
+});
+
+describe("createProductAction", () => {
+  it("sends the Shipping fields on the new product's variant", async () => {
+    mockedCreate.mockResolvedValue({ ok: true, data: { id: "p2" } });
+
+    await createProductAction("s1", "AUD", {
+      ...baseInput(),
+      weightKg: "0.5",
+      lengthCm: "15",
+      widthCm: "15",
+      heightCm: "15",
+      options: [],
+      variants: [],
+      removed_variant_ids: [],
+    });
+
+    const body = mockedCreate.mock.calls[0]![1];
+    expect(body.variants[0]).toMatchObject({
+      weight_grams: 500,
+      length_cm: 15,
+      width_cm: 15,
+      height_cm: 15,
+    });
   });
 });
 

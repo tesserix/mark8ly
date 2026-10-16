@@ -26,6 +26,12 @@ export const PRODUCT_FIELDS = [
   "width_cm",
   "height_cm",
   "category_slugs",
+  "option1_name",
+  "option1_value",
+  "option2_name",
+  "option2_value",
+  "option3_name",
+  "option3_value",
 ] as const;
 
 export type ProductField = (typeof PRODUCT_FIELDS)[number];
@@ -46,6 +52,12 @@ const FIELD_LABELS: Record<ProductField, string> = {
   width_cm: "width (cm)",
   height_cm: "height (cm)",
   category_slugs: "categories (category_slugs)",
+  option1_name: "option 1 name",
+  option1_value: "option 1 value",
+  option2_name: "option 2 name",
+  option2_value: "option 2 value",
+  option3_name: "option 3 name",
+  option3_value: "option 3 value",
 };
 
 interface CsvColumnMappingProps {
@@ -136,6 +148,14 @@ const FIELD_ALIASES: Record<string, ProductField> = {
   "length (cm)": "length_cm",
   "width (cm)": "width_cm",
   "height (cm)": "height_cm",
+  // Shopify's variant columns. Its weight column is already grams.
+  "option1 name": "option1_name",
+  "option1 value": "option1_value",
+  "option2 name": "option2_name",
+  "option2 value": "option2_value",
+  "option3 name": "option3_name",
+  "option3 value": "option3_value",
+  "variant grams": "weight",
 };
 
 /**

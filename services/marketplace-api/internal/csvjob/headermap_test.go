@@ -97,7 +97,7 @@ func TestValidateColumnMapping_AllowsEveryCanonicalColumn(t *testing.T) {
 // class of defect as the mapper not being sent at all.
 func TestCanonicalColumns_MatchWhatTheParserReads(t *testing.T) {
 	headers := csvjob.CanonicalColumns
-	row := []string{"Shirt", "shirt-1", "desc", "active", "10.00", "S1", "5", "1000", "15", "12.5", "9", "tops"}
+	row := []string{"Shirt", "shirt-1", "desc", "active", "10.00", "S1", "5", "1000", "15", "12.5", "9", "tops", "Size", "M", "Colour", "Sand", "Glaze", "Matte"}
 	require.Len(t, row, len(headers), "update this row when a column is added")
 
 	draft, err := csvjob.ParseRow(headers, row, 1, csvjob.NewHandleTracker())
@@ -112,4 +112,5 @@ func TestCanonicalColumns_MatchWhatTheParserReads(t *testing.T) {
 	require.Equal(t, "12.5", draft.WidthCM.String())
 	require.Equal(t, "9", draft.HeightCM.String())
 	require.Equal(t, []string{"tops"}, draft.CategorySlugs)
+	require.Equal(t, [3]csvjob.OptionPair{{Name: "Size", Value: "M"}, {Name: "Colour", Value: "Sand"}, {Name: "Glaze", Value: "Matte"}}, draft.Options)
 }

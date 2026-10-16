@@ -17,6 +17,8 @@ var CanonicalColumns = []string{
 	colTitle, colHandle, colDescription, colStatus,
 	colBasePrice, colSKU, colStock, colWeight,
 	colLengthCM, colWidthCM, colHeightCM, colCategorySlugs,
+	colOption1Name, colOption1Value, colOption2Name, colOption2Value,
+	colOption3Name, colOption3Value,
 }
 
 func isCanonicalColumn(name string) bool {

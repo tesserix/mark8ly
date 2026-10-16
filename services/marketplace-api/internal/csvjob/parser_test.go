@@ -96,6 +96,23 @@ func TestParseRow(t *testing.T) {
 	}
 }
 
+func TestParseRow_OptionNeedsBothCells(t *testing.T) {
+	headers := []string{"title", "handle", "option1_name", "option1_value"}
+	_, err := csvjob.ParseRow(headers, []string{"Mug", "mug", "Colour", ""}, 1, nil)
+	require.ErrorContains(t, err, `option1_name "Colour" has no option1_value`)
+	_, err = csvjob.ParseRow(headers, []string{"Mug", "mug", "", "Sand"}, 1, nil)
+	require.ErrorContains(t, err, `option1_value "Sand" has no option1_name`)
+}
+
+// A Shopify export repeats the handle on each variant row and leaves the
+// title and option names blank there.
+func TestParseVariantRow_AllowsBlankTitleAndOptionName(t *testing.T) {
+	headers := []string{"title", "handle", "option1_name", "option1_value"}
+	d, err := csvjob.ParseVariantRow(headers, []string{"", "mug", "", "Sand"}, 2)
+	require.NoError(t, err)
+	require.Equal(t, "Sand", d.Options[0].Value)
+}
+
 func TestParseRow_DuplicateHandle(t *testing.T) {
 	headers := []string{"title", "handle", "base_price", "sku", "stock"}
 	tracker := csvjob.NewHandleTracker()

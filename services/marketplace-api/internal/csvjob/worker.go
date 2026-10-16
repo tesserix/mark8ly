@@ -212,6 +212,9 @@ func (w *Worker) Run(ctx context.Context, job CsvImportJob) {
 				CurrencyCode: w.currencyCode,
 				InitialStock: draft.Stock,
 				WeightGrams:  draft.WeightGrams,
+				LengthCM:     draft.LengthCM,
+				WidthCM:      draft.WidthCM,
+				HeightCM:     draft.HeightCM,
 			}},
 		})
 		if createErr != nil {

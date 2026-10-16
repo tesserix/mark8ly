@@ -10,7 +10,7 @@ import (
 )
 
 func TestParseRow(t *testing.T) {
-	headers := []string{"title", "handle", "description", "status", "base_price", "sku", "stock", "weight", "category_slugs"}
+	headers := []string{"title", "handle", "description", "status", "base_price", "sku", "stock", "weight", "category_slugs", "length_cm"}
 
 	tests := []struct {
 		name    string
@@ -58,6 +58,16 @@ func TestParseRow(t *testing.T) {
 			name:    "weight with a unit",
 			row:     []string{"Title", "handle-5", "", "", "10", "SKU-5", "5", "200g", ""},
 			wantErr: "not a whole number of grams",
+		},
+		{
+			name:    "dimension with a unit",
+			row:     []string{"Title", "handle-6", "", "", "10", "SKU-6", "5", "", "", "15cm"},
+			wantErr: `length_cm "15cm" is not a number of centimetres`,
+		},
+		{
+			name:    "zero dimension",
+			row:     []string{"Title", "handle-7", "", "", "10", "SKU-7", "5", "", "", "0"},
+			wantErr: "length_cm must be greater than 0",
 		},
 		{
 			name: "default status is draft",

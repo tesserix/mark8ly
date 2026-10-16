@@ -15,7 +15,8 @@ import (
 // on — which is what the admin column mapper is for.
 var CanonicalColumns = []string{
 	colTitle, colHandle, colDescription, colStatus,
-	colBasePrice, colSKU, colStock, colWeight, colCategorySlugs,
+	colBasePrice, colSKU, colStock, colWeight,
+	colLengthCM, colWidthCM, colHeightCM, colCategorySlugs,
 }
 
 func isCanonicalColumn(name string) bool {

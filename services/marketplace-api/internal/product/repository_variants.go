@@ -26,7 +26,8 @@ import (
 //   - Adds: INSERT new variants (store_id copied in for composite FK).
 //     OptionValueLinks are cascaded from each variant row.
 //   - Updates: UPDATE a stable set of columns (sku, price,
-//     compare_at_price, cost_price, weight_grams, inventory_policy,
+//     compare_at_price, cost_price, weight_grams, length_cm, width_cm,
+//     height_cm, inventory_policy,
 //     low_stock_threshold, position, barcode). Currency code is NEVER
 //     updated — slice 1 forbids currency change (spec §14.2). Also
 //     inventory_quantity is NEVER updated here — it is derived from
@@ -74,6 +75,9 @@ func (r *gormRepository) ApplyVariantDiffInTx(ctx context.Context, tx *gorm.DB, 
 			"compare_at_price":    v.CompareAtPrice,
 			"cost_price":          v.CostPrice,
 			"weight_grams":        v.WeightGrams,
+			"length_cm":           v.LengthCM,
+			"width_cm":            v.WidthCM,
+			"height_cm":           v.HeightCM,
 			"inventory_policy":    v.InventoryPolicy,
 			"low_stock_threshold": v.LowStockThreshold,
 			"position":            v.Position,

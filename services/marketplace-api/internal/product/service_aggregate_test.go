@@ -149,6 +149,59 @@ func TestIntegration_ProductService_UpdateAggregate_FullRoundTrip(t *testing.T) 
 	}
 }
 
+// The parcel size is what carriers quote on, so an edit has to save it on
+// both an existing variant and a new one, not only the weight.
+func TestIntegration_ProductService_UpdateAggregate_SavesShippingDimensions(t *testing.T) {
+	tx := testdb.NewTx(t)
+	storeID, tenantID, _ := seedStore(t, tx)
+	svc := buildService(tx, media.NewFakeUploader())
+
+	agg := seedColorSizeProduct(t, svc, storeID, tenantID)
+	weight, l, w, h := 500, decimal.NewFromInt(15), decimal.NewFromInt(12), decimal.NewFromInt(9)
+	tuple := func(c, s string) []product.OptionValueRef {
+		return []product.OptionValueRef{{OptionName: "Color", Value: c}, {OptionName: "Size", Value: s}}
+	}
+	options := []product.OptionSpec{
+		{Name: "Color", Values: []product.OptionValueSpec{{Value: "Red"}, {Value: "Blue"}}},
+		{Name: "Size", Values: []product.OptionValueSpec{{Value: "S"}, {Value: "M"}, {Value: "L"}}},
+	}
+	variants := []product.VariantInput{
+		{ID: findVariantBySKU(agg, "TEE-R-S").ID, SKU: "TEE-R-S", Price: decimal.NewFromInt(10), CurrencyCode: "USD",
+			WeightGrams: &weight, LengthCM: &l, WidthCM: &w, HeightCM: &h, OptionValues: tuple("Red", "S")},
+		{SKU: "TEE-R-L", Price: decimal.NewFromInt(14), CurrencyCode: "USD",
+			WeightGrams: &weight, LengthCM: &l, WidthCM: &w, HeightCM: &h, OptionValues: tuple("Red", "L")},
+		{SKU: "TEE-R-M", Price: decimal.NewFromInt(11), CurrencyCode: "USD", OptionValues: tuple("Red", "M")},
+		{SKU: "TEE-B-S", Price: decimal.NewFromInt(12), CurrencyCode: "USD", OptionValues: tuple("Blue", "S")},
+		{SKU: "TEE-B-M", Price: decimal.NewFromInt(13), CurrencyCode: "USD", OptionValues: tuple("Blue", "M")},
+		{SKU: "TEE-B-L", Price: decimal.NewFromInt(15), CurrencyCode: "USD", OptionValues: tuple("Blue", "L")},
+	}
+
+	if _, err := svc.UpdateAggregate(context.Background(), product.UpdateAggregateRequest{
+		ID: agg.Product.ID, StoreID: storeID, TenantID: tenantID,
+		Options: &options, Variants: &variants,
+	}); err != nil {
+		t.Fatalf("UpdateAggregate: %v", err)
+	}
+
+	for _, sku := range []string{"TEE-R-S", "TEE-R-L"} {
+		var row struct {
+			WeightGrams                 *int
+			LengthCM, WidthCM, HeightCM *decimal.Decimal
+		}
+		if err := tx.Raw(`SELECT weight_grams, length_cm, width_cm, height_cm FROM product_variants
+			WHERE product_id = ? AND sku = ? AND deleted_at IS NULL`, agg.Product.ID, sku).Scan(&row).Error; err != nil {
+			t.Fatalf("%s: read row: %v", sku, err)
+		}
+		if row.WeightGrams == nil || *row.WeightGrams != weight ||
+			row.LengthCM == nil || !row.LengthCM.Equal(l) ||
+			row.WidthCM == nil || !row.WidthCM.Equal(w) ||
+			row.HeightCM == nil || !row.HeightCM.Equal(h) {
+			t.Fatalf("%s: saved weight=%v l=%v w=%v h=%v, want 500/15/12/9",
+				sku, row.WeightGrams, row.LengthCM, row.WidthCM, row.HeightCM)
+		}
+	}
+}
+
 // TestIntegration_ProductService_UpdateAggregate_RemovedVariantIDsSoftDelete
 // exercises gap #2: RemovedVariantIDs path soft-deletes variants.
 func TestIntegration_ProductService_UpdateAggregate_RemovedVariantIDsSoftDelete(t *testing.T) {

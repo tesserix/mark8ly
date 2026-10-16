@@ -116,6 +116,31 @@ func TestWorker_ProcessesRowsWithOneError(t *testing.T) {
 	require.Len(t, creator.calls, 5)
 }
 
+// The weight column is grams, and it has to reach the variant: carriers
+// quote on it.
+func TestWorker_SavesWeightOnTheVariant(t *testing.T) {
+	repo := newFakeRepo()
+	creator := &fakeProductCreator{}
+	job := &csvjob.CsvImportJob{ID: "job-w", StoreID: "store-1", UserID: "user-1",
+		GCSPath: "w.csv", ContentHash: "hash-w", Status: csvjob.StatusQueued}
+	require.NoError(t, repo.Create(context.Background(), job))
+
+	csvjob.NewWorker(csvjob.WorkerConfig{
+		Repo:         repo,
+		ProductSvc:   creator,
+		CSVReader:    &fakeCSVReader{content: "title,handle,base_price,sku,stock,weight\nMug,mug,45.00,M1,3,500\n"},
+		ErrFactory:   newFakeErrorWriterFactory(),
+		StoreID:      "store-1",
+		TenantID:     "tenant-1",
+		CurrencyCode: "AUD",
+	}).Run(context.Background(), *job)
+
+	require.Len(t, creator.calls, 1)
+	got := creator.calls[0].Variants[0].WeightGrams
+	require.NotNil(t, got)
+	require.Equal(t, 500, *got)
+}
+
 func TestWorker_CancellationMidBatch(t *testing.T) {
 	// Build a CSV with 25 rows so we get at least one checkpoint at row 10.
 	var buf bytes.Buffer

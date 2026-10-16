@@ -98,7 +98,7 @@ export function AddPersonalisationField({
   }
 
   return (
-    <div className="rounded-md border border-[color:var(--ink-900)] border-opacity-15 bg-[color:var(--paper-100,transparent)] p-5">
+    <div className="rounded-md border border-[color:var(--ink-900)]/15 bg-[color:var(--paper-100,transparent)] p-5">
       <fieldset disabled={busy} className="flex flex-col gap-5">
         <legend className="sr-only">Add a personalisation field</legend>
 
@@ -110,7 +110,7 @@ export function AddPersonalisationField({
             {KIND_CHOICES.map((choice) => (
               <label
                 key={choice.value}
-                className="flex cursor-pointer items-start gap-3 rounded-md border border-[color:var(--ink-900)] border-opacity-10 px-3 py-2 hover:border-opacity-30"
+                className="flex cursor-pointer items-start gap-3 rounded-md border border-[color:var(--ink-900)]/10 px-3 py-2 hover:border-[color:var(--ink-900)]/30"
               >
                 <input
                   type="radio"

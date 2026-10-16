@@ -111,7 +111,7 @@ export function PersonalisationFieldCard({
   }
 
   return (
-    <div className="rounded-md border border-[color:var(--ink-900)] border-opacity-15 p-4">
+    <div className="rounded-md border border-[color:var(--ink-900)]/15 p-4">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -345,7 +345,7 @@ export function PersonalisationFieldCard({
                 });
                 setNewOption({ label: "", price_delta: "" });
               }}
-              className="mb-[2px] rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-3 py-2 text-sm text-[color:var(--ink-900)] disabled:opacity-40"
+              className="mb-[2px] rounded-md border border-[color:var(--ink-900)]/20 px-3 py-2 text-sm text-[color:var(--ink-900)] disabled:opacity-40"
             >
               Add
             </button>

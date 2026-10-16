@@ -24,7 +24,7 @@ type Variant = "in-progress" | "good" | "between" | "closed" | "warn";
 
 const VARIANT_CLASS: Record<Variant, string> = {
   "in-progress":
-    "border border-[color:var(--ink-900)] border-opacity-60 bg-transparent",
+    "border border-[color:var(--ink-900)]/60 bg-transparent",
   good: "bg-[color:var(--moss-700)]",
   between:
     "border border-[color:var(--moss-700)] bg-transparent",

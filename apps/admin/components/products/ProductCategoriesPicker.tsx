@@ -112,7 +112,7 @@ export function ProductCategoriesPicker({
           {selected.map((cat) => (
             <span
               key={cat.id}
-              className="inline-flex items-center gap-2 rounded-full border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-1 text-sm text-[color:var(--ink-900)]"
+              className="inline-flex items-center gap-2 rounded-full border border-[color:var(--ink-900)]/20 bg-[color:var(--background-elevated,white)] px-3 py-1 text-sm text-[color:var(--ink-900)]"
             >
               {cat.name}
               {!disabled && (
@@ -148,13 +148,13 @@ export function ProductCategoriesPicker({
               }}
               onFocus={() => setIsOpen(true)}
               onBlur={() => setTimeout(() => setIsOpen(false), 120)}
-              className="w-full rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] py-2 pl-10 pr-3 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="w-full rounded-md border border-[color:var(--ink-900)]/20 bg-[color:var(--background-elevated,white)] py-2 pl-10 pr-3 text-sm text-[color:var(--ink-900)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
             />
           </label>
           {isOpen && available.length > 0 && (
             <ul
               role="listbox"
-              className="absolute left-0 right-0 top-full z-10 mt-1 max-h-60 overflow-y-auto rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--background-elevated,white)] shadow-sm"
+              className="absolute left-0 right-0 top-full z-10 mt-1 max-h-60 overflow-y-auto rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--background-elevated,white)] shadow-sm"
             >
               {available.map((cat) => (
                 <li key={cat.id} role="option" aria-selected="false">
@@ -164,7 +164,7 @@ export function ProductCategoriesPicker({
                       e.preventDefault();
                       add(cat.id);
                     }}
-                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/5 focus-visible:bg-[color:var(--ink-900)] focus-visible:bg-opacity-5 focus-visible:outline-none"
+                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/5 focus-visible:bg-[color:var(--ink-900)]/5 focus-visible:outline-none"
                   >
                     <span>{cat.name}</span>
                     <span className="text-xs opacity-50">/{cat.slug}</span>
@@ -174,7 +174,7 @@ export function ProductCategoriesPicker({
             </ul>
           )}
           {isOpen && available.length === 0 && query.trim() && (
-            <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--background-elevated,white)] shadow-sm">
+            <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--background-elevated,white)] shadow-sm">
               {canCreate ? (
                 <button
                   type="button"
@@ -183,7 +183,7 @@ export function ProductCategoriesPicker({
                     e.preventDefault();
                     handleCreate();
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[color:var(--moss-700)] hover:bg-[color:var(--ink-900)]/5 focus-visible:bg-[color:var(--ink-900)] focus-visible:bg-opacity-5 focus-visible:outline-none"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[color:var(--moss-700)] hover:bg-[color:var(--ink-900)]/5 focus-visible:bg-[color:var(--ink-900)]/5 focus-visible:outline-none"
                 >
                   <Plus className="h-3 w-3" aria-hidden="true" />
                   {creating

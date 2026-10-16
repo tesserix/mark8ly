@@ -726,7 +726,7 @@ function RefundForm({
 // ─────────────────────────────────────────────────────────────────────────
 
 const inputCls =
-  "rounded-md border border-[color:var(--ink-900)] border-opacity-30 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:border-[color:var(--moss-700)] focus-visible:outline-none";
+  "rounded-md border border-[color:var(--ink-900)]/30 bg-[color:var(--background-elevated,white)] px-3 py-2 text-sm text-[color:var(--ink-900)] focus-visible:border-[color:var(--moss-700)] focus-visible:outline-none";
 
 function SubmitButton({
   pending,

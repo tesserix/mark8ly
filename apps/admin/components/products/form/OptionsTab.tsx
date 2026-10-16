@@ -14,7 +14,7 @@ export function OptionsTab() {
       {variantError && (
         <div
           role="alert"
-          className="rounded-md border border-[color:var(--signal)] border-opacity-40 bg-[color:var(--paper-200)] px-4 py-3 text-sm text-[color:var(--signal)]"
+          className="rounded-md border border-[color:var(--signal)]/40 bg-[color:var(--paper-200)] px-4 py-3 text-sm text-[color:var(--signal)]"
         >
           {variantError}
         </div>

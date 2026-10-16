@@ -99,7 +99,7 @@ export function CopyToStoreDialog({
               key={store.id}
               className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors ${
                 selectedStoreId === store.id
-                  ? "bg-[color:var(--moss-700)] bg-opacity-[0.08] text-[color:var(--ink-900)]"
+                  ? "bg-[color:var(--moss-700)]/8 text-[color:var(--ink-900)]"
                   : "text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/[0.03]"
               }`}
             >
@@ -110,7 +110,7 @@ export function CopyToStoreDialog({
                 checked={selectedStoreId === store.id}
                 onChange={() => setSelectedStoreId(store.id)}
                 aria-label={store.name}
-                className="h-4 w-4 border-[color:var(--ink-900)] border-opacity-30 text-[color:var(--moss-700)] focus:ring-[color:var(--moss-700)]"
+                className="h-4 w-4 border-[color:var(--ink-900)]/30 text-[color:var(--moss-700)] focus:ring-[color:var(--moss-700)]"
               />
               <span className="flex-1">{store.name}</span>
               <span className="text-xs opacity-50">
@@ -120,13 +120,13 @@ export function CopyToStoreDialog({
           ))}
         </fieldset>
 
-        <label className="flex items-center gap-3 border-t border-[color:var(--ink-900)] border-opacity-10 py-3 text-sm text-[color:var(--ink-900)]">
+        <label className="flex items-center gap-3 border-t border-[color:var(--ink-900)]/10 py-3 text-sm text-[color:var(--ink-900)]">
           <input
             type="checkbox"
             checked={copyMedia}
             onChange={(e) => setCopyMedia(e.target.checked)}
             aria-label="Copy media"
-            className="h-4 w-4 rounded border-[color:var(--ink-900)] border-opacity-30 text-[color:var(--moss-700)] focus:ring-[color:var(--moss-700)]"
+            className="h-4 w-4 rounded border-[color:var(--ink-900)]/30 text-[color:var(--moss-700)] focus:ring-[color:var(--moss-700)]"
           />
           Also copy media files
         </label>
@@ -135,7 +135,7 @@ export function CopyToStoreDialog({
           <DialogClose asChild>
             <button
               type="button"
-              className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 px-4 py-2 text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+              className="rounded-md border border-[color:var(--ink-900)]/20 px-4 py-2 text-sm text-[color:var(--ink-900)] hover:bg-[color:var(--ink-900)]/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
             >
               Cancel
             </button>

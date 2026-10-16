@@ -116,9 +116,9 @@ func TestWorker_ProcessesRowsWithOneError(t *testing.T) {
 	require.Len(t, creator.calls, 5)
 }
 
-// The weight column is grams, and it has to reach the variant: carriers
+// Weight (grams) and parcel size (cm) have to reach the variant: carriers
 // quote on it.
-func TestWorker_SavesWeightOnTheVariant(t *testing.T) {
+func TestWorker_SavesWeightAndSizeOnTheVariant(t *testing.T) {
 	repo := newFakeRepo()
 	creator := &fakeProductCreator{}
 	job := &csvjob.CsvImportJob{ID: "job-w", StoreID: "store-1", UserID: "user-1",
@@ -128,7 +128,7 @@ func TestWorker_SavesWeightOnTheVariant(t *testing.T) {
 	csvjob.NewWorker(csvjob.WorkerConfig{
 		Repo:         repo,
 		ProductSvc:   creator,
-		CSVReader:    &fakeCSVReader{content: "title,handle,base_price,sku,stock,weight\nMug,mug,45.00,M1,3,500\n"},
+		CSVReader:    &fakeCSVReader{content: "title,handle,base_price,sku,stock,weight,length_cm,width_cm,height_cm\nMug,mug,45.00,M1,3,500,15,15,12.5\n"},
 		ErrFactory:   newFakeErrorWriterFactory(),
 		StoreID:      "store-1",
 		TenantID:     "tenant-1",
@@ -139,6 +139,10 @@ func TestWorker_SavesWeightOnTheVariant(t *testing.T) {
 	got := creator.calls[0].Variants[0].WeightGrams
 	require.NotNil(t, got)
 	require.Equal(t, 500, *got)
+	v := creator.calls[0].Variants[0]
+	require.Equal(t, "15", v.LengthCM.String())
+	require.Equal(t, "15", v.WidthCM.String())
+	require.Equal(t, "12.5", v.HeightCM.String())
 }
 
 func TestWorker_CancellationMidBatch(t *testing.T) {

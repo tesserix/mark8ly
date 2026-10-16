@@ -50,7 +50,7 @@ export function StorefrontNav({ storeName }: StorefrontNavProps) {
   return (
     <nav
       aria-label="Store"
-      className="mb-10 w-full border-b border-[color:var(--storefront-text,var(--ink-900))] border-opacity-10"
+      className="mb-10 w-full border-b border-[color:var(--storefront-text,var(--ink-900))]/10"
     >
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-1 px-6 py-3 sm:flex-nowrap sm:gap-4 sm:px-8 sm:py-4">
         <Link

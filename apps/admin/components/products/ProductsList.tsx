@@ -354,7 +354,7 @@ const ProductRow = memo(function ProductRow({
         {isMenuOpen && (
           <div
             role="menu"
-            className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--background-elevated,white)] py-1 shadow-[var(--shadow-2,0_4px_12px_rgba(0,0,0,0.08))]"
+            className="absolute right-0 top-full z-20 mt-1 min-w-[160px] rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--background-elevated,white)] py-1 shadow-[var(--shadow-2,0_4px_12px_rgba(0,0,0,0.08))]"
           >
             <button
               type="button"
@@ -382,13 +382,13 @@ function MediaThumb({
   if (!media) {
     return (
       <div
-        className="h-10 w-10 rounded border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--paper-200)]"
+        className="h-10 w-10 rounded border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-200)]"
         aria-hidden="true"
       />
     );
   }
   return (
-    <div className="relative h-10 w-10 overflow-hidden rounded border border-[color:var(--ink-900)] border-opacity-10">
+    <div className="relative h-10 w-10 overflow-hidden rounded border border-[color:var(--ink-900)]/10">
       <Image
         src={media.url}
         alt={media.alt ?? productTitle}

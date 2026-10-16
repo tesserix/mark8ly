@@ -47,7 +47,7 @@ export function CouponsListFilters() {
           onKeyDown={(e) => {
             if (e.key === "Enter") applyFilters(undefined, search);
           }}
-          className="rounded-md border border-[color:var(--ink-900)] border-opacity-20 bg-[color:var(--background-elevated,white)] px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:opacity-50 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+          className="rounded-md border border-[color:var(--ink-900)]/20 bg-[color:var(--background-elevated,white)] px-3 py-2.5 text-sm text-[color:var(--ink-900)] placeholder:opacity-50 focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
         />
       </div>
       <div>

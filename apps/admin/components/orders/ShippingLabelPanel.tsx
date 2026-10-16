@@ -134,7 +134,7 @@ export function ShippingLabelPanel({
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          className="inline-flex w-fit items-center gap-2 rounded-md border border-[color:var(--ink-900)] border-opacity-40 px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+          className="inline-flex w-fit items-center gap-2 rounded-md border border-[color:var(--ink-900)]/40 px-4 py-2 text-sm text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
         >
           Create shipping label
         </button>

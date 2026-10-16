@@ -40,7 +40,7 @@ export function BulkCategoryAssignPopover({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-16 z-40 mx-auto w-full max-w-md rounded-lg border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--background-elevated,white)] p-4 shadow-[var(--shadow-2,0_4px_12px_rgba(0,0,0,0.08))]">
+    <div className="fixed inset-x-0 bottom-16 z-40 mx-auto w-full max-w-md rounded-lg border border-[color:var(--ink-900)]/10 bg-[color:var(--background-elevated,white)] p-4 shadow-[var(--shadow-2,0_4px_12px_rgba(0,0,0,0.08))]">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-medium text-[color:var(--ink-900)]">
           Assign categories
@@ -60,7 +60,7 @@ export function BulkCategoryAssignPopover({
         onChange={setSelectedIds}
       />
 
-      <div className="mt-3 flex justify-end border-t border-[color:var(--ink-900)] border-opacity-10 pt-3">
+      <div className="mt-3 flex justify-end border-t border-[color:var(--ink-900)]/10 pt-3">
         <button
           type="button"
           onClick={handleApply}

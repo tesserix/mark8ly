@@ -517,6 +517,10 @@ func TestIntegration_ProductService_Copy_CrossStore_Success(t *testing.T) {
 	srcCatID := seedCategory(t, tx, srcStoreID, tenantID, "apparel")
 
 	source := seedRichSourceProduct(t, tx, srcStoreID, tenantID, "EUR", srcCatID)
+	if err := tx.Exec(`UPDATE product_variants SET length_cm = 15, width_cm = 12, height_cm = 9
+		WHERE product_id = ?`, source.Product.ID).Error; err != nil {
+		t.Fatalf("seed dimensions: %v", err)
+	}
 
 	svc := buildService(tx, media.NewFakeUploader())
 	got, err := svc.Copy(ctx, product.CopyRequest{
@@ -550,6 +554,11 @@ func TestIntegration_ProductService_Copy_CrossStore_Success(t *testing.T) {
 		}
 		if v.InventoryQuantity != 0 {
 			t.Fatalf("variant[%d] inventory_quantity = %d, want 0 in target store", i, v.InventoryQuantity)
+		}
+		if v.LengthCM == nil || !v.LengthCM.Equal(decimal.NewFromInt(15)) ||
+			v.WidthCM == nil || !v.WidthCM.Equal(decimal.NewFromInt(12)) ||
+			v.HeightCM == nil || !v.HeightCM.Equal(decimal.NewFromInt(9)) {
+			t.Fatalf("variant[%d] parcel size = %v/%v/%v, want 15/12/9 copied", i, v.LengthCM, v.WidthCM, v.HeightCM)
 		}
 	}
 	// Media: rows share storage_keys with source.

@@ -58,7 +58,7 @@ export function ProductSearchInput() {
         onChange={(e) => setDraft(e.target.value)}
         placeholder="Search the shop…"
         aria-label="Search products"
-        className="w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))] border-opacity-20 bg-[color:var(--background-elevated,white)] py-2 pl-10 pr-11 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+        className="w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--background-elevated,white)] py-2 pl-10 pr-11 text-sm text-[color:var(--storefront-text,var(--ink-900))] placeholder:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
       />
       {draft && (
         <button

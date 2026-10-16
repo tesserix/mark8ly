@@ -175,8 +175,8 @@ export function CustomerNotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 max-h-96 w-[calc(100vw-3rem)] overflow-y-auto rounded-md border border-[color:var(--ink-900)] border-opacity-10 bg-[color:var(--paper-50,#fff)] shadow-lg sm:w-80">
-          <div className="flex items-center justify-between border-b border-[color:var(--ink-900)] border-opacity-10 px-4 py-3">
+        <div className="absolute right-0 top-full z-50 mt-2 max-h-96 w-[calc(100vw-3rem)] overflow-y-auto rounded-md border border-[color:var(--ink-900)]/10 bg-[color:var(--paper-50,#fff)] shadow-lg sm:w-80">
+          <div className="flex items-center justify-between border-b border-[color:var(--ink-900)]/10 px-4 py-3">
             <p className="text-sm font-medium text-[color:var(--ink-900)]">Notifications</p>
             {unread > 0 && (
               <button type="button" onClick={markAllRead} className="text-xs font-medium text-[color:var(--storefront-accent,var(--moss-700))] hover:underline">
@@ -189,13 +189,13 @@ export function CustomerNotificationBell() {
           ) : items.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm opacity-60">No notifications yet.</div>
           ) : (
-            <ul className="divide-y divide-[color:var(--ink-900)] divide-opacity-10">
+            <ul className="divide-y divide-[color:var(--ink-900)]/10">
               {items.map((n) => (
                 <li key={n.id}>
                   <Link
                     href={hrefFor(n.type)}
                     onClick={() => setOpen(false)}
-                    className={`block px-4 py-3 transition-colors hover:bg-[color:var(--ink-900)] hover:bg-opacity-[0.03] ${n.is_read ? "" : "bg-[color:var(--moss-700)] bg-opacity-[0.05]"}`}
+                    className={`block px-4 py-3 transition-colors hover:bg-[color:var(--ink-900)]/3 ${n.is_read ? "" : "bg-[color:var(--moss-700)]/5"}`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className="truncate text-sm font-medium text-[color:var(--ink-900)]">{n.title}</p>

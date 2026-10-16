@@ -23,7 +23,7 @@ export async function FeaturedProducts({ storeSlug, max = 8 }: FeaturedProductsP
   return (
     <section
       aria-label="Featured products"
-      className="mt-16 border-t border-[color:var(--storefront-text,var(--ink-900))] border-opacity-10 pt-12"
+      className="mt-16 border-t border-[color:var(--storefront-text,var(--ink-900))]/10 pt-12"
     >
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <h2 className="font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-3xl text-[color:var(--storefront-text,var(--ink-900))]">

@@ -18,7 +18,7 @@ type ProductDraft struct {
 	BasePrice     decimal.Decimal
 	SKU           string
 	Stock         int
-	Weight        string
+	WeightGrams   *int
 	CategorySlugs []string
 }
 
@@ -109,7 +109,6 @@ func ParseRow(headers []string, row []string, rowNum int, tracker *HandleTracker
 		draft.Status = "draft"
 	}
 	draft.SKU = get(colSKU)
-	draft.Weight = get(colWeight)
 
 	// base_price — decimal
 	if priceStr := get(colBasePrice); priceStr != "" {
@@ -132,6 +131,18 @@ func ParseRow(headers []string, row []string, rowNum int, tracker *HandleTracker
 			errs = append(errs, "stock must not be negative")
 		} else {
 			draft.Stock = s
+		}
+	}
+
+	// weight — whole grams, the unit the variant stores
+	if weightStr := get(colWeight); weightStr != "" {
+		g, err := strconv.Atoi(weightStr)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("weight %q is not a whole number of grams", weightStr))
+		} else if g < 0 {
+			errs = append(errs, "weight must not be negative")
+		} else {
+			draft.WeightGrams = &g
 		}
 	}
 

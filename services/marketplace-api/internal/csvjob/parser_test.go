@@ -20,7 +20,7 @@ func TestParseRow(t *testing.T) {
 	}{
 		{
 			name: "valid row",
-			row:  []string{"T-Shirt", "t-shirt", "A nice shirt", "active", "29.99", "TSH-001", "100", "200g", "clothing|shirts"},
+			row:  []string{"T-Shirt", "t-shirt", "A nice shirt", "active", "29.99", "TSH-001", "100", "200", "clothing|shirts"},
 			check: func(t *testing.T, d csvjob.ProductDraft) {
 				require.Equal(t, "T-Shirt", d.Title)
 				require.Equal(t, "t-shirt", d.Handle)
@@ -29,7 +29,8 @@ func TestParseRow(t *testing.T) {
 				require.True(t, d.BasePrice.Equal(decimal.NewFromFloat(29.99)))
 				require.Equal(t, "TSH-001", d.SKU)
 				require.Equal(t, 100, d.Stock)
-				require.Equal(t, "200g", d.Weight)
+				require.NotNil(t, d.WeightGrams)
+				require.Equal(t, 200, *d.WeightGrams)
 				require.Equal(t, []string{"clothing", "shirts"}, d.CategorySlugs)
 			},
 		},
@@ -54,10 +55,16 @@ func TestParseRow(t *testing.T) {
 			wantErr: "not a valid integer",
 		},
 		{
+			name:    "weight with a unit",
+			row:     []string{"Title", "handle-5", "", "", "10", "SKU-5", "5", "200g", ""},
+			wantErr: "not a whole number of grams",
+		},
+		{
 			name: "default status is draft",
 			row:  []string{"Title", "handle-4", "", "", "10", "SKU-4", "5", "", ""},
 			check: func(t *testing.T, d csvjob.ProductDraft) {
 				require.Equal(t, "draft", d.Status)
+				require.Nil(t, d.WeightGrams)
 			},
 		},
 	}

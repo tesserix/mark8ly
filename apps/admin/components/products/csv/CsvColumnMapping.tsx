@@ -38,7 +38,7 @@ const FIELD_LABELS: Record<ProductField, string> = {
   base_price: "price (base_price)",
   sku: "sku",
   stock: "stock",
-  weight: "weight",
+  weight: "weight (grams)",
   category_slugs: "categories (category_slugs)",
 };
 

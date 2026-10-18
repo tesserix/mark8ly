@@ -321,12 +321,8 @@ export default function HomePage() {
 /* ============================================================
    Hero
    ------------------------------------------------------------
-   Asymmetric: copy left, single editorial moment right. No
-   floating badges, no fake browser chrome, no metric strip.
-   Headline carries the brand, the deck line under it carries the
-   offer; everything else gets out of the way. The offer is stated
-   once, above the CTAs — the line below them keeps price detail only,
-   so nothing repeats.
+   Lead with first-listing setup help beside the existing signup path.
+   Keep trial and paid-plan terms visible without fixed regional prices.
    ============================================================ */
 
 function Hero() {
@@ -334,36 +330,9 @@ function Hero() {
     <section className="relative overflow-hidden">
       <div className="mx-auto max-w-6xl px-6 pb-16 pt-16 lg:pb-24 lg:pt-20">
         <div className="max-w-3xl">
-          {/*
-            The H1 carries the offer as well as the brand line.
-
-            The <title> was rewritten to lead with the offer (#570), but
-            the H1 was not — so the page told two different stories
-            depending on how you arrived (tesserix/mark8ly#599). Someone
-            coming from search passes through the title first. Someone
-            tapping a link in an Instagram DM never sees the title at
-            all, and lands straight on the H1 — and that is the primary
-            acquisition channel, so it is the majority arrival path.
-
-            "A storefront worth opening" is a comparison claim: it only
-            lands against an implicit alternative, which a seller
-            currently taking orders in DMs does not have. It is kept,
-            because it is the brand line and it works on the migrator,
-            but it no longer stands alone.
-          */}
           <h1 className="font-serif text-5xl font-medium leading-[1.02] tracking-[-0.025em] text-foreground">
             A storefront worth opening.
-            <br />
-            {/* nbsp keeps "ninety days." together: at 390px the serif
-                wraps to four lines and would otherwise orphan "days."
-                on a line of its own. text-wrap:balance does not help —
-                the explicit <br> splits the heading into two separate
-                balancing blocks, and measuring showed no effect. */}
-            Free for ninety&nbsp;days.
           </h1>
-          <p className="mt-6 max-w-xl text-xl leading-[1.2] text-foreground">
-            No card to start, and we never take a cut of what you sell.
-          </p>
           <p className="mt-6 max-w-xl text-lg leading-[1.55] text-foreground-secondary">
             Mark8ly is a quiet, considered commerce platform for people who
             actually make things. If you&rsquo;re taking orders through
@@ -372,12 +341,15 @@ function Hero() {
             storefront that doesn&rsquo;t look like everyone else&rsquo;s.
           </p>
 
-          <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
+          <p className="mt-8 max-w-xl text-xl leading-[1.2] text-foreground">
+            We&rsquo;ll help you set up your first listing at no charge.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-4">
             <Link
               href="/onboarding"
               className="inline-flex h-12 items-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover"
             >
-              Open your store
+              Start with free setup help
             </Link>
             <Link href="/#pricing" className="btn-ghost">
               See the pricing
@@ -385,7 +357,8 @@ function Hero() {
           </div>
 
           <p className="mt-8 text-sm text-foreground-tertiary">
-            Three clear plans after that, from $15 a month, billed yearly.
+            90-day free trial. No card to start. Choose a paid plan after
+            the trial. No added transaction fees from Mark8ly.
           </p>
         </div>
       </div>
@@ -870,7 +843,7 @@ function Faq() {
 
 /* ============================================================
    Final CTA — full-width ink panel. Single confident sentence
-   in serif, single CTA, nothing else.
+   in serif, setup-help offer and clear trial terms beside signup.
    ============================================================ */
 
 function FinalCta() {
@@ -883,12 +856,15 @@ function FinalCta() {
           <br />
           this afternoon.
         </h2>
-        <div className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-4">
+        <p className="mt-6 max-w-xl text-xl leading-relaxed text-paper-50">
+          We&rsquo;ll help you set up your first listing at no charge.
+        </p>
+        <div className="mt-8 flex flex-wrap items-center gap-x-8 gap-y-4">
           <Link
             href="/onboarding"
             className="inline-flex h-12 items-center rounded-md bg-paper-50 px-6 text-base font-medium text-ink-900 hover:bg-paper-100"
           >
-            Start free
+            Start with free setup help
           </Link>
           <Link
             href="/#pricing"
@@ -897,6 +873,9 @@ function FinalCta() {
             Review the pricing first
           </Link>
         </div>
+        <p className="mt-8 text-sm text-paper-300">
+          90-day free trial. No card to start. Choose a paid plan after the trial.
+        </p>
       </div>
     </section>
   );

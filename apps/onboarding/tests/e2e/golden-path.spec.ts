@@ -33,21 +33,22 @@ test("golden path: landing → form → magic link → welcome", async ({
     "/?utm_source=e2e&utm_medium=spec&utm_campaign=attribution&utm_content=hero&token=must-not-persist",
   );
   await expect(
-    // Pins both halves of the H1. The offer half is the point of
-    // tesserix/mark8ly#599: the <title> leads with the offer, so an H1
-    // that leads only with the brand line tells a different story to
-    // anyone who arrives without passing through a SERP.
-    page.getByRole("heading", {
-      // \s+ rather than a literal space: the markup uses &nbsp; to stop
-      // "days." orphaning on mobile, and a literal space would not match it.
-      name: /a storefront worth opening\.\s*free for ninety\s+days\./i,
-    }),
+    page.getByRole("heading", { name: "A storefront worth opening.", exact: true }),
   ).toBeVisible();
+  const hero = page.locator("main section").first();
+  await expect(hero).toContainText(
+    "We’ll help you set up your first listing at no charge.",
+  );
+  await expect(hero).toContainText(
+    "90-day free trial. No card to start. Choose a paid plan after the trial.",
+  );
+  const heroCta = hero.getByRole("link", { name: "Start with free setup help", exact: true });
+  await expect(heroCta).toHaveAttribute("href", "/onboarding");
 
   // 2. Onboarding form, reached the way a visitor reaches it: through the
   //    hero CTA, whose href carries no query string. The attribution
   //    survives that hop because it lives in the browser, not the URL.
-  await page.getByRole("link", { name: /open your store/i }).first().click();
+  await heroCta.click();
   await expect(page).toHaveURL(/\/onboarding$/);
   await expect(
     page.getByRole("heading", { name: /start your store/i }),

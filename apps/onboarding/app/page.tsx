@@ -267,7 +267,7 @@ function buildHomeJsonLd(currency: Currency) {
         thumbnailUrl: `${SITE_URL}/video/tour-poster.jpg`,
         contentUrl: `${SITE_URL}/video/tour.mp4`,
         duration: "PT1M",
-        uploadDate: "2026-10-19",
+        uploadDate: "2026-10-20",
       },
       {
         "@type": "FAQPage",
@@ -405,8 +405,7 @@ function Hero() {
    then a 16:9 video frame matching the FeaturePlate language
    (rounded-lg, ring on paper). Poster shows first frame so
    the moment reads as composed before play. Built from real demo-store
-   screens with added motion and burned-in captions; sixty seconds,
-   silent.
+   screens with added motion and burned-in captions, with a voiceover; sixty seconds.
    ============================================================ */
 
 function Tour() {
@@ -425,8 +424,8 @@ function Tour() {
           </div>
           <p className="max-w-xl self-end text-base leading-relaxed text-foreground-secondary">
             One minute on our demo store, from adding a product to the
-            first order: real Mark8ly screens, set to captions, no sound
-            needed.
+            first order: real Mark8ly screens, captioned, so it works with the
+            sound off.
           </p>
         </div>
 
@@ -440,9 +439,8 @@ function Tour() {
             aria-label="Mark8ly product tour on the demo store: adding a product, the product page, cart, checkout, then the order in the admin"
           >
             <source src="/video/tour.mp4" type="video/mp4" />
-            {/* Captions are burned into the film; this track is for
-                screen readers and players that read text tracks, so it is
-                not on by default (it would print every line twice). */}
+            {/* The film burns in short scene titles; this track is the
+                full voiceover transcript, off by default. */}
             <track
               kind="captions"
               src="/video/tour.en.vtt"

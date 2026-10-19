@@ -370,8 +370,8 @@ function Hero() {
 
         <figure className="relative aspect-[16/10] overflow-hidden rounded-lg bg-paper-100 ring-1 ring-border-subtle lg:aspect-[4/3]">
           <Image
-            src="/screens/storefront.png"
-            alt="The Bondi Store, a Mark8ly demo storefront: a coastal hero photo with shop links for linen and cotton basics"
+            src="/screens/storefront-product.jpg"
+            alt="A product page on The Bondi Store, a Mark8ly demo store: a sandstone ceramic mug at A$45 with a personalisation field"
             fill
             priority
             sizes="(min-width: 1024px) 560px, 100vw"
@@ -533,8 +533,10 @@ const FEATURES = [
     title: "An admin you don't have to learn.",
     body:
       "Products, orders, customers, inventory. Each screen does one thing, clearly. No dashboards full of metrics that don't matter to you.",
-    screen: "/screens/admin.png",
-    screenAlt: "Mark8ly admin — branding settings with editorial layout gallery",
+    // Customer names and emails masked to example.com placeholders at
+    // capture time; the demo store's real orders carry real addresses.
+    screen: "/screens/admin-orders.jpg",
+    screenAlt: "Mark8ly admin — the orders list with payment and fulfilment status for each order",
   },
 ];
 
@@ -649,16 +651,22 @@ function HowItWorks() {
     {
       number: "01",
       title: "Add your products.",
+      image: "/steps/add-products.jpg",
+      imageAlt: "A seller photographing a ceramic mug on linen with a phone",
       body: "Photos, prices and stock. Connect your payment provider so customers can pay.",
     },
     {
       number: "02",
       title: "Share your store.",
+      image: "/steps/share-store.jpg",
+      imageAlt: "A woman at a cafe table sending a link from her phone",
       body: "Send customers your store link, or use your own domain.",
     },
     {
       number: "03",
       title: "Receive and dispatch orders.",
+      image: "/steps/dispatch-orders.jpg",
+      imageAlt: "A seller packing a folded linen shirt into a mailer box",
       body: "Customers pay on your store. Every order lands in your dashboard, ready to pack and ship.",
     },
   ];
@@ -676,6 +684,15 @@ function HowItWorks() {
         <ol className="mt-12 grid gap-10 sm:grid-cols-3 sm:gap-8">
           {steps.map((step) => (
             <li key={step.number}>
+              <div className="relative mb-6 aspect-[4/3] overflow-hidden rounded-lg bg-paper-100">
+                <Image
+                  src={step.image}
+                  alt={step.imageAlt}
+                  fill
+                  sizes="(min-width: 640px) 33vw, 100vw"
+                  className="object-cover"
+                />
+              </div>
               <p className="font-serif text-3xl text-moss-700">
                 {step.number}
               </p>
@@ -688,6 +705,11 @@ function HowItWorks() {
             </li>
           ))}
         </ol>
+        {/* The step photos are AI-generated scenes, not customers; say so
+            rather than let them read as merchant proof. */}
+        <p className="mt-8 text-xs text-foreground-tertiary">
+          Step photos are AI-generated illustrations.
+        </p>
       </div>
     </section>
   );

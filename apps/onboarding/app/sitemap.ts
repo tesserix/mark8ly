@@ -48,13 +48,13 @@ const LAST_MODIFIED: Readonly<Record<string, string>> = {
   "/": "2026-10-20",
   "/about": "2026-10-19",
   "/contact": "2026-09-02",
-  "/help": "2026-10-19",
+  "/help": "2026-10-20",
   "/integrations": "2026-10-20",
 
-  "/shopify-alternative": "2026-10-19",
-  "/ecommerce-for-makers": "2026-10-19",
-  "/sell-online-india": "2026-10-19",
-  "/etsy-alternative": "2026-10-19",
+  "/shopify-alternative": "2026-10-20",
+  "/ecommerce-for-makers": "2026-10-20",
+  "/sell-online-india": "2026-10-20",
+  "/etsy-alternative": "2026-10-20",
 
   "/legal": "2026-09-02",
   "/privacy": "2026-09-02",

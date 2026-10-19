@@ -39,7 +39,7 @@ export interface SeoBreakdownRow {
  * same fee philosophy with the competitor's name swapped in
  * (tesserix/mark8ly#602). Shared boilerplate across near-identical
  * pages is a low-quality-content marker, and more to the point it is
- * not useful: "we don't take a cut" is a claim, whereas arithmetic a
+ * not useful: "we don’t take a cut" is a claim, whereas arithmetic a
  * seller can check against their own last order is evidence.
  *
  * `source` is required, not optional. Every number here is a claim

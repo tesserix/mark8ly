@@ -361,7 +361,7 @@ function Hero() {
           </p>
 
           {/* TODO(setup-help): this CTA read "Start with free setup help"
-              with a "We'll help you set up your first listing" line above
+              with a "We’ll help you set up your first listing" line above
               it. Restore both once the setup-help service is defined. */}
           <div className="mt-8 flex flex-wrap items-center gap-x-8 gap-y-4">
             <Link
@@ -468,7 +468,7 @@ function Manifesto() {
       number: "i.",
       title: "Quiet by design.",
       body:
-        "No popups, no abandoned-cart guilt, no aggressive nudges in the admin. Your store should feel like a shop you walk into, not an inbox you can't close.",
+        "No popups, no abandoned-cart guilt, no aggressive nudges in the admin. Your store should feel like a shop you walk into, not an inbox you can’t close.",
     },
     {
       number: "ii.",
@@ -547,9 +547,9 @@ const FEATURES = [
   },
   {
     kicker: "Admin",
-    title: "An admin you don't have to learn.",
+    title: "An admin you don’t have to learn.",
     body:
-      "Products, orders, customers, inventory. Each screen does one thing, clearly. No dashboards full of metrics that don't matter to you.",
+      "Products, orders, customers, inventory. Each screen does one thing, clearly. No dashboards full of metrics that don’t matter to you.",
     // Customer names and emails masked to example.com placeholders at
     // capture time; the demo store's real orders carry real addresses.
     screen: "/screens/admin-orders.jpg",
@@ -739,9 +739,9 @@ function HowItWorks() {
 
 const faqItems = [
   {
-    question: "I'm not technical. Can I still use this?",
+    question: "I’m not technical. Can I still use this?",
     answer:
-      "Yes — that's the entire point. If you can write an email, you can run a store on Mark8ly. And if you get stuck, real humans answer real messages.",
+      "Yes — that’s the entire point. If you can write an email, you can run a store on Mark8ly. And if you get stuck, real humans answer real messages.",
   },
   {
     question: "What happens after the ninety-day free trial?",
@@ -751,7 +751,7 @@ const faqItems = [
   {
     question: "What does Mark8ly take from each sale?",
     answer:
-      "Nothing. Standard processor rates apply — that's your payment provider's fee, not ours. Mark8ly adds no platform fee on top.",
+      "Nothing. Standard processor rates apply — that’s your payment provider’s fee, not ours. Mark8ly adds no platform fee on top.",
   },
   {
     question: "Is there a limit on products?",
@@ -799,7 +799,7 @@ function FinalCta() {
           this afternoon.
         </h2>
         {/* TODO(setup-help): this CTA read "Start with free setup help"
-            with a "We'll help you set up your first listing" line above
+            with a "We’ll help you set up your first listing" line above
             it. Restore both once the setup-help service is defined. */}
         <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
           <Link

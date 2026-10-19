@@ -66,14 +66,14 @@ const CATEGORIES: ReadonlyArray<FaqCategory> = [
     heading: "Opening a store",
     items: [
       {
-        question: "I'm not technical. Can I actually do this myself?",
+        question: "I’m not technical. Can I actually do this myself?",
         answer:
-          "Yes — that's the point of Mark8ly. If you can write an email, you can set up a store: add products, connect a payment processor, and pick a domain, all from the admin. Most merchants have a working store open by the end of the afternoon.",
+          "Yes — that’s the point of Mark8ly. If you can write an email, you can set up a store: add products, connect a payment processor, and pick a domain, all from the admin. You can set it up in an afternoon; taking payments starts once your payment processor is connected.",
       },
       {
         question: "Do I need a credit card to start?",
         answer:
-          "No. The 90-day trial starts with just an email and doesn't ask for a card. You'll only be asked to choose a plan once the trial is ending, or earlier if you decide to upgrade.",
+          "No. The 90-day trial starts with just an email and doesn’t ask for a card. You’ll only be asked to choose a plan once the trial is ending, or earlier if you decide to upgrade.",
       },
     ],
   },
@@ -82,19 +82,19 @@ const CATEGORIES: ReadonlyArray<FaqCategory> = [
     heading: "The 90 days, and after",
     items: [
       {
-        question: "What's included in the free trial?",
+        question: "What’s included in the free trial?",
         answer:
           "The full product — unlimited products and orders, your own domain, payments, shipping, and the admin, exactly as a paying merchant sees it. Nothing is watermarked or feature-limited during the 90 days.",
       },
       {
         question: "What happens when the trial ends?",
         answer:
-          "You choose one of three plans — Starter, Studio, or Pro — starting at $15.17 a month billed yearly ($182 a year), or $19 a month billed monthly. There's no auto-upgrade and no surprise charge: if you haven't picked a plan, your store simply won't take new orders until you do.",
+          "You choose one of three plans — Starter, Studio, or Pro — starting at $15.17 a month billed yearly ($182 a year), or $19 a month billed monthly. There’s no auto-upgrade and no surprise charge: if you haven’t picked a plan, your store simply won’t take new orders until you do.",
       },
       {
         question: "Can I cancel or change plans later?",
         answer:
-          "Any time. Upgrades take effect immediately and prorate; downgrades take effect at the end of the current billing period. Cancelling doesn't lock your data — see data ownership below.",
+          "Any time. Upgrades take effect immediately and prorate; downgrades take effect at the end of the current billing period. Cancelling doesn’t lock your data — see data ownership below.",
       },
     ],
   },
@@ -105,12 +105,12 @@ const CATEGORIES: ReadonlyArray<FaqCategory> = [
       {
         question: "Does Mark8ly take a cut of my sales?",
         answer:
-          "No. We don't add a platform transaction fee on any plan. You pay only your payment gateway's standard rate — roughly 2% for UPI and 2–3% for cards — and that's the entire cost of taking a payment.",
+          "No. Standard payment processor rates apply — Mark8ly adds no platform fee on any plan.",
       },
       {
-        question: "What's the difference between Starter, Studio, and Pro?",
+        question: "What’s the difference between Starter, Studio, and Pro?",
         answer:
-          "All three include unlimited products and orders. Starter covers up to 2 stores. Studio adds up to 5 stores, custom CSS and fonts, a read-only API, and a 12-month audit log. Pro adds up to 10 stores, a full read/write API, SSO, and priority support.",
+          "All three include unlimited products and orders. Starter covers up to 2 stores and includes read-only API access. Studio adds up to 5 stores, custom CSS and fonts, and a 12-month audit log. Pro adds up to 10 stores, a full read/write API, SSO, and priority support.",
       },
     ],
   },
@@ -121,7 +121,7 @@ const CATEGORIES: ReadonlyArray<FaqCategory> = [
       {
         question: "Can I use my own domain?",
         answer:
-          "Yes, on every plan — it's included, not an add-on. Connect a domain you already own from Settings → Domains, or buy one during onboarding. Customers land on your brand, never a Mark8ly subdomain.",
+          "Yes, on every plan — it’s included, not an add-on. Connect a domain you already own from Settings → Domains, or buy one during onboarding. Customers land on your brand, never a Mark8ly subdomain.",
       },
     ],
   },
@@ -135,9 +135,9 @@ const CATEGORIES: ReadonlyArray<FaqCategory> = [
           "Stripe for cards internationally, and Razorpay for merchants selling in India — which covers UPI, wallets, and local cards, not just international cards. You connect one from Settings → Payments; customers never leave your storefront to pay.",
       },
       {
-        question: "Can I accept UPI payments if I'm selling in India?",
+        question: "Can I accept UPI payments if I’m selling in India?",
         answer:
-          "Yes. Razorpay is a first-class processor in Mark8ly, so UPI, popular wallets, and net banking are available alongside cards for Indian customers, at Razorpay's standard rates — Mark8ly adds nothing on top.",
+          "Yes. Razorpay is a first-class processor in Mark8ly, so UPI, popular wallets, and net banking are available alongside cards for Indian customers, at Razorpay’s standard rates — Mark8ly adds nothing on top.",
       },
     ],
   },
@@ -164,7 +164,7 @@ const CATEGORIES: ReadonlyArray<FaqCategory> = [
       {
         question: "What shipping carriers can I use?",
         answer:
-          "Delhivery for domestic shipping within India, NinjaVan for Southeast Asia, and ShipEngine for broader coverage — which connects carriers like USPS, UPS, FedEx, and DHL through a single integration. Live rates are calculated at checkout based on the carriers you've connected.",
+          "Delhivery for domestic shipping within India, NinjaVan for Southeast Asia, and ShipEngine for broader coverage — which connects carriers like USPS, UPS, FedEx, and DHL through a single integration. Live rates are calculated at checkout based on the carriers you’ve connected.",
       },
     ],
   },
@@ -175,7 +175,7 @@ const CATEGORIES: ReadonlyArray<FaqCategory> = [
       {
         question: "What happens to my data if I decide to leave?",
         answer:
-          "It's yours. Export your products, customers, and orders in one click, at any time, whether or not you're cancelling. We'd rather earn a renewal than make leaving painful.",
+          "It’s yours. Export your products, customers, and orders in one click, at any time, whether or not you’re cancelling. We’d rather earn a renewal than make leaving painful.",
       },
     ],
   },
@@ -204,7 +204,7 @@ export default function HelpPage() {
       <PageHero
         eyebrow="Help"
         title={<>Answers, plainly.</>}
-        lede="The questions merchants actually ask, grouped by topic. If yours isn't here, a real person reads every message we get."
+        lede="The questions merchants actually ask, grouped by topic. If yours isn’t here, a real person reads every message we get."
       />
 
       {CATEGORIES.map((category) => (

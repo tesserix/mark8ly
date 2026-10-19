@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-// The live pricing table (components/marketing/Pricing.tsx) promised two
+// The live pricing table (plan copy now in lib/plans.ts) promised two
 // features that plangate never enabled server-side — see #544:
 //
 //   - "Read-only API + webhooks" (Studio): the read-only API is real
@@ -24,7 +24,7 @@ import { test, expect } from "@playwright/test";
 // plus the basic shape of PLAN_META.
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { PLAN_META } from "../../components/marketing/Pricing";
+import { PLAN_META } from "../../lib/plans";
 
 function allFeatures(): string[] {
   return PLAN_META.flatMap((plan) => plan.features);

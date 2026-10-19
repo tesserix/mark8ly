@@ -258,6 +258,18 @@ function buildHomeJsonLd(currency: Currency) {
           ]
         : []),
       {
+        "@type": "VideoObject",
+        "@id": `${SITE_URL}#tour`,
+        name: "Mark8ly product tour",
+        description:
+          "One minute on the Mark8ly demo store: adding a product, the " +
+          "product page, cart, checkout, and the order in the admin.",
+        thumbnailUrl: `${SITE_URL}/video/tour-poster.jpg`,
+        contentUrl: `${SITE_URL}/video/tour.mp4`,
+        duration: "PT1M",
+        uploadDate: "2026-10-19",
+      },
+      {
         "@type": "FAQPage",
         "@id": `${SITE_URL}#faq`,
         // Built from the same `faqItems` the accordion renders, so the
@@ -392,8 +404,9 @@ function Hero() {
    Tour — editorial product film. Asymmetric heading + body,
    then a 16:9 video frame matching the FeaturePlate language
    (rounded-lg, ring on paper). Poster shows first frame so
-   the moment reads as composed before play. The actual product
-   running, no marketing tricks.
+   the moment reads as composed before play. Built from real demo-store
+   screens with added motion and burned-in captions; sixty seconds,
+   silent.
    ============================================================ */
 
 function Tour() {
@@ -410,13 +423,10 @@ function Tour() {
               See it move.
             </h2>
           </div>
-          {/* TODO(tour-video): the current tour.mp4 runs 51.4s, not 45.
-              Update this duration when the new video ships; until then
-              the copy says "under a minute" rather than a wrong number. */}
           <p className="max-w-xl self-end text-base leading-relaxed text-foreground-secondary">
-            Under a minute inside a working Mark8ly storefront, checkout
-            and admin. No screenshots, no marketing tricks &mdash; just the
-            product running.
+            One minute on our demo store, from adding a product to the
+            first order: real Mark8ly screens, set to captions, no sound
+            needed.
           </p>
         </div>
 
@@ -427,9 +437,18 @@ function Tour() {
             preload="metadata"
             poster="/video/tour-poster.jpg"
             className="absolute inset-0 h-full w-full object-cover"
-            aria-label="Mark8ly product tour"
+            aria-label="Mark8ly product tour on the demo store: adding a product, the product page, cart, checkout, then the order in the admin"
           >
             <source src="/video/tour.mp4" type="video/mp4" />
+            {/* Captions are burned into the film; this track is for
+                screen readers and players that read text tracks, so it is
+                not on by default (it would print every line twice). */}
+            <track
+              kind="captions"
+              src="/video/tour.en.vtt"
+              srcLang="en"
+              label="English"
+            />
           </video>
         </figure>
       </div>

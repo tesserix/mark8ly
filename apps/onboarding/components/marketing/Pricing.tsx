@@ -16,7 +16,7 @@
  *  - No emoji. No urgency copy.
  *
  * Pricing source of truth: packages/ui/src/subscription/pricing-data.ts.
- * Feature + tagline copy matches spec §9 feature matrix exactly.
+ * Plan features and taglines: lib/plans.ts (shared with /integrations).
  */
 
 import Link from 'next/link'
@@ -25,11 +25,11 @@ import {
   Money,
   getAddOnPrice,
   getPlanPrice,
-  type PlanId,
   type SharedPricingCatalogue,
 } from '@repo/ui/subscription'
 
 import { useGeoCurrency } from '@/lib/geo/use-geo-currency'
+import { PLAN_META } from '@/lib/plans'
 
 interface PricingProps {
   catalogue: SharedPricingCatalogue
@@ -37,81 +37,6 @@ interface PricingProps {
 
 type BillingPeriod = 'monthly' | 'annual'
 
-interface PlanMeta {
-  id: PlanId
-  name: string
-  tagline: string
-  features: string[]
-}
-
-// Every bullet below must be something a merchant on that plan can actually
-// get today. Before adding or restoring one:
-//   1. Find its `plangate.Feature` constant in
-//      services/marketplace-api/internal/plangate/matrix.go, confirm it is
-//      enabled (non-Disabled) for that plan, AND grep for the constant
-//      outside matrix.go and its tests to confirm a real handler enforces
-//      it — a constant that only appears in matrix.go is a hedge for
-//      something unbuilt, not a shipped feature (see
-//      FeatureCustomCodeInjection).
-//   2. Check migrations/ for a later migration that withdrew the feature
-//      while its implementation code stayed behind (see
-//      000121_retire_untested_paypal — a complete gateway offered to
-//      nobody).
-//   3. For a numeric limit (stores, emails, images, retention), confirm the
-//      number is enforced in code, not just asserted in this file.
-// An implementation file existing is NOT evidence a feature is offered.
-// This exact mistake shipped twice on the live page — see #544 — before
-// anyone checked past "the code exists somewhere."
-const PLAN_META: readonly PlanMeta[] = [
-  {
-    id: 'starter',
-    name: 'Starter',
-    tagline: 'For your first shop.',
-    features: [
-      'Up to 2 stores',
-      'Unlimited products & orders',
-      '15,000 campaign emails / mo',
-      'Full colour palette & announcement bar',
-      'Your own domain',
-      'Read-only API',
-      '10 webhook endpoints',
-    ],
-  },
-  {
-    id: 'studio',
-    name: 'Studio',
-    tagline: 'For merchants finding their rhythm.',
-    features: [
-      'Up to 5 stores',
-      '50 images per product',
-      '50,000 campaign emails / mo',
-      'Custom CSS & fonts',
-      'Read-only API',
-      '25 webhook endpoints',
-      '12-month audit log',
-    ],
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    tagline: 'For mid-market brands at scale.',
-    features: [
-      'Up to 10 stores',
-      'Unlimited images',
-      'Full read/write API',
-      '100 webhook endpoints',
-      // SAML is not implemented — both SSO routes answer 501 for it and
-      // there is no SP (mark8ly#820). Advertising it sold something
-      // that cannot be delivered; OIDC is real and configurable at
-      // Settings -> Single sign-on.
-      'SSO (OpenID Connect)',
-      'Priority support (4h response)',
-      'Forever audit retention',
-    ],
-  },
-] as const
-
-export { PLAN_META }
 
 // No tax disclosure is rendered for any currency, AUD included: Tesserix is
 // not GST-registered, so no GST is charged and none may be disclosed. The AU
@@ -271,7 +196,14 @@ export function Pricing({ catalogue }: PricingProps) {
                     charged once a year
                   </p>
                 )}
-                <ul className="mt-6 space-y-3 text-foreground-secondary">
+                {meta.includes && (
+                  <p className="mt-6 text-sm font-medium text-foreground">
+                    Everything in {meta.includes}, plus
+                  </p>
+                )}
+                <ul
+                  className={`${meta.includes ? 'mt-3' : 'mt-6'} space-y-3 text-foreground-secondary`}
+                >
                   {meta.features.map((feature) => (
                     <li key={feature} className="flex items-baseline gap-3">
                       <span

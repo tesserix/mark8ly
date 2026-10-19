@@ -61,7 +61,7 @@ function storeLimitsFromMatrix(): Record<string, number> {
 test("public pricing copy quotes the storefront counts plangate enforces", () => {
   const limits = storeLimitsFromMatrix();
   const surfaces: ReadonlyArray<[string, string]> = [
-    ["onboarding", read("apps/onboarding/components/marketing/Pricing.tsx")],
+    ["onboarding", read("apps/onboarding/lib/plans.ts")],
     ["admin", read("apps/admin/lib/copy/pricing.ts")],
   ];
 
@@ -95,7 +95,7 @@ const INVENTED_LIMITS: ReadonlyArray<RegExp> = [
 
 test("no pricing surface advertises a limit or capability the service lacks", () => {
   const surfaces: ReadonlyArray<[string, string]> = [
-    ["onboarding Pricing.tsx", copyOnly(read("apps/onboarding/components/marketing/Pricing.tsx"))],
+    ["onboarding lib/plans.ts", copyOnly(read("apps/onboarding/lib/plans.ts"))],
     ["admin lib/copy/pricing.ts", copyOnly(read("apps/admin/lib/copy/pricing.ts"))],
     ["llms-full.txt", read("apps/onboarding/public/llms-full.txt")],
   ];
@@ -131,7 +131,7 @@ test("no pricing surface advertises a limit or capability the service lacks", ()
  */
 test("no pricing surface still sells custom code injection (#544)", () => {
   const surfaces: ReadonlyArray<[string, string]> = [
-    ["onboarding Pricing.tsx", copyOnly(read("apps/onboarding/components/marketing/Pricing.tsx"))],
+    ["onboarding lib/plans.ts", copyOnly(read("apps/onboarding/lib/plans.ts"))],
     ["admin lib/copy/pricing.ts", copyOnly(read("apps/admin/lib/copy/pricing.ts"))],
     ["llms-full.txt", read("apps/onboarding/public/llms-full.txt")],
   ];
@@ -170,7 +170,7 @@ test("no pricing surface still sells custom code injection (#544)", () => {
  */
 test("pricing surfaces sell the SSO protocol that works, and only that one (#838)", () => {
   const surfaces: ReadonlyArray<[string, string]> = [
-    ["onboarding Pricing.tsx", copyOnly(read("apps/onboarding/components/marketing/Pricing.tsx"))],
+    ["onboarding lib/plans.ts", copyOnly(read("apps/onboarding/lib/plans.ts"))],
     ["admin lib/copy/pricing.ts", copyOnly(read("apps/admin/lib/copy/pricing.ts"))],
     ["llms-full.txt", read("apps/onboarding/public/llms-full.txt")],
   ];

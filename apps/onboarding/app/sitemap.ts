@@ -45,11 +45,11 @@ const SITE_URL = "https://mark8ly.com";
  * date is derived from the guides themselves below and cannot drift.
  */
 const LAST_MODIFIED: Readonly<Record<string, string>> = {
-  "/": "2026-10-19",
+  "/": "2026-10-20",
   "/about": "2026-10-19",
   "/contact": "2026-09-02",
   "/help": "2026-10-19",
-  "/integrations": "2026-10-19",
+  "/integrations": "2026-10-20",
 
   "/shopify-alternative": "2026-10-19",
   "/ecommerce-for-makers": "2026-10-19",

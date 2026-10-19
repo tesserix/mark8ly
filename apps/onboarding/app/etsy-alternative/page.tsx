@@ -30,7 +30,7 @@ export default function EtsyAlternativePage() {
       intro={[
         "Etsy is a marketplace, and a marketplace is someone else's shopping mall. You rent a stall, you compete with near-identical listings a scroll away, and you pay for the privilege on every sale — listing fees, transaction fees, payment processing, and more if you want to be seen. Worst of all, the customer belongs to Etsy, not to you.",
         "Mark8ly is the opposite of that. It's your own website, on your own domain, with your own brand at the top and your own customer list underneath. When someone buys, they're buying from you — and you keep their relationship, their email, and the next sale.",
-        "There's no per-sale platform fee. You pay only your payment processor's standard rate; we don't add a cut on top. Ninety days free to start, then plans from $15 a month billed yearly — a flat, predictable cost instead of a stack of fees that grows with every order.",
+        "There's no per-sale platform fee. You pay only your payment processor's standard rate; we don't add a cut on top. Ninety days free to start, then plans from $15.17 a month billed yearly ($182 a year) — a flat, predictable cost instead of a stack of fees that grows with every order.",
       ]}
       competitorName="Etsy"
       comparisonNote="Etsy is a marketplace with listing, transaction, and payment fees per sale; Mark8ly is your own website with no platform cut."
@@ -103,7 +103,7 @@ export default function EtsyAlternativePage() {
             "Offsite Ads add 15% of the order on any sale that follows an Etsy-placed ad. On the same $53 order that is a further $7.95, taking the total to $13.44 \u2014 just over a quarter of the order.",
             "The part worth reading carefully: opting out is only available while your shop is under $10,000 of sales in a rolling twelve months. Cross that line once and enrolment becomes permanent for the life of the shop, at a reduced 12% rate capped at $100 per order. It does not lapse if your sales later fall back below the threshold.",
             "None of this makes Etsy a bad place to sell. It has demand you would otherwise have to go and find, and for many makers that trade is worth it. But it is a marketplace fee, and it scales with your success rather than with anything it costs Etsy to serve you.",
-            "On Mark8ly there is no listing fee, no transaction fee, and no advertising levy. You pay your payment processor \u2014 on that same $53 order, around $1.84, essentially identical to Etsy's own processing charge \u2014 and nothing else. The $3.65 difference per order is the whole of it. At forty orders a month that is roughly $146 you keep, against $15 a month for Starter billed yearly.",
+            "On Mark8ly there is no listing fee, no transaction fee, and no advertising levy. You pay your payment processor \u2014 on that same $53 order, around $1.84, essentially identical to Etsy's own processing charge \u2014 and nothing else. The $3.65 difference per order is the whole of it. At forty orders a month that is roughly $146 you keep, against $15.17 a month for Starter billed yearly.",
           ],
         },
         {
@@ -123,7 +123,7 @@ export default function EtsyAlternativePage() {
         {
           question: "Are there listing or transaction fees?",
           answer:
-            "No. There are no listing fees and no platform transaction fee. You pay only your payment processor's standard rate, plus a flat plan starting at $15 a month billed yearly after 90 days free.",
+            "No. There are no listing fees and no platform transaction fee. You pay only your payment processor's standard rate, plus a flat plan starting at $15.17 a month billed yearly after 90 days free.",
         },
         {
           question: "Can I keep selling on Etsy too?",

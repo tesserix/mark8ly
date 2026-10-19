@@ -66,16 +66,6 @@ export const metadata: Metadata = {
   creator: "Tesserix",
   publisher: "Tesserix",
   category: "ecommerce",
-  keywords: [
-    "ecommerce platform",
-    "indie commerce",
-    "storefront builder",
-    "online store",
-    "small business",
-    "editorial commerce",
-    "Shopify alternative",
-    "no transaction fees",
-  ],
   alternates: {
     canonical: "/",
   },

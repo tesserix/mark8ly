@@ -67,13 +67,13 @@ export default function ShopifyAlternativePage() {
           heading: "No platform fees, in plain terms",
           body: [
             "Every sale on Mark8ly costs you exactly what your payment processor charges — nothing more. There's no percentage skim, no per-order surcharge, no penalty for using the processor you prefer. Over a year, on real volume, that's the kind of saving that funds better packaging or a second product line.",
-            "After the ninety-day free trial you choose one of three plans — Starter, Studio, or Pro — from $15 a month billed yearly. That's the whole bill. The plan is the price; the sales are yours.",
+            "After the ninety-day free trial you choose one of three plans — Starter, Studio, or Pro — from $15.17 a month billed yearly ($182 a year). That's the whole bill. The plan is the price; the sales are yours.",
           ],
         },
         {
           heading: "A storefront that looks hired, not templated",
           body: [
-            "The default Mark8ly storefront was built by designers and real merchants together. It's editorial by default — the sort of restrained, confident layout you'd normally pay a studio to build. You can make it yours without a theme licence, a design fee, or a pile of plugins.",
+            "The default Mark8ly storefront is editorial by default — the sort of restrained, confident layout you'd normally pay a studio to build. You can make it yours without a theme licence, a design fee, or a pile of plugins.",
             "Your own domain is included, so customers land on your brand, not a subdomain. And the whole thing is set up to be legible and fast, because a shop that loads slowly is a shop that loses the sale.",
           ],
         },
@@ -91,7 +91,7 @@ export default function ShopifyAlternativePage() {
               { label: "$10,000 a month in sales", amount: "$239", note: "$39 subscription + $200 platform fee" },
               { label: "$20,000 a month in sales", amount: "$439", note: "$39 subscription + $400 platform fee" },
             ],
-            total: { label: "Mark8ly, at every one of those volumes", amount: "$15", note: "Starter billed yearly. No platform fee, at any volume." },
+            total: { label: "Mark8ly, at every one of those volumes", amount: "$15.17", note: "Starter billed yearly ($182 a year). No platform fee, at any volume." },
             source: {
               label: "Shopify's published pricing",
               url: "https://www.shopify.com/pricing",
@@ -117,12 +117,12 @@ export default function ShopifyAlternativePage() {
         {
           question: "Does Mark8ly really charge no transaction fees?",
           answer:
-            "Correct. Mark8ly adds nothing to your sales. You pay only your payment gateway's standard rate — around 2% for UPI and 2–3% for cards. There is no platform fee on top, on any plan.",
+            "Correct. Mark8ly adds nothing to your sales. Standard processor rates apply — that's your payment provider's fee, not ours. There is no platform fee on top, on any plan.",
         },
         {
           question: "How does the price compare to Shopify?",
           answer:
-            "Plans start at $15 a month billed yearly after a 90-day free trial, with no added transaction fees. Shopify Basic is $39 a month ($29 billed yearly) with a 3-day trial, and adds a 2% platform fee unless you use Shopify Payments.",
+            "Plans start at $15.17 a month billed yearly ($182 a year) after a 90-day free trial, with no added transaction fees. Shopify Basic is $39 a month ($29 billed yearly) with a 3-day trial, and adds a 2% platform fee unless you use Shopify Payments.",
         },
         {
           question: "Can I use my own domain?",

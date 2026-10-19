@@ -8,27 +8,27 @@ Last generated: April 2026.
 
 ## Home (https://mark8ly.com)
 
-A storefront worth opening.
+Create your online shop. Take orders and payments in one place.
 
-Mark8ly is a quiet, considered commerce platform for people who actually make things. Set up in an afternoon. Keep your margins. Sell on a storefront that doesn't look like everyone else's.
+Customers browse and pay on your own store. You manage products and orders from one simple dashboard.
 
-Free for ninety days. No card required. Three clear plans after that, from $15 a month billed yearly.
+90 days free · No card needed · No platform fee on sales
 
-### What we believe
+### How it works
 
-**Three things we'll never compromise on.**
+**Three steps to your first order.**
 
-1. **Quiet by design.** No popups, no abandoned-cart guilt, no aggressive nudges in the admin. Your store should feel like a shop you walk into, not an inbox you can't close.
+1. Add your products. Photos, prices and stock. Connect your payment provider so customers can pay.
+2. Share your store. Send customers your store link, or use your own domain.
+3. Receive and dispatch orders. Customers pay on your store. Every order lands in your dashboard, ready to pack and ship.
 
-2. **Yours, fully.** No transaction fees from us. No platform skim. Use your own domain, export your data anytime, leave whenever you want. The store is yours — we just keep it running.
-
-3. **Made well.** Real merchants worked on the design. Real engineers built the infrastructure. The result is a tool that does fewer things, but does them properly.
-
-### What you get
+### What's included
 
 **Less software, more shop.**
 
-- **Storefront:** A theme that feels considered, out of the box. Quiet typography, generous whitespace, real attention to product detail pages.
+Your storefront, checkout and payments, orders and admin, on your own domain. Every plan.
+
+- **Storefront:** A storefront that looks designed, out of the box. Clean typography, generous whitespace, real attention to product detail pages.
 - **Checkout:** Payments that work everywhere customers do. Cards, UPI, wallets, and local methods, all behind a single checkout. No upcharges from us. Standard processor fees only.
 - **Admin:** An admin you don't have to learn. Products, orders, customers, inventory — each screen does one thing, clearly. No dashboards full of metrics that don't matter to you.
 
@@ -38,8 +38,8 @@ Free for ninety days. No card required. Three clear plans after that, from $15 a
 
 Ninety days free to start. After that, three clear plans — no hidden fees, no transaction cuts from Mark8ly, only what your payment processor charges at their standard rate. Change plans any time; upgrades prorate, downgrades take effect at the end of your current period.
 
-- **Starter — $15/month billed yearly, or $19/month billed monthly.** For merchants opening their first store. Up to 2 stores, unlimited products and orders, 15,000 campaign emails/month, full colour palette and announcement bar, your own domain, read-only API, 10 webhook endpoints.
-- **Studio — $39/month billed yearly, or $49/month billed monthly.** For stores finding their rhythm. Up to 5 stores, 50 images per product, 50,000 campaign emails/month, custom CSS and fonts, read-only API, 25 webhook endpoints, 12-month audit log.
+- **Starter — $15.17/month billed yearly ($182 a year), or $19/month billed monthly.** For merchants opening their first store. Up to 2 stores, unlimited products and orders, 15,000 campaign emails/month, full colour palette and announcement bar, your own domain, read-only API, 10 webhook endpoints.
+- **Studio — $39.17/month billed yearly ($470 a year), or $49/month billed monthly.** For stores finding their rhythm. Up to 5 stores, 50 images per product, 50,000 campaign emails/month, custom CSS and fonts, read-only API, 25 webhook endpoints, 12-month audit log.
 - **Pro — $99/month billed yearly, or $119/month billed monthly.** For mid-market brands at scale. Up to 10 stores, unlimited images, full read/write API, 100 webhook endpoints, SSO (OpenID Connect), priority support with 4-hour response, forever audit retention.
 
 **White-label App add-on** (Pro only): publish a branded iOS and Android app for your storefront. Billed annually and co-terminated with your Pro renewal.
@@ -51,30 +51,32 @@ Every plan includes:
 - Export everything, anytime
 - Cancel in one click
 
-### How it works
-
-**An afternoon, start to finish.**
-
-1. Tell us about your shop. Name, country, what you sell. Two minutes.
-2. Add what you make. Upload products, set prices, organize them however you like.
-3. Open the doors. Share your link. Your storefront is live.
-
 ### Questions, answered
 
 **I'm not technical. Can I still use this?**
 Yes — that's the entire point. If you can write an email, you can run a store on Mark8ly. And if you get stuck, real humans answer real messages.
 
 **What happens after the ninety-day free trial?**
-You choose between three plans — Starter, Studio, or Pro — from $15 a month billed yearly, or $19 a month billed monthly. No added transaction fees from Mark8ly, ever. You can cancel any time and take your data with you.
+You choose between three plans — Starter, Studio, or Pro — from $15.17 a month billed yearly ($182 a year), or $19 a month billed monthly. No added transaction fees from Mark8ly, ever. You can cancel any time and take your data with you.
 
 **What does Mark8ly take from each sale?**
-Nothing. Your payment processor charges their standard fee (around 2% for UPI, 2–3% for cards). We don't add anything on top of that.
+Nothing. Standard processor rates apply — that's your payment provider's fee, not ours. Mark8ly adds no platform fee on top.
 
 **Is there a limit on products?**
 No. Products and orders are unlimited on every plan. What changes between plans is how many storefronts you can run: two on Starter, five on Studio, ten on Pro.
 
 **Can I leave?**
 Whenever you like. Export your products, customers, and orders in one click and take everything with you. No hard feelings.
+
+### What we believe
+
+**Three things we'll never compromise on.**
+
+1. **Quiet by design.** No popups, no abandoned-cart guilt, no aggressive nudges in the admin. Your store should feel like a shop you walk into, not an inbox you can't close.
+
+2. **Yours, fully.** No transaction fees from us. No platform skim. Use your own domain, export your data anytime, leave whenever you want. The store is yours — we just keep it running.
+
+3. **Made well.** We build fewer things, on purpose, so each one works properly.
 
 ---
 
@@ -100,7 +102,7 @@ Three commitments we won't compromise on:
 
 2. **Yours, fully.** No transaction fees from us. Your domain, your data, your customers. Export everything any time. Leave whenever you like — no friction, no hard feelings.
 
-3. **Made well.** Real merchants shaped the design. Real engineers wrote the code. We build fewer things on purpose so each one works properly.
+3. **Made well.** We build fewer things on purpose so each one works properly.
 
 ### Where we're based
 
@@ -146,7 +148,7 @@ Australia. We work remote-first across a small distributed team, which means the
 
 - Age requirement: 18+.
 - Free trial: 90 days, no credit card.
-- After the free period: three plans — Starter at $15/month (annual) or $19/month (monthly), Studio at $39/month (annual) or $49/month (monthly), Pro at $99/month (annual) or $119/month (monthly). Annual billing available on every plan. No extra platform transaction fees from Mark8ly. Optional White-label App add-on on Pro, billed annually.
+- After the free period: three plans — Starter at $15.17/month (annual) or $19/month (monthly), Studio at $39.17/month (annual) or $49/month (monthly), Pro at $99/month (annual) or $119/month (monthly). Annual billing available on every plan. No extra platform transaction fees from Mark8ly. Optional White-label App add-on on Pro, billed annually.
 - Refunds: within 14 days, via support@mark8ly.com.
 - Acceptable use: no illegal, counterfeit, or restricted items. No fraud, malware, or interference with other stores.
 - Cancellation: any time, no fees, no penalties. Download your data before cancelling.

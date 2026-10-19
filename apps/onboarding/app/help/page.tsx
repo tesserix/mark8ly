@@ -89,7 +89,7 @@ const CATEGORIES: ReadonlyArray<FaqCategory> = [
       {
         question: "What happens when the trial ends?",
         answer:
-          "You choose one of three plans — Starter, Studio, or Pro — starting at $15 a month billed yearly, or $19 a month billed monthly. There's no auto-upgrade and no surprise charge: if you haven't picked a plan, your store simply won't take new orders until you do.",
+          "You choose one of three plans — Starter, Studio, or Pro — starting at $15.17 a month billed yearly ($182 a year), or $19 a month billed monthly. There's no auto-upgrade and no surprise charge: if you haven't picked a plan, your store simply won't take new orders until you do.",
       },
       {
         question: "Can I cancel or change plans later?",

@@ -27,6 +27,7 @@ export const HOME_DESCRIPTION =
   "Customers browse and pay on your own store; you manage products and " +
   "orders from one dashboard. 90 days free, no card, no platform fee on sales.";
 
-// TODO(demo-store): set to the public demo store URL. The hero button stays
-// hidden while this is empty, so it never links nowhere.
-export const DEMO_STORE_URL = "";
+// The public demo store. It carries a "Demo store" banner on every page
+// (apps/storefront/components/DemoStoreBanner.tsx). Set to "" to hide the
+// hero button.
+export const DEMO_STORE_URL = "https://the-bondi-store.mark8ly.com/";

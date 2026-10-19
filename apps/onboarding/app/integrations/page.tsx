@@ -143,14 +143,9 @@ const EMAIL: IntegrationGroup = {
 };
 
 // internal/plangate/matrix.go's FeatureReadAPI / FeatureFullAPI, wired to
-// real handlers in internal/handlers/admin/apikeys_handler.go (Studio gets
-// read-only key scopes, Pro gets full read/write). Pricing.tsx additionally
-// advertises "webhooks" (Studio) and "custom code injection" (Pro) — both
-// left off here because they don't check out: no merchant-facing outbound
-// webhook subscription exists anywhere in the codebase (internal/outbox is
-// an internal event-bus pattern, not something a merchant configures), and
-// matrix.go's own comment on FeatureCustomCodeInjection calls it "reserved
-// for the future... no handler accepts arbitrary <script> payloads today."
+// real handlers in internal/handlers/admin/apikeys_handler.go. Read scopes
+// are on every plan, trial included (#585); write is Pro-only. Keep this in
+// step with the plan bullets in components/marketing/Pricing.tsx.
 const DEVELOPER: IntegrationGroup = {
   eyebrow: "Build on Mark8ly",
   heading: "For everything else",
@@ -160,7 +155,7 @@ const DEVELOPER: IntegrationGroup = {
     {
       name: "REST API",
       description:
-        "Read-only API access on Studio; full read/write access on Pro — enough to sync orders and inventory with tools we don't connect to directly.",
+        "Read-only API access on every plan; full read/write access on Pro — enough to sync orders and inventory with tools we don't connect to directly.",
     },
   ],
 };

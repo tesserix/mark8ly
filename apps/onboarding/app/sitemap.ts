@@ -45,16 +45,16 @@ const SITE_URL = "https://mark8ly.com";
  * date is derived from the guides themselves below and cannot drift.
  */
 const LAST_MODIFIED: Readonly<Record<string, string>> = {
-  "/": "2026-09-05",
-  "/about": "2026-09-03",
+  "/": "2026-10-19",
+  "/about": "2026-10-19",
   "/contact": "2026-09-02",
-  "/help": "2026-09-03",
-  "/integrations": "2026-09-02",
+  "/help": "2026-10-19",
+  "/integrations": "2026-10-19",
 
-  "/shopify-alternative": "2026-09-03",
-  "/ecommerce-for-makers": "2026-09-03",
-  "/sell-online-india": "2026-09-03",
-  "/etsy-alternative": "2026-09-03",
+  "/shopify-alternative": "2026-10-19",
+  "/ecommerce-for-makers": "2026-10-19",
+  "/sell-online-india": "2026-10-19",
+  "/etsy-alternative": "2026-10-19",
 
   "/legal": "2026-09-02",
   "/privacy": "2026-09-02",

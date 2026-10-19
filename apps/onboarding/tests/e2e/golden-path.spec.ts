@@ -33,16 +33,19 @@ test("golden path: landing → form → magic link → welcome", async ({
     "/?utm_source=e2e&utm_medium=spec&utm_campaign=attribution&utm_content=hero&token=must-not-persist",
   );
   await expect(
-    page.getByRole("heading", { name: "A storefront worth opening.", exact: true }),
+    page.getByRole("heading", {
+      name: "Create your online shop. Take orders and payments in one place.",
+      exact: true,
+    }),
   ).toBeVisible();
   const hero = page.locator("main section").first();
   await expect(hero).toContainText(
-    "We’ll help you set up your first listing at no charge.",
+    "90 days free · No card needed · No platform fee on sales",
   );
-  await expect(hero).toContainText(
-    "90-day free trial. No card to start. Choose a paid plan after the trial.",
-  );
-  const heroCta = hero.getByRole("link", { name: "Start with free setup help", exact: true });
+  // The product is on the first screen, labelled as a demo.
+  await expect(hero.getByRole("img")).toBeVisible();
+  await expect(hero).toContainText("Demo store");
+  const heroCta = hero.getByRole("link", { name: "Start free", exact: true });
   await expect(heroCta).toHaveAttribute("href", "/onboarding");
 
   // 2. Onboarding form, reached the way a visitor reaches it: through the

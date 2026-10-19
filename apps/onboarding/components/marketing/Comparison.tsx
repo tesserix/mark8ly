@@ -211,7 +211,7 @@ export function Comparison() {
               id="compare-heading"
               className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground"
             >
-              Side by side,
+              Side by side,{" "}
               <br />
               no spin.
             </h2>
@@ -279,7 +279,7 @@ export function Comparison() {
                         <Money
                           amount={mark8lyStarterAnnualMonthly}
                           currency={mark8lyStarterCurrency}
-                          showCents={false}
+                          showCents={mark8lyStarterAnnualMonthly % 100 !== 0}
                         />
                         <span className="text-foreground-tertiary"> / mo</span>
                       </>
@@ -336,10 +336,9 @@ export function Comparison() {
           publish a price in your currency (BigCommerce globally; Wix and
           Squarespace outside the US in our verified data), we show the USD
           rate and tag it so you know what you&rsquo;d actually be charged.
-          Payment processor fees &mdash; around 2&ndash;3% for cards, closer
-          to 1% for UPI &mdash; apply on every platform. That&rsquo;s your
-          bank, not us; the line above is what the platform itself adds on
-          top.
+          Standard payment processor rates apply on every platform.
+          That&rsquo;s your payment provider, not us; the line above is what
+          the platform itself adds on top.
         </p>
 
         <p className="mt-8 max-w-3xl text-base leading-relaxed text-foreground-secondary">

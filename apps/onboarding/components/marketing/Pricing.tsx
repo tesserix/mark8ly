@@ -200,7 +200,7 @@ export function Pricing({ catalogue }: PricingProps) {
           <div>
             <p className="eyebrow mb-5">Pricing</p>
             <h2 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
-              Three plans.
+              Three plans.{' '}
               <br />
               Honestly priced.
             </h2>
@@ -255,7 +255,9 @@ export function Pricing({ catalogue }: PricingProps) {
                     letterSpacing: '-0.03em',
                   }}
                 >
-                  <Money amount={headline} currency={resolvedCurrency} showCents={false} />
+                  {/* Cents only when there are some: rounding $182/yr down to
+                      "$15/mo" understated the annual total. */}
+                  <Money amount={headline} currency={resolvedCurrency} showCents={headline % 100 !== 0} />
                   <span
                     className="ml-1 font-sans text-base font-normal text-foreground-tertiary"
                     style={{ letterSpacing: 'normal', whiteSpace: 'nowrap' }}

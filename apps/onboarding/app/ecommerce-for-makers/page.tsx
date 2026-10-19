@@ -29,8 +29,8 @@ export default function EcommerceForMakersPage() {
       lede="Mark8ly is an ecommerce platform for makers and handmade sellers — an editorial storefront that shows your work properly, no platform fees on your sales, and ninety days to try it for free."
       intro={[
         "Most ecommerce platforms are built for catalogues, not craft. They optimise for thousands of SKUs, bulk imports, and dashboards full of metrics — which is exactly wrong for a maker with forty carefully-made products and a story behind each one. What you need is a shop that treats each item like it matters, not a spreadsheet with a checkout bolted on.",
-        "Mark8ly is built the other way round. The default storefront is editorial: quiet typography, generous whitespace, and product pages that give a single object room to breathe. It's the kind of layout you'd normally hire a designer for — because we did, working alongside real merchants who sell the things they make.",
-        "And because makers usually run on thin margins, we don't take a cut. There's no platform fee on your sales — you pay only your payment processor's standard rate. Ninety days free to start, then plans from $15 a month billed yearly, with unlimited products on every tier — including the Starter plan people open their first shop on.",
+        "Mark8ly is built the other way round. The default storefront is editorial: quiet typography, generous whitespace, and product pages that give a single object room to breathe. It's the kind of layout you'd normally hire a designer for.",
+        "And because makers usually run on thin margins, we don't take a cut. There's no platform fee on your sales — you pay only your payment processor's standard rate. Ninety days free to start, then plans from $15.17 a month billed yearly ($182 a year), with unlimited products on every tier — including the Starter plan people open their first shop on.",
       ]}
       competitorName="Generic platforms"
       comparisonNote="Most mainstream platforms are tuned for high-SKU catalogues and add fees or design costs that hit small makers hardest."
@@ -105,7 +105,7 @@ export default function EcommerceForMakersPage() {
         {
           question: "How much does it cost to sell handmade goods here?",
           answer:
-            "There's no platform fee on your sales. You pay only your payment processor's standard rate. Plans start at $15 a month billed yearly after 90 days free, with a Starter tier for first-time shops.",
+            "There's no platform fee on your sales. You pay only your payment processor's standard rate. Plans start at $15.17 a month billed yearly ($182 a year) after 90 days free, with a Starter tier for first-time shops.",
         },
         {
           question: "How many products can I list?",

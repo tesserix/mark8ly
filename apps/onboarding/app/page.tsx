@@ -16,6 +16,12 @@ import { Footer } from "@/components/marketing/Footer";
 import { Pricing } from "@/components/marketing/Pricing";
 import { Comparison } from "@/components/marketing/Comparison";
 import { PRERENDER_CURRENCY } from "@/lib/geo/currency";
+import {
+  DEMO_STORE_URL,
+  HERO,
+  HOME_DESCRIPTION,
+  HOME_TITLE,
+} from "@/lib/copy/home";
 
 const SITE_URL = "https://mark8ly.com";
 
@@ -30,23 +36,27 @@ const SITE_URL = "https://mark8ly.com";
    ============================================================ */
 
 export const metadata: Metadata = {
-  title: {
-    // Offer-led, not brand-led: the ninety days and the 0% platform fee are
-    // what differentiate us in a SERP (Shopify gives three days, Wix and
-    // Squarespace fourteen), and a brand tagline spends the whole ~60-char
-    // budget saying nothing a searcher can act on. 53 chars, so Google
-    // renders it whole.
-    absolute: "Ninety days free, 0% platform fees — Mark8ly commerce",
-  },
-  // 151 chars — under the ~155 Google renders. Offer first, category second;
-  // "platform fees" rather than a bare "0% fees" because the merchant still
-  // pays their payment processor's standard rate.
-  description:
-    "Ninety days free, no card, and 0% platform fees on your sales. " +
-    "An editorial commerce platform for independent merchants — " +
-    "open a store in an afternoon.",
+  // Title, H1 and OG title share one message (lib/copy/home.ts) so
+  // search results and link previews match the page.
+  title: { absolute: HOME_TITLE },
+  description: HOME_DESCRIPTION,
   alternates: {
     canonical: "/",
+  },
+  // Page-level openGraph replaces the layout's object wholesale, so the
+  // site fields are restated here.
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "Mark8ly",
+    title: HERO.title,
+    description: HOME_DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: HERO.title,
+    description: HOME_DESCRIPTION,
+    creator: "@mark8ly",
   },
 };
 
@@ -303,13 +313,12 @@ export default function HomePage() {
       <main id="main">
         <Hero />
         <Tour />
-        <Manifesto />
+        <HowItWorks />
         <Features />
         <Pricing catalogue={SHARED_PRICING_CATALOGUE} />
-        <Comparison />
-        <HowItWorks />
-        <SetupSavings />
         <Faq />
+        <Comparison />
+        <Manifesto />
         <FinalCta />
       </main>
 
@@ -321,46 +330,57 @@ export default function HomePage() {
 /* ============================================================
    Hero
    ------------------------------------------------------------
-   Lead with first-listing setup help beside the existing signup path.
-   Keep trial and paid-plan terms visible without fixed regional prices.
+   Says what the product is before anything about the brand: first-time
+   visitors could not tell what the site was for. The storefront shot
+   sits on the first screen at every width, so the page is never text
+   only above the fold.
    ============================================================ */
 
 function Hero() {
   return (
     <section className="relative overflow-hidden">
-      <div className="mx-auto max-w-6xl px-6 pb-16 pt-16 lg:pb-24 lg:pt-20">
-        <div className="max-w-3xl">
-          <h1 className="font-serif text-5xl font-medium leading-[1.02] tracking-[-0.025em] text-foreground">
-            A storefront worth opening.
+      <div className="mx-auto grid max-w-6xl gap-10 px-6 pb-16 pt-8 sm:pt-16 lg:grid-cols-[1.3fr_1fr] lg:items-center lg:gap-12 lg:pb-24 lg:pt-20">
+        <div>
+          <h1 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.025em] text-foreground sm:text-5xl sm:leading-[1.02] lg:text-[3.5rem]">
+            {HERO.title}
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-[1.55] text-foreground-secondary">
-            Mark8ly is a quiet, considered commerce platform for people who
-            actually make things. If you&rsquo;re taking orders through
-            Instagram DMs and a link in your bio today, this is the step
-            after that. Set up in an afternoon. Keep your margins. Sell on a
-            storefront that doesn&rsquo;t look like everyone else&rsquo;s.
+          <p className="mt-5 max-w-xl text-lg leading-[1.5] text-foreground-secondary">
+            {HERO.subtitle}
           </p>
 
-          <p className="mt-8 max-w-xl text-xl leading-[1.2] text-foreground">
-            We&rsquo;ll help you set up your first listing at no charge.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-4">
+          {/* TODO(setup-help): this CTA read "Start with free setup help"
+              with a "We'll help you set up your first listing" line above
+              it. Restore both once the setup-help service is defined. */}
+          <div className="mt-8 flex flex-wrap items-center gap-x-8 gap-y-4">
             <Link
               href="/onboarding"
               className="inline-flex h-12 items-center rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover"
             >
-              Start with free setup help
+              Start free
             </Link>
-            <Link href="/#pricing" className="btn-ghost">
-              See the pricing
-            </Link>
+            {DEMO_STORE_URL && (
+              <Link href={DEMO_STORE_URL} className="btn-ghost">
+                See a demo shop
+              </Link>
+            )}
           </div>
 
-          <p className="mt-8 text-sm text-foreground-tertiary">
-            90-day free trial. No card to start. Choose a paid plan after
-            the trial. No added transaction fees from Mark8ly.
-          </p>
+          <p className="mt-6 text-sm text-foreground-tertiary">{HERO.terms}</p>
         </div>
+
+        <figure className="relative aspect-[16/10] overflow-hidden rounded-lg bg-paper-100 ring-1 ring-border-subtle lg:aspect-[4/3]">
+          <Image
+            src="/screens/storefront.png"
+            alt="The Bondi Store, a Mark8ly demo storefront: a coastal hero photo with shop links for linen and cotton basics"
+            fill
+            priority
+            sizes="(min-width: 1024px) 560px, 100vw"
+            className="object-cover object-top"
+          />
+          <figcaption className="absolute left-3 top-3 rounded-full bg-ink-900/80 px-3 py-1 text-xs font-medium text-paper-50">
+            Demo store
+          </figcaption>
+        </figure>
       </div>
 
       <div className="rule mx-auto max-w-6xl" />
@@ -372,8 +392,8 @@ function Hero() {
    Tour — editorial product film. Asymmetric heading + body,
    then a 16:9 video frame matching the FeaturePlate language
    (rounded-lg, ring on paper). Poster shows first frame so
-   the moment reads as composed before play. Forty-five
-   seconds of the actual product running, no marketing tricks.
+   the moment reads as composed before play. The actual product
+   running, no marketing tricks.
    ============================================================ */
 
 function Tour() {
@@ -390,8 +410,11 @@ function Tour() {
               See it move.
             </h2>
           </div>
+          {/* TODO(tour-video): the current tour.mp4 runs 51.4s, not 45.
+              Update this duration when the new video ships; until then
+              the copy says "under a minute" rather than a wrong number. */}
           <p className="max-w-xl self-end text-base leading-relaxed text-foreground-secondary">
-            Forty-five seconds inside a working Mark8ly storefront, checkout
+            Under a minute inside a working Mark8ly storefront, checkout
             and admin. No screenshots, no marketing tricks &mdash; just the
             product running.
           </p>
@@ -440,12 +463,12 @@ function Manifesto() {
       number: "iii.",
       title: "Made well.",
       body:
-        "Real merchants worked on the design. Real engineers built the infrastructure. The result is a tool that does fewer things, but does them properly.",
+        "We build fewer things, on purpose, so each one works properly.",
     },
   ];
 
   return (
-    <section id="features" className="py-16 sm:py-24">
+    <section className="border-t border-border-subtle py-16 sm:py-24">
       <div className="mx-auto max-w-6xl px-6">
         <div className="grid gap-12 lg:grid-cols-[1fr_2fr] lg:gap-16">
           <div className="lg:sticky lg:top-32 lg:self-start">
@@ -491,9 +514,9 @@ function Manifesto() {
 const FEATURES = [
   {
     kicker: "Storefront",
-    title: "A theme that feels considered, out of the box.",
+    title: "A storefront that looks designed, out of the box.",
     body:
-      "Quiet typography, generous whitespace, real attention to product detail pages. The default storefront looks like something you would have hired a designer to build — because we did.",
+      "Clean typography, generous whitespace, real attention to product detail pages. The default storefront looks like something you would have hired a designer to build — because we did.",
     screen: "/screens/storefront.png",
     screenAlt: "Mark8ly storefront — coastal hero with editorial typography",
   },
@@ -517,15 +540,22 @@ const FEATURES = [
 
 function Features() {
   return (
-    <section className="border-t border-border-subtle py-16 sm:py-24">
+    <section
+      id="features"
+      className="border-t border-border-subtle py-16 sm:py-24"
+    >
       <div className="mx-auto max-w-6xl px-6">
         <div className="mb-12 max-w-2xl">
-          <p className="eyebrow mb-5">What you get</p>
+          <p className="eyebrow mb-5">What&rsquo;s included</p>
           <h2 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
-            Less software,
+            Less software,{" "}
             <br />
             more shop.
           </h2>
+          <p className="mt-6 text-lg leading-relaxed text-foreground-secondary">
+            Your storefront, checkout and payments, orders and admin, on
+            your own domain. Every plan.
+          </p>
         </div>
 
         <div className="space-y-14">
@@ -610,25 +640,26 @@ function FeaturePlate({ kicker, index, src, alt }: FeaturePlateProps) {
 
 /* ============================================================
    How it works — three steps, numbered, left-aligned, narrow
-   measure. No "How it works → Three steps" eyebrow redundancy.
+   measure. Ends at the first order, not at "live": taking payments
+   needs a processor connection, so publishing alone isn't selling.
    ============================================================ */
 
 function HowItWorks() {
   const steps = [
     {
       number: "01",
-      title: "Tell us about your shop.",
-      body: "Name, country, what you sell. Two minutes.",
+      title: "Add your products.",
+      body: "Photos, prices and stock. Connect your payment provider so customers can pay.",
     },
     {
       number: "02",
-      title: "Add what you make.",
-      body: "Upload products, set prices, organize them however you like.",
+      title: "Share your store.",
+      body: "Send customers your store link, or use your own domain.",
     },
     {
       number: "03",
-      title: "Open the doors.",
-      body: "Share your link. Your storefront is live.",
+      title: "Receive and dispatch orders.",
+      body: "Customers pay on your store. Every order lands in your dashboard, ready to pack and ship.",
     },
   ];
 
@@ -636,9 +667,9 @@ function HowItWorks() {
     <section className="border-t border-border-subtle py-16 sm:py-24">
       <div className="mx-auto max-w-6xl px-6">
         <div className="max-w-2xl">
-          <p className="eyebrow mb-5">From signup to live</p>
+          <p className="eyebrow mb-5">How it works</p>
           <h2 className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground">
-            An afternoon, start to finish.
+            Three steps to your first order.
           </h2>
         </div>
 
@@ -663,134 +694,6 @@ function HowItWorks() {
 }
 
 /* ============================================================
-   SetupSavings — what merchants are spared from. Two left-
-   aligned columns, no card, hairline rules between rows.
-   The "other route" column is set in foreground-secondary so
-   it reads as background context; the Mark8ly column carries
-   the moss accent on the time/effort detail to mirror the
-   editorial language used everywhere else on the page.
-
-   Numbers are deliberately evocative rather than precise — we
-   don't want to claim a US$1,500 designer fee that doesn't hold
-   in INR or AUD. "A few hundred dollars" / "a weekend's salary"
-   reads honestly in every market and avoids a second pricing
-   table to maintain.
-   ============================================================ */
-
-function SetupSavings() {
-  const elsewhere = [
-    {
-      label: "Pick a theme that doesn't look templated",
-      detail: "Days of browsing",
-    },
-    {
-      label: "Hire a designer to tidy it up",
-      detail: "A few hundred, easily",
-    },
-    {
-      label: "Buy plugins to fill missing features",
-      detail: "$30–$200 a month, on top",
-    },
-    {
-      label: "Wire up payments, DNS, SSL",
-      detail: "Half a day, or a developer's fee",
-    },
-    {
-      label: "Hire a consultant to wire it all together",
-      detail: "An invoice you didn't budget for",
-    },
-  ];
-
-  const here = [
-    { label: "Tell us about your shop", detail: "Two minutes" },
-    { label: "Pick your colours", detail: "A click" },
-    { label: "Add your products", detail: "Half an hour" },
-    {
-      label: "Connect your domain",
-      detail: "Auto-SSL, no DNS expert",
-    },
-    { label: "Open the doors", detail: "Same afternoon" },
-  ];
-
-  return (
-    <section
-      id="setup"
-      aria-labelledby="setup-heading"
-      className="border-t border-border-subtle py-16 sm:py-24"
-    >
-      <div className="mx-auto max-w-6xl px-6">
-        <div className="mb-12 grid gap-8 lg:grid-cols-[1fr_2fr] lg:gap-16">
-          <div>
-            <p className="eyebrow mb-5">Without the consultant</p>
-            <h2
-              id="setup-heading"
-              className="font-serif text-4xl font-medium leading-[1.05] tracking-[-0.02em] text-foreground"
-            >
-              Save the
-              <br />
-              consultant invoice.
-            </h2>
-          </div>
-          <p className="max-w-xl self-end text-base leading-relaxed text-foreground-secondary">
-            Most store launches go the same way: a fortnight of theme
-            shopping, a designer to undo the templated look, a developer to
-            wire payments and DNS, then a consultant invoice nobody warned
-            you about. We took every one of those off the table &mdash;
-            because the platform should already do them.
-          </p>
-        </div>
-
-        <div className="grid gap-12 lg:grid-cols-2 lg:gap-20">
-          <div>
-            <p className="eyebrow mb-6 text-foreground-tertiary">
-              The other route
-            </p>
-            <ul>
-              {elsewhere.map((item) => (
-                <li
-                  key={item.label}
-                  className="grid grid-cols-[1fr_auto] items-baseline gap-6 border-b border-border-subtle py-4 first:border-t"
-                >
-                  <span className="text-foreground-secondary">
-                    {item.label}
-                  </span>
-                  <span className="text-sm text-foreground-tertiary">
-                    {item.detail}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <p className="eyebrow mb-6 text-moss-700">On Mark8ly</p>
-            <ul>
-              {here.map((item) => (
-                <li
-                  key={item.label}
-                  className="grid grid-cols-[1fr_auto] items-baseline gap-6 border-b border-border-subtle py-4 first:border-t"
-                >
-                  <span className="text-foreground">{item.label}</span>
-                  <span className="font-serif text-sm text-moss-700">
-                    {item.detail}
-                  </span>
-                </li>
-              ))}
-            </ul>
-
-            <p className="mt-8 max-w-md text-base leading-relaxed text-foreground-secondary">
-              No theme licence. No design fee. No plugin sprawl. No
-              consultant on retainer. Just you, your products, and an open
-              shop by the end of the day.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ============================================================
    FAQ — accessible accordion via @repo/ui island. The only
    client component on this page.
    ============================================================ */
@@ -804,12 +707,12 @@ const faqItems = [
   {
     question: "What happens after the ninety-day free trial?",
     answer:
-      "You choose between three plans — Starter, Studio, or Pro — from $15 a month billed yearly, or $19 a month billed monthly. No added transaction fees from Mark8ly, ever. You can cancel any time and take your data with you.",
+      "You choose between three plans — Starter, Studio, or Pro — from $15.17 a month billed yearly ($182 a year), or $19 a month billed monthly. No added transaction fees from Mark8ly, ever. You can cancel any time and take your data with you.",
   },
   {
     question: "What does Mark8ly take from each sale?",
     answer:
-      "Nothing. Your payment gateway charges its standard fee (around 2% for UPI, 2–3% for cards). We don't add anything on top of that.",
+      "Nothing. Standard processor rates apply — that's your payment provider's fee, not ours. Mark8ly adds no platform fee on top.",
   },
   {
     question: "Is there a limit on products?",
@@ -843,7 +746,7 @@ function Faq() {
 
 /* ============================================================
    Final CTA — full-width ink panel. Single confident sentence
-   in serif, setup-help offer and clear trial terms beside signup.
+   in serif, single CTA and the same trial terms as the hero.
    ============================================================ */
 
 function FinalCta() {
@@ -852,19 +755,19 @@ function FinalCta() {
       <div className="mx-auto max-w-5xl px-6 text-left">
         <p className="eyebrow text-paper-400">Ready when you are</p>
         <h2 className="mt-6 font-serif text-5xl font-medium leading-[1.02] tracking-[-0.025em] text-paper-50">
-          Open your shop
+          Open your shop{" "}
           <br />
           this afternoon.
         </h2>
-        <p className="mt-6 max-w-xl text-xl leading-relaxed text-paper-50">
-          We&rsquo;ll help you set up your first listing at no charge.
-        </p>
-        <div className="mt-8 flex flex-wrap items-center gap-x-8 gap-y-4">
+        {/* TODO(setup-help): this CTA read "Start with free setup help"
+            with a "We'll help you set up your first listing" line above
+            it. Restore both once the setup-help service is defined. */}
+        <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4">
           <Link
             href="/onboarding"
             className="inline-flex h-12 items-center rounded-md bg-paper-50 px-6 text-base font-medium text-ink-900 hover:bg-paper-100"
           >
-            Start with free setup help
+            Start free
           </Link>
           <Link
             href="/#pricing"
@@ -874,7 +777,7 @@ function FinalCta() {
           </Link>
         </div>
         <p className="mt-8 text-sm text-paper-300">
-          90-day free trial. No card to start. Choose a paid plan after the trial.
+          {HERO.terms}
         </p>
       </div>
     </section>

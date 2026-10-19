@@ -1,5 +1,7 @@
 import { ImageResponse } from "next/og";
 
+import { HERO } from "@/lib/copy/home";
+
 /**
  * OpenGraph image — Next 16 file convention. Generated at build
  * into a 1200x630 PNG served as /opengraph-image. Automatically
@@ -7,11 +9,12 @@ import { ImageResponse } from "next/og";
  * by the metadata API.
  *
  * The composition is a single editorial moment: serif wordmark,
- * moss accent rule, tagline. No icons, no decoration, no logo
- * placeholder — matches the paper/ink/moss brand system.
+ * the homepage H1, moss accent rule, trial terms. The headline reads
+ * from the same constant as the H1 so a link preview says what the
+ * page says. No icons, no decoration — paper/ink/moss only.
  */
 
-export const alt = "Mark8ly — quiet commerce for people who make things";
+export const alt = `Mark8ly — ${HERO.title}`;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -54,17 +57,16 @@ export default async function OpenGraphImage() {
         >
           <div
             style={{
-              fontSize: 128,
+              fontSize: 76,
               fontWeight: 500,
               color: "#0E0E0C",
-              letterSpacing: "-0.035em",
-              lineHeight: 0.95,
+              letterSpacing: "-0.03em",
+              lineHeight: 1.02,
               display: "flex",
               flexDirection: "column",
             }}
           >
-            <span>A storefront</span>
-            <span>worth opening.</span>
+            {HERO.title}
           </div>
         </div>
 
@@ -91,7 +93,7 @@ export default async function OpenGraphImage() {
               display: "flex",
             }}
           >
-            Quiet commerce for people who make things.
+            {HERO.terms}
           </div>
         </div>
       </div>

@@ -238,6 +238,6 @@ const beliefs = [
   {
     number: "iii.",
     title: "Made well.",
-    body: "Real merchants shaped the design. Real engineers wrote the code. We build fewer things on purpose so each one works properly.",
+    body: "We build fewer things on purpose so each one works properly.",
   },
 ];

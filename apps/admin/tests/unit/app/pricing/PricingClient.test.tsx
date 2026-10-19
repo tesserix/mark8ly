@@ -107,7 +107,7 @@ describe('PricingClient', () => {
       screen.getByRole('region', { name: /White-label App add-on/i }),
     ).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /White-label App/i })).toBeInTheDocument()
-    expect(screen.getByText(/Add-on — requires Studio plan or higher/i)).toBeInTheDocument()
+    expect(screen.getByText(/Add-on — requires the Pro plan/i)).toBeInTheDocument()
   })
 
   it('toggles from annual to monthly when the Monthly button is clicked', () => {

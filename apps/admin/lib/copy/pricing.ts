@@ -73,9 +73,6 @@ export const pricingCopy = {
   /** Footnote shown on Pro card when monthly billing is selected. */
   proMonthlyPremiumNote: '+20% on monthly vs annual equivalent.',
 
-  /** Pro card main pricing copy — used when currency is USD (default). */
-  proAnnualLine:
-    'From $1,188/yr ($99/mo equivalent), billed annually. Monthly available at $119/mo.',
 
   /** Pro card CTAs. */
   proCtas: {
@@ -87,7 +84,7 @@ export const pricingCopy = {
   proApp: {
     name: 'White-label App',
     tagline: 'Publish a branded iOS and Android app for your storefront.',
-    requirement: 'Add-on — requires Studio plan or higher.',
+    requirement: 'Add-on — requires the Pro plan.',
     /** The $2,000 setup fee is a separate one-off charge, not part of the monthly price above. */
     setupFeeNote: 'Plus a $2,000 one-time setup.',
     cta: 'Add to plan',

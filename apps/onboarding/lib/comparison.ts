@@ -3,18 +3,12 @@
 // checked it there. Comparative claims are Australian Consumer Law
 // territory: a cell nobody can source is a cell we should not publish.
 //
-// TODO(verify): every `verifiedOn` is null — none of these cells has a
-// recorded check against the live pricing page. Re-verify each platform,
-// then set the date. The "As of" note under the table renders only from
-// verified dates, so it stays hidden until then rather than vouching for
-// numbers nobody checked. Known suspects:
-//   - Squarespace: "Basic Commerce" is a legacy plan name; the current
-//     line-up is Basic / Core / Plus / Advanced, and Basic charges a
-//     platform fee on physical product sales — the "None" fee cell and
-//     the $27 price both need checking.
-//   - Shopify: Basic is not the cheapest paid plan (Starter is), and
-//     introductory trial pricing may apply.
-//   - Wix and BigCommerce: prices and trial lengths.
+// Checked 2026-10-20. The fetch reached each platform's AU edition, so
+// USD/GBP/EUR figures for Shopify and Squarespace come from third-party
+// 2026 pricing guides, not the platform's own page; those two stay
+// unverified (verifiedOn null) until someone reads them first-hand.
+// Wix's page showed "USD for reference only" from AU, so it stays open too.
+// The "As of" note renders only when every platform is verified.
 
 import type { Currency } from "@repo/ui/subscription";
 
@@ -41,23 +35,24 @@ export const COMPETITORS: readonly Competitor[] = [
     name: "Shopify",
     plan: "Basic",
     source: "https://www.shopify.com/pricing",
+    // AUD and INR read on shopify.com 2026-10-20; USD/GBP/EUR from guides.
     verifiedOn: null,
     startingPrice: {
       USD: "$29",
-      AUD: "A$42", // shopify.com/au/pricing
-      INR: "₹1,499", // shopify.com/in/pricing
+      AUD: "A$42",
+      INR: "₹1,499",
       GBP: "£19",
-      EUR: "€27",
+      EUR: "€24",
     },
   },
   {
     id: "bigcommerce",
     name: "BigCommerce",
-    plan: "Standard",
+    plan: "Core",
     source: "https://www.bigcommerce.com/essentials/pricing/",
-    verifiedOn: null,
-    // $29 monthly with "save 25%" annually → $22/mo. USD only globally.
-    startingPrice: { USD: "$22" },
+    verifiedOn: "2026-10-20",
+    // $39 monthly, $29/mo billed annually. USD only globally.
+    startingPrice: { USD: "$29" },
   },
   {
     id: "wix",
@@ -70,10 +65,12 @@ export const COMPETITORS: readonly Competitor[] = [
   {
     id: "squarespace",
     name: "Squarespace",
-    plan: "Basic Commerce",
+    // Core, not Basic: Basic takes 2% of every store sale, Core takes none.
+    plan: "Core",
     source: "https://www.squarespace.com/pricing",
+    // AUD read on squarespace.com 2026-10-20; USD from guides.
     verifiedOn: null,
-    startingPrice: { USD: "$27" },
+    startingPrice: { USD: "$29", AUD: "A$28" },
   },
 ];
 
@@ -83,7 +80,9 @@ export interface CompareRow {
   competitors: Record<CompetitorId, string>;
 }
 
-// Facts only. The "Default storefront design" row ("Generic templates" vs
+// Facts only. The local-payments and data-export rows had no source for
+// any competitor cell ("Partial", "Limited by region") and are gone, as is
+// the "Default storefront design" row ("Generic templates" vs
 // "Editorial, designer-led") was opinion under a factual heading and is gone.
 export const COMPARISON_ROWS: readonly CompareRow[] = [
   {
@@ -92,7 +91,7 @@ export const COMPARISON_ROWS: readonly CompareRow[] = [
     competitors: {
       shopify: "3 days",
       bigcommerce: "15 days",
-      wix: "14 days",
+      wix: "Free plan; 14-day refund",
       squarespace: "14 days",
     },
   },
@@ -101,7 +100,7 @@ export const COMPARISON_ROWS: readonly CompareRow[] = [
     mark8ly: "None",
     competitors: {
       shopify: "2%, unless you use Shopify Payments",
-      bigcommerce: "None",
+      bigcommerce: "None with built-in providers, else 2%",
       wix: "None",
       squarespace: "None",
     },
@@ -116,26 +115,6 @@ export const COMPARISON_ROWS: readonly CompareRow[] = [
       bigcommerce: "Bring your own",
       wix: "First year included",
       squarespace: "First year included",
-    },
-  },
-  {
-    label: "Local payments (UPI, wallets)",
-    mark8ly: "Built in",
-    competitors: {
-      shopify: "Limited by region",
-      bigcommerce: "Limited by region",
-      wix: "Limited by region",
-      squarespace: "Mostly Stripe / PayPal",
-    },
-  },
-  {
-    label: "Take your data when you leave",
-    mark8ly: "One click, any time",
-    competitors: {
-      shopify: "CSV export",
-      bigcommerce: "CSV export",
-      wix: "Partial",
-      squarespace: "Partial",
     },
   },
 ];

@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Integrations · Mark8ly",
     description:
-      "A small, considered set of integrations — payments, shipping, tax, and email — each one honestly described, nothing implied that isn't live.",
+      "A small, considered set of integrations — payments, shipping, tax, and email — each one honestly described, nothing implied that isn’t live.",
     url: "/integrations",
   },
 };
@@ -59,7 +59,7 @@ const PAYMENTS: IntegrationGroup = {
   eyebrow: "Payments",
   heading: "Getting paid",
   intro:
-    "Connect one processor per store from Settings → Payments. Mark8ly never touches the money or adds a fee on top — you pay only the processor's own rate.",
+    "Connect one processor per store from Settings → Payments. Mark8ly never touches the money or adds a fee on top — you pay only the processor’s own rate.",
   items: [
     {
       name: "Stripe",
@@ -115,7 +115,7 @@ const TAX: IntegrationGroup = {
     {
       name: "TaxJar",
       description:
-        "Automatic US sales tax calculation by jurisdiction. India uses a built-in calculator instead, since GST doesn't need a third party.",
+        "Automatic US sales tax calculation by jurisdiction. India uses a built-in calculator instead, since GST doesn’t need a third party.",
     },
   ],
 };
@@ -138,7 +138,7 @@ const EMAIL: IntegrationGroup = {
     {
       name: "Resend",
       description:
-        "An alternative provider; Mark8ly automatically falls back to it if the primary provider has an outage, so a delivery failure doesn't mean a lost order confirmation.",
+        "An alternative provider; Mark8ly automatically falls back to it if the primary provider has an outage, so a delivery failure doesn’t mean a lost order confirmation.",
     },
   ],
 };
@@ -150,7 +150,7 @@ const DEVELOPER: IntegrationGroup = {
   eyebrow: "Build on Mark8ly",
   heading: "For everything else",
   intro:
-    "If the integration you need isn't on this list yet, you can often build it yourself.",
+    "If the integration you need isn’t on this list yet, you can often build it yourself.",
   items: [
     {
       name: "REST API",
@@ -174,7 +174,7 @@ export default function IntegrationsPage() {
       <PageHero
         eyebrow="Integrations"
         title={<>A small, considered set.</>}
-        lede="We pick integrations the way an editor picks recommended tools — only the ones that earn their place. Here's exactly what's live today."
+        lede="We pick integrations the way an editor picks recommended tools — only the ones that earn their place. Here’s exactly what’s live today."
       />
 
       {GROUPS.map((group) => (

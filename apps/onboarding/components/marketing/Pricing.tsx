@@ -228,6 +228,15 @@ export function Pricing({ catalogue }: PricingProps) {
           one-time setup{showUsdBilledNote ? ' (billed in USD globally)' : ''}.
         </p>
 
+        {/* Wording mirrors /security §9; keep the two in step. */}
+        <p className="mt-3 text-sm text-foreground-tertiary">
+          Card payments are handled by Stripe, Razorpay and Cashfree Payments;
+          Mark8ly never stores full card numbers.{' '}
+          <Link href="/security" className="underline underline-offset-4">
+            How we keep payments secure
+          </Link>
+        </p>
+
         <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4 border-t border-border-subtle pt-10">
           <Link
             href="/onboarding"

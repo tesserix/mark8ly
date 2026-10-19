@@ -412,10 +412,12 @@ function Tour() {
           </div>
           {/* TODO(tour-video): the current tour.mp4 runs 51.4s, not 45.
               Update this duration when the new video ships; until then
-              the copy says "under a minute" rather than a wrong number. */}
+              the copy says "under a minute" rather than a wrong number.
+              The voiceover was removed (it sounded robotic); the film is
+              silent until the new one ships with captions. */}
           <p className="max-w-xl self-end text-base leading-relaxed text-foreground-secondary">
             Under a minute inside a working Mark8ly storefront, checkout
-            and admin. No screenshots, no marketing tricks &mdash; just the
+            and admin, no sound needed. No screenshots, no marketing tricks &mdash; just the
             product running.
           </p>
         </div>
@@ -427,7 +429,7 @@ function Tour() {
             preload="metadata"
             poster="/video/tour-poster.jpg"
             className="absolute inset-0 h-full w-full object-cover"
-            aria-label="Mark8ly product tour"
+            aria-label="Mark8ly product tour, silent: the demo storefront, a product page, checkout, then the admin dashboard and branding settings"
           >
             <source src="/video/tour.mp4" type="video/mp4" />
           </video>

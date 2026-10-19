@@ -23,9 +23,11 @@ import { CustomerAuthProvider } from "@/components/CustomerAuthProvider";
 import { StoreProvider } from "@/components/StoreProvider";
 import { Footer } from "@/components/Footer";
 import { PromotionBar } from "@/components/PromotionBar";
+import { DemoStoreBanner } from "@/components/DemoStoreBanner";
 import { OttoSupportChat } from "@/components/OttoSupportChat";
 import { Toaster } from "@/components/Toaster";
 import { resolveStoreSlug } from "@/lib/slug";
+import { isDemoStore } from "@/lib/demo-store";
 import { resolveTitleTemplate } from "@/lib/seo";
 import { buildLoginUrl, buildLogoutUrl } from "@/lib/auth";
 import { decodeSessionForScope } from "@/lib/session";
@@ -282,6 +284,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
         data-radius={normalizedTheme?.radius ?? "soft"}
       >
         <SkipLink />
+        {isDemoStore(storeSlug) ? <DemoStoreBanner /> : null}
         <PromotionBar
           promotion={brandingData?.active_promotion}
           announcement={

@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
   // includes the right node_modules for monorepo builds inside Docker.
   outputFileTracingRoot: path.join(__dirname, "../.."),
   reactStrictMode: true,
+  // Pricing lives on the homepage; /pricing is the URL people guess and
+  // paste into DMs. Temporary so a real /pricing page can replace it later.
+  async redirects() {
+    return [{ source: "/pricing", destination: "/#pricing", permanent: false }];
+  },
   // Same baseline security headers as admin + storefront. The onboarding
   // app collects merchant-signup PII (emails, addresses, tax IDs) and is
   // framed against the marketing domain — it needs identical protections.

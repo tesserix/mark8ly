@@ -791,7 +791,7 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
           </a>
           , and{" "}
           <a
-            href="/legal"
+            href="/security"
             className="text-foreground underline decoration-moss-700 decoration-2 underline-offset-4 hover:text-moss-700"
           >
             Security Policy

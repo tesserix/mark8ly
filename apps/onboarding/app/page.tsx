@@ -267,7 +267,7 @@ function buildHomeJsonLd(currency: Currency) {
         thumbnailUrl: `${SITE_URL}/video/tour-poster.jpg`,
         contentUrl: `${SITE_URL}/video/tour.mp4`,
         duration: "PT1M",
-        uploadDate: "2026-10-20",
+        uploadDate: "2026-10-20T00:00:00+11:00",
       },
       {
         "@type": "FAQPage",

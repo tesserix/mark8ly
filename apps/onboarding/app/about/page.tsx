@@ -10,7 +10,7 @@ export const metadata = {
   openGraph: {
     title: "About · Mark8ly",
     description:
-      "Built for people who make things. A small team, three commitments, Australia.",
+      "Built for independent sellers. A small team, three commitments, Australia.",
     url: "/about",
   },
 };
@@ -22,9 +22,9 @@ export default function AboutPage() {
         eyebrow="About"
         title={
           <>
-            Built for people
+            Built for
             <br />
-            who make things.
+            independent sellers.
           </>
         }
         lede="We&rsquo;re a small team building a commerce platform for independent merchants who want a store that looks considered, costs predictably, and stays out of their way."

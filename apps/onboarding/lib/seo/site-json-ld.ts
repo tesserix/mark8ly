@@ -9,7 +9,7 @@
  */
 export const SITE_URL = "https://mark8ly.com";
 export const SITE_NAME = "Mark8ly";
-export const SITE_TAGLINE = "Quiet commerce for people who make things";
+export const SITE_TAGLINE = "Online shops for independent sellers";
 export const SITE_DESCRIPTION =
   "A modern editorial commerce platform for independent merchants. Launch your store in an afternoon, keep every sale, and look considered from day one.";
 

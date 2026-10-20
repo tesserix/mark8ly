@@ -46,7 +46,7 @@ const SITE_URL = "https://mark8ly.com";
  */
 const LAST_MODIFIED: Readonly<Record<string, string>> = {
   "/": "2026-10-20",
-  "/about": "2026-10-19",
+  "/about": "2026-10-20",
   "/contact": "2026-09-02",
   "/help": "2026-10-20",
   "/integrations": "2026-10-20",

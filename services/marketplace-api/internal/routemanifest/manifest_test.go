@@ -342,17 +342,17 @@ var mountsOutsideManifest = map[string]string{
 	// doc, not from observing production traffic. A route labelled here as
 	// service-to-service that a frontend also fetches would be wrongly
 	// exempt; that specific mistake is what the frontend guard catches.
-	"vendorHandler.RegisterRoutes":                             "/internal vendor sync — called by platform-api at onboarding completion with a shared secret",
-	"templateHandler.Register":                                 "/internal email-template refresh + test-send — operator/cron surface",
-	"internalDomainsHandler.Register":                          "/internal domain re-verify + cert refresh — super-admin actions via the console's own backend, not the browser",
-	"stores.NewInternalHandler.RegisterRoutes":                 "/internal stores mirror — written by platform-api at onboarding completion",
+	"vendorHandler.RegisterRoutes":                                            "/internal vendor sync — called by platform-api at onboarding completion with a shared secret",
+	"templateHandler.Register":                                                "/internal email-template refresh + test-send — operator/cron surface",
+	"internalDomainsHandler.Register":                                         "/internal domain re-verify + cert refresh — super-admin actions via the console's own backend, not the browser",
+	"stores.NewInternalHandler.RegisterRoutes":                                "/internal stores mirror — written by platform-api at onboarding completion",
 	"subscription.NewInternalHandler.WithPromo.WithPromoAudit.RegisterRoutes": "/internal signup subscription + promo callback — called by onboarding's backend with MARKETPLACE_INTERNAL_AUTH_SECRET",
-	"ticketInternalHandler.RegisterRoutes":                     "/internal ticket-from-conversation — posted by slm-router on AI-to-human handoff",
-	"migrationHandler.RegisterInternalRoutes":                  "/internal CSM migration fast-path review — operator action through the console backend",
-	"internalsvc.NewAuditIngestHandler.Register":               "/internal audit ingest — auth-bff and platform-api post login/logout and staff invite events",
-	"internalsvc.NewStorefrontStatusHandler.Register":          "/internal storefront status — read at the edge by the storefront-gate Cloudflare Worker",
-	"internalsvc.NewActiveDomainsHandler.Register":             "/internal active domains list — read by the OpenPanel CORS reconciler",
-	"internalsvc.NewTenantPurgeHandler.Register":               "/internal tenant hard-delete — posted by platform-api's outbox drainer",
+	"ticketInternalHandler.RegisterRoutes":                                    "/internal ticket-from-conversation — posted by slm-router on AI-to-human handoff",
+	"migrationHandler.RegisterInternalRoutes":                                 "/internal CSM migration fast-path review — operator action through the console backend",
+	"internalsvc.NewAuditIngestHandler.Register":                              "/internal audit ingest — auth-bff and platform-api post login/logout and staff invite events",
+	"internalsvc.NewStorefrontStatusHandler.Register":                         "/internal storefront status — read at the edge by the storefront-gate Cloudflare Worker",
+	"internalsvc.NewActiveDomainsHandler.Register":                            "/internal active domains list — read by the OpenPanel CORS reconciler",
+	"internalsvc.NewTenantPurgeHandler.Register":                              "/internal tenant hard-delete — posted by platform-api's outbox drainer",
 }
 
 // directRoutesOutsideManifest are routes registered STRAIGHT onto a router

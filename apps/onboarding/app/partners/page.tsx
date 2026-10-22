@@ -43,7 +43,7 @@ export default function PartnersPage() {
           </li>
         </ul>
         <p>
-          To join, email <MailLink email="mahesh@mark8ly.com" /> with your
+          To join, email <MailLink email="partners@mark8ly.com" /> with your
           studio&rsquo;s name and website, and we&rsquo;ll send your code.
         </p>
 
@@ -155,7 +155,7 @@ export default function PartnersPage() {
         <p>
           The stores themselves remain under our{" "}
           <a href="/terms">Terms of service</a>. Questions:{" "}
-          <MailLink email="mahesh@mark8ly.com" />.
+          <MailLink email="partners@mark8ly.com" />.
         </p>
       </Prose>
     </MarketingPage>

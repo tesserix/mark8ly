@@ -6,7 +6,7 @@
 # Go's runtime handles SIGTERM directly so tini is unnecessary; K8s
 # securityContext overrides USER, mode 0755 lets any uid execute.
 
-FROM ghcr.io/tesserix/base-go-builder:20261017@sha256:f9214aed0fe09af409811bd4581bbd4af586d1a72bb667a67d03a446857dd47c AS build
+FROM ghcr.io/tesserix/base-go-builder:20261022@sha256:52dfe62a2b3fac61f5cef9ef6c551810745c8f1308f314eb1f370c9f5e5f027e AS build
 USER 0:0
 WORKDIR /src
 COPY go.mod go.sum ./

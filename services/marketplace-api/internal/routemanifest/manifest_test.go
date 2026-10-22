@@ -346,7 +346,7 @@ var mountsOutsideManifest = map[string]string{
 	"templateHandler.Register":                                 "/internal email-template refresh + test-send — operator/cron surface",
 	"internalDomainsHandler.Register":                          "/internal domain re-verify + cert refresh — super-admin actions via the console's own backend, not the browser",
 	"stores.NewInternalHandler.RegisterRoutes":                 "/internal stores mirror — written by platform-api at onboarding completion",
-	"subscription.NewInternalHandler.WithPromo.RegisterRoutes": "/internal signup subscription + promo callback — called by onboarding's backend with MARKETPLACE_INTERNAL_AUTH_SECRET",
+	"subscription.NewInternalHandler.WithPromo.WithPromoAudit.RegisterRoutes": "/internal signup subscription + promo callback — called by onboarding's backend with MARKETPLACE_INTERNAL_AUTH_SECRET",
 	"ticketInternalHandler.RegisterRoutes":                     "/internal ticket-from-conversation — posted by slm-router on AI-to-human handoff",
 	"migrationHandler.RegisterInternalRoutes":                  "/internal CSM migration fast-path review — operator action through the console backend",
 	"internalsvc.NewAuditIngestHandler.Register":               "/internal audit ingest — auth-bff and platform-api post login/logout and staff invite events",

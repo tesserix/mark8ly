@@ -301,6 +301,71 @@ func TestEnsureSubscription_ARefusedCodeStillCompletesOnboarding(t *testing.T) {
 	}
 }
 
+type recordedPromo struct {
+	sub   *subscription.StoreSubscription
+	code  string
+	offer subscription.SignupPromoOffer
+}
+
+type stubAuditor struct{ records []recordedPromo }
+
+func (a *stubAuditor) RecordSignupPromo(_ *gin.Context, sub *subscription.StoreSubscription,
+	code string, offer subscription.SignupPromoOffer) {
+	a.records = append(a.records, recordedPromo{sub: sub, code: code, offer: offer})
+}
+
+// A refused code writes no redemption row, so the audit record is the only
+// trace that a partner's code was typed for this store.
+func TestEnsureSubscription_RecordsARefusedCodeAgainstTheStore(t *testing.T) {
+	p := &stubPromo{
+		offer: subscription.SignupPromoOffer{RejectReason: "invalid_or_expired"},
+		err:   errors.New("refused"),
+	}
+	a := &stubAuditor{}
+	storeID := uuid.New()
+	gin.SetMode(gin.TestMode)
+	e := gin.New()
+	subscription.NewInternalHandler(&stubBootstrapper{}).WithPromo(p).WithPromoAudit(a).
+		RegisterRoutes(e.Group("/internal"), testInternalSecret)
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, ensureReq(t, storeID, map[string]any{
+		"tenant_id":  uuid.New().String(),
+		"promo_code": " HAVN90 ",
+	}, testInternalSecret))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(a.records) != 1 {
+		t.Fatalf("recorded %d outcomes, want 1", len(a.records))
+	}
+	got := a.records[0]
+	if got.code != "HAVN90" || got.offer.RejectReason != "invalid_or_expired" {
+		t.Errorf("recorded %+v", got)
+	}
+	if got.sub == nil || got.sub.StoreID != storeID {
+		t.Errorf("recorded against %+v, want the new store", got.sub)
+	}
+}
+
+func TestEnsureSubscription_RecordsNothingWhenNoCodeIsTyped(t *testing.T) {
+	a := &stubAuditor{}
+	gin.SetMode(gin.TestMode)
+	e := gin.New()
+	subscription.NewInternalHandler(&stubBootstrapper{}).WithPromo(&stubPromo{}).WithPromoAudit(a).
+		RegisterRoutes(e.Group("/internal"), testInternalSecret)
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, ensureReq(t, uuid.New(), map[string]any{
+		"tenant_id": uuid.New().String(),
+	}, testInternalSecret))
+
+	if len(a.records) != 0 {
+		t.Errorf("recorded %d outcomes for a signup with no code", len(a.records))
+	}
+}
+
 // With no promo service wired, a code must be REFUSED rather than dropped.
 // Silently ignoring it would tell a merchant it applied when nothing could
 // have applied it — the shape of #620's original defect.

@@ -7,6 +7,7 @@ import {
   PROMO_MAX_ATTEMPTS,
   PROMO_WINDOW_MS,
 } from "../../lib/promo/rateLimit";
+import { promoFromSearch } from "../../lib/promo/link";
 
 /**
  * The onboarding promo field (#620).
@@ -127,5 +128,23 @@ test.describe("allowPromoCheck", () => {
     for (let i = 0; i < PROMO_MAX_ATTEMPTS; i++) allowPromoCheck("1.2.3.4", t0);
     expect(allowPromoCheck("1.2.3.4", t0)).toBe(false);
     expect(allowPromoCheck("1.2.3.4", t0 + PROMO_WINDOW_MS + 1)).toBe(true);
+  });
+});
+
+test.describe("promoFromSearch", () => {
+  test("reads a partner's code from the link", () => {
+    expect(promoFromSearch("?promo=HAVEN90")).toBe("HAVEN90");
+    expect(promoFromSearch("?utm_source=haven&promo=haven90")).toBe("haven90");
+  });
+
+  test("returns nothing when the link carries no code", () => {
+    expect(promoFromSearch("")).toBe("");
+    expect(promoFromSearch("?promo=")).toBe("");
+    expect(promoFromSearch("?utm_source=x")).toBe("");
+  });
+
+  test("drops whitespace and caps the length", () => {
+    expect(promoFromSearch("?promo=%20HAVEN%2090%20")).toBe("HAVEN90");
+    expect(promoFromSearch(`?promo=${"A".repeat(100)}`)).toHaveLength(64);
   });
 });

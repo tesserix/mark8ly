@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 
+	"github.com/gin-gonic/gin"
+
+	"github.com/mark8ly/marketplace-api/internal/audit"
 	"github.com/mark8ly/marketplace-api/internal/promo"
 	"github.com/mark8ly/marketplace-api/internal/subscription"
 )
@@ -57,4 +60,21 @@ func out(offer promo.SignupOffer) subscription.SignupPromoOffer {
 		TrialExtensionDays: offer.TrialExtensionDays,
 		RejectReason:       reason,
 	}
+}
+
+// signupPromoAuditAdapter joins internal/audit to subscription's
+// SignupPromoAuditor, for the same one-way-import reason as above.
+type signupPromoAuditAdapter struct{ emitter *audit.Emitter }
+
+func (a signupPromoAuditAdapter) RecordSignupPromo(c *gin.Context,
+	sub *subscription.StoreSubscription, code string, offer subscription.SignupPromoOffer) {
+	a.emitter.EmitPromoApplied(c, audit.PromoApplied{
+		TenantID:           sub.TenantID,
+		StoreID:            sub.StoreID,
+		Code:               code,
+		Actor:              "system:onboarding",
+		RejectReason:       offer.RejectReason,
+		Accepted:           offer.RejectReason == "",
+		TrialExtensionDays: offer.TrialExtensionDays,
+	})
 }

@@ -24,6 +24,7 @@ import {
   submitOnboarding,
 } from "@/app/onboarding/actions";
 import { promoMessage, type PromoMessage } from "@/lib/promo/message";
+import { promoFromSearch } from "@/lib/promo/link";
 import { signupCopy } from "@/lib/copy/signup";
 import { readStoredAcquisition } from "@/lib/acquisition";
 
@@ -202,6 +203,15 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
       signupCopy.taxIdHelpFallback
     );
   }, [watchedCountry]);
+
+  // A partner's link carries their code (?promo=); pre-fill it and open the
+  // disclosure so the merchant sees what it grants. Read once, on mount.
+  useEffect(() => {
+    const code = promoFromSearch(window.location.search);
+    if (!code) return;
+    setValue("promoCode", code);
+    setOptionalOpen(true);
+  }, [setValue]);
 
   // Auto-suggest slug from business name until the user touches the slug field.
   useEffect(() => {

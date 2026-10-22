@@ -63,10 +63,20 @@ type SignupPromoOffer struct {
 	RejectReason       string
 }
 
+// SignupPromoAuditor records the outcome of a code typed at signup, granted
+// or refused. A refusal leaves no redemption row, so without this a partner's
+// mistyped code would leave no trace to attribute the store by hand. An
+// interface for the same import-cycle reason as SignupPromoRedeemer:
+// internal/audit imports this package.
+type SignupPromoAuditor interface {
+	RecordSignupPromo(c *gin.Context, sub *StoreSubscription, code string, offer SignupPromoOffer)
+}
+
 // InternalHandler serves the platform-api subscription callback.
 type InternalHandler struct {
-	svc   Bootstrapper
-	promo SignupPromoRedeemer
+	svc     Bootstrapper
+	promo   SignupPromoRedeemer
+	auditor SignupPromoAuditor
 }
 
 // NewInternalHandler constructs an InternalHandler.
@@ -79,6 +89,12 @@ func NewInternalHandler(svc Bootstrapper) *InternalHandler {
 // never told their code applied when nothing could have applied it.
 func (h *InternalHandler) WithPromo(p SignupPromoRedeemer) *InternalHandler {
 	h.promo = p
+	return h
+}
+
+// WithPromoAudit records every signup code's outcome. Nil-safe.
+func (h *InternalHandler) WithPromoAudit(a SignupPromoAuditor) *InternalHandler {
+	h.auditor = a
 	return h
 }
 
@@ -231,6 +247,9 @@ func (h *InternalHandler) ensureSubscription(c *gin.Context) {
 			if promoErr != nil && offer.RejectReason == "" {
 				offer.RejectReason = "promo_failed"
 			}
+		}
+		if h.auditor != nil {
+			h.auditor.RecordSignupPromo(c, sub, code, offer)
 		}
 	}
 

@@ -21,7 +21,7 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server \
 
 # Single runtime stage carries both binaries so the K8s init pattern
 # can override ENTRYPOINT to /migrate without pulling a second image.
-FROM ghcr.io/tesserix/base-distroless-static:20261017@sha256:7c885c37cb2f61400256bef39b9221b48a4860f8080101765da1c262b994cdf1 AS server
+FROM ghcr.io/tesserix/base-distroless-static:20261024@sha256:a0ada4bf3d50447e7bbc3bf95f872ade97dd85feba81e7b4facf8e9fab665594 AS server
 COPY --from=build --chown=10001:10001 /out/server /server
 COPY --from=build --chown=10001:10001 /out/migrate /migrate
 EXPOSE 8080
@@ -29,6 +29,6 @@ CMD ["/server"]
 
 # Legacy single-purpose stage retained for local docker-compose flows
 # that build with --target migrate.
-FROM ghcr.io/tesserix/base-distroless-static:20261017@sha256:7c885c37cb2f61400256bef39b9221b48a4860f8080101765da1c262b994cdf1 AS migrate
+FROM ghcr.io/tesserix/base-distroless-static:20261024@sha256:a0ada4bf3d50447e7bbc3bf95f872ade97dd85feba81e7b4facf8e9fab665594 AS migrate
 COPY --from=build --chown=10001:10001 /out/migrate /migrate
 CMD ["/migrate"]

@@ -49,6 +49,7 @@ func TestIntegration_Complete_TenantAndOutboxCommitAtomically(t *testing.T) {
 	tenantRepo := tenant.NewRepository(db)
 	onboardingRepo := NewRepository(db)
 	svc := NewService(Config{
+		StoreRepo:    store.NewRepository(db),
 		DB:           db,
 		Repo:         onboardingRepo,
 		TenantRepo:   tenantRepo,
@@ -182,6 +183,7 @@ func TestIntegration_Complete_RejectsUnverifiedSession(t *testing.T) {
 	tenantRepo := tenant.NewRepository(db)
 	onboardingRepo := NewRepository(db)
 	svc := NewService(Config{
+		StoreRepo:  store.NewRepository(db),
 		DB:         db,
 		Repo:       onboardingRepo,
 		TenantRepo: tenantRepo,
@@ -244,6 +246,7 @@ func TestIntegration_Complete_DuplicateSlugRollsBackEverything(t *testing.T) {
 	tenantRepo := tenant.NewRepository(db)
 	onboardingRepo := NewRepository(db)
 	svc := NewService(Config{
+		StoreRepo:  store.NewRepository(db),
 		DB:         db,
 		Repo:       onboardingRepo,
 		TenantRepo: tenantRepo,
@@ -383,6 +386,7 @@ func TestIntegration_Complete_CallsEnsureSelfVendor(t *testing.T) {
 	onboardingRepo := NewRepository(db)
 	fake := &fakeVendorClient{}
 	svc := NewService(Config{
+		StoreRepo:    store.NewRepository(db),
 		DB:           db,
 		Repo:         onboardingRepo,
 		TenantRepo:   tenantRepo,
@@ -447,6 +451,7 @@ func TestIntegration_Complete_SwallowsVendorError(t *testing.T) {
 	onboardingRepo := NewRepository(db)
 	fake := &fakeVendorClient{err: errors.New("boom")}
 	svc := NewService(Config{
+		StoreRepo:    store.NewRepository(db),
 		DB:           db,
 		Repo:         onboardingRepo,
 		TenantRepo:   tenantRepo,
@@ -505,6 +510,7 @@ func TestIntegration_Complete_StartsTheTrial(t *testing.T) {
 	onboardingRepo := NewRepository(db)
 	fake := &fakeVendorClient{}
 	svc := NewService(Config{
+		StoreRepo:    store.NewRepository(db),
 		DB:           db,
 		Repo:         onboardingRepo,
 		TenantRepo:   tenant.NewRepository(db),
@@ -583,6 +589,7 @@ func TestIntegration_Complete_CarriesThePromoCode(t *testing.T) {
 	onboardingRepo := NewRepository(db)
 	fake := &fakeVendorClient{}
 	svc := NewService(Config{
+		StoreRepo:    store.NewRepository(db),
 		DB:           db,
 		Repo:         onboardingRepo,
 		TenantRepo:   tenant.NewRepository(db),
@@ -644,7 +651,8 @@ func TestIntegration_Complete_NoPromoCodeStaysEmpty(t *testing.T) {
 	onboardingRepo := NewRepository(db)
 	fake := &fakeVendorClient{}
 	svc := NewService(Config{
-		DB: db, Repo: onboardingRepo, TenantRepo: tenant.NewRepository(db),
+		StoreRepo: store.NewRepository(db),
+		DB:        db, Repo: onboardingRepo, TenantRepo: tenant.NewRepository(db),
 		Sender: notification.NoopSender{}, EmailFrom: "noreply@test.local",
 		SupportEmail: "help@test.local", VendorClient: fake,
 	})
@@ -697,7 +705,8 @@ func TestIntegration_Complete_CarriesTheTaxID(t *testing.T) {
 	onboardingRepo := NewRepository(db)
 	fake := &fakeVendorClient{}
 	svc := NewService(Config{
-		DB: db, Repo: onboardingRepo, TenantRepo: tenant.NewRepository(db),
+		StoreRepo: store.NewRepository(db),
+		DB:        db, Repo: onboardingRepo, TenantRepo: tenant.NewRepository(db),
 		Sender: notification.NoopSender{}, EmailFrom: "noreply@test.local",
 		SupportEmail: "help@test.local", VendorClient: fake,
 	})

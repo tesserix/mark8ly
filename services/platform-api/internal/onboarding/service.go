@@ -77,6 +77,7 @@ type OwnerProvisioner interface {
 }
 
 type Service struct {
+	rocketChatEnabled     bool
 	db                    *gorm.DB
 	repo                  Repository
 	tenantRepo            tenant.Repository
@@ -94,11 +95,12 @@ type Service struct {
 
 // Config holds Service dependencies.
 type Config struct {
-	DB         *gorm.DB
-	Repo       Repository
-	TenantRepo tenant.Repository
-	StoreRepo  store.Repository
-	Sender     notification.Sender
+	RocketChatEnabled bool
+	DB                *gorm.DB
+	Repo              Repository
+	TenantRepo        tenant.Repository
+	StoreRepo         store.Repository
+	Sender            notification.Sender
 	// Loader is the DB-backed template loader (embedded fallback).
 	Loader    *notification.Loader
 	EmailFrom string
@@ -127,6 +129,7 @@ type Config struct {
 // NewService constructs a Service.
 func NewService(cfg Config) *Service {
 	return &Service{
+		rocketChatEnabled:     cfg.RocketChatEnabled,
 		classifier:            cfg.Classifier,
 		db:                    cfg.DB,
 		repo:                  cfg.Repo,
@@ -473,6 +476,17 @@ func (s *Service) Complete(ctx context.Context, req CompleteRequest) (*CompleteR
 			StoreID:  st.ID,
 		}); err != nil {
 			return err
+		}
+		if s.rocketChatEnabled {
+			return outbox.Enqueue(tx, RocketChatOutboxKind, signupNotification{
+				TenantID: t.ID, StoreID: st.ID,
+				OwnerName: strings.TrimSpace(req.FirstName + " " + req.LastName), OwnerEmail: t.OwnerEmail,
+				BusinessName: t.Name, Slug: st.Slug, Country: st.CountryCode,
+				Currency: st.CurrencyCode, Timezone: st.Timezone, SignedUpAt: t.CreatedAt,
+				Classification: classification,
+				AdminURL:       formatURLTemplate(s.adminURLTemplate, st.Slug),
+				StorefrontURL:  formatURLTemplate(s.storefrontURLTemplate, st.Slug),
+			})
 		}
 		return nil
 	})

@@ -321,6 +321,7 @@ func (d *Drainer) markCompleted(ctx context.Context, evt Event) {
 func (d *Drainer) markRetry(ctx context.Context, evt Event, cause error) {
 	next := time.Now().Add(d.backoff(evt.Attempts + 1))
 	if err := d.db.WithContext(ctx).Model(&Event{}).Where("id = ?", evt.ID).Updates(map[string]any{
+		"status":          StatusPending,
 		"attempts":        evt.Attempts + 1,
 		"last_error":      truncate(cause.Error(), 1000),
 		"next_attempt_at": next,

@@ -210,10 +210,16 @@ func main() {
 		panic(ownerProvErr)
 	}
 
+	chatHandler, err := onboardingChatHandler(cfg)
+	if err != nil {
+		log.Error("onboarding chat configuration invalid", "err", err)
+		os.Exit(1)
+	}
 	onboardingRepo := onboarding.NewRepository(conn)
 	onboardingSvc := onboarding.NewService(onboarding.Config{
-		DB:   conn,
-		Repo: onboardingRepo,
+		RocketChatEnabled: cfg.RocketChatEnabled,
+		DB:                conn,
+		Repo:              onboardingRepo,
 		Classifier: onboarding.NewClassifier(
 			cfg.OnboardingInternalEmailDomains,
 			cfg.OnboardingDemoEmails,
@@ -348,6 +354,7 @@ func main() {
 
 	// ─── Outbox drainer ────────────────────────────────────────────────
 	drainer := outbox.NewDrainer(conn, log, outbox.Config{})
+	drainer.Register(onboarding.RocketChatOutboxKind, chatHandler)
 	if fga != nil {
 		drainer.Register(onboarding.FGAOutboxKind, onboarding.NewFGAOutboxHandler(fga))
 	}

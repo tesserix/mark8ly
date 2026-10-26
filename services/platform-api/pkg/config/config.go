@@ -12,6 +12,12 @@ import (
 
 // Config holds all runtime configuration for platform-api.
 type Config struct {
+	RocketChatEnabled bool   `envconfig:"ROCKETCHAT_ONBOARDING_ENABLED" default:"false"`
+	RocketChatURL     string `envconfig:"ROCKETCHAT_URL" default:"https://rocketchat.tesserix.app"`
+	RocketChatUserID  string `envconfig:"ROCKETCHAT_USER_ID"`
+	RocketChatToken   string `envconfig:"ROCKETCHAT_AUTH_TOKEN"`
+	RocketChatRoomID  string `envconfig:"ROCKETCHAT_ONBOARDING_ROOM_ID"`
+
 	Env         string `envconfig:"ENV" default:"dev"`
 	HTTPPort    int    `envconfig:"HTTP_PORT" default:"8086"`
 	DatabaseURL string `envconfig:"DATABASE_URL" required:"true"`

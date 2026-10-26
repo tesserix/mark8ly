@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mark8ly/platform-api/internal/store"
 	"github.com/mark8ly/platform-api/internal/tenant"
 )
 
@@ -98,6 +99,7 @@ func TestIntegration_Funnel_ExternalView(t *testing.T) {
 func TestIntegration_Create_StoresSanitisedAcquisitionAndClassifies(t *testing.T) {
 	repo, db := setupFunnelTest(t)
 	svc := NewService(Config{
+		StoreRepo:  store.NewRepository(db),
 		DB:         db,
 		Repo:       repo,
 		TenantRepo: tenant.NewRepository(db),

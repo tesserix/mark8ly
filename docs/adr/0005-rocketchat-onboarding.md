@@ -1,6 +1,6 @@
 # Rocket.Chat onboarding notifications
 
-Status: implemented locally; production rollout pending approval.
+Status: accepted; production activation is controlled by the infrastructure repository.
 
 ## Decision
 
@@ -36,7 +36,10 @@ events for operator inspection and replay. The existing retry transition needed
 `status=pending`; otherwise failed jobs stayed in flight until crash recovery.
 
 There is no synchronous chat call in signup, new service, schema migration,
-queue, disk or inbound endpoint. Disabled by default in application code. When
+queue, disk or inbound endpoint. Disabled replicas still register a retryable
+handler so a rolling enablement does not dead-letter newly queued events as an
+unknown kind. Deploy this compatible binary everywhere before enabling signup
+notifications. Disabled by default in application code. When
 enabled, incomplete bot configuration fails startup rather than silently losing
 notifications. Production Helm enables it only as part of the approved rollout.
 

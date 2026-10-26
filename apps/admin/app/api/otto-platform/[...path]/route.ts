@@ -56,6 +56,7 @@ async function forward(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Tenant-Id": PLATFORM_TENANT_ID,
+    "X-Product-Id": "mark8ly",
     "X-Store-Id": PLATFORM_STORE_ID,
     // Identity — Otto's CustomerContext treats these as a logged-in
     // customer and skips OTP. The admin's tenant_id/store_id are

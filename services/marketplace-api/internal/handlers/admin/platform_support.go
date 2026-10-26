@@ -48,6 +48,7 @@ func platformResolver(c *gin.Context) (ottoclient.ForwardScope, ottoclient.Forwa
 	return ottoclient.ForwardScope{TenantID: platformTenantID, StoreID: platformStoreID},
 		ottoclient.ForwardIdentity{
 			UserID:         c.GetString("user_id"),
+			ProductID:      "mark8ly",
 			ClientTenantID: c.GetString("tenant_id"),
 		},
 		true

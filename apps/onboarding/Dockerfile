@@ -93,6 +93,9 @@ RUN --mount=type=secret,id=APPLICATION_BUILD_SECRET \
 # apps/onboarding/.next/standalone/ with the monorepo directory layout
 # preserved, so the entrypoint is apps/onboarding/server.js.
 FROM ghcr.io/tesserix/base-node-runtime-24:20260926@sha256:48607e5eef602f303299d13d70b36eeb39bd69eee62e00af64d127ba839463e3 AS runtime
+USER 0:0
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+USER 10001:10001
 WORKDIR /app
 
 ENV PORT=4201

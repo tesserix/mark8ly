@@ -16,8 +16,9 @@ import (
 // platform tenant/store and carry the merchant's own tenant as
 // X-Client-Tenant-Id so the Tesserix agent sees who is talking.
 func TestPlatformSupport_PinsPlatformTenantAndAttributesMerchant(t *testing.T) {
-	var sawTenant, sawStore, sawUser, sawClientTenant string
+	var sawTenant, sawStore, sawUser, sawClientTenant, sawProduct string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawProduct = r.Header.Get("X-Product-Id")
 		sawTenant = r.Header.Get("X-Tenant-Id")
 		sawStore = r.Header.Get("X-Store-Id")
 		sawUser = r.Header.Get("X-User-Id")
@@ -51,6 +52,9 @@ func TestPlatformSupport_PinsPlatformTenantAndAttributesMerchant(t *testing.T) {
 	}
 	if sawUser != "admin-1" {
 		t.Errorf("X-User-Id=%q, want admin-1", sawUser)
+	}
+	if sawProduct != "mark8ly" {
+		t.Errorf("product=%q, want mark8ly", sawProduct)
 	}
 	if sawClientTenant != "merchant-9" {
 		t.Errorf("X-Client-Tenant-Id=%q, want merchant-9", sawClientTenant)

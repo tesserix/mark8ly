@@ -30,6 +30,7 @@ type ForwardScope struct {
 // the platform-support surface so the Tesserix agent can see which
 // merchant raised the chat.
 type ForwardIdentity struct {
+	ProductID        string
 	UserID           string
 	UserEmail        string
 	UserName         string
@@ -96,6 +97,9 @@ func (c *Client) Forward(ctx context.Context, in ForwardRequest) (*ForwardRespon
 	}
 	if in.Identity.UserName != "" {
 		req.Header.Set("X-User-Name", in.Identity.UserName)
+	}
+	if in.Identity.ProductID != "" {
+		req.Header.Set("X-Product-Id", in.Identity.ProductID)
 	}
 	if in.Identity.ClientTenantID != "" {
 		req.Header.Set("X-Client-Tenant-Id", in.Identity.ClientTenantID)

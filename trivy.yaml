@@ -1,0 +1,8 @@
+# The GCR cache intermittently returns 404 for existing database layers.
+db:
+  repository:
+    - ghcr.io/aquasecurity/trivy-db:2
+    - public.ecr.aws/aquasecurity/trivy-db:2
+  java-repository:
+    - ghcr.io/aquasecurity/trivy-java-db:1
+    - public.ecr.aws/aquasecurity/trivy-java-db:1

@@ -34,6 +34,9 @@ type Config struct {
 	ResendAPIKey         string `envconfig:"RESEND_API_KEY"`
 	EmailPrimaryProvider string `envconfig:"EMAIL_PRIMARY_PROVIDER" default:"sendgrid"`
 	EmailFrom            string `envconfig:"EMAIL_FROM" default:"noreply@mark8ly.local"`
+	// SupportEmail is the "Contact us" address in email footers. Never EMAIL_FROM:
+	// that is a no-reply mailbox, so replies to it go nowhere.
+	SupportEmail string `envconfig:"SUPPORT_EMAIL" default:"hello@mark8ly.com"`
 
 	// Storage (inlined GCS for now)
 	GCSBucket string `envconfig:"GCS_BUCKET"`

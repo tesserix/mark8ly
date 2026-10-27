@@ -13,7 +13,7 @@
 # `replace github.com/mark8ly/platformauth => ../../packages/platformauth`,
 # a sibling module a services/platform-api-scoped context can't reach.
 
-FROM ghcr.io/tesserix/base-go-builder:20261022@sha256:52dfe62a2b3fac61f5cef9ef6c551810745c8f1308f314eb1f370c9f5e5f027e AS build
+FROM ghcr.io/tesserix/base-go-builder:20261024@sha256:3e00161f419a8fd7abe3144ad46d08ef809126294d785bcdd6b4b16137070a70 AS build
 USER 0:0
 WORKDIR /src
 

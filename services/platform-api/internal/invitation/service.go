@@ -24,18 +24,19 @@ import (
 // is small enough that the handler/service/repo split is the only
 // layering that matters.
 type Service struct {
-	repo        Repository
-	tenantRepo  tenant.Repository
-	storeRepo   store.Repository
-	fga         authz.Client
-	sender      notification.Sender
-	loader      *notification.Loader
-	emailFrom   string
-	acceptURL   func(slug, token string) string
-	expiry      time.Duration
-	recorder    TokenRecorder
-	audit       *audit.Client // optional — emits staff lifecycle events
-	provisioner StaffProvisioner
+	repo         Repository
+	tenantRepo   tenant.Repository
+	storeRepo    store.Repository
+	fga          authz.Client
+	sender       notification.Sender
+	loader       *notification.Loader
+	emailFrom    string
+	supportEmail string
+	acceptURL    func(slug, token string) string
+	expiry       time.Duration
+	recorder     TokenRecorder
+	audit        *audit.Client // optional — emits staff lifecycle events
+	provisioner  StaffProvisioner
 }
 
 // StaffProvisioner makes an invited teammate a usable sign-in identity
@@ -80,8 +81,9 @@ type Config struct {
 	Sender    notification.Sender
 	// Loader is the DB-backed template loader (embedded fallback). May
 	// be nil; nil falls through to embedded rendering.
-	Loader    *notification.Loader
-	EmailFrom string
+	Loader       *notification.Loader
+	EmailFrom    string
+	SupportEmail string
 	// AcceptURL builds the full invitation accept URL from the
 	// default-store slug and a plaintext token.
 	AcceptURL func(slug, token string) string
@@ -103,18 +105,19 @@ func NewService(cfg Config) *Service {
 		cfg.Expiry = 72 * time.Hour
 	}
 	return &Service{
-		repo:        cfg.Repo,
-		tenantRepo:  cfg.TenantRepo,
-		storeRepo:   cfg.StoreRepo,
-		fga:         cfg.FGA,
-		sender:      cfg.Sender,
-		loader:      cfg.Loader,
-		emailFrom:   cfg.EmailFrom,
-		acceptURL:   cfg.AcceptURL,
-		expiry:      cfg.Expiry,
-		recorder:    cfg.Recorder,
-		audit:       cfg.Audit,
-		provisioner: cfg.Provisioner,
+		repo:         cfg.Repo,
+		tenantRepo:   cfg.TenantRepo,
+		storeRepo:    cfg.StoreRepo,
+		fga:          cfg.FGA,
+		sender:       cfg.Sender,
+		loader:       cfg.Loader,
+		emailFrom:    cfg.EmailFrom,
+		supportEmail: cfg.SupportEmail,
+		acceptURL:    cfg.AcceptURL,
+		expiry:       cfg.Expiry,
+		recorder:     cfg.Recorder,
+		audit:        cfg.Audit,
+		provisioner:  cfg.Provisioner,
 	}
 }
 
@@ -255,7 +258,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Invitation, erro
 			Role:         role,
 			AcceptURL:    url,
 			ExpiresIn:    "72 hours",
-			SupportEmail: s.emailFrom,
+			SupportEmail: s.supportEmail,
 		}
 		// DB-loaded template with embedded fallback. Tenant context is
 		// known here so forward it for engagement attribution.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/mail"
 	"time"
 )
 
@@ -61,7 +62,7 @@ func (s *SendGridSender) Send(ctx context.Context, msg Email) error {
 		Personalizations: []sendgridPersonalization{{
 			To: []sendgridAddress{{Email: msg.To}},
 		}},
-		From:    sendgridAddress{Email: msg.From},
+		From:    sendgridFrom(msg.From),
 		Subject: msg.Subject,
 		Content: []sendgridContent{
 			{Type: "text/plain", Value: msg.TextBody},
@@ -152,3 +153,12 @@ type sendgridContent struct {
 
 // Name identifies the provider in fallback-chain logs.
 func (s *SendGridSender) Name() string { return ProviderSendGrid }
+
+// sendgridFrom splits a `"Name" <addr>` From into SendGrid's two fields;
+// SendGrid rejects the combined form in the email field.
+func sendgridFrom(from string) sendgridAddress {
+	if a, err := mail.ParseAddress(from); err == nil {
+		return sendgridAddress{Email: a.Address, Name: a.Name}
+	}
+	return sendgridAddress{Email: from}
+}

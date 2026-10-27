@@ -7,7 +7,7 @@
 </head>
 <body style="margin:0;padding:0;background-color:#F7F6F2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Source Sans 3',Helvetica,Arial,sans-serif;color:#0E0E0C;">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
-    {{.Inviter}} invited you to join {{.TenantName}} on Mark8ly as a {{.Role}}.
+    {{if .Inviter}}{{.Inviter}} invited you{{else}}You&rsquo;ve been invited{{end}} to join {{.TenantName}} on Mark8ly as {{.Role}}.
   </div>
   <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#F7F6F2;padding:48px 16px;">
     <tr>
@@ -27,7 +27,7 @@
                 Join {{.TenantName}}
               </h1>
               <p style="margin:0 0 24px 0;font-size:16px;line-height:1.7;color:#45433E;">
-                You&rsquo;ve been invited to join <strong style="font-weight:600;color:#0E0E0C;">{{.TenantName}}</strong> on Mark8ly as a <strong style="font-weight:600;color:#0E0E0C;">{{.Role}}</strong>. Accept the invite to open the admin and start collaborating.
+                You&rsquo;ve been invited to join <strong style="font-weight:600;color:#0E0E0C;">{{.TenantName}}</strong> on Mark8ly as <strong style="font-weight:600;color:#0E0E0C;">{{.Role}}</strong>. Accept the invite to open the admin and start collaborating.
               </p>
               <table cellspacing="0" cellpadding="0" border="0" style="margin:0 0 28px 0;">
                 <tr>

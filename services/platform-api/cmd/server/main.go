@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/mail"
 	"os"
 	"os/signal"
 	"strings"
@@ -60,6 +61,8 @@ func main() {
 		panic(err)
 	}
 	log := logger.New(cfg.Env)
+	// Inboxes show "Mark8ly" rather than the bare no-reply address.
+	emailFrom := (&mail.Address{Name: "Mark8ly", Address: cfg.EmailFrom}).String()
 
 	// ─── Observability ──────────────────────────────────────────────────
 	// Initialise OpenTelemetry (traces + metrics over OTLP/gRPC) before any
@@ -189,8 +192,8 @@ func main() {
 		verification.Config{
 			Sender:        sender,
 			Loader:        templateLoader,
-			EmailFrom:     cfg.EmailFrom,
-			SupportEmail:  cfg.EmailFrom,
+			EmailFrom:     emailFrom,
+			SupportEmail:  cfg.SupportEmail,
 			VerifyURLBase: cfg.OnboardingBaseURL,
 			Recorder:      tokenRecorder,
 		},
@@ -229,10 +232,10 @@ func main() {
 		StoreRepo:             storeRepo,
 		Sender:                sender,
 		Loader:                templateLoader,
-		EmailFrom:             cfg.EmailFrom,
+		EmailFrom:             emailFrom,
 		AdminURLTemplate:      cfg.AdminBaseURLTemplate,
 		StorefrontURLTemplate: cfg.StorefrontBaseURLTemplate,
-		SupportEmail:          cfg.EmailFrom,
+		SupportEmail:          cfg.SupportEmail,
 		VendorClient:          vendorClient,
 		Provisioner:           ownerProvisioner,
 	})
@@ -283,8 +286,8 @@ func main() {
 			Admin:             resetProvider,
 			Sender:            sender,
 			Loader:            templateLoader,
-			EmailFrom:         cfg.EmailFrom,
-			SupportEmail:      cfg.EmailFrom,
+			EmailFrom:         emailFrom,
+			SupportEmail:      cfg.SupportEmail,
 			AdminResetBaseURL: cfg.AdminResetBaseURL,
 			Logger:            log,
 		})
@@ -318,17 +321,18 @@ func main() {
 	}
 
 	invitationSvc := invitation.NewService(invitation.Config{
-		Repo:        invitation.NewRepository(conn),
-		TenantRepo:  tenantRepo,
-		StoreRepo:   storeRepo,
-		FGA:         fga,
-		Sender:      sender,
-		Loader:      templateLoader,
-		EmailFrom:   cfg.EmailFrom,
-		AcceptURL:   acceptURL,
-		Recorder:    invitationRec,
-		Audit:       auditClient,
-		Provisioner: staffProvisioner,
+		Repo:         invitation.NewRepository(conn),
+		TenantRepo:   tenantRepo,
+		StoreRepo:    storeRepo,
+		FGA:          fga,
+		Sender:       sender,
+		Loader:       templateLoader,
+		EmailFrom:    emailFrom,
+		SupportEmail: cfg.SupportEmail,
+		AcceptURL:    acceptURL,
+		Recorder:     invitationRec,
+		Audit:        auditClient,
+		Provisioner:  staffProvisioner,
 	})
 	invitationHandler := invitation.NewHandler(invitationSvc)
 
@@ -392,7 +396,7 @@ func main() {
 		// emailtemplates.Registry's doc comment.
 		EmailTemplates:          emailtemplates.NewStore(conn),
 		EmailTemplateRegistry:   emailtemplates.NewRegistry(templateLoader),
-		EmailTemplateTestSender: emailtemplates.NewNotificationTestSender(sender, cfg.EmailFrom),
+		EmailTemplateTestSender: emailtemplates.NewNotificationTestSender(sender, emailFrom),
 	})
 
 	v1 := r.Group("/api/v1")
@@ -420,7 +424,7 @@ func main() {
 		Invitation:      func(g *gin.RouterGroup) { invitationHandler.Register(v1, g) },
 		Auth:            authInternalRegistrar(authHandler),
 		MerchantAccount: merchantAccountRegistrar(merchantAccountRoutes, accountHandler),
-		Notification:    notification.NewHandler(templateLoader, sender, cfg.EmailFrom).Register,
+		Notification:    notification.NewHandler(templateLoader, sender, emailFrom).Register,
 	})
 
 	locationHandler.Register(v1)

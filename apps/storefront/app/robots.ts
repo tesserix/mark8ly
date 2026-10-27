@@ -33,7 +33,9 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
     {
       userAgent: "*",
       allow: "/",
-      disallow: ["/api/", "/_next/"],
+      // Never block /_next/: it serves the page JS, CSS and fonts Google needs
+      // to render, and /_next/image serves every product photo.
+      disallow: ["/api/"],
     },
   ];
 

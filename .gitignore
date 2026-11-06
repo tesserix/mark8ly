@@ -42,6 +42,7 @@ vendor/
 /vendor/*
 !/vendor/deepmerge/
 !/vendor/image-size/
+!/vendor/decode-uri-component/
 # Allow the Vendor entity package (Phase 1 vendor foundation) despite the
 # broad `vendor/` Go-modules rule above.
 !services/*/internal/vendor/

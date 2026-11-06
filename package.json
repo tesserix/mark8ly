@@ -9,7 +9,7 @@
     "check-types": "turbo run check-types --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/mobile-storefront' --filter='!@repo/mobile-admin'",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "format:check": "prettier --check \"package*.json\" \".github/**/*.{yml,yaml,json}\" \"docs/ci.md\"",
-    "test:security": "node --test vendor/deepmerge/security.test.cjs vendor/image-size/security.test.cjs scripts/ci/dependency-security.test.cjs",
+    "test:security": "node --test vendor/deepmerge/security.test.cjs vendor/image-size/security.test.cjs scripts/ci/dependency-security.test.cjs vendor/decode-uri-component/security.test.cjs",
     "audit:dependencies": "npm audit --audit-level=low"
   },
   "devDependencies": {
@@ -19,7 +19,10 @@
     "typescript": "5.9.2",
     "deepmerge": "file:./vendor/deepmerge",
     "image-size": "file:./vendor/image-size",
-    "react-native": "0.85.3"
+    "react-native": "0.85.3",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "decode-uri-component": "file:./vendor/decode-uri-component"
   },
   "engines": {
     "node": ">=24"
@@ -60,7 +63,7 @@
     "undici@^6.0.0": ">=6.29.1 <7",
     "undici@^8.0.0": ">=8.12.2 <9",
     "@grpc/grpc-js": ">=1.13.6 <2",
-    "decode-uri-component": "^0.5.1",
+    "decode-uri-component": "$decode-uri-component",
     "postcss-selector-parser@^6.0.0": "^6.1.5",
     "glob@>=9 <15": "^14.0.2",
     "minimatch@>=7 <11": "^11.0.1",

@@ -1,0 +1,10 @@
+{
+  "name": "decode-uri-component",
+  "version": "0.2.2-compat.1",
+  "private": true,
+  "description": "CommonJS compatibility for the patched URI decoder",
+  "main": "index.cjs",
+  "dependencies": {
+    "safe-decode-uri-component": "npm:decode-uri-component@^0.5.1"
+  }
+}

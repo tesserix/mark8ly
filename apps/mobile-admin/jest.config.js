@@ -1,104 +1,36 @@
-// Pin `react-native` resolution to this app's local install. The monorepo
-// root hoists a different react-native version (used by another app in the
-// npm workspace), and jest-expo's transitive @react-native/jest-preset
-// resolves `react-native` relative to *its own* location — which lands on
-// the hoisted root copy instead of this app's version, breaking native
-// module mocks (e.g. "PlatformConstants could not be found"). Overriding
-// moduleNameMapper here forces every `react-native` (and subpath) import
-// back to apps/mobile-admin/node_modules/react-native.
-// Same hoisting issue as react-native above, but for @react-native-firebase:
-// the monorepo root hoists an older major (pinned by another app in the
-// workspace), and that mismatched module tries to init native modules and
-// blows up under jest. Force it back to this app's local install. Only
-// /app remains — it is the push-notification dependency; the auth package
-// is no longer imported anywhere (#786).
-// Same class of bug again, but for `react`: `zustand` exists ONLY at the
-// monorepo root (packages/mobile-shared has no node_modules at all), and the
-// root's React (19.2.5) is a different physical copy than this app's local
-// React (19.2.3). At runtime metro resolves zustand's `require('react')` to
-// this app's copy first, so there's no bug in the running app — but jest's
-// resolver walks zustand's require up to the hoisted root copy, producing
-// two live Reacts in the same render tree and breaking hooks
-// ("Cannot read properties of null (reading 'useCallback')") in any
-// zustand-backed component. Pin `react` the same way as above.
-// Same class of bug a fourth time, but for `expo-haptics`: Task 7 wired
-// `@repo/mobile-shared/haptics/feedback` (adminHaptics) into SegmentedControl,
-// which the `@/components/ui` barrel re-exports, so any test that touches the
-// barrel now transitively requires expo-haptics from
-// packages/mobile-shared/haptics/feedback.ts — which, having no local
-// node_modules, resolves expo-haptics to the hoisted ROOT copy instead of
-// this app's local install. That root copy's `expo` -> `expo-asset` chain
-// calls a resolveAssetSource API this app's pinned react-native doesn't
-// expose the same way, throwing "setCustomSourceTransformer is not a
-// function" at require time. Pin `expo-haptics` the same way as above.
-// Fifth instance of the same barrel landmine, different failure mode: Task 5
-// added `ActionSheet` (which imports `@gorhom/bottom-sheet`) to the
-// `@/components/ui` barrel — the first bottom-sheet consumer to live in
-// components/ui/ rather than being imported directly by one screen/sheet
-// file. Every OTHER test that merely touches the barrel for an unrelated
-// component (Text, PressableRow, …) now transitively requires
-// `@gorhom/bottom-sheet`'s real module too. Unlike react-native-reanimated
-// (which jest-expo ships a working default mock for), gorhom's real
-// `constants.ts` throws synchronously at require time under Jest
-// ("Cannot read properties of undefined (reading 'out')") — it has no
-// native module to read platform constants from. This broke 14 previously
-// unrelated suites the moment ActionSheet joined the barrel. Every existing
-// bottom-sheet consumer's test already had to `jest.mock("@gorhom/bottom-sheet", …)`
-// per-file (see new-product.test.tsx, option-builder-sheet.test.tsx); mapping
-// it globally here to the shared `lib/test-support/gorhom-bottom-sheet-mock`
-// makes that the default for every test instead of an opt-in every barrel
-// consumer must now remember. A test file's own local `jest.mock(...)` for
-// this module still wins over this mapping, so nothing above changes.
+const path = require('node:path');
+const expoPreset = require('jest-expo/jest-preset');
+const { createRequire } = require('node:module');
+
+// Resolve SDK dependencies from this workspace after npm hoisting.
+const packageRoot = (name) => path.dirname(require.resolve(`${name}/package.json`));
+const expoRequire = createRequire(require.resolve('expo/package.json'));
+const expoDependencyRoot = (name) => path.dirname(expoRequire.resolve(`${name}/package.json`));
+
 module.exports = {
   preset: 'jest-expo',
+  // Transform the ESM decoder behind the legacy CommonJS navigation bridge.
+  transformIgnorePatterns: expoPreset.transformIgnorePatterns.map((pattern) =>
+    pattern.replace('(?!(.pnpm|', '(?!(safe-decode-uri-component|.pnpm|'),
+  ),
   moduleNameMapper: {
-    '^react-native$': '<rootDir>/node_modules/react-native',
-    '^react-native/(.*)$': '<rootDir>/node_modules/react-native/$1',
-    '^@react-native-firebase/app$': '<rootDir>/node_modules/@react-native-firebase/app',
-    '^@react-native-firebase/app/(.*)$': '<rootDir>/node_modules/@react-native-firebase/app/$1',
-    '^react$': '<rootDir>/node_modules/react',
-    '^react/(.*)$': '<rootDir>/node_modules/react/$1',
-    '^expo-haptics$': '<rootDir>/node_modules/expo-haptics',
-    '^expo-haptics/(.*)$': '<rootDir>/node_modules/expo-haptics/$1',
-    // Sixth instance of the hoisting bug, this time silent rather than loud:
-    // packages/mobile-shared/auth/token-storage.ts resolves expo-secure-store
-    // to the hoisted ROOT copy, so a test's own
-    // `jest.mock("expo-secure-store", …)` intercepts a different physical
-    // module than the source imports — every read returns null and every
-    // write lands nowhere, with no error to explain it.
-    '^expo-secure-store$': '<rootDir>/node_modules/expo-secure-store',
-    '^expo-secure-store/(.*)$': '<rootDir>/node_modules/expo-secure-store/$1',
-    // Seventh instance of the hoisting bug. babel-preset-expo injects a
-    // `require('expo/virtual/env')` into the modules it transforms, resolved
-    // relative to the FILE — so anything under packages/mobile-shared (which
-    // has no node_modules of its own) walks up to the hoisted ROOT `expo`,
-    // which ships no `virtual/` directory at all: "Cannot find module
-    // 'expo/virtual/env'". A test's own jest.mock cannot help, because the
-    // require is injected rather than written. Pin the virtual modules to this
-    // app's install, which does have them.
-    '^expo/virtual/(.*)$': '<rootDir>/node_modules/expo/virtual/$1',
-    // Eighth instance, and the first where pinning the *importer* is not an
-    // option. Raising expo-image-picker/-manipulator to their SDK 56 versions
-    // let npm hoist them to the monorepo root — they have no app-local copy at
-    // all now — and from there they resolve `expo-asset` to the root's 11.0.5
-    // (SDK 52), which does not export `setCustomSourceTransformer` the way
-    // this app's react-native expects. Requiring either one throws
-    // "setCustomSourceTransformer is not a function" at import time, the same
-    // signature expo-haptics produced above. There is no app-local path to map
-    // those two packages to, so pin the mismatched dependency itself; every
-    // consumer then lands on the SDK 56 expo-asset regardless of where npm put
-    // the package doing the requiring.
-    '^expo-asset$': '<rootDir>/node_modules/expo-asset',
-    '^expo-asset/(.*)$': '<rootDir>/node_modules/expo-asset/$1',
-    // ...and `expo` itself, for the same reason and the same two packages:
-    // from the root, expo-image-picker resolves `expo` to the root's 52.0.49,
-    // which has no `createPermissionHook`. Pinning the two mismatched
-    // dependencies (`expo-asset` above, `expo` here) covers every root-hoisted
-    // requirer at once, which is what the per-package pins above cannot do.
-    // This must stay BELOW the `expo/virtual/` entry: moduleNameMapper takes
-    // the first matching pattern, and both would match `expo/virtual/env`.
-    '^expo$': '<rootDir>/node_modules/expo',
-    '^expo/(.*)$': '<rootDir>/node_modules/expo/$1',
+    '^react-native$': packageRoot('react-native'),
+    '^react-native/(.*)$': `${packageRoot('react-native')}/$1`,
+    '^@react-native-firebase/app$': packageRoot('@react-native-firebase/app'),
+    '^@react-native-firebase/app/(.*)$': `${packageRoot('@react-native-firebase/app')}/$1`,
+    '^react$': packageRoot('react'),
+    '^react/(.*)$': `${packageRoot('react')}/$1`,
+    '^expo-haptics$': packageRoot('expo-haptics'),
+    '^expo-haptics/(.*)$': `${packageRoot('expo-haptics')}/$1`,
+    '^expo-secure-store$': packageRoot('expo-secure-store'),
+    '^expo-secure-store/(.*)$': `${packageRoot('expo-secure-store')}/$1`,
+    '^expo/virtual/(.*)$': `${packageRoot('expo')}/virtual/$1`,
+    '^expo-modules-core$': expoDependencyRoot('expo-modules-core'),
+    '^expo-modules-core/(.*)$': `${expoDependencyRoot('expo-modules-core')}/$1`,
+    '^expo-asset$': expoDependencyRoot('expo-asset'),
+    '^expo-asset/(.*)$': `${expoDependencyRoot('expo-asset')}/$1`,
+    '^expo$': packageRoot('expo'),
+    '^expo/(.*)$': `${packageRoot('expo')}/$1`,
     '^@gorhom/bottom-sheet$': '<rootDir>/lib/test-support/gorhom-bottom-sheet-mock',
   },
 };

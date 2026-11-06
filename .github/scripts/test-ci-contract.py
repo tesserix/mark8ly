@@ -46,7 +46,6 @@ class ReusableCIContract(unittest.TestCase):
             "@mark8ly/storefront",
             "@mark8ly/onboarding",
             "@repo/ui",
-            "@repo/otto-widget",
         ):
             self.assertIn(workspace, workflow)
 

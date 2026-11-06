@@ -1,0 +1,12 @@
+{
+  "name": "deepmerge",
+  "version": "4.3.1-patched.1",
+  "private": true,
+  "main": "index.cjs",
+  "types": "index.d.ts",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test security.test.cjs"
+  },
+  "description": "Locally maintained security fork; see README.md"
+}

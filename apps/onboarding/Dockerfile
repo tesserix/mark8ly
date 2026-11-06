@@ -16,6 +16,7 @@ USER 0:0
 WORKDIR /src
 
 COPY package.json package-lock.json ./
+COPY vendor ./vendor
 COPY apps/onboarding/package.json ./apps/onboarding/
 COPY apps/admin/package.json ./apps/admin/
 COPY apps/storefront/package.json ./apps/storefront/

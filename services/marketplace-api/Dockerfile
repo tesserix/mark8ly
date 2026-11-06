@@ -24,6 +24,7 @@ WORKDIR /src
 # exist as a module — its own go.sum isn't consulted by the downloader.
 COPY services/marketplace-api/go.mod services/marketplace-api/go.sum ./services/marketplace-api/
 COPY packages/platformauth/go.mod packages/platformauth/go.sum ./packages/platformauth/
+COPY services/marketplace-api/third_party ./services/marketplace-api/third_party
 WORKDIR /src/services/marketplace-api
 RUN go mod download
 

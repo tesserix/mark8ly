@@ -1,0 +1,10 @@
+{
+  "name": "image-size",
+  "version": "1.2.1-compat.1",
+  "private": true,
+  "main": "index.cjs",
+  "dependencies": {
+    "safe-image-size": "npm:image-size@^2.0.3"
+  },
+  "description": "Locally maintained security compatibility adapter; see README.md"
+}

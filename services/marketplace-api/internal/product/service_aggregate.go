@@ -627,13 +627,25 @@ func (s *Service) applyVariantsDiff(
 	}
 
 	// Explicit RemovedVariantIDs — merge into the removes set (dedup).
+	// A variant this same request keeps (an Update) is never removed: the
+	// admin form accumulates removed ids while options are edited, and an
+	// option added then abandoned left the simple product's only variant
+	// on that list, so saving updated it and then deleted it (sugarcoat
+	// car-sc-13: no price, no stock, no add to cart).
 	if req.RemovedVariantIDs != nil {
 		existingRemoves := make(map[string]struct{}, len(diff.Removes))
 		for _, id := range diff.Removes {
 			existingRemoves[id] = struct{}{}
 		}
+		kept := make(map[string]struct{}, len(diff.Updates))
+		for _, u := range diff.Updates {
+			kept[u.ID] = struct{}{}
+		}
 		for _, id := range *req.RemovedVariantIDs {
 			if _, ok := existingRemoves[id]; ok {
+				continue
+			}
+			if _, ok := kept[id]; ok {
 				continue
 			}
 			if _, ok := existingByID[id]; !ok {

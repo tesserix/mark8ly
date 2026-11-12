@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
+
+const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
 
 export interface MediaUploaderProgressItem {
   id: string;
@@ -22,17 +24,33 @@ export function MediaUploader({
   progressItems = [],
 }: MediaUploaderProps): React.ReactElement {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   const handleFiles = (fileList: FileList | null): void => {
     if (!fileList || fileList.length === 0) return;
     onFiles(Array.from(fileList));
   };
 
+  // A drop skips the input's `accept`, so filter to the same types here.
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>): void => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files).filter((f) => ACCEPTED.includes(f.type));
+    if (files.length > 0) onFiles(files);
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <label
         htmlFor="media-uploader-input"
-        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[var(--ink-200)] bg-[var(--paper-200)] px-8 py-12 text-center text-[var(--ink-700)] transition-colors hover:border-[var(--moss-700)] focus-within:border-[var(--moss-700)] focus-within:ring-2 focus-within:ring-[var(--moss-700)]"
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+        data-drag-over={dragOver ? "true" : undefined}
+        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[var(--ink-200)] bg-[var(--paper-200)] px-8 py-12 text-center text-[var(--ink-700)] transition-colors hover:border-[var(--moss-700)] data-[drag-over=true]:border-[var(--moss-700)] focus-within:border-[var(--moss-700)] focus-within:ring-2 focus-within:ring-[var(--moss-700)]"
       >
         <span className="font-[var(--font-serif)] text-xl text-[var(--ink-900)]">
           Drop images or click to browse
@@ -45,7 +63,7 @@ export function MediaUploader({
           ref={inputRef}
           type="file"
           multiple
-          accept="image/jpeg,image/png,image/webp"
+          accept={ACCEPTED.join(",")}
           className="sr-only"
           onChange={(e) => handleFiles(e.target.files)}
         />

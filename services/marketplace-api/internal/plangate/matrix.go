@@ -181,7 +181,7 @@ var featureMatrix = map[subscription.SubscriptionPlan]planLimits{
 	subscription.PlanTrial: {
 		FeatureStores:                  1,
 		FeatureImagesPerProduct:        25,
-		FeaturePersonalisationFields:   1,
+		FeaturePersonalisationFields:   5, // matches Starter: a trial product must still save after upgrading
 		FeaturePersonalisationUploadMB: 5,
 		FeatureAuditRetentionDays:      90,
 		FeatureCampaignEmailsPerMonth:  5_000,

@@ -20,6 +20,7 @@ import {
   updateProduct,
   deleteProduct,
   copyProduct,
+  duplicateProduct,
   bulkProductAction,
   getProduct,
   type CreateProductRequest,
@@ -327,6 +328,23 @@ export async function deleteProductAction(
 // ─────────────────────────────────────────────────────────────────────────
 // M7d: copy-to-store + bulk actions
 // ─────────────────────────────────────────────────────────────────────────
+
+export async function duplicateProductAction(
+  storeId: string,
+  productId: string,
+): Promise<ActionResult> {
+  const ctx = await readContext(storeId, "USD");
+  if (!ctx) return { ok: false, error: { code: "no_session", message: "Your session has expired. Please sign in again." } };
+
+  const result = await duplicateProduct(ctx.storeId, productId, {
+    userId: ctx.userId, tenantId: ctx.tenantId, email: ctx.email,
+  });
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+  revalidatePath("/products");
+  redirect(`/products/${result.data.id}`);
+}
 
 export interface CopyActionInput {
   targetStoreId: string;

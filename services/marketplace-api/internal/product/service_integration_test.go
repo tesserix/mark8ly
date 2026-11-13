@@ -624,6 +624,65 @@ func TestIntegration_ProductService_Copy_TargetInvalid_SameStore(t *testing.T) {
 	}
 }
 
+// Duplicate stays in the source store, starts as a draft, marks the title,
+// and carries personalisation fields and their options with fresh ids.
+func TestIntegration_ProductService_Duplicate_SameStore_WithPersonalisation(t *testing.T) {
+	tx := testdb.NewTx(t)
+	storeID, tenantID, _ := seedStore(t, tx)
+	srcCatID := seedCategory(t, tx, storeID, tenantID, "dup-cat")
+	source := seedRichSourceProduct(t, tx, storeID, tenantID, "USD", srcCatID)
+	svc := buildService(tx, media.NewFakeUploader())
+	ctx := context.Background()
+
+	srcField, err := svc.CreatePersonalisationField(ctx, product.CreatePersonalisationFieldRequest{
+		ProductID: source.Product.ID, StoreID: storeID, TenantID: tenantID,
+		Key: "finish", Label: "Pick a finish", Kind: product.PersonalisationKindSelect, Required: true,
+		Options: []product.PersonalisationOptionSpec{
+			{Value: "matte", Label: "Matte", Position: 0},
+			{Value: "gloss", Label: "Gloss", Position: 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("seed field: %v", err)
+	}
+
+	got, err := svc.Copy(ctx, product.CopyRequest{
+		SourceProductID: source.Product.ID,
+		SourceTenantID:  tenantID,
+		SourceStoreID:   storeID,
+		Duplicate:       true,
+	})
+	if err != nil {
+		t.Fatalf("Duplicate: %v", err)
+	}
+	if got.Product.StoreID != storeID || got.Product.ID == source.Product.ID {
+		t.Fatalf("duplicate landed in store %s as %s", got.Product.StoreID, got.Product.ID)
+	}
+	if got.Product.Title != source.Product.Title+" (copy)" || got.Product.Status != product.StatusDraft {
+		t.Fatalf("title %q status %q, want %q draft", got.Product.Title, got.Product.Status, source.Product.Title+" (copy)")
+	}
+	if got.Product.Handle == source.Product.Handle {
+		t.Fatalf("duplicate reused the handle %q", got.Product.Handle)
+	}
+
+	fields, err := svc.ListPersonalisationFields(ctx, got.Product.ID, storeID, tenantID)
+	if err != nil {
+		t.Fatalf("list fields: %v", err)
+	}
+	if len(fields) != 1 || fields[0].ID == srcField.ID || fields[0].Key != "finish" || !fields[0].Required {
+		t.Fatalf("fields = %+v, want one fresh copy of %q", fields, "finish")
+	}
+	if len(fields[0].Options) != 2 || fields[0].Options[0].Value != "matte" || fields[0].Options[1].Value != "gloss" {
+		t.Fatalf("options = %+v, want matte, gloss", fields[0].Options)
+	}
+
+	// The source keeps its own field untouched.
+	srcFields, _ := svc.ListPersonalisationFields(ctx, source.Product.ID, storeID, tenantID)
+	if len(srcFields) != 1 || srcFields[0].ID != srcField.ID {
+		t.Fatalf("source fields changed: %+v", srcFields)
+	}
+}
+
 func TestIntegration_ProductService_Copy_TargetInvalid_NotFound(t *testing.T) {
 	tx := testdb.NewTx(t)
 	storeID, tenantID, _ := seedStore(t, tx)

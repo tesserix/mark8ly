@@ -818,6 +818,22 @@ export async function copyProduct(
   return { ok: true, data: (await res.json()) as CopyProductResult };
 }
 
+/** Duplicate a product into the same store as a draft, personalisation included. */
+export async function duplicateProduct(
+  storeId: string,
+  productId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<{ id: string }>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/products/${productId}/duplicate`,
+    { method: "POST", cache: "no-store", headers: commonHeaders(session) },
+  );
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as { id: string } };
+}
+
 /**
  * Execute a bulk action on multiple products.
  */

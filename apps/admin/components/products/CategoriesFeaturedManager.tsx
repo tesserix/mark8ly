@@ -2,7 +2,7 @@
 
 // apps/admin/components/products/CategoriesFeaturedManager.tsx
 //
-// Minimal admin surface for toggling a category's `featured` flag.
+// Minimal admin surface for renaming categories and toggling `featured`.
 // Featured categories surface on the storefront's /products filter
 // grid; the rest remain reachable via the full /categories browse page.
 // Per-row optimistic toggle with rollback on failure.
@@ -12,7 +12,7 @@ import { useTransition } from "react";
 import { Star } from "lucide-react";
 
 import type { AdminCategory } from "@/lib/api/marketplace-api";
-import { setCategoryFeatured } from "@/app/(admin)/products/category-actions";
+import { renameCategory, setCategoryFeatured } from "@/app/(admin)/products/category-actions";
 import { useToast } from "@/components/feedback/Toaster";
 
 export interface CategoriesFeaturedManagerProps {
@@ -30,7 +30,33 @@ export function CategoriesFeaturedManager({
   const [pending, startTransition] = useTransition();
   const [pendingId, setPendingId] = React.useState<string | null>(null);
 
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [draftName, setDraftName] = React.useState("");
+
   const featuredCount = rows.filter((c) => c.featured).length;
+
+  const startRename = (cat: AdminCategory): void => {
+    setEditingId(cat.id);
+    setDraftName(cat.name);
+  };
+
+  const saveRename = (cat: AdminCategory): void => {
+    const next = draftName.trim();
+    setEditingId(null);
+    if (!next || next === cat.name) return;
+    setRows((prev) => prev.map((c) => (c.id === cat.id ? { ...c, name: next } : c)));
+    setPendingId(cat.id);
+    startTransition(async () => {
+      const result = await renameCategory(storeId, cat.id, next);
+      setPendingId(null);
+      if (!result.ok) {
+        setRows((prev) => prev.map((c) => (c.id === cat.id ? { ...c, name: cat.name } : c)));
+        toast.error("Couldn't rename", result.error ?? "Try again in a moment.");
+        return;
+      }
+      toast.success("Category renamed", next);
+    });
+  };
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -114,7 +140,33 @@ export function CategoriesFeaturedManager({
                   className="border-b border-border-subtle last:border-b-0 transition-colors hover:bg-[color:var(--ink-900)]/[0.02]"
                 >
                   <td className="pl-4 pr-3 py-3 text-sm text-foreground">
-                    {cat.name}
+                    {editingId === cat.id ? (
+                      <input
+                        autoFocus
+                        value={draftName}
+                        onChange={(e) => setDraftName(e.target.value)}
+                        onBlur={() => saveRename(cat)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveRename(cat);
+                          if (e.key === "Escape") setEditingId(null);
+                        }}
+                        aria-label={`New name for ${cat.name}`}
+                        className="h-8 w-full max-w-xs rounded-md border border-[color:var(--ink-900)]/20 bg-[color:var(--background-elevated)] px-2 text-sm text-foreground focus:border-[color:var(--moss-700)] focus:outline-none focus:ring-1 focus:ring-[color:var(--moss-700)]"
+                      />
+                    ) : (
+                      <span className="inline-flex items-center gap-3">
+                        {cat.name}
+                        <button
+                          type="button"
+                          onClick={() => startRename(cat)}
+                          disabled={isPending}
+                          aria-label={`Rename ${cat.name}`}
+                          className="text-xs uppercase tracking-widest text-foreground-tertiary transition-colors hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
+                        >
+                          Rename
+                        </button>
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-3 font-mono text-xs text-foreground-tertiary">
                     {cat.slug}

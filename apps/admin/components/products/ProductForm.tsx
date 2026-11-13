@@ -50,6 +50,7 @@ import type { Warehouse } from "@/lib/api/warehouses-api";
 import { OptionsTab } from "./form/OptionsTab";
 import { MediaTab } from "./form/MediaTab";
 import { PersonalisationEditor } from "./personalisation/PersonalisationEditor";
+import { DuplicateProductButton } from "./DuplicateProductButton";
 import { TaxSection } from "./form/TaxSection";
 import { ProductSection } from "./form/ProductSection";
 import { DetailsSection } from "./form/DetailsSection";
@@ -627,6 +628,8 @@ export function ProductForm({
                   </a>
                 </>
               )}
+              <span aria-hidden="true">·</span>
+              <DuplicateProductButton storeId={storeId} productId={initialProduct.id} />
             </p>
           )}
         </header>

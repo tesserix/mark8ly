@@ -252,6 +252,7 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			products.PATCH("/:id", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.ProductHandler.Patch)
 			products.DELETE("/:id", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner), deps.ProductHandler.Delete)
 			products.POST("/:id/copy", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.ProductHandler.Copy)
+			products.POST("/:id/duplicate", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.ProductHandler.Duplicate)
 
 			// Bulk actions — role check is per-id inside the handler.
 			if deps.BulkHandler != nil {

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import type { AdminMediaResponse } from "@/lib/api/marketplace-api";
 
-export type MediaAction = "set-primary" | "crop" | "replace" | "delete" | "edit-alt";
+export type MediaAction = "set-primary" | "crop" | "delete" | "edit-alt";
 
 export interface MediaCardProps {
   media: AdminMediaResponse;
@@ -16,7 +16,6 @@ export interface MediaCardProps {
 const MENU: ReadonlyArray<{ action: MediaAction; label: string }> = [
   { action: "set-primary", label: "Set as primary" },
   { action: "crop", label: "Crop" },
-  { action: "replace", label: "Replace" },
   { action: "edit-alt", label: "Edit alt text" },
   { action: "delete", label: "Delete" },
 ];
@@ -26,14 +25,16 @@ export function MediaCard({ media, isPrimary, onAction }: MediaCardProps): React
 
   return (
     <div
-      className="group relative h-40 w-40 overflow-hidden rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] shadow-[var(--shadow-1)] transition-shadow hover:shadow-[var(--shadow-2)]"
+      className="group relative h-40 w-40 rounded-md border border-[var(--ink-100)] bg-[var(--background-elevated)] shadow-[var(--shadow-1)] transition-shadow hover:shadow-[var(--shadow-2)]"
       data-primary={isPrimary ? "true" : undefined}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={media.url}
         alt={media.alt ?? ""}
-        className="h-full w-full object-cover"
+        // The image is clipped, not the card, so the actions menu can open
+        // past the card's edge instead of being cut off inside it.
+        className="h-full w-full rounded-md object-cover"
         draggable={false}
       />
 

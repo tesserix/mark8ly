@@ -136,3 +136,38 @@ export async function setCategoryFeatured(
   revalidatePath("/products/categories");
   return { ok: true };
 }
+
+// Rename a category. The slug stays as it is, so links to the category
+// page keep working.
+export async function renameCategory(
+  storeId: string,
+  categoryId: string,
+  name: string,
+): Promise<ToggleFeaturedResult> {
+  const h = await headers();
+  const userId = h.get("x-session-user-id") ?? "";
+  const tenantId = h.get("x-session-tenant-id") ?? "";
+  if (!userId || !tenantId || !storeId || !categoryId) {
+    return { ok: false, error: "Session expired." };
+  }
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return { ok: false, error: "Give the category a name." };
+  }
+
+  const result = await updateCategory(
+    storeId,
+    categoryId,
+    { name: trimmed },
+    { userId, tenantId },
+  );
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.error?.message ?? "Failed to rename category.",
+    };
+  }
+
+  revalidatePath("/products/categories");
+  return { ok: true };
+}

@@ -178,6 +178,32 @@ describe("MediaTab", () => {
     expect(screen.getByAltText("alt b")).toBeInTheDocument();
   });
 
+  it("set as primary saves the new order straight away", async () => {
+    const initial = [makeMedia("a", 0), makeMedia("b", 1), makeMedia("c", 2)];
+    const updateMedia = vi.fn(async () => ({ ok: true as const, data: true as const }));
+
+    render(
+      <Harness
+        initialMedia={initial}
+        uploadMediaFile={vi.fn()}
+        recropMedia={vi.fn()}
+        updateMedia={updateMedia}
+        deleteMedia={vi.fn()}
+        putBlob={vi.fn()}
+      />,
+    );
+
+    const buttons = screen.getAllByRole("button", { name: /image actions/i });
+    fireEvent.click(buttons[2]!);
+    fireEvent.click(screen.getByRole("menuitem", { name: /set as primary/i }));
+
+    const session = { userId: "u", tenantId: "t" };
+    await waitFor(() => expect(updateMedia).toHaveBeenCalledTimes(3));
+    expect(updateMedia).toHaveBeenCalledWith("store_1", "prod_1", "c", { position: 0 }, session);
+    expect(updateMedia).toHaveBeenCalledWith("store_1", "prod_1", "a", { position: 1 }, session);
+    expect(updateMedia).toHaveBeenCalledWith("store_1", "prod_1", "b", { position: 2 }, session);
+  });
+
   it("crop action recrops with the source content_type then updates", async () => {
     const initial = [makeMedia("a", 0)]; // url ends in .jpg → image/jpeg
     const recropMedia = vi.fn(async () => ({

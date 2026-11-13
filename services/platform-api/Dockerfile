@@ -13,7 +13,7 @@
 # `replace github.com/mark8ly/platformauth => ../../packages/platformauth`,
 # a sibling module a services/platform-api-scoped context can't reach.
 
-FROM ghcr.io/tesserix/base-go-builder:20261024@sha256:3e00161f419a8fd7abe3144ad46d08ef809126294d785bcdd6b4b16137070a70 AS build
+FROM ghcr.io/tesserix/base-go-builder:20261113@sha256:63086000b8d00b95ff9312080d4d1f0d64475039ff81db67a2cda5db70c23d48 AS build
 USER 0:0
 WORKDIR /src
 
@@ -39,7 +39,7 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/server           ./cmd/server \
 # overrides can pick the right entrypoint without pulling a second image.
 # /backfill-vendors is the CLI surfaced by the marketplace-api error
 # "tenant has no self-vendor; run platform-api's backfill-vendors CLI".
-FROM ghcr.io/tesserix/base-distroless-static:20261024@sha256:a0ada4bf3d50447e7bbc3bf95f872ade97dd85feba81e7b4facf8e9fab665594 AS server
+FROM ghcr.io/tesserix/base-distroless-static:20261113@sha256:bd65dd61664f24e0e70b80881b5e75559ff0d98b1d99a2d2f61365b0dcf828d2 AS server
 COPY --from=build --chown=10001:10001 /out/server           /server
 COPY --from=build --chown=10001:10001 /out/migrate          /migrate
 COPY --from=build --chown=10001:10001 /out/seed             /seed
@@ -48,10 +48,10 @@ EXPOSE 8086
 CMD ["/server"]
 
 # Legacy single-purpose stages retained for local docker-compose flows.
-FROM ghcr.io/tesserix/base-distroless-static:20261024@sha256:a0ada4bf3d50447e7bbc3bf95f872ade97dd85feba81e7b4facf8e9fab665594 AS migrate
+FROM ghcr.io/tesserix/base-distroless-static:20261113@sha256:bd65dd61664f24e0e70b80881b5e75559ff0d98b1d99a2d2f61365b0dcf828d2 AS migrate
 COPY --from=build --chown=10001:10001 /out/migrate /migrate
 CMD ["/migrate"]
 
-FROM ghcr.io/tesserix/base-distroless-static:20261024@sha256:a0ada4bf3d50447e7bbc3bf95f872ade97dd85feba81e7b4facf8e9fab665594 AS seed
+FROM ghcr.io/tesserix/base-distroless-static:20261113@sha256:bd65dd61664f24e0e70b80881b5e75559ff0d98b1d99a2d2f61365b0dcf828d2 AS seed
 COPY --from=build --chown=10001:10001 /out/seed /seed
 CMD ["/seed"]

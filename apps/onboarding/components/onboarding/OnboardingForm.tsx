@@ -190,9 +190,13 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
       return "UTC";
     }
   }, []);
+  // The browser's own IANA zone is what the store should run on, listed or
+  // not: the list is 22 zones, and falling back to its first entry put
+  // every unlisted browser (Asia/Calcutta, Australia/Melbourne, ...) on
+  // America/Chicago. Only a missing zone falls back, and then to UTC.
   const resolvedTimezone = useMemo(() => {
     const exact = timezones.find((tz) => tz.id === browserTimezone);
-    return exact?.id ?? timezones[0]?.id ?? "UTC";
+    return exact?.id ?? (browserTimezone || "UTC");
   }, [browserTimezone, timezones]);
 
   // Country-aware tax ID help text.

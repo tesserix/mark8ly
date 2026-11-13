@@ -164,6 +164,7 @@
         "POST /api/v1/admin/stores/:storeId/pages",
         "POST /api/v1/admin/stores/:storeId/products",
         "POST /api/v1/admin/stores/:storeId/products/:id/copy",
+        "POST /api/v1/admin/stores/:storeId/products/:id/duplicate",
         "POST /api/v1/admin/stores/:storeId/products/:id/media",
         "POST /api/v1/admin/stores/:storeId/products/:id/media/:mediaId/recrop",
         "POST /api/v1/admin/stores/:storeId/products/:id/media/upload-url",

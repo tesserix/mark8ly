@@ -11,10 +11,10 @@ import type {
   UpdateMediaInput,
 } from "@/lib/api/marketplace-api";
 import {
-  deleteMedia as defaultDeleteMedia,
-  recropMedia as defaultRecropMedia,
-  updateMedia as defaultUpdateMedia,
-} from "@/lib/api/marketplace-api";
+  deleteMediaAction as defaultDeleteMedia,
+  recropMediaAction as defaultRecropMedia,
+  updateMediaAction as defaultUpdateMedia,
+} from "@/app/(admin)/products/media-actions";
 import { uploadMediaFile as defaultUploadMediaFile } from "@/components/products/media/mediaUploadClient";
 import type { ProductFormValues } from "@/lib/validation/product-form";
 import {

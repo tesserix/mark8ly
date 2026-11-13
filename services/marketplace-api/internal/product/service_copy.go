@@ -36,6 +36,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
@@ -53,6 +54,10 @@ type CopyRequest struct {
 	SourceStoreID   string
 	TargetStoreID   string
 	CopiedBy        *string
+	// Duplicate copies into the SOURCE store (TargetStoreID is ignored):
+	// the admin's "Duplicate" for a merchant who lists one product per
+	// design. The title gets " (copy)" so the two are told apart.
+	Duplicate bool
 }
 
 // Copy clones a product from source store into target store within the
@@ -65,13 +70,26 @@ func (s *Service) Copy(ctx context.Context, req CopyRequest) (*Aggregate, error)
 	}
 
 	// 2. Validate target store.
-	if req.TargetStoreID == req.SourceStoreID {
-		return nil, apperrors.TargetStoreInvalid(req.TargetStoreID, "target is the same as source")
+	title := source.Product.Title
+	if req.Duplicate {
+		req.TargetStoreID = req.SourceStoreID
+		title += " (copy)"
+	} else {
+		if req.TargetStoreID == req.SourceStoreID {
+			return nil, apperrors.TargetStoreInvalid(req.TargetStoreID, "target is the same as source")
+		}
+		if _, err := s.storesRepo.GetByIDForTenant(ctx, req.TargetStoreID, req.SourceTenantID); err != nil {
+			// Tenant-scoped lookup: "not found" covers both "doesn't exist"
+			// and "different tenant" without leaking which one.
+			return nil, apperrors.TargetStoreInvalid(req.TargetStoreID, "not found or not owned by this tenant")
+		}
 	}
-	if _, err := s.storesRepo.GetByIDForTenant(ctx, req.TargetStoreID, req.SourceTenantID); err != nil {
-		// Tenant-scoped lookup: "not found" covers both "doesn't exist"
-		// and "different tenant" without leaking which one.
-		return nil, apperrors.TargetStoreInvalid(req.TargetStoreID, "not found or not owned by this tenant")
+
+	// Personalisation fields are not part of the aggregate; carry them over
+	// too, or every copy loses the questions the buyer must answer.
+	srcFields, err := s.repo.ListPersonalisationFields(ctx, source.Product.ID, req.SourceStoreID, req.SourceTenantID)
+	if err != nil {
+		return nil, err
 	}
 
 	// 3. Build the fresh aggregate with new UUIDs.
@@ -176,7 +194,7 @@ func (s *Service) Copy(ctx context.Context, req CopyRequest) (*Aggregate, error)
 			TenantID:            req.SourceTenantID,
 			StoreID:             req.TargetStoreID,
 			Handle:              newHandle,
-			Title:               source.Product.Title,
+			Title:               title,
 			Description:         source.Product.Description,
 			Status:              StatusDraft,
 			VendorID:            source.Product.VendorID,
@@ -227,7 +245,31 @@ func (s *Service) Copy(ctx context.Context, req CopyRequest) (*Aggregate, error)
 			}
 		}
 
-		// 4e. Outbox: product.created with copy_source_product_id.
+		// 4e. Personalisation fields and their options, fresh ids. The
+		// mockup keeps the same storage key, as media does above.
+		for _, sf := range srcFields {
+			f := sf
+			f.ID = uuid.NewString()
+			f.TenantID = req.SourceTenantID
+			f.StoreID = req.TargetStoreID
+			f.ProductID = newProductID
+			f.Options = nil
+			f.CreatedAt, f.UpdatedAt = time.Time{}, time.Time{} // DB default: now()
+			if err := s.repo.InsertPersonalisationFieldInTx(ctx, tx, &f); err != nil {
+				return err
+			}
+			for _, so := range sf.Options {
+				o := so
+				o.ID = uuid.NewString()
+				o.FieldID = f.ID
+				o.CreatedAt = time.Time{}
+				if err := s.repo.InsertPersonalisationOptionInTx(ctx, tx, &o); err != nil {
+					return err
+				}
+			}
+		}
+
+		// 4f. Outbox: product.created with copy_source_product_id.
 		payload, err := json.Marshal(map[string]any{
 			"store_id":               req.TargetStoreID,
 			"product_id":             newAgg.Product.ID,

@@ -103,6 +103,7 @@ var webOnlyRoutes = map[string]string{
 
 	"DELETE /stores/:storeId/products/:id":                     "destructive and owner-only; deliberately not armed on a phone",
 	"POST /stores/:storeId/products/:id/copy":                  "duplicate-product is a desktop catalogue-authoring action",
+	"POST /stores/:storeId/products/:id/duplicate":             "duplicate-product is a desktop catalogue-authoring action",
 	"POST /stores/:storeId/products/bulk":                      "multi-select bulk edit — no mobile multi-select UI",
 	"GET /stores/:storeId/products/export.csv":                 "CSV download stream — no mobile file-save target",
 	"POST /stores/:storeId/products/:id/media/:mediaId/recrop": "crop editor is a desktop-only canvas UI",

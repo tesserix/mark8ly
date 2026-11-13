@@ -326,6 +326,28 @@ func (h *ProductHandler) Copy(c *gin.Context) {
 	c.JSON(http.StatusCreated, ToAdminProductResponse(agg, categories))
 }
 
+// Duplicate handles POST /admin/stores/:storeId/products/:id/duplicate:
+// a draft copy in the same store, personalisation included.
+func (h *ProductHandler) Duplicate(c *gin.Context) {
+	userID := c.GetString("user_id")
+	req := product.CopyRequest{
+		SourceProductID: c.Param("id"),
+		SourceTenantID:  c.GetString("tenant_id"),
+		SourceStoreID:   c.Param("storeId"),
+		Duplicate:       true,
+	}
+	if userID != "" {
+		req.CopiedBy = &userID
+	}
+	agg, err := h.svc.Copy(c.Request.Context(), req)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	categories := h.resolveCategoryRefs(c, agg.CategoryLinks, agg.Product.StoreID, req.SourceTenantID)
+	c.JSON(http.StatusCreated, ToAdminProductResponse(agg, categories))
+}
+
 // resolveCategoryRefs hydrates the wire DTO category list with names
 // and slugs via the category repo. Missing-category lookups are
 // downgraded to empty slice + a warn log so a category lookup glitch

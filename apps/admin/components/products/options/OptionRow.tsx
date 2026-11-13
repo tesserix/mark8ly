@@ -9,6 +9,8 @@ export interface OptionRowProps {
   onNameChange: (next: string) => void;
   onValuesChange: (next: OptionDraft["values"]) => void;
   onRemove: () => void;
+  /** Why this row blocks saving, shown under it. */
+  error?: string;
 }
 
 export function OptionRow({
@@ -16,6 +18,7 @@ export function OptionRow({
   onNameChange,
   onValuesChange,
   onRemove,
+  error,
 }: OptionRowProps): React.ReactElement {
   const [inflight, setInflight] = React.useState("");
 
@@ -86,6 +89,11 @@ export function OptionRow({
         <p className="text-[11px] text-foreground-tertiary">
           Press Enter to add each value
         </p>
+        {error && (
+          <p role="alert" className="text-xs text-[color:var(--signal)]">
+            {error}
+          </p>
+        )}
       </div>
       <button
         type="button"

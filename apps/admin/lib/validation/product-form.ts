@@ -95,7 +95,7 @@ export const productFormSchema = z.object({
     .array(
       z.object({
         id: z.string().optional(),
-        name: z.string().min(1),
+        name: z.string(),
         values: z.array(
           z.object({
             id: z.string().optional(),
@@ -104,6 +104,28 @@ export const productFormSchema = z.object({
         ),
       }),
     )
+    // A half-filled option used to be dropped on save without a word, and
+    // on a simple product that also deleted its only variant (sugarcoat
+    // car-sc-13). Say what is missing instead. A row with neither a name
+    // nor values is just an unused "+ Add option" click and is ignored.
+    .superRefine((options, ctx) => {
+      options.forEach((o, i) => {
+        const named = o.name.trim().length > 0;
+        if (named && o.values.length === 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [i, "values"],
+            message: `Add at least one value to "${o.name.trim()}" (press Enter after each), or remove the option.`,
+          });
+        } else if (!named && o.values.length > 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [i, "name"],
+            message: "Give this option a name, e.g. Size or Colour, or remove it.",
+          });
+        }
+      });
+    })
     .optional(),
   variants: z
     .array(

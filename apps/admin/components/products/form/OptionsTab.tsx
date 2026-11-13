@@ -8,6 +8,10 @@ export function OptionsTab() {
   const { control, setValue, formState } = useFormContext<ProductFormValues>();
   const options = (useWatch({ control, name: "options" }) as OptionDraft[] | undefined) ?? [];
   const variantError = formState.errors.variants?.message as string | undefined;
+  const optionErrors = options.map((_, i) => {
+    const e = formState.errors.options?.[i];
+    return e?.values?.message ?? e?.name?.message;
+  });
 
   return (
     <div className="flex flex-col gap-6">
@@ -21,8 +25,10 @@ export function OptionsTab() {
       )}
       <OptionsEditor
         value={options}
+        errors={optionErrors}
         onChange={(next) =>
-          setValue("options", next, { shouldDirty: true, shouldValidate: false })
+          // Once a save has failed, re-check as they fix it so the message clears.
+          setValue("options", next, { shouldDirty: true, shouldValidate: formState.isSubmitted })
         }
       />
     </div>

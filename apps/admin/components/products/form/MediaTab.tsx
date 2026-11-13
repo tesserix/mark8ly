@@ -214,6 +214,26 @@ export function MediaTab({
     [fields.length, setProgressItem, uploadOne],
   );
 
+  // Order is saved straight away, like delete. It used to change only the
+  // form, and the product save never sends media positions, so a new
+  // primary image or a drag reorder was lost on reload.
+  const persistOrder = useCallback(
+    async (next: AdminMediaResponse[]) => {
+      const ordered = next.map((m, i) => ({ ...m, position: i }));
+      replace(ordered.map(mediaToField));
+      const moved = next.filter((m, i) => m.position !== i);
+      const results = await Promise.all(
+        moved.map((m) =>
+          updateMedia(storeId, productId, m.id, { position: ordered.findIndex((o) => o.id === m.id) }, session),
+        ),
+      );
+      if (results.some((r) => !r.ok)) {
+        toast.error("Couldn't save the new image order. Please try again.");
+      }
+    },
+    [productId, replace, session, storeId, toast, updateMedia],
+  );
+
   const handleAction = useCallback(
     (action: MediaAction, media: AdminMediaResponse) => {
       if (action === "delete") {
@@ -231,7 +251,7 @@ export function MediaTab({
         const moved = next.splice(idx, 1)[0];
         if (!moved) return;
         next.unshift(moved);
-        replace(next.map(mediaToField));
+        void persistOrder(next);
         return;
       }
       if (action === "crop") {
@@ -258,14 +278,14 @@ export function MediaTab({
         })();
       }
     },
-    [deleteMedia, fields, gridItems, productId, recropMedia, remove, replace, session, storeId, toast],
+    [deleteMedia, fields, gridItems, persistOrder, productId, recropMedia, remove, session, storeId, toast],
   );
 
   const handleReorder = useCallback(
     (next: AdminMediaResponse[]) => {
-      replace(next.map(mediaToField));
+      void persistOrder(next);
     },
-    [replace],
+    [persistOrder],
   );
 
   const handleCropApply = useCallback(

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import type { AdminMediaResponse } from "@/lib/api/marketplace-api";
 
-export type MediaAction = "set-primary" | "crop" | "replace" | "delete" | "edit-alt";
+export type MediaAction = "set-primary" | "crop" | "delete" | "edit-alt";
 
 export interface MediaCardProps {
   media: AdminMediaResponse;
@@ -16,7 +16,6 @@ export interface MediaCardProps {
 const MENU: ReadonlyArray<{ action: MediaAction; label: string }> = [
   { action: "set-primary", label: "Set as primary" },
   { action: "crop", label: "Crop" },
-  { action: "replace", label: "Replace" },
   { action: "edit-alt", label: "Edit alt text" },
   { action: "delete", label: "Delete" },
 ];

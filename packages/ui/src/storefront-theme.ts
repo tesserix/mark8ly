@@ -981,12 +981,16 @@ export function themeCssVariables(
     "--storefront-density-scale": String(themeDensityScale(theme)),
     "--storefront-motion-scale": String(themeMotionScale(theme)),
     "--storefront-mode": theme.mode,
-    // Narrow house-token overrides — only the three foreground colours,
-    // which always need to flip with mode. We intentionally DO NOT
-    // override --ink-900 / --paper-200 / --moss-700 — those are used
-    // as button backgrounds and borders where flipping breaks contrast.
+    // Narrow house-token overrides — the foreground colours and the page
+    // background, which always need to flip with mode. We intentionally
+    // DO NOT override --ink-900 / --paper-200 / --moss-700 — those are
+    // used as button backgrounds and borders where flipping breaks
+    // contrast. --background flips because hero CTAs pair
+    // `bg-foreground text-background`: with only --foreground flipped, a
+    // dark store drew light text on a light button (sugarcoat, 13 Nov).
     "--foreground": text,
     "--foreground-secondary": `${text}B3`,
     "--foreground-tertiary": `${text}80`,
+    "--background": background,
   };
 }

@@ -32,9 +32,13 @@ describe("themeCssVariables", () => {
       `color-mix(in oklab, ${dark.statusColors.success} 18%, ${dark.colors.background})`,
     );
     expect(vars["--storefront-neutral-bg"]).toContain(dark.colors.background);
+    // Chip text must be the light status colour, not the light-mode dark hex.
+    expect(vars["--storefront-success-fg"]).toBe(dark.statusColors.success);
+    expect(vars["--storefront-neutral-fg"]).toBe(dark.colors.text);
   });
 
   it("leaves light-mode status surfaces to globals.css", () => {
     expect(themeCssVariables(defaultStorefrontTheme)["--storefront-success-bg"]).toBeUndefined();
+    expect(themeCssVariables(defaultStorefrontTheme)["--storefront-success-fg"]).toBeUndefined();
   });
 });

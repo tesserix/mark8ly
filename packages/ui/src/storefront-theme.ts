@@ -1010,8 +1010,10 @@ function darkStatusSurfaces(
   for (const tone of ["success", "warning", "danger", "info"] as const) {
     out[`--storefront-${tone}-bg`] = `color-mix(in oklab, ${colors[tone]} 18%, ${background})`;
     out[`--storefront-${tone}-border`] = `color-mix(in oklab, ${colors[tone]} 45%, transparent)`;
+    out[`--storefront-${tone}-fg`] = colors[tone];
   }
   out["--storefront-neutral-bg"] = `color-mix(in oklab, ${text} 12%, ${background})`;
   out["--storefront-neutral-border"] = `color-mix(in oklab, ${text} 25%, transparent)`;
+  out["--storefront-neutral-fg"] = text;
   return out;
 }

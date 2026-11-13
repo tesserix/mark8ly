@@ -448,12 +448,10 @@ export function ProductForm({
     // RHF blocked submit due to validation. Surface a clear toast so the
     // user isn't left wondering why nothing happened — without this,
     // hidden-tab fields (e.g. Media) can fail silently.
-    const firstField = Object.keys(errors)[0] ?? "form";
-    const firstMsg = (() => {
-      const e = errors[firstField] as { message?: string } | undefined;
-      return e?.message ?? "Please review the highlighted fields.";
-    })();
-    toast.error("Couldn't save — check the form", firstMsg);
+    toast.error(
+      "Couldn't save — check the form",
+      firstErrorMessage(errors) ?? "Please review the highlighted fields.",
+    );
   };
 
   const title =
@@ -847,4 +845,18 @@ function useWatchSafe(
   name: "media" | "variants",
 ) {
   return useWatch({ control: methods.control, name });
+}
+
+// RHF nests array errors (options[2].values), so the top-level key often has
+// no message of its own; take the first message found depth-first.
+function firstErrorMessage(e: unknown): string | undefined {
+  if (!e || typeof e !== "object") return undefined;
+  const msg = (e as { message?: unknown }).message;
+  if (typeof msg === "string" && msg) return msg;
+  for (const [k, v] of Object.entries(e)) {
+    if (k === "ref") continue; // a DOM node, with React's circular fibers on it
+    const found = firstErrorMessage(v);
+    if (found) return found;
+  }
+  return undefined;
 }

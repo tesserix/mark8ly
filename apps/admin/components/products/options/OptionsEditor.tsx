@@ -12,9 +12,11 @@ export interface OptionDraft {
 export interface OptionsEditorProps {
   value: OptionDraft[];
   onChange: (next: OptionDraft[]) => void;
+  /** Per-row validation messages, by option index. */
+  errors?: Array<string | undefined>;
 }
 
-export function OptionsEditor({ value, onChange }: OptionsEditorProps): React.ReactElement {
+export function OptionsEditor({ value, onChange, errors }: OptionsEditorProps): React.ReactElement {
   const updateAt = (index: number, next: OptionDraft): void => {
     onChange(value.map((opt, i) => (i === index ? next : opt)));
   };
@@ -36,6 +38,7 @@ export function OptionsEditor({ value, onChange }: OptionsEditorProps): React.Re
           onNameChange={(name) => updateAt(i, { ...opt, name })}
           onValuesChange={(values) => updateAt(i, { ...opt, values })}
           onRemove={() => removeAt(i)}
+          error={errors?.[i]}
         />
       ))}
       <button

@@ -37,24 +37,26 @@ func TestSanitizer_OWASPCorpus(t *testing.T) {
 	}
 }
 
-func TestSanitizer_PreservesAllowedTags(t *testing.T) {
-	in := `<p>Hello <strong>world</strong> <em>now</em></p><ul><li>one</li></ul>`
-	out := product.Sanitize(in)
-	for _, tag := range []string{"<p>", "<strong>", "<em>", "<ul>", "<li>"} {
-		if !strings.Contains(out, tag) {
-			t.Errorf("expected %q preserved in %q", tag, out)
-		}
+func TestSanitizer_PlainText(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		// The sugarcoat report: v1 stored "&amp;" and the storefront showed it.
+		{"ampersand", "Machine cut, Bubble free & Zero residue", "Machine cut, Bubble free & Zero residue"},
+		{"quotes_and_angles", `Size "L" < 2kg > 1kg, it's`, `Size "L" < 2kg > 1kg, it's`},
+		{"newlines_kept", "Line one\n\nLine two", "Line one\n\nLine two"},
+		{"tags_stripped_text_kept", "<p>Hello <strong>world</strong></p>", "Hello world"},
+		{"link_text_kept", `<a href="https://example.com">click</a>`, "click"},
 	}
-}
-
-func TestSanitizer_ForcesNofollowOnLinks(t *testing.T) {
-	in := `<a href="https://example.com" target="_blank">click</a>`
-	out := product.Sanitize(in)
-	if !strings.Contains(out, `rel="nofollow"`) {
-		t.Errorf("expected rel=nofollow on links; got %q", out)
-	}
-	if strings.Contains(out, "target") {
-		t.Errorf("expected target attribute stripped; got %q", out)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := product.Sanitize(tc.in)
+			if got != tc.want {
+				t.Errorf("Sanitize(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+			// Re-saving what the edit form shows must not change it.
+			if again := product.Sanitize(got); again != got {
+				t.Errorf("not idempotent: %q -> %q", got, again)
+			}
+		})
 	}
 }
 
@@ -65,7 +67,7 @@ func TestSanitizer_EmptyInput(t *testing.T) {
 }
 
 func TestSanitizer_PolicyVersion(t *testing.T) {
-	if product.SanitizerPolicyVersion != 1 {
-		t.Fatalf("SanitizerPolicyVersion must stay 1 until an accompanying re-sanitize migration ships (spec §14.14); got %d", product.SanitizerPolicyVersion)
+	if product.SanitizerPolicyVersion != 2 {
+		t.Fatalf("SanitizerPolicyVersion must stay 2 until an accompanying re-sanitize migration ships (spec §14.14); got %d", product.SanitizerPolicyVersion)
 	}
 }

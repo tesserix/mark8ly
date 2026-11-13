@@ -17,6 +17,7 @@ import {
 } from "@tesserix/web";
 
 import type { Country, Currency, Timezone } from "@/lib/types";
+import { storeTimezone } from "@/lib/geo/timezone";
 import { useOnboardingStore } from "@/lib/store/onboarding-store";
 import {
   checkPromoCode,
@@ -122,7 +123,7 @@ async function uploadScreenshot(_file: File): Promise<string> {
  *   - optional tax ID field with country-aware help text (§5.2)
  *   - migration fast-path evidence: WHOIS URL or screenshot upload (§5.1.1)
  */
-export function OnboardingForm({ countries, currencies, timezones }: Props) {
+export function OnboardingForm({ countries, currencies }: Props) {
   const router = useRouter();
   const setSubmitted = useOnboardingStore((s) => s.setSubmitted);
 
@@ -190,10 +191,10 @@ export function OnboardingForm({ countries, currencies, timezones }: Props) {
       return "UTC";
     }
   }, []);
-  const resolvedTimezone = useMemo(() => {
-    const exact = timezones.find((tz) => tz.id === browserTimezone);
-    return exact?.id ?? timezones[0]?.id ?? "UTC";
-  }, [browserTimezone, timezones]);
+  const resolvedTimezone = useMemo(
+    () => storeTimezone(watchedCountry ?? "", browserTimezone),
+    [watchedCountry, browserTimezone],
+  );
 
   // Country-aware tax ID help text.
   const taxIdHelp = useMemo(() => {

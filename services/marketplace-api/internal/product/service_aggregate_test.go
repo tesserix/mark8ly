@@ -259,6 +259,46 @@ func TestIntegration_ProductService_UpdateAggregate_RemovedVariantIDsSoftDelete(
 	}
 }
 
+// A variant both sent as kept and listed in RemovedVariantIDs survives. The
+// admin form produced exactly that when an option was added then abandoned
+// on a simple product, and the save deleted the product's only variant.
+func TestIntegration_ProductService_UpdateAggregate_RemovedIDOfKeptVariantSurvives(t *testing.T) {
+	tx := testdb.NewTx(t)
+	storeID, tenantID, _ := seedStore(t, tx)
+	svc := buildService(tx, media.NewFakeUploader())
+	ctx := context.Background()
+
+	agg, err := svc.Create(ctx, product.CreateRequest{
+		StoreID: storeID, TenantID: tenantID, Title: "Skin",
+		Variants: []product.VariantInput{
+			{SKU: "SKIN-default", Price: decimal.NewFromInt(599), CurrencyCode: "USD", InitialStock: 10},
+		},
+	})
+	if err != nil {
+		t.Fatalf("seed product: %v", err)
+	}
+	vid := agg.Variants[0].ID
+
+	noOptions := []product.OptionSpec{}
+	variants := []product.VariantInput{
+		{ID: vid, SKU: "SKIN-default", Price: decimal.NewFromInt(599), CurrencyCode: "USD", InitialStock: 10},
+	}
+	removed := []string{vid}
+	got, err := svc.UpdateAggregate(ctx, product.UpdateAggregateRequest{
+		ID: agg.Product.ID, StoreID: storeID, TenantID: tenantID,
+		Options: &noOptions, Variants: &variants, RemovedVariantIDs: &removed,
+	})
+	if err != nil {
+		t.Fatalf("UpdateAggregate: %v", err)
+	}
+	if len(got.Variants) != 1 || got.Variants[0].ID != vid {
+		t.Fatalf("variants = %+v, want the one kept variant %s", got.Variants, vid)
+	}
+	if got.Variants[0].InventoryQuantity != 10 {
+		t.Fatalf("stock = %d, want 10", got.Variants[0].InventoryQuantity)
+	}
+}
+
 // TestIntegration_ProductService_UpdateAggregate_OptionValueInUseRejected
 // exercises semantics (c): removing an option value that a surviving
 // variant still references should return OptionValueInUse and roll back.

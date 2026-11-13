@@ -167,7 +167,10 @@ export function GeneralSettingsForm({
               <SelectValue placeholder="Select timezone…" />
             </SelectTrigger>
             <SelectContent>
-              {timezones.map((tz) => (
+              {(timezones.some((tz) => tz.id === store.timezone)
+                ? timezones
+                : [{ id: store.timezone, name: store.timezone, utc_offset: "" }, ...timezones]
+              ).map((tz) => (
                 <SelectItem key={tz.id} value={tz.id}>
                   {tz.id}
                   {tz.utc_offset ? ` (UTC${tz.utc_offset})` : ""}

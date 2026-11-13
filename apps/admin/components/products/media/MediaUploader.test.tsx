@@ -14,6 +14,17 @@ describe("MediaUploader", () => {
     expect(onFiles.mock.calls[0]?.[0]).toHaveLength(2);
   });
 
+  it("calls onFiles with dropped images and ignores other file types", () => {
+    const onFiles = vi.fn();
+    render(<MediaUploader onFiles={onFiles} />);
+    const zone = screen.getByText(/drop images/i).closest("label") as HTMLLabelElement;
+    const img = new File(["a"], "a.png", { type: "image/png" });
+    const pdf = new File(["b"], "b.pdf", { type: "application/pdf" });
+    fireEvent.drop(zone, { dataTransfer: { files: [img, pdf] } });
+    expect(onFiles).toHaveBeenCalledTimes(1);
+    expect(onFiles.mock.calls[0]?.[0]).toEqual([img]);
+  });
+
   it("renders progress items", () => {
     render(
       <MediaUploader

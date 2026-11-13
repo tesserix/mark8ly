@@ -130,7 +130,8 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
       {/* Thumbnail strip */}
       {media.length > 1 && (
         <div
-          className="flex gap-2 overflow-x-auto pb-1"
+          // Room for the active ring-2: overflow-x-auto clips it otherwise.
+          className="flex gap-2 overflow-x-auto p-0.5 pb-1"
           role="listbox"
           aria-label={`${productTitle} — select image (use arrow keys to navigate)`}
           tabIndex={0}

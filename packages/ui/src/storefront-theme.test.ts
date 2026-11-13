@@ -24,4 +24,17 @@ describe("themeCssVariables", () => {
     expect(vars["--background"]).toBe(defaultStorefrontTheme.colors.background);
     expect(vars["--foreground"]).toBe(defaultStorefrontTheme.colors.text);
   });
+
+  it("mixes dark-mode status surfaces against the dark background", () => {
+    const dark = withBackground(withMode(defaultStorefrontTheme, "dark"), "obsidian");
+    const vars = themeCssVariables(dark);
+    expect(vars["--storefront-success-bg"]).toBe(
+      `color-mix(in oklab, ${dark.statusColors.success} 18%, ${dark.colors.background})`,
+    );
+    expect(vars["--storefront-neutral-bg"]).toContain(dark.colors.background);
+  });
+
+  it("leaves light-mode status surfaces to globals.css", () => {
+    expect(themeCssVariables(defaultStorefrontTheme)["--storefront-success-bg"]).toBeUndefined();
+  });
 });

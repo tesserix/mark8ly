@@ -992,5 +992,26 @@ export function themeCssVariables(
     "--foreground-secondary": `${text}B3`,
     "--foreground-tertiary": `${text}80`,
     "--background": background,
+    // Status chip and toast surfaces. globals.css mixes them against paper
+    // white so light-mode's dark status colours read on any page. Dark mode
+    // ships LIGHT status colours, and light-on-paper was unreadable (a
+    // pale-green "added to cart" toast on sugarcoat, 13 Nov), so in dark
+    // mode the surface is mixed against the store's own background instead.
+    ...(theme.mode === "dark" ? darkStatusSurfaces(theme.statusColors, background, text) : {}),
   };
+}
+
+function darkStatusSurfaces(
+  colors: StatusColors,
+  background: string,
+  text: string,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const tone of ["success", "warning", "danger", "info"] as const) {
+    out[`--storefront-${tone}-bg`] = `color-mix(in oklab, ${colors[tone]} 18%, ${background})`;
+    out[`--storefront-${tone}-border`] = `color-mix(in oklab, ${colors[tone]} 45%, transparent)`;
+  }
+  out["--storefront-neutral-bg"] = `color-mix(in oklab, ${text} 12%, ${background})`;
+  out["--storefront-neutral-border"] = `color-mix(in oklab, ${text} 25%, transparent)`;
+  return out;
 }

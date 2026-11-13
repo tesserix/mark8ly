@@ -6,6 +6,8 @@ import { BrandBar } from "@repo/ui/brand-bar";
 import { listMemberTenants } from "@/lib/api/platform-api";
 import { PickTenantForm } from "@/components/auth/PickTenantForm";
 import { decidePickTenantOutcome } from "@/lib/auth/pick-tenant-decision";
+import { classifyAdminHost } from "@/lib/auth/host-policy";
+import { platformInternalHeaders } from "@/lib/api/server/platformInternal";
 
 export const metadata: Metadata = { title: "Pick a store" };
 
@@ -29,15 +31,16 @@ const PLATFORM_API_URL =
 async function tenantIdForHostSlug(
   hostHeader: string | null | undefined,
 ): Promise<string | null> {
-  if (!hostHeader) return null;
-  const host = hostHeader.split(":")[0] ?? "";
-  const match = host.match(/^([^.]+)-admin\.mark8ly\.com$/);
-  if (!match || !match[1]) return null;
-  const slug = match[1];
+  // Same host parsing and same internal-auth header as middleware.ts. Without
+  // the header platform-api answers 401, this returned null, and a
+  // single-store user on another store's subdomain was sent to /dashboard,
+  // which middleware sent straight back here: a redirect loop.
+  const host = classifyAdminHost(hostHeader);
+  if (host.kind !== "slug") return null;
   try {
     const res = await fetch(
-      `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(slug)}`,
-      { cache: "no-store" },
+      `${PLATFORM_API_URL}/internal/stores/by-slug/${encodeURIComponent(host.slug)}`,
+      { cache: "no-store", headers: platformInternalHeaders() },
     );
     if (!res.ok) return null;
     const body = (await res.json()) as { data?: { tenant_id?: string } };

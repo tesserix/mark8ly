@@ -1207,6 +1207,39 @@ func (h *CheckoutExtHandler) calculateTax(
 	req CheckoutExtRequest,
 	shippingTotal decimal.Decimal,
 ) (*tax.TaxBreakdown, error) {
+	lines := make([]checkoutcore.TaxLine, 0, len(req.Items))
+	for _, it := range req.Items {
+		lines = append(lines, checkoutcore.TaxLine{
+			SKU:             it.SKUSnapshot,
+			ProductID:       it.ProductID,
+			UnitPrice:       it.UnitPrice,
+			Quantity:        it.Quantity,
+			TaxCode:         it.TaxCode,
+			TaxCategory:     it.TaxCategory,
+			TaxRateOverride: it.TaxRateOverride,
+		})
+	}
+	return h.QuoteTax(ctx, store, sc, checkoutcore.TaxableItems(sc, lines), tax.Address{
+		Line1:       req.ShippingAddress.Line1,
+		City:        req.ShippingAddress.City,
+		Region:      derefString(req.ShippingAddress.Region),
+		PostalCode:  derefString(req.ShippingAddress.PostalCode),
+		CountryCode: req.ShippingAddress.CountryCode,
+	}, shippingTotal)
+}
+
+// QuoteTax computes the tax breakdown for already-built items shipped to
+// dest. In-store sales call it with the seller's own address as dest. It owns
+// the TaxJar credential and the seller-region lookup so no caller repeats
+// them.
+func (h *CheckoutExtHandler) QuoteTax(
+	ctx context.Context,
+	store *stores.Store,
+	sc *country.SupportedCountry,
+	taxItems []tax.TaxableItem,
+	dest tax.Address,
+	shippingTotal decimal.Decimal,
+) (*tax.TaxBreakdown, error) {
 	// Try to get a tax provider config for TaxJar (US stores).
 	var taxjarAPIKey, taxjarMode string
 	if sc.TaxStrategy == "taxjar" {
@@ -1237,42 +1270,6 @@ func (h *CheckoutExtHandler) calculateTax(
 	calc, err := tax.NewCalculator(sc.TaxStrategy, sc.TaxRate, taxjarAPIKey, taxjarMode)
 	if err != nil {
 		return nil, fmt.Errorf("tax calculator init: %w", err)
-	}
-
-	// Build taxable items from checkout lines. Per-item fields win when
-	// set; otherwise fall back to the country default from
-	// supported_countries.tax_rate.
-	//
-	// Both sources store the rate as a PERCENTAGE (e.g. 18.00 = 18%) —
-	// the admin Tax tab writes percentages, and supported_countries
-	// seeds them that way. The calculator expects a FRACTION (0.18), so
-	// divide by 100 on the way in.
-	hundred := decimal.NewFromInt(100)
-	defaultRate := decimal.Zero
-	if sc.TaxRate != nil && *sc.TaxRate > 0 {
-		defaultRate = decimal.NewFromFloat(*sc.TaxRate).Div(hundred)
-	}
-
-	taxItems := make([]tax.TaxableItem, 0, len(req.Items))
-	for _, it := range req.Items {
-		rate := decimal.Zero
-		if it.TaxRateOverride != nil && it.TaxRateOverride.GreaterThan(decimal.Zero) {
-			rate = it.TaxRateOverride.Div(hundred)
-		} else if !defaultRate.IsZero() {
-			rate = defaultRate
-		}
-		ti := tax.TaxableItem{
-			SKU:         it.SKUSnapshot,
-			Amount:      it.UnitPrice,
-			Quantity:    it.Quantity,
-			TaxCode:     derefString(it.TaxCode),
-			TaxRate:     rate,
-			TaxCategory: derefString(it.TaxCategory),
-		}
-		if it.ProductID != nil {
-			ti.ProductID = *it.ProductID
-		}
-		taxItems = append(taxItems, ti)
 	}
 
 	// C5 fix: populate SellerAddress.Region from the store's warehouse config
@@ -1306,13 +1303,7 @@ func (h *CheckoutExtHandler) calculateTax(
 			CountryCode: store.CountryCode,
 			Region:      sellerRegion,
 		},
-		tax.Address{
-			Line1:       req.ShippingAddress.Line1,
-			City:        req.ShippingAddress.City,
-			Region:      derefString(req.ShippingAddress.Region),
-			PostalCode:  derefString(req.ShippingAddress.PostalCode),
-			CountryCode: req.ShippingAddress.CountryCode,
-		},
+		dest,
 		taxItems,
 		shippingTotal,
 		store.CurrencyCode,

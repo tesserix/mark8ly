@@ -120,3 +120,25 @@ func TestFake_WriteRole_RejectsUnknownRole(t *testing.T) {
 		t.Error("expected error for unknown role")
 	}
 }
+
+// A cashier (#1104) is a member who can sell in store and nothing else.
+func TestFake_Cashier_MemberWhoCanOnlySell(t *testing.T) {
+	f := NewFake()
+	ctx := context.Background()
+	if err := f.WriteRole(ctx, "c1", RoleCashier, "t1"); err != nil {
+		t.Fatalf("WriteRole(cashier): %v", err)
+	}
+	want := map[string]bool{
+		"cashier": true, "member": true, "can_sell_in_store": true,
+		"viewer": false, "staff": false, "can_view_settings": false,
+		"can_edit_settings": false, "can_invite_members": false,
+	}
+	for rel, exp := range want {
+		if ok, err := f.Check(ctx, "c1", rel, "t1"); err != nil || ok != exp {
+			t.Errorf("Check(%q) = %v, %v; want %v", rel, ok, err, exp)
+		}
+	}
+	if role, _ := f.GetRole(ctx, "c1", "t1"); role != RoleCashier {
+		t.Errorf("GetRole = %q, want cashier", role)
+	}
+}

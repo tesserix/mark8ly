@@ -67,6 +67,10 @@ func (f *FakeClient) Check(_ context.Context, userID, relation, tenantID string)
 		return role == RoleOwner || role == RoleAdmin || role == RoleStaff, nil
 	case "viewer":
 		return role == RoleOwner || role == RoleAdmin || role == RoleStaff || role == RoleViewer, nil
+	case "cashier":
+		return role == RoleCashier, nil
+	case "can_sell_in_store":
+		return role == RoleCashier || role.HigherOrEqual(RoleStaff), nil
 	case "member":
 		return true, nil
 	}

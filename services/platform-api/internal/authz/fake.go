@@ -252,11 +252,17 @@ func (f *FakeClient) CheckObject(ctx context.Context, userID, relation, objectTy
 func (f *FakeClient) checkTenantRelationLocked(userID, relation, tenantID string) bool {
 	key := userID + "|" + tenantID
 	switch relation {
-	case "member", "can_view_settings":
+	case "member":
 		return f.hasAnyRoleLocked(userID, tenantID)
+	case "can_view_settings":
+		return f.roles[RoleOwner][key] || f.roles[RoleAdmin][key] ||
+			f.roles[RoleStaff][key] || f.roles[RoleViewer][key]
+	case "can_sell_in_store":
+		return f.roles[RoleCashier][key] || f.roles[RoleOwner][key] ||
+			f.roles[RoleAdmin][key] || f.roles[RoleStaff][key]
 	case "can_edit_settings", "can_invite_members", "can_manage_stores":
 		return f.roles[RoleOwner][key] || f.roles[RoleAdmin][key]
-	case string(RoleOwner), string(RoleAdmin), string(RoleStaff), string(RoleViewer):
+	case string(RoleOwner), string(RoleAdmin), string(RoleStaff), string(RoleViewer), string(RoleCashier):
 		return f.roles[Role(relation)][key]
 	}
 	return false

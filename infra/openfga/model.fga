@@ -35,7 +35,13 @@ type tenant
     define staff:  [user] or admin
     define viewer: [user] or staff
 
-    define member: viewer
+    # Cashier (#1104): sells in store and nothing else. A member, so they
+    # can sign in and pick a store, but outside owner > admin > staff >
+    # viewer, so no ranked permission includes them.
+    define cashier: [user]
+
+    define member: viewer or cashier
+    define can_sell_in_store: cashier or staff
 
     define can_view_settings:   viewer
     define can_edit_settings:   admin

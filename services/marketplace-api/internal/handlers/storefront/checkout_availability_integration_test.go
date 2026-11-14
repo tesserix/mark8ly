@@ -17,6 +17,7 @@ package storefront
 
 import (
 	"context"
+	"github.com/mark8ly/marketplace-api/internal/checkoutcore"
 	"testing"
 	"time"
 
@@ -87,7 +88,7 @@ func TestLoadAvailability_SentinelStockNoLongerCountsAsAnything(t *testing.T) {
 		 VALUES (?, ?, 7, now())`, variantID, retiredSentinelForTest).Error)
 
 	warehouses := []allocation.Warehouse{{ID: whID}}
-	avail, storage, err := loadAvailability(context.Background(), db, uuid.NewString(), warehouses, []string{variantID})
+	avail, storage, err := checkoutcore.LoadAvailability(context.Background(), db, uuid.NewString(), warehouses, []string{variantID})
 	require.NoError(t, err)
 
 	require.Zero(t, avail.At(variantID, whID),
@@ -107,14 +108,14 @@ func TestLoadAvailability_RealWarehouseStockIsReportedAgainstItself(t *testing.T
 		variantID, whA, variantID, whB).Error)
 
 	warehouses := []allocation.Warehouse{{ID: whA}, {ID: whB}}
-	avail, storage, err := loadAvailability(context.Background(), db, uuid.NewString(), warehouses, []string{variantID})
+	avail, storage, err := checkoutcore.LoadAvailability(context.Background(), db, uuid.NewString(), warehouses, []string{variantID})
 	require.NoError(t, err)
 
 	require.Equal(t, 3, avail.At(variantID, whA))
 	require.Equal(t, 4, avail.At(variantID, whB))
-	require.Equal(t, []stockAt{{LocationID: whA, Units: 3}}, storage[variantID][whA],
+	require.Equal(t, []checkoutcore.StockAt{{LocationID: whA, Units: 3}}, storage[variantID][whA],
 		"post-backfill the storage location IS the warehouse")
-	require.Equal(t, []stockAt{{LocationID: whB, Units: 4}}, storage[variantID][whB])
+	require.Equal(t, []checkoutcore.StockAt{{LocationID: whB, Units: 4}}, storage[variantID][whB])
 }
 
 // Matching stockhold.Hold and stockhold.Available: a cart must not see its
@@ -136,7 +137,7 @@ func TestLoadAvailability_ExcludesTheCallingCartsOwnHolds(t *testing.T) {
 		variantID, whID, theirs, time.Now().Add(time.Hour)).Error)
 
 	warehouses := []allocation.Warehouse{{ID: whID}}
-	avail, _, err := loadAvailability(context.Background(), db, mine, warehouses, []string{variantID})
+	avail, _, err := checkoutcore.LoadAvailability(context.Background(), db, mine, warehouses, []string{variantID})
 	require.NoError(t, err)
 
 	require.Equal(t, 7, avail.At(variantID, whID),
@@ -155,7 +156,7 @@ func TestLoadAvailability_ExpiredHoldsDoNotReduceAvailability(t *testing.T) {
 		 VALUES (?, ?, ?, 5, ?, 'held')`,
 		variantID, whID, uuid.NewString(), time.Now().Add(-time.Minute)).Error)
 
-	avail, _, err := loadAvailability(context.Background(), db, uuid.NewString(),
+	avail, _, err := checkoutcore.LoadAvailability(context.Background(), db, uuid.NewString(),
 		[]allocation.Warehouse{{ID: whID}}, []string{variantID})
 	require.NoError(t, err)
 
@@ -171,7 +172,7 @@ func TestLoadAvailability_VariantWithNoStockRowsIsAbsent(t *testing.T) {
 	storeID, variantID := seedAvailStore(t, db)
 	whID := seedWarehouseRow(t, db, storeID, "Main")
 
-	avail, storage, err := loadAvailability(context.Background(), db, uuid.NewString(),
+	avail, storage, err := checkoutcore.LoadAvailability(context.Background(), db, uuid.NewString(),
 		[]allocation.Warehouse{{ID: whID}}, []string{variantID})
 	require.NoError(t, err)
 
@@ -198,7 +199,7 @@ func TestLoadAvailability_StockAtUnknownLocationContributesNothing(t *testing.T)
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
 		 VALUES (?, ?, 9, now())`, variantID, orphanLocationID).Error)
 
-	avail, storage, err := loadAvailability(context.Background(), db, uuid.NewString(),
+	avail, storage, err := checkoutcore.LoadAvailability(context.Background(), db, uuid.NewString(),
 		[]allocation.Warehouse{{ID: whID}}, []string{variantID})
 	require.NoError(t, err)
 

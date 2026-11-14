@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mark8ly/marketplace-api/internal/checkoutcore"
 	"sort"
 	"strings"
 
@@ -96,7 +97,7 @@ func buildOriginGroups(
 		}
 	}
 
-	warehouses, err := storeWarehousesInFillOrder(ctx, db, storeID)
+	warehouses, err := checkoutcore.StoreWarehousesInFillOrder(ctx, db, storeID)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +132,7 @@ func buildOriginGroups(
 	// cookie (checked with uuid.Parse — this value would parse, but no
 	// client is ever issued it) or freshly minted via uuid.NewString(),
 	// which cannot collide with an all-zero id.
-	avail, _, err := loadAvailability(ctx, db, quoteCartTokenSentinel, warehouses, variantIDs)
+	avail, _, err := checkoutcore.LoadAvailability(ctx, db, quoteCartTokenSentinel, warehouses, variantIDs)
 	if err != nil {
 		return nil, err
 	}

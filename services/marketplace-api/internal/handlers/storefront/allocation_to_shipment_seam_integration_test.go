@@ -36,6 +36,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mark8ly/marketplace-api/internal/checkoutcore"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -206,12 +207,12 @@ func TestSeam_RealAllocationsProduceOneShipmentPerWarehouse(t *testing.T) {
 		 VALUES (?, ?, 3, now()), (?, ?, 4, now())`,
 		variantID, whA, variantID, whB).Error)
 
-	lines := []stockLine{{VariantID: variantID, Quantity: 5}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 5}}
 	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
 
 	// ── half one: the REAL allocator ──────────────────────────────────
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	}))
 
@@ -283,11 +284,11 @@ func TestSeam_SingleWarehouseAllocationStillProducesOneShipment(t *testing.T) {
 		 VALUES (?, ?, 10, now())`, variantID, whA).Error)
 
 	// TWO lines of the same variant, both fillable from the one warehouse.
-	lines := []stockLine{{VariantID: variantID, Quantity: 2}, {VariantID: variantID, Quantity: 3}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 2}, {VariantID: variantID, Quantity: 3}}
 	orderID, _ := seedOrderWithItems(t, db, storeID, lines)
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	}))
 

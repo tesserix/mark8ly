@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mark8ly/marketplace-api/internal/checkoutcore"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -461,7 +462,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	// and a shopper could POST unit_price: 0.01 and pay a cent for anything.
 	// repriceItems overwrites unit_price, line_total and currency_code from
 	// product_variants (store-scoped) before any total is derived.
-	if err := repriceItems(ctx, dbCatalogPricer{db: h.db}, store.ID, req.Items); err != nil {
+	if err := repriceItems(ctx, checkoutcore.NewDBCatalogPricer(h.db), store.ID, req.Items); err != nil {
 		h.logWarn("checkout_ext: repricing failed", "store_id", store.ID, "err", err)
 		h.respondErr(c, apperrors.ValidationFailed("items",
 			"one or more items are no longer available at the requested price"))
@@ -708,7 +709,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		}
 
 		if h.stockHolds != nil {
-			if err := commitStock(ctx, tx, h.stockHolds, stockCartToken, o.ID.String(), storeID.String(), stockLines); err != nil {
+			if err := checkoutcore.CommitStock(ctx, tx, h.stockHolds, stockCartToken, o.ID.String(), storeID.String(), stockLines); err != nil {
 				return err
 			}
 		}
@@ -1477,7 +1478,7 @@ func (h *CheckoutExtHandler) respondErr(c *gin.Context, err error) {
 	// arrives here as an ordinary error from the order transaction, so it
 	// must be matched before the apperrors switch or it falls through to
 	// internal_error and the shopper is told nothing actionable.
-	var oos outOfStockError
+	var oos checkoutcore.OutOfStockError
 	if errors.As(err, &oos) {
 		c.AbortWithStatusJSON(http.StatusConflict, map[string]any{
 			"error":      "out_of_stock",

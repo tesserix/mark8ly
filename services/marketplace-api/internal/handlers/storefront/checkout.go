@@ -7,6 +7,7 @@ package storefront
 
 import (
 	"errors"
+	"github.com/mark8ly/marketplace-api/internal/checkoutcore"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -230,7 +231,7 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 		lines := stockLinesFromItems(req.Items)
 		cartToken := cartTokenForCheckout(c, req.CartToken)
 		in.WithinTx = func(tx *gorm.DB, o *order.Order) error {
-			return commitStock(c.Request.Context(), tx, h.stockHolds, cartToken, o.ID.String(), storeID.String(), lines)
+			return checkoutcore.CommitStock(c.Request.Context(), tx, h.stockHolds, cartToken, o.ID.String(), storeID.String(), lines)
 		}
 	}
 
@@ -310,7 +311,7 @@ func (h *CheckoutHandler) respondErr(c *gin.Context, err error) {
 	// shopper can act on it: remove that line and retry. It is checked
 	// first because it travels up through order.Create's transaction as an
 	// ordinary error and would otherwise fall through to internal_error.
-	var oos outOfStockError
+	var oos checkoutcore.OutOfStockError
 	if errors.As(err, &oos) {
 		c.AbortWithStatusJSON(http.StatusConflict, map[string]any{
 			"error":      "out_of_stock",

@@ -1,4 +1,4 @@
-package storefront
+package checkoutcore
 
 import (
 	"context"
@@ -10,13 +10,13 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/allocation"
 )
 
-// stockAt is units of a variant available at one physical storage location.
-type stockAt struct {
+// StockAt is units of a variant available at one physical storage location.
+type StockAt struct {
 	LocationID string
 	Units      int
 }
 
-// storageLocations records, per variant and warehouse, WHERE the units
+// StorageLocations records, per variant and warehouse, WHERE the units
 // backing that warehouse's availability actually sit.
 //
 // It exists because a hold must be placed against the location(s) the rows
@@ -26,9 +26,9 @@ type stockAt struct {
 // #177 PR 6 that collapses to the obvious case — one warehouse, one row —
 // and the indirection is kept because it is what makes a hold target a
 // real location rather than the warehouse's id by assumption.
-type storageLocations map[string]map[string][]stockAt
+type StorageLocations map[string]map[string][]StockAt
 
-// loadAvailability builds the snapshot allocation.Plan reasons over.
+// LoadAvailability builds the snapshot allocation.Plan reasons over.
 //
 // Availability is variant_stock.quantity minus OTHER carts' live holds — the
 // same arithmetic stockhold.Available uses, and excluding the calling cart's
@@ -40,15 +40,15 @@ type storageLocations map[string]map[string][]stockAt
 // check that counts. A snapshot that is stale by the time it is used simply
 // produces a plan whose holds fail, which is the same outcome a
 // single-warehouse shopper gets today.
-func loadAvailability(
+func LoadAvailability(
 	ctx context.Context,
 	tx *gorm.DB,
 	cartToken string,
 	warehouses []allocation.Warehouse,
 	variantIDs []string,
-) (allocation.Availability, storageLocations, error) {
+) (allocation.Availability, StorageLocations, error) {
 	avail := allocation.Availability{}
-	storage := storageLocations{}
+	storage := StorageLocations{}
 	if len(warehouses) == 0 || len(variantIDs) == 0 {
 		return avail, storage, nil
 	}
@@ -104,7 +104,7 @@ func loadAvailability(
 
 		if avail[r.VariantID] == nil {
 			avail[r.VariantID] = map[string]int{}
-			storage[r.VariantID] = map[string][]stockAt{}
+			storage[r.VariantID] = map[string][]StockAt{}
 		}
 		avail[r.VariantID][warehouseID] += r.Available
 		// Append rather than overwrite. One warehouse is normally backed by
@@ -114,7 +114,7 @@ func loadAvailability(
 		// stops being true.
 		storage[r.VariantID][warehouseID] = append(
 			storage[r.VariantID][warehouseID],
-			stockAt{LocationID: r.LocationID, Units: r.Available},
+			StockAt{LocationID: r.LocationID, Units: r.Available},
 		)
 	}
 

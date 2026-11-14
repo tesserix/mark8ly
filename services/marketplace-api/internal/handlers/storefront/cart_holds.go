@@ -2,6 +2,7 @@ package storefront
 
 import (
 	"errors"
+	"github.com/mark8ly/marketplace-api/internal/checkoutcore"
 	"log/slog"
 	"net/http"
 	"time"
@@ -24,15 +25,8 @@ import (
 // the identity survive a reload.
 const CartTokenCookie = "mk_cart_token"
 
-// HoldTTL is how long a cart keeps its units.
-//
-// Placed AT CART-ADD, not at checkout-start — decided 2026-08-30 as the
-// epic's literal intent: the shopper who adds first keeps the unit. The cost
-// is real and accepted: an abandoned tab parks the last unit for fifteen
-// minutes, and abandoned carts are the norm. If that proves too expensive on
-// scarce variants, the lever is this constant plus a shorter hold at
-// cart-add, not a change to the mechanism.
-const HoldTTL = 15 * time.Minute
+// HoldTTL is how long a cart keeps its units; see checkoutcore.HoldTTL.
+const HoldTTL = checkoutcore.HoldTTL
 
 // CartHoldsHandler serves the storefront's stock-hold surface (#232).
 type CartHoldsHandler struct {

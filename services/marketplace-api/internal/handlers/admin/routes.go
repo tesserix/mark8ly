@@ -892,10 +892,9 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 
 		// P15 — white-label mobile-app add-on (§13.2, §14.2, §18.9). Pro
 		// plan + has_white_label_app_add_on=true gate is enforced inside
-		// the handler; no extra AuthzMiddleware needed because the creds
-		// are tenant-scoped at the appcreds.Service layer.
-		MountAppCredentialsRoutes(storeRoute, deps.AppCredentialsHandler)
-		MountAppAddOnRoutes(storeRoute, deps.AppAddOnHandler)
+		// the handler; the role gates are in the mount functions.
+		MountAppCredentialsRoutes(storeRoute, deps.AppCredentialsHandler, deps.AuthzMiddleware)
+		MountAppAddOnRoutes(storeRoute, deps.AppAddOnHandler, deps.AuthzMiddleware)
 
 		// Trial billing — P5 deferred-charge card-add (§5.3).
 		if deps.TrialBillingHandler != nil {

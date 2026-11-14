@@ -253,7 +253,8 @@ func (h *APIKeysHandler) parseUser(c *gin.Context) (uuid.UUID, bool) {
 // RegisterAPIKeys mounts the admin endpoints. List is gated by FeatureReadAPI
 // (every plan since #585); create/rotate/revoke are gated by FeatureFullAPI
 // (Pro). Read endpoints under FeatureReadAPI let any merchant list their keys
-// without upgrading; write endpoints require an explicit Pro plan.
+// without upgrading; write endpoints require an explicit Pro plan. The role
+// gate runs first so a caller without the role learns nothing about the plan.
 func RegisterAPIKeys(storeRoute gin.IRouter, h *APIKeysHandler, fgaMw *authz.Middleware, logger *slog.Logger) {
 	if h == nil || h.resolver == nil {
 		return
@@ -261,20 +262,20 @@ func RegisterAPIKeys(storeRoute gin.IRouter, h *APIKeysHandler, fgaMw *authz.Mid
 	keys := storeRoute.Group("/api-keys")
 	{
 		keys.GET("",
-			plangate.RequireFeature(h.resolver, plangate.FeatureReadAPI, logger),
 			fgaMw.RequireTenantRelation(authz.SubscriptionViewRole),
+			plangate.RequireFeature(h.resolver, plangate.FeatureReadAPI, logger),
 			h.List)
 		keys.POST("",
-			plangate.RequireFeature(h.resolver, plangate.FeatureFullAPI, logger),
 			fgaMw.RequireTenantRelation(authz.SubscriptionEditRole),
+			plangate.RequireFeature(h.resolver, plangate.FeatureFullAPI, logger),
 			h.Create)
 		keys.POST("/:keyId/rotate",
-			plangate.RequireFeature(h.resolver, plangate.FeatureFullAPI, logger),
 			fgaMw.RequireTenantRelation(authz.SubscriptionEditRole),
+			plangate.RequireFeature(h.resolver, plangate.FeatureFullAPI, logger),
 			h.Rotate)
 		keys.DELETE("/:keyId",
-			plangate.RequireFeature(h.resolver, plangate.FeatureFullAPI, logger),
 			fgaMw.RequireTenantRelation(authz.SubscriptionEditRole),
+			plangate.RequireFeature(h.resolver, plangate.FeatureFullAPI, logger),
 			h.Revoke)
 	}
 }

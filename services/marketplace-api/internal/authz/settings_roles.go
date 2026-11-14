@@ -21,3 +21,8 @@ var AuditLogsViewRole = RoleStaff
 // Notifications — staff can view/manage their own.
 var NotificationsViewRole = RoleStaff
 var NotificationsEditRole = RoleStaff
+
+// AppCredentialsEditRole gates uploading the white-label app's Apple and
+// Google signing credentials. Owner, like custom domains: these keys
+// publish an app under the merchant's name.
+var AppCredentialsEditRole = RoleOwner

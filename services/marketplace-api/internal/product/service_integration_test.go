@@ -801,3 +801,31 @@ func TestIntegration_ProductService_Copy_CategoriesCreatedInTarget(t *testing.T)
 		t.Fatalf("expected category created in target store, got count = %d", postCount)
 	}
 }
+
+// Updating a row moves it in the heap, so an unordered preload returned
+// media in update order rather than merchant order (sugarcoat, 14 Nov).
+func TestIntegration_ProductRepository_MediaFollowsPositionAfterReorder(t *testing.T) {
+	tx := testdb.NewTx(t)
+	storeID, tenantID, _ := seedStore(t, tx)
+	src := seedRichSourceProduct(t, tx, storeID, tenantID, "USD", seedCategory(t, tx, storeID, tenantID, "order-cat"))
+
+	// Swap a (0) and b (1), updating b last: heap order ends a, b while
+	// positions say b first, so an unordered read returns the wrong one.
+	for _, q := range []string{
+		`UPDATE product_media SET position = 99 WHERE product_id = ? AND url = 'https://cdn/b.jpg'`,
+		`UPDATE product_media SET position = 1 WHERE product_id = ? AND url = 'https://cdn/a.jpg'`,
+		`UPDATE product_media SET position = 0 WHERE product_id = ? AND url = 'https://cdn/b.jpg'`,
+	} {
+		if err := tx.Exec(q, src.Product.ID).Error; err != nil {
+			t.Fatalf("reorder: %v", err)
+		}
+	}
+
+	got, err := product.NewRepository(tx).GetByIDForStore(context.Background(), src.Product.ID, storeID, tenantID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(got.Media) != 2 || got.Media[0].URL != "https://cdn/b.jpg" {
+		t.Fatalf("media order = %+v, want b.jpg first", got.Media)
+	}
+}

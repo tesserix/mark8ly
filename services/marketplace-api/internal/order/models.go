@@ -38,12 +38,19 @@ type Order struct {
 	ShippingService   *string         `gorm:"column:shipping_service;type:varchar(40)"`
 	ShippingCarrier   *string         `gorm:"column:shipping_carrier;type:varchar(40)"`
 	Notes             *string         `gorm:"column:notes;type:text"`
-	PlacedAt          time.Time       `gorm:"column:placed_at;not null;default:now()"`
-	CancelledAt       *time.Time      `gorm:"column:cancelled_at"`
-	FulfilledAt       *time.Time      `gorm:"column:fulfilled_at"`
-	CreatedAt         time.Time       `gorm:"column:created_at;not null;default:now()"`
-	UpdatedAt         time.Time       `gorm:"column:updated_at;not null;default:now()"`
-	DeletedAt         *time.Time      `gorm:"column:deleted_at"`
+	// In-store sales (#1102). Channel is "online" for every checkout order;
+	// the rest are set only for in-store sales, paid outside mark8ly.
+	Channel            string           `gorm:"column:channel;type:varchar(20);not null;default:online"`
+	PaymentMethod      *string          `gorm:"column:payment_method;type:varchar(20)"`
+	PaymentMethodLabel *string          `gorm:"column:payment_method_label;type:varchar(40)"`
+	SoldByUserID       *string          `gorm:"column:sold_by_user_id;type:varchar(64)"`
+	CashTendered       *decimal.Decimal `gorm:"column:cash_tendered;type:numeric(12,2)"`
+	PlacedAt           time.Time        `gorm:"column:placed_at;not null;default:now()"`
+	CancelledAt        *time.Time       `gorm:"column:cancelled_at"`
+	FulfilledAt        *time.Time       `gorm:"column:fulfilled_at"`
+	CreatedAt          time.Time        `gorm:"column:created_at;not null;default:now()"`
+	UpdatedAt          time.Time        `gorm:"column:updated_at;not null;default:now()"`
+	DeletedAt          *time.Time       `gorm:"column:deleted_at"`
 }
 
 func (Order) TableName() string { return "orders" }

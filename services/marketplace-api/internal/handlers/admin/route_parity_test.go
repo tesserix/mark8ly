@@ -60,6 +60,7 @@ var webOnlySubtrees = map[string]string{
 	"/stores/:storeId/dashboard/metrics":                   "analytics tabs — no mobile analytics screen yet; the mobile Home uses GET /dashboard only",
 	"/stores/:storeId/dashboard/setup-progress":            "onboarding checklist incl. SSE/WebSocket streams — mobile has no setup-checklist screen",
 	"/stores/:storeId/domains":                             "custom domain + DNS setup — a desktop task, web-only by design",
+	"/stores/:storeId/in-store":                            "in-store sale screen (#1103) ships in the web admin, tablet-first; mirror it here if the native app gets a sale screen",
 	"/stores/:storeId/migration-fast-path":                 "platform-migration submission form — web-only by design",
 	"/stores/:storeId/products/:id/personalisation-fields": "authoring what a buyer may supply (#962) is a web-console task — it is a form with a mockup image, a print-area rectangle and per-option pricing. mobile-admin gains a READ view in #969, and when it does this blanket entry must be replaced with route-by-route webOnlyRoutes entries, because a half-mirrored subtree is exactly how the two bugs in this file's header happened.",
 	"/stores/:storeId/pages":                               "CMS page editor (rich text) — no mobile editor",

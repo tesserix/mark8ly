@@ -144,12 +144,14 @@ export function AddToCartButton({
     personalisation,
   ]);
 
+  // Disabled states use a neutral text tint, not a faded accent: 40% red
+  // under dark on-accent text was unreadable on dark themes (sugarcoat).
   if (!inStock) {
     return (
       <button
         type="button"
         disabled
-        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm text-[color:var(--storefront-on-accent,var(--paper-200))] opacity-40 cursor-not-allowed"
+        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-text,var(--ink-900))]/5 px-6 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]/70 cursor-not-allowed"
       >
         Out of stock
       </button>
@@ -166,7 +168,7 @@ export function AddToCartButton({
         type="button"
         disabled
         aria-describedby="personalisation-blocked"
-        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm text-[color:var(--storefront-on-accent,var(--paper-200))] opacity-40 cursor-not-allowed"
+        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-text,var(--ink-900))]/5 px-6 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]/70 cursor-not-allowed"
       >
         {blockedReason}
       </button>
@@ -178,7 +180,7 @@ export function AddToCartButton({
       <button
         type="button"
         disabled
-        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md bg-[color:var(--storefront-accent,var(--ink-900))] px-6 py-3 text-sm text-[color:var(--storefront-on-accent,var(--paper-200))] opacity-40 cursor-not-allowed"
+        className="mt-2 inline-flex w-fit items-center gap-2 rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-[color:var(--storefront-text,var(--ink-900))]/5 px-6 py-3 text-sm text-[color:var(--storefront-text,var(--ink-900))]/70 cursor-not-allowed"
       >
         {disabledReason ?? "Add to cart"}
       </button>

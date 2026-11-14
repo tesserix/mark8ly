@@ -99,8 +99,10 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
         ))}
         {media.length > 1 && (
           <>
+            {/* Fixed dark scrim, not the accent: on-accent is chosen for a solid
+                accent, and at 60% over a photo it went dark-on-dark. */}
             <p
-              className="absolute bottom-3 right-3 rounded-full bg-[color:var(--storefront-accent,var(--ink-900))]/60 px-2.5 py-1 text-xs text-[color:var(--storefront-on-accent,var(--paper-200))]"
+              className="absolute bottom-3 right-3 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white"
               style={{ fontFeatureSettings: '"tnum" 1, "lnum" 1' }}
               aria-live="polite"
               aria-atomic="true"
@@ -114,7 +116,7 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
                 onClick={togglePaused}
                 aria-pressed={isPaused}
                 aria-label={isPaused ? "Play image slideshow" : "Pause image slideshow"}
-                className="absolute bottom-3 left-3 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[color:var(--storefront-accent,var(--ink-900))]/60 text-[color:var(--storefront-on-accent,var(--paper-200))] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
+                className="absolute bottom-3 left-3 inline-flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]"
               >
                 {isPaused ? (
                   <Play className="size-4" aria-hidden="true" />

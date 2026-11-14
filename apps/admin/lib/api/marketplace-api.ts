@@ -498,6 +498,19 @@ export interface UpdateCategoryInput {
   featured?: boolean;
 }
 
+export async function deleteCategory(
+  storeId: string,
+  categoryId: string,
+  session: SessionHeaders,
+): Promise<MutationResult<true>> {
+  const res = await fetch(
+    `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/categories/${categoryId}`,
+    { method: "DELETE", cache: "no-store", headers: commonHeaders(session) },
+  );
+  if (res.ok) return { ok: true, data: true };
+  return { ok: false, error: await parseMutationError(res) };
+}
+
 export async function updateCategory(
   storeId: string,
   categoryId: string,

@@ -2,17 +2,17 @@
 
 // apps/admin/components/products/CategoriesFeaturedManager.tsx
 //
-// Minimal admin surface for renaming categories and toggling `featured`.
+// Minimal admin surface for renaming, deleting and featuring categories.
 // Featured categories surface on the storefront's /products filter
 // grid; the rest remain reachable via the full /categories browse page.
 // Per-row optimistic toggle with rollback on failure.
 
 import * as React from "react";
 import { useTransition } from "react";
-import { Star } from "lucide-react";
+import { Pencil, Star, Trash2 } from "lucide-react";
 
 import type { AdminCategory } from "@/lib/api/marketplace-api";
-import { renameCategory, setCategoryFeatured } from "@/app/(admin)/products/category-actions";
+import { deleteCategory, renameCategory, setCategoryFeatured } from "@/app/(admin)/products/category-actions";
 import { useToast } from "@/components/feedback/Toaster";
 
 export interface CategoriesFeaturedManagerProps {
@@ -32,6 +32,7 @@ export function CategoriesFeaturedManager({
 
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [draftName, setDraftName] = React.useState("");
+  const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
 
   const featuredCount = rows.filter((c) => c.featured).length;
 
@@ -55,6 +56,21 @@ export function CategoriesFeaturedManager({
         return;
       }
       toast.success("Category renamed", next);
+    });
+  };
+
+  const remove = (cat: AdminCategory): void => {
+    setConfirmingId(null);
+    setPendingId(cat.id);
+    startTransition(async () => {
+      const result = await deleteCategory(storeId, cat.id);
+      setPendingId(null);
+      if (!result.ok) {
+        toast.error("Couldn't delete", result.error ?? "Try again in a moment.");
+        return;
+      }
+      setRows((prev) => prev.filter((c) => c.id !== cat.id));
+      toast.success("Category deleted", cat.name);
     });
   };
 
@@ -156,15 +172,50 @@ export function CategoriesFeaturedManager({
                     ) : (
                       <span className="inline-flex items-center gap-3">
                         {cat.name}
-                        <button
-                          type="button"
-                          onClick={() => startRename(cat)}
-                          disabled={isPending}
-                          aria-label={`Rename ${cat.name}`}
-                          className="text-xs uppercase tracking-widest text-foreground-tertiary transition-colors hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50"
-                        >
-                          Rename
-                        </button>
+                        {confirmingId === cat.id ? (
+                          <span className="inline-flex items-center gap-2 text-xs">
+                            <span className="text-foreground-secondary">Delete?</span>
+                            <button
+                              type="button"
+                              onClick={() => remove(cat)}
+                              aria-label={`Confirm delete ${cat.name}`}
+                              className="rounded-md px-2 py-1 font-medium text-danger hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger"
+                            >
+                              Delete
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingId(null)}
+                              aria-label={`Keep ${cat.name}`}
+                              className="rounded-md px-2 py-1 text-foreground-secondary hover:bg-[color:var(--ink-900)]/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)]"
+                            >
+                              Keep
+                            </button>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => startRename(cat)}
+                              disabled={isPending}
+                              aria-label={`Rename ${cat.name}`}
+                              title="Rename"
+                              className={ICON_BUTTON}
+                            >
+                              <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingId(cat.id)}
+                              disabled={isPending}
+                              aria-label={`Delete ${cat.name}`}
+                              title="Delete"
+                              className={`${ICON_BUTTON} hover:text-danger`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </button>
+                          </span>
+                        )}
                       </span>
                     )}
                   </td>
@@ -208,3 +259,6 @@ export function CategoriesFeaturedManager({
     </div>
   );
 }
+
+const ICON_BUTTON =
+  "inline-flex h-8 w-8 items-center justify-center rounded-md text-foreground-tertiary transition-colors hover:bg-[color:var(--ink-900)]/5 hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:opacity-50";

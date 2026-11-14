@@ -227,7 +227,7 @@ func (r *gormRepository) GetByIDForStore(ctx context.Context, id, storeID, tenan
 		Preload("Options.Values").
 		Preload("Variants").
 		Preload("Variants.OptionValueLinks").
-		Preload("Media").
+		Preload("Media", orderMediaByPosition).
 		Where("id = ? AND store_id = ? AND tenant_id = ? AND deleted_at IS NULL", id, storeID, tenantID).
 		First(&p).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -299,7 +299,7 @@ func (r *gormRepository) ListAdmin(ctx context.Context, q ListAdminQuery) ([]Agg
 		Preload("Options.Values").
 		Preload("Variants").
 		Preload("Variants.OptionValueLinks").
-		Preload("Media").
+		Preload("Media", orderMediaByPosition).
 		Order("updated_at DESC").
 		Limit(q.PageSize).
 		Offset((q.Page - 1) * q.PageSize).
@@ -368,7 +368,7 @@ func (r *gormRepository) ListPublished(ctx context.Context, q ListPublishedQuery
 		Preload("Options").
 		Preload("Options.Values").
 		Preload("Variants").
-		Preload("Media").
+		Preload("Media", orderMediaByPosition).
 		Order("published_at DESC").
 		Limit(q.PageSize).
 		Offset((q.Page - 1) * q.PageSize).
@@ -422,7 +422,7 @@ func (r *gormRepository) ListPublishedBySlugs(ctx context.Context, storeID strin
 		Preload("Options").
 		Preload("Options.Values").
 		Preload("Variants").
-		Preload("Media").
+		Preload("Media", orderMediaByPosition).
 		Where("store_id = ? AND handle IN ? AND status = ? AND deleted_at IS NULL AND published_at IS NOT NULL AND published_at <= now()",
 			storeID, ordered, StatusActive).
 		Find(&rows).Error
@@ -465,7 +465,7 @@ func (r *gormRepository) GetPublishedByHandle(ctx context.Context, storeID, hand
 		Preload("Options.Values").
 		Preload("Variants").
 		Preload("Variants.OptionValueLinks").
-		Preload("Media").
+		Preload("Media", orderMediaByPosition).
 		Where("store_id = ? AND handle = ? AND status = ? AND deleted_at IS NULL AND published_at IS NOT NULL AND published_at <= now()",
 			storeID, handle, StatusActive).
 		First(&p).Error
@@ -582,4 +582,11 @@ func firstSKU(vs []Variant) string {
 		return ""
 	}
 	return vs[0].SKU
+}
+
+// orderMediaByPosition keeps media in merchant order. Without it Postgres
+// returns rows in heap order, which shifts whenever a row is updated (the
+// storefront showed the second image first after a reorder, 14 Nov).
+func orderMediaByPosition(db *gorm.DB) *gorm.DB {
+	return db.Order("position ASC, id ASC")
 }

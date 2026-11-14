@@ -5,8 +5,10 @@ import userEvent from "@testing-library/user-event";
 import type { AdminCategory } from "@/lib/api/marketplace-api";
 
 const renameCategory = vi.fn();
+const deleteCategory = vi.fn();
 vi.mock("@/app/(admin)/products/category-actions", () => ({
   renameCategory: (...a: unknown[]) => renameCategory(...a),
+  deleteCategory: (...a: unknown[]) => deleteCategory(...a),
   setCategoryFeatured: vi.fn(),
 }));
 const toastError = vi.fn();
@@ -47,5 +49,49 @@ describe("CategoriesFeaturedManager rename", () => {
 
     await waitFor(() => expect(toastError).toHaveBeenCalled());
     expect(screen.queryByText("Cars")).not.toBeInTheDocument();
+  });
+});
+
+describe("CategoriesFeaturedManager delete", () => {
+  beforeEach(() => {
+    deleteCategory.mockReset();
+    toastError.mockReset();
+  });
+
+  it("asks before deleting, then removes the row", async () => {
+    deleteCategory.mockResolvedValue({ ok: true });
+    render(<CategoriesFeaturedManager storeId="s1" categories={[car]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Delete car" }));
+    expect(deleteCategory).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Confirm delete car" }));
+    await waitFor(() => expect(deleteCategory).toHaveBeenCalledWith("s1", "c1"));
+    await waitFor(() => expect(screen.queryByText("car")).not.toBeInTheDocument());
+  });
+
+  it("cancel keeps the category", async () => {
+    render(<CategoriesFeaturedManager storeId="s1" categories={[car]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Delete car" }));
+    await userEvent.click(screen.getByRole("button", { name: "Keep car" }));
+    expect(deleteCategory).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Delete car" })).toBeInTheDocument();
+  });
+
+  it("keeps the row and explains when products still use it", async () => {
+    deleteCategory.mockResolvedValue({
+      ok: false,
+      error: "3 products are still in this category. Move them to another category first.",
+    });
+    render(<CategoriesFeaturedManager storeId="s1" categories={[car]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Delete car" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm delete car" }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        "Couldn't delete",
+        "3 products are still in this category. Move them to another category first.",
+      ),
+    );
+    expect(screen.getByText("car", { selector: "span" })).toBeInTheDocument();
   });
 });

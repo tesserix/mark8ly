@@ -4,8 +4,10 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import {
   createCategory,
+  deleteCategory as deleteCategoryApi,
   listCategories,
   updateCategory,
+  type MutationError,
 } from "@/lib/api/marketplace-api";
 
 export interface CreateCategoryResult {
@@ -170,4 +172,39 @@ export async function renameCategory(
 
   revalidatePath("/products/categories");
   return { ok: true };
+}
+
+// Delete a category. The API refuses while products or sub-categories
+// still use it; say which, so the merchant knows what to move first.
+export async function deleteCategory(
+  storeId: string,
+  categoryId: string,
+): Promise<ToggleFeaturedResult> {
+  const h = await headers();
+  const userId = h.get("x-session-user-id") ?? "";
+  const tenantId = h.get("x-session-tenant-id") ?? "";
+  if (!userId || !tenantId || !storeId || !categoryId) {
+    return { ok: false, error: "Session expired." };
+  }
+
+  const result = await deleteCategoryApi(storeId, categoryId, { userId, tenantId });
+  if (!result.ok) {
+    return { ok: false, error: deleteErrorMessage(result.error) };
+  }
+
+  revalidatePath("/products/categories");
+  return { ok: true };
+}
+
+function deleteErrorMessage(err: MutationError): string {
+  const count = (key: string) => Number(err.details?.[key] ?? 0);
+  if (err.code === "category_not_empty") {
+    const n = count("product_count");
+    return `${n === 1 ? "1 product is" : `${n} products are`} still in this category. Move them to another category first.`;
+  }
+  if (err.code === "category_has_children") {
+    const n = count("child_count");
+    return `${n === 1 ? "1 sub-category sits" : `${n} sub-categories sit`} under this category. Move or delete them first.`;
+  }
+  return err.message || "Failed to delete category.";
 }

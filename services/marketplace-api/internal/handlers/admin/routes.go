@@ -28,6 +28,7 @@ type Deps struct {
 	MediaHandler            *MediaHandler
 	PersonalisationHandler  *PersonalisationHandler
 	OrdersHandler           *OrdersHandler
+	InStoreHandler          *InStoreHandler // #1103 — in-store sale screen
 	ReturnsHandler          *ReturnsHandler
 	AbandonedCartsHandler   *AbandonedCartsHandler
 	StoresHandler           *StoresHandler
@@ -892,10 +893,18 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 
 		// P15 — white-label mobile-app add-on (§13.2, §14.2, §18.9). Pro
 		// plan + has_white_label_app_add_on=true gate is enforced inside
-		// the handler; no extra AuthzMiddleware needed because the creds
-		// are tenant-scoped at the appcreds.Service layer.
-		MountAppCredentialsRoutes(storeRoute, deps.AppCredentialsHandler)
-		MountAppAddOnRoutes(storeRoute, deps.AppAddOnHandler)
+		// the handler; the role gates are in the mount functions.
+		// In-store sales (#1103). can_sell_in_store: cashiers, and staff
+		// and above. The only routes a cashier can reach.
+		if deps.InStoreHandler != nil {
+			inStore := storeRoute.Group("/in-store", deps.AuthzMiddleware.RequireTenantRelation(authz.InStoreSellRole))
+			inStore.GET("/catalog", deps.InStoreHandler.Catalog)
+			inStore.POST("/sales", deps.InStoreHandler.RecordSale)
+			inStore.GET("/sales", deps.InStoreHandler.MySales)
+		}
+
+		MountAppCredentialsRoutes(storeRoute, deps.AppCredentialsHandler, deps.AuthzMiddleware)
+		MountAppAddOnRoutes(storeRoute, deps.AppAddOnHandler, deps.AuthzMiddleware)
 
 		// Trial billing — P5 deferred-charge card-add (§5.3).
 		if deps.TrialBillingHandler != nil {

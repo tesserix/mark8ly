@@ -49,6 +49,10 @@ const (
 	RoleAdmin  Role = "admin"
 	RoleStaff  Role = "staff"
 	RoleViewer Role = "viewer"
+
+	// RoleCashier sells in store and nothing else (#1104): a tenant member
+	// outside the owner > admin > staff > viewer chain.
+	RoleCashier Role = "cashier"
 )
 
 // rolePriority gives us an ordering over the role constants so
@@ -56,15 +60,16 @@ const (
 // tuple exists (e.g. future "staff promoted to admin" edge cases where
 // we intentionally leave the old tuple in place for audit trail).
 var rolePriority = map[Role]int{
-	RoleOwner:  4,
-	RoleAdmin:  3,
-	RoleStaff:  2,
-	RoleViewer: 1,
+	RoleOwner:   4,
+	RoleAdmin:   3,
+	RoleStaff:   2,
+	RoleViewer:  1,
+	RoleCashier: 0,
 }
 
 // allRoles is iterated by GetRole. Declared once so the order is
 // stable and we don't allocate on every call.
-var allRoles = []Role{RoleOwner, RoleAdmin, RoleStaff, RoleViewer}
+var allRoles = []Role{RoleOwner, RoleAdmin, RoleStaff, RoleViewer, RoleCashier}
 
 // Client is the operations platform-api needs from OpenFGA.
 //

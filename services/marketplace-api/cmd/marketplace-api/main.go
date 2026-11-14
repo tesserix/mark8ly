@@ -83,6 +83,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/handlers/testroutes"
 	"github.com/mark8ly/marketplace-api/internal/handlers/webhooks"
 	"github.com/mark8ly/marketplace-api/internal/health"
+	"github.com/mark8ly/marketplace-api/internal/instore"
 	"github.com/mark8ly/marketplace-api/internal/ipprivacy"
 	"github.com/mark8ly/marketplace-api/internal/journal"
 	"github.com/mark8ly/marketplace-api/internal/k8sprov"
@@ -1016,6 +1017,13 @@ func main() {
 
 		ordersHandler := admin.NewOrdersHandler(conn, orderSvc, orderRepo, orderDocSvc, log).
 			WithRefunds(refundCoordinator)
+		// In-store sales (#1103). Tax at the counter reuses checkout's tax
+		// path (TaxJar credential, seller region); only QuoteCounterTax is
+		// called on this handler, so it needs no coupon or gift-card service.
+		counterTax := storefront.NewCheckoutExtHandler(conn, orderSvc, nil, nil, apiKeyEncryptor, log).
+			WithSecretStore(carrierSecretStore)
+		inStoreHandler := admin.NewInStoreHandler(conn,
+			instore.NewService(conn, orderSvc, stockhold.NewRepository(), counterTax), fgaClient, log)
 		returnsHandler := admin.NewReturnsHandler(conn, returnSvc, returnRepo, orderRepo, orderSvc, log).
 			WithRefunds(refundCoordinator)
 		abandonedCartsHandler := admin.NewAbandonedCartsHandler(abandonedCartSvc, log)
@@ -1664,6 +1672,7 @@ func main() {
 			MediaHandler:                mediaHandler,
 			PersonalisationHandler:      personalisationHandler,
 			OrdersHandler:               ordersHandler,
+			InStoreHandler:              inStoreHandler,
 			ReturnsHandler:              returnsHandler,
 			AbandonedCartsHandler:       abandonedCartsHandler,
 			StoresHandler:               storesHandler,

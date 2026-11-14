@@ -3,6 +3,7 @@ package storefront
 import (
 	"context"
 	"errors"
+	"github.com/mark8ly/marketplace-api/internal/checkoutcore"
 	"strings"
 	"testing"
 
@@ -15,16 +16,16 @@ import (
 // These tests pin the catalog, not the request, as the source of truth.
 
 type fakePricer struct {
-	prices map[string]catalogPrice
+	prices map[string]checkoutcore.CatalogPrice
 	calls  []string
 }
 
-func (f *fakePricer) PriceFor(_ context.Context, storeID string, variantID string) (catalogPrice, error) {
+func (f *fakePricer) PriceFor(_ context.Context, storeID string, variantID string) (checkoutcore.CatalogPrice, error) {
 	key := storeID + "|v:" + variantID
 	f.calls = append(f.calls, key)
 	p, ok := f.prices[key]
 	if !ok {
-		return catalogPrice{}, errCatalogItemNotFound
+		return checkoutcore.CatalogPrice{}, checkoutcore.ErrCatalogItemNotFound
 	}
 	return p, nil
 }
@@ -32,7 +33,7 @@ func (f *fakePricer) PriceFor(_ context.Context, storeID string, variantID strin
 func strp(s string) *string { return &s }
 
 func TestRepriceItems_OverridesTamperedUnitPrice(t *testing.T) {
-	p := &fakePricer{prices: map[string]catalogPrice{
+	p := &fakePricer{prices: map[string]checkoutcore.CatalogPrice{
 		"store-1|v:var-1": {Amount: decimal.RequireFromString("49.95"), CurrencyCode: "AUD"},
 	}}
 	items := []CheckoutItemRequest{{
@@ -59,7 +60,7 @@ func TestRepriceItems_OverridesTamperedUnitPrice(t *testing.T) {
 }
 
 func TestRepriceItems_ScopesLookupToTheStore(t *testing.T) {
-	p := &fakePricer{prices: map[string]catalogPrice{
+	p := &fakePricer{prices: map[string]checkoutcore.CatalogPrice{
 		"store-1|v:var-1": {Amount: decimal.NewFromInt(10), CurrencyCode: "AUD"},
 	}}
 	items := []CheckoutItemRequest{{VariantID: strp("var-1"), Quantity: 1}}
@@ -73,22 +74,22 @@ func TestRepriceItems_ScopesLookupToTheStore(t *testing.T) {
 }
 
 func TestRepriceItems_RejectsItemNotInCatalog(t *testing.T) {
-	p := &fakePricer{prices: map[string]catalogPrice{}}
+	p := &fakePricer{prices: map[string]checkoutcore.CatalogPrice{}}
 	items := []CheckoutItemRequest{{VariantID: strp("ghost"), Quantity: 1}}
 
 	err := repriceItems(context.Background(), p, "store-1", items)
 	if err == nil {
 		t.Fatal("want an error for an item with no catalog row; got nil")
 	}
-	if !errors.Is(err, errCatalogItemNotFound) {
-		t.Errorf("err = %v, want errCatalogItemNotFound", err)
+	if !errors.Is(err, checkoutcore.ErrCatalogItemNotFound) {
+		t.Errorf("err = %v, want checkoutcore.ErrCatalogItemNotFound", err)
 	}
 }
 
 func TestRepriceItems_RejectsItemWithNoVariant(t *testing.T) {
 	// Price lives on product_variants only — `products` has no price column —
 	// so a product-only line is not priceable and must not be sold.
-	p := &fakePricer{prices: map[string]catalogPrice{}}
+	p := &fakePricer{prices: map[string]checkoutcore.CatalogPrice{}}
 	for name, items := range map[string][]CheckoutItemRequest{
 		"no ids at all":    {{Quantity: 1}},
 		"product id only":  {{ProductID: strp("prod-1"), Quantity: 1}},
@@ -104,7 +105,7 @@ func TestRepriceItems_RejectsItemWithNoVariant(t *testing.T) {
 }
 
 func TestRepriceItems_PricesFromTheVariantNotTheProduct(t *testing.T) {
-	p := &fakePricer{prices: map[string]catalogPrice{
+	p := &fakePricer{prices: map[string]checkoutcore.CatalogPrice{
 		"store-1|v:var-1": {Amount: decimal.NewFromInt(25), CurrencyCode: "AUD"},
 	}}
 	items := []CheckoutItemRequest{{
@@ -124,7 +125,7 @@ func TestRepriceItems_OverridesTamperedTaxFields(t *testing.T) {
 	// it by 100 to get the applied rate. Sending 0.01 would shave tax to
 	// nearly nothing, so it must come from the catalog like the price does.
 	catRate := decimal.RequireFromString("10")
-	p := &fakePricer{prices: map[string]catalogPrice{
+	p := &fakePricer{prices: map[string]checkoutcore.CatalogPrice{
 		"store-1|v:var-1": {
 			Amount:          decimal.NewFromInt(100),
 			CurrencyCode:    "AUD",
@@ -153,7 +154,7 @@ func TestRepriceItems_OverridesTamperedTaxFields(t *testing.T) {
 
 func TestRepriceItems_ClearsTaxFieldsTheCatalogDoesNotSet(t *testing.T) {
 	// A product with no override must not inherit one the shopper invented.
-	p := &fakePricer{prices: map[string]catalogPrice{
+	p := &fakePricer{prices: map[string]checkoutcore.CatalogPrice{
 		"store-1|v:var-1": {Amount: decimal.NewFromInt(100), CurrencyCode: "AUD"},
 	}}
 	tampered := decimal.RequireFromString("0.01")

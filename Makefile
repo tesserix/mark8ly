@@ -152,6 +152,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/handlers/webhooks/... \
 	    ./internal/idempotency/... \
 	    ./internal/inbox/... \
+	    ./internal/instore/... \
 	    ./internal/journal/... \
 	    ./internal/notification/... \
 	    ./internal/order/... \

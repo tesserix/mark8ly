@@ -45,6 +45,11 @@ type Store struct {
 	// portal tokens (§15.4, migration 058). Generated at migration time;
 	// lazily regenerated if empty via customerportal.GenerateSecret().
 	StorefrontCustomerPortalSecret string `gorm:"column:storefront_customer_portal_secret;type:char(64)" json:"-"`
+
+	// CashierDiscountsEnabled lets cashiers give discounts and ring up custom
+	// prices at the counter (#1104). Owned here, not synced from
+	// platform-api, so it is absent from storeUpsertAssignments.
+	CashierDiscountsEnabled bool `gorm:"column:cashier_discounts_enabled;not null;default:false" json:"cashier_discounts_enabled"`
 }
 
 func (Store) TableName() string { return "stores" }

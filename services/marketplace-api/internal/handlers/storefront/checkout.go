@@ -7,6 +7,7 @@ package storefront
 
 import (
 	"errors"
+	"github.com/mark8ly/marketplace-api/internal/checkoutcore"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -230,7 +231,7 @@ func (h *CheckoutHandler) Checkout(c *gin.Context) {
 		lines := stockLinesFromItems(req.Items)
 		cartToken := cartTokenForCheckout(c, req.CartToken)
 		in.WithinTx = func(tx *gorm.DB, o *order.Order) error {
-			return commitStock(c.Request.Context(), tx, h.stockHolds, cartToken, o.ID.String(), storeID.String(), lines)
+			return checkoutcore.CommitStock(c.Request.Context(), tx, h.stockHolds, cartToken, o.ID.String(), storeID.String(), lines)
 		}
 	}
 
@@ -310,7 +311,7 @@ func (h *CheckoutHandler) respondErr(c *gin.Context, err error) {
 	// shopper can act on it: remove that line and retry. It is checked
 	// first because it travels up through order.Create's transaction as an
 	// ordinary error and would otherwise fall through to internal_error.
-	var oos outOfStockError
+	var oos checkoutcore.OutOfStockError
 	if errors.As(err, &oos) {
 		c.AbortWithStatusJSON(http.StatusConflict, map[string]any{
 			"error":      "out_of_stock",
@@ -352,20 +353,7 @@ func (h *CheckoutHandler) respondErr(c *gin.Context, err error) {
 
 // storePrefixFromSlug derives the 3-char order number prefix from a store
 // slug. Mirrors the admin handler's helper.
-func storePrefixFromSlug(slug string) string {
-	upper := strings.ToUpper(slug)
-	out := make([]byte, 0, 3)
-	for i := 0; i < len(upper) && len(out) < 3; i++ {
-		c := upper[i]
-		if (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
-			out = append(out, c)
-		}
-	}
-	if len(out) == 3 {
-		return string(out)
-	}
-	return "STR"
-}
+func storePrefixFromSlug(slug string) string { return order.StorePrefix(slug) }
 
 func checkoutToServiceItems(items []CheckoutItemRequest) []order.OrderItem {
 	out := make([]order.OrderItem, 0, len(items))

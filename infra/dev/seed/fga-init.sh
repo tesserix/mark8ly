@@ -69,8 +69,22 @@ MODEL_JSON='{
             ]
           }
         },
+        "cashier": { "this": {} },
         "member": {
-          "computedUserset": { "relation": "viewer" }
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "viewer" } },
+              { "computedUserset": { "relation": "cashier" } }
+            ]
+          }
+        },
+        "can_sell_in_store": {
+          "union": {
+            "child": [
+              { "computedUserset": { "relation": "cashier" } },
+              { "computedUserset": { "relation": "staff" } }
+            ]
+          }
         },
         "can_view_settings": {
           "computedUserset": { "relation": "viewer" }
@@ -90,7 +104,8 @@ MODEL_JSON='{
           "owner":  { "directly_related_user_types": [{ "type": "user" }] },
           "admin":  { "directly_related_user_types": [{ "type": "user" }] },
           "staff":  { "directly_related_user_types": [{ "type": "user" }] },
-          "viewer": { "directly_related_user_types": [{ "type": "user" }] }
+          "viewer": { "directly_related_user_types": [{ "type": "user" }] },
+          "cashier": { "directly_related_user_types": [{ "type": "user" }] }
         }
       }
     },

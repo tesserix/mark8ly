@@ -101,6 +101,25 @@ type CreateInput struct {
 	// aggregate before opening a transaction, and the discount was consumed
 	// by the original call.
 	WithinTx func(tx *gorm.DB, o *Order) error
+
+	// InStore marks an in-store sale (#1102). Nil for every online order.
+	InStore *InStoreDetails
+}
+
+// Order channels.
+const (
+	ChannelOnline  = "online"
+	ChannelInStore = "in_store"
+)
+
+// InStoreDetails records how an in-store sale was paid and who rang it up.
+// Payment happened outside mark8ly (the seller's own EFTPOS terminal, cash,
+// a bank transfer), so nothing here is charged.
+type InStoreDetails struct {
+	PaymentMethod      string
+	PaymentMethodLabel *string
+	SoldByUserID       string
+	CashTendered       *decimal.Decimal
 }
 
 // CreateResult holds the persisted order plus a Reused flag for the
@@ -162,11 +181,22 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 		ShippingCarrier:   in.ShippingCarrier,
 		Notes:             in.Notes,
 		PlacedAt:          in.PlacedAt,
+		Channel:           ChannelOnline,
+	}
+	if in.InStore != nil {
+		o.Channel = ChannelInStore
+		o.PaymentMethod = &in.InStore.PaymentMethod
+		o.PaymentMethodLabel = in.InStore.PaymentMethodLabel
+		o.SoldByUserID = &in.InStore.SoldByUserID
+		o.CashTendered = in.InStore.CashTendered
 	}
 
 	addrs := []OrderAddress{in.Shipping, in.Billing}
 	addrs[0].Kind = "shipping"
 	addrs[1].Kind = "billing"
+	if in.InStore != nil {
+		addrs = nil // a counter sale has no address
+	}
 
 	initialEvent := OrderEvent{
 		Kind: string(EventKindCreated),

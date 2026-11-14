@@ -117,3 +117,31 @@ func TestFakeClient_Revoke(t *testing.T) {
 		t.Fatalf("GetRole after revoke = %q; want empty", role)
 	}
 }
+
+// A cashier is a member who can only sell (#1104): outside the
+// owner > admin > staff > viewer chain, so no ranked gate admits them.
+func TestFakeClient_Cashier(t *testing.T) {
+	f := NewFakeClient()
+	f.Grant("c1", RoleCashier, "t1")
+	f.Grant("s1", RoleStaff, "t1")
+	ctx := context.Background()
+
+	want := map[string]bool{
+		"cashier": true, "member": true, "can_sell_in_store": true,
+		"viewer": false, "staff": false, "admin": false, "owner": false,
+	}
+	for rel, exp := range want {
+		if ok, err := f.Check(ctx, "c1", rel, "t1"); err != nil || ok != exp {
+			t.Errorf("cashier Check(%q) = %v, %v; want %v", rel, ok, err, exp)
+		}
+	}
+	if ok, _ := f.Check(ctx, "s1", "can_sell_in_store", "t1"); !ok {
+		t.Error("staff must be able to sell in store")
+	}
+	if ok, _ := f.Check(ctx, "s1", "cashier", "t1"); ok {
+		t.Error("staff is not a cashier")
+	}
+	if role, _ := f.GetRole(ctx, "c1", "t1"); role != RoleCashier {
+		t.Errorf("GetRole = %q, want cashier", role)
+	}
+}

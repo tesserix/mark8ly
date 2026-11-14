@@ -10,6 +10,7 @@ package storefront
 
 import (
 	"context"
+	"github.com/mark8ly/marketplace-api/internal/checkoutcore"
 	"strings"
 	"testing"
 	"time"
@@ -31,7 +32,7 @@ import (
 // (and therefore strictly increasing created_at) would stay green against a
 // production-broken assumption that order_items come back in line order.
 // Returns (orderID, []orderItemID) in the SAME order as lines.
-func seedOrderWithItems(t *testing.T, db *gorm.DB, storeID string, lines []stockLine) (string, []string) {
+func seedOrderWithItems(t *testing.T, db *gorm.DB, storeID string, lines []checkoutcore.Line) (string, []string) {
 	t.Helper()
 	var tenantID string
 	require.NoError(t, db.Raw(`SELECT tenant_id FROM stores WHERE id = ?`, storeID).Row().Scan(&tenantID))
@@ -93,11 +94,11 @@ func TestCommitStock_StoreWithNoWarehousesFailsLoudlyInsteadOfUsingASentinel(t *
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
 		 VALUES (?, ?, 5, now())`, variantID, orphan).Error)
 
-	lines := []stockLine{{VariantID: variantID, Quantity: 2}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 2}}
 	orderID, _ := seedOrderWithItems(t, db, storeID, lines)
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	})
 	require.Error(t, err, "a store with no warehouse cannot allocate, and must say so")
@@ -120,11 +121,11 @@ func TestCommitStock_AllocatesAcrossWarehousesAndRecordsThem(t *testing.T) {
 		 VALUES (?, ?, 3, now()), (?, ?, 4, now())`,
 		variantID, whA, variantID, whB).Error)
 
-	lines := []stockLine{{VariantID: variantID, Quantity: 5}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 5}}
 	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	}))
 
@@ -158,11 +159,11 @@ func TestCommitStock_TwoLinesOfOneVariantDoNotUnderHold(t *testing.T) {
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
 		 VALUES (?, ?, 6, now())`, variantID, whA).Error)
 
-	lines := []stockLine{{VariantID: variantID, Quantity: 2}, {VariantID: variantID, Quantity: 3}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 2}, {VariantID: variantID, Quantity: 3}}
 	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	}))
 
@@ -186,11 +187,11 @@ func TestCommitStock_UnfillableOrderFailsAndTakesNoStock(t *testing.T) {
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
 		 VALUES (?, ?, 2, now())`, variantID, whA).Error)
 
-	lines := []stockLine{{VariantID: variantID, Quantity: 9}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 9}}
 	orderID, _ := seedOrderWithItems(t, db, storeID, lines)
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	})
 	require.Error(t, err, "an order no combination of warehouses can fill must fail the transaction")
@@ -248,11 +249,11 @@ func TestCommitStock_RecordsAllocationsForTwoDifferentVariantsAcrossWarehouses(t
 
 	// X: 2 at A, 1 at B — needs both. Y: 1 at A, 2 at B — needs both too,
 	// so both variants' assignments interleave across the same warehouses.
-	lines := []stockLine{{VariantID: variantX, Quantity: 3}, {VariantID: variantY, Quantity: 3}}
+	lines := []checkoutcore.Line{{VariantID: variantX, Quantity: 3}, {VariantID: variantY, Quantity: 3}}
 	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	}))
 
@@ -296,11 +297,11 @@ func TestCommitStock_TwoLinesOfSameVariantDifferentQuantitiesAttributeCorrectly(
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
 		 VALUES (?, ?, 10, now())`, variantID, whA).Error)
 
-	lines := []stockLine{{VariantID: variantID, Quantity: 2}, {VariantID: variantID, Quantity: 5}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 2}, {VariantID: variantID, Quantity: 5}}
 	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	}))
 
@@ -326,11 +327,11 @@ func TestCommitStock_ContinuePolicyWithNoStorageSucceedsOnAllocationPath(t *test
 		`UPDATE product_variants SET inventory_policy = 'continue' WHERE id = ?`, variantID).Error)
 	// Deliberately no variant_stock row for variantID anywhere.
 
-	lines := []stockLine{{VariantID: variantID, Quantity: 3}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 3}}
 	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	}))
 
@@ -377,11 +378,11 @@ func TestCommitStock_TwoLinesFilledAtSameWarehouseDoNotDoubleCountTheBreakdown(t
 		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at)
 		 VALUES (?, ?, 5, now())`, variantID, whA).Error)
 
-	lines := []stockLine{{VariantID: variantID, Quantity: 2}, {VariantID: variantID, Quantity: 3}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 2}, {VariantID: variantID, Quantity: 3}}
 	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	}), "a cart the store can fully fill must not see out_of_stock")
 
@@ -435,11 +436,11 @@ func TestCommitStock_StaleCartHoldAtAnUnusedLocationIsReleasedNotDoubleCommitted
 		`UPDATE variant_stock SET quantity = 0 WHERE variant_id = ? AND location_id = ?`,
 		variantID, whB).Error)
 
-	lines := []stockLine{{VariantID: variantID, Quantity: 2}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 2}}
 	orderID, itemIDs := seedOrderWithItems(t, db, storeID, lines)
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, holds, cart, orderID, storeID, lines)
+		return checkoutcore.CommitStock(context.Background(), tx, holds, cart, orderID, storeID, lines)
 	}), "the stale sentinel hold must be released, not decremented a second time")
 
 	require.Equal(t, 0, stockUnitsAt(t, db, variantID, whB),
@@ -492,10 +493,10 @@ func TestCommitStock_ItemWithNilVariantIDIsIgnoredNotAFailure(t *testing.T) {
 		stockedItemID, orderID, variantID, unstockedItemID, orderID).Error)
 
 	// Mirrors stockLinesFromItems: the nil-variant item produced no line.
-	lines := []stockLine{{VariantID: variantID, Quantity: 2}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 2}}
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	}), "a variantless item must not turn a paid checkout into a 500")
 
@@ -537,7 +538,7 @@ func TestCommitStock_UppercaseVariantIDStillMatchesAvailability(t *testing.T) {
 	orderID, _ := seedOrderWithItems(t, db, storeID, lines)
 
 	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	}), "an uppercase client-supplied variant id must not produce a false out_of_stock")
 
@@ -565,11 +566,11 @@ func TestCommitStock_ArchivedWarehouseIsNotAllocatedTo(t *testing.T) {
 		 VALUES (?, ?, 3, now()), (?, ?, 4, now())`,
 		variantID, live, variantID, archived).Error)
 
-	lines := []stockLine{{VariantID: variantID, Quantity: 5}}
+	lines := []checkoutcore.Line{{VariantID: variantID, Quantity: 5}}
 	orderID, _ := seedOrderWithItems(t, db, storeID, lines)
 
 	err := db.Transaction(func(tx *gorm.DB) error {
-		return commitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
+		return checkoutcore.CommitStock(context.Background(), tx, stockhold.NewRepository(), uuid.NewString(),
 			orderID, storeID, lines)
 	})
 	require.Error(t, err,

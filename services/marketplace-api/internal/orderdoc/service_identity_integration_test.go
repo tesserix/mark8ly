@@ -66,3 +66,47 @@ func TestIntegration_BuildInput_CarriesStoreSenderIdentity(t *testing.T) {
 		"the envelope's Reply-To comes from this")
 	require.Equal(t, tenantID.String(), mailer.last.TenantID)
 }
+
+// An in-store sale without a receipt email stores customer_email = ”
+// (#1102). Every document send must refuse it rather than mail nobody.
+func TestIntegration_SendReceipt_EmptyRecipientSendsNothing(t *testing.T) {
+	tx := testdb.NewTx(t)
+	ctx := context.Background()
+
+	tenantID, storeID := uuid.New(), uuid.New()
+	testdb.SeedStore(t, tx, tenantID, storeID)
+	orderID := uuid.New()
+	require.NoError(t, tx.Exec(`
+		INSERT INTO orders (id, tenant_id, store_id, order_number, idempotency_key,
+		                    customer_email, subtotal, grand_total, currency_code, channel)
+		VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, 'in_store')`,
+		orderID, tenantID, storeID, "ORD-1102-1", uuid.NewString(), "42.00", "42.00", "AUD").Error)
+
+	mailer := &countingMailer{}
+	svc := NewService(tx, mailer, order.NewRepository(),
+		branding.NewService(branding.ServiceConfig{DB: tx, Repo: branding.NewRepository()}),
+		"https://{slug}.mark8ly.com")
+
+	for name, send := range map[string]func() error{
+		"receipt": func() error { return svc.SendReceipt(ctx, orderID) },
+		"invoice": func() error { return svc.SendInvoice(ctx, orderID) },
+	} {
+		err := send()
+		require.True(t, IsMissingCustomerEmail(err), "%s: err = %v, want missing-customer-email", name, err)
+	}
+	require.Zero(t, mailer.calls, "nothing may be handed to the mailer")
+}
+
+type countingMailer struct{ calls int }
+
+func (m *countingMailer) SendInvoice(context.Context, DocumentInput) error { m.calls++; return nil }
+func (m *countingMailer) SendReceipt(context.Context, DocumentInput) error { m.calls++; return nil }
+func (m *countingMailer) SendCancellation(context.Context, DocumentInput) error {
+	m.calls++
+	return nil
+}
+func (m *countingMailer) SendRefund(context.Context, DocumentInput) error { m.calls++; return nil }
+func (m *countingMailer) SendShipmentDispatched(context.Context, DocumentInput) error {
+	m.calls++
+	return nil
+}

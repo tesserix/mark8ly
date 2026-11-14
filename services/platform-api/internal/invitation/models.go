@@ -54,7 +54,7 @@ const (
 // exactly one owner, transferred only through a dedicated flow.
 func isAllowedTenantRole(role string) bool {
 	switch role {
-	case "admin", "staff", "viewer":
+	case "admin", "staff", "viewer", "cashier":
 		return true
 	}
 	return false

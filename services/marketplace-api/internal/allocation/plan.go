@@ -22,7 +22,7 @@ var ErrInvalidInput = errors.New("allocation: invalid input")
 //
 // It carries the variant because a bare failure is unactionable on a cart of
 // six items — the storefront needs to know which line to mark, exactly as
-// storefront's outOfStockError does.
+// checkoutcore.OutOfStockError does.
 type CannotFillError struct {
 	VariantID string
 	Short     int

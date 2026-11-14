@@ -605,7 +605,9 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 
 		// Push tokens
 		if deps.PushTokenHandler != nil {
-			pushTokens := storeRoute.Group("/push-tokens")
+			// Viewer, not membership alone: a registered token receives the
+			// store's order notifications, which a cashier must not (#1104).
+			pushTokens := storeRoute.Group("/push-tokens", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleViewer))
 			{
 				pushTokens.POST("", deps.PushTokenHandler.Register)
 				pushTokens.DELETE("/:tokenId", deps.PushTokenHandler.Delete)

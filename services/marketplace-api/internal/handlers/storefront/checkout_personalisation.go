@@ -23,6 +23,7 @@ package storefront
 import (
 	"context"
 	"fmt"
+	"github.com/mark8ly/marketplace-api/internal/checkoutcore"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -453,7 +454,7 @@ func (r personalisationResolver) productForVariant(
 		Where("v.id = ? AND v.store_id = ? AND v.deleted_at IS NULL", variantID, storeID).
 		Take(&productID).Error
 	if err != nil {
-		return "", errCatalogItemNotFound
+		return "", checkoutcore.ErrCatalogItemNotFound
 	}
 	return productID, nil
 }

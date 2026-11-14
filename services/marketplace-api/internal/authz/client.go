@@ -43,6 +43,15 @@ const (
 	RoleAdmin  Role = "admin"
 	RoleStaff  Role = "staff"
 	RoleViewer Role = "viewer"
+
+	// RoleCashier can only sell in store (#1104). It is a tenant member but
+	// sits outside the owner > admin > staff > viewer chain, so every ranked
+	// gate keeps denying it.
+	RoleCashier Role = "cashier"
+
+	// RelationCanSellInStore is the FGA permission behind the in-store sale
+	// routes: cashier, or staff and above.
+	RelationCanSellInStore Role = "can_sell_in_store"
 )
 
 var rolePriority = map[Role]int{
@@ -50,6 +59,8 @@ var rolePriority = map[Role]int{
 	RoleAdmin:  3,
 	RoleStaff:  2,
 	RoleViewer: 1,
+	// Zero: never outranks anything, and Grant over a real role is a no-op.
+	RoleCashier: 0,
 }
 
 // HigherOrEqual reports whether r outranks (or equals) other in the role
@@ -60,7 +71,7 @@ func (r Role) HigherOrEqual(other Role) bool {
 
 // allRoles is iterated by GetRole. Stable order so the highest match
 // wins on the first hit.
-var allRoles = []Role{RoleOwner, RoleAdmin, RoleStaff, RoleViewer}
+var allRoles = []Role{RoleOwner, RoleAdmin, RoleStaff, RoleViewer, RoleCashier}
 
 // Client is the read-only operations marketplace-api needs from OpenFGA.
 type Client interface {

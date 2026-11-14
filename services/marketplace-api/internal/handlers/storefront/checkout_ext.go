@@ -1272,6 +1272,42 @@ func (h *CheckoutExtHandler) QuoteTax(
 		return nil, fmt.Errorf("tax calculator init: %w", err)
 	}
 
+	seller := h.sellerAddress(ctx, store)
+
+	// H10 fix: route through tax.Service.CalculateOrderTax instead of
+	// calling calc.Calculate directly, so validateBreakdown runs.
+	taxSvc := tax.NewService()
+	breakdown, err := taxSvc.CalculateOrderTax(
+		ctx,
+		store.CountryCode,
+		seller,
+		dest,
+		taxItems,
+		shippingTotal,
+		store.CurrencyCode,
+		calc,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("tax calculation: %w", err)
+	}
+
+	return breakdown, nil
+}
+
+// QuoteCounterTax is QuoteTax for a sale made at the seller's own counter
+// or stall: the goods never leave the seller's region, so the destination
+// is the seller's address (intra-state for India GST).
+func (h *CheckoutExtHandler) QuoteCounterTax(
+	ctx context.Context,
+	store *stores.Store,
+	sc *country.SupportedCountry,
+	taxItems []tax.TaxableItem,
+) (*tax.TaxBreakdown, error) {
+	return h.QuoteTax(ctx, store, sc, taxItems, h.sellerAddress(ctx, store), decimal.Zero)
+}
+
+// sellerAddress is the store's own tax origin.
+func (h *CheckoutExtHandler) sellerAddress(ctx context.Context, store *stores.Store) tax.Address {
 	// C5 fix: populate SellerAddress.Region from the store's warehouse config
 	// so India GST can determine intra-state vs inter-state correctly.
 	//
@@ -1292,28 +1328,7 @@ func (h *CheckoutExtHandler) QuoteTax(
 				"store_id", store.ID, "warehouse_id", *cfg.WarehouseID, "err", whErr)
 		}
 	}
-
-	// H10 fix: route through tax.Service.CalculateOrderTax instead of
-	// calling calc.Calculate directly, so validateBreakdown runs.
-	taxSvc := tax.NewService()
-	breakdown, err := taxSvc.CalculateOrderTax(
-		ctx,
-		store.CountryCode,
-		tax.Address{
-			CountryCode: store.CountryCode,
-			Region:      sellerRegion,
-		},
-		dest,
-		taxItems,
-		shippingTotal,
-		store.CurrencyCode,
-		calc,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("tax calculation: %w", err)
-	}
-
-	return breakdown, nil
+	return tax.Address{CountryCode: store.CountryCode, Region: sellerRegion}
 }
 
 // createPaymentIntent provisions the provider-side payment object and

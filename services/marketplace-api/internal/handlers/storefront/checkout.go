@@ -353,20 +353,7 @@ func (h *CheckoutHandler) respondErr(c *gin.Context, err error) {
 
 // storePrefixFromSlug derives the 3-char order number prefix from a store
 // slug. Mirrors the admin handler's helper.
-func storePrefixFromSlug(slug string) string {
-	upper := strings.ToUpper(slug)
-	out := make([]byte, 0, 3)
-	for i := 0; i < len(upper) && len(out) < 3; i++ {
-		c := upper[i]
-		if (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
-			out = append(out, c)
-		}
-	}
-	if len(out) == 3 {
-		return string(out)
-	}
-	return "STR"
-}
+func storePrefixFromSlug(slug string) string { return order.StorePrefix(slug) }
 
 func checkoutToServiceItems(items []CheckoutItemRequest) []order.OrderItem {
 	out := make([]order.OrderItem, 0, len(items))

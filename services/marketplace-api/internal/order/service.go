@@ -194,6 +194,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 	addrs := []OrderAddress{in.Shipping, in.Billing}
 	addrs[0].Kind = "shipping"
 	addrs[1].Kind = "billing"
+	if in.InStore != nil {
+		addrs = nil // a counter sale has no address
+	}
 
 	initialEvent := OrderEvent{
 		Kind: string(EventKindCreated),

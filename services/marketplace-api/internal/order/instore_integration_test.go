@@ -58,3 +58,24 @@ func TestIntegration_OrderCreate_DefaultsOnline(t *testing.T) {
 	require.Nil(t, got.PaymentMethod)
 	require.Nil(t, got.SoldByUserID)
 }
+
+// A counter sale has no address; order_addresses requires a country, so
+// in-store orders carry no address rows rather than placeholder ones.
+func TestIntegration_OrderCreate_InStoreHasNoAddresses(t *testing.T) {
+	ctx := context.Background()
+	db := testdb.NewDB(t, withinTxTruncateTables...)
+	storeID, tenantID := uuid.New(), uuid.New()
+	seedStore(t, db, storeID)
+	svc := order.NewService(db, order.NewRepository(), outbox.NewRepository(db))
+
+	in := baseCreateInput(storeID, tenantID, "instore-noaddr-"+uuid.NewString())
+	in.Shipping, in.Billing = order.OrderAddress{}, order.OrderAddress{}
+	in.InStore = &order.InStoreDetails{PaymentMethod: "card_external", SoldByUserID: "u-1"}
+
+	res, err := svc.Create(ctx, in)
+	require.NoError(t, err)
+	require.Empty(t, res.Addrs)
+	var n int64
+	require.NoError(t, db.Table("order_addresses").Where("order_id = ?", res.Order.ID).Count(&n).Error)
+	require.Zero(t, n)
+}

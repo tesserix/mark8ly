@@ -102,3 +102,20 @@ func FormatReturnNumber(prefix string, day time.Time, seq int64) string {
 		seq,
 	)
 }
+
+// StorePrefix is the three-character order-number prefix for a store slug:
+// its first three letters or digits, upper-cased, or "STR".
+func StorePrefix(slug string) string {
+	upper := strings.ToUpper(slug)
+	out := make([]byte, 0, 3)
+	for i := 0; i < len(upper) && len(out) < 3; i++ {
+		c := upper[i]
+		if (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			out = append(out, c)
+		}
+	}
+	if len(out) == 3 {
+		return string(out)
+	}
+	return "STR"
+}

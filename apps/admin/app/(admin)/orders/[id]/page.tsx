@@ -126,12 +126,16 @@ export default async function OrderDetailPage({ params }: PageProps) {
               <OutsideRefundForm order={order} />
             </section>
           ) : null}
-          <div className="border-t border-border-subtle pt-8">
-            <OrderDocumentsPanel
-              order={order}
-              shipmentStatus={shipment?.status ?? null}
-            />
-          </div>
+          {/* Invoice-on-accept and receipt-on-delivery are online lifecycles;
+              an in-store sale has the Receipt card above instead. */}
+          {showsShipping(order) ? (
+            <div className="border-t border-border-subtle pt-8">
+              <OrderDocumentsPanel
+                order={order}
+                shipmentStatus={shipment?.status ?? null}
+              />
+            </div>
+          ) : null}
         </aside>
       </div>
     </main>

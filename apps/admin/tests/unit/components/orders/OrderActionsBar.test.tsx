@@ -31,3 +31,19 @@ describe("OrderActionsBar refunds", () => {
     expect(screen.queryByRole("button", { name: /issue refund/i })).not.toBeInTheDocument();
   });
 });
+
+describe("OrderActionsBar fully refunded note", () => {
+  const refunded = (channel: AdminOrder["channel"]) => ({ ...order(channel), payment_status: "refunded" as const });
+
+  it("tells an online merchant to cancel to restock", () => {
+    render(<OrderActionsBar order={refunded("online")} shipmentStatus={null} />);
+    expect(screen.getByText(/cancel the order to close it out/i)).toBeInTheDocument();
+  });
+
+  // The outside refund already put back what the seller chose; cancelling would not.
+  it("does not tell an in-store seller to cancel to restock", () => {
+    render(<OrderActionsBar order={refunded("in_store")} shipmentStatus={null} />);
+    expect(screen.queryByText(/cancel the order/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/put back in stock when the refund was recorded/i)).toBeInTheDocument();
+  });
+});

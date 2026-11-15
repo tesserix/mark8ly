@@ -36,17 +36,20 @@ export function fitTextSize(value: string, font: string | undefined): string {
 }
 
 /**
- * Outline colour that keeps the buyer's text readable on any photo: white
- * round a dark or saturated colour, near-black round a light one. Undefined
- * when there is no parseable hex, so default ink is left as it is.
+ * How the buyer's text sits on the photo so it reads as printed ink, not a
+ * sticker. Dark ink multiplies into the surface, picking up its grain and
+ * shading; light ink would vanish that way, so it sits on top, slightly
+ * sheer. No parseable hex means default (dark) ink.
  */
-export function textHalo(hex: string | undefined): string | undefined {
+export function textInk(hex: string | undefined): { mixBlendMode: "multiply" | "normal"; opacity: number } {
   const h = hex?.match(/^#?([0-9a-f]{6})$/i)?.[1];
-  if (!h) return undefined;
+  if (!h) return { mixBlendMode: "multiply", opacity: 0.92 };
   const lin = (i: number) => {
     const c = parseInt(h.slice(i, i + 2), 16) / 255;
     return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   };
   const [r, g, b] = [lin(0), lin(2), lin(4)];
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? "#111" : "#fff";
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4
+    ? { mixBlendMode: "normal", opacity: 0.85 }
+    : { mixBlendMode: "multiply", opacity: 0.92 };
 }

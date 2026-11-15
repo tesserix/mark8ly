@@ -212,7 +212,7 @@ export async function updateStore(
  * sentinel is only used by `fetchTenantMe`'s null-on-404 fallback
  * and should never leak into UI-facing code.
  */
-export type TenantRole = "owner" | "admin" | "staff" | "viewer";
+export type TenantRole = "owner" | "admin" | "staff" | "viewer" | "cashier";
 
 /**
  * A single entry in the caller's tenant list. Returned by

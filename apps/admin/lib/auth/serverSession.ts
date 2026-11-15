@@ -54,8 +54,8 @@ export interface ServerSessionContext {
 // the middleware path doesn't silently reveal admin-only actions.
 const DEFAULT_ROLE: TenantRole = "viewer";
 
-function normalizeRole(raw: string | null): TenantRole {
-  if (raw === "owner" || raw === "admin" || raw === "staff" || raw === "viewer") {
+export function normalizeRole(raw: string | null): TenantRole {
+  if (raw === "owner" || raw === "admin" || raw === "staff" || raw === "viewer" || raw === "cashier") {
     return raw;
   }
   return DEFAULT_ROLE;

@@ -214,3 +214,55 @@ func TestIntegration_InStore_MadeToOrderStaysUnfulfilled(t *testing.T) {
 	require.Equal(t, string(order.PaymentStatusPaid), o.PaymentStatus)
 	require.Equal(t, string(order.FulfillmentStatusUnfulfilled), o.FulfillmentStatus)
 }
+
+func dec(s string) *decimal.Decimal { d := decimal.RequireFromString(s); return &d }
+
+func TestIntegration_InStore_QuoteMatchesRecordedTotal(t *testing.T) {
+	f := newFixture(t)
+	vid := f.variant(t, "20.00", 5, "deny")
+	in := f.sale(line(vid, 2))
+
+	q, err := f.svc.Quote(context.Background(), in)
+	require.NoError(t, err)
+	require.True(t, q.GrandTotal.Equal(decimal.RequireFromString("40.00")), "quote %s", q.GrandTotal)
+	require.Equal(t, "AUD", q.CurrencyCode)
+
+	in.ExpectedTotal = &q.GrandTotal
+	res, err := f.svc.RecordSale(context.Background(), in)
+	require.NoError(t, err)
+	require.True(t, res.Order.GrandTotal.Equal(q.GrandTotal))
+}
+
+func TestIntegration_InStore_TotalChangedRefused(t *testing.T) {
+	f := newFixture(t)
+	vid := f.variant(t, "20.00", 5, "deny")
+	in := f.sale(line(vid, 2))
+	in.ExpectedTotal = dec("39.00")
+
+	_, err := f.svc.RecordSale(context.Background(), in)
+	var tc *instore.TotalChangedError
+	require.ErrorAs(t, err, &tc)
+	require.True(t, tc.Actual.Equal(decimal.RequireFromString("40.00")), "actual %s", tc.Actual)
+
+	var n int64
+	require.NoError(t, f.db.Raw(`SELECT count(*) FROM orders WHERE store_id = ?`, f.sid).Row().Scan(&n))
+	require.Zero(t, n)
+	require.Equal(t, 5, f.stock(t, vid))
+}
+
+func TestIntegration_InStore_RetryAfterPriceChangeReturnsFirstOrder(t *testing.T) {
+	f := newFixture(t)
+	vid := f.variant(t, "20.00", 5, "deny")
+	in := f.sale(line(vid, 2))
+	in.ExpectedTotal = dec("40.00")
+
+	first, err := f.svc.RecordSale(context.Background(), in)
+	require.NoError(t, err)
+	require.NoError(t, f.db.Exec(`UPDATE product_variants SET price = 25.00 WHERE id = ?`, vid).Error)
+
+	again, err := f.svc.RecordSale(context.Background(), in)
+	require.NoError(t, err)
+	require.True(t, again.Reused)
+	require.Equal(t, first.Order.ID, again.Order.ID)
+	require.Equal(t, 3, f.stock(t, vid))
+}

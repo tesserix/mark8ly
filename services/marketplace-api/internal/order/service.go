@@ -135,6 +135,16 @@ type CreateResult struct {
 // order_events row, and an outbox_events row — all in one tx. If a row
 // already exists for (store_id, idempotency_key), the existing aggregate
 // is returned and Reused is true.
+// FindByIdempotencyKey returns the order already created for (storeID,
+// key) as a Reused result, or nil when there is none.
+func (s *Service) FindByIdempotencyKey(ctx context.Context, storeID uuid.UUID, key string) (*CreateResult, error) {
+	o, items, addrs, err := s.repo.GetByIdempotencyKey(ctx, s.db, storeID, key)
+	if err != nil || o == nil {
+		return nil, err
+	}
+	return &CreateResult{Order: o, Items: items, Addrs: addrs, Reused: true}, nil
+}
+
 func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, error) {
 	if in.IdempotencyKey == "" {
 		return nil, apperrors.ValidationFailed("idempotency_key", "idempotency_key is required")

@@ -24,6 +24,7 @@ import (
 // InStoreRecorder records a sale; satisfied by *instore.Service.
 type InStoreRecorder interface {
 	RecordSale(ctx context.Context, in instore.SaleInput) (*order.CreateResult, error)
+	Quote(ctx context.Context, in instore.SaleInput) (*instore.Quote, error)
 }
 
 // InStoreHandler serves the in-store sale screen (#1103): its catalogue,
@@ -62,6 +63,24 @@ type InStoreSaleRequest struct {
 	CustomerEmail      string                   `json:"customer_email"`
 	// Fulfilled defaults to true: handed over at the counter.
 	Fulfilled *bool `json:"fulfilled"`
+	// ExpectedTotal is the total the screen showed for "Charge"; a sale
+	// that now prices differently is refused with 409 total_changed.
+	ExpectedTotal *decimal.Decimal `json:"expected_total"`
+}
+
+// InStoreQuoteRequest is POST /admin/stores/:storeId/in-store/quote.
+type InStoreQuoteRequest struct {
+	Lines    []InStoreSaleLineRequest `json:"lines"`
+	Discount decimal.Decimal          `json:"discount"`
+}
+
+// InStoreQuoteResponse is what the sale would cost now.
+type InStoreQuoteResponse struct {
+	Subtotal      string `json:"subtotal"`
+	TaxTotal      string `json:"tax_total"`
+	DiscountTotal string `json:"discount_total"`
+	GrandTotal    string `json:"grand_total"`
+	CurrencyCode  string `json:"currency_code"`
 }
 
 // RecordSale handles POST /admin/stores/:storeId/in-store/sales.
@@ -76,29 +95,19 @@ func (h *InStoreHandler) RecordSale(c *gin.Context) {
 		return
 	}
 	userID := c.GetString("user_id")
-
-	canDiscount := store.CashierDiscountsEnabled
-	if !canDiscount {
-		staff, err := h.roles.Check(c.Request.Context(), userID, string(authz.RoleStaff), tenantID.String())
-		if err != nil {
-			RespondErr(c, err, h.logger)
-			return
-		}
-		canDiscount = staff
+	canDiscount, ok := h.canDiscount(c, store, userID, tenantID)
+	if !ok {
+		return
 	}
 
-	lines := make([]instore.SaleLine, 0, len(req.Lines))
-	for _, l := range req.Lines {
-		lines = append(lines, instore.SaleLine{VariantID: l.VariantID, Quantity: l.Quantity,
-			CustomTitle: l.CustomTitle, CustomPrice: l.CustomPrice})
-	}
 	res, err := h.sales.RecordSale(c.Request.Context(), instore.SaleInput{
 		TenantID: tenantID, StoreID: storeID, Store: store,
-		IdempotencyKey: req.IdempotencyKey, Lines: lines, Discount: req.Discount,
+		IdempotencyKey: req.IdempotencyKey, Lines: saleLines(req.Lines), Discount: req.Discount,
 		PaymentMethod: req.PaymentMethod, PaymentMethodLabel: req.PaymentMethodLabel,
 		CashTendered: req.CashTendered, Note: req.Note, CustomerEmail: req.CustomerEmail,
 		SoldByUserID: userID, CanDiscount: canDiscount,
-		Fulfilled: req.Fulfilled == nil || *req.Fulfilled,
+		Fulfilled:     req.Fulfilled == nil || *req.Fulfilled,
+		ExpectedTotal: req.ExpectedTotal,
 	})
 	var oos checkoutcore.OutOfStockError
 	if errors.As(err, &oos) {
@@ -106,6 +115,15 @@ func (h *InStoreHandler) RecordSale(c *gin.Context) {
 			"error":      "out_of_stock",
 			"message":    "not enough stock for one of the items",
 			"variant_id": oos.VariantID,
+		})
+		return
+	}
+	var changed *instore.TotalChangedError
+	if errors.As(err, &changed) {
+		c.AbortWithStatusJSON(http.StatusConflict, map[string]any{
+			"error":       "total_changed",
+			"message":     "the total changed since it was charged",
+			"grand_total": changed.Actual.StringFixed(2),
 		})
 		return
 	}
@@ -118,6 +136,59 @@ func (h *InStoreHandler) RecordSale(c *gin.Context) {
 		status = http.StatusOK
 	}
 	c.JSON(status, ToAdminOrderResponse(res.Order, res.Items, res.Addrs))
+}
+
+// Quote handles POST /admin/stores/:storeId/in-store/quote: the total to
+// charge, priced exactly as RecordSale will price it.
+func (h *InStoreHandler) Quote(c *gin.Context) {
+	var req InStoreQuoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
+		return
+	}
+	store, storeID, tenantID, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	canDiscount, ok := h.canDiscount(c, store, c.GetString("user_id"), tenantID)
+	if !ok {
+		return
+	}
+	q, err := h.sales.Quote(c.Request.Context(), instore.SaleInput{
+		TenantID: tenantID, StoreID: storeID, Store: store,
+		Lines: saleLines(req.Lines), Discount: req.Discount, CanDiscount: canDiscount,
+	})
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	c.JSON(http.StatusOK, InStoreQuoteResponse{
+		Subtotal: q.Subtotal.StringFixed(2), TaxTotal: q.TaxTotal.StringFixed(2),
+		DiscountTotal: q.DiscountTotal.StringFixed(2), GrandTotal: q.GrandTotal.StringFixed(2),
+		CurrencyCode: q.CurrencyCode,
+	})
+}
+
+// canDiscount: staff and above always; a cashier when the store allows it.
+func (h *InStoreHandler) canDiscount(c *gin.Context, store *stores.Store, userID string, tenantID uuid.UUID) (bool, bool) {
+	if store.CashierDiscountsEnabled {
+		return true, true
+	}
+	staff, err := h.roles.Check(c.Request.Context(), userID, string(authz.RoleStaff), tenantID.String())
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return false, false
+	}
+	return staff, true
+}
+
+func saleLines(in []InStoreSaleLineRequest) []instore.SaleLine {
+	lines := make([]instore.SaleLine, 0, len(in))
+	for _, l := range in {
+		lines = append(lines, instore.SaleLine{VariantID: l.VariantID, Quantity: l.Quantity,
+			CustomTitle: l.CustomTitle, CustomPrice: l.CustomPrice})
+	}
+	return lines
 }
 
 // InStoreCatalogVariant is one sellable variant on the sale screen.

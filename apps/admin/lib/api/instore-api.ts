@@ -75,6 +75,44 @@ export async function getInStoreCatalog(storeId: string, session: SessionHeaders
   return Array.isArray(body) ? body : (body.data ?? []);
 }
 
+// What the sale screen may offer this caller. Fails closed: no discounts if
+// the server can't be asked (it would refuse them anyway).
+export async function getInStorePermissions(
+  storeId: string,
+  session: SessionHeaders,
+): Promise<{ canDiscount: boolean }> {
+  try {
+    const res = await fetch(`${base(storeId)}/permissions`, { cache: "no-store", headers: commonHeaders(session) });
+    if (!res.ok) return { canDiscount: false };
+    const body = (await res.json()) as { can_discount?: boolean };
+    return { canDiscount: body.can_discount === true };
+  } catch {
+    return { canDiscount: false };
+  }
+}
+
+export type MySale = {
+  id: string;
+  order_number: string;
+  grand_total: string;
+  currency_code: string;
+  payment_method?: string;
+  placed_at: string;
+};
+
+// The caller's own in-store sales since midnight in the store's timezone;
+// null when they couldn't be loaded.
+export async function getMySalesToday(storeId: string, session: SessionHeaders): Promise<MySale[] | null> {
+  try {
+    const res = await fetch(`${base(storeId)}/sales`, { cache: "no-store", headers: commonHeaders(session) });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { data?: MySale[] };
+    return body.data ?? [];
+  } catch {
+    return null;
+  }
+}
+
 export async function quoteInStoreSale(
   storeId: string,
   body: InStoreQuoteBody,

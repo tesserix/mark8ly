@@ -231,6 +231,18 @@ describe("SaleScreen", () => {
     expect(screen.getByRole("button", { name: /^Charge$/ })).toBeEnabled();
   });
 
+  // A cashier can't open Orders; their own sales are listed under the screen.
+  it("points a locked sale at Your sales today, not Orders", async () => {
+    const user = userEvent.setup();
+    recordSaleAction.mockResolvedValue({ ok: false, kind: "unreachable" });
+    renderScreen();
+    await ringUpSkinAndCharge(user);
+    await user.click(screen.getByRole("button", { name: /^paid/i }));
+    const cart = screen.getByRole("region", { name: /cart/i });
+    expect(await within(cart).findByText(/Check Your sales today/)).toBeInTheDocument();
+    expect(within(cart).queryByText(/Check Orders/)).not.toBeInTheDocument();
+  });
+
   it("doesn't say it is still working out the total once the charge is shown", async () => {
     const user = userEvent.setup();
     renderScreen();

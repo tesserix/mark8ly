@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { quoteInStoreSale, recordInStoreSale } from "./instore-api";
+import { getInStorePermissions, getMySalesToday, quoteInStoreSale, recordInStoreSale } from "./instore-api";
 
 const session = { userId: "u-1", tenantId: "t-1" };
 const body = {
@@ -73,5 +73,32 @@ describe("quoteInStoreSale", () => {
       ok: true,
       data: { subtotal: "40.00", tax_total: "4.00", discount_total: "0.00", grand_total: "44.00", currency_code: "AUD" },
     });
+  });
+});
+
+describe("getInStorePermissions", () => {
+  it("returns the server's can_discount", async () => {
+    const fetchMock = respond(200, { can_discount: true });
+    expect(await getInStorePermissions("s1", session)).toEqual({ canDiscount: true });
+    expect(String(fetchMock.mock.calls[0]![0])).toMatch(/\/in-store\/permissions$/);
+  });
+
+  it("denies discounts when it can't ask", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+    expect(await getInStorePermissions("s1", session)).toEqual({ canDiscount: false });
+  });
+});
+
+describe("getMySalesToday", () => {
+  it("returns the caller's sales", async () => {
+    const sale = { id: "o-1", order_number: "M-1", grand_total: "28.00", currency_code: "AUD", payment_method: "cash", placed_at: "2026-11-15T01:00:00Z" };
+    const fetchMock = respond(200, { data: [sale] });
+    expect(await getMySalesToday("s1", session)).toEqual([sale]);
+    expect(String(fetchMock.mock.calls[0]![0])).toMatch(/\/in-store\/sales$/);
+  });
+
+  it("is null when the list can't be loaded, so the screen can say so", async () => {
+    respond(500, {});
+    expect(await getMySalesToday("s1", session)).toBeNull();
   });
 });

@@ -16,7 +16,7 @@ interface OrderDetailHeaderProps {
 
 export function OrderDetailHeader({ order }: OrderDetailHeaderProps) {
   const itemCount = order.items.reduce((sum, it) => sum + it.quantity, 0);
-  const customer = order.customer_name?.trim() || order.customer_email;
+  const customer = order.customer_name?.trim() || order.customer_email || "In-store sale";
 
   return (
     <header className="flex flex-col gap-3">

@@ -44,6 +44,7 @@ type Order struct {
 	PaymentMethod      *string          `gorm:"column:payment_method;type:varchar(20)"`
 	PaymentMethodLabel *string          `gorm:"column:payment_method_label;type:varchar(40)"`
 	SoldByUserID       *string          `gorm:"column:sold_by_user_id;type:varchar(64)"`
+	SoldByEmail        *string          `gorm:"column:sold_by_email;type:varchar(320)"`
 	CashTendered       *decimal.Decimal `gorm:"column:cash_tendered;type:numeric(12,2)"`
 	PlacedAt           time.Time        `gorm:"column:placed_at;not null;default:now()"`
 	CancelledAt        *time.Time       `gorm:"column:cancelled_at"`

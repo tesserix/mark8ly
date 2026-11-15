@@ -61,7 +61,7 @@ export function RecentOrders({ orders, currencyCode }: RecentOrdersProps) {
                     </span>
                   </div>
                   <p className="mt-0.5 truncate text-sm text-foreground-secondary">
-                    {order.customer_email}
+                    {order.customer_email || "In-store sale"}
                   </p>
                 </div>
                 <div className="text-right">

@@ -516,6 +516,7 @@ func (h *DashboardHandler) GetCustomersMetrics(c *gin.Context) {
 				WHERE store_id = ? AND tenant_id = ?
 					AND deleted_at IS NULL
 					AND status != 'cancelled'
+					AND customer_email <> ''
 			) r ON DATE(r.placed_at) = gs.day::date
 			GROUP BY gs.day
 		) s
@@ -540,6 +541,7 @@ func (h *DashboardHandler) GetCustomersMetrics(c *gin.Context) {
 		WHERE store_id = ? AND tenant_id = ?
 			AND deleted_at IS NULL
 			AND status != 'cancelled'
+			AND customer_email <> ''
 			AND placed_at >= ? AND placed_at < ?
 	`, storeID, tenantID, win.start, win.end).Scan(&resp.UniqueBuyers)
 

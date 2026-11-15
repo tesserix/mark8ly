@@ -63,9 +63,12 @@ export function OrderActionsBar({ order, shipmentStatus }: OrderActionsBarProps)
   const canConfirm = order.status === "pending";
   const canFulfill = order.status === "confirmed";
   const canCancel = order.status === "pending" || order.status === "confirmed";
+  // An in-store sale was paid outside mark8ly; there is no provider payment
+  // to refund (recording one is #1110).
   const canRefund =
-    order.payment_status === "paid" ||
-    order.payment_status === "partially_refunded";
+    order.channel !== "in_store" &&
+    (order.payment_status === "paid" ||
+      order.payment_status === "partially_refunded");
 
   // OrderStatus is deliberately orthogonal to PaymentStatus (see
   // internal/order/status.go — "'refunded' is deliberately absent here and

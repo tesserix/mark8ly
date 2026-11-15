@@ -169,6 +169,9 @@ func (h *OrdersHandler) List(c *gin.Context) {
 	if q.PaymentStatus != "" {
 		tx = tx.Where("payment_status = ?", q.PaymentStatus)
 	}
+	if q.Channel != "" {
+		tx = tx.Where("channel = ?", q.Channel)
+	}
 	if s := strings.TrimSpace(q.Search); s != "" {
 		// Partial-match across the columns an operator typically
 		// remembers. ILIKE means the query is case-insensitive and a

@@ -321,7 +321,7 @@ export interface InvitationVerifyResult {
  * admin/staff/viewer (mirrors Phase P). Store-scoped invites use
  * manager/staff/viewer (mirrors the store DSL relations).
  */
-export type InviteRole = "admin" | "manager" | "staff" | "viewer";
+export type InviteRole = "admin" | "manager" | "staff" | "viewer" | "cashier";
 
 export async function createInvitation(
   tenantId: string,

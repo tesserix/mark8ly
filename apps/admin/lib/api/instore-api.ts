@@ -113,6 +113,33 @@ export async function getMySalesToday(storeId: string, session: SessionHeaders):
   }
 }
 
+export type InStoreSettings = { cashier_discounts_enabled: boolean };
+
+// Owner and admin only; null when it can't be read.
+export async function getInStoreSettings(storeId: string, session: SessionHeaders): Promise<InStoreSettings | null> {
+  try {
+    const res = await fetch(`${base(storeId)}/settings`, { cache: "no-store", headers: commonHeaders(session) });
+    return res.ok ? ((await res.json()) as InStoreSettings) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setInStoreSettings(
+  storeId: string,
+  body: InStoreSettings,
+  session: SessionHeaders,
+): Promise<MutationResult<InStoreSettings>> {
+  const res = await fetch(`${base(storeId)}/settings`, {
+    method: "PUT",
+    cache: "no-store",
+    headers: commonHeaders(session),
+    body: JSON.stringify(body),
+  });
+  if (res.ok) return { ok: true, data: (await res.json()) as InStoreSettings };
+  return { ok: false, error: await parseMutationError(res) };
+}
+
 export async function quoteInStoreSale(
   storeId: string,
   body: InStoreQuoteBody,

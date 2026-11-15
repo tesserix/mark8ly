@@ -17,8 +17,9 @@ import {
 } from "lucide-react";
 
 import type { AdminCategory } from "@/lib/api/marketplace-api";
+import type { TenantRole } from "@/lib/api/platform-api";
 
-export type StoreRole = "owner" | "admin" | "staff" | "viewer";
+export type StoreRole = TenantRole;
 
 export interface BulkActionsBarProps {
   selectedIds: string[];
@@ -41,7 +42,7 @@ export function BulkActionsBar({
   onBulkAction,
 }: BulkActionsBarProps) {
   if (selectedIds.length === 0) return null;
-  if (role === "staff" || role === "viewer") return null;
+  if (role !== "owner" && role !== "admin") return null;
 
   const count = selectedIds.length;
   const isOwner = role === "owner";

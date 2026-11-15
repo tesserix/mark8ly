@@ -345,6 +345,56 @@ func maskEmail(e string) string {
 	return e[:1] + "***" + e[at:]
 }
 
+// Permissions handles GET /admin/stores/:storeId/in-store/permissions: what
+// the sale screen may offer this caller. Discounts and custom lines are the
+// same permission.
+func (h *InStoreHandler) Permissions(c *gin.Context) {
+	store, _, tenantID, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	can, ok := h.canDiscount(c, store, c.GetString("user_id"), tenantID)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"can_discount": can})
+}
+
+// InStoreSettings is the store's in-store sales configuration (#1104).
+type InStoreSettings struct {
+	CashierDiscountsEnabled bool `json:"cashier_discounts_enabled"`
+}
+
+// Settings handles GET /admin/stores/:storeId/in-store/settings (owner, admin).
+func (h *InStoreHandler) Settings(c *gin.Context) {
+	store, _, _, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, InStoreSettings{CashierDiscountsEnabled: store.CashierDiscountsEnabled})
+}
+
+// UpdateSettings handles PUT /admin/stores/:storeId/in-store/settings (owner,
+// admin). The flag is owned here, not synced from platform-api.
+func (h *InStoreHandler) UpdateSettings(c *gin.Context) {
+	_, storeID, _, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	var req InStoreSettings
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
+		return
+	}
+	if err := h.db.WithContext(c.Request.Context()).Model(&stores.Store{}).
+		Where("id = ?", storeID).
+		Update("cashier_discounts_enabled", req.CashierDiscountsEnabled).Error; err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	c.JSON(http.StatusOK, req)
+}
+
 // sessionEmail is the caller's email: set by bearer auth, or forwarded by
 // admin server actions as X-User-Email (same fallback as tickets.go).
 func sessionEmail(c *gin.Context) string {

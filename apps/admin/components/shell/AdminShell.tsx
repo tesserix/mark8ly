@@ -177,6 +177,16 @@ const navigation: NavSection[] = [
   },
 ];
 
+// A cashier sells in store and nothing else (#1104); the middleware keeps
+// them on /sell, so the rest of the navigation would only lead back there.
+const cashierNavigation: NavSection[] = [
+  { key: "sell", label: "In-store sale", icon: ShoppingCart, href: "/sell" },
+];
+
+export function navigationFor(role: TenantRole | undefined): NavSection[] {
+  return role === "cashier" ? cashierNavigation : navigation;
+}
+
 export function AdminShell(props: AdminShellProps) {
   return (
     <SidebarProvider>
@@ -225,7 +235,7 @@ function AdminShellFrame({
       >
         <SidebarHeader className="border-b border-border-subtle px-4 py-5 group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:py-3">
           <Link
-            href="/dashboard"
+            href={role === "cashier" ? "/sell" : "/dashboard"}
             className="flex items-center gap-3 px-1 py-1 transition-opacity hover:opacity-80 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
           >
             <span className="font-serif text-2xl font-medium tracking-[-0.025em] text-foreground group-data-[collapsible=icon]:hidden">
@@ -267,7 +277,7 @@ function AdminShellFrame({
             </div>
             <SidebarGroupContent>
               <SidebarMenu className="space-y-1">
-                {navigation.map((section) => (
+                {navigationFor(role).map((section) => (
                   <NavSectionItem
                     key={section.key}
                     section={section}
@@ -353,7 +363,7 @@ function AdminShellFrame({
                   <RoleBadge role={role} size="md" />
                 </div>
               )}
-              {currentStoreId && userId && tenantId && (
+              {currentStoreId && userId && tenantId && role !== "cashier" && (
                 <div className="hidden sm:inline-flex">
                   <NotificationBell
                     storeId={currentStoreId}

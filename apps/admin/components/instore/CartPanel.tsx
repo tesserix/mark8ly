@@ -159,7 +159,7 @@ export function CartPanel({
 
       {cart.locked ? (
         <div className="rounded-md border border-danger/40 p-3 text-sm">
-          <p>This sale may already be recorded. Check Orders before discarding it, or you could lose a sale.</p>
+          <p>This sale may already be recorded. Check Your sales today before discarding it, or you could lose a sale.</p>
           <button type="button" onClick={onDiscard} className="mt-2 min-h-11 text-danger underline">
             Discard this sale
           </button>

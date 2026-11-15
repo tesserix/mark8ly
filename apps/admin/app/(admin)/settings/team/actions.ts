@@ -19,7 +19,8 @@ import {
   type InviteRole,
   type TenantRole,
 } from "@/lib/api/platform-api";
-import { canInviteMembers } from "@/lib/auth/serverSession";
+import { setInStoreSettings } from "@/lib/api/instore-api";
+import { canInviteMembers, getServerSessionContext } from "@/lib/auth/serverSession";
 
 type Result =
   | { ok: true }
@@ -177,4 +178,24 @@ export async function revokeInvite(
   } catch (err) {
     return fail(err);
   }
+}
+
+// Whether cashiers at the current store may give discounts and custom
+// prices (#1104). Owner and admin only; the API re-checks.
+export async function setCashierDiscountsAction(
+  enabled: boolean,
+): Promise<{ ok: true; enabled: boolean } | { ok: false; message: string }> {
+  const { role, currentStore, userId, tenantId, email } = await getServerSessionContext();
+  if (role !== "owner" && role !== "admin") {
+    return { ok: false, message: "Only the owner or an admin can change this." };
+  }
+  if (!currentStore) return { ok: false, message: "Select a store first." };
+  const res = await setInStoreSettings(
+    currentStore.id,
+    { cashier_discounts_enabled: enabled },
+    { userId, tenantId, email },
+  );
+  if (!res.ok) return { ok: false, message: res.error.message };
+  revalidatePath("/settings/team");
+  return { ok: true, enabled: res.data.cashier_discounts_enabled };
 }

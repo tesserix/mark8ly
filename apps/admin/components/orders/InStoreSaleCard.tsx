@@ -1,7 +1,7 @@
 // How an in-store sale was paid and who rang it up (#1109). Renders nothing
 // for online orders.
 
-import { PAYMENT_METHODS } from "@/components/instore/ChargeSheet";
+import { PAYMENT_METHODS } from "@/lib/instore/payment-methods";
 import type { AdminOrder } from "@/lib/api/marketplace-api";
 import { change } from "@/lib/instore/cart";
 import { formatMoney } from "@/lib/format";

@@ -3,14 +3,9 @@
 import { change } from "@/lib/instore/cart";
 import { formatMoney } from "@/lib/format";
 
-export type PaymentMethod = "card_external" | "cash" | "bank_transfer" | "other";
+import { PAYMENT_METHODS, type PaymentMethod } from "@/lib/instore/payment-methods";
 
-export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
-  { value: "card_external", label: "Card (EFTPOS)" },
-  { value: "cash", label: "Cash" },
-  { value: "bank_transfer", label: "Bank transfer" },
-  { value: "other", label: "Other" },
-];
+export type { PaymentMethod };
 
 const input = "h-11 rounded-md border border-border bg-surface px-3 text-base";
 

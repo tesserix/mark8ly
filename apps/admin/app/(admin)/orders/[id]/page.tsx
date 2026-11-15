@@ -16,6 +16,7 @@ import { OrderDocumentsPanel } from "@/components/orders/OrderDocumentsPanel";
 import { OrderItemsTable } from "@/components/orders/OrderItemsTable";
 import { OrderLifecycleStepper } from "@/components/orders/OrderLifecycleStepper";
 import { OrderTotalsCard } from "@/components/orders/OrderTotalsCard";
+import { InStoreReceiptCard } from "@/components/orders/InStoreReceiptCard";
 import { getOrder } from "@/lib/api/marketplace-api";
 import { getOrderShipment } from "@/lib/api/shipping-api";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
@@ -103,6 +104,12 @@ export default async function OrderDetailPage({ params }: PageProps) {
               customerService={order.shipping_service}
             />
           </div>
+          {/* channel arrives on AdminOrder with #1118. */}
+          <InStoreReceiptCard
+            storeId={currentStore.id}
+            orderId={order.id}
+            channel={(order as { channel?: string }).channel}
+          />
           <div className="border-t border-border-subtle pt-8">
             <OrderDocumentsPanel
               order={order}

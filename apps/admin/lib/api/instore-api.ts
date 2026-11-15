@@ -122,3 +122,22 @@ export async function recordInStoreSale(
   if (json?.error === "total_changed") return { ok: false, kind: "total_changed", grandTotal: String(json.grand_total ?? "") };
   return { ok: false, kind: "rejected", message: String(json?.message ?? `The sale was refused (${res.status}).`) };
 }
+
+export type InStoreReceiptBody = { send: false } | { send: true; email: string };
+
+// Mints a receipt link for an in-store sale, and emails it when send is set.
+export async function requestInStoreReceipt(
+  storeId: string,
+  orderId: string,
+  body: InStoreReceiptBody,
+  session: SessionHeaders,
+): Promise<MutationResult<{ url: string }>> {
+  const res = await fetch(`${base(storeId)}/sales/${encodeURIComponent(orderId)}/receipt`, {
+    method: "POST",
+    cache: "no-store",
+    headers: commonHeaders(session),
+    body: JSON.stringify(body),
+  });
+  if (res.ok) return { ok: true, data: (await res.json()) as { url: string } };
+  return { ok: false, error: await parseMutationError(res) };
+}

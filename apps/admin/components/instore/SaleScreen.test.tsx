@@ -10,6 +10,7 @@ const recordSaleAction = vi.fn();
 vi.mock("@/app/(admin)/sell/actions", () => ({
   quoteSaleAction: (...args: unknown[]) => quoteSaleAction(...args),
   recordSaleAction: (...args: unknown[]) => recordSaleAction(...args),
+  receiptAction: vi.fn(),
 }));
 
 const refresh = vi.fn();
@@ -229,6 +230,17 @@ describe("SaleScreen", () => {
     await user.click(screen.getByRole("button", { name: /^Charge/ }));
     expect(await screen.findByText(/No connection/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Charge$/ })).toBeEnabled();
+  });
+
+  it("offers to email or print the receipt once the sale is recorded", async () => {
+    const user = userEvent.setup();
+    recordSaleAction.mockResolvedValue({ ok: true, orderId: "o-9", orderNumber: "M-9", grandTotal: "44.00", reused: false });
+    renderScreen();
+    await ringUpSkinAndCharge(user);
+    await user.click(screen.getByRole("button", { name: /^paid/i }));
+    const done = await screen.findByRole("region", { name: "Sale recorded" });
+    expect(within(done).getByRole("button", { name: "Email receipt" })).toBeInTheDocument();
+    expect(within(done).getByRole("button", { name: "Print receipt" })).toBeInTheDocument();
   });
 
   it("doesn't say it is still working out the total once the charge is shown", async () => {

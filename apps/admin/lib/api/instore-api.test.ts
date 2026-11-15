@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { quoteInStoreSale, recordInStoreSale } from "./instore-api";
+import { quoteInStoreSale, recordInStoreSale, requestInStoreReceipt } from "./instore-api";
 
 const session = { userId: "u-1", tenantId: "t-1" };
 const body = {
@@ -73,5 +73,21 @@ describe("quoteInStoreSale", () => {
       ok: true,
       data: { subtotal: "40.00", tax_total: "4.00", discount_total: "0.00", grand_total: "44.00", currency_code: "AUD" },
     });
+  });
+});
+
+describe("requestInStoreReceipt", () => {
+  it("posts to the sale's receipt route and returns the link", async () => {
+    const fetchMock = respond(200, { url: "https://s.mark8ly.com/r/tok" });
+    expect(await requestInStoreReceipt("s1", "o1", { send: false }, session)).toEqual({ ok: true, data: { url: "https://s.mark8ly.com/r/tok" } });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toMatch(/\/in-store\/sales\/o1\/receipt$/);
+    expect(JSON.parse(init.body)).toEqual({ send: false });
+  });
+
+  it("passes the server's message through on a refusal", async () => {
+    respond(400, { error: "validation_failed", message: "enter a valid email address" });
+    const res = await requestInStoreReceipt("s1", "o1", { send: true, email: "x" }, session);
+    expect(res.ok).toBe(false);
   });
 });

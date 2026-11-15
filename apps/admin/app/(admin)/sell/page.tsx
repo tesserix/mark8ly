@@ -57,7 +57,7 @@ export default async function SellPage() {
         canDiscount={permissions.canDiscount}
       />
       <div className="mt-10 border-t border-border-subtle pt-8 md:max-w-xl">
-        <MySalesToday sales={mySales} currencyCode={currentStore.currency_code} />
+        <MySalesToday sales={mySales} currencyCode={currentStore.currency_code} timeZone={currentStore.timezone} />
       </div>
     </AdminPage>
   );

@@ -25,6 +25,17 @@ describe("MySalesToday", () => {
     expect(rows[1]).toHaveTextContent("Card (EFTPOS)");
   });
 
+  it("shows the time where the shop is, not the server's", () => {
+    render(
+      <MySalesToday
+        currencyCode="AUD"
+        timeZone="Australia/Sydney"
+        sales={[sale("a", "M-1", "2026-11-15T07:08:00Z", "110.00", "card_external")]}
+      />,
+    );
+    expect(screen.getByText(/6:08\s?pm/i)).toBeInTheDocument();
+  });
+
   it("says when there are no sales yet", () => {
     render(<MySalesToday currencyCode="AUD" sales={[]} />);
     expect(screen.getByText("No sales yet today.")).toBeInTheDocument();

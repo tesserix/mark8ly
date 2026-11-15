@@ -62,8 +62,13 @@ export function SaleScreen({
     setQuoting(true);
     setMessage(null);
     setLineNotes({});
-    const res = await quoteSaleAction(storeId, { lines: toSaleLines(cart), discount });
+    // A server action throws when the device itself is offline.
+    const res = await quoteSaleAction(storeId, { lines: toSaleLines(cart), discount }).catch(() => null);
     setQuoting(false);
+    if (!res) {
+      setMessage("No connection. Check the connection and tap Charge again.");
+      return;
+    }
     if (!res.ok) {
       setMessage(res.error.message);
       return;
@@ -85,7 +90,7 @@ export function SaleScreen({
       cash_tendered: method === "cash" ? tendered.trim() : undefined,
       note: cart.note.trim() || undefined,
       expected_total: total,
-    });
+    }).catch(() => ({ ok: false as const, kind: "unreachable" as const }));
     setPending(false);
 
     if (res.ok) {

@@ -210,6 +210,27 @@ describe("SaleScreen", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
+  it("treats a Paid that never reached the server (device offline) as no answer", async () => {
+    const user = userEvent.setup();
+    recordSaleAction.mockRejectedValue(new TypeError("Failed to fetch"));
+    renderScreen();
+    await ringUpSkinAndCharge(user);
+    await user.click(screen.getByRole("button", { name: /^paid/i }));
+    expect(await screen.findByText(/No connection, sale not recorded yet/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /try again/i })).toBeEnabled();
+    expect(JSON.parse(localStorage.getItem("mark8ly:instore-cart:s1") ?? "{}").locked).toBe(true);
+  });
+
+  it("lets the seller charge again when the quote never reached the server", async () => {
+    const user = userEvent.setup();
+    quoteSaleAction.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderScreen();
+    await user.click(screen.getByRole("button", { name: /BMW M4 Laptop Skin/ }));
+    await user.click(screen.getByRole("button", { name: /^Charge/ }));
+    expect(await screen.findByText(/No connection/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Charge$/ })).toBeEnabled();
+  });
+
   it("doesn't say it is still working out the total once the charge is shown", async () => {
     const user = userEvent.setup();
     renderScreen();

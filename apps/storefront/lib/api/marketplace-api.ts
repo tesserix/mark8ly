@@ -142,7 +142,7 @@ export interface StorefrontPersonalisationField {
    * dimensions, which is what makes the composite plain CSS.
    */
   mockup_url?: string;
-  print_area?: { x: number; y: number; w: number; h: number };
+  print_area?: { x: number; y: number; w: number; h: number; surface?: "curved" };
   price_delta?: string;
   options?: StorefrontPersonalisationOption[];
   /**

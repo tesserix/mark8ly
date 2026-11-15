@@ -129,7 +129,13 @@ type PrintAreaRect struct {
 	Y float64 `json:"y"`
 	W float64 `json:"w"`
 	H float64 `json:"h"`
+	// Surface is PrintSurfaceCurved for a mug, bottle or candle, whose
+	// preview bends the buyer's text round it. Empty means flat.
+	Surface string `json:"surface,omitempty"`
 }
+
+// PrintSurfaceCurved is the only non-flat print surface.
+const PrintSurfaceCurved = "curved"
 
 // DecodeTextColours reads the field's colour list. A malformed column
 // yields nil, which offers no colours rather than failing the read: the

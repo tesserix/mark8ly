@@ -99,4 +99,29 @@ describe("MockupConfig", () => {
       expect.objectContaining({ print_area: expect.objectContaining({ x: 100, y: 0 }) }),
     );
   });
+
+  // A mug or bottle bends the buyer's text in the storefront preview.
+  it("saves a curved surface, and keeps an existing one when re-saved", () => {
+    const onSave = vi.fn();
+    const { unmount } = render(
+      <MockupConfig media={media} mockupStorageKey={media[0]!.storage_key} printArea={{ x: 10, y: 10, w: 50, h: 50 }} onSave={onSave} />,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: /curved/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save mockup/i }));
+    expect(onSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({ print_area: { x: 10, y: 10, w: 50, h: 50, surface: "curved" } }),
+    );
+    unmount();
+
+    render(
+      <MockupConfig media={media} mockupStorageKey={media[0]!.storage_key}
+        printArea={{ x: 10, y: 10, w: 50, h: 50, surface: "curved" }} onSave={onSave} />,
+    );
+    expect(screen.getByRole("radio", { name: /curved/i })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: /flat/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save mockup/i }));
+    expect(onSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({ print_area: { x: 10, y: 10, w: 50, h: 50 } }),
+    );
+  });
 });

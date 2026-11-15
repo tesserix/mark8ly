@@ -16,8 +16,10 @@
 // is surprised at this stage is a refund avoided, which is the whole
 // point of showing it.
 
+import type { CSSProperties } from "react";
 import Image from "next/image";
 
+import { CurvedText } from "@/components/personalisation/CurvedText";
 import { personalisationFontStyle } from "@/lib/personalisation-fonts";
 import { fitTextSize, textInk } from "@/lib/personalisation-text-fit";
 
@@ -26,6 +28,8 @@ export interface PrintArea {
   y: number;
   w: number;
   h: number;
+  /** "curved" for a mug or bottle: the text wraps round it. */
+  surface?: "curved";
 }
 
 export interface MockupPreviewProps {
@@ -79,7 +83,7 @@ export function MockupPreview({
 
         {text && text.value.trim() !== "" ? (
           <span
-            className="absolute flex items-center justify-center overflow-hidden"
+            className={`absolute flex items-center justify-center ${printArea.surface === "curved" ? "" : "overflow-hidden"}`}
             style={{
               left: `${left}%`,
               top: `${top}%`,
@@ -88,22 +92,11 @@ export function MockupPreview({
               containerType: "size",
             }}
           >
-            <span
-              // The buyer's own words, so it is real text, not an image:
-              // readable by a screen reader and selectable.
-              className="whitespace-pre text-center leading-[1.1]"
-              style={{
-                ...personalisationFontStyle(text.font),
-                color: text.colourHex ?? "currentColor",
-                fontSize: fitTextSize(text.value, text.font),
-                // Printed, not stuck on: blended into the surface, with the
-                // slightly soft edge ink has on a glaze or fabric.
-                ...textInk(text.colourHex),
-                filter: "blur(0.3px)",
-              }}
-            >
-              {text.value}
-            </span>
+            {printArea.surface === "curved" ? (
+              <CurvedText value={text.value} font={text.font} style={inkStyle(text)} flat={flatText(text)} />
+            ) : (
+              flatText(text)
+            )}
           </span>
         ) : artworkUrl ? (
           <span
@@ -154,5 +147,30 @@ export function MockupPreview({
             : "Your photo will be printed in the marked area."}
       </figcaption>
     </figure>
+  );
+}
+
+// Font, colour and blend: how the buyer's text reads as ink on the photo.
+function inkStyle(text: NonNullable<MockupPreviewProps["text"]>): CSSProperties {
+  return {
+    ...personalisationFontStyle(text.font),
+    color: text.colourHex ?? "currentColor",
+    // Printed, not stuck on: blended into the surface, with the slightly
+    // soft edge ink has on a glaze or fabric.
+    ...textInk(text.colourHex),
+    filter: "blur(0.3px)",
+  };
+}
+
+function flatText(text: NonNullable<MockupPreviewProps["text"]>) {
+  return (
+    <span
+      // The buyer's own words, so it is real text, not an image:
+      // readable by a screen reader and selectable.
+      className="whitespace-pre text-center leading-[1.1]"
+      style={{ ...inkStyle(text), fontSize: fitTextSize(text.value, text.font) }}
+    >
+      {text.value}
+    </span>
   );
 }

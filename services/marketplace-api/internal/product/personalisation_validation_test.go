@@ -432,3 +432,25 @@ func TestIsValidPersonalisationKind(t *testing.T) {
 		require.False(t, IsValidPersonalisationKind(k), k)
 	}
 }
+
+// A mug or bottle bends the buyer's text round its surface; anything else
+// is refused so a typo cannot silently mean flat.
+func TestValidateCreateField_PrintAreaSurface(t *testing.T) {
+	req := baseReq(PersonalisationKindImage)
+	req.MockupStorageKey = strp("tenants/t/mockups/abc/mug.jpg")
+	req.PrintArea = &PrintAreaRect{X: 25, Y: 30, W: 50, H: 40, Surface: PrintSurfaceCurved}
+	row, err := validateCreateField(&req)
+	require.NoError(t, err)
+	var got PrintAreaRect
+	require.NoError(t, json.Unmarshal(*row.PrintArea, &got))
+	require.Equal(t, PrintSurfaceCurved, got.Surface)
+
+	req.PrintArea = &PrintAreaRect{X: 25, Y: 30, W: 50, H: 40}
+	row, err = validateCreateField(&req)
+	require.NoError(t, err)
+	require.NotContains(t, string(*row.PrintArea), "surface", "flat is the default and is not stored")
+
+	req.PrintArea = &PrintAreaRect{X: 25, Y: 30, W: 50, H: 40, Surface: "sphere"}
+	_, err = validateCreateField(&req)
+	requireFieldError(t, err, "personalisation_field.print_area")
+}

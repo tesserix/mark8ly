@@ -4,17 +4,23 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/sell", useRouter: () =>
 
 import { navigationFor } from "./AdminShell";
 
-const hrefs = (role: Parameters<typeof navigationFor>[0]) =>
-  navigationFor(role).flatMap((s) => [s.href, ...(s.children ?? []).map((c) => c.href)]).filter(Boolean);
+const hrefs = (role: Parameters<typeof navigationFor>[0], inStore = true) =>
+  navigationFor(role, inStore).flatMap((s) => [s.href, ...(s.children ?? []).map((c) => c.href)]).filter(Boolean);
 
 describe("navigationFor", () => {
   it("shows only In-store sale to a cashier", () => {
-    expect(navigationFor("cashier")).toEqual([
+    expect(navigationFor("cashier", true)).toEqual([
       expect.objectContaining({ label: "In-store sale", href: "/sell" }),
     ]);
   });
 
   it("shows the full navigation to everyone else", () => {
     expect(hrefs("owner")).toEqual(expect.arrayContaining(["/dashboard", "/orders", "/sell", "/products"]));
+  });
+
+  it("hides In-store sale when the store has it turned off, but keeps its setting", () => {
+    expect(hrefs("owner", false)).not.toContain("/sell");
+    expect(hrefs("owner", false)).toContain("/settings/in-store");
+    expect(hrefs("owner", true)).toContain("/sell");
   });
 });

@@ -80,14 +80,14 @@ export async function getInStoreCatalog(storeId: string, session: SessionHeaders
 export async function getInStorePermissions(
   storeId: string,
   session: SessionHeaders,
-): Promise<{ canDiscount: boolean }> {
+): Promise<{ canDiscount: boolean; enabled: boolean }> {
   try {
     const res = await fetch(`${base(storeId)}/permissions`, { cache: "no-store", headers: commonHeaders(session) });
-    if (!res.ok) return { canDiscount: false };
-    const body = (await res.json()) as { can_discount?: boolean };
-    return { canDiscount: body.can_discount === true };
+    if (!res.ok) return { canDiscount: false, enabled: false };
+    const body = (await res.json()) as { can_discount?: boolean; enabled?: boolean };
+    return { canDiscount: body.can_discount === true, enabled: body.enabled === true };
   } catch {
-    return { canDiscount: false };
+    return { canDiscount: false, enabled: false };
   }
 }
 
@@ -113,7 +113,7 @@ export async function getMySalesToday(storeId: string, session: SessionHeaders):
   }
 }
 
-export type InStoreSettings = { cashier_discounts_enabled: boolean };
+export type InStoreSettings = { cashier_discounts_enabled: boolean; in_store_enabled: boolean };
 
 // Owner and admin only; null when it can't be read.
 export async function getInStoreSettings(storeId: string, session: SessionHeaders): Promise<InStoreSettings | null> {
@@ -127,7 +127,7 @@ export async function getInStoreSettings(storeId: string, session: SessionHeader
 
 export async function setInStoreSettings(
   storeId: string,
-  body: InStoreSettings,
+  body: Partial<InStoreSettings>,
   session: SessionHeaders,
 ): Promise<MutationResult<InStoreSettings>> {
   const res = await fetch(`${base(storeId)}/settings`, {

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { AdminShell } from "@/components/shell/AdminShell";
 import { Toaster } from "@/components/feedback/Toaster";
+import { getInStorePermissions } from "@/lib/api/instore-api";
 import { getAccountProfile } from "@/lib/api/settings-tier2-api";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 
@@ -34,9 +35,13 @@ export default async function AdminLayout({
   // Best-effort profile fetch so the header can show the user's avatar
   // and persisted name. Swallow errors — a missing profile just falls
   // back to the email-derived initial.
-  const profile = userId && tenantId
-    ? await getAccountProfile({ userId, tenantId, email }).catch(() => null)
-    : null;
+  const [profile, inStore] = await Promise.all([
+    userId && tenantId ? getAccountProfile({ userId, tenantId, email }).catch(() => null) : null,
+    // Whether this store sells in store; a viewer can't ask and sees no link.
+    userId && tenantId && currentStore
+      ? getInStorePermissions(currentStore.id, { userId, tenantId, email })
+      : null,
+  ]);
 
   return (
     <Toaster>
@@ -52,6 +57,7 @@ export default async function AdminLayout({
         currentStoreId={currentStore?.id}
         userId={userId}
         tenantId={tenantId}
+        inStoreEnabled={inStore?.enabled ?? false}
       >
         {children}
       </AdminShell>

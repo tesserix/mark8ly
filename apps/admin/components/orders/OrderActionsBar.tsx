@@ -152,7 +152,14 @@ export function OrderActionsBar({ order, shipmentStatus }: OrderActionsBarProps)
       {/* State the refund outright. Otherwise it can only be inferred from
           the absence of "Issue refund", and the remaining fulfil/cancel
           buttons read as though the order were still live. */}
-      {isFullyRefunded && (
+      {isFullyRefunded && order.channel === "in_store" && (
+        <p className="text-sm text-foreground-secondary">
+          <span className="font-medium text-foreground">Fully refunded.</span>{" "}
+          Recorded as refunded outside mark8ly. Any items you chose were put
+          back in stock when the refund was recorded.
+        </p>
+      )}
+      {isFullyRefunded && order.channel !== "in_store" && (
         <p className="text-sm text-foreground-secondary">
           <span className="font-medium text-foreground">Fully refunded.</span>{" "}
           The customer has been repaid in full, and any shipment was already

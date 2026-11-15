@@ -33,7 +33,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
   const logo = branding?.branding?.logo_url ?? null;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col gap-8 px-5 py-10 text-[color:var(--storefront-text)] print:max-w-none print:py-0">
+    <main data-receipt className="mx-auto flex min-h-screen max-w-xl flex-col gap-8 px-5 py-10 text-[color:var(--storefront-text)] print:max-w-none print:py-0">
       <header className="flex flex-col items-center gap-3 text-center">
         {logo ? <img src={logo} alt={storeName} className="h-14 w-auto object-contain" /> : null}
         <h1 className="font-[family-name:var(--storefront-heading-font)] text-2xl">{storeName}</h1>

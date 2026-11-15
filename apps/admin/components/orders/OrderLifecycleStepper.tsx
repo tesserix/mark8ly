@@ -111,7 +111,9 @@ export function OrderLifecycleStepper({
           shipmentStatus,
           order.placed_at,
           order.fulfilled_at,
-        );
+        )
+          // A counter sale is handed over in person: no Shipped or Delivered.
+          .slice(0, order.channel === "in_store" ? 3 : undefined);
 
   return (
     <nav

@@ -116,6 +116,7 @@ const navigation: NavSection[] = [
     children: [
       { label: "All Orders", href: "/orders" },
       { label: "Returns & replacements", href: "/orders/returns" },
+      { label: "In-store sale", href: "/sell" },
     ],
   },
   {
@@ -623,6 +624,9 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/orders")) {
     return { eyebrow: "Operations", title: "Orders" };
+  }
+  if (pathname.startsWith("/sell")) {
+    return { eyebrow: "Operations", title: "In-store sale" };
   }
   if (pathname.startsWith("/customers/reviews")) {
     return { eyebrow: "Customers", title: "Reviews" };

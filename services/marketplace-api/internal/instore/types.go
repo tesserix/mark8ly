@@ -48,6 +48,7 @@ type SaleInput struct {
 	Note               *string
 	CustomerEmail      string // "" for no receipt email
 	SoldByUserID       string
+	SoldByEmail        string // shown on the order as who rang it up
 	// CanDiscount: staff and above, or a cashier when the store allows it.
 	// Covers both discounts and custom lines.
 	CanDiscount bool

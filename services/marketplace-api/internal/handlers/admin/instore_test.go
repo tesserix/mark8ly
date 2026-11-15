@@ -162,3 +162,19 @@ func TestInStoreSale_TotalChanged409(t *testing.T) {
 		t.Errorf("expected_total not passed through: %v", rec.got.ExpectedTotal)
 	}
 }
+
+func TestInStoreSale_RecordsSellerEmailFromSession(t *testing.T) {
+	rec := &fakeRecorder{}
+	e := inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{})
+	req := httptest.NewRequest(http.MethodPost, "/admin/stores/"+uuid.NewString()+"/in-store/sales", strings.NewReader(saleBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-Email", "sam@shop.test")
+	w := httptest.NewRecorder()
+	e.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
+	if rec.got.SoldByEmail != "sam@shop.test" {
+		t.Errorf("SoldByEmail = %q", rec.got.SoldByEmail)
+	}
+}

@@ -102,6 +102,7 @@ func (s *Service) RecordSale(ctx context.Context, in SaleInput) (*order.CreateRe
 			PaymentMethod:      in.PaymentMethod,
 			PaymentMethodLabel: in.PaymentMethodLabel,
 			SoldByUserID:       in.SoldByUserID,
+			SoldByEmail:        nonEmpty(in.SoldByEmail),
 			CashTendered:       in.CashTendered,
 		},
 		WithinTx: func(tx *gorm.DB, o *order.Order) error {
@@ -364,4 +365,11 @@ func (d dbDetails) Details(ctx context.Context, storeID string, variantIDs []str
 			OptionSummary: r.OptionSummary, ImageURL: r.ImageURL}
 	}
 	return out, nil
+}
+
+func nonEmpty(s string) *string {
+	if s = strings.TrimSpace(s); s == "" {
+		return nil
+	}
+	return &s
 }

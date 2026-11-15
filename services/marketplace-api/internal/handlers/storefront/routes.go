@@ -53,6 +53,7 @@ type Deps struct {
 	TicketsHandler *TicketsHandler
 	// P11 — GDPR customer portal (unauth order history + erasure request).
 	CustomerPortalHandler *customerportal.Handler
+	ReceiptsHandler       *ReceiptsHandler
 	Logger                *slog.Logger
 }
 
@@ -155,6 +156,11 @@ func RegisterStorefront(router *gin.RouterGroup, deps Deps) {
 			// checkout UI render a helpful fallback ("we ship to India")
 			// when a customer's address falls outside any carrier's zone.
 			group.GET("/shipping-options", deps.ShippingOptionsHandler.GetOptions)
+		}
+		// In-store receipts (#1106): the token is the credential.
+		if deps.ReceiptsHandler != nil {
+			group.GET("/receipts/:token", deps.ReceiptsHandler.Get)
+			group.POST("/receipts/:token/resend", deps.ReceiptsHandler.Resend)
 		}
 		if deps.OrderDetailHandler != nil {
 			group.GET("/orders/:id", deps.OrderDetailHandler.GetOrder)

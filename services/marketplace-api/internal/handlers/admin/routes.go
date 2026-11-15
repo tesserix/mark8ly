@@ -902,6 +902,7 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			inStore.POST("/quote", deps.InStoreHandler.Quote)
 			inStore.POST("/sales", deps.InStoreHandler.RecordSale)
 			inStore.GET("/sales", deps.InStoreHandler.MySales)
+			inStore.POST("/sales/:id/receipt", deps.InStoreHandler.Receipt)
 		}
 
 		MountAppCredentialsRoutes(storeRoute, deps.AppCredentialsHandler, deps.AuthzMiddleware)

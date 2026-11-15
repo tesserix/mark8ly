@@ -117,6 +117,10 @@ type DocumentInput struct {
 	// — empty string suppresses the block entirely.
 	AdminNote string
 
+	// InStore marks a receipt for a sale made at the counter (#1107):
+	// DocumentURL is the receipt page, and there is no PDF or delivery.
+	InStore bool
+
 	// StoreContactEmail is store_branding.support_email — the merchant's
 	// own address, used as the customer-facing Reply-To so a reply to an
 	// order confirmation reaches the merchant instead of the platform's
@@ -219,6 +223,9 @@ func (t Theme) withDefaults() Theme {
 var templateFS embed.FS
 
 type renderData struct {
+	// InStore: a counter-sale receipt (#1107), so no "delivered" wording.
+	InStore bool
+
 	// Subject is removed — it's now rendered by the loader from a
 	// separate subject-template column. Heading / Lede / CTAButtonLabel
 	// stay here because they're computed in Go (business-state-driven
@@ -364,6 +371,10 @@ func buildRenderData(kind Kind, in DocumentInput, hasAttachment bool) renderData
 	case KindReceipt:
 		heading = "Your order has been delivered."
 		lede = fmt.Sprintf("This is your receipt for order %s. Keep it for your records — and thank you for shopping with %s.", in.OrderNumber, theme.StoreName)
+		if in.InStore {
+			heading = "Thanks for shopping with us."
+			lede = fmt.Sprintf("Here's your receipt for order %s from %s.", in.OrderNumber, theme.StoreName)
+		}
 		cta = "View receipt"
 	case KindCancellation:
 		heading = "Your order has been cancelled."
@@ -401,6 +412,7 @@ func buildRenderData(kind Kind, in DocumentInput, hasAttachment bool) renderData
 	}
 
 	return renderData{
+		InStore:            in.InStore,
 		Heading:            heading,
 		Lede:               lede,
 		CTAButtonLabel:     cta,
@@ -543,7 +555,7 @@ func (m *DocumentMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 	// language that turns into a small lie when the fetch flakes.
 	var attachments []email.Attachment
 	hasAttachment := false
-	if (kind == KindInvoice || kind == KindReceipt) && m.pdfFetcher != nil {
+	if (kind == KindInvoice || kind == KindReceipt) && m.pdfFetcher != nil && !in.InStore {
 		var pdfBytes []byte
 		var pdfErr error
 		if kind == KindInvoice {

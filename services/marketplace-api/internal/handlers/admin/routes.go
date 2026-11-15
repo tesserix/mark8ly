@@ -902,6 +902,13 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 			inStore.POST("/quote", deps.InStoreHandler.Quote)
 			inStore.POST("/sales", deps.InStoreHandler.RecordSale)
 			inStore.GET("/sales", deps.InStoreHandler.MySales)
+			inStore.GET("/permissions", deps.InStoreHandler.Permissions)
+			// Configuring in-store sales is for owners and admins, not the
+			// cashiers the group above admits.
+			storeRoute.GET("/in-store/settings",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.InStoreHandler.Settings)
+			storeRoute.PUT("/in-store/settings",
+				deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin), deps.InStoreHandler.UpdateSettings)
 		}
 
 		MountAppCredentialsRoutes(storeRoute, deps.AppCredentialsHandler, deps.AuthzMiddleware)

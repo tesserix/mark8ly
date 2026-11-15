@@ -59,6 +59,10 @@ func inStoreEngine(t *testing.T, rec *fakeRecorder, role authz.Role, store *stor
 	})
 	g.POST("/in-store/sales", h.RecordSale)
 	g.POST("/in-store/quote", h.Quote)
+	g.GET("/in-store/permissions", h.Permissions)
+	settings := authz.NewMiddleware(fga, nil).RequireTenantRelation(authz.RoleAdmin)
+	g.GET("/in-store/settings", settings, h.Settings)
+	g.PUT("/in-store/settings", settings, h.UpdateSettings)
 	return e
 }
 
@@ -160,5 +164,53 @@ func TestInStoreSale_TotalChanged409(t *testing.T) {
 	}
 	if rec.got.ExpectedTotal == nil || rec.got.ExpectedTotal.String() != "40" {
 		t.Errorf("expected_total not passed through: %v", rec.got.ExpectedTotal)
+	}
+}
+
+func get(e *gin.Engine, path string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/admin/stores/"+uuid.NewString()+"/in-store/"+path, nil)
+	w := httptest.NewRecorder()
+	e.ServeHTTP(w, req)
+	return w
+}
+
+func TestInStorePermissions_CanDiscount(t *testing.T) {
+	cases := []struct {
+		name  string
+		role  authz.Role
+		store *stores.Store
+		want  string
+	}{
+		{"cashier, setting off", authz.RoleCashier, &stores.Store{}, `{"can_discount":false}`},
+		{"cashier, setting on", authz.RoleCashier, &stores.Store{CashierDiscountsEnabled: true}, `{"can_discount":true}`},
+		{"staff", authz.RoleStaff, &stores.Store{}, `{"can_discount":true}`},
+	}
+	for _, tc := range cases {
+		w := get(inStoreEngine(t, &fakeRecorder{}, tc.role, tc.store), "permissions")
+		if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != tc.want {
+			t.Errorf("%s: %d %s, want %s", tc.name, w.Code, w.Body, tc.want)
+		}
+	}
+}
+
+// Denials are 404 from the authz middleware, so the route's existence isn't leaked.
+func TestInStoreSettings_OwnerAdminOnly(t *testing.T) {
+	for _, role := range []authz.Role{authz.RoleCashier, authz.RoleStaff} {
+		e := inStoreEngine(t, &fakeRecorder{}, role, &stores.Store{})
+		if w := get(e, "settings"); w.Code != http.StatusNotFound {
+			t.Errorf("%s GET settings: %d", role, w.Code)
+		}
+		req := httptest.NewRequest(http.MethodPut, "/admin/stores/"+uuid.NewString()+"/in-store/settings",
+			strings.NewReader(`{"cashier_discounts_enabled":true}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		e.ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s PUT settings: %d", role, w.Code)
+		}
+	}
+	w := get(inStoreEngine(t, &fakeRecorder{}, authz.RoleAdmin, &stores.Store{CashierDiscountsEnabled: true}), "settings")
+	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true}` {
+		t.Errorf("admin GET settings: %d %s", w.Code, w.Body)
 	}
 }

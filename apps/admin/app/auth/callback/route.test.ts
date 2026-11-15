@@ -21,7 +21,26 @@ function makeRequest(
   });
 }
 
+// What the pod actually sees behind the ingress: its own bind address,
+// with the public host in x-forwarded-host.
+function makeProxiedRequest(search: string, cookies: Record<string, string> = {}): NextRequest {
+  const cookie = Object.entries(cookies).map(([n, v]) => `${n}=${encodeURIComponent(v)}`).join("; ");
+  return new NextRequest(`http://0.0.0.0:4202/auth/callback${search}`, {
+    headers: { "x-forwarded-host": "admin.mark8ly.com", "x-forwarded-proto": "https", cookie },
+  });
+}
+
 describe("GET /auth/callback", () => {
+  it("sends a rejected callback back to the public login page, not the pod address", async () => {
+    const res = await GET(makeProxiedRequest("?code=abc&state=stale", { [ZITADEL_STATE_COOKIE]: "s1" }));
+    expect(res.headers.get("location")).toBe("https://admin.mark8ly.com/login?error=state_mismatch");
+  });
+
+  it("lands the default destination on the public host behind the proxy", async () => {
+    const res = await GET(makeProxiedRequest("?code=abc&state=s1", { [ZITADEL_STATE_COOKIE]: "s1" }));
+    expect(res.headers.get("location")).toBe("https://admin.mark8ly.com/dashboard");
+  });
+
   it("redirects (303) to the sanitised destination when state matches", async () => {
     const req = makeRequest("?code=abc&state=s1", {
       [ZITADEL_STATE_COOKIE]: "s1",

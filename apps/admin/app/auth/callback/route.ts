@@ -47,20 +47,27 @@ export async function GET(req: NextRequest): Promise<Response> {
   const returnUrlCookie = req.cookies.get(ZITADEL_RETURN_URL_COOKIE)?.value;
   const destination = sanitizeReturnUrl(returnUrlCookie) ?? DEFAULT_DESTINATION;
 
-  const res = NextResponse.redirect(new URL(destination, req.url), 303);
+  const res = NextResponse.redirect(new URL(destination, publicOrigin(req)), 303);
   clearFlowCookies(res);
   return res;
 }
 
 function errorResponse(req: NextRequest, code: string): NextResponse {
   const res = NextResponse.redirect(
-    new URL(`/login?error=${encodeURIComponent(code)}`, req.url),
+    new URL(`/login?error=${encodeURIComponent(code)}`, publicOrigin(req)),
     303,
   );
   // Clear on the failure path too — a state cookie that survives a
   // rejected attempt is still a single credential worth burning.
   clearFlowCookies(res);
   return res;
+}
+
+// Behind the ingress `req.url` is the pod's bind address (0.0.0.0:4202),
+// so redirects are built on the host the browser actually used.
+function publicOrigin(req: NextRequest): string {
+  const host = req.headers.get("x-forwarded-host");
+  return host ? `${req.headers.get("x-forwarded-proto") ?? "https"}://${host}` : req.url;
 }
 
 // Single-use: whether this callback succeeds or is rejected, the

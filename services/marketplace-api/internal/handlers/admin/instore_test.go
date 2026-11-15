@@ -60,8 +60,8 @@ func inStoreEngine(t *testing.T, rec *fakeRecorder, role authz.Role, store *stor
 		c.Set("tenant_id", tenantID)
 		c.Set("store", store)
 	})
-	g.POST("/in-store/sales", h.RecordSale)
-	g.POST("/in-store/quote", h.Quote)
+	g.POST("/in-store/sales", h.RequireEnabled, h.RecordSale)
+	g.POST("/in-store/quote", h.RequireEnabled, h.Quote)
 	g.GET("/in-store/permissions", h.Permissions)
 	g.POST("/in-store/sales/:id/receipt", h.Receipt)
 	g.POST("/in-store/sales/:id/refund", authz.NewMiddleware(fga, nil).RequireTenantRelation(authz.RoleAdmin), h.OutsideRefund)
@@ -87,7 +87,7 @@ const saleBody = `{"idempotency_key":"k1","lines":[{"variant_id":"v1","quantity"
 
 func TestInStoreSale_Created201(t *testing.T) {
 	rec := &fakeRecorder{}
-	w := postSale(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{}), saleBody)
+	w := postSale(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{InStoreEnabled: true}), saleBody)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, body %s", w.Code, w.Body)
 	}
@@ -97,7 +97,7 @@ func TestInStoreSale_Created201(t *testing.T) {
 }
 
 func TestInStoreSale_Replay200(t *testing.T) {
-	w := postSale(inStoreEngine(t, &fakeRecorder{reused: true}, authz.RoleCashier, &stores.Store{}), saleBody)
+	w := postSale(inStoreEngine(t, &fakeRecorder{reused: true}, authz.RoleCashier, &stores.Store{InStoreEnabled: true}), saleBody)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
@@ -105,7 +105,7 @@ func TestInStoreSale_Replay200(t *testing.T) {
 
 func TestInStoreSale_OutOfStock409NamesVariant(t *testing.T) {
 	rec := &fakeRecorder{err: checkoutcore.OutOfStockError{VariantID: "v1"}}
-	w := postSale(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{}), saleBody)
+	w := postSale(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{InStoreEnabled: true}), saleBody)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", w.Code)
 	}
@@ -118,19 +118,19 @@ func TestInStoreSale_OutOfStock409NamesVariant(t *testing.T) {
 
 func TestInStoreSale_CashierDiscountOnlyWhenEnabled(t *testing.T) {
 	rec := &fakeRecorder{}
-	postSale(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{}), saleBody)
+	postSale(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{InStoreEnabled: true}), saleBody)
 	if rec.got.CanDiscount {
 		t.Error("cashier may not discount unless the store allows it")
 	}
 
 	rec = &fakeRecorder{}
-	postSale(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{CashierDiscountsEnabled: true}), saleBody)
+	postSale(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{InStoreEnabled: true, CashierDiscountsEnabled: true}), saleBody)
 	if !rec.got.CanDiscount {
 		t.Error("store allows cashier discounts")
 	}
 
 	rec = &fakeRecorder{}
-	postSale(inStoreEngine(t, rec, authz.RoleStaff, &stores.Store{}), saleBody)
+	postSale(inStoreEngine(t, rec, authz.RoleStaff, &stores.Store{InStoreEnabled: true}), saleBody)
 	if !rec.got.CanDiscount {
 		t.Error("staff may always discount")
 	}
@@ -141,7 +141,7 @@ func TestInStoreQuote_200(t *testing.T) {
 		Subtotal: decimal.RequireFromString("40.00"), TaxTotal: decimal.RequireFromString("4.00"),
 		GrandTotal: decimal.RequireFromString("44.00"), CurrencyCode: "AUD",
 	}}
-	w := post(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{}), "quote",
+	w := post(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{InStoreEnabled: true}), "quote",
 		`{"lines":[{"variant_id":"v1","quantity":2}]}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body %s", w.Code, w.Body)
@@ -157,7 +157,7 @@ func TestInStoreSale_TotalChanged409(t *testing.T) {
 	rec := &fakeRecorder{err: &instore.TotalChangedError{
 		Expected: decimal.RequireFromString("40.00"), Actual: decimal.RequireFromString("46.00"),
 	}}
-	w := postSale(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{}),
+	w := postSale(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{InStoreEnabled: true}),
 		`{"idempotency_key":"k1","lines":[{"variant_id":"v1","quantity":1}],"payment_method":"card_external","expected_total":"40.00"}`)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", w.Code)
@@ -186,9 +186,9 @@ func TestInStorePermissions_CanDiscount(t *testing.T) {
 		store *stores.Store
 		want  string
 	}{
-		{"cashier, setting off", authz.RoleCashier, &stores.Store{}, `{"can_discount":false}`},
-		{"cashier, setting on", authz.RoleCashier, &stores.Store{CashierDiscountsEnabled: true}, `{"can_discount":true}`},
-		{"staff", authz.RoleStaff, &stores.Store{}, `{"can_discount":true}`},
+		{"cashier, setting off", authz.RoleCashier, &stores.Store{InStoreEnabled: true}, `{"can_discount":false,"enabled":true}`},
+		{"cashier, setting on", authz.RoleCashier, &stores.Store{InStoreEnabled: true, CashierDiscountsEnabled: true}, `{"can_discount":true,"enabled":true}`},
+		{"staff", authz.RoleStaff, &stores.Store{InStoreEnabled: true}, `{"can_discount":true,"enabled":true}`},
 	}
 	for _, tc := range cases {
 		w := get(inStoreEngine(t, &fakeRecorder{}, tc.role, tc.store), "permissions")
@@ -201,12 +201,12 @@ func TestInStorePermissions_CanDiscount(t *testing.T) {
 // Denials are 404 from the authz middleware, so the route's existence isn't leaked.
 func TestInStoreSettings_OwnerAdminOnly(t *testing.T) {
 	for _, role := range []authz.Role{authz.RoleCashier, authz.RoleStaff} {
-		e := inStoreEngine(t, &fakeRecorder{}, role, &stores.Store{})
+		e := inStoreEngine(t, &fakeRecorder{}, role, &stores.Store{InStoreEnabled: true})
 		if w := get(e, "settings"); w.Code != http.StatusNotFound {
 			t.Errorf("%s GET settings: %d", role, w.Code)
 		}
 		req := httptest.NewRequest(http.MethodPut, "/admin/stores/"+uuid.NewString()+"/in-store/settings",
-			strings.NewReader(`{"cashier_discounts_enabled":true}`))
+			strings.NewReader(`{"cashier_discounts_enabled":true,"in_store_enabled":true}`))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		e.ServeHTTP(w, req)
@@ -214,8 +214,8 @@ func TestInStoreSettings_OwnerAdminOnly(t *testing.T) {
 			t.Errorf("%s PUT settings: %d", role, w.Code)
 		}
 	}
-	w := get(inStoreEngine(t, &fakeRecorder{}, authz.RoleAdmin, &stores.Store{CashierDiscountsEnabled: true}), "settings")
-	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true}` {
+	w := get(inStoreEngine(t, &fakeRecorder{}, authz.RoleAdmin, &stores.Store{InStoreEnabled: true, CashierDiscountsEnabled: true}), "settings")
+	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":true}` {
 		t.Errorf("admin GET settings: %d %s", w.Code, w.Body)
 	}
 }
@@ -244,20 +244,20 @@ func postReceipt(e *gin.Engine, body string) *httptest.ResponseRecorder {
 
 func TestReceiptLink_CashierOwnSalesOnly(t *testing.T) {
 	r := &fakeReceipts{soldBy: "someone-else"}
-	e := inStoreEngine(t, &fakeRecorder{}, authz.RoleCashier, &stores.Store{}, r)
+	e := inStoreEngine(t, &fakeRecorder{}, authz.RoleCashier, &stores.Store{InStoreEnabled: true}, r)
 	if w := postReceipt(e, `{"send":false}`); w.Code != http.StatusNotFound || r.issued {
 		t.Errorf("cashier on another's sale: %d issued=%v", w.Code, r.issued)
 	}
 
 	r = &fakeReceipts{soldBy: "u-1"}
-	e = inStoreEngine(t, &fakeRecorder{}, authz.RoleCashier, &stores.Store{}, r)
+	e = inStoreEngine(t, &fakeRecorder{}, authz.RoleCashier, &stores.Store{InStoreEnabled: true}, r)
 	w := postReceipt(e, `{"send":false}`)
 	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"url":"https://s.mark8ly.com/r/tok"}` {
 		t.Errorf("cashier own sale: %d %s", w.Code, w.Body)
 	}
 
 	r = &fakeReceipts{soldBy: "someone-else"}
-	e = inStoreEngine(t, &fakeRecorder{}, authz.RoleStaff, &stores.Store{}, r)
+	e = inStoreEngine(t, &fakeRecorder{}, authz.RoleStaff, &stores.Store{InStoreEnabled: true}, r)
 	if w := postReceipt(e, `{"send":true,"email":"jo@example.com"}`); w.Code != http.StatusOK || r.sent != "jo@example.com" {
 		t.Errorf("staff on any sale: %d sent=%q", w.Code, r.sent)
 	}
@@ -265,7 +265,7 @@ func TestReceiptLink_CashierOwnSalesOnly(t *testing.T) {
 
 func TestReceiptLink_SendNeedsEmail(t *testing.T) {
 	r := &fakeReceipts{soldBy: "u-1"}
-	e := inStoreEngine(t, &fakeRecorder{}, authz.RoleCashier, &stores.Store{}, r)
+	e := inStoreEngine(t, &fakeRecorder{}, authz.RoleCashier, &stores.Store{InStoreEnabled: true}, r)
 	if w := postReceipt(e, `{"send":true}`); w.Code != http.StatusBadRequest {
 		t.Errorf("send without email: %d", w.Code)
 	}
@@ -273,7 +273,7 @@ func TestReceiptLink_SendNeedsEmail(t *testing.T) {
 
 func TestInStoreSale_RecordsSellerEmailFromSession(t *testing.T) {
 	rec := &fakeRecorder{}
-	e := inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{})
+	e := inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{InStoreEnabled: true})
 	req := httptest.NewRequest(http.MethodPost, "/admin/stores/"+uuid.NewString()+"/in-store/sales", strings.NewReader(saleBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-User-Email", "sam@shop.test")
@@ -298,7 +298,7 @@ func TestOutsideRefund_OwnerAdminOnly(t *testing.T) {
 	body := `{"refund_request_id":"r1","method":"cash","items":[{"order_item_id":"` + uuid.NewString() + `","quantity":1}]}`
 	for _, role := range []authz.Role{authz.RoleCashier, authz.RoleStaff} {
 		f := &fakeRefunder{}
-		e := inStoreEngine(t, &fakeRecorder{}, role, &stores.Store{})
+		e := inStoreEngine(t, &fakeRecorder{}, role, &stores.Store{InStoreEnabled: true})
 		if w := post(e, "sales/"+uuid.NewString()+"/refund", body); w.Code != http.StatusNotFound || f.got.RequestID != "" {
 			t.Errorf("%s: %d", role, w.Code)
 		}
@@ -321,8 +321,37 @@ func inStoreEngineWithRefunds(t *testing.T, role authz.Role, r admin.InStoreRefu
 	g := e.Group("/admin/stores/:storeId", func(c *gin.Context) {
 		c.Set("user_id", "u-1")
 		c.Set("tenant_id", tenantID)
-		c.Set("store", &stores.Store{})
+		c.Set("store", &stores.Store{InStoreEnabled: true})
 	})
 	g.POST("/in-store/sales/:id/refund", authz.NewMiddleware(fga, nil).RequireTenantRelation(authz.RoleAdmin), h.OutsideRefund)
 	return e
+}
+
+func TestInStore_TurnedOffRefusesSelling(t *testing.T) {
+	rec := &fakeRecorder{}
+	e := inStoreEngine(t, rec, authz.RoleOwner, &stores.Store{})
+	if w := postSale(e, saleBody); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "turned off") {
+		t.Errorf("sale: %d %s", w.Code, w.Body)
+	}
+	if w := post(e, "quote", `{"lines":[{"variant_id":"v1","quantity":1}]}`); w.Code != http.StatusForbidden {
+		t.Errorf("quote: %d", w.Code)
+	}
+	if rec.got.IdempotencyKey != "" {
+		t.Error("a sale reached the recorder")
+	}
+	if w := get(e, "permissions"); strings.TrimSpace(w.Body.String()) != `{"can_discount":true,"enabled":false}` {
+		t.Errorf("permissions: %s", w.Body)
+	}
+}
+
+func TestInStoreSettings_PartialUpdateNeedsDB(t *testing.T) {
+	// Partial PUTs are covered by the integration test; here, an empty body is refused.
+	e := inStoreEngine(t, &fakeRecorder{}, authz.RoleAdmin, &stores.Store{InStoreEnabled: true})
+	req := httptest.NewRequest(http.MethodPut, "/admin/stores/"+uuid.NewString()+"/in-store/settings", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	e.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("empty settings: %d", w.Code)
+	}
 }

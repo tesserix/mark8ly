@@ -383,12 +383,31 @@ func (h *InStoreHandler) Permissions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"can_discount": can})
+	c.JSON(http.StatusOK, gin.H{"can_discount": can, "enabled": store.InStoreEnabled})
 }
 
-// InStoreSettings is the store's in-store sales configuration (#1104).
+// InStoreSettings is the store's in-store sales configuration.
 type InStoreSettings struct {
 	CashierDiscountsEnabled bool `json:"cashier_discounts_enabled"`
+	InStoreEnabled          bool `json:"in_store_enabled"`
+}
+
+// InStoreSettingsUpdate changes only the fields it carries.
+type InStoreSettingsUpdate struct {
+	CashierDiscountsEnabled *bool `json:"cashier_discounts_enabled"`
+	InStoreEnabled          *bool `json:"in_store_enabled"`
+}
+
+// RequireEnabled refuses selling while in-store sales are turned off for the
+// store. Receipts and refunds for past sales stay available.
+func (h *InStoreHandler) RequireEnabled(c *gin.Context) {
+	v, _ := c.Get("store")
+	if s, _ := v.(*stores.Store); s == nil || !s.InStoreEnabled {
+		RespondErr(c, apperrors.New(apperrors.CodeForbidden, "In-store sales are turned off for this store."), h.logger)
+		c.Abort()
+		return
+	}
+	c.Next()
 }
 
 // Settings handles GET /admin/stores/:storeId/in-store/settings (owner, admin).
@@ -397,7 +416,7 @@ func (h *InStoreHandler) Settings(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, InStoreSettings{CashierDiscountsEnabled: store.CashierDiscountsEnabled})
+	c.JSON(http.StatusOK, InStoreSettings{CashierDiscountsEnabled: store.CashierDiscountsEnabled, InStoreEnabled: store.InStoreEnabled})
 }
 
 // UpdateSettings handles PUT /admin/stores/:storeId/in-store/settings (owner,
@@ -407,18 +426,34 @@ func (h *InStoreHandler) UpdateSettings(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var req InStoreSettings
+	var req InStoreSettingsUpdate
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
 		return
 	}
-	if err := h.db.WithContext(c.Request.Context()).Model(&stores.Store{}).
-		Where("id = ?", storeID).
-		Update("cashier_discounts_enabled", req.CashierDiscountsEnabled).Error; err != nil {
+	set := map[string]any{}
+	if req.CashierDiscountsEnabled != nil {
+		set["cashier_discounts_enabled"] = *req.CashierDiscountsEnabled
+	}
+	if req.InStoreEnabled != nil {
+		set["in_store_enabled"] = *req.InStoreEnabled
+	}
+	if len(set) == 0 {
+		RespondErr(c, apperrors.ValidationFailed("body", "nothing to change"), h.logger)
+		return
+	}
+	var out InStoreSettings
+	err := h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&stores.Store{}).Where("id = ?", storeID).Updates(set).Error; err != nil {
+			return err
+		}
+		return tx.Raw(`SELECT cashier_discounts_enabled, in_store_enabled FROM stores WHERE id = ?`, storeID).Scan(&out).Error
+	})
+	if err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}
-	c.JSON(http.StatusOK, req)
+	c.JSON(http.StatusOK, out)
 }
 
 // InStoreReceiptRequest asks for a receipt link; send emails it to email.

@@ -50,6 +50,9 @@ type Store struct {
 	// prices at the counter (#1104). Owned here, not synced from
 	// platform-api, so it is absent from storeUpsertAssignments.
 	CashierDiscountsEnabled bool `gorm:"column:cashier_discounts_enabled;not null;default:false" json:"cashier_discounts_enabled"`
+	// InStoreEnabled turns in-store sales on for the store. Owned here like
+	// CashierDiscountsEnabled.
+	InStoreEnabled bool `gorm:"column:in_store_enabled;not null;default:false" json:"in_store_enabled"`
 }
 
 func (Store) TableName() string { return "stores" }

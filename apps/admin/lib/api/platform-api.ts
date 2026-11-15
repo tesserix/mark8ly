@@ -212,7 +212,7 @@ export async function updateStore(
  * sentinel is only used by `fetchTenantMe`'s null-on-404 fallback
  * and should never leak into UI-facing code.
  */
-export type TenantRole = "owner" | "admin" | "staff" | "viewer";
+export type TenantRole = "owner" | "admin" | "staff" | "viewer" | "cashier";
 
 /**
  * A single entry in the caller's tenant list. Returned by
@@ -321,7 +321,7 @@ export interface InvitationVerifyResult {
  * admin/staff/viewer (mirrors Phase P). Store-scoped invites use
  * manager/staff/viewer (mirrors the store DSL relations).
  */
-export type InviteRole = "admin" | "manager" | "staff" | "viewer";
+export type InviteRole = "admin" | "manager" | "staff" | "viewer" | "cashier";
 
 export async function createInvitation(
   tenantId: string,

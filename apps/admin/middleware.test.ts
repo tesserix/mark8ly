@@ -11,9 +11,9 @@ const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "m8_session";
 // Builds a request against `{slug}-admin.mark8ly.com/dashboard` carrying a
 // valid session cookie value — the value itself is never inspected because
 // auth-bff's response (mocked below) is the only thing that matters.
-function buildRequest(): NextRequest {
+function buildRequest(path = "/dashboard"): NextRequest {
   const req = new NextRequest(
-    `https://${SLUG}-admin.mark8ly.com/dashboard`,
+    `https://${SLUG}-admin.mark8ly.com${path}`,
     { headers: { host: `${SLUG}-admin.mark8ly.com`, cookie: `${SESSION_COOKIE_NAME}=valid-session-token` } },
   );
   return req;
@@ -22,7 +22,7 @@ function buildRequest(): NextRequest {
 // Routes the mocked global fetch by URL substring so the test doesn't care
 // about call order — the middleware makes several sequential fetches
 // (slug-status, session, store-by-slug, role) before it finishes.
-function mockFetchForStatus(status: string) {
+function mockFetchForStatus(status: string, role = "owner") {
   global.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
 
@@ -48,7 +48,7 @@ function mockFetchForStatus(status: string) {
       );
     }
     if (url.includes("/internal/tenants/") && url.includes("/me")) {
-      return new Response(JSON.stringify({ data: { role: "owner" } }), {
+      return new Response(JSON.stringify({ data: { role } }), {
         status: 200,
       });
     }
@@ -181,5 +181,31 @@ describe("admin middleware — Google IdP finish route", () => {
     });
     const res = await middleware(req);
     expect(res.status).toBe(404);
+  });
+});
+
+describe("admin middleware — cashier", () => {
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("sends a cashier from any other page to the sale screen", async () => {
+    mockFetchForStatus("active", "cashier");
+    const res = await middleware(buildRequest("/orders"));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe(`https://${SLUG}-admin.mark8ly.com/sell`);
+  });
+
+  it("lets a cashier open the sale screen", async () => {
+    mockFetchForStatus("active", "cashier");
+    const res = await middleware(buildRequest("/sell"));
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("leaves an owner on the page they asked for", async () => {
+    mockFetchForStatus("active");
+    const res = await middleware(buildRequest("/orders"));
+    expect(res.headers.get("location")).toBeNull();
   });
 });

@@ -1,11 +1,12 @@
 import { getServerSessionContext } from "@/lib/auth/serverSession";
-import { getInStoreCatalog } from "@/lib/api/instore-api";
+import { getInStoreCatalog, getInStorePermissions, getMySalesToday } from "@/lib/api/instore-api";
 
 import { AdminPage } from "@/components/layout";
+import { MySalesToday } from "@/components/instore/MySalesToday";
 import { SaleScreen } from "@/components/instore/SaleScreen";
 
 export default async function SellPage() {
-  const { currentStore, role, userId, tenantId } = await getServerSessionContext();
+  const { currentStore, userId, tenantId } = await getServerSessionContext();
 
   if (!currentStore) {
     return (
@@ -15,7 +16,12 @@ export default async function SellPage() {
     );
   }
 
-  const catalog = await getInStoreCatalog(currentStore.id, { userId, tenantId });
+  const session = { userId, tenantId };
+  const [catalog, permissions, mySales] = await Promise.all([
+    getInStoreCatalog(currentStore.id, session),
+    getInStorePermissions(currentStore.id, session),
+    getMySalesToday(currentStore.id, session),
+  ]);
 
   return (
     <AdminPage
@@ -27,9 +33,12 @@ export default async function SellPage() {
         storeId={currentStore.id}
         currencyCode={currentStore.currency_code}
         catalog={catalog}
-        // Viewers cannot reach the sale routes; everyone else here is staff or above.
-        canDiscount={role !== "viewer"}
+        // The server decides: staff and above, or a cashier when the store allows it.
+        canDiscount={permissions.canDiscount}
       />
+      <div className="mt-10 border-t border-border-subtle pt-8 md:max-w-xl">
+        <MySalesToday sales={mySales} currencyCode={currentStore.currency_code} />
+      </div>
     </AdminPage>
   );
 }

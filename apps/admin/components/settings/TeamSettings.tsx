@@ -24,6 +24,7 @@ import {
   inviteTeammate,
   revokeInvite,
 } from "@/app/(admin)/settings/team/actions";
+import { canEditMember, inviteRoleOptions, memberRoleOptions, roleLabel } from "@/lib/team/roles";
 
 interface TeamSettingsProps {
   members: TeamMember[];
@@ -82,10 +83,7 @@ export function TeamSettings({
   // Store-scoped: manager/staff/viewer. When the scope flips we reset
   // the role to the safe "staff" default so we never ship a combo
   // that would fail the backend allowlist.
-  const roleOptions: InviteRole[] =
-    scope === "tenant"
-      ? ["admin", "staff", "viewer"]
-      : ["manager", "staff", "viewer"];
+  const roleOptions = inviteRoleOptions(scope);
 
   function handleScopeChange(next: Scope) {
     setScope(next);
@@ -165,15 +163,7 @@ export function TeamSettings({
    *   - Admin (viewer): can edit staff/viewer only, not other admins
    */
   function canEditMemberRole(m: TeamMember): boolean {
-    if (m.kind === "owner") return false;
-    if (currentUserEmail && m.email.toLowerCase() === currentUserEmail.toLowerCase()) {
-      return false;
-    }
-    if (currentRole === "owner") return true;
-    if (currentRole === "admin") {
-      return m.role === "staff" || m.role === "viewer";
-    }
-    return false;
+    return canEditMember(currentRole, m, currentUserEmail);
   }
 
   return (
@@ -201,10 +191,7 @@ export function TeamSettings({
             {members.map((m) => {
               const editable = canEditMemberRole(m);
               const isPending = roleChangePending === m.email;
-              const adminEditOptions: InviteRole[] =
-                currentRole === "owner"
-                  ? ["admin", "staff", "viewer"]
-                  : ["staff", "viewer"];
+              const adminEditOptions = memberRoleOptions(currentRole);
               return (
                 <li
                   key={`${m.kind}-${m.email}`}
@@ -243,7 +230,7 @@ export function TeamSettings({
                           <SelectContent>
                             {adminEditOptions.map((r) => (
                               <SelectItem key={r} value={r}>
-                                {r.charAt(0).toUpperCase() + r.slice(1)}
+                                {roleLabel(r)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -335,7 +322,7 @@ export function TeamSettings({
                   <SelectContent>
                     {roleOptions.map((r) => (
                       <SelectItem key={r} value={r}>
-                        {r.charAt(0).toUpperCase() + r.slice(1)}
+                        {roleLabel(r)}
                       </SelectItem>
                     ))}
                   </SelectContent>

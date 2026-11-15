@@ -8,6 +8,8 @@ import {
 import { platformInternalHeaders } from "./lib/api/server/platformInternal";
 import { isCrossOriginStateChange } from "@repo/ui/auth/csrf";
 import { buildCsp, newNonce } from "./lib/security/csp";
+import { cashierPath } from "./lib/auth/cashier";
+import type { TenantRole } from "./lib/api/platform-api";
 
 /**
  * Admin middleware — Phase J.
@@ -412,7 +414,7 @@ async function handleRequest(
   // auth-bff to embed role in session mint, coupling two services
   // on the same redeploy. A dedicated edge cache (Redis or even an
   // in-memory LRU) lands when latency warrants it.
-  let role: "owner" | "admin" | "staff" | "viewer" | null = null;
+  let role: TenantRole | null = null;
   try {
     const roleRes = await fetch(
       `${PLATFORM_API_URL}/internal/tenants/${session.tenant_id}/me?uid=${encodeURIComponent(session.user_id)}`,
@@ -420,7 +422,7 @@ async function handleRequest(
     );
     if (roleRes.ok) {
       const body = (await roleRes.json()) as {
-        data: { role: "owner" | "admin" | "staff" | "viewer" };
+        data: { role: TenantRole };
       };
       role = body.data.role;
     }
@@ -480,6 +482,11 @@ async function handleRequest(
       return NextResponse.redirect(target);
     }
     return NextResponse.redirect(new URL("/pick-tenant", req.nextUrl));
+  }
+
+  // A cashier sells in store and nothing else (#1104).
+  if (role === "cashier" && cashierPath(pathname) === "redirect") {
+    return NextResponse.redirect(new URL("/sell", externalOrigin(req)));
   }
 
   // Forward the resolved session to the server component via request

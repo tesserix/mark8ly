@@ -106,7 +106,14 @@ func refresh(ctx context.Context, cfg MiddlewareConfig, storeID, tenantID string
 	if err := cfg.Repo.Upsert(ctx, fresh); err != nil {
 		return nil, err
 	}
-	return fresh, nil
+	// platform-api knows nothing of the columns this service owns (in-store
+	// on/off, cashier discounts, the portal secret); the upsert keeps them,
+	// so serve the row as stored rather than platform-api's copy.
+	stored, err := cfg.Repo.GetByIDForTenant(ctx, storeID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return stored, nil
 }
 
 func respondNotFound(c *gin.Context) {

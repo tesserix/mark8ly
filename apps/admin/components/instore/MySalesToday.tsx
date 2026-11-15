@@ -3,11 +3,20 @@ import { formatMoney } from "@/lib/format";
 
 import { PAYMENT_METHODS } from "@/lib/instore/payment-methods";
 
-const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 
 // The seller's own sales today (#1104): how a cashier, who can't open
 // Orders, checks whether a sale went through.
-export function MySalesToday({ sales, currencyCode }: { sales: MySale[] | null; currencyCode: string }) {
+// This renders on the server, so the time zone must be the store's.
+export function MySalesToday({
+  sales,
+  currencyCode,
+  timeZone,
+}: {
+  sales: MySale[] | null;
+  currencyCode: string;
+  timeZone?: string;
+}) {
+  const time = new Intl.DateTimeFormat("en-AU", { hour: "numeric", minute: "2-digit", timeZone: timeZone || undefined });
   const newestFirst = sales ? [...sales].sort((a, b) => b.placed_at.localeCompare(a.placed_at)) : null;
   return (
     <section aria-label="Your sales today" className="flex flex-col gap-3">

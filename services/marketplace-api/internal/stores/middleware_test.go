@@ -80,6 +80,12 @@ func (r *fakeRepo) Upsert(_ context.Context, s *stores.Store) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	cp := *s
+	// As the real upsert: columns this service owns survive a sync.
+	if old, ok := r.byKey[s.TenantID+"|"+s.ID]; ok {
+		cp.CashierDiscountsEnabled = old.CashierDiscountsEnabled
+		cp.InStoreEnabled = old.InStoreEnabled
+		cp.StorefrontCustomerPortalSecret = old.StorefrontCustomerPortalSecret
+	}
 	r.byKey[s.TenantID+"|"+s.ID] = &cp
 	r.upserts++
 	return nil
@@ -614,5 +620,26 @@ func TestStoreMiddleware_ConcurrentRefreshIsTenantScoped(t *testing.T) {
 	}
 	if got := client.calls.Load(); got != 2 {
 		t.Fatalf("platform client calls = %d, want 2 (one per tenant)", got)
+	}
+}
+
+// A refresh copies platform-api's fields; the request must still see the
+// columns this service owns (in-store on/off, cashier discounts), or the
+// sale screen reads as turned off every time the projection goes stale.
+func TestMiddleware_StaleRefreshKeepsLocalColumns(t *testing.T) {
+	repo := newFakeRepo()
+	local := newFixtureStore(time.Now().Add(-6 * time.Minute))
+	local.InStoreEnabled = true
+	local.CashierDiscountsEnabled = true
+	repo.preload(local)
+	client := &fakeClient{result: newFixtureStore(time.Time{})}
+	p := &probe{}
+	r := buildRouter(baseCfg(repo, client), p)
+
+	if w := doRequest(r); w.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200", w.Code)
+	}
+	if p.store == nil || !p.store.InStoreEnabled || !p.store.CashierDiscountsEnabled {
+		t.Fatalf("refresh dropped local columns: %+v", p.store)
 	}
 }

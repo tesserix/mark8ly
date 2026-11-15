@@ -1,7 +1,7 @@
 import type { MySale } from "@/lib/api/instore-api";
 import { formatMoney } from "@/lib/format";
 
-import { PAYMENT_METHODS } from "./ChargeSheet";
+import { PAYMENT_METHODS } from "@/lib/instore/payment-methods";
 
 const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 

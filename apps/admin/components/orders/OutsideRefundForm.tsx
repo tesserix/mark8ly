@@ -8,7 +8,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 
 import { recordOutsideRefundAction } from "@/app/(admin)/orders/[id]/actions";
-import { PAYMENT_METHODS } from "@/components/instore/ChargeSheet";
+import { PAYMENT_METHODS } from "@/lib/instore/payment-methods";
 import { formatMoney } from "@/lib/format";
 import { fromCents, toCents } from "@/lib/instore/cart";
 

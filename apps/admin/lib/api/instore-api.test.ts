@@ -78,14 +78,14 @@ describe("quoteInStoreSale", () => {
 
 describe("getInStorePermissions", () => {
   it("returns the server's can_discount", async () => {
-    const fetchMock = respond(200, { can_discount: true });
-    expect(await getInStorePermissions("s1", session)).toEqual({ canDiscount: true });
+    const fetchMock = respond(200, { can_discount: true, enabled: true });
+    expect(await getInStorePermissions("s1", session)).toEqual({ canDiscount: true, enabled: true });
     expect(String(fetchMock.mock.calls[0]![0])).toMatch(/\/in-store\/permissions$/);
   });
 
   it("denies discounts when it can't ask", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
-    expect(await getInStorePermissions("s1", session)).toEqual({ canDiscount: false });
+    expect(await getInStorePermissions("s1", session)).toEqual({ canDiscount: false, enabled: false });
   });
 });
 

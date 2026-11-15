@@ -74,6 +74,7 @@ interface AdminShellProps {
   currentStoreId?: string;
   userId?: string;
   tenantId?: string;
+  inStoreEnabled?: boolean;
 }
 
 interface NavLeaf {
@@ -151,6 +152,7 @@ const navigation: NavSection[] = [
       { group: "Store", label: "Domains", href: "/settings/domains" },
       { group: "Selling", label: "Payments", href: "/settings/payments" },
       { group: "Selling", label: "Shipping", href: "/settings/shipping" },
+      { group: "Selling", label: "In-store sales", href: "/settings/in-store" },
       { group: "Team & access", label: "Team", href: "/settings/team" },
       { group: "Team & access", label: "Single sign-on", href: "/settings/sso" },
       { group: "Team & access", label: "Audit Logs", href: "/settings/audit-logs" },
@@ -183,8 +185,12 @@ const cashierNavigation: NavSection[] = [
   { key: "sell", label: "In-store sale", icon: ShoppingCart, href: "/sell" },
 ];
 
-export function navigationFor(role: TenantRole | undefined): NavSection[] {
-  return role === "cashier" ? cashierNavigation : navigation;
+// inStoreEnabled: the store sells in store (Settings → In-store sales); when
+// off, the sale screen leaves the menu but its setting stays.
+export function navigationFor(role: TenantRole | undefined, inStoreEnabled: boolean): NavSection[] {
+  if (role === "cashier") return cashierNavigation;
+  if (inStoreEnabled) return navigation;
+  return navigation.map((s) => (s.children ? { ...s, children: s.children.filter((c) => c.href !== "/sell") } : s));
 }
 
 export function AdminShell(props: AdminShellProps) {
@@ -208,6 +214,7 @@ function AdminShellFrame({
   currentStoreId,
   userId,
   tenantId,
+  inStoreEnabled = false,
 }: AdminShellProps) {
   const pathname = usePathname();
   const { state, toggleSidebar } = useSidebar();
@@ -277,7 +284,7 @@ function AdminShellFrame({
             </div>
             <SidebarGroupContent>
               <SidebarMenu className="space-y-1">
-                {navigationFor(role).map((section) => (
+                {navigationFor(role, inStoreEnabled).map((section) => (
                   <NavSectionItem
                     key={section.key}
                     section={section}
@@ -655,6 +662,9 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/settings/shipping")) {
     return { eyebrow: "Selling", title: "Shipping" };
+  }
+  if (pathname.startsWith("/settings/in-store")) {
+    return { eyebrow: "Selling", title: "In-store sales" };
   }
   if (pathname.startsWith("/settings/team")) {
     return { eyebrow: "Team & access", title: "Team" };

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { getInStoreCatalog, getInStorePermissions, getMySalesToday } from "@/lib/api/instore-api";
 
@@ -6,7 +7,7 @@ import { MySalesToday } from "@/components/instore/MySalesToday";
 import { SaleScreen } from "@/components/instore/SaleScreen";
 
 export default async function SellPage() {
-  const { currentStore, userId, tenantId } = await getServerSessionContext();
+  const { currentStore, userId, tenantId, role } = await getServerSessionContext();
 
   if (!currentStore) {
     return (
@@ -17,9 +18,28 @@ export default async function SellPage() {
   }
 
   const session = { userId, tenantId };
-  const [catalog, permissions, mySales] = await Promise.all([
+  const permissions = await getInStorePermissions(currentStore.id, session);
+  if (!permissions.enabled) {
+    return (
+      <AdminPage eyebrow="Orders" title="In-store sale" description="In-store sales are turned off for this store.">
+        <p className="text-sm text-foreground-secondary">
+          {role === "owner" || role === "admin" ? (
+            <>
+              Turn them on in{" "}
+              <Link href="/settings/in-store" className="underline">
+                Settings → In-store sales
+              </Link>
+              .
+            </>
+          ) : (
+            "Ask the store owner or an admin to turn them on."
+          )}
+        </p>
+      </AdminPage>
+    );
+  }
+  const [catalog, mySales] = await Promise.all([
     getInStoreCatalog(currentStore.id, session),
-    getInStorePermissions(currentStore.id, session),
     getMySalesToday(currentStore.id, session),
   ]);
 

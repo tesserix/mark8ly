@@ -898,10 +898,13 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		// and above. The only routes a cashier can reach.
 		if deps.InStoreHandler != nil {
 			inStore := storeRoute.Group("/in-store", deps.AuthzMiddleware.RequireTenantRelation(authz.InStoreSellRole))
-			inStore.GET("/catalog", deps.InStoreHandler.Catalog)
-			inStore.POST("/quote", deps.InStoreHandler.Quote)
-			inStore.POST("/sales", deps.InStoreHandler.RecordSale)
-			inStore.GET("/sales", deps.InStoreHandler.MySales)
+			// Selling stops while the store has in-store sales turned off;
+			// receipts and refunds for past sales do not.
+			on := deps.InStoreHandler.RequireEnabled
+			inStore.GET("/catalog", on, deps.InStoreHandler.Catalog)
+			inStore.POST("/quote", on, deps.InStoreHandler.Quote)
+			inStore.POST("/sales", on, deps.InStoreHandler.RecordSale)
+			inStore.GET("/sales", on, deps.InStoreHandler.MySales)
 			inStore.GET("/permissions", deps.InStoreHandler.Permissions)
 			inStore.POST("/sales/:id/receipt", deps.InStoreHandler.Receipt)
 			// Refunds made outside mark8ly (#1110) are for owners and

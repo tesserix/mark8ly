@@ -43,8 +43,18 @@ func TestIntegration_InStoreSettings_SavesAndSurvivesSync(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	e.ServeHTTP(w, req)
-	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true}` {
+	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":false}` {
 		t.Fatalf("PUT: %d %s", w.Code, w.Body)
+	}
+
+	// Turning in-store sales on leaves the discount flag alone.
+	req = httptest.NewRequest(http.MethodPut, "/admin/stores/"+storeID+"/in-store/settings",
+		strings.NewReader(`{"in_store_enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	e.ServeHTTP(w, req)
+	if strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":true}` {
+		t.Fatalf("partial PUT: %d %s", w.Code, w.Body)
 	}
 
 	// A platform-api sync rewrites the mirrored columns; the flag is ours.
@@ -54,13 +64,14 @@ func TestIntegration_InStoreSettings_SavesAndSurvivesSync(t *testing.T) {
 	}
 	s.Name = "Renamed"
 	s.CashierDiscountsEnabled = false
+	s.InStoreEnabled = false
 	if err := repo.Upsert(t.Context(), s); err != nil {
 		t.Fatal(err)
 	}
 
 	w = httptest.NewRecorder()
 	e.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/stores/"+storeID+"/in-store/settings", nil))
-	if strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true}` {
+	if strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":true}` {
 		t.Errorf("after sync: %s", w.Body)
 	}
 }

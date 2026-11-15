@@ -777,6 +777,10 @@ func encodePrintArea(r PrintAreaRect) (*datatypes.JSON, error) {
 		return nil, apperrors.ValidationFailed("personalisation_field.print_area",
 			"print area must lie within the mockup: x, y, w, h are percentages and must not exceed 100")
 	}
+	if r.Surface != "" && r.Surface != PrintSurfaceCurved {
+		return nil, apperrors.ValidationFailed("personalisation_field.print_area",
+			"print area surface must be flat (empty) or curved")
+	}
 	b, err := json.Marshal(r)
 	if err != nil {
 		return nil, apperrors.ValidationFailed("personalisation_field.print_area",

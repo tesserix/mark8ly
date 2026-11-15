@@ -28,11 +28,46 @@ export function personalisationFontAdvance(id: string | undefined): number {
  * to fit rather than letting it spill out of where it will be printed.
  */
 export function fitTextSize(value: string, font: string | undefined): string {
+  const { byHeight, byWidth } = fitPercents(value, font);
+  return `min(${byHeight.toFixed(2)}cqh, ${byWidth.toFixed(2)}cqw)`;
+}
+
+/** The two limits, as percentages of the print area's height and width. */
+function fitPercents(value: string, font: string | undefined) {
   const lines = value.split("\n");
   const longest = Math.max(1, ...lines.map((l) => l.length));
-  const byHeight = 70 / lines.length;
-  const byWidth = 92 / (longest * personalisationFontAdvance(font));
-  return `min(${byHeight.toFixed(2)}cqh, ${byWidth.toFixed(2)}cqw)`;
+  return { lines, byHeight: 70 / lines.length, byWidth: 92 / (longest * personalisationFontAdvance(font)) };
+}
+
+// How far the ends of a line rise above its middle, as a fraction of the
+// print area's width: a mug seen from a little above.
+const CURVE_RISE = 0.06;
+
+/**
+ * The text on a curved surface (a mug, bottle or candle), for an SVG of
+ * the print area's pixel size: the same font size as the flat preview,
+ * and one quadratic curve per line for a <textPath> to follow, ends
+ * raised so the line wraps round the surface. Following a path keeps the
+ * font's own letter spacing.
+ */
+export function curvedTextLayout(value: string, font: string | undefined, w: number, h: number) {
+  const { lines, byHeight, byWidth } = fitPercents(value, font);
+  const fontSize = Math.min((byHeight / 100) * h, (byWidth / 100) * w);
+  const rise = CURVE_RISE * w;
+  const lineHeight = fontSize * 1.1;
+  const top = (h - lineHeight * lines.length) / 2;
+  const f = (n: number) => Number(n.toFixed(2));
+  return {
+    fontSize,
+    lines: lines.map((_, i) => {
+      // Baseline about 0.8em into the line box; the middle of the curve
+      // sits there and the ends rise above it.
+      const mid = top + lineHeight * i + fontSize * 0.8;
+      // A quadratic's midpoint is (y0 + 2·cy + y1) / 4, so a control point
+      // as far below as the ends are above puts the middle exactly on it.
+      return `M0 ${f(mid - rise)} Q${f(w / 2)} ${f(mid + rise)} ${f(w)} ${f(mid - rise)}`;
+    }),
+  };
 }
 
 /**

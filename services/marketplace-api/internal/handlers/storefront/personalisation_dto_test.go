@@ -174,3 +174,15 @@ func TestToStorefrontPersonalisationFields_MockupURLJoinsCleanly(t *testing.T) {
 	require.NotNil(t, out[0].MockupURL)
 	require.Equal(t, "https://cdn.mark8ly.com/tenants/t1/m/a.jpg", *out[0].MockupURL)
 }
+
+// A curved surface reaches the shop, which bends the buyer's text round it.
+func TestToStorefrontPersonalisationFields_CurvedSurface(t *testing.T) {
+	area := datatypes.JSON([]byte(`{"x":10,"y":10,"w":50,"h":50,"surface":"curved"}`))
+	out := storefront.ToStorefrontPersonalisationFields([]product.PersonalisationField{{
+		ID: "f1", ProductID: "p1", Key: "name", Label: "Name", Kind: product.PersonalisationKindImage,
+		MockupStorageKey: strp("tenants/t1/mockups/abc/mug.jpg"), PrintArea: &area,
+	}}, testMediaBase)
+	blob, err := json.Marshal(out[0])
+	require.NoError(t, err)
+	require.Contains(t, string(blob), `"print_area":{"x":10,"y":10,"w":50,"h":50,"surface":"curved"}`)
+}

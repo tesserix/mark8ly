@@ -15,7 +15,7 @@
 // storefront's composite be the same two lines of CSS.
 
 import * as React from "react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import Image from "next/image";
 
 export interface MockupMedia {
@@ -30,6 +30,8 @@ export interface PrintAreaValue {
   y: number;
   w: number;
   h: number;
+  /** "curved" for a mug or bottle; absent means flat. */
+  surface?: "curved";
 }
 
 export interface MockupConfigProps {
@@ -63,10 +65,12 @@ export function MockupConfig({
 }: MockupConfigProps): React.ReactElement {
   const [selectedKey, setSelectedKey] = useState<string | undefined>(mockupStorageKey);
   const [area, setArea] = useState<PrintAreaValue>(printArea ?? DEFAULT_AREA);
+  // One radio group per editor: a product can have several fields.
+  const surfaceName = useId();
 
   const selected = media.find((m) => m.storage_key === selectedKey);
 
-  const setField = (k: keyof PrintAreaValue, raw: string) => {
+  const setField = (k: "x" | "y" | "w" | "h", raw: string) => {
     const n = Number.parseFloat(raw);
     setArea((a) => ({ ...a, [k]: Number.isFinite(n) ? n : 0 }));
   };
@@ -166,6 +170,28 @@ export function MockupConfig({
               </label>
             ))}
           </div>
+
+          {/* A mug or bottle wraps the print round it; the storefront
+              preview bends the buyer's text to match. */}
+          <fieldset className="flex flex-col gap-1">
+            <legend className="text-xs font-medium text-[var(--ink-700)]">Surface</legend>
+            {(
+              [
+                [undefined, "Flat (shirt, tote, card, print)"],
+                ["curved", "Curved (mug, bottle, candle)"],
+              ] as const
+            ).map(([value, label]) => (
+              <label key={label} className="flex items-center gap-2 text-xs text-[var(--ink-700)]">
+                <input
+                  type="radio"
+                  name={surfaceName}
+                  checked={area.surface === value}
+                  onChange={() => setArea((a) => ({ ...a, surface: value }))}
+                />
+                {label}
+              </label>
+            ))}
+          </fieldset>
         </>
       ) : null}
 
@@ -183,6 +209,8 @@ export function MockupConfig({
                       y: clamp(area.y),
                       w: clamp(area.w),
                       h: clamp(area.h),
+                      // Flat is the default and is left out.
+                      ...(area.surface === "curved" ? { surface: "curved" as const } : {}),
                     },
                   }
                 : // Clearing is an explicit pair of nulls: a mockup with

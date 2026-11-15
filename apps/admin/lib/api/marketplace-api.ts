@@ -2727,6 +2727,8 @@ export interface PersonalisationPrintArea {
   y: number;
   w: number;
   h: number;
+  /** "curved" for a mug or bottle; absent means flat. */
+  surface?: "curved";
 }
 
 export interface PersonalisationOption {

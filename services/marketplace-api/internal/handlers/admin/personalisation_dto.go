@@ -25,6 +25,8 @@ type PrintAreaDTO struct {
 	Y float64 `json:"y"`
 	W float64 `json:"w"`
 	H float64 `json:"h"`
+	// Surface is "curved" for a mug or bottle; omitted means flat.
+	Surface string `json:"surface,omitempty"`
 }
 
 // PersonalisationOptionDTO is one value of a select field.
@@ -139,7 +141,7 @@ func toServicePrintArea(in *PrintAreaDTO) *product.PrintAreaRect {
 	if in == nil {
 		return nil
 	}
-	return &product.PrintAreaRect{X: in.X, Y: in.Y, W: in.W, H: in.H}
+	return &product.PrintAreaRect{X: in.X, Y: in.Y, W: in.W, H: in.H, Surface: in.Surface}
 }
 
 // toServiceTextColours converts the wire swatches to the domain's.

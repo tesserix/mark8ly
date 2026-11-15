@@ -66,6 +66,7 @@ type Receipt struct {
 	TaxTotal           decimal.Decimal `json:"tax_total"`
 	GrandTotal         decimal.Decimal `json:"grand_total"`
 	TaxLabel           string          `json:"tax_label"`
+	TimeZone           string          `json:"time_zone"` // the store's, for the date and time shown
 	Fresh              bool            `json:"fresh"`
 	PaymentMethod      *string         `json:"payment_method,omitempty"`
 	PaymentMethodLabel *string         `json:"payment_method_label,omitempty"`
@@ -162,6 +163,7 @@ type receiptOrder struct {
 	PaymentMethod      *string
 	PaymentMethodLabel *string
 	CountryCode        string
+	Timezone           string
 	LinkCreatedAt      time.Time
 }
 
@@ -170,7 +172,7 @@ func (s *ReceiptService) find(ctx context.Context, storeID uuid.UUID, token stri
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT o.id, o.order_number, o.placed_at, o.currency_code, o.subtotal, o.discount_total,
 		       o.tax_total, o.grand_total, o.customer_email, o.payment_method, o.payment_method_label,
-		       st.country_code, rl.created_at AS link_created_at
+		       st.country_code, st.timezone, rl.created_at AS link_created_at
 		  FROM receipt_links rl
 		  JOIN orders o ON o.id = rl.order_id AND o.deleted_at IS NULL
 		  JOIN stores st ON st.id = o.store_id
@@ -200,7 +202,7 @@ func (s *ReceiptService) Load(ctx context.Context, storeID uuid.UUID, token stri
 	r := &Receipt{
 		OrderNumber: o.OrderNumber, PlacedAt: o.PlacedAt, CurrencyCode: o.CurrencyCode, Lines: lines,
 		Subtotal: o.Subtotal, DiscountTotal: o.DiscountTotal, TaxTotal: o.TaxTotal, GrandTotal: o.GrandTotal,
-		TaxLabel: "Tax", Fresh: time.Since(o.LinkCreatedAt) < receiptFreshFor,
+		TaxLabel: "Tax", TimeZone: o.Timezone, Fresh: time.Since(o.LinkCreatedAt) < receiptFreshFor,
 	}
 	if o.CountryCode == "AU" {
 		r.TaxLabel = "GST included"

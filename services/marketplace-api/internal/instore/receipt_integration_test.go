@@ -55,6 +55,9 @@ func TestReceipt_IssueAndLoad(t *testing.T) {
 	require.Equal(t, 2, r.Lines[0].Quantity)
 	require.Equal(t, "40", r.GrandTotal.String())
 	require.Equal(t, "GST included", r.TaxLabel)
+	var tz string
+	require.NoError(t, f.db.Raw(`SELECT timezone FROM stores WHERE id = ?`, f.sid).Row().Scan(&tz))
+	require.Equal(t, tz, r.TimeZone, "the page shows the time where the shop is")
 	require.True(t, r.Fresh)
 	require.Equal(t, "cash", *r.PaymentMethod)
 	require.Equal(t, "j***@example.com", *r.ReceiptEmailMasked)

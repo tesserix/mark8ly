@@ -143,6 +143,44 @@ describe("SaleScreen", () => {
     expect(second).toBe(first);
   });
 
+  it("lets the seller pick cash when retrying a sale restored after reload", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      "mark8ly:instore-cart:s1",
+      JSON.stringify({
+        lines: [{ key: "k", variantId: "v1", title: "BMW M4 Laptop Skin", unitPrice: "40", quantity: 1 }],
+        discount: "", note: "", idempotencyKey: "key-1", locked: true,
+      }),
+    );
+    recordSaleAction.mockResolvedValue({ ok: true, orderId: "o1", orderNumber: "BON-1001", grandTotal: "44.00", reused: true });
+    renderScreen();
+    await user.click(screen.getByRole("button", { name: /^Charge/ }));
+    await screen.findByText(/Charge A\$44\.00/);
+    await user.click(screen.getByRole("radio", { name: /cash/i }));
+    await user.type(screen.getByLabelText(/cash tendered/i), "50");
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+    await screen.findByText(/BON-1001/);
+    expect(recordSaleAction.mock.calls[0]![1]).toMatchObject({
+      idempotency_key: "key-1", payment_method: "cash", cash_tendered: "50",
+    });
+  });
+
+  it("keeps a possibly-recorded sale locked when the retry is refused", async () => {
+    const user = userEvent.setup();
+    recordSaleAction
+      .mockResolvedValueOnce({ ok: false, kind: "unreachable" })
+      .mockResolvedValueOnce({ ok: false, kind: "rejected", message: "this product is not for sale in this store" });
+    renderScreen();
+    await ringUpSkinAndCharge(user);
+    await user.click(screen.getByRole("button", { name: /^paid/i }));
+    await user.click(await screen.findByRole("button", { name: /try again/i }));
+    expect(await screen.findByText(/not for sale/)).toBeInTheDocument();
+    const cart = screen.getByRole("region", { name: /cart/i });
+    expect(within(cart).queryByRole("button", { name: /remove/i })).not.toBeInTheDocument();
+    expect(within(cart).getByRole("button", { name: /discard this sale/i })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("mark8ly:instore-cart:s1") ?? "{}").idempotencyKey).toBeTruthy();
+  });
+
   it("names the line when out of stock", async () => {
     const user = userEvent.setup();
     recordSaleAction.mockResolvedValue({ ok: false, kind: "out_of_stock", variantId: "v1" });

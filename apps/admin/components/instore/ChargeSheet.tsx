@@ -63,7 +63,7 @@ export function ChargeSheet({
           <label key={m.value}
             className="flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm has-[:checked]:border-primary">
             <input type="radio" name="payment-method" value={m.value} checked={method === m.value}
-              disabled={pending || uncertain} onChange={() => onMethod(m.value)} />
+              disabled={pending} onChange={() => onMethod(m.value)} />
             {m.label}
           </label>
         ))}
@@ -72,7 +72,7 @@ export function ChargeSheet({
       {method === "cash" ? (
         <label className="flex flex-col gap-1 text-sm">
           Cash tendered
-          <input className={input} inputMode="decimal" value={tendered} disabled={pending || uncertain}
+          <input className={input} inputMode="decimal" value={tendered} disabled={pending}
             onChange={(e) => onTendered(e.target.value)} />
           {due !== null ? (
             <span className="text-base font-medium">Change {formatMoney(due, currencyCode)}</span>
@@ -85,7 +85,7 @@ export function ChargeSheet({
         <label className="flex flex-col gap-1 text-sm">
           Payment method name
           <input className={input} maxLength={40} placeholder="e.g. UPI" value={otherLabel}
-            disabled={pending || uncertain} onChange={(e) => onOtherLabel(e.target.value)} />
+            disabled={pending} onChange={(e) => onOtherLabel(e.target.value)} />
         </label>
       ) : null}
 

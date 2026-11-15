@@ -112,7 +112,9 @@ export function SaleScreen({
         setMessage(`The total changed to ${formatMoney(res.grandTotal, currencyCode)}. Charge that amount instead.`);
         return;
       case "rejected":
-        dispatch({ type: "refused" });
+        // After a lost answer the first attempt may exist, so a refusal
+        // now proves nothing: stay locked until it is checked or discarded.
+        if (!cart.locked) dispatch({ type: "refused" });
         setMessage(res.message);
         return;
     }

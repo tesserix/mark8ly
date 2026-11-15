@@ -3,6 +3,6 @@
 // keeps them from landing on pages that would only show errors.
 export function cashierPath(pathname: string): "allow" | "redirect" {
   if (pathname === "/sell" || pathname.startsWith("/sell/")) return "allow";
-  if (pathname === "/logout") return "allow";
+  if (pathname === "/logout" || pathname === "/pick-tenant") return "allow";
   return "redirect";
 }

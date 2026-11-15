@@ -12,6 +12,9 @@ vi.mock("@/app/(admin)/sell/actions", () => ({
   recordSaleAction: (...args: unknown[]) => recordSaleAction(...args),
 }));
 
+const refresh = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
+
 // Marks next/link anchors so a test can tell them from plain ones.
 vi.mock("next/link", () => ({
   default: ({ children, ...props }: { children: React.ReactNode }) => <a data-next-link {...props}>{children}</a>,
@@ -53,6 +56,7 @@ beforeEach(() => {
   localStorage.clear();
   quoteSaleAction.mockReset().mockResolvedValue(quote("44.00"));
   recordSaleAction.mockReset();
+  refresh.mockReset();
 });
 
 describe("SaleScreen", () => {
@@ -193,15 +197,56 @@ describe("SaleScreen", () => {
     expect(JSON.parse(localStorage.getItem("mark8ly:instore-cart:s1") ?? "{}").idempotencyKey).toBeTruthy();
   });
 
-  it("names the line when out of stock", async () => {
+  it("names the line when out of stock, without a stock count that may be stale", async () => {
     const user = userEvent.setup();
     recordSaleAction.mockResolvedValue({ ok: false, kind: "out_of_stock", variantId: "v1" });
     renderScreen();
     await ringUpSkinAndCharge(user);
     await user.click(screen.getByRole("button", { name: /^paid/i }));
     const cart = screen.getByRole("region", { name: /cart/i });
-    expect(await within(cart).findByText(/Only 5 left/)).toBeInTheDocument();
+    expect(await within(cart).findByText("Not enough stock")).toBeInTheDocument();
+    expect(within(cart).queryByText(/Only \d+ left/)).not.toBeInTheDocument();
     expect(within(cart).getByRole("button", { name: /remove/i })).toBeInTheDocument();
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it("treats a Paid that never reached the server (device offline) as no answer", async () => {
+    const user = userEvent.setup();
+    recordSaleAction.mockRejectedValue(new TypeError("Failed to fetch"));
+    renderScreen();
+    await ringUpSkinAndCharge(user);
+    await user.click(screen.getByRole("button", { name: /^paid/i }));
+    expect(await screen.findByText(/No connection, sale not recorded yet/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /try again/i })).toBeEnabled();
+    expect(JSON.parse(localStorage.getItem("mark8ly:instore-cart:s1") ?? "{}").locked).toBe(true);
+  });
+
+  it("lets the seller charge again when the quote never reached the server", async () => {
+    const user = userEvent.setup();
+    quoteSaleAction.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderScreen();
+    await user.click(screen.getByRole("button", { name: /BMW M4 Laptop Skin/ }));
+    await user.click(screen.getByRole("button", { name: /^Charge/ }));
+    expect(await screen.findByText(/No connection/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Charge$/ })).toBeEnabled();
+  });
+
+  it("doesn't say it is still working out the total once the charge is shown", async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await ringUpSkinAndCharge(user);
+    expect(screen.queryByText(/Working out the total/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Charge$/ })).toBeDisabled();
+  });
+
+  it("reloads the catalogue after a recorded sale, so stock counts stay current", async () => {
+    const user = userEvent.setup();
+    recordSaleAction.mockResolvedValue({ ok: true, orderNumber: "M-1", grandTotal: "44.00", reused: false });
+    renderScreen();
+    await ringUpSkinAndCharge(user);
+    await user.click(screen.getByRole("button", { name: /^paid/i }));
+    await screen.findByText("Sale recorded");
+    expect(refresh).toHaveBeenCalled();
   });
 
   it("shows the new total when the server refuses a changed total", async () => {

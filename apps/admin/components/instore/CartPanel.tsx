@@ -13,6 +13,7 @@ export function CartPanel({
   canDiscount,
   lineNotes,
   charging,
+  quoting,
   dispatch,
   onCharge,
   onDiscard,
@@ -20,9 +21,11 @@ export function CartPanel({
   cart: Cart;
   currencyCode: string;
   canDiscount: boolean;
-  // Per-variant warnings from the last refused sale, e.g. "Only 2 left".
+  // Per-variant warnings from the last refused sale, e.g. "Not enough stock".
   lineNotes: Record<string, string>;
   charging: boolean;
+  // Only while the quote is in flight; the charge sheet may be open after.
+  quoting: boolean;
   dispatch: (a: CartAction) => void;
   onCharge: () => void;
   onDiscard: () => void;
@@ -151,7 +154,7 @@ export function CartPanel({
         onClick={onCharge}
         className="min-h-12 rounded-md bg-primary px-6 text-base font-medium text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:bg-ink-600"
       >
-        {charging ? "Working out the total…" : "Charge"}
+        {quoting ? "Working out the total…" : "Charge"}
       </button>
 
       {cart.locked ? (

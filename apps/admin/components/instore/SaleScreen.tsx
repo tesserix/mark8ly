@@ -7,6 +7,7 @@
 // never be recorded twice.
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 
 import { quoteSaleAction, recordSaleAction } from "@/app/(admin)/sell/actions";
 import type { InStoreProduct } from "@/lib/api/instore-api";
@@ -32,6 +33,8 @@ export function SaleScreen({
   // Loaded after mount: the server render has no local storage.
   const [cart, setCart] = React.useState<Cart>(emptyCart);
   const [hydrated, setHydrated] = React.useState(false);
+  // The catalogue's stock counts are a snapshot from page load.
+  const router = useRouter();
   const dispatch = React.useCallback((a: CartAction) => setCart((c) => cartReducer(c, a)), []);
 
   React.useEffect(() => {
@@ -59,8 +62,13 @@ export function SaleScreen({
     setQuoting(true);
     setMessage(null);
     setLineNotes({});
-    const res = await quoteSaleAction(storeId, { lines: toSaleLines(cart), discount });
+    // A server action throws when the device itself is offline.
+    const res = await quoteSaleAction(storeId, { lines: toSaleLines(cart), discount }).catch(() => null);
     setQuoting(false);
+    if (!res) {
+      setMessage("No connection. Check the connection and tap Charge again.");
+      return;
+    }
     if (!res.ok) {
       setMessage(res.error.message);
       return;
@@ -82,13 +90,14 @@ export function SaleScreen({
       cash_tendered: method === "cash" ? tendered.trim() : undefined,
       note: cart.note.trim() || undefined,
       expected_total: total,
-    });
+    }).catch(() => ({ ok: false as const, kind: "unreachable" as const }));
     setPending(false);
 
     if (res.ok) {
       setDone({ orderNumber: res.orderNumber, grandTotal: res.grandTotal || total });
       dispatch({ type: "reset" });
       setTotal(null);
+      router.refresh();
       return;
     }
     switch (res.kind) {
@@ -97,10 +106,11 @@ export function SaleScreen({
         setMessage("No connection, sale not recorded yet. Check the connection and try again; it won't be recorded twice.");
         return;
       case "out_of_stock": {
+        // The refusal doesn't say how many are left, and our count may be stale.
         dispatch({ type: "refused" });
-        const v = catalog.flatMap((p) => p.variants).find((x) => x.id === res.variantId);
-        setLineNotes({ [res.variantId]: v && v.available > 0 ? `Only ${v.available} left` : "Out of stock" });
+        setLineNotes({ [res.variantId]: "Not enough stock" });
         setTotal(null);
+        router.refresh();
         return;
       }
       case "total_changed":
@@ -183,6 +193,7 @@ export function SaleScreen({
                 canDiscount={canDiscount}
                 lineNotes={lineNotes}
                 charging={quoting || total !== null}
+                quoting={quoting}
                 dispatch={dispatch}
                 onCharge={charge}
                 onDiscard={() => {

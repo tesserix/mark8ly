@@ -56,3 +56,15 @@ describe("receiptView", () => {
     expect(receiptView({ ...base, time_zone: "Australia/Sydney" }).placed).toMatch(/^In-store purchase · 15 Nov 2026, 2:20\s?pm$/i);
   });
 });
+
+describe("receiptView tax invoice (#1108)", () => {
+  it("is titled Tax invoice with the seller's ABN when the API says so", () => {
+    const v = receiptView({ ...base, title: "Tax invoice", abn: "51 824 753 556" });
+    expect(v.title).toBe("Tax invoice");
+    expect(v.abn).toBe("ABN 51 824 753 556");
+  });
+
+  it("is a plain receipt otherwise, including from an older API", () => {
+    expect(receiptView(base)).toMatchObject({ title: "Receipt", abn: null });
+  });
+});

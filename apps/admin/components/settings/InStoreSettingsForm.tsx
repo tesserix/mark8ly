@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 
+import { Button, Input, Label } from "@tesserix/web";
+
 import { setInStoreSettingAction } from "@/app/(admin)/settings/in-store/actions";
 import { ToggleSwitch } from "@/components/settings/BrandingSettingsClient";
 import type { InStoreSettings } from "@/lib/api/instore-api";
@@ -26,8 +28,16 @@ function Row({ label, hint, checked, disabled, onChange }: {
 
 // The store's in-store sales switches: selling at a counter or stall at all,
 // and whether cashiers may give discounts and custom prices.
-export function InStoreSettingsForm({ storeName, initial }: { storeName: string; initial: InStoreSettings }) {
+// "51824753556" → "51 824 753 556", as on the ABN register.
+const spaced = (abn: string) => abn.replace(/^(\d{2})(\d{3})(\d{3})(\d{3})$/, "$1 $2 $3 $4");
+
+export function InStoreSettingsForm({ storeName, countryCode, initial }: {
+  storeName: string;
+  countryCode: string;
+  initial: InStoreSettings;
+}) {
   const [settings, setSettings] = useState(initial);
+  const [abn, setAbn] = useState(spaced(initial.abn ?? ""));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -35,8 +45,10 @@ export function InStoreSettingsForm({ storeName, initial }: { storeName: string;
     setError(null);
     startTransition(async () => {
       const res = await setInStoreSettingAction(patch);
-      if (res.ok) setSettings(res.settings);
-      else setError(res.message);
+      if (res.ok) {
+        setSettings(res.settings);
+        setAbn(spaced(res.settings.abn ?? ""));
+      } else setError(res.message);
     });
   };
 
@@ -57,6 +69,34 @@ export function InStoreSettingsForm({ storeName, initial }: { storeName: string;
           disabled={pending}
           onChange={(v) => change({ cashier_discounts_enabled: v })}
         />
+      ) : null}
+      {countryCode === "AU" ? (
+        <form
+          className="flex flex-col gap-2 py-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            change({ abn });
+          }}
+        >
+          <Label htmlFor="in-store-abn">ABN</Label>
+          <span className="text-xs text-foreground-tertiary">
+            Printed on in-store receipts, which then count as tax invoices. Leave empty if you have none.
+          </span>
+          <div className="flex gap-2">
+            <Input
+              id="in-store-abn"
+              value={abn}
+              onChange={(e) => setAbn(e.target.value)}
+              inputMode="numeric"
+              placeholder="51 824 753 556"
+              className="max-w-xs"
+              disabled={pending}
+            />
+            <Button type="submit" variant="outline" disabled={pending}>
+              Save ABN
+            </Button>
+          </div>
+        </form>
       ) : null}
       {error ? (
         <p role="alert" className="py-3 text-sm text-danger">

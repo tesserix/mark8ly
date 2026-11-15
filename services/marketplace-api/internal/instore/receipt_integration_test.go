@@ -140,3 +140,21 @@ func TestReceiptSend_RefusesBadEmail(t *testing.T) {
 	_, err := f.receipts(&fakeReceiptMailer{}).Send(context.Background(), f.sid, f.cashSale(t), "not-an-email")
 	require.Error(t, err)
 }
+
+// An AU store with an ABN issues tax invoices; without one, plain receipts (#1108).
+func TestReceipt_TaxInvoiceNeedsABN(t *testing.T) {
+	f := newFixture(t)
+	url, err := f.receipts(&fakeReceiptMailer{}).Issue(context.Background(), f.sid, f.cashSale(t))
+	require.NoError(t, err)
+
+	r, err := f.receipts(nil).Load(context.Background(), f.sid, tokenOf(url))
+	require.NoError(t, err)
+	require.Equal(t, "Receipt", r.Title)
+	require.Empty(t, r.ABN)
+
+	require.NoError(t, f.db.Exec(`UPDATE stores SET abn = '51824753556' WHERE id = ?`, f.sid).Error)
+	r, err = f.receipts(nil).Load(context.Background(), f.sid, tokenOf(url))
+	require.NoError(t, err)
+	require.Equal(t, "Tax invoice", r.Title)
+	require.Equal(t, "51 824 753 556", r.ABN)
+}

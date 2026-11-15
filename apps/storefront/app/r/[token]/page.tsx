@@ -37,6 +37,9 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
       <header className="flex flex-col items-center gap-3 text-center">
         {logo ? <img src={logo} alt={storeName} className="h-14 w-auto object-contain" /> : null}
         <h1 className="font-[family-name:var(--storefront-heading-font)] text-2xl">{storeName}</h1>
+        {/* A tax invoice names the seller (above) and its ABN. */}
+        <p className="text-xs font-semibold uppercase tracking-[0.16em]">{v.title}</p>
+        {v.abn ? <p className="text-sm">{v.abn}</p> : null}
         <p className="text-sm opacity-80">{v.placed}</p>
         <p className="text-sm">Order {v.orderNumber}</p>
       </header>

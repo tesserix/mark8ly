@@ -173,8 +173,9 @@ func (s *Service) price(ctx context.Context, in SaleInput) (*priced, error) {
 	if err != nil {
 		return nil, fmt.Errorf("instore: tax: %w", err)
 	}
-	// Same arithmetic as online checkout: tax on the undiscounted lines,
-	// the discount taken off the total.
+	// Unlike online checkout, tax is on the discounted price: the receipt can
+	// be an AU tax invoice, whose GST must be on what was paid (#1108).
+	breakdown = taxAfterDiscount(breakdown, subtotal, in.Discount)
 	return &priced{items: items, stockLines: stockLines, breakdown: breakdown, quote: Quote{
 		Subtotal: subtotal, TaxTotal: breakdown.TaxTotal, DiscountTotal: in.Discount,
 		GrandTotal:   subtotal.Add(breakdown.TaxTotal).Sub(in.Discount),
@@ -379,4 +380,24 @@ func nonEmpty(s string) *string {
 // shopper's cart.
 func SaleCartToken(storeID uuid.UUID, idempotencyKey string) string {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("instore:"+storeID.String()+":"+idempotencyKey)).String()
+}
+
+// taxAfterDiscount spreads a whole-sale discount across the lines in
+// proportion to their price, which scales every tax line by what was paid
+// over the undiscounted subtotal.
+func taxAfterDiscount(bd *tax.TaxBreakdown, subtotal, discount decimal.Decimal) *tax.TaxBreakdown {
+	if discount.IsZero() || subtotal.IsZero() {
+		return bd
+	}
+	share := subtotal.Sub(discount).Div(subtotal)
+	out := &tax.TaxBreakdown{TaxTotal: decimal.Zero, Lines: make([]tax.TaxLine, len(bd.Lines))}
+	for i, l := range bd.Lines {
+		l.Amount = l.Amount.Mul(share).Round(2)
+		out.Lines[i] = l
+		out.TaxTotal = out.TaxTotal.Add(l.Amount)
+	}
+	if len(bd.Lines) == 0 {
+		out.TaxTotal = bd.TaxTotal.Mul(share).Round(2)
+	}
+	return out
 }

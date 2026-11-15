@@ -57,20 +57,23 @@ type ReceiptLine struct {
 // Receipt is the receipt page's data. Payment and contact fields are set
 // only while the link is fresh.
 type Receipt struct {
-	OrderNumber        string          `json:"order_number"`
-	PlacedAt           time.Time       `json:"placed_at"`
-	CurrencyCode       string          `json:"currency_code"`
-	Lines              []ReceiptLine   `json:"lines"`
-	Subtotal           decimal.Decimal `json:"subtotal"`
-	DiscountTotal      decimal.Decimal `json:"discount_total"`
-	TaxTotal           decimal.Decimal `json:"tax_total"`
-	GrandTotal         decimal.Decimal `json:"grand_total"`
-	TaxLabel           string          `json:"tax_label"`
-	TimeZone           string          `json:"time_zone"` // the store's, for the date and time shown
-	Fresh              bool            `json:"fresh"`
-	PaymentMethod      *string         `json:"payment_method,omitempty"`
-	PaymentMethodLabel *string         `json:"payment_method_label,omitempty"`
-	ReceiptEmailMasked *string         `json:"receipt_email_masked,omitempty"`
+	OrderNumber   string          `json:"order_number"`
+	PlacedAt      time.Time       `json:"placed_at"`
+	CurrencyCode  string          `json:"currency_code"`
+	Lines         []ReceiptLine   `json:"lines"`
+	Subtotal      decimal.Decimal `json:"subtotal"`
+	DiscountTotal decimal.Decimal `json:"discount_total"`
+	TaxTotal      decimal.Decimal `json:"tax_total"`
+	GrandTotal    decimal.Decimal `json:"grand_total"`
+	TaxLabel      string          `json:"tax_label"`
+	// Title is "Tax invoice" for an AU store with an ABN, else "Receipt".
+	Title              string  `json:"title"`
+	ABN                string  `json:"abn,omitempty"` // spaced as on the ABN register
+	TimeZone           string  `json:"time_zone"`     // the store's, for the date and time shown
+	Fresh              bool    `json:"fresh"`
+	PaymentMethod      *string `json:"payment_method,omitempty"`
+	PaymentMethodLabel *string `json:"payment_method_label,omitempty"`
+	ReceiptEmailMasked *string `json:"receipt_email_masked,omitempty"`
 }
 
 func hashToken(token string) string {
@@ -163,6 +166,7 @@ type receiptOrder struct {
 	PaymentMethod      *string
 	PaymentMethodLabel *string
 	CountryCode        string
+	ABN                string
 	Timezone           string
 	LinkCreatedAt      time.Time
 }
@@ -172,7 +176,7 @@ func (s *ReceiptService) find(ctx context.Context, storeID uuid.UUID, token stri
 	err := s.db.WithContext(ctx).Raw(`
 		SELECT o.id, o.order_number, o.placed_at, o.currency_code, o.subtotal, o.discount_total,
 		       o.tax_total, o.grand_total, o.customer_email, o.payment_method, o.payment_method_label,
-		       st.country_code, st.timezone, rl.created_at AS link_created_at
+		       st.country_code, st.abn, st.timezone, rl.created_at AS link_created_at
 		  FROM receipt_links rl
 		  JOIN orders o ON o.id = rl.order_id AND o.deleted_at IS NULL
 		  JOIN stores st ON st.id = o.store_id
@@ -202,10 +206,14 @@ func (s *ReceiptService) Load(ctx context.Context, storeID uuid.UUID, token stri
 	r := &Receipt{
 		OrderNumber: o.OrderNumber, PlacedAt: o.PlacedAt, CurrencyCode: o.CurrencyCode, Lines: lines,
 		Subtotal: o.Subtotal, DiscountTotal: o.DiscountTotal, TaxTotal: o.TaxTotal, GrandTotal: o.GrandTotal,
-		TaxLabel: "Tax", TimeZone: o.Timezone, Fresh: time.Since(o.LinkCreatedAt) < receiptFreshFor,
+		TaxLabel: "Tax", Title: "Receipt", TimeZone: o.Timezone, Fresh: time.Since(o.LinkCreatedAt) < receiptFreshFor,
 	}
 	if o.CountryCode == "AU" {
 		r.TaxLabel = "GST included"
+		// A tax invoice needs the seller's ABN; GST is already on what was paid.
+		if len(o.ABN) == 11 {
+			r.Title, r.ABN = "Tax invoice", o.ABN[:2]+" "+o.ABN[2:5]+" "+o.ABN[5:8]+" "+o.ABN[8:]
+		}
 	}
 	if r.Fresh {
 		r.PaymentMethod, r.PaymentMethodLabel = o.PaymentMethod, o.PaymentMethodLabel

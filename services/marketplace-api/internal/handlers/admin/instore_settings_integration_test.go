@@ -20,6 +20,9 @@ func TestIntegration_InStoreSettings_SavesAndSurvivesSync(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := testdb.NewDB(t, "stores")
 	storeID, tid := seedStoreRow(t, db, "")
+	if err := db.Exec(`UPDATE stores SET country_code = 'AU' WHERE id = ?`, storeID).Error; err != nil {
+		t.Fatal(err)
+	}
 	fga := authz.NewFakeClient()
 	fga.Grant("u-1", authz.RoleAdmin, tid)
 	h := admin.NewInStoreHandler(db, nil, fga, nil)
@@ -43,7 +46,7 @@ func TestIntegration_InStoreSettings_SavesAndSurvivesSync(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	e.ServeHTTP(w, req)
-	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":false}` {
+	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":false,"abn":""}` {
 		t.Fatalf("PUT: %d %s", w.Code, w.Body)
 	}
 
@@ -53,7 +56,7 @@ func TestIntegration_InStoreSettings_SavesAndSurvivesSync(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	e.ServeHTTP(w, req)
-	if strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":true}` {
+	if strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":true,"abn":""}` {
 		t.Fatalf("partial PUT: %d %s", w.Code, w.Body)
 	}
 
@@ -71,7 +74,27 @@ func TestIntegration_InStoreSettings_SavesAndSurvivesSync(t *testing.T) {
 
 	w = httptest.NewRecorder()
 	e.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/stores/"+storeID+"/in-store/settings", nil))
-	if strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":true}` {
+	if strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":true,"abn":""}` {
 		t.Errorf("after sync: %s", w.Body)
+	}
+
+	// An ABN is saved as digits, survives a sync, and can be cleared.
+	req = httptest.NewRequest(http.MethodPut, "/admin/stores/"+storeID+"/in-store/settings",
+		strings.NewReader(`{"abn":"51 824 753 556"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	e.ServeHTTP(w, req)
+	if strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":true,"abn":"51824753556"}` {
+		t.Fatalf("PUT abn: %d %s", w.Code, w.Body)
+	}
+	if err := repo.Upsert(t.Context(), s); err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPut, "/admin/stores/"+storeID+"/in-store/settings", strings.NewReader(`{"abn":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	e.ServeHTTP(w, req)
+	if strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":true,"abn":""}` {
+		t.Errorf("clear abn: %d %s", w.Code, w.Body)
 	}
 }

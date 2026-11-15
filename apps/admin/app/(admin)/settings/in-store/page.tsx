@@ -4,7 +4,7 @@ import { getInStoreSettings } from "@/lib/api/instore-api";
 import { canEditSettings, getServerSessionContext } from "@/lib/auth/serverSession";
 
 // Settings → In-store sales: turn selling at a counter or stall on or off for
-// the current store, and whether cashiers may give discounts.
+// the current store, whether cashiers may give discounts, and an AU store's ABN.
 export default async function InStoreSettingsPage() {
   const { role, currentStore, userId, tenantId, email } = await getServerSessionContext();
   const editable = canEditSettings(role);
@@ -22,7 +22,7 @@ export default async function InStoreSettingsPage() {
       {!currentStore ? (
         <p className="text-sm text-foreground-secondary">Select a store first.</p>
       ) : settings ? (
-        <InStoreSettingsForm storeName={currentStore.name} initial={settings} />
+        <InStoreSettingsForm storeName={currentStore.name} countryCode={currentStore.country_code} initial={settings} />
       ) : editable ? (
         <p role="alert" className="text-sm text-danger">
           Couldn&rsquo;t load the in-store settings. Reload the page to try again.

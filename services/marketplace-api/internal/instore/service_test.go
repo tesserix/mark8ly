@@ -164,3 +164,23 @@ func TestInStore_UnknownVariantRefused(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// GST is on the price actually paid: a A$5 discount on A$30 of goods taxed
+// at 10% leaves A$2.50 GST, not A$3.00 (#1108).
+func TestInStore_TaxAfterDiscount(t *testing.T) {
+	d := decimal.RequireFromString
+	bd := &tax.TaxBreakdown{TaxTotal: d("3.00"), Lines: []tax.TaxLine{{Description: "Tax 10%", Rate: d("0.10"), Amount: d("3.00")}}}
+	got := taxAfterDiscount(bd, d("30.00"), d("5.00"))
+	if !got.TaxTotal.Equal(d("2.50")) || !got.Lines[0].Amount.Equal(d("2.50")) {
+		t.Errorf("tax after discount = %s (line %s), want 2.50", got.TaxTotal, got.Lines[0].Amount)
+	}
+	if bd.TaxTotal.String() != "3" {
+		t.Errorf("input breakdown was changed: %s", bd.TaxTotal)
+	}
+	if same := taxAfterDiscount(bd, d("30.00"), decimal.Zero); same != bd {
+		t.Error("no discount should return the breakdown as is")
+	}
+	if all := taxAfterDiscount(bd, d("30.00"), d("30.00")); !all.TaxTotal.IsZero() {
+		t.Errorf("fully discounted sale has tax %s", all.TaxTotal)
+	}
+}

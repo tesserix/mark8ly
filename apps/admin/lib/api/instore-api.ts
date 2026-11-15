@@ -113,7 +113,7 @@ export async function getMySalesToday(storeId: string, session: SessionHeaders):
   }
 }
 
-export type InStoreSettings = { cashier_discounts_enabled: boolean; in_store_enabled: boolean };
+export type InStoreSettings = { cashier_discounts_enabled: boolean; in_store_enabled: boolean; abn?: string };
 
 // Owner and admin only; null when it can't be read.
 export async function getInStoreSettings(storeId: string, session: SessionHeaders): Promise<InStoreSettings | null> {

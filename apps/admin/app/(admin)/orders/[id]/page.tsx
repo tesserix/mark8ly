@@ -16,6 +16,7 @@ import { OrderDocumentsPanel } from "@/components/orders/OrderDocumentsPanel";
 import { OrderItemsTable } from "@/components/orders/OrderItemsTable";
 import { OrderLifecycleStepper } from "@/components/orders/OrderLifecycleStepper";
 import { OrderTotalsCard } from "@/components/orders/OrderTotalsCard";
+import { OutsideRefundForm } from "@/components/orders/OutsideRefundForm";
 import { InStoreSaleCard, showsShipping } from "@/components/orders/InStoreSaleCard";
 import { InStoreReceiptCard } from "@/components/orders/InStoreReceiptCard";
 import { getOrder } from "@/lib/api/marketplace-api";
@@ -29,7 +30,7 @@ interface PageProps {
 export default async function OrderDetailPage({ params }: PageProps) {
   const { id } = await params;
   const session = await getServerSessionContext();
-  const { tenantName, email, currentStore, userId, tenantId } = session;
+  const { tenantName, email, currentStore, userId, tenantId, role } = session;
 
   if (!currentStore) {
     notFound();
@@ -111,6 +112,20 @@ export default async function OrderDetailPage({ params }: PageProps) {
             </div>
           ) : null}
           <InStoreReceiptCard storeId={currentStore.id} orderId={order.id} channel={order.channel} />
+          {/* Refunds made outside mark8ly (#1110): in-store sales, owner and admin. */}
+          {order.channel === "in_store" &&
+          (role === "owner" || role === "admin") &&
+          (order.payment_status === "paid" || order.payment_status === "partially_refunded") ? (
+            <section aria-labelledby="outside-refund-heading" className="flex flex-col gap-4 border-t border-border-subtle pt-8">
+              <h2
+                id="outside-refund-heading"
+                className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground-tertiary"
+              >
+                Record a refund
+              </h2>
+              <OutsideRefundForm order={order} />
+            </section>
+          ) : null}
           <div className="border-t border-border-subtle pt-8">
             <OrderDocumentsPanel
               order={order}

@@ -109,7 +109,7 @@ func (s *Service) RecordSale(ctx context.Context, in SaleInput) (*order.CreateRe
 			if len(stockLines) > 0 {
 				// Holds are keyed by a uuid cart token; derive a stable one
 				// from the sale so it never collides with a shopper's cart.
-				token := uuid.NewSHA1(uuid.NameSpaceOID, []byte("instore:"+in.StoreID.String()+":"+in.IdempotencyKey)).String()
+				token := SaleCartToken(in.StoreID, in.IdempotencyKey)
 				if err := checkoutcore.CommitStock(ctx, tx, s.holds, token,
 					o.ID.String(), in.StoreID.String(), stockLines); err != nil {
 					return err
@@ -372,4 +372,11 @@ func nonEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// SaleCartToken is the stock-hold cart token for an in-store sale: stable
+// per sale, so a refund can find where its units came from, and never a
+// shopper's cart.
+func SaleCartToken(storeID uuid.UUID, idempotencyKey string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("instore:"+storeID.String()+":"+idempotencyKey)).String()
 }

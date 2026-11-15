@@ -35,6 +35,18 @@ type InStoreHandler struct {
 	roles    authz.Client
 	logger   *slog.Logger
 	receipts InStoreReceipts
+	refunds  InStoreRefunder
+}
+
+// InStoreRefunder records refunds made outside mark8ly (#1110).
+type InStoreRefunder interface {
+	Record(ctx context.Context, in instore.RefundInput) (*instore.RefundResult, error)
+}
+
+// WithRefunds enables POST /in-store/sales/:id/refund.
+func (h *InStoreHandler) WithRefunds(r InStoreRefunder) *InStoreHandler {
+	h.refunds = r
+	return h
 }
 
 // InStoreReceipts mints and emails receipt links (#1106, #1107).
@@ -474,4 +486,47 @@ func sessionEmail(c *gin.Context) string {
 		return e
 	}
 	return c.GetHeader("X-User-Email")
+}
+
+// OutsideRefundRequest records money given back on the shop's own terminal
+// or in cash, optionally putting lines back in stock.
+type OutsideRefundRequest struct {
+	RefundRequestID string           `json:"refund_request_id"`
+	Amount          *decimal.Decimal `json:"amount"`
+	Method          string           `json:"method"`
+	Reason          string           `json:"reason"`
+	Items           []struct {
+		OrderItemID uuid.UUID `json:"order_item_id"`
+		Quantity    int       `json:"quantity"`
+	} `json:"items"`
+}
+
+// OutsideRefund handles POST /admin/stores/:storeId/in-store/sales/:id/refund
+// (owner and admin, by route). No payment provider is called.
+func (h *InStoreHandler) OutsideRefund(c *gin.Context) {
+	_, storeID, _, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	orderID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.NotFound("order"), h.logger)
+		return
+	}
+	var req OutsideRefundRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
+		return
+	}
+	in := instore.RefundInput{StoreID: storeID, OrderID: orderID, RequestID: req.RefundRequestID,
+		Amount: req.Amount, Method: req.Method, Reason: req.Reason, RefundedBy: c.GetString("user_id")}
+	for _, it := range req.Items {
+		in.Items = append(in.Items, instore.RefundItem{OrderItemID: it.OrderItemID, Quantity: it.Quantity})
+	}
+	res, err := h.refunds.Record(c.Request.Context(), in)
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }

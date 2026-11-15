@@ -53,6 +53,25 @@ type SaleInput struct {
 	CanDiscount bool
 	// Fulfilled: handed over at the counter. False for made-to-order.
 	Fulfilled bool
+	// ExpectedTotal is the amount the seller keyed into the terminal. When
+	// set and the sale now prices differently, nothing is recorded.
+	ExpectedTotal *decimal.Decimal
+}
+
+// Quote is what a sale would cost now, before it is recorded.
+type Quote struct {
+	Subtotal, TaxTotal, DiscountTotal, GrandTotal decimal.Decimal
+	CurrencyCode                                  string
+}
+
+// TotalChangedError: the sale prices differently from the total the seller
+// charged (a price or tax changed in between). Nothing was recorded.
+type TotalChangedError struct {
+	Expected, Actual decimal.Decimal
+}
+
+func (e *TotalChangedError) Error() string {
+	return "instore: total changed from " + e.Expected.StringFixed(2) + " to " + e.Actual.StringFixed(2)
 }
 
 // VariantDetails is what the order snapshots about a catalogue line.

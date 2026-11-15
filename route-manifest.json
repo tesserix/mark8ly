@@ -148,6 +148,7 @@
         "POST /api/v1/admin/stores/:storeId/gift-cards",
         "POST /api/v1/admin/stores/:storeId/gift-cards/:id/disable",
         "POST /api/v1/admin/stores/:storeId/gift-cards/:id/enable",
+        "POST /api/v1/admin/stores/:storeId/in-store/quote",
         "POST /api/v1/admin/stores/:storeId/in-store/sales",
         "POST /api/v1/admin/stores/:storeId/loyalty/members/:id/adjust",
         "POST /api/v1/admin/stores/:storeId/migration-fast-path/submit",

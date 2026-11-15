@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/mark8ly/marketplace-api/internal/authz"
 	"github.com/mark8ly/marketplace-api/internal/checkoutcore"
@@ -23,6 +24,15 @@ type fakeRecorder struct {
 	got    instore.SaleInput
 	reused bool
 	err    error
+	quote  *instore.Quote
+}
+
+func (f *fakeRecorder) Quote(_ context.Context, in instore.SaleInput) (*instore.Quote, error) {
+	f.got = in
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.quote, nil
 }
 
 func (f *fakeRecorder) RecordSale(_ context.Context, in instore.SaleInput) (*order.CreateResult, error) {
@@ -48,11 +58,16 @@ func inStoreEngine(t *testing.T, rec *fakeRecorder, role authz.Role, store *stor
 		c.Set("store", store)
 	})
 	g.POST("/in-store/sales", h.RecordSale)
+	g.POST("/in-store/quote", h.Quote)
 	return e
 }
 
 func postSale(e *gin.Engine, body string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, "/admin/stores/"+uuid.NewString()+"/in-store/sales", strings.NewReader(body))
+	return post(e, "sales", body)
+}
+
+func post(e *gin.Engine, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/admin/stores/"+uuid.NewString()+"/in-store/"+path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	e.ServeHTTP(w, req)
@@ -109,5 +124,41 @@ func TestInStoreSale_CashierDiscountOnlyWhenEnabled(t *testing.T) {
 	postSale(inStoreEngine(t, rec, authz.RoleStaff, &stores.Store{}), saleBody)
 	if !rec.got.CanDiscount {
 		t.Error("staff may always discount")
+	}
+}
+
+func TestInStoreQuote_200(t *testing.T) {
+	rec := &fakeRecorder{quote: &instore.Quote{
+		Subtotal: decimal.RequireFromString("40.00"), TaxTotal: decimal.RequireFromString("4.00"),
+		GrandTotal: decimal.RequireFromString("44.00"), CurrencyCode: "AUD",
+	}}
+	w := post(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{}), "quote",
+		`{"lines":[{"variant_id":"v1","quantity":2}]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body["grand_total"] != "44.00" || body["tax_total"] != "4.00" || body["currency_code"] != "AUD" {
+		t.Errorf("body = %v", body)
+	}
+}
+
+func TestInStoreSale_TotalChanged409(t *testing.T) {
+	rec := &fakeRecorder{err: &instore.TotalChangedError{
+		Expected: decimal.RequireFromString("40.00"), Actual: decimal.RequireFromString("46.00"),
+	}}
+	w := postSale(inStoreEngine(t, rec, authz.RoleCashier, &stores.Store{}),
+		`{"idempotency_key":"k1","lines":[{"variant_id":"v1","quantity":1}],"payment_method":"card_external","expected_total":"40.00"}`)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", w.Code)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body["error"] != "total_changed" || body["grand_total"] != "46.00" {
+		t.Errorf("body = %v", body)
+	}
+	if rec.got.ExpectedTotal == nil || rec.got.ExpectedTotal.String() != "40" {
+		t.Errorf("expected_total not passed through: %v", rec.got.ExpectedTotal)
 	}
 }

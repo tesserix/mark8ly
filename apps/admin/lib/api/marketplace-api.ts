@@ -11,7 +11,7 @@
 // component) and passes them into the client functions. The client does
 // the header rename dance (x-session-user-id → X-User-Id).
 
-const MARKETPLACE_API_URL =
+export const MARKETPLACE_API_URL =
   process.env.MARKETPLACE_API_URL ?? "http://localhost:8088";
 
 const MARKETPLACE_INTERNAL_AUTH =
@@ -299,7 +299,7 @@ export interface MutationError {
 
 export type MutationResult<T> = { ok: true; data: T } | { ok: false; error: MutationError };
 
-function commonHeaders(session: SessionHeaders): HeadersInit {
+export function commonHeaders(session: SessionHeaders): HeadersInit {
   const headers: Record<string, string> = {
     "X-User-Id": session.userId,
     "X-Tenant-Id": session.tenantId,
@@ -330,7 +330,7 @@ function readHeaders(session: SessionHeaders): HeadersInit {
   return headers;
 }
 
-async function parseMutationError(res: Response): Promise<MutationError> {
+export async function parseMutationError(res: Response): Promise<MutationError> {
   const body = (await res.json().catch(() => null)) as ApiError | null;
   return {
     code: body?.error ?? "unknown_error",

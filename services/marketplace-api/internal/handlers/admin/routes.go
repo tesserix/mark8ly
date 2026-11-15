@@ -899,6 +899,7 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 		if deps.InStoreHandler != nil {
 			inStore := storeRoute.Group("/in-store", deps.AuthzMiddleware.RequireTenantRelation(authz.InStoreSellRole))
 			inStore.GET("/catalog", deps.InStoreHandler.Catalog)
+			inStore.POST("/quote", deps.InStoreHandler.Quote)
 			inStore.POST("/sales", deps.InStoreHandler.RecordSale)
 			inStore.GET("/sales", deps.InStoreHandler.MySales)
 		}

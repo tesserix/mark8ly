@@ -66,28 +66,23 @@ func (s *Service) RecordSale(ctx context.Context, in SaleInput) (*order.CreateRe
 		return nil, err
 	}
 
-	items, stockLines, taxLines, subtotal, err := s.priceLines(ctx, in)
+	p, err := s.price(ctx, in)
 	if err != nil {
 		return nil, err
 	}
-	if in.Discount.IsNegative() || in.Discount.GreaterThan(subtotal) {
-		return nil, apperrors.ValidationFailed("discount", "discount must be between 0 and the subtotal")
+	grand := p.quote.GrandTotal
+	if in.ExpectedTotal != nil && !in.ExpectedTotal.Equal(grand) {
+		// A retry of a sale recorded before the price moved returns that
+		// order rather than refusing it.
+		if prev, ferr := s.orders.FindByIdempotencyKey(ctx, in.StoreID, in.IdempotencyKey); ferr != nil || prev != nil {
+			return prev, ferr
+		}
+		return nil, &TotalChangedError{Expected: *in.ExpectedTotal, Actual: grand}
 	}
-
-	sc, err := s.countries(ctx, in.Store.CountryCode)
-	if err != nil {
-		return nil, err
-	}
-	breakdown, err := s.taxes.QuoteCounterTax(ctx, in.Store, sc, checkoutcore.TaxableItems(sc, taxLines))
-	if err != nil {
-		return nil, fmt.Errorf("instore: tax: %w", err)
-	}
-	// Same arithmetic as online checkout: tax on the undiscounted lines,
-	// the discount taken off the total.
-	grand := subtotal.Add(breakdown.TaxTotal).Sub(in.Discount)
 	if in.PaymentMethod == PaymentCash && (in.CashTendered == nil || in.CashTendered.LessThan(grand)) {
 		return nil, apperrors.ValidationFailed("cash_tendered", "cash tendered must cover the total")
 	}
+	items, stockLines, subtotal, breakdown := p.items, p.stockLines, p.quote.Subtotal, p.breakdown
 
 	paid := order.PaymentStatusPaid
 	create := order.CreateInput{
@@ -139,12 +134,67 @@ func (s *Service) RecordSale(ctx context.Context, in SaleInput) (*order.CreateRe
 	return res, nil
 }
 
-func validateShape(in SaleInput) error {
-	if in.Store == nil {
-		return apperrors.ValidationFailed("store", "store is required")
+// Quote prices a sale exactly as RecordSale would, without recording it.
+// Payment fields and the idempotency key are ignored.
+func (s *Service) Quote(ctx context.Context, in SaleInput) (*Quote, error) {
+	if err := validateItems(in); err != nil {
+		return nil, err
 	}
+	p, err := s.price(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return &p.quote, nil
+}
+
+type priced struct {
+	items      []order.OrderItem
+	stockLines []checkoutcore.Line
+	breakdown  *tax.TaxBreakdown
+	quote      Quote
+}
+
+// price is the one place a sale's total is worked out, so the amount the
+// seller is told to charge is the amount the order records.
+func (s *Service) price(ctx context.Context, in SaleInput) (*priced, error) {
+	items, stockLines, taxLines, subtotal, err := s.priceLines(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	if in.Discount.IsNegative() || in.Discount.GreaterThan(subtotal) {
+		return nil, apperrors.ValidationFailed("discount", "discount must be between 0 and the subtotal")
+	}
+	sc, err := s.countries(ctx, in.Store.CountryCode)
+	if err != nil {
+		return nil, err
+	}
+	breakdown, err := s.taxes.QuoteCounterTax(ctx, in.Store, sc, checkoutcore.TaxableItems(sc, taxLines))
+	if err != nil {
+		return nil, fmt.Errorf("instore: tax: %w", err)
+	}
+	// Same arithmetic as online checkout: tax on the undiscounted lines,
+	// the discount taken off the total.
+	return &priced{items: items, stockLines: stockLines, breakdown: breakdown, quote: Quote{
+		Subtotal: subtotal, TaxTotal: breakdown.TaxTotal, DiscountTotal: in.Discount,
+		GrandTotal:   subtotal.Add(breakdown.TaxTotal).Sub(in.Discount),
+		CurrencyCode: in.Store.CurrencyCode,
+	}}, nil
+}
+
+func validateShape(in SaleInput) error {
 	if strings.TrimSpace(in.IdempotencyKey) == "" {
 		return apperrors.ValidationFailed("idempotency_key", "idempotency_key is required")
+	}
+	if err := validateItems(in); err != nil {
+		return err
+	}
+	return validatePayment(in)
+}
+
+// validateItems checks the store, lines and discount: what a quote needs.
+func validateItems(in SaleInput) error {
+	if in.Store == nil {
+		return apperrors.ValidationFailed("store", "store is required")
 	}
 	if len(in.Lines) == 0 {
 		return apperrors.ValidationFailed("lines", "add at least one item")
@@ -178,6 +228,10 @@ func validateShape(in SaleInput) error {
 	if !in.Discount.IsZero() && !in.CanDiscount {
 		return apperrors.ValidationFailed("discount", "you are not allowed to give discounts")
 	}
+	return nil
+}
+
+func validatePayment(in SaleInput) error {
 	switch in.PaymentMethod {
 	case PaymentCard, PaymentCash, PaymentTransfer:
 	case PaymentOther:

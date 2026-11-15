@@ -173,7 +173,9 @@ type fakeReceipts struct {
 	issued bool
 }
 
-func (f *fakeReceipts) SoldBy(context.Context, uuid.UUID, uuid.UUID) (string, error) { return f.soldBy, nil }
+func (f *fakeReceipts) SoldBy(context.Context, uuid.UUID, uuid.UUID) (string, error) {
+	return f.soldBy, nil
+}
 func (f *fakeReceipts) Issue(context.Context, uuid.UUID, uuid.UUID) (string, error) {
 	f.issued = true
 	return "https://s.mark8ly.com/r/tok", nil

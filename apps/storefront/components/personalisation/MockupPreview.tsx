@@ -19,7 +19,7 @@
 import Image from "next/image";
 
 import { personalisationFontStyle } from "@/lib/personalisation-fonts";
-import { fitTextSize } from "@/lib/personalisation-text-fit";
+import { fitTextSize, textHalo } from "@/lib/personalisation-text-fit";
 
 export interface PrintArea {
   x: number;
@@ -96,6 +96,11 @@ export function MockupPreview({
                 ...personalisationFontStyle(text.font),
                 color: text.colourHex ?? "currentColor",
                 fontSize: fitTextSize(text.value, text.font),
+                // A thin contrasting outline so the colour reads on any photo.
+                WebkitTextStroke: textHalo(text.colourHex)
+                  ? `0.06em ${textHalo(text.colourHex)}`
+                  : undefined,
+                paintOrder: "stroke fill",
               }}
             >
               {text.value}

@@ -42,6 +42,22 @@ import (
 func (r *gormRepository) ApplyVariantDiffInTx(ctx context.Context, tx *gorm.DB, productID, storeID string, diff VariantDiff) error {
 	tx = tx.WithContext(ctx)
 
+	// Removes first (soft delete): the SKU index only covers live rows, so
+	// a rebuilt variant can reuse the SKU of the one it replaces.
+	if len(diff.Removes) > 0 {
+		// Redundant with GORM's automatic filter on gorm.DeletedAt, same
+		// as above — but here it is also load-bearing: without it, a
+		// row already soft-deleted would match and get its deleted_at
+		// re-stamped to now(), overwriting the original deletion time.
+		res := tx.Model(&Variant{}).
+			Where("id IN ? AND product_id = ? AND store_id = ? AND deleted_at IS NULL",
+				diff.Removes, productID, storeID).
+			Update("deleted_at", gorm.Expr("now()"))
+		if res.Error != nil {
+			return fmt.Errorf("product: remove variants: %w", res.Error)
+		}
+	}
+
 	// Adds
 	for i := range diff.Adds {
 		diff.Adds[i].ProductID = productID
@@ -95,21 +111,6 @@ func (r *gormRepository) ApplyVariantDiffInTx(ctx context.Context, tx *gorm.DB, 
 		}
 		if res.RowsAffected == 0 {
 			return apperrors.NotFound("variant")
-		}
-	}
-
-	// Removes (soft delete).
-	if len(diff.Removes) > 0 {
-		// Redundant with GORM's automatic filter on gorm.DeletedAt, same
-		// as above — but here it is also load-bearing: without it, a
-		// row already soft-deleted would match and get its deleted_at
-		// re-stamped to now(), overwriting the original deletion time.
-		res := tx.Model(&Variant{}).
-			Where("id IN ? AND product_id = ? AND store_id = ? AND deleted_at IS NULL",
-				diff.Removes, productID, storeID).
-			Update("deleted_at", gorm.Expr("now()"))
-		if res.Error != nil {
-			return fmt.Errorf("product: remove variants: %w", res.Error)
 		}
 	}
 

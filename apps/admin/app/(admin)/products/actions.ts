@@ -301,6 +301,16 @@ export async function updateProductAction(
 
   const result = await updateProduct(ctx.storeId, productId, body, { userId: ctx.userId, tenantId: ctx.tenantId, email: ctx.email });
   if (!result.ok) {
+    if (result.error.code === "variant_matrix_mismatch" && !hasOptions) {
+      return {
+        ok: false,
+        error: {
+          ...result.error,
+          message:
+            "This product has several variants but no options, so it can't be saved. It needs an option, such as Size, with one value per variant. Add it under Options, or remove the extra variants.",
+        },
+      };
+    }
     return { ok: false, error: result.error };
   }
 

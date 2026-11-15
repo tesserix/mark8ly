@@ -113,6 +113,19 @@ describe("updateProductAction", () => {
     expect(result.error?.code).toBe("too_many_variants");
   });
 
+  it("explains variants that have lost their options instead of the raw matrix error", async () => {
+    mockedUpdate.mockResolvedValue({
+      ok: false,
+      error: { code: "variant_matrix_mismatch", message: "variant count does not match option-value product" },
+    });
+
+    const result = await updateProductAction("s1", "p1", "USD", { ...baseInput(), options: [] });
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("variant_matrix_mismatch");
+    expect(result.error?.message).toMatch(/needs an option/);
+  });
+
   it("maps option_value_in_use backend error to typed result", async () => {
     mockedUpdate.mockResolvedValue({
       ok: false,

@@ -20,6 +20,7 @@ import {
   validateAnswers,
   type PersonalisationAnswers,
 } from "@/lib/personalisation";
+import { chooseOptionsLabel } from "@/lib/variant-prompt";
 
 interface ProductDetailsProps {
   product: StorefrontProduct;
@@ -186,7 +187,7 @@ export function ProductDetails({ product, storeSlug }: ProductDetailsProps) {
         disabled={hasOptions && !selectedVariant}
         disabledReason={
           hasOptions && !selectedVariant
-            ? "Select all options"
+            ? chooseOptionsLabel(product.options.map((o) => o.name))
             : undefined
         }
       />

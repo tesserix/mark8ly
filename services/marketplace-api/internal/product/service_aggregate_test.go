@@ -447,3 +447,59 @@ func TestIntegration_ProductService_UpdateAggregate_VariantsSuppliedPreemptsTheI
 		t.Fatalf("option value count = %d, want 2 (unchanged)", valueCount)
 	}
 }
+
+// Rebuilding the variant list under a new option shape replaces every
+// variant. A merchant who keeps their SKUs must not be told the SKU is taken
+// by the very variant the same save removes, and the stock they typed must
+// land on the new variant.
+func TestIntegration_ProductService_UpdateAggregate_RebuildKeepsSKUs(t *testing.T) {
+	tx := testdb.NewTx(t)
+	storeID, tenantID, _ := seedStore(t, tx)
+	svc := buildService(tx, media.NewFakeUploader())
+	ctx := context.Background()
+
+	agg := seedColorSizeProduct(t, svc, storeID, tenantID)
+
+	newOptions := []product.OptionSpec{
+		{Name: "Size", Values: []product.OptionValueSpec{{Value: "S"}, {Value: "M"}}},
+	}
+	newVariants := []product.VariantInput{
+		{SKU: "TEE-R-S", Price: decimal.NewFromInt(10), CurrencyCode: "USD", InitialStock: 21,
+			OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "S"}}},
+		{SKU: "TEE-R-M", Price: decimal.NewFromInt(11), CurrencyCode: "USD", InitialStock: 22,
+			OptionValues: []product.OptionValueRef{{OptionName: "Size", Value: "M"}}},
+	}
+	got, err := svc.UpdateAggregate(ctx, product.UpdateAggregateRequest{
+		ID: agg.Product.ID, StoreID: storeID, TenantID: tenantID,
+		Options:  &newOptions,
+		Variants: &newVariants,
+	})
+	if err != nil {
+		t.Fatalf("UpdateAggregate: %v", err)
+	}
+	if len(got.Variants) != 2 {
+		t.Fatalf("variants = %d, want 2", len(got.Variants))
+	}
+	for sku, want := range map[string]int{"TEE-R-S": 21, "TEE-R-M": 22} {
+		v := findVariantBySKU(got, sku)
+		if v == nil {
+			t.Fatalf("%s missing after rebuild", sku)
+		}
+		if v.ID == findVariantBySKU(agg, sku).ID {
+			t.Fatalf("%s kept its old row; want a new variant", sku)
+		}
+		if v.InventoryQuantity != want {
+			t.Fatalf("%s stock = %d, want %d", sku, v.InventoryQuantity, want)
+		}
+	}
+	// The replaced variant keeps the stock it had; the new figure is not
+	// also written onto it through the shared SKU.
+	var oldQty int
+	if err := tx.Raw(`SELECT inventory_quantity FROM product_variants WHERE id = ?`,
+		findVariantBySKU(agg, "TEE-R-S").ID).Scan(&oldQty).Error; err != nil {
+		t.Fatalf("read replaced variant: %v", err)
+	}
+	if oldQty != 3 {
+		t.Fatalf("replaced TEE-R-S stock = %d, want 3 (untouched)", oldQty)
+	}
+}

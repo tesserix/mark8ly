@@ -254,8 +254,10 @@ func (s *Service) UpdateAggregate(ctx context.Context, req UpdateAggregateReques
 				existingBySKU[v.SKU] = v
 			}
 			newByID := make(map[string]struct{}, len(newVariants))
+			newBySKU := make(map[string]struct{}, len(newVariants))
 			for _, nv := range newVariants {
 				newByID[nv.ID] = struct{}{}
+				newBySKU[nv.SKU] = struct{}{}
 			}
 			// Resolved once for the loop below. Step 4 may have resolved it
 			// already; EnsureDefaultForStore is idempotent, so asking twice
@@ -275,6 +277,11 @@ func (s *Service) UpdateAggregate(ctx context.Context, req UpdateAggregateReques
 					}
 				}
 				if matched == nil {
+					// A new variant reusing a removed one's SKU was seeded in
+					// step 4; the SKU must not lead back to the removed row.
+					if _, isNew := newBySKU[in.SKU]; isNew {
+						continue
+					}
 					if v, ok := existingBySKU[in.SKU]; ok {
 						matched = &v
 					}

@@ -2,13 +2,18 @@
 
 import { formatMoney } from "@/lib/format";
 
-// Receipt buttons (#1106, #1107) join "New sale" here.
+import { ReceiptActions } from "./ReceiptActions";
+
 export function SaleDone({
+  storeId,
+  orderId,
   orderNumber,
   grandTotal,
   currencyCode,
   onNewSale,
 }: {
+  storeId: string;
+  orderId: string;
   orderNumber: string;
   grandTotal: string;
   currencyCode: string;
@@ -20,6 +25,7 @@ export function SaleDone({
       <p className="text-sm">
         Order {orderNumber} · {formatMoney(grandTotal, currencyCode)}
       </p>
+      {orderId ? <ReceiptActions storeId={storeId} orderId={orderId} /> : null}
       <button
         type="button"
         onClick={onNewSale}

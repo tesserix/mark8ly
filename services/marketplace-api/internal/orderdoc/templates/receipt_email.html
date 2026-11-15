@@ -14,7 +14,7 @@
 </head>
 <body style="margin:0;padding:0;background-color:{{.Theme.ColorBackground}};font-family:{{.Theme.BodyFont}};color:{{.Theme.ColorText}};">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
-    Your receipt {{.DocumentNumber}} for delivered order {{.OrderNumber}} from {{.Theme.StoreName}}.
+    Your receipt {{.DocumentNumber}} for {{if not .InStore}}delivered {{end}}order {{.OrderNumber}} from {{.Theme.StoreName}}.
   </div>
   <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:{{.Theme.ColorBackground}};padding:48px 16px;">
     <tr>

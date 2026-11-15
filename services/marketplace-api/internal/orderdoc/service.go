@@ -118,6 +118,20 @@ func (s *Service) SendReceiptWithOptions(ctx context.Context, orderID uuid.UUID,
 	return s.mailer.SendReceipt(ctx, in)
 }
 
+// SendInStoreReceipt emails the receipt-page link for a sale made at the
+// counter (#1107). No PDF and no delivery date: the link is the receipt.
+func (s *Service) SendInStoreReceipt(ctx context.Context, orderID uuid.UUID, receiptURL string) error {
+	in, err := s.buildInput(ctx, orderID, false)
+	if err != nil {
+		return err
+	}
+	in.InStore = true
+	in.DocumentNumber = documentNumber(true, in.OrderNumber)
+	in.DocumentURL = receiptURL
+	in.OrderURL = ""
+	return s.mailer.SendReceipt(ctx, in)
+}
+
 // SendCancellation loads the order context and dispatches the cancel
 // envelope. `byCustomer` switches the subject + lede copy between
 // "cancelled by you" and "cancelled by the merchant" tones.

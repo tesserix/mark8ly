@@ -8,6 +8,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/mark8ly/marketplace-api/internal/email"
 	"github.com/mark8ly/marketplace-api/internal/emailtemplates"
 )
 
@@ -167,4 +168,58 @@ func TestRender_LoaderPath_MatchesEmbedded(t *testing.T) {
 	if embText != loaderText {
 		t.Errorf("text drift:\n emb: %q\n ld:  %q", embText, loaderText)
 	}
+}
+
+type countingFetcher struct{ calls int }
+
+func (f *countingFetcher) FetchInvoicePDF(context.Context, DocumentInput) ([]byte, error) {
+	f.calls++
+	return []byte("%PDF"), nil
+}
+func (f *countingFetcher) FetchReceiptPDF(context.Context, DocumentInput) ([]byte, error) {
+	f.calls++
+	return []byte("%PDF"), nil
+}
+
+// An in-store receipt is a link to the receipt page, not a delivered-order PDF.
+func TestRender_InStoreReceipt_LinksReceiptPage(t *testing.T) {
+	in := sampleInput("M-1")
+	in.InStore = true
+	in.OrderURL = ""
+	in.DocumentURL = "https://acme.mark8ly.com/r/tok"
+	_, html, text, err := render(context.Background(), nil, KindReceipt, in, false)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	for name, body := range map[string]string{"html": html, "text": text} {
+		if strings.Contains(body, "delivered") {
+			t.Errorf("%s says delivered: %s", name, body)
+		}
+		if !strings.Contains(body, "https://acme.mark8ly.com/r/tok") {
+			t.Errorf("%s missing receipt link", name)
+		}
+		if !strings.Contains(body, "M-1") {
+			t.Errorf("%s missing order number", name)
+		}
+	}
+}
+
+func TestSend_InStoreReceipt_NoAttachment(t *testing.T) {
+	f := &countingFetcher{}
+	m := NewDocumentMailer(&captureSender{}, "noreply@example.com", nil).WithStorefrontPDFFetcher(f)
+	in := sampleInput("M-1")
+	in.InStore = true
+	if err := m.SendReceipt(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if f.calls != 0 {
+		t.Errorf("fetched a PDF for an in-store receipt")
+	}
+}
+
+type captureSender struct{ msgs []email.Message }
+
+func (s *captureSender) Send(_ context.Context, m email.Message) error {
+	s.msgs = append(s.msgs, m)
+	return nil
 }

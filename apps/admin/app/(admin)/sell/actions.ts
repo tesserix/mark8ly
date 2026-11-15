@@ -11,8 +11,10 @@ import {
   type InStoreQuoteBody,
   type InStoreSaleBody,
   type SaleResult,
+  type InStoreReceiptBody,
   quoteInStoreSale,
   recordInStoreSale,
+  requestInStoreReceipt,
 } from "@/lib/api/instore-api";
 import type { MutationResult, SessionHeaders } from "@/lib/api/marketplace-api";
 
@@ -35,4 +37,15 @@ export async function recordSaleAction(storeId: string, body: InStoreSaleBody): 
   // Nothing was sent, so nothing was recorded.
   if (!session) return { ok: false, kind: "rejected", message: "Your session has expired. Please sign in again." };
   return recordInStoreSale(storeId, body, session);
+}
+
+export async function receiptAction(
+  storeId: string,
+  orderId: string,
+  body: InStoreReceiptBody,
+): Promise<{ ok: true; url: string } | { ok: false; message: string }> {
+  const session = await serverSession();
+  if (!session) return { ok: false, message: "Your session has expired. Please sign in again." };
+  const res = await requestInStoreReceipt(storeId, orderId, body, session);
+  return res.ok ? { ok: true, url: res.data.url } : { ok: false, message: res.error.message };
 }

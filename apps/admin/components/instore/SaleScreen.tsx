@@ -53,7 +53,7 @@ export function SaleScreen({
   const [pending, setPending] = React.useState(false);
   const [message, setMessage] = React.useState<string | null>(null);
   const [lineNotes, setLineNotes] = React.useState<Record<string, string>>({});
-  const [done, setDone] = React.useState<{ orderNumber: string; grandTotal: string } | null>(null);
+  const [done, setDone] = React.useState<{ orderId: string; orderNumber: string; grandTotal: string } | null>(null);
   const [cartOpen, setCartOpen] = React.useState(false);
 
   const discount = cart.discount.trim() || undefined;
@@ -94,7 +94,7 @@ export function SaleScreen({
     setPending(false);
 
     if (res.ok) {
-      setDone({ orderNumber: res.orderNumber, grandTotal: res.grandTotal || total });
+      setDone({ orderId: res.orderId, orderNumber: res.orderNumber, grandTotal: res.grandTotal || total });
       dispatch({ type: "reset" });
       setTotal(null);
       router.refresh();
@@ -161,7 +161,7 @@ export function SaleScreen({
 
         <div className={`${cartOpen ? "fixed inset-x-0 bottom-0 z-40 max-h-[85vh] overflow-y-auto rounded-t-xl border-t border-border bg-background p-4 shadow-lg" : "hidden"} md:static md:block md:max-h-none md:rounded-none md:border-0 md:p-0 md:shadow-none`}>
           {done ? (
-            <SaleDone orderNumber={done.orderNumber} grandTotal={done.grandTotal} currencyCode={currencyCode} onNewSale={newSale} />
+            <SaleDone storeId={storeId} orderId={done.orderId} orderNumber={done.orderNumber} grandTotal={done.grandTotal} currencyCode={currencyCode} onNewSale={newSale} />
           ) : total !== null ? (
             <ChargeSheet
               total={total}

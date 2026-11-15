@@ -17,6 +17,7 @@ import { OrderItemsTable } from "@/components/orders/OrderItemsTable";
 import { OrderLifecycleStepper } from "@/components/orders/OrderLifecycleStepper";
 import { OrderTotalsCard } from "@/components/orders/OrderTotalsCard";
 import { InStoreSaleCard, showsShipping } from "@/components/orders/InStoreSaleCard";
+import { InStoreReceiptCard } from "@/components/orders/InStoreReceiptCard";
 import { getOrder } from "@/lib/api/marketplace-api";
 import { getOrderShipment } from "@/lib/api/shipping-api";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
@@ -109,6 +110,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
               />
             </div>
           ) : null}
+          <InStoreReceiptCard storeId={currentStore.id} orderId={order.id} channel={order.channel} />
           <div className="border-t border-border-subtle pt-8">
             <OrderDocumentsPanel
               order={order}

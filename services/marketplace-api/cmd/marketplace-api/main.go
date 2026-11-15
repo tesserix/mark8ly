@@ -1023,7 +1023,8 @@ func main() {
 		counterTax := storefront.NewCheckoutExtHandler(conn, orderSvc, nil, nil, apiKeyEncryptor, log).
 			WithSecretStore(carrierSecretStore)
 		inStoreHandler := admin.NewInStoreHandler(conn,
-			instore.NewService(conn, orderSvc, stockhold.NewRepository(), counterTax), fgaClient, log)
+			instore.NewService(conn, orderSvc, stockhold.NewRepository(), counterTax), fgaClient, log).
+			WithReceipts(instore.NewReceiptService(conn, orderDocSvc, cfg.StorefrontBaseURLTemplate))
 		returnsHandler := admin.NewReturnsHandler(conn, returnSvc, returnRepo, orderRepo, orderSvc, log).
 			WithRefunds(refundCoordinator)
 		abandonedCartsHandler := admin.NewAbandonedCartsHandler(abandonedCartSvc, log)
@@ -2078,7 +2079,9 @@ func main() {
 			DomainResolveHandler:  domainsHandler.ResolveDomain,
 			TicketsHandler:        sfTicketsHandler,
 			CustomerPortalHandler: customerPortalHandler,
-			Logger:                log,
+			ReceiptsHandler: storefront.NewReceiptsHandler(
+				instore.NewReceiptService(conn, orderDocSvcSF, cfg.StorefrontBaseURLTemplate), log),
+			Logger: log,
 		}
 	}
 

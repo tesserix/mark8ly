@@ -30,10 +30,24 @@ type InStoreRecorder interface {
 // InStoreHandler serves the in-store sale screen (#1103): its catalogue,
 // recording a sale, and the caller's own sales today.
 type InStoreHandler struct {
-	db     *gorm.DB
-	sales  InStoreRecorder
-	roles  authz.Client
-	logger *slog.Logger
+	db       *gorm.DB
+	sales    InStoreRecorder
+	roles    authz.Client
+	logger   *slog.Logger
+	receipts InStoreReceipts
+}
+
+// InStoreReceipts mints and emails receipt links (#1106, #1107).
+type InStoreReceipts interface {
+	SoldBy(ctx context.Context, storeID, orderID uuid.UUID) (string, error)
+	Issue(ctx context.Context, storeID, orderID uuid.UUID) (string, error)
+	Send(ctx context.Context, storeID, orderID uuid.UUID, email string) (string, error)
+}
+
+// WithReceipts enables POST /in-store/sales/:id/receipt.
+func (h *InStoreHandler) WithReceipts(r InStoreReceipts) *InStoreHandler {
+	h.receipts = r
+	return h
 }
 
 // NewInStoreHandler builds the handler. roles answers whether the caller is
@@ -393,6 +407,64 @@ func (h *InStoreHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, req)
+}
+
+// InStoreReceiptRequest asks for a receipt link; send emails it to email.
+type InStoreReceiptRequest struct {
+	Send  bool   `json:"send"`
+	Email string `json:"email"`
+}
+
+// Receipt handles POST /admin/stores/:storeId/in-store/sales/:id/receipt and
+// returns {"url"}. A cashier may do this only for their own sales; staff and
+// above for any in-store sale. Someone else's sale is a 404, as elsewhere.
+func (h *InStoreHandler) Receipt(c *gin.Context) {
+	_, storeID, tenantID, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	orderID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondErr(c, apperrors.NotFound("order"), h.logger)
+		return
+	}
+	var req InStoreReceiptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondErr(c, apperrors.ValidationFailed("body", err.Error()), h.logger)
+		return
+	}
+	if req.Send && strings.TrimSpace(req.Email) == "" {
+		RespondErr(c, apperrors.ValidationFailed("email", "enter the customer's email"), h.logger)
+		return
+	}
+	userID := c.GetString("user_id")
+	staff, err := h.roles.Check(c.Request.Context(), userID, string(authz.RoleStaff), tenantID.String())
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	if !staff {
+		soldBy, err := h.receipts.SoldBy(c.Request.Context(), storeID, orderID)
+		if err != nil {
+			RespondErr(c, err, h.logger)
+			return
+		}
+		if soldBy != userID {
+			RespondErr(c, apperrors.NotFound("order"), h.logger)
+			return
+		}
+	}
+	var url string
+	if req.Send {
+		url, err = h.receipts.Send(c.Request.Context(), storeID, orderID, req.Email)
+	} else {
+		url, err = h.receipts.Issue(c.Request.Context(), storeID, orderID)
+	}
+	if err != nil {
+		RespondErr(c, err, h.logger)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"url": url})
 }
 
 // sessionEmail is the caller's email: set by bearer auth, or forwarded by

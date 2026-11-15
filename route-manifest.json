@@ -153,6 +153,7 @@
         "POST /api/v1/admin/stores/:storeId/in-store/quote",
         "POST /api/v1/admin/stores/:storeId/in-store/sales",
         "POST /api/v1/admin/stores/:storeId/in-store/sales/:id/receipt",
+        "POST /api/v1/admin/stores/:storeId/in-store/sales/:id/refund",
         "POST /api/v1/admin/stores/:storeId/loyalty/members/:id/adjust",
         "POST /api/v1/admin/stores/:storeId/migration-fast-path/submit",
         "POST /api/v1/admin/stores/:storeId/orders",

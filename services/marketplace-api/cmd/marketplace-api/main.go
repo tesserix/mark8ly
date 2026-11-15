@@ -1024,7 +1024,8 @@ func main() {
 			WithSecretStore(carrierSecretStore)
 		inStoreHandler := admin.NewInStoreHandler(conn,
 			instore.NewService(conn, orderSvc, stockhold.NewRepository(), counterTax), fgaClient, log).
-			WithReceipts(instore.NewReceiptService(conn, orderDocSvc, cfg.StorefrontBaseURLTemplate))
+			WithReceipts(instore.NewReceiptService(conn, orderDocSvc, cfg.StorefrontBaseURLTemplate)).
+			WithRefunds(instore.NewRefundService(conn))
 		returnsHandler := admin.NewReturnsHandler(conn, returnSvc, returnRepo, orderRepo, orderSvc, log).
 			WithRefunds(refundCoordinator)
 		abandonedCartsHandler := admin.NewAbandonedCartsHandler(abandonedCartSvc, log)

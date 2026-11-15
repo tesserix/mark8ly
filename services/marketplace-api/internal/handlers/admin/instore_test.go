@@ -64,6 +64,7 @@ func inStoreEngine(t *testing.T, rec *fakeRecorder, role authz.Role, store *stor
 	g.POST("/in-store/quote", h.Quote)
 	g.GET("/in-store/permissions", h.Permissions)
 	g.POST("/in-store/sales/:id/receipt", h.Receipt)
+	g.POST("/in-store/sales/:id/refund", authz.NewMiddleware(fga, nil).RequireTenantRelation(authz.RoleAdmin), h.OutsideRefund)
 	settings := authz.NewMiddleware(fga, nil).RequireTenantRelation(authz.RoleAdmin)
 	g.GET("/in-store/settings", settings, h.Settings)
 	g.PUT("/in-store/settings", settings, h.UpdateSettings)
@@ -284,4 +285,44 @@ func TestInStoreSale_RecordsSellerEmailFromSession(t *testing.T) {
 	if rec.got.SoldByEmail != "sam@shop.test" {
 		t.Errorf("SoldByEmail = %q", rec.got.SoldByEmail)
 	}
+}
+
+type fakeRefunder struct{ got instore.RefundInput }
+
+func (f *fakeRefunder) Record(_ context.Context, in instore.RefundInput) (*instore.RefundResult, error) {
+	f.got = in
+	return &instore.RefundResult{PaymentStatus: "refunded"}, nil
+}
+
+func TestOutsideRefund_OwnerAdminOnly(t *testing.T) {
+	body := `{"refund_request_id":"r1","method":"cash","items":[{"order_item_id":"` + uuid.NewString() + `","quantity":1}]}`
+	for _, role := range []authz.Role{authz.RoleCashier, authz.RoleStaff} {
+		f := &fakeRefunder{}
+		e := inStoreEngine(t, &fakeRecorder{}, role, &stores.Store{})
+		if w := post(e, "sales/"+uuid.NewString()+"/refund", body); w.Code != http.StatusNotFound || f.got.RequestID != "" {
+			t.Errorf("%s: %d", role, w.Code)
+		}
+	}
+	f := &fakeRefunder{}
+	e := inStoreEngineWithRefunds(t, authz.RoleAdmin, f)
+	w := post(e, "sales/"+uuid.NewString()+"/refund", body)
+	if w.Code != http.StatusOK || f.got.RequestID != "r1" || f.got.Method != "cash" || len(f.got.Items) != 1 || f.got.RefundedBy != "u-1" {
+		t.Errorf("admin: %d %s %+v", w.Code, w.Body, f.got)
+	}
+}
+
+func inStoreEngineWithRefunds(t *testing.T, role authz.Role, r admin.InStoreRefunder) *gin.Engine {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	fga := authz.NewFakeClient()
+	fga.Grant("u-1", role, tenantID)
+	h := admin.NewInStoreHandler(nil, &fakeRecorder{}, fga, nil).WithRefunds(r)
+	e := gin.New()
+	g := e.Group("/admin/stores/:storeId", func(c *gin.Context) {
+		c.Set("user_id", "u-1")
+		c.Set("tenant_id", tenantID)
+		c.Set("store", &stores.Store{})
+	})
+	g.POST("/in-store/sales/:id/refund", authz.NewMiddleware(fga, nil).RequireTenantRelation(authz.RoleAdmin), h.OutsideRefund)
+	return e
 }

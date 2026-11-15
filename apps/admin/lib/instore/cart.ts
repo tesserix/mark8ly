@@ -76,12 +76,12 @@ export function cartReducer(cart: Cart, action: CartAction): Cart {
   }
 }
 
-function toCents(amount: string): number | null {
+export function toCents(amount: string): number | null {
   if (!/^\d+(\.\d{1,2})?$/.test(amount.trim())) return null;
   return Math.round(Number(amount) * 100);
 }
 
-function fromCents(cents: number): string {
+export function fromCents(cents: number): string {
   return (cents / 100).toFixed(2);
 }
 

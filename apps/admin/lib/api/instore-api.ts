@@ -206,3 +206,28 @@ export async function requestInStoreReceipt(
   if (res.ok) return { ok: true, data: (await res.json()) as { url: string } };
   return { ok: false, error: await parseMutationError(res) };
 }
+
+export type OutsideRefundBody = {
+  refund_request_id: string;
+  amount: string;
+  method: string;
+  reason?: string;
+  items: { order_item_id: string; quantity: number }[];
+};
+
+// Records a refund given on the shop's own terminal or in cash (#1110).
+export async function recordOutsideRefund(
+  storeId: string,
+  orderId: string,
+  body: OutsideRefundBody,
+  session: SessionHeaders,
+): Promise<MutationResult<{ payment_status: string; refunded_amount: string; reused: boolean }>> {
+  const res = await fetch(`${base(storeId)}/sales/${encodeURIComponent(orderId)}/refund`, {
+    method: "POST",
+    cache: "no-store",
+    headers: commonHeaders(session),
+    body: JSON.stringify(body),
+  });
+  if (res.ok) return { ok: true, data: await res.json() };
+  return { ok: false, error: await parseMutationError(res) };
+}

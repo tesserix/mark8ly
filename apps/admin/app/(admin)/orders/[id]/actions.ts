@@ -19,6 +19,7 @@ import {
   refundOrder,
   type PaymentStatus,
 } from "@/lib/api/marketplace-api";
+import { recordOutsideRefund, type OutsideRefundBody } from "@/lib/api/instore-api";
 
 export interface OrderActionResult {
   ok: boolean;
@@ -222,5 +223,20 @@ export async function refundOrderAction(
   }
   revalidatePath(`/orders/${orderId}`);
   revalidatePath(`/orders`);
+  return { ok: true };
+}
+
+// Records a refund of an in-store sale made outside mark8ly (#1110). Owner
+// and admin only; the API enforces it.
+export async function recordOutsideRefundAction(
+  storeId: string,
+  orderId: string,
+  body: OutsideRefundBody,
+): Promise<OrderActionResult> {
+  const ctx = await readContext(storeId);
+  if (!ctx) return noSession();
+  const res = await recordOutsideRefund(storeId, orderId, body, { userId: ctx.userId, tenantId: ctx.tenantId });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath(`/orders/${orderId}`);
   return { ok: true };
 }

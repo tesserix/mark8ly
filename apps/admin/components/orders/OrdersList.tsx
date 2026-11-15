@@ -53,11 +53,18 @@ const OrderRow = memo(function OrderRow({ order: o }: { order: AdminOrder }) {
       <Link
         href={`/orders/${o.id}`}
         className={`grid ${GRID} items-center gap-6 px-4 py-4 transition-colors hover:bg-[color:var(--ink-900)]/[0.03] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]`}
-        aria-label={`Order ${o.order_number} for ${o.customer_email}`}
+        aria-label={`Order ${o.order_number}, ${o.customer_name ?? (o.customer_email || "in-store sale")}`}
       >
         <span className="flex min-w-0 flex-col gap-1">
-          <span className="truncate font-serif text-base text-foreground">
-            {o.order_number}
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-serif text-base text-foreground">
+              {o.order_number}
+            </span>
+            {o.channel === "in_store" ? (
+              <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-foreground-secondary">
+                In-store
+              </span>
+            ) : null}
           </span>
           <span className="truncate text-xs text-foreground-tertiary">
             {formatDate(o.placed_at)}
@@ -65,7 +72,7 @@ const OrderRow = memo(function OrderRow({ order: o }: { order: AdminOrder }) {
         </span>
 
         <span className="flex min-w-0 flex-col gap-1 text-sm text-foreground">
-          <span className="truncate">{o.customer_name ?? o.customer_email}</span>
+          <span className="truncate">{o.customer_name ?? (o.customer_email || "In-store sale")}</span>
           {o.customer_name && (
             <span className="truncate text-xs text-foreground-tertiary">{o.customer_email}</span>
           )}

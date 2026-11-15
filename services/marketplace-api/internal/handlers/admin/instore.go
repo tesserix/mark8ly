@@ -119,7 +119,7 @@ func (h *InStoreHandler) RecordSale(c *gin.Context) {
 		IdempotencyKey: req.IdempotencyKey, Lines: saleLines(req.Lines), Discount: req.Discount,
 		PaymentMethod: req.PaymentMethod, PaymentMethodLabel: req.PaymentMethodLabel,
 		CashTendered: req.CashTendered, Note: req.Note, CustomerEmail: req.CustomerEmail,
-		SoldByUserID: userID, CanDiscount: canDiscount,
+		SoldByUserID: userID, SoldByEmail: sessionEmail(c), CanDiscount: canDiscount,
 		Fulfilled:     req.Fulfilled == nil || *req.Fulfilled,
 		ExpectedTotal: req.ExpectedTotal,
 	})
@@ -415,4 +415,13 @@ func (h *InStoreHandler) Receipt(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"url": url})
+}
+
+// sessionEmail is the caller's email: set by bearer auth, or forwarded by
+// admin server actions as X-User-Email (same fallback as tickets.go).
+func sessionEmail(c *gin.Context) string {
+	if e := c.GetString("user_email"); e != "" {
+		return e
+	}
+	return c.GetHeader("X-User-Email")
 }

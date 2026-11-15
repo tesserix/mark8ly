@@ -266,3 +266,23 @@ func TestIntegration_InStore_RetryAfterPriceChangeReturnsFirstOrder(t *testing.T
 	require.Equal(t, first.Order.ID, again.Order.ID)
 	require.Equal(t, 3, f.stock(t, vid))
 }
+
+func TestIntegration_InStore_RecordsSellerEmail(t *testing.T) {
+	f := newFixture(t)
+	vid := f.variant(t, "20.00", 5, "deny")
+
+	in := f.sale(line(vid, 1))
+	in.SoldByEmail = "sam@shop.test"
+	res, err := f.svc.RecordSale(context.Background(), in)
+	require.NoError(t, err)
+	var o order.Order
+	require.NoError(t, f.db.First(&o, "id = ?", res.Order.ID).Error)
+	require.NotNil(t, o.SoldByEmail)
+	require.Equal(t, "sam@shop.test", *o.SoldByEmail)
+
+	res, err = f.svc.RecordSale(context.Background(), f.sale(line(vid, 1)))
+	require.NoError(t, err)
+	var anon order.Order
+	require.NoError(t, f.db.First(&anon, "id = ?", res.Order.ID).Error)
+	require.Nil(t, anon.SoldByEmail)
+}

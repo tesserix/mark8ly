@@ -5,7 +5,7 @@ import { formatMoney } from "@/lib/format";
 
 export type PaymentMethod = "card_external" | "cash" | "bank_transfer" | "other";
 
-const METHODS: { value: PaymentMethod; label: string }[] = [
+export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "card_external", label: "Card (EFTPOS)" },
   { value: "cash", label: "Cash" },
   { value: "bank_transfer", label: "Bank transfer" },
@@ -59,7 +59,7 @@ export function ChargeSheet({
 
       <fieldset className="grid grid-cols-2 gap-2">
         <legend className="mb-1 text-sm font-medium">How did they pay?</legend>
-        {METHODS.map((m) => (
+        {PAYMENT_METHODS.map((m) => (
           <label key={m.value}
             className="flex min-h-11 items-center gap-2 rounded-md border border-border px-3 text-sm has-[:checked]:border-primary">
             <input type="radio" name="payment-method" value={m.value} checked={method === m.value}

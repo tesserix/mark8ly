@@ -4,13 +4,9 @@ import { AdminPage } from "@/components/layout";
 import { OrdersList } from "@/components/orders/OrdersList";
 import { OrdersListEmpty } from "@/components/orders/OrdersListEmpty";
 import { OrdersListPagination } from "@/components/orders/OrdersListPagination";
-import {
-  listOrders,
-  type ListOrdersQuery,
-  type OrderStatus,
-  type PaymentStatus,
-} from "@/lib/api/marketplace-api";
+import { listOrders, type ListOrdersQuery } from "@/lib/api/marketplace-api";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
+import { ordersHref, parseOrdersQuery } from "@/lib/orders/list-query";
 
 interface OrdersPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -23,7 +19,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
   const session = await getServerSessionContext();
   const { currentStore, userId, tenantId } = session;
   const params = await searchParams;
-  const query = parseSearchParams(params);
+  const query = parseOrdersQuery(params);
 
   if (!currentStore) {
     return (
@@ -45,29 +41,12 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
     total: 0,
     total_pages: 0,
   };
-  const hasActiveFilters = !!query.status || !!query.paymentStatus || !!query.search;
+  const hasActiveFilters = !!query.status || !!query.paymentStatus || !!query.channel || !!query.search;
   const isEmpty = orders.length === 0;
-
-  const buildHref = (page: number) => {
-    const p = new URLSearchParams();
-    if (query.status) p.set("status", query.status);
-    if (query.paymentStatus) p.set("payment_status", query.paymentStatus);
-    if (query.search) p.set("search", query.search);
-    if (query.pageSize) p.set("page_size", String(query.pageSize));
-    if (page > 1) p.set("page", String(page));
-    const qs = p.toString();
-    return qs ? `/orders?${qs}` : "/orders";
-  };
 
   return (
     <AdminPage eyebrow="Operations" title="Orders" description={DESCRIPTION}>
-      <OrdersFilterBar
-        search={query.search ?? ""}
-        status={query.status}
-        paymentStatus={query.paymentStatus}
-        total={meta.total}
-        clearable={hasActiveFilters}
-      />
+      <OrdersFilterBar query={query} total={meta.total} clearable={hasActiveFilters} />
       {isEmpty ? (
         <OrdersListEmpty
           variant={hasActiveFilters ? "no-matches" : "no-orders"}
@@ -79,7 +58,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
           <OrdersListPagination
             currentPage={meta.page}
             totalPages={meta.total_pages}
-            buildHref={buildHref}
+            buildHref={(page) => ordersHref(query, { page })}
           />
         </>
       )}
@@ -92,39 +71,13 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
 // is a plain Link that preserves the other query params, so filters
 // compose cleanly and the URL stays deep-linkable.
 interface OrdersFilterBarProps {
-  search: string;
-  status?: OrderStatus;
-  paymentStatus?: PaymentStatus;
+  query: ListOrdersQuery;
   total: number;
   clearable: boolean;
 }
 
-function OrdersFilterBar({
-  search,
-  status,
-  paymentStatus,
-  total,
-  clearable,
-}: OrdersFilterBarProps) {
-  // Preserve the non-status params when a status chip is clicked so
-  // filters compose rather than replace each other.
-  const buildStatusHref = (next?: OrderStatus): string => {
-    const p = new URLSearchParams();
-    if (next) p.set("status", next);
-    if (paymentStatus) p.set("payment_status", paymentStatus);
-    if (search) p.set("search", search);
-    const qs = p.toString();
-    return qs ? `/orders?${qs}` : "/orders";
-  };
-  const buildPaymentHref = (next?: PaymentStatus): string => {
-    const p = new URLSearchParams();
-    if (status) p.set("status", status);
-    if (next) p.set("payment_status", next);
-    if (search) p.set("search", search);
-    const qs = p.toString();
-    return qs ? `/orders?${qs}` : "/orders";
-  };
-
+function OrdersFilterBar({ query, total, clearable }: OrdersFilterBarProps) {
+  const { search = "", status, paymentStatus, channel } = query;
   return (
     <div className="flex flex-col gap-6">
       <form
@@ -138,6 +91,7 @@ function OrdersFilterBar({
         {paymentStatus && (
           <input type="hidden" name="payment_status" value={paymentStatus} />
         )}
+        {channel && <input type="hidden" name="channel" value={channel} />}
         <input
           type="search"
           name="search"
@@ -153,10 +107,7 @@ function OrdersFilterBar({
         </button>
         {search && (
           <Link
-            href={`/orders${status || paymentStatus ? `?${new URLSearchParams({
-              ...(status ? { status } : {}),
-              ...(paymentStatus ? { payment_status: paymentStatus } : {}),
-            }).toString()}` : ""}`}
+            href={ordersHref(query, { search: undefined })}
             className="text-xs text-foreground-tertiary underline-offset-4 hover:text-foreground hover:underline"
           >
             Clear
@@ -178,7 +129,7 @@ function OrdersFilterBar({
             { value: "fulfilled", label: "Fulfilled" },
             { value: "cancelled", label: "Cancelled" },
           ]}
-          buildHref={buildStatusHref as (v: string | undefined) => string}
+          buildHref={(v) => ordersHref(query, { status: v as ListOrdersQuery["status"] })}
         />
         <span
           aria-hidden="true"
@@ -196,7 +147,21 @@ function OrdersFilterBar({
             { value: "partially_refunded", label: "Partial refund" },
             { value: "refunded", label: "Refunded" },
           ]}
-          buildHref={buildPaymentHref as (v: string | undefined) => string}
+          buildHref={(v) => ordersHref(query, { paymentStatus: v as ListOrdersQuery["paymentStatus"] })}
+        />
+        <span
+          aria-hidden="true"
+          className="h-4 w-px shrink-0 self-center bg-border-subtle"
+        />
+        <FilterChipRow
+          legend="Channel"
+          current={channel}
+          options={[
+            { value: undefined, label: "All" },
+            { value: "online", label: "Online" },
+            { value: "in_store", label: "In-store" },
+          ]}
+          buildHref={(v) => ordersHref(query, { channel: v as ListOrdersQuery["channel"] })}
         />
         {clearable && (
           <span className="ml-auto flex items-center gap-3 text-xs text-foreground-tertiary">
@@ -260,52 +225,4 @@ function FilterChipRow({
       </div>
     </div>
   );
-}
-
-const VALID_ORDER_STATUS: readonly OrderStatus[] = [
-  "pending",
-  "confirmed",
-  "fulfilled",
-  "cancelled",
-];
-const VALID_PAYMENT_STATUS: readonly PaymentStatus[] = [
-  "pending",
-  "authorized",
-  "paid",
-  "failed",
-  "refunded",
-  "partially_refunded",
-];
-
-function parseSearchParams(
-  raw: Record<string, string | string[] | undefined>,
-): ListOrdersQuery {
-  const status = typeof raw.status === "string" ? raw.status : undefined;
-  const paymentStatus =
-    typeof raw.payment_status === "string" ? raw.payment_status : undefined;
-  const page =
-    typeof raw.page === "string" ? Number.parseInt(raw.page, 10) : undefined;
-  const pageSize =
-    typeof raw.page_size === "string"
-      ? Number.parseInt(raw.page_size, 10)
-      : undefined;
-
-  const validStatus = VALID_ORDER_STATUS.includes(status as OrderStatus)
-    ? (status as OrderStatus)
-    : undefined;
-  const validPaymentStatus = VALID_PAYMENT_STATUS.includes(
-    paymentStatus as PaymentStatus,
-  )
-    ? (paymentStatus as PaymentStatus)
-    : undefined;
-
-  const search = typeof raw.search === "string" ? raw.search.trim() : "";
-  return {
-    status: validStatus,
-    paymentStatus: validPaymentStatus,
-    search: search || undefined,
-    page: page && page > 0 ? page : undefined,
-    pageSize:
-      pageSize && pageSize > 0 && pageSize <= 200 ? pageSize : undefined,
-  };
 }

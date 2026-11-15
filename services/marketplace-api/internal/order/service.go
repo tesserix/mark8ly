@@ -119,6 +119,7 @@ type InStoreDetails struct {
 	PaymentMethod      string
 	PaymentMethodLabel *string
 	SoldByUserID       string
+	SoldByEmail        *string // nil when the session carried no email
 	CashTendered       *decimal.Decimal
 }
 
@@ -198,6 +199,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 		o.PaymentMethod = &in.InStore.PaymentMethod
 		o.PaymentMethodLabel = in.InStore.PaymentMethodLabel
 		o.SoldByUserID = &in.InStore.SoldByUserID
+		o.SoldByEmail = in.InStore.SoldByEmail
 		o.CashTendered = in.InStore.CashTendered
 	}
 

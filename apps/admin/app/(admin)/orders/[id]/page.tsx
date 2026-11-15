@@ -16,6 +16,7 @@ import { OrderDocumentsPanel } from "@/components/orders/OrderDocumentsPanel";
 import { OrderItemsTable } from "@/components/orders/OrderItemsTable";
 import { OrderLifecycleStepper } from "@/components/orders/OrderLifecycleStepper";
 import { OrderTotalsCard } from "@/components/orders/OrderTotalsCard";
+import { InStoreSaleCard, showsShipping } from "@/components/orders/InStoreSaleCard";
 import { InStoreReceiptCard } from "@/components/orders/InStoreReceiptCard";
 import { getOrder } from "@/lib/api/marketplace-api";
 import { getOrderShipment } from "@/lib/api/shipping-api";
@@ -86,30 +87,30 @@ export default async function OrderDetailPage({ params }: PageProps) {
           <div className="border-t border-border-subtle pt-6">
             <OrderTotalsCard order={order} />
           </div>
-          <div className="mt-4 border-t border-border-subtle pt-8">
-            <OrderAddressCard addresses={order.addresses} />
-          </div>
+          {showsShipping(order) ? (
+            <div className="mt-4 border-t border-border-subtle pt-8">
+              <OrderAddressCard addresses={order.addresses} />
+            </div>
+          ) : null}
         </div>
 
         {/* Aside — sticky action workspace. All three sections use the
             hairline system; no elevated cards inside. */}
         <aside className="flex flex-col gap-8 lg:sticky lg:top-8 lg:self-start">
+          <InStoreSaleCard order={order} />
           <OrderActionsBar order={order} shipmentStatus={shipment?.status ?? null} />
-          <div className="border-t border-border-subtle pt-8">
-            <ShippingLabelPanel
-              storeId={currentStore.id}
-              orderId={order.id}
-              orderStatus={order.status}
-              customerCarrier={order.shipping_carrier}
-              customerService={order.shipping_service}
-            />
-          </div>
-          {/* channel arrives on AdminOrder with #1118. */}
-          <InStoreReceiptCard
-            storeId={currentStore.id}
-            orderId={order.id}
-            channel={(order as { channel?: string }).channel}
-          />
+          {showsShipping(order) ? (
+            <div className="border-t border-border-subtle pt-8">
+              <ShippingLabelPanel
+                storeId={currentStore.id}
+                orderId={order.id}
+                orderStatus={order.status}
+                customerCarrier={order.shipping_carrier}
+                customerService={order.shipping_service}
+              />
+            </div>
+          ) : null}
+          <InStoreReceiptCard storeId={currentStore.id} orderId={order.id} channel={order.channel} />
           <div className="border-t border-border-subtle pt-8">
             <OrderDocumentsPanel
               order={order}

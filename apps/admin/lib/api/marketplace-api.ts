@@ -1146,6 +1146,13 @@ export interface AdminOrder {
    */
   shipping_service?: string;
   shipping_carrier?: string;
+  notes?: string;
+  /** In-store sales (#1109): set on every order; the rest only in-store. */
+  channel: OrderChannel;
+  payment_method?: "card_external" | "cash" | "bank_transfer" | "other";
+  payment_method_label?: string;
+  sold_by_email?: string;
+  cash_tendered?: string;
   items: AdminOrderItem[];
   addresses: AdminOrderAddress[];
   placed_at: string;
@@ -1167,9 +1174,12 @@ export interface ListOrdersResponse {
   meta: ListOrdersMeta;
 }
 
+export type OrderChannel = "online" | "in_store";
+
 export interface ListOrdersQuery {
   status?: OrderStatus;
   paymentStatus?: PaymentStatus;
+  channel?: OrderChannel;
   /** Free-text search (order number, customer name/email). Backend does
    *  ILIKE matching across those columns. */
   search?: string;
@@ -1190,6 +1200,7 @@ export async function listOrders(
   const params = new URLSearchParams();
   if (query.status) params.set("status", query.status);
   if (query.paymentStatus) params.set("payment_status", query.paymentStatus);
+  if (query.channel) params.set("channel", query.channel);
   if (query.search) params.set("search", query.search);
   if (query.page) params.set("page", String(query.page));
   if (query.pageSize) params.set("page_size", String(query.pageSize));

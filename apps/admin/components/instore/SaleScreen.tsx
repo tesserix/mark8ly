@@ -7,7 +7,6 @@
 // never be recorded twice.
 
 import * as React from "react";
-import Link from "next/link";
 
 import { quoteSaleAction, recordSaleAction } from "@/app/(admin)/sell/actions";
 import type { InStoreProduct } from "@/lib/api/instore-api";
@@ -133,9 +132,10 @@ export function SaleScreen({
   return (
     <div className="flex flex-col gap-4 pb-20 md:pb-0">
       <div className="flex justify-end">
-        <Link href="/logout" className="min-h-11 text-sm underline">
+        {/* A plain anchor: next/link prefetches, and prefetching /logout signs out. */}
+        <a href="/logout" className="min-h-11 text-sm underline">
           Switch person
-        </Link>
+        </a>
       </div>
 
       <div className="grid gap-6 md:grid-cols-[1fr_minmax(20rem,24rem)]">

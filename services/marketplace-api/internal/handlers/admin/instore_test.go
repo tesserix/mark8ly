@@ -206,7 +206,7 @@ func TestInStoreSettings_OwnerAdminOnly(t *testing.T) {
 			t.Errorf("%s GET settings: %d", role, w.Code)
 		}
 		req := httptest.NewRequest(http.MethodPut, "/admin/stores/"+uuid.NewString()+"/in-store/settings",
-			strings.NewReader(`{"cashier_discounts_enabled":true,"in_store_enabled":true}`))
+			strings.NewReader(`{"cashier_discounts_enabled":true,"in_store_enabled":true,"abn":""}`))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		e.ServeHTTP(w, req)
@@ -215,7 +215,7 @@ func TestInStoreSettings_OwnerAdminOnly(t *testing.T) {
 		}
 	}
 	w := get(inStoreEngine(t, &fakeRecorder{}, authz.RoleAdmin, &stores.Store{InStoreEnabled: true, CashierDiscountsEnabled: true}), "settings")
-	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":true}` {
+	if w.Code != http.StatusOK || strings.TrimSpace(w.Body.String()) != `{"cashier_discounts_enabled":true,"in_store_enabled":true,"abn":""}` {
 		t.Errorf("admin GET settings: %d %s", w.Code, w.Body)
 	}
 }
@@ -353,5 +353,34 @@ func TestInStoreSettings_PartialUpdateNeedsDB(t *testing.T) {
 	e.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("empty settings: %d", w.Code)
+	}
+}
+
+func putSettings(e *gin.Engine, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPut, "/admin/stores/"+uuid.NewString()+"/in-store/settings", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	e.ServeHTTP(w, req)
+	return w
+}
+
+// A mistyped ABN would print on a tax invoice, so the ATO checksum is enforced.
+func TestInStoreSettings_ABNValidated(t *testing.T) {
+	au := inStoreEngine(t, &fakeRecorder{}, authz.RoleAdmin, &stores.Store{CountryCode: "AU"})
+	for _, abn := range []string{"51 824 753 557", "5182475355", "ABN51824753556"} {
+		if w := putSettings(au, `{"abn":"`+abn+`"}`); w.Code != http.StatusBadRequest {
+			t.Errorf("abn %q: %d %s", abn, w.Code, w.Body)
+		}
+	}
+	// A valid ABN passes validation and reaches the (absent) database.
+	func() {
+		defer func() { _ = recover() }()
+		if w := putSettings(au, `{"abn":"51 824 753 556"}`); w.Code == http.StatusBadRequest {
+			t.Errorf("valid abn refused: %s", w.Body)
+		}
+	}()
+	nz := inStoreEngine(t, &fakeRecorder{}, authz.RoleAdmin, &stores.Store{CountryCode: "NZ"})
+	if w := putSettings(nz, `{"abn":"51 824 753 556"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("non-AU store: %d %s", w.Code, w.Body)
 	}
 }

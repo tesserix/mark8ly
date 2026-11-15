@@ -388,14 +388,17 @@ func (h *InStoreHandler) Permissions(c *gin.Context) {
 
 // InStoreSettings is the store's in-store sales configuration.
 type InStoreSettings struct {
-	CashierDiscountsEnabled bool `json:"cashier_discounts_enabled"`
-	InStoreEnabled          bool `json:"in_store_enabled"`
+	CashierDiscountsEnabled bool   `json:"cashier_discounts_enabled"`
+	InStoreEnabled          bool   `json:"in_store_enabled"`
+	ABN                     string `json:"abn"`
 }
 
 // InStoreSettingsUpdate changes only the fields it carries.
 type InStoreSettingsUpdate struct {
 	CashierDiscountsEnabled *bool `json:"cashier_discounts_enabled"`
 	InStoreEnabled          *bool `json:"in_store_enabled"`
+	// ABN is printed on receipts; "" clears it. AU stores only.
+	ABN *string `json:"abn"`
 }
 
 // RequireEnabled refuses selling while in-store sales are turned off for the
@@ -416,13 +419,13 @@ func (h *InStoreHandler) Settings(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, InStoreSettings{CashierDiscountsEnabled: store.CashierDiscountsEnabled, InStoreEnabled: store.InStoreEnabled})
+	c.JSON(http.StatusOK, InStoreSettings{CashierDiscountsEnabled: store.CashierDiscountsEnabled, InStoreEnabled: store.InStoreEnabled, ABN: store.ABN})
 }
 
 // UpdateSettings handles PUT /admin/stores/:storeId/in-store/settings (owner,
 // admin). The flag is owned here, not synced from platform-api.
 func (h *InStoreHandler) UpdateSettings(c *gin.Context) {
-	_, storeID, _, ok := h.scope(c)
+	store, storeID, _, ok := h.scope(c)
 	if !ok {
 		return
 	}
@@ -438,6 +441,14 @@ func (h *InStoreHandler) UpdateSettings(c *gin.Context) {
 	if req.InStoreEnabled != nil {
 		set["in_store_enabled"] = *req.InStoreEnabled
 	}
+	if req.ABN != nil {
+		abn, err := normaliseABN(*req.ABN, store.CountryCode)
+		if err != nil {
+			RespondErr(c, err, h.logger)
+			return
+		}
+		set["abn"] = abn
+	}
 	if len(set) == 0 {
 		RespondErr(c, apperrors.ValidationFailed("body", "nothing to change"), h.logger)
 		return
@@ -447,13 +458,44 @@ func (h *InStoreHandler) UpdateSettings(c *gin.Context) {
 		if err := tx.Model(&stores.Store{}).Where("id = ?", storeID).Updates(set).Error; err != nil {
 			return err
 		}
-		return tx.Raw(`SELECT cashier_discounts_enabled, in_store_enabled FROM stores WHERE id = ?`, storeID).Scan(&out).Error
+		return tx.Raw(`SELECT cashier_discounts_enabled, in_store_enabled, abn FROM stores WHERE id = ?`, storeID).Scan(&out).Error
 	})
 	if err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+// normaliseABN strips spaces and checks the ATO's ABN checksum: subtract 1
+// from the first digit, weight the digits, and the sum divides by 89.
+func normaliseABN(raw, country string) (string, error) {
+	abn := strings.ReplaceAll(raw, " ", "")
+	if abn == "" {
+		return "", nil
+	}
+	if country != "AU" {
+		return "", apperrors.ValidationFailed("abn", "an ABN is for Australian stores")
+	}
+	if len(abn) != 11 {
+		return "", apperrors.ValidationFailed("abn", "an ABN is 11 digits")
+	}
+	weights := [11]int{10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19}
+	sum := 0
+	for i, r := range abn {
+		if r < '0' || r > '9' {
+			return "", apperrors.ValidationFailed("abn", "an ABN is 11 digits")
+		}
+		d := int(r - '0')
+		if i == 0 {
+			d--
+		}
+		sum += d * weights[i]
+	}
+	if sum%89 != 0 {
+		return "", apperrors.ValidationFailed("abn", "that is not a valid ABN; check the digits")
+	}
+	return abn, nil
 }
 
 // InStoreReceiptRequest asks for a receipt link; send emails it to email.

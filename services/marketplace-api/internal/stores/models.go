@@ -53,6 +53,9 @@ type Store struct {
 	// InStoreEnabled turns in-store sales on for the store. Owned here like
 	// CashierDiscountsEnabled.
 	InStoreEnabled bool `gorm:"column:in_store_enabled;not null;default:false" json:"in_store_enabled"`
+	// ABN is the store's Australian Business Number, 11 digits or empty,
+	// printed on receipts (#1108). Owned here like the flags above.
+	ABN string `gorm:"column:abn;type:varchar(11);not null;default:''" json:"abn"`
 }
 
 func (Store) TableName() string { return "stores" }

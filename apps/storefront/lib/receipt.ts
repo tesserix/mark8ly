@@ -20,6 +20,8 @@ export type Receipt = {
   tax_total: string;
   grand_total: string;
   tax_label: string;
+  title?: string; // "Tax invoice" for an AU store with an ABN (#1108)
+  abn?: string;
   time_zone?: string;
   fresh: boolean;
   payment_method?: string;
@@ -69,6 +71,8 @@ export function receiptView(r: Receipt) {
   if (r.fresh && r.receipt_email_masked) contact.push(["Sent to", r.receipt_email_masked]);
 
   return {
+    title: r.title || "Receipt",
+    abn: r.abn ? `ABN ${r.abn}` : null,
     orderNumber: r.order_number,
     placed: `In-store purchase · ${placed}`,
     lines: r.lines.map((l) => ({

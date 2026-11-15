@@ -12,6 +12,11 @@ vi.mock("@/app/(admin)/sell/actions", () => ({
   recordSaleAction: (...args: unknown[]) => recordSaleAction(...args),
 }));
 
+// Marks next/link anchors so a test can tell them from plain ones.
+vi.mock("next/link", () => ({
+  default: ({ children, ...props }: { children: React.ReactNode }) => <a data-next-link {...props}>{children}</a>,
+}));
+
 import { SaleScreen } from "./SaleScreen";
 
 const catalog: InStoreProduct[] = [
@@ -51,6 +56,13 @@ beforeEach(() => {
 });
 
 describe("SaleScreen", () => {
+  it("links to sign-out with a plain anchor, so a prefetch can't sign the seller out", () => {
+    renderScreen();
+    const link = screen.getByRole("link", { name: "Switch person" });
+    expect(link).toHaveAttribute("href", "/logout");
+    expect(link).not.toHaveAttribute("data-next-link");
+  });
+
   it("filters the grid by search", async () => {
     const user = userEvent.setup();
     renderScreen();

@@ -40,6 +40,12 @@ in admin. The other three stay internal until their stores exist and are linked.
 The down migration removes unlinked drafts and preserves linked merchant rows;
 it is destructive and is tested only in disposable databases.
 
+Migration 24 lets an unlinked row be published for stores onboarded offline
+before registration. The store's manager supplies consent on the owner's behalf,
+and the row still needs a store name. The public feed shows linked rows only for
+active stores and tenants, and shows unlinked rows by store name. Its down
+migration unpublishes every unlinked row before restoring the old constraint.
+
 Migration 22 adds a table and partial index, without changing existing rows or
 tables. A disposable database verifies up/down/up and the public/private flow.
 Deploy the migration before the new API (the existing migrate init container does

@@ -150,10 +150,13 @@ func (h *Handler) list(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 	defer cancel()
 	rows := []PublicReview{}
-	err := h.db.WithContext(ctx).Raw(`SELECT r.store_id, s.name AS store_name, r.position, r.quote, r.rating
-		FROM merchant_testimonials r JOIN stores s ON s.id = r.store_id JOIN tenants t ON t.id = s.tenant_id
-		WHERE r.published AND r.consented_at IS NOT NULL AND s.status = 'active' AND t.status = 'active'
-		ORDER BY r.updated_at DESC, r.store_id LIMIT 12`).Scan(&rows).Error
+	// Stores onboarded offline are not yet registered, so their reviews carry only a store name.
+	err := h.db.WithContext(ctx).Raw(`SELECT COALESCE(r.store_id, r.id)::text AS store_id,
+		COALESCE(s.name, r.store_name) AS store_name, r.position, r.quote, r.rating
+		FROM merchant_testimonials r LEFT JOIN stores s ON s.id = r.store_id LEFT JOIN tenants t ON t.id = s.tenant_id
+		WHERE r.published AND r.consented_at IS NOT NULL
+		AND (r.store_id IS NULL OR (s.status = 'active' AND t.status = 'active'))
+		ORDER BY r.updated_at DESC, r.id LIMIT 12`).Scan(&rows).Error
 	if err != nil {
 		fail(c, 503, "unavailable", "Testimonials are unavailable.")
 		return

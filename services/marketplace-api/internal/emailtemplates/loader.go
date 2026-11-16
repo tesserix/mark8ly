@@ -280,8 +280,11 @@ func renderText(name, body string, vars any) (string, error) {
 }
 
 // SeedFromEmbedded inserts every registered fallback into the
-// email_templates table for any key without a row. Idempotent —
-// safe to run on every boot. Returns nil when db is nil.
+// email_templates table for any key without a row, and refreshes a row
+// nobody has edited (still the version-1 seed) to the current code, so a
+// wording fix reaches production. An operator edit (Store.Upsert bumps the
+// version and records who) is never overwritten. Idempotent — safe to run
+// on every boot. Returns nil when db is nil.
 func (l *Loader) SeedFromEmbedded(ctx context.Context) error {
 	if l == nil || l.db == nil {
 		return nil
@@ -301,7 +304,12 @@ func (l *Loader) SeedFromEmbedded(ctx context.Context) error {
 			INSERT INTO email_templates
 				(key, subject, html_body, text_body, variables, status, version, updated_by)
 			VALUES (?, ?, ?, ?, '[]'::jsonb, 'published', 1, 'embedded-seed')
-			ON CONFLICT (key) DO NOTHING
+			ON CONFLICT (key) DO UPDATE SET
+				subject = EXCLUDED.subject, html_body = EXCLUDED.html_body,
+				text_body = EXCLUDED.text_body, updated_at = now()
+			WHERE email_templates.updated_by = 'embedded-seed' AND email_templates.version = 1
+			  AND (email_templates.subject, email_templates.html_body, email_templates.text_body)
+			      IS DISTINCT FROM (EXCLUDED.subject, EXCLUDED.html_body, EXCLUDED.text_body)
 		`, k, fb.Subject, fb.HTMLBody, fb.TextBody).Error
 		if err != nil {
 			return fmt.Errorf("emailtemplates: seed %q: %w", k, err)

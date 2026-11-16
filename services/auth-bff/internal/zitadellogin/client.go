@@ -443,6 +443,11 @@ func (c *Client) FindUserByVerifiedEmail(ctx context.Context, orgID, email strin
 					"method":       "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE",
 				},
 			},
+			// withOrgID's header does not filter a v2 user search; the org
+			// must be a query too, or another product's user matches.
+			map[string]any{
+				"organizationIdQuery": map[string]any{"organizationId": orgID},
+			},
 		},
 	}
 	var wire struct {
@@ -507,6 +512,11 @@ func (c *Client) FindUserByEmail(ctx context.Context, orgID, email string) (user
 					"emailAddress": email,
 					"method":       "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE",
 				},
+			},
+			// withOrgID's header does not filter a v2 user search; the org
+			// must be a query too, or another product's user matches.
+			map[string]any{
+				"organizationIdQuery": map[string]any{"organizationId": orgID},
 			},
 		},
 	}

@@ -59,9 +59,17 @@ func TestResolveUserIDByEmail_Found(t *testing.T) {
 	if gotOrgHeader != "org-tesserix" {
 		t.Errorf("x-zitadel-orgid = %q, want org-tesserix", gotOrgHeader)
 	}
+	// The header does not filter a v2 user search: on 16 Nov the same
+	// address matched three users across three orgs (two belonging to
+	// another product), and a cashier invite could not be accepted. The
+	// org has to be a query, ANDed with the email.
 	q, ok := gotBody["queries"].([]any)
-	if !ok || len(q) != 1 {
+	if !ok || len(q) != 2 {
 		t.Fatalf("queries = %v", gotBody["queries"])
+	}
+	org, _ := q[1].(map[string]any)["organizationIdQuery"].(map[string]any)
+	if org["organizationId"] != "org-tesserix" {
+		t.Errorf("organizationIdQuery = %v, want org-tesserix", q[1])
 	}
 }
 

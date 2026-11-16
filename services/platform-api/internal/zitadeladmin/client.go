@@ -489,6 +489,11 @@ func (c *Client) resolveUserIDByEmail(ctx context.Context, email string) (string
 					"method":       "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE",
 				},
 			},
+			// The x-zitadel-orgid header does not filter a v2 user search;
+			// without this the same address in another product's org matches.
+			map[string]any{
+				"organizationIdQuery": map[string]any{"organizationId": c.orgID},
+			},
 		},
 	}
 	var wire struct {

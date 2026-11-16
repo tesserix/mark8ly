@@ -39,7 +39,7 @@ var (
 		// account and grants it a role on a tenant (mark8ly#820). The
 		// permissive guard no-ops on an empty secret, so an unconfigured
 		// deploy would offer that to anything that reaches the pod.
-		"SSOUsers",
+		"SSOUsers", "Testimonials",
 	}
 	wantPermissive = []string{
 		"Tenant", "Store", "Invitation", "Auth", "MerchantAccount", "Notification",

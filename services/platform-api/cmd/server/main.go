@@ -47,6 +47,7 @@ import (
 	"github.com/mark8ly/platform-api/internal/store"
 	"github.com/mark8ly/platform-api/internal/tenant"
 	testhelper "github.com/mark8ly/platform-api/internal/test"
+	"github.com/mark8ly/platform-api/internal/testimonial"
 	"github.com/mark8ly/platform-api/internal/verification"
 	"github.com/mark8ly/platform-api/pkg/config"
 	"github.com/mark8ly/platform-api/pkg/db"
@@ -400,6 +401,8 @@ func main() {
 	})
 
 	v1 := r.Group("/api/v1")
+	testimonialHandler := testimonial.NewHandler(conn, fga)
+	testimonialHandler.RegisterPublic(v1)
 	// /internal/* is the in-cluster trust surface — admin BFF, auth-bff,
 	// marketplace-api call into here. The route-to-guard mapping lives in
 	// internal/routes so it can be TESTED (#323): while it was inline
@@ -418,6 +421,7 @@ func main() {
 		EstateUsers:         estateuser.NewHandler(estateuser.NewRepository(conn)).Register,
 		AccountOperator:     accountHandler.RegisterOperator,
 		SSOUsers:            ssoUsersRegistrar(ssoUsersProvisioner, fga),
+		Testimonials:        testimonialHandler.RegisterInternal,
 
 		Tenant:          func(g *gin.RouterGroup) { tenantHandler.Register(v1, g) },
 		Store:           func(g *gin.RouterGroup) { storeHandler.Register(v1, g) },

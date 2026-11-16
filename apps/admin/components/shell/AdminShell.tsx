@@ -157,6 +157,7 @@ const navigation: NavSection[] = [
       { group: "Team & access", label: "Single sign-on", href: "/settings/sso" },
       { group: "Team & access", label: "Audit Logs", href: "/settings/audit-logs" },
       { group: "Account", label: "Account", href: "/settings/account" },
+      { group: "Account", label: "Your testimonial", href: "/settings/testimonial" },
       { group: "Account", label: "Security", href: "/settings/security" },
       { group: "Account", label: "Notifications", href: "/settings/notifications" },
       { group: "Account", label: "Billing", href: "/settings/billing" },
@@ -673,6 +674,9 @@ function getPageTitle(pathname: string | null): {
   }
   if (pathname.startsWith("/settings/account")) {
     return { eyebrow: "Settings", title: "Account" };
+  }
+  if (pathname.startsWith("/settings/testimonial")) {
+    return { eyebrow: "Account", title: "Your testimonial" };
   }
   if (pathname.startsWith("/settings/domains")) {
     return { eyebrow: "Settings", title: "Custom Domains" };

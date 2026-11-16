@@ -27,6 +27,7 @@ type InternalHandlers struct {
 	EstateUsers         Registrar
 	AccountOperator     Registrar
 	SSOUsers            Registrar
+	Testimonials        Registrar
 
 	Tenant          Registrar
 	Store           Registrar
@@ -41,7 +42,7 @@ type InternalHandlers struct {
 func StrictSlots() []string {
 	return []string{
 		"TenantDirectory", "TenantLifecycle", "OnboardingAnalytics",
-		"EstateCounts", "EstateUsers", "AccountOperator", "SSOUsers",
+		"EstateCounts", "EstateUsers", "AccountOperator", "SSOUsers", "Testimonials",
 	}
 }
 
@@ -73,7 +74,7 @@ func MountInternal(r gin.IRouter, secret string, h InternalHandlers) {
 	strict := r.Group("/internal", middleware.RequireInternalAuthStrict(secret))
 	mount(strict,
 		h.TenantDirectory, h.TenantLifecycle, h.OnboardingAnalytics,
-		h.EstateCounts, h.EstateUsers, h.AccountOperator, h.SSOUsers,
+		h.EstateCounts, h.EstateUsers, h.AccountOperator, h.SSOUsers, h.Testimonials,
 	)
 
 	permissive := r.Group("/internal", middleware.RequireInternalAuth(secret))

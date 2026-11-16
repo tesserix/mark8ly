@@ -15,6 +15,7 @@ import { Header } from "@/components/marketing/Header";
 import { Footer } from "@/components/marketing/Footer";
 import { Pricing } from "@/components/marketing/Pricing";
 import { Comparison } from "@/components/marketing/Comparison";
+import { Testimonials } from "@/components/marketing/Testimonials";
 import { PRERENDER_CURRENCY } from "@/lib/geo/currency";
 import {
   DEMO_STORE_URL,
@@ -327,6 +328,7 @@ export default function HomePage() {
         <Tour />
         <HowItWorks />
         <Features />
+        <Testimonials />
         <Pricing catalogue={SHARED_PRICING_CATALOGUE} />
         <Faq />
         <Comparison />

@@ -390,6 +390,8 @@ func TestAPI_AdminMedia_Recrop_AfterCommit_KeepsOriginalPinned(t *testing.T) {
 	var resp map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	newKey := resp["new_storage_key"].(string)
+	// The client PUTs the cropped blob to upload_url before committing.
+	env.uploader.Register(media.Attrs{StorageKey: newKey, Size: 1, ContentType: "image/jpeg"})
 
 	// Commit via PATCH with new storage_key.
 	w2 := request(t, env.router, http.MethodPatch, mediaURL(storeID, pid)+"/"+mid,

@@ -88,14 +88,7 @@ func (s *Service) AddMedia(ctx context.Context, req AddMediaRequest) (*Media, er
 		}
 	}
 
-	// Persist a publicly-resolvable URL on product_media.url so storefront
-	// renders it directly. Falls back to whatever the caller passed (the
-	// upload client today passes the raw storage key) when no base URL is
-	// configured — matches legacy behavior.
-	persistedURL := req.URL
-	if s.mediaPublicBaseURL != "" {
-		persistedURL = s.mediaPublicBaseURL + "/" + req.StorageKey
-	}
+	persistedURL := s.publicMediaURL(req.StorageKey, req.URL)
 
 	row := &Media{
 		ID:              uuid.NewString(),
@@ -157,8 +150,15 @@ func (s *Service) UpdateMedia(ctx context.Context, req UpdateMediaRequest) error
 	if req.StorageKey != nil {
 		// storage_key updates commit a fresh recrop upload. gcs_path_original
 		// is intentionally NOT touched so future recrops still read the
-		// pristine source.
+		// pristine source. url follows the key, or the shop keeps showing
+		// the uncropped image.
+		if s.uploader != nil {
+			if _, err := s.uploader.Verify(ctx, *req.StorageKey); err != nil {
+				return apperrors.UploadNotFound(*req.StorageKey)
+			}
+		}
 		fields["storage_key"] = *req.StorageKey
+		fields["url"] = s.publicMediaURL(*req.StorageKey, *req.StorageKey)
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -180,4 +180,14 @@ func (s *Service) DeleteMedia(ctx context.Context, productID, mediaID, storeID, 
 		}
 		return s.enqueue(ctx, tx, tenantID, storeID, productID, outbox.EventProductUpdated)
 	})
+}
+
+// publicMediaURL is the url persisted for a storage key: the public base
+// plus the key. With no base configured it falls back to what the caller
+// passed (legacy: the upload client passes the raw key).
+func (s *Service) publicMediaURL(storageKey, fallback string) string {
+	if s.mediaPublicBaseURL == "" || storageKey == "" {
+		return fallback
+	}
+	return s.mediaPublicBaseURL + "/" + storageKey
 }

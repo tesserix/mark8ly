@@ -113,3 +113,48 @@ func TestOutsideRefund_RestockWithoutStockRow(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, f.stock(t, vid))
 }
+
+// A sale that took one variant from two locations puts each unit back
+// where it came from, across more than one refund.
+func TestOutsideRefund_RestocksEachLocationItCameFrom(t *testing.T) {
+	f := newFixture(t)
+	vid := f.variant(t, "20.00", 2, "deny") // 2 at the store's first warehouse
+	second := uuid.NewString()
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO warehouses (id, tenant_id, store_id, name, line1, city, region, postal_code, country_code, phone, is_default)
+		 VALUES (?, ?, ?, 'Stall', '2 Market St', 'Sydney', 'NSW', '2000', 'AU', '+61200000001', false)`,
+		second, f.tid, f.sid).Error)
+	require.NoError(t, f.db.Exec(
+		`INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at) VALUES (?, ?, 3, now())`, vid, second).Error)
+	perLocation := func() map[string]int {
+		var rows []struct {
+			LocationID string
+			Quantity   int
+		}
+		require.NoError(t, f.db.Raw(`SELECT location_id::text, quantity FROM variant_stock WHERE variant_id = ?`, vid).Scan(&rows).Error)
+		out := map[string]int{}
+		for _, r := range rows {
+			out[r.LocationID] = r.Quantity
+		}
+		return out
+	}
+	before := perLocation()
+
+	res, err := f.svc.RecordSale(context.Background(), f.sale(line(vid, 5)))
+	require.NoError(t, err)
+	var item uuid.UUID
+	require.NoError(t, f.db.Raw(`SELECT id FROM order_items WHERE order_id = ?`, res.Order.ID).Row().Scan(&item))
+	for _, q := range perLocation() {
+		require.Zero(t, q, "the sale drew from both locations")
+	}
+
+	in := f.refundIn(res.Order.ID, instore.RefundItem{OrderItemID: item, Quantity: 1})
+	amt := decimal.RequireFromString("20")
+	in.Amount = &amt
+	_, err = f.refunds().Record(context.Background(), in)
+	require.NoError(t, err)
+	_, err = f.refunds().Record(context.Background(), f.refundIn(res.Order.ID, instore.RefundItem{OrderItemID: item, Quantity: 4}))
+	require.NoError(t, err)
+
+	require.Equal(t, before, perLocation())
+}

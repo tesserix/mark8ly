@@ -115,6 +115,12 @@ export function ImageCropDialog({
   const [zoom, setZoom] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
   const [pixelCrop, setPixelCrop] = useState<CropBox | null>(null);
+  // The photo's own width/height, so "Free" (no fixed aspect) keeps it
+  // instead of falling back to the cropper's built-in 4:3.
+  const [photoAspect, setPhotoAspect] = useState<number | undefined>(undefined);
+  const turned = rotation % 180 !== 0;
+  const cropAspect =
+    selectedAspect ?? (photoAspect && (turned ? 1 / photoAspect : photoAspect));
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -191,7 +197,8 @@ export function ImageCropDialog({
           crop={crop}
           zoom={zoom}
           rotation={rotation}
-          aspect={selectedAspect}
+          aspect={cropAspect}
+          onMediaLoaded={(m) => setPhotoAspect(m.naturalWidth / m.naturalHeight)}
           onCropChange={setCrop}
           onZoomChange={setZoom}
           onRotationChange={setRotation}

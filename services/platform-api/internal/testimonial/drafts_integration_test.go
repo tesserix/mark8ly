@@ -3,6 +3,7 @@
 package testimonial
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,25 +16,37 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestIntegrationUnregisteredDraftNeverAppearsPublicly(t *testing.T) {
+func TestIntegrationUnlinkedReviewAppearsOnlyOncePublished(t *testing.T) {
 	db := testdb.NewTx(t)
 	var before int64
 	require.NoError(t, db.Table("stores").Count(&before).Error)
-	require.NoError(t, db.Exec(`INSERT INTO merchant_testimonials (store_name, position, quote, rating) VALUES ('Unregistered test store', 'Store owner', 'Proposed draft copy.', 5)`).Error)
+	var id string
+	require.NoError(t, db.Raw(`INSERT INTO merchant_testimonials (store_name, position, quote, rating) VALUES ('Offline test store', 'Store owner', 'Offline store review.', 5) RETURNING id`).Scan(&id).Error)
 	var after int64
 	require.NoError(t, db.Table("stores").Count(&after).Error)
-	require.Equal(t, before, after, "drafts must not create merchant accounts")
-	err := db.Transaction(func(tx *gorm.DB) error {
-		return tx.Exec(`UPDATE merchant_testimonials SET published = true, consented_at = now(), submitted_by = 'test' WHERE store_name = 'Unregistered test store'`).Error
-	})
-	require.Error(t, err, "an unregistered draft cannot be published")
+	require.Equal(t, before, after, "unlinked reviews must not create merchant accounts")
 	r := gin.New()
 	NewHandler(db, nil).RegisterPublic(r.Group("/api/v1"))
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/testimonials", nil))
-	require.Equal(t, 200, w.Code)
-	require.NotContains(t, w.Body.String(), "Unregistered test store")
-	require.NotContains(t, w.Body.String(), "Proposed draft copy.")
+	readPublic := func() string {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/testimonials", nil))
+		require.Equal(t, 200, w.Code, w.Body.String())
+		return w.Body.String()
+	}
+	require.NotContains(t, readPublic(), "Offline store review.", "unpublished drafts stay private")
+	require.NoError(t, db.Exec(`UPDATE merchant_testimonials SET published = true, consented_at = now(), submitted_by = 'store-manager' WHERE id = ?`, id).Error)
+	var body struct{ Data []PublicReview }
+	require.NoError(t, json.Unmarshal([]byte(readPublic()), &body))
+	require.Contains(t, body.Data, PublicReview{StoreID: id, StoreName: "Offline test store", Position: "Store owner", Quote: "Offline store review.", Rating: 5})
+	require.NotContains(t, readPublic(), "store-manager")
+}
+
+func TestIntegrationUnlinkedReviewStillNeedsStoreName(t *testing.T) {
+	db := testdb.NewTx(t)
+	err := db.Transaction(func(tx *gorm.DB) error {
+		return tx.Exec(`INSERT INTO merchant_testimonials (position, quote, rating, published, consented_at, submitted_by) VALUES ('Store owner', 'Nameless review.', 5, true, now(), 'test')`).Error
+	})
+	require.Error(t, err)
 }
 
 func TestIntegrationFourRequestedDraftsLinkOnlyExistingStores(t *testing.T) {

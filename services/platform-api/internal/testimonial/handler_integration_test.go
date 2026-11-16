@@ -120,6 +120,11 @@ func TestIntegrationDraftSeedsStayPrivate(t *testing.T) {
 		require.Nil(t, draft.ConsentedAt)
 	}
 	require.ElementsMatch(t, []string{"Mugshot Studio", "Buttercup Bakes", "Daily Basket"}, names)
+	for _, later := range []string{"000023_internal_testimonial_drafts", "000024_publish_unlinked_testimonials"} {
+		up, err := platformapi.MigrationsFS.ReadFile("migrations/" + later + ".up.sql")
+		require.NoError(t, err)
+		require.NoError(t, db.Exec(string(up)).Error)
+	}
 	r := gin.New()
 	NewHandler(db, nil).RegisterPublic(r.Group("/api/v1"))
 	w := httptest.NewRecorder()

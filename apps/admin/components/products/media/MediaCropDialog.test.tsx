@@ -3,21 +3,31 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MediaCropDialog } from "./MediaCropDialog";
 
-// The aspect the cropper was last rendered with.
-const cropper = vi.hoisted(() => ({ aspect: undefined as number | undefined }));
+// What the cropper was last rendered with.
+const cropper = vi.hoisted(() => ({
+  aspect: undefined as number | undefined,
+  cropSize: undefined as { width: number; height: number } | undefined,
+}));
 
 vi.mock("react-easy-crop", () => ({
   default: (props: {
     aspect?: number;
-    onMediaLoaded?: (size: { naturalWidth: number; naturalHeight: number }) => void;
+    cropSize?: { width: number; height: number };
+    onMediaLoaded?: (size: {
+      width: number;
+      height: number;
+      naturalWidth: number;
+      naturalHeight: number;
+    }) => void;
     onCropComplete?: (
       area: { x: number; y: number; width: number; height: number },
       pixels: { x: number; y: number; width: number; height: number },
     ) => void;
   }): ReactElement => {
     cropper.aspect = props.aspect;
+    cropper.cropSize = props.cropSize;
     setTimeout(() => {
-      props.onMediaLoaded?.({ naturalWidth: 2048, naturalHeight: 1152 });
+      props.onMediaLoaded?.({ width: 800, height: 450, naturalWidth: 2048, naturalHeight: 1152 });
       props.onCropComplete?.(
         { x: 0, y: 0, width: 100, height: 100 },
         { x: 10, y: 20, width: 200, height: 300 },
@@ -127,13 +137,32 @@ describe("MediaCropDialog", () => {
     expect(screen.getByRole("button", { name: /^free$/i })).toBeInTheDocument();
   });
 
-  it("Free keeps the photo's own proportions, turned with it", async () => {
+  it("Free starts on the whole photo, turned with it", async () => {
+
     render(<MediaCropDialog sourceUrl="blob:test" onApply={vi.fn()} onCancel={vi.fn()} />);
+
     await waitFor(() => expect(screen.getByRole("button", { name: /apply/i })).not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: /^free$/i }));
-    await waitFor(() => expect(cropper.aspect).toBeCloseTo(2048 / 1152));
+    await waitFor(() => expect(cropper.cropSize).toEqual({ width: 800, height: 450 }));
     fireEvent.click(screen.getByRole("button", { name: /rotate right/i }));
-    await waitFor(() => expect(cropper.aspect).toBeCloseTo(1152 / 2048));
+    await waitFor(() => expect(cropper.cropSize).toEqual({ width: 450, height: 800 }));
+  });
+
+  it("Free resizes to any shape from a corner handle", async () => {
+
+    render(<MediaCropDialog sourceUrl="blob:test" onApply={vi.fn()} onCancel={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /apply/i })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: /^free$/i }));
+    const corner = await screen.findByRole("button", { name: /resize crop from bottom right/i });
+    fireEvent.keyDown(corner, { key: "ArrowLeft" });
+    fireEvent.keyDown(corner, { key: "ArrowUp" });
+    fireEvent.keyDown(corner, { key: "ArrowUp" });
+    await waitFor(() => expect(cropper.cropSize).toEqual({ width: 790, height: 430 }));
+    // A fixed aspect has no handles: the cropper keeps its own box.
+    fireEvent.click(screen.getByRole("button", { name: /^1:1$/ }));
+    await waitFor(() => expect(cropper.cropSize).toBeUndefined());
+    expect(screen.queryByRole("button", { name: /resize crop/i })).toBeNull();
   });
 
   it("shows a non-blocking advisory when the crop output is below the floor and still applies", async () => {

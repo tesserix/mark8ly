@@ -161,26 +161,61 @@ func (s *RefundService) restock(ctx context.Context, tx *gorm.DB, o *order.Order
 		return err
 	}
 
-	// Put the units back where the sale took them from, else where the
-	// variant is stocked, else at the store's default warehouse.
-	// shortcut: a sale that drew one variant from two locations restocks it
-	// all at the first; upgrade if multi-location stores appear.
+	// Put the units back where the sale took them from, location by
+	// location, after what earlier refunds of this variant already put back.
+	// A sale with no committed holds (continue-selling past zero) falls back
+	// to where the variant is stocked, else the store's default warehouse.
+	var holds []struct {
+		LocationID uuid.UUID
+		Qty        int
+	}
+	if err := tx.Raw(`
+		SELECT location_id, qty FROM stock_holds
+		 WHERE cart_token = ? AND variant_id = ? AND state = 'committed'
+		 ORDER BY location_id`,
+		SaleCartToken(o.StoreID, o.IdempotencyKey), *line.VariantID).Scan(&holds).Error; err != nil {
+		return err
+	}
+	var earlier int
+	if err := tx.Raw(`
+		SELECT COALESCE(SUM(ri.quantity), 0) FROM in_store_refund_items ri
+		  JOIN order_items oi ON oi.id = ri.order_item_id
+		 WHERE oi.order_id = ? AND oi.variant_id = ? AND ri.refund_id <> ?`,
+		o.ID, *line.VariantID, refundID).Row().Scan(&earlier); err != nil {
+		return err
+	}
+	left := it.Quantity
+	for _, h := range holds {
+		taken := min(earlier, h.Qty) // already returned here by earlier refunds
+		earlier -= taken
+		n := min(left, h.Qty-taken)
+		if n > 0 {
+			if err := addStock(tx, *line.VariantID, h.LocationID, n); err != nil {
+				return err
+			}
+			left -= n
+		}
+	}
+	if left == 0 {
+		return nil
+	}
 	var loc *uuid.UUID
 	if err := tx.Raw(`
 		SELECT COALESCE(
-		  (SELECT h.location_id FROM stock_holds h
-		    WHERE h.cart_token = ? AND h.variant_id = ? AND h.state = 'committed'
-		    ORDER BY h.location_id LIMIT 1),
 		  (SELECT vs.location_id FROM variant_stock vs WHERE vs.variant_id = ? ORDER BY vs.location_id LIMIT 1),
 		  (SELECT w.id FROM warehouses w WHERE w.store_id = ? ORDER BY w.is_default DESC, w.created_at LIMIT 1))`,
-		SaleCartToken(o.StoreID, o.IdempotencyKey), *line.VariantID, *line.VariantID, o.StoreID).Row().Scan(&loc); err != nil {
+		*line.VariantID, o.StoreID).Row().Scan(&loc); err != nil {
 		return err
 	}
 	if loc == nil {
 		return nil // nowhere stock is kept for this store: nothing to put back
 	}
+	return addStock(tx, *line.VariantID, *loc, left)
+}
+
+func addStock(tx *gorm.DB, variantID, locationID uuid.UUID, qty int) error {
 	return tx.Exec(`
 		INSERT INTO variant_stock (variant_id, location_id, quantity, updated_at) VALUES (?, ?, ?, now())
 		ON CONFLICT (variant_id, location_id) DO UPDATE SET quantity = variant_stock.quantity + EXCLUDED.quantity, updated_at = now()`,
-		*line.VariantID, *loc, it.Quantity).Error
+		variantID, locationID, qty).Error
 }

@@ -189,7 +189,8 @@ const cashierNavigation: NavSection[] = [
 // off, the sale screen leaves the menu but its setting stays.
 export function navigationFor(role: TenantRole | undefined, inStoreEnabled: boolean): NavSection[] {
   if (role === "cashier") return cashierNavigation;
-  if (inStoreEnabled) return navigation;
+  // Selling needs staff or above; a viewer would only meet a refusal.
+  if (inStoreEnabled && role !== "viewer") return navigation;
   return navigation.map((s) => (s.children ? { ...s, children: s.children.filter((c) => c.href !== "/sell") } : s));
 }
 
@@ -380,6 +381,7 @@ function AdminShellFrame({
                 </div>
               )}
               <UserMenu
+                sellOnly={role === "cashier"}
                 email={userEmail}
                 name={userName}
                 avatarUrl={userAvatarUrl}

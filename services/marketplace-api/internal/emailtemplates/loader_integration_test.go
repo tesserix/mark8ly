@@ -94,8 +94,9 @@ func TestLoader_DB_SeedIsIdempotent(t *testing.T) {
 	if err := loader.SeedFromEmbedded(context.Background()); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	// Operator edits the row.
-	if err := db.Exec(`UPDATE email_templates SET subject='OPERATOR-EDIT' WHERE key='k'`).Error; err != nil {
+	// Operator edits the row, the way Store.Upsert does: version bumped and
+	// attributed to the operator.
+	if err := db.Exec(`UPDATE email_templates SET subject='OPERATOR-EDIT', version = version + 1, updated_by = 'op-1' WHERE key='k'`).Error; err != nil {
 		t.Fatalf("operator edit: %v", err)
 	}
 	loader.InvalidateAll()
@@ -110,6 +111,38 @@ func TestLoader_DB_SeedIsIdempotent(t *testing.T) {
 	}
 	if subj != "OPERATOR-EDIT" {
 		t.Errorf("subject = %q, want OPERATOR-EDIT — re-seed clobbered an edit", subj)
+	}
+}
+
+// TestLoader_DB_SeedRefreshesAnUntouchedSeed — a row nobody has edited
+// follows the code. Without this a wording fix never reached production:
+// the seed inserted once and never again (the in-store receipt said
+// "sign in to your account" to customers who have none).
+func TestLoader_DB_SeedRefreshesAnUntouchedSeed(t *testing.T) {
+	db := testdb.NewTx(t)
+	old := NewLoader(db)
+	old.Register("k", EmbeddedFallback{Subject: "old", HTMLBody: "<p>old</p>", TextBody: "old"})
+	if err := old.SeedFromEmbedded(context.Background()); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	updated := NewLoader(db)
+	updated.Register("k", EmbeddedFallback{Subject: "new", HTMLBody: "<p>new</p>", TextBody: "new"})
+	if err := updated.SeedFromEmbedded(context.Background()); err != nil {
+		t.Fatalf("seed second: %v", err)
+	}
+	var row struct {
+		Subject, HTMLBody, TextBody, UpdatedBy string
+		Version                                int
+	}
+	if err := db.Raw(`SELECT subject, html_body, text_body, updated_by, version FROM email_templates WHERE key='k'`).Scan(&row).Error; err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if row.Subject != "new" || row.HTMLBody != "<p>new</p>" || row.TextBody != "new" {
+		t.Errorf("row = %+v, want the new embedded copy", row)
+	}
+	if row.UpdatedBy != "embedded-seed" || row.Version != 1 {
+		t.Errorf("refresh changed attribution: %+v", row)
 	}
 }
 

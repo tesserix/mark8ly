@@ -16,7 +16,7 @@ Delivered:    {{.DeliveredAt}}{{end}}
 Items:        {{.ItemCount}}
 Total:        {{.GrandTotal}} {{.CurrencyCode}}
 
-{{if .HasAttachment}}Your receipt PDF is attached to this email.{{else}}Download your receipt: {{if .DocumentURL}}{{.DocumentURL}}{{else}}{{.OrderURL}}{{end}}{{end}}
+{{if .HasAttachment}}Your receipt PDF is attached to this email.{{else}}{{if .InStore}}View your receipt: {{else}}Download your receipt: {{end}}{{if .DocumentURL}}{{.DocumentURL}}{{else}}{{.OrderURL}}{{end}}{{end}}
 {{if .OrderURL}}View order online: {{.OrderURL}}{{end}}
 
 —

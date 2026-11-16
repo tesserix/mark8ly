@@ -52,6 +52,7 @@ function CampaignStrip({ promotion }: { promotion: ActivePromotion }) {
 
   return (
     <div
+      data-promotion-bar
       className="bg-[color:var(--storefront-text)] text-[color:var(--storefront-background)]"
     >
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-sm">
@@ -95,6 +96,7 @@ function AnnouncementStrip({
 
   return (
     <div
+      data-promotion-bar
       className="bg-[color:var(--storefront-text)] text-[color:var(--storefront-background)] px-4 py-2.5"
       style={style}
     >

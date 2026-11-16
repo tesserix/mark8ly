@@ -201,6 +201,12 @@ func TestRender_InStoreReceipt_LinksReceiptPage(t *testing.T) {
 		if !strings.Contains(body, "M-1") {
 			t.Errorf("%s missing order number", name)
 		}
+		// A counter customer has no account and nothing to download.
+		for _, wrong := range []string{"sign in", "Download your receipt"} {
+			if strings.Contains(body, wrong) {
+				t.Errorf("%s says %q", name, wrong)
+			}
+		}
 	}
 }
 

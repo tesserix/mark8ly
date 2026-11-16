@@ -138,7 +138,7 @@
               </p>
               {{else}}
               <p style="margin:0 0 16px 0;font-size:13px;color:{{.SupportingCopy}};line-height:1.6;">
-                Download your receipt {{.DocumentNumber}} below or sign in to your account to view it any time.
+                {{if .InStore}}Your receipt {{.DocumentNumber}} is online: view it, print it or keep the link.{{else}}Download your receipt {{.DocumentNumber}} below or sign in to your account to view it any time.{{end}}
               </p>
               {{if .DocumentURL}}
               <p style="margin:0 0 8px 0;">

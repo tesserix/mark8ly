@@ -385,6 +385,8 @@ export interface TaxPreviewBody {
   shipping_address: CheckoutAddressBody;
   subtotal: string;
   shipping_total?: string;
+  /** Coupon plus loyalty discount: tax is on what the buyer pays (#1127). */
+  discount_total?: string;
 }
 
 export interface TaxPreviewResult {

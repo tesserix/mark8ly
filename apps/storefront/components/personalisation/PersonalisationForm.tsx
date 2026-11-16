@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { StorefrontPersonalisationField } from "@/lib/api/marketplace-api";
 import {
   isBelowMinimumResolution,
+  personalisationInputClass,
   type PersonalisationAnswers,
   type PersonalisationProblem,
 } from "@/lib/personalisation";
@@ -52,8 +53,7 @@ interface UploadState {
   softWarning?: string;
 }
 
-const inputClass =
-  "w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-transparent px-3 py-2 text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]";
+const inputClass = personalisationInputClass;
 
 export function PersonalisationForm({
   storeSlug,

@@ -42,6 +42,9 @@ func TestIntegrationMerchantPublicationAndWithdrawal(t *testing.T) {
 	readPublic := func() []PublicReview {
 		w := call(http.MethodGet, "/api/v1/testimonials", "", "")
 		require.Equal(t, 200, w.Code, w.Body.String())
+		require.NotContains(t, w.Body.String(), "author_name", "personal names must not be in the public contract")
+		require.NotContains(t, w.Body.String(), "submitted_by")
+		require.NotContains(t, w.Body.String(), "consented_at")
 		var body struct {
 			Data []PublicReview `json:"data"`
 		}
@@ -56,7 +59,7 @@ func TestIntegrationMerchantPublicationAndWithdrawal(t *testing.T) {
 		require.Equal(t, 200, w.Code, w.Body.String())
 		rows := readPublic()
 		if publish {
-			require.Contains(t, rows, PublicReview{StoreID: storeID, StoreName: "Review shop", AuthorName: "A Seller", Quote: "My honest review.", Rating: 3})
+			require.Contains(t, rows, PublicReview{StoreID: storeID, StoreName: "Review shop", Position: "Store owner", Quote: "My honest review.", Rating: 3})
 		} else {
 			for _, row := range rows {
 				require.NotEqual(t, storeID, row.StoreID)
@@ -80,6 +83,10 @@ func TestIntegrationMerchantPublicationAndWithdrawal(t *testing.T) {
 	require.NoError(t, db.Table("merchant_testimonials").Where("store_id = ?", storeID).Count(&count).Error)
 	require.EqualValues(t, 1, count, "retries update the same review")
 	require.Equal(t, 404, call(http.MethodPut, path, "other-tenant", `{}`).Code)
+	require.NoError(t, fga.WriteRole(context.Background(), "review-admin", authz.RoleAdmin, tenantID))
+	w = call(http.MethodPut, path, "review-admin", `{"position":"Store owner","author_name":"Private Person","quote":"Admin review.","rating":4,"publish":true,"consent":true}`)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, readPublic(), PublicReview{StoreID: storeID, StoreName: "Review shop", Position: "Store admin", Quote: "Admin review.", Rating: 4})
 }
 
 func TestIntegrationDraftSeedsStayPrivate(t *testing.T) {
@@ -96,21 +103,23 @@ func TestIntegrationDraftSeedsStayPrivate(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(string(up)).Error)
 	var drafts []struct {
-		AuthorName  string
+		StoreName   string
+		Position    string
 		Published   bool
 		Rating      int
 		ConsentedAt *string
 	}
-	require.NoError(t, db.Table("merchant_testimonials").Select("author_name, published, rating, consented_at").Find(&drafts).Error)
+	require.NoError(t, db.Table("merchant_testimonials r").Joins("JOIN stores s ON s.id = r.store_id").Select("s.name AS store_name, r.position, r.published, r.rating, r.consented_at").Find(&drafts).Error)
 	require.Len(t, drafts, 3)
 	var names []string
 	for _, draft := range drafts {
-		names = append(names, draft.AuthorName)
+		names = append(names, draft.StoreName)
+		require.Equal(t, "Store owner", draft.Position)
 		require.False(t, draft.Published)
 		require.Equal(t, 5, draft.Rating)
 		require.Nil(t, draft.ConsentedAt)
 	}
-	require.ElementsMatch(t, []string{"Abilipsa Naik", "Stithapragyan Behuria", "Sampurna Rout"}, names)
+	require.ElementsMatch(t, []string{"Mugshot Studio", "Buttercup Bakes", "Daily Basket"}, names)
 	r := gin.New()
 	NewHandler(db, nil).RegisterPublic(r.Group("/api/v1"))
 	w := httptest.NewRecorder()

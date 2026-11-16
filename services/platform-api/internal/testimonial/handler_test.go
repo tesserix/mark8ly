@@ -39,7 +39,6 @@ func TestMerchantValidatesReviewBeforeWriting(t *testing.T) {
 	for _, body := range []string{
 		`{"author_name":"A","quote":"Helpful","rating":0,"publish":true}`,
 		`{"author_name":"A","quote":"Helpful","rating":6,"publish":true}`,
-		`{"author_name":" ","quote":"Helpful","rating":5,"publish":true}`,
 		`{"author_name":"A","quote":" ","rating":5,"publish":true}`,
 		`{"author_name":"A","quote":"Helpful","rating":5,"publish":true,"consent":false}`,
 	} {

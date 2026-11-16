@@ -14,7 +14,7 @@ test("loads public reviews without replacing an honest lower rating", async () =
           {
             store_id: "s1",
             store_name: "A shop",
-            author_name: "A Seller",
+            position: "Store owner",
             quote: "Helpful.",
             rating: 3,
           },
@@ -25,7 +25,7 @@ test("loads public reviews without replacing an honest lower rating", async () =
     {
       store_id: "s1",
       store_name: "A shop",
-      author_name: "A Seller",
+      position: "Store owner",
       quote: "Helpful.",
       rating: 3,
     },

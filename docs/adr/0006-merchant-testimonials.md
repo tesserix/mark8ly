@@ -13,7 +13,7 @@ OpenFGA's store settings permission. Missing authorization fails closed. The
 assets are merchant identity and consent; another tenant or an unauthenticated
 caller must never edit a review or publish on someone else's behalf.
 
-PUT validates name (1–100 characters), quote (1–1000), and rating (1–5). Publishing
+PUT validates quote (1–1000 characters) and rating (1–5). Publishing
 requires explicit merchant consent for this version of the text. Saving as a
 draft withdraws publication. The merchant's explicit submission is approval;
 there is no platform moderation queue. Draft seed text is not customer feedback
@@ -21,7 +21,9 @@ and is never published automatically. Seeds only match a unique existing store
 name, never guessed identifiers, and never overwrite a submitted review.
 
 The public endpoint returns up to twelve published, consented reviews from active
-stores and tenants, without internal identity or consent metadata. All star
+stores and tenants. It includes only store name and store role for attribution,
+never personal names or internal identity/consent metadata. The role is derived
+from the canonical tenant owner and authorized submitter, never form input. All star
 ratings qualify equally. The static homepage loads them through a same-origin
 uncached route after mount, preserving its current edge caching. Read errors or
 an empty list omit the section; admin errors preserve the form and show a retry

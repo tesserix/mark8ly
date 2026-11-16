@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Button, Input, Label } from "@tesserix/web";
+import { Button, Label } from "@tesserix/web";
 import { saveTestimonial } from "@/app/(admin)/settings/testimonial/actions";
 import type { MerchantTestimonial } from "@/lib/api/testimonials";
 
@@ -13,7 +13,6 @@ export function TestimonialForm({
   storeName: string;
 }) {
   const [state, action, pending] = useActionState(saveTestimonial, {});
-  const [name, setName] = useState(initial?.author_name ?? "");
   const [quote, setQuote] = useState(initial?.quote ?? "");
   const [rating, setRating] = useState(String(initial?.rating ?? ""));
   const [consent, setConsent] = useState(false);
@@ -28,21 +27,10 @@ export function TestimonialForm({
       <p className="text-sm font-medium">
         Status: {published ? "Published" : "Private draft"}
       </p>
-      <div className="space-y-2">
-        <Label htmlFor="testimonial-name">Your public name</Label>
-        <Input
-          id="testimonial-name"
-          name="author_name"
-          value={name}
-          maxLength={100}
-          required
-          disabled={pending}
-          onChange={(e) => {
-            setName(e.target.value);
-            setConsent(false);
-          }}
-        />
-      </div>
+      <p className="text-sm text-foreground-secondary">
+        Public attribution shows your store name and store role. Your personal
+        name is not displayed.
+      </p>
       <div className="space-y-2">
         <Label htmlFor="testimonial-rating">Your rating</Label>
         <select
@@ -96,8 +84,8 @@ export function TestimonialForm({
           onChange={(e) => setConsent(e.target.checked)}
         />
         <span>
-          I confirm this is my honest review and agree to publish my name, store
-          name, rating and words on mark8ly.com.
+          I confirm this is my honest review and agree to publish my store name,
+          store role, rating and words on mark8ly.com.
         </span>
       </label>
       {state.message ? (

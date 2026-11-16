@@ -51,7 +51,6 @@ it("uses the authenticated store and identity, ignoring form identity", async ()
   );
   const sent = JSON.parse(request.mock.calls[0][1].body);
   expect(sent).toEqual({
-    author_name: "Seller",
     quote: "Easy to set up.",
     rating: 4,
     publish: true,

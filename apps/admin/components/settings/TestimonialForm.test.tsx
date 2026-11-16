@@ -11,6 +11,7 @@ it("starts with no rating or consent and lets merchants save privately", () => {
   render(<TestimonialForm storeName="My shop" initial={null} />);
   expect(screen.getByLabelText("Your rating")).toHaveValue("");
   expect(screen.getByRole("checkbox")).not.toBeChecked();
+  expect(screen.queryByLabelText("Your public name")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Publish review" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Save privately" })).toBeEnabled();
 });
@@ -20,7 +21,7 @@ it("requires fresh consent after editing the review or rating", () => {
     <TestimonialForm
       storeName="My shop"
       initial={{
-        author_name: "Seller",
+        position: "Store owner",
         quote: "My experience.",
         rating: 3,
         published: true,

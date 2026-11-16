@@ -3,7 +3,7 @@ import { z } from "zod";
 const publicReview = z.object({
   store_id: z.string(),
   store_name: z.string(),
-  author_name: z.string(),
+  position: z.enum(["Store owner", "Store admin"]),
   quote: z.string(),
   rating: z.number().int().min(1).max(5),
 });

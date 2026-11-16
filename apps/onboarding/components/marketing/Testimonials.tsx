@@ -60,9 +60,7 @@ export function Testimonials() {
                 “{review.quote}”
               </blockquote>
               <figcaption>
-                <p className="font-medium text-foreground">
-                  {review.author_name}
-                </p>
+                <p className="font-medium text-foreground">{review.position}</p>
                 <p className="mt-1 text-sm text-foreground-secondary">
                   Online store of {review.store_name}
                 </p>

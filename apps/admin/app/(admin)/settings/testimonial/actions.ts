@@ -12,11 +12,6 @@ export type TestimonialState = {
 };
 
 const reviewSchema = z.object({
-  author_name: z
-    .string()
-    .trim()
-    .min(1)
-    .refine((v) => Array.from(v).length <= 100),
   quote: z
     .string()
     .trim()
@@ -37,7 +32,6 @@ export async function saveTestimonial(
     };
   }
   const parsed = reviewSchema.safeParse({
-    author_name: data.get("author_name"),
     quote: data.get("quote"),
     rating: Number(data.get("rating")),
   });
@@ -45,7 +39,7 @@ export async function saveTestimonial(
     return {
       ok: false,
       message:
-        "Enter your name (up to 100 characters), review (up to 1,000) and a 1–5 star rating.",
+        "Enter your review (up to 1,000 characters) and a 1–5 star rating.",
     };
   const intent = data.get("intent");
   if (intent !== "publish" && intent !== "draft")

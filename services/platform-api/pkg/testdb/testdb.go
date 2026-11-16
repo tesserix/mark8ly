@@ -8,8 +8,12 @@
 // LISTEN/NOTIFY or multi-connection behavior) should use a different approach.
 //
 // Required: TEST_DATABASE_URL must point at a real Postgres with the migrations
-// already applied. In CI and `make test-int`, this is the docker-compose
-// `platform_api` database. Locally, run `make dev` first.
+// already applied AND the location reference data seeded (stores have foreign
+// keys into countries, currencies and timezones). In CI and `make test-int`,
+// this is the docker-compose `platform_api` database. Against a bare
+// Postgres: `go run ./cmd/migrate up` then `go run ./cmd/seed`, both with
+// DATABASE_URL set. pkg/migrate's round-trip test migrates down to zero and
+// back, which drops the seed, so seed again before re-running other packages.
 package testdb
 
 import (

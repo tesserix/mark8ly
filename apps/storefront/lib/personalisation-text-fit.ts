@@ -59,6 +59,9 @@ export function curvedTextLayout(value: string, font: string | undefined, w: num
   const f = (n: number) => Number(n.toFixed(2));
   return {
     fontSize,
+    rise,
+    // Each line's baseline at the centre of the print area.
+    baselines: lines.map((_, i) => top + lineHeight * i + fontSize * 0.8),
     lines: lines.map((_, i) => {
       // Baseline about 0.8em into the line box; the middle of the curve
       // sits there and the ends rise above it.
@@ -87,4 +90,32 @@ export function textInk(hex: string | undefined): { mixBlendMode: "multiply" | "
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4
     ? { mixBlendMode: "normal", opacity: 0.85 }
     : { mixBlendMode: "multiply", opacity: 0.92 };
+}
+
+// How far round the surface the print area's edge sits from its centre:
+// 60°, so the outermost letters show at half width.
+const WRAP_ANGLE = Math.PI / 3;
+
+/**
+ * Each letter of one line on a curved surface. starts and widths are the
+ * font's own advances (measured by the browser, kerning included), so the
+ * spacing is the font's; w is the print area's width, baseline the line's
+ * baseline at the centre, rise how far the ends sit above it. A letter is
+ * placed by its arc distance from the centre: it moves in and narrows
+ * (cos of its angle) as it turns away, and rises on the line's curve.
+ */
+export function cylinderGlyphs(starts: number[], widths: number[], w: number, baseline: number, rise: number) {
+  const n = starts.length;
+  const lineWidth = n ? starts[n - 1]! + widths[n - 1]! : 0;
+  const radius = w / 2 / WRAP_ANGLE;
+  return starts.map((start, i) => {
+    const arc = start + widths[i]! / 2 - lineWidth / 2;
+    const angle = arc / radius;
+    const offset = radius * Math.sin(angle);
+    return {
+      x: w / 2 + offset,
+      y: baseline - rise * (offset / (w / 2)) ** 2,
+      scaleX: Math.max(0, Math.cos(angle)),
+    };
+  });
 }

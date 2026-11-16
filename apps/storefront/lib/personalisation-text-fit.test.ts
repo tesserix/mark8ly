@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { curvedTextLayout, fitTextSize, textInk } from "./personalisation-text-fit";
+import { curvedTextLayout, cylinderGlyphs, fitTextSize, textInk } from "./personalisation-text-fit";
 
 const parse = (css: string) => {
   const m = css.match(/min\(([\d.]+)cqh, ([\d.]+)cqw\)/);
@@ -70,5 +70,32 @@ describe("curvedTextLayout", () => {
     const { lines } = curvedTextLayout("Happy\nBirthday", "classic", 200, 100);
     const ys = lines.map((d) => Number(d.split(" ")[1]));
     expect(ys[1]).toBeGreaterThan(ys[0]!);
+  });
+});
+
+describe("cylinderGlyphs", () => {
+  // Five 10px letters, a 100px print area: the middle letter faces the
+  // buyer; letters further out turn away, so they narrow and sit higher.
+  const glyphs = cylinderGlyphs([0, 10, 20, 30, 40], [10, 10, 10, 10, 10], 100, 50, 6);
+
+  it("keeps the middle letter full width, centred", () => {
+    expect(glyphs[2]!.scaleX).toBeCloseTo(1, 2);
+    expect(glyphs[2]!.x).toBeCloseTo(50, 1);
+    expect(glyphs[2]!.y).toBeCloseTo(50, 1);
+  });
+
+  it("narrows and raises letters symmetrically towards the edges", () => {
+    expect(glyphs[0]!.scaleX).toBeLessThan(glyphs[1]!.scaleX);
+    expect(glyphs[1]!.scaleX).toBeLessThan(1);
+    expect(glyphs[0]!.scaleX).toBeCloseTo(glyphs[4]!.scaleX, 5);
+    expect(glyphs[0]!.y).toBeLessThan(glyphs[1]!.y);
+    expect(glyphs[0]!.y).toBeCloseTo(glyphs[4]!.y, 5);
+    expect(50 - glyphs[0]!.x).toBeCloseTo(glyphs[4]!.x - 50, 5);
+  });
+
+  it("brings neighbours closer as they turn away, keeping their order", () => {
+    const xs = glyphs.map((g) => g.x);
+    expect(xs).toEqual([...xs].sort((a, b) => a - b));
+    expect(xs[1]! - xs[0]!).toBeLessThan(xs[2]! - xs[1]!);
   });
 });

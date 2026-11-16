@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"strings"
 	"testing"
 
 	_ "github.com/lib/pq"
@@ -82,14 +81,11 @@ func TestIntegration_MigrationsApplyCleanly(t *testing.T) {
 	if err := mig.Down(int(expected)); err != nil {
 		t.Fatalf("Down: %v", err)
 	}
+	// Version reports an empty schema as (0, clean, nil): it swallows
+	// migrate.ErrNilVersion so cmd/server can compare against a number.
 	v, dirty, err := mig.Version()
-	if err == nil {
-		// version is non-zero — Down didn't go all the way to 0
-		t.Fatalf("expected version 0 after Down, got version=%d dirty=%v", v, dirty)
-	}
-	// migrate.ErrNilVersion is the expected error after a clean Down to 0.
-	if !strings.Contains(err.Error(), "no migration") && !strings.Contains(err.Error(), "nil version") {
-		t.Fatalf("Version after Down: unexpected error %v", err)
+	if err != nil || v != 0 || dirty {
+		t.Fatalf("after Down: version=%d dirty=%v err=%v, want 0, clean, no error", v, dirty, err)
 	}
 
 	// 4. Up after Down — restores to latest. This is the rollback-then-reapply

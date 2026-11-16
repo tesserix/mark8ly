@@ -316,7 +316,9 @@ export function MediaTab({
       if (current) {
         update(idx, {
           id: current.id,
-          url: current.url,
+          // The server derives the saved url from storage_key; this only
+          // shows the crop now instead of after a reload.
+          url: URL.createObjectURL(blob),
           alt: current.alt,
           position: current.position,
           variant_id: current.variant_id,

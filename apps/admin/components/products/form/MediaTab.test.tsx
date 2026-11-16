@@ -254,4 +254,39 @@ describe("MediaTab", () => {
       ),
     );
   });
+
+  it("shows the cropped image once the crop is saved", async () => {
+    const createObjectURL = vi.fn(() => "blob:cropped");
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() }));
+    render(
+      <Harness
+        initialMedia={[makeMedia("a", 0)]}
+        uploadMediaFile={vi.fn()}
+        recropMedia={vi.fn(async () => ({
+          ok: true as const,
+          data: {
+            source_original_url: "https://cdn.test/original.jpg",
+            upload_url: "https://upload.test/put",
+            new_storage_key: "products/new_key",
+            expires_at: "2099-01-01T00:00:00Z",
+          },
+        }))}
+        updateMedia={vi.fn(async () => ({ ok: true as const, data: true as const }))}
+        deleteMedia={vi.fn()}
+        putBlob={vi.fn(async () => ({ ok: true, status: 200 }))}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /image actions/i })[0]!);
+    fireEvent.click(screen.getByRole("menuitem", { name: /^crop$/i }));
+    await waitFor(() => expect(screen.getByTestId("auto-apply-crop")).toBeInTheDocument());
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("auto-apply-crop"));
+    });
+
+    await waitFor(() =>
+      expect(document.querySelector('img[src="blob:cropped"]')).not.toBeNull(),
+    );
+    vi.unstubAllGlobals();
+  });
 });

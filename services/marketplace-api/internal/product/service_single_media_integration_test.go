@@ -11,7 +11,10 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/mark8ly/marketplace-api/internal/media"
+	"github.com/mark8ly/marketplace-api/internal/outbox"
 	"github.com/mark8ly/marketplace-api/internal/product"
+	"github.com/mark8ly/marketplace-api/internal/stores"
+	"github.com/mark8ly/marketplace-api/internal/vendor"
 	"github.com/mark8ly/marketplace-api/pkg/apperrors"
 	"github.com/mark8ly/marketplace-api/pkg/testdb"
 )
@@ -190,5 +193,70 @@ func TestIntegration_Service_DeleteMedia_CrossTenant_NotFound(t *testing.T) {
 	var ae *apperrors.Error
 	if !errors.As(err, &ae) || ae.Code != apperrors.CodeNotFound {
 		t.Fatalf("expected NotFound; got %v", err)
+	}
+}
+
+// A recrop commits by PATCHing storage_key; url must follow it, or the
+// shop keeps showing the uncropped image. A later full-product save
+// sends the stale url back and must not undo it either.
+func TestIntegration_Service_RecropStorageKey_MovesURL(t *testing.T) {
+	tx := testdb.NewTx(t)
+	storeID, tenantID, _ := seedStore(t, tx)
+	up := media.NewFakeUploader()
+	up.Register(media.Attrs{StorageKey: "orig.png", Size: 1, ContentType: "image/png"})
+	up.Register(media.Attrs{StorageKey: "cropped.png", Size: 1, ContentType: "image/png"})
+	svc := product.NewService(product.Config{
+		DB:                 tx,
+		Repo:               product.NewRepository(tx),
+		StoresRepo:         stores.NewRepository(tx),
+		OutboxRepo:         outbox.NewRepository(tx),
+		Uploader:           up,
+		VendorLookup:       vendor.NewService(vendor.NewRepository(tx)),
+		MediaPublicBaseURL: "https://cdn.test",
+	})
+	ctx := context.Background()
+	agg := seedProductForMedia(t, svc, storeID, tenantID)
+	m, err := svc.AddMedia(ctx, product.AddMediaRequest{
+		ProductID: agg.Product.ID, StoreID: storeID, TenantID: tenantID, StorageKey: "orig.png",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	urlOf := func() string {
+		fresh, _ := svc.Get(ctx, agg.Product.ID, storeID, tenantID)
+		for _, md := range fresh.Media {
+			if md.ID == m.ID {
+				return md.URL
+			}
+		}
+		t.Fatal("media not found")
+		return ""
+	}
+
+	missing := "never-uploaded.png"
+	err = svc.UpdateMedia(ctx, product.UpdateMediaRequest{
+		ProductID: agg.Product.ID, MediaID: m.ID, StoreID: storeID, TenantID: tenantID, StorageKey: &missing,
+	})
+	if !errors.Is(err, apperrors.ErrUploadNotFound) {
+		t.Fatalf("missing upload: err = %v, want upload not found", err)
+	}
+
+	key := "cropped.png"
+	if err := svc.UpdateMedia(ctx, product.UpdateMediaRequest{
+		ProductID: agg.Product.ID, MediaID: m.ID, StoreID: storeID, TenantID: tenantID, StorageKey: &key,
+	}); err != nil {
+		t.Fatalf("update media: %v", err)
+	}
+	if got := urlOf(); got != "https://cdn.test/cropped.png" {
+		t.Fatalf("after recrop url = %q", got)
+	}
+
+	if err := svc.ReplaceMedia(ctx, agg.Product.ID, storeID, tenantID, []product.MediaInput{{
+		StorageKey: "cropped.png", URL: "https://cdn.test/orig.png",
+	}}); err != nil {
+		t.Fatalf("replace media: %v", err)
+	}
+	if got := urlOf(); got != "https://cdn.test/cropped.png" {
+		t.Fatalf("after product save url = %q", got)
 	}
 }

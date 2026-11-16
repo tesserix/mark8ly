@@ -6,6 +6,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/mark8ly/marketplace-api/internal/country"
+	"github.com/mark8ly/marketplace-api/internal/tax"
 )
 
 func TestTaxableItems_RatesArePercentagesConvertedToFractions(t *testing.T) {
@@ -35,5 +36,31 @@ func TestTaxableItems_NoRateAnywhereIsZero(t *testing.T) {
 	got := TaxableItems(&country.SupportedCountry{}, []TaxLine{{SKU: "A", UnitPrice: decimal.NewFromInt(5), Quantity: 1}})
 	if !got[0].TaxRate.IsZero() {
 		t.Errorf("rate = %s, want 0", got[0].TaxRate)
+	}
+}
+
+// GST is on the price paid (#1127): a A$5 coupon on A$30 of goods at 10%
+// leaves A$2.50 of GST, spread over the lines in proportion to their price.
+func TestDiscountTaxableItems(t *testing.T) {
+	d := decimal.RequireFromString
+	items := []tax.TaxableItem{{SKU: "a", Amount: d("10.00"), Quantity: 2}, {SKU: "b", Amount: d("10.00"), Quantity: 1}}
+	got := DiscountTaxableItems(items, d("5.00"))
+	total := decimal.Zero
+	for _, it := range got {
+		total = total.Add(it.Amount.Mul(decimal.NewFromInt(int64(it.Quantity))))
+	}
+	if !total.Round(2).Equal(d("25.00")) {
+		t.Errorf("taxable total = %s, want 25.00", total)
+	}
+	if !items[0].Amount.Equal(d("10.00")) {
+		t.Error("input items were changed")
+	}
+	if same := DiscountTaxableItems(items, decimal.Zero); &same[0] != &items[0] {
+		t.Error("no discount should return the items as they are")
+	}
+	for _, it := range DiscountTaxableItems(items, d("40.00")) {
+		if !it.Amount.IsZero() {
+			t.Errorf("a discount above the total leaves %s taxable", it.Amount)
+		}
 	}
 }

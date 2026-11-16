@@ -302,6 +302,9 @@ type TaxPreviewRequest struct {
 	ShippingAddress CheckoutAddressRequest `json:"shipping_address" binding:"required"`
 	Subtotal        decimal.Decimal        `json:"subtotal"         binding:"required"`
 	ShippingTotal   decimal.Decimal        `json:"shipping_total"`
+	// DiscountTotal is the coupon and loyalty discount the buyer has applied,
+	// so the preview taxes what they will pay, as checkout does (#1127).
+	DiscountTotal decimal.Decimal `json:"discount_total"`
 }
 
 // TaxPreviewResponse mirrors the totals the buyer cares about pre-submit.
@@ -356,7 +359,8 @@ func (h *CheckoutExtHandler) TaxPreview(c *gin.Context) {
 		ShippingAddress: req.ShippingAddress,
 		Subtotal:        req.Subtotal,
 	}
-	breakdown, err := h.calculateTax(c.Request.Context(), store, &sc, bridged, req.ShippingTotal)
+	breakdown, err := h.calculateTax(c.Request.Context(), store, &sc, bridged, req.ShippingTotal,
+		decimal.Min(req.DiscountTotal, req.Subtotal))
 	if err != nil {
 		// Don't 500 the buyer's checkout page over a tax-preview hiccup —
 		// return zero so the UI can show "Tax: --" rather than a banner.
@@ -589,15 +593,6 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 		shippingTotal = decimal.Zero
 	}
 
-	// ── Step 3: Calculate tax ───────────────────────────────────────────
-	taxBreakdown, err := h.calculateTax(ctx, store, &sc, req, shippingTotal)
-	if err != nil {
-		// M8 fix: return error instead of silently falling back to zero.
-		h.respondErr(c, fmt.Errorf("tax calculation failed: %w", err))
-		return
-	}
-
-	// ── Step 4: Create order ────────────────────────────────────────────
 	// Use coupon discount if a coupon was applied, otherwise use client-supplied discount.
 	// Loyalty redemption stacks on top as an additional discount so post-purchase
 	// earn (subtotal − discount_total) excludes the points-paid portion.
@@ -608,6 +603,18 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	if loyaltyDiscount.GreaterThan(decimal.Zero) {
 		effectiveDiscount = effectiveDiscount.Add(loyaltyDiscount)
 	}
+
+	// ── Step 3: Calculate tax ───────────────────────────────────────────
+	// On the discounted items (#1127), so the GST on the invoice is the GST
+	// in what the buyer paid.
+	taxBreakdown, err := h.calculateTax(ctx, store, &sc, req, shippingTotal, effectiveDiscount)
+	if err != nil {
+		// M8 fix: return error instead of silently falling back to zero.
+		h.respondErr(c, fmt.Errorf("tax calculation failed: %w", err))
+		return
+	}
+
+	// ── Step 4: Create order ────────────────────────────────────────────
 	grandTotal := req.Subtotal.Add(shippingTotal).Add(taxBreakdown.TaxTotal).Sub(effectiveDiscount)
 
 	// ── Step 3.5: Gift card lookup (before tx) ─────────────────────────
@@ -1206,6 +1213,7 @@ func (h *CheckoutExtHandler) calculateTax(
 	sc *country.SupportedCountry,
 	req CheckoutExtRequest,
 	shippingTotal decimal.Decimal,
+	discount decimal.Decimal,
 ) (*tax.TaxBreakdown, error) {
 	lines := make([]checkoutcore.TaxLine, 0, len(req.Items))
 	for _, it := range req.Items {
@@ -1219,7 +1227,9 @@ func (h *CheckoutExtHandler) calculateTax(
 			TaxRateOverride: it.TaxRateOverride,
 		})
 	}
-	return h.QuoteTax(ctx, store, sc, checkoutcore.TaxableItems(sc, lines), tax.Address{
+	// Tax is on what the buyer pays: the discount comes off the items first.
+	items := checkoutcore.DiscountTaxableItems(checkoutcore.TaxableItems(sc, lines), discount)
+	return h.QuoteTax(ctx, store, sc, items, tax.Address{
 		Line1:       req.ShippingAddress.Line1,
 		City:        req.ShippingAddress.City,
 		Region:      derefString(req.ShippingAddress.Region),

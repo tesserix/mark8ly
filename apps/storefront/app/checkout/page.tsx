@@ -449,6 +449,7 @@ export default function CheckoutPage() {
         shipping_address: toCheckoutAddress(address),
         subtotal: subtotal.toFixed(2),
         shipping_total: (couponFreeShipping ? 0 : shippingTotal).toFixed(2),
+        discount_total: (couponDiscount + loyaltyDiscount).toFixed(2),
       });
       if (cancelled) return;
       if (result) {
@@ -464,7 +465,7 @@ export default function CheckoutPage() {
       clearTimeout(timer);
       setTaxLoading(false);
     };
-  }, [address, items, shippingTotal, couponFreeShipping, storeSlug, subtotal]);
+  }, [address, items, shippingTotal, couponFreeShipping, couponDiscount, loyaltyDiscount, storeSlug, subtotal]);
 
   // Fetch loyalty program + balance when email is entered. Debounced so we
   // don't hammer the API while the user is still typing. Clears redemption

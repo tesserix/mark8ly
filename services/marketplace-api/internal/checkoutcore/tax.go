@@ -56,6 +56,33 @@ func TaxableItems(sc *country.SupportedCountry, lines []TaxLine) []tax.TaxableIt
 	return out
 }
 
+// DiscountTaxableItems lowers each item's taxable price by its share of an
+// order-wide discount (coupon or loyalty points), so tax is on what the
+// buyer pays (#1127). Shipping is untouched; gift cards are payment, not a
+// discount, and are not passed here.
+//
+// shortcut: a coupon limited to some products is still spread over every
+// line; upgrade when per-line coupon amounts are recorded.
+func DiscountTaxableItems(items []tax.TaxableItem, discount decimal.Decimal) []tax.TaxableItem {
+	if !discount.IsPositive() {
+		return items
+	}
+	total := decimal.Zero
+	for _, it := range items {
+		total = total.Add(it.Amount.Mul(decimal.NewFromInt(int64(it.Quantity))))
+	}
+	if !total.IsPositive() {
+		return items
+	}
+	share := decimal.Max(decimal.Zero, total.Sub(discount)).Div(total)
+	out := make([]tax.TaxableItem, len(items))
+	for i, it := range items {
+		it.Amount = it.Amount.Mul(share)
+		out[i] = it
+	}
+	return out
+}
+
 func deref(s *string) string {
 	if s == nil {
 		return ""

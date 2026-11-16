@@ -325,10 +325,10 @@ export default function HomePage() {
 
       <main id="main">
         <Hero />
+        <Testimonials />
         <Tour />
         <HowItWorks />
         <Features />
-        <Testimonials />
         <Pricing catalogue={SHARED_PRICING_CATALOGUE} />
         <Faq />
         <Comparison />

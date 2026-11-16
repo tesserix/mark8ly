@@ -21,7 +21,7 @@
 //                        has one correct aspect and should lock it
 
 import * as React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import CropperImport from "react-easy-crop";
 import type { CropperProps } from "react-easy-crop";
 
@@ -95,6 +95,17 @@ const DEFAULT_ASPECTS: readonly AspectOption[] = [
   { label: "Free", value: undefined },
 ];
 
+type Size = { width: number; height: number };
+
+const MIN_FREE_PX = 40;
+
+const CORNERS = [
+  { name: "top left", sx: -1, sy: -1 },
+  { name: "top right", sx: 1, sy: -1 },
+  { name: "bottom left", sx: -1, sy: 1 },
+  { name: "bottom right", sx: 1, sy: 1 },
+] as const;
+
 export function ImageCropDialog({
   sourceUrl,
   aspect,
@@ -115,12 +126,66 @@ export function ImageCropDialog({
   const [zoom, setZoom] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
   const [pixelCrop, setPixelCrop] = useState<CropBox | null>(null);
-  // The photo's own width/height, so "Free" (no fixed aspect) keeps it
-  // instead of falling back to the cropper's built-in 4:3.
-  const [photoAspect, setPhotoAspect] = useState<number | undefined>(undefined);
+  // The photo as shown at zoom 1, in screen pixels.
+  const [media, setMedia] = useState<Size | null>(null);
+  // "Free" is a box dragged to any shape from its corners; react-easy-crop
+  // only has fixed-aspect boxes, so its size is ours. null = whole photo.
+  const [freeSize, setFreeSize] = useState<Size | null>(null);
+  const stage = useRef<HTMLDivElement>(null);
   const turned = rotation % 180 !== 0;
-  const cropAspect =
-    selectedAspect ?? (photoAspect && (turned ? 1 / photoAspect : photoAspect));
+  const isFree = selectedAspect === undefined;
+  const shown = media && {
+    width: (turned ? media.height : media.width) * zoom,
+    height: (turned ? media.width : media.height) * zoom,
+  };
+  // Never bigger than the photo (zooming out shrinks it) or the stage.
+  const maxSize = shown && {
+    width: Math.min(shown.width, stage.current?.clientWidth || Infinity),
+    height: Math.min(shown.height, stage.current?.clientHeight || Infinity),
+  };
+  const cropSize =
+    isFree && maxSize
+      ? {
+          width: Math.min(freeSize?.width ?? Infinity, maxSize.width),
+          height: Math.min(freeSize?.height ?? Infinity, maxSize.height),
+        }
+      : undefined;
+
+  // The box stays centred, so a corner moved by d changes the size by 2d.
+  const resize = (from: Size, dw: number, dh: number): void => {
+    if (!maxSize) return;
+    const clamp = (v: number, max: number) => Math.max(MIN_FREE_PX, Math.min(v, max));
+    setFreeSize({
+      width: clamp(from.width + 2 * dw, maxSize.width),
+      height: clamp(from.height + 2 * dh, maxSize.height),
+    });
+  };
+
+  const startDrag = (e: React.PointerEvent, sx: number, sy: number): void => {
+    if (!cropSize) return;
+    e.preventDefault();
+    const from = cropSize;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const move = (ev: PointerEvent) => resize(from, sx * (ev.clientX - x0), sy * (ev.clientY - y0));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  const keyResize = (e: React.KeyboardEvent, sx: number, sy: number): void => {
+    if (!cropSize) return;
+    const step = e.shiftKey ? 50 : 5;
+    const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[
+      e.key
+    ];
+    if (!d) return;
+    e.preventDefault();
+    resize(cropSize, sx * d[0]!, sy * d[1]!);
+  };
   const [busy, setBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -191,19 +256,37 @@ export function ImageCropDialog({
         ) : null}
       </header>
 
-      <div className="relative flex-1 bg-[var(--ink-900)]">
+      <div ref={stage} className="relative flex-1 bg-[var(--ink-900)]">
         <Cropper
           image={sourceUrl}
           crop={crop}
           zoom={zoom}
           rotation={rotation}
-          aspect={cropAspect}
-          onMediaLoaded={(m) => setPhotoAspect(m.naturalWidth / m.naturalHeight)}
+          aspect={selectedAspect}
+          cropSize={cropSize}
+          onMediaLoaded={(m) => setMedia({ width: m.width, height: m.height })}
           onCropChange={setCrop}
           onZoomChange={setZoom}
           onRotationChange={setRotation}
           onCropComplete={handleCropComplete}
         />
+        {cropSize
+          ? CORNERS.map(({ name, sx, sy }) => (
+              <button
+                key={name}
+                type="button"
+                aria-label={`Resize crop from ${name}`}
+                onPointerDown={(e) => startDrag(e, sx, sy)}
+                onKeyDown={(e) => keyResize(e, sx, sy)}
+                className="absolute z-10 h-5 w-5 -translate-x-1/2 -translate-y-1/2 touch-none rounded-sm border-2 border-[var(--ink-900)] bg-[var(--paper-200)] focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
+                style={{
+                  left: `calc(50% + ${(sx * cropSize.width) / 2}px)`,
+                  top: `calc(50% + ${(sy * cropSize.height) / 2}px)`,
+                  cursor: sx === sy ? "nwse-resize" : "nesw-resize",
+                }}
+              />
+            ))
+          : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-6 border-t border-[var(--ink-100)] bg-[var(--background-elevated)] px-8 py-4">
@@ -223,7 +306,10 @@ export function ImageCropDialog({
         <div className="flex items-center gap-2 text-sm">
           <button
             type="button"
-            onClick={() => setRotation((r) => (r - 90 + 360) % 360)}
+            onClick={() => {
+              setRotation((r) => (r - 90 + 360) % 360);
+              setFreeSize(null);
+            }}
             className="rounded-md border border-[var(--ink-200)] px-3 py-1 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
             aria-label="Rotate left"
           >
@@ -231,7 +317,10 @@ export function ImageCropDialog({
           </button>
           <button
             type="button"
-            onClick={() => setRotation((r) => (r + 90) % 360)}
+            onClick={() => {
+              setRotation((r) => (r + 90) % 360);
+              setFreeSize(null);
+            }}
             className="rounded-md border border-[var(--ink-200)] px-3 py-1 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)]"
             aria-label="Rotate right"
           >
@@ -248,7 +337,10 @@ export function ImageCropDialog({
                   key={opt.label}
                   type="button"
                   aria-pressed={isActive}
-                  onClick={() => setSelectedAspect(opt.value)}
+                  onClick={() => {
+                    setSelectedAspect(opt.value);
+                    setFreeSize(null);
+                  }}
                   className={`rounded-md border px-3 py-1 focus:outline-none focus:ring-2 focus:ring-[var(--moss-700)] ${
                     isActive
                       ? "border-[var(--moss-700)] bg-[var(--moss-700)] text-[var(--paper-200)]"

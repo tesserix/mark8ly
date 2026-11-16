@@ -152,17 +152,14 @@ export function ImageCropDialog({
       : undefined;
 
   // The box stays centred, so a corner moved by d changes the size by 2d.
-  const resize = useCallback(
-    (from: Size, dw: number, dh: number) => {
-      if (!maxSize) return;
-      const clamp = (v: number, max: number) => Math.max(MIN_FREE_PX, Math.min(v, max));
-      setFreeSize({
-        width: clamp(from.width + 2 * dw, maxSize.width),
-        height: clamp(from.height + 2 * dh, maxSize.height),
-      });
-    },
-    [maxSize],
-  );
+  const resize = (from: Size, dw: number, dh: number): void => {
+    if (!maxSize) return;
+    const clamp = (v: number, max: number) => Math.max(MIN_FREE_PX, Math.min(v, max));
+    setFreeSize({
+      width: clamp(from.width + 2 * dw, maxSize.width),
+      height: clamp(from.height + 2 * dh, maxSize.height),
+    });
+  };
 
   const startDrag = (e: React.PointerEvent, sx: number, sy: number): void => {
     if (!cropSize) return;

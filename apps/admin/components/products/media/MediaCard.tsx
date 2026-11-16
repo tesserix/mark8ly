@@ -34,7 +34,7 @@ export function MediaCard({ media, isPrimary, onAction }: MediaCardProps): React
         alt={media.alt ?? ""}
         // The image is clipped, not the card, so the actions menu can open
         // past the card's edge instead of being cut off inside it.
-        className="h-full w-full rounded-md object-cover"
+        className="h-full w-full rounded-md object-contain"
         draggable={false}
       />
 

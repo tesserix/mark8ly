@@ -92,7 +92,7 @@ export function MediaGallery({ media, productTitle }: MediaGalleryProps) {
             sizes="(min-width: 1024px) 50vw, 100vw"
             priority={i === 0}
             className={[
-              "object-cover transition-opacity duration-700 ease-in-out",
+              "object-contain transition-opacity duration-700 ease-in-out",
               i === activeIndex ? "opacity-100" : "opacity-0",
             ].join(" ")}
           />

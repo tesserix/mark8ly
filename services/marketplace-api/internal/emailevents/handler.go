@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -110,8 +111,12 @@ func (h *Handler) receive(c *gin.Context) {
 
 	sendID, ok := sendIDFrom(ev.Data)
 	if !ok {
+		// Expected for mail other services send (invites, sign-in codes).
+		// The key names (never values: they hold addresses) show where a
+		// send id would be if the provider moved it.
 		h.logger.Info("emailevents: event carries no send id; ignoring",
-			"type", ev.Type, "event_id", c.GetHeader(HeaderID))
+			"type", ev.Type, "event_id", c.GetHeader(HeaderID),
+			"data_keys", keysOf(ev.Data), "tag_keys", keysOf(tagField(ev.Data)))
 		c.Status(http.StatusOK)
 		return
 	}
@@ -141,14 +146,14 @@ func sendIDFrom(data json.RawMessage) (uuid.UUID, bool) {
 		return uuid.Nil, false
 	}
 	var payload struct {
-		Tags       map[string]string `json:"tags"`
+		Tags       json.RawMessage   `json:"tags"`
 		CustomArgs map[string]string `json:"custom_args"`
 		Headers    map[string]string `json:"headers"`
 	}
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return uuid.Nil, false
 	}
-	for _, m := range []map[string]string{payload.Tags, payload.CustomArgs, payload.Headers} {
+	for _, m := range []map[string]string{tagMap(payload.Tags), payload.CustomArgs, payload.Headers} {
 		if raw, ok := m[emaillog.CustomArgSendID]; ok {
 			if id, err := uuid.Parse(raw); err == nil {
 				return id, true
@@ -156,6 +161,56 @@ func sendIDFrom(data json.RawMessage) (uuid.UUID, bool) {
 		}
 	}
 	return uuid.Nil, false
+}
+
+// keysOf lists an object's keys, or describes a non-object.
+func keysOf(raw json.RawMessage) []string {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		if len(raw) > 0 && raw[0] == '[' {
+			var list []struct{ Name string }
+			if json.Unmarshal(raw, &list) == nil {
+				out := []string{"(list)"}
+				for _, t := range list {
+					out = append(out, t.Name)
+				}
+				return out
+			}
+		}
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func tagField(data json.RawMessage) json.RawMessage {
+	var p struct {
+		Tags json.RawMessage `json:"tags"`
+	}
+	_ = json.Unmarshal(data, &p)
+	return p.Tags
+}
+
+// tagMap reads tags in either shape Resend echoes them: an object, or a
+// list of {name, value} (the shape we send them in). Anything else is empty.
+func tagMap(raw json.RawMessage) map[string]string {
+	var m map[string]string
+	if json.Unmarshal(raw, &m) == nil {
+		return m
+	}
+	var list []struct{ Name, Value string }
+	if json.Unmarshal(raw, &list) != nil {
+		return nil
+	}
+	m = make(map[string]string, len(list))
+	for _, t := range list {
+		m[t.Name] = t.Value
+	}
+	return m
 }
 
 // parseEventTime falls back to now for an absent or unparseable timestamp.

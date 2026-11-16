@@ -237,6 +237,11 @@ func TestFindUserByVerifiedEmailSendsTheOrgIDHeader(t *testing.T) {
 	if !strings.Contains(gotBody, "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE") {
 		t.Fatalf("request body %q missing the case-insensitive query method", gotBody)
 	}
+	// The header alone does not filter a v2 user search (16 Nov: one
+	// address matched users in three orgs); the org must be in the query.
+	if !strings.Contains(gotBody, `"organizationIdQuery":{"organizationId":"org-1"}`) {
+		t.Fatalf("request body %q is not scoped to the org", gotBody)
+	}
 }
 
 func TestFindUserByVerifiedEmailRefusesAnEmptyOrgID(t *testing.T) {
@@ -319,6 +324,11 @@ func TestFindUserByEmailSendsTheOrgIDHeader(t *testing.T) {
 	}
 	if !strings.Contains(gotBody, "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE") {
 		t.Fatalf("request body %q missing the case-insensitive query method", gotBody)
+	}
+	// The header alone does not filter a v2 user search (16 Nov: one
+	// address matched users in three orgs); the org must be in the query.
+	if !strings.Contains(gotBody, `"organizationIdQuery":{"organizationId":"org-1"}`) {
+		t.Fatalf("request body %q is not scoped to the org", gotBody)
 	}
 }
 

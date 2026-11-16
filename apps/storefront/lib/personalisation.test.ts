@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   isBelowMinimumResolution,
+  personalisationInputClass,
   personalisationSurcharge,
   toCartPersonalisation,
   toCheckoutPersonalisation,
@@ -233,5 +234,14 @@ describe("toCheckoutPersonalisation", () => {
       { field_id: "f1", upload_id: undefined, text: "Asha", option_id: undefined, checked: undefined },
       { field_id: "f2", upload_id: undefined, text: undefined, option_id: undefined, checked: true },
     ]);
+  });
+});
+
+// iPhone Safari zooms into a focused field whose text is under 16px, and
+// stays zoomed after the keyboard closes.
+describe("personalisationInputClass", () => {
+  it("is 16px on phones", () => {
+    expect(personalisationInputClass.split(" ")).toContain("text-base");
+    expect(personalisationInputClass.split(" ")).not.toContain("text-sm");
   });
 });

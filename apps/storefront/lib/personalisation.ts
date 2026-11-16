@@ -288,3 +288,8 @@ export function resolveTextStyle(
     colours.find((c) => c.label === answer?.colour) ?? colours[0];
   return { font, colour };
 }
+
+// The buyer's input fields. 16px text on phones: iPhone Safari zooms into a
+// focused field under 16px and stays zoomed after the keyboard closes.
+export const personalisationInputClass =
+  "w-full rounded-md border border-[color:var(--storefront-text,var(--ink-900))]/20 bg-transparent px-3 py-2 text-base sm:text-sm text-[color:var(--storefront-text,var(--ink-900))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))]";

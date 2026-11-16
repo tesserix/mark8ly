@@ -13,6 +13,8 @@ interface UserMenuProps {
   email?: string;
   name?: string;
   avatarUrl?: string;
+  /** A cashier is kept on the sale screen: no Profile or Settings links. */
+  sellOnly?: boolean;
 }
 
 // Pull a short display name out of the email's local part so the
@@ -28,7 +30,7 @@ function displayNameFromEmail(email: string | undefined): string {
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
 
-export function UserMenu({ email, name, avatarUrl }: UserMenuProps) {
+export function UserMenu({ email, name, avatarUrl, sellOnly = false }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -118,28 +120,30 @@ export function UserMenu({ email, name, avatarUrl }: UserMenuProps) {
             </div>
           </div>
 
-          <ul role="list" className="divide-y divide-border">
-            <li>
-              <Link
-                href="/settings/account"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-3 px-4 py-3 text-sm text-foreground transition-colors hover:bg-[color:var(--paper-100)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
-              >
-                <User className="h-4 w-4 shrink-0 text-foreground-secondary" aria-hidden="true" />
-                Profile
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/settings"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-3 px-4 py-3 text-sm text-foreground transition-colors hover:bg-[color:var(--paper-100)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
-              >
-                <SettingsIcon className="h-4 w-4 shrink-0 text-foreground-secondary" aria-hidden="true" />
-                Settings
-              </Link>
-            </li>
-          </ul>
+          {sellOnly ? null : (
+            <ul role="list" className="divide-y divide-border">
+              <li>
+                <Link
+                  href="/settings/account"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 px-4 py-3 text-sm text-foreground transition-colors hover:bg-[color:var(--paper-100)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
+                >
+                  <User className="h-4 w-4 shrink-0 text-foreground-secondary" aria-hidden="true" />
+                  Profile
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/settings"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 px-4 py-3 text-sm text-foreground transition-colors hover:bg-[color:var(--paper-100)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[color:var(--moss-700)]"
+                >
+                  <SettingsIcon className="h-4 w-4 shrink-0 text-foreground-secondary" aria-hidden="true" />
+                  Settings
+                </Link>
+              </li>
+            </ul>
+          )}
 
           <div className="border-t border-border">
             <a

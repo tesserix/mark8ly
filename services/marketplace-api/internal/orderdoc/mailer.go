@@ -329,6 +329,11 @@ func templateKey(kind Kind) string {
 	return "orderdoc_" + string(kind) + "_email"
 }
 
+// inStoreReceiptKey is the counter-sale receipt (#1107). Its own key, not
+// the receipt's: the seeded receipt row predates in-store sales and is
+// never refreshed from code, so it would say "delivered order".
+const inStoreReceiptKey = "orderdoc_instore_receipt_email"
+
 // RegisterFallbacks registers every orderdoc template's embedded
 // fallback against the shared loader. Called once at boot.
 func RegisterFallbacks(loader *emailtemplates.Loader) {
@@ -338,6 +343,11 @@ func RegisterFallbacks(loader *emailtemplates.Loader) {
 		TextBody: invoiceEmbeddedText,
 	})
 	loader.Register(templateKey(KindReceipt), emailtemplates.EmbeddedFallback{
+		Subject:  receiptSubjectTpl,
+		HTMLBody: receiptEmbeddedHTML,
+		TextBody: receiptEmbeddedText,
+	})
+	loader.Register(inStoreReceiptKey, emailtemplates.EmbeddedFallback{
 		Subject:  receiptSubjectTpl,
 		HTMLBody: receiptEmbeddedHTML,
 		TextBody: receiptEmbeddedText,
@@ -457,7 +467,11 @@ func render(ctx context.Context, loader *emailtemplates.Loader, kind Kind, in Do
 		RegisterFallbacks(loader)
 	}
 
-	r, err := loader.Render(ctx, templateKey(kind), data)
+	key := templateKey(kind)
+	if kind == KindReceipt && in.InStore {
+		key = inStoreReceiptKey
+	}
+	r, err := loader.Render(ctx, key, data)
 	if err != nil {
 		return "", "", "", fmt.Errorf("orderdoc: %w", err)
 	}

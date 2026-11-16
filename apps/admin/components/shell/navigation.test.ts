@@ -23,4 +23,10 @@ describe("navigationFor", () => {
     expect(hrefs("owner", false)).toContain("/settings/in-store");
     expect(hrefs("owner", true)).toContain("/sell");
   });
+
+  // A viewer cannot sell (can_sell_in_store is staff and up, or cashier).
+  it("hides In-store sale from a viewer", () => {
+    expect(hrefs("viewer")).not.toContain("/sell");
+    expect(hrefs("staff")).toContain("/sell");
+  });
 });

@@ -223,3 +223,28 @@ func (s *captureSender) Send(_ context.Context, m email.Message) error {
 	s.msgs = append(s.msgs, m)
 	return nil
 }
+
+// The online receipt template in the database predates in-store sales, and
+// a seeded row is never refreshed from code. In-store receipts therefore
+// have their own key, so they never pick up "delivered" wording from it.
+func TestRender_InStoreReceipt_OwnTemplateKey(t *testing.T) {
+	loader := emailtemplates.NewLoader(nil)
+	RegisterFallbacks(loader)
+	// Stand-in for the old row under the online receipt key.
+	loader.Register(templateKey(KindReceipt), emailtemplates.EmbeddedFallback{
+		Subject: "Receipt", HTMLBody: "for delivered order {{.OrderNumber}}", TextBody: "for delivered order {{.OrderNumber}}",
+	})
+	in := sampleInput("M-1")
+	in.InStore = true
+	in.DocumentURL = "https://acme.mark8ly.com/r/tok"
+	_, html, text, err := render(context.Background(), loader, KindReceipt, in, false)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if strings.Contains(html+text, "delivered") || !strings.Contains(html, "https://acme.mark8ly.com/r/tok") {
+		t.Errorf("in-store receipt used the online template: %s", text)
+	}
+	if _, ok := loader.Fallback(inStoreReceiptKey); !ok {
+		t.Error("in-store receipt template not registered, so it would not be seeded")
+	}
+}

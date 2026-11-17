@@ -81,6 +81,9 @@ jobs:
         @mark8ly/storefront
         @mark8ly/onboarding
         @repo/ui
+      # picomatch ReDoS (GHSA-fc5q-39xc-vjpf) has no patched release; build-time
+      # globs only. Remove once fixed. Keep in step with scripts/ci/audit-dependencies.cjs.
+      audit_allowlist: GHSA-fc5q-39xc-vjpf
     secrets:
       package_read_token: ${{ secrets.GHCR_PAT }}
 

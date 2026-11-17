@@ -9,8 +9,8 @@
     "check-types": "turbo run check-types --filter='!@mark8ly/platform-api' --filter='!@mark8ly/auth-bff' --filter='!@mark8ly/otto' --filter='!@repo/mobile-storefront' --filter='!@repo/mobile-admin'",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "format:check": "prettier --check \"package*.json\" \".github/**/*.{yml,yaml,json}\" \"docs/ci.md\"",
-    "test:security": "node --test vendor/deepmerge/security.test.cjs vendor/image-size/security.test.cjs scripts/ci/dependency-security.test.cjs vendor/decode-uri-component/security.test.cjs",
-    "audit:dependencies": "npm audit --audit-level=low"
+    "test:security": "node --test vendor/deepmerge/security.test.cjs vendor/image-size/security.test.cjs scripts/ci/dependency-security.test.cjs scripts/ci/audit-dependencies.test.cjs vendor/decode-uri-component/security.test.cjs",
+    "audit:dependencies": "node scripts/ci/audit-dependencies.cjs"
   },
   "devDependencies": {
     "nanoid": "3.3.18",

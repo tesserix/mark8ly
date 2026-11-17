@@ -172,7 +172,8 @@ const navigation: NavSection[] = [
       // (and its audit trail). Routes + components live under
       // app/(admin)/support/{live-chat,audit-log}.
       { label: "Live chat", href: "/support/live-chat" },
-      { label: "Audit log", href: "/support/audit-log" },
+      // Audit log route still returns notFound() — see docs/otto-disabled.md.
+      // { label: "Audit log", href: "/support/audit-log" },
       { label: "Tickets", href: "/support/tickets" },
       { label: "Help Center", href: "/support/help" },
       { label: "Platform support", href: "/support/platform" },

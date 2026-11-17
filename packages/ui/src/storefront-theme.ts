@@ -440,11 +440,23 @@ interface ResolvedColors {
 const LIGHT_TEXT = "#EDEDED";
 const DARK_TEXT = "#0E0E0C";
 
-/** Derive a surface colour from an arbitrary hex bg. Nudges white-ish
- *  backgrounds lighter and dark-ish ones slightly lighter for contrast. */
+/** Derive a surface colour from an arbitrary hex bg. Light mode uses
+ *  white; dark mode lifts the bg 6% toward white, keeping its tint —
+ *  about the step the named dark backgrounds use (obsidian #0A0A0A →
+ *  #1A1A1A). A fixed #1A1A1A drew cards darker than any custom bg above
+ *  it (sugarcoat, 17 Nov). */
 function derivedSurface(bgHex: string, mode: StorefrontMode): string {
-  // Cheap heuristic — no need to go perceptual. Custom bgs are rare.
-  return mode === "dark" ? "#1A1A1A" : "#FFFFFF";
+  if (mode !== "dark") return "#FFFFFF";
+  return (
+    "#" +
+    [1, 3, 5]
+      .map((i) => {
+        const c = parseInt(bgHex.slice(i, i + 2), 16);
+        return Math.round(c + (255 - c) * 0.06).toString(16).padStart(2, "0");
+      })
+      .join("")
+      .toUpperCase()
+  );
 }
 
 export function resolveThemeColors(
@@ -781,7 +793,12 @@ export function normalizeStorefrontTheme(value: unknown): StorefrontTheme {
       primary: sanitizeHex((raw.colors as Record<string, unknown> | undefined)?.primary, colors.primary),
       accent: sanitizeHex((raw.colors as Record<string, unknown> | undefined)?.accent, colors.accent),
       background: sanitizeHex((raw.colors as Record<string, unknown> | undefined)?.background, colors.background),
-      surface: sanitizeHex((raw.colors as Record<string, unknown> | undefined)?.surface, colors.surface),
+      // A custom bg's stored surface is only the old derived value (no UI
+      // edits it), so re-derive it rather than keep a stale #1A1A1A.
+      surface:
+        background === "custom"
+          ? colors.surface
+          : sanitizeHex((raw.colors as Record<string, unknown> | undefined)?.surface, colors.surface),
       text: sanitizeHex((raw.colors as Record<string, unknown> | undefined)?.text, colors.text),
     },
     statusColors,

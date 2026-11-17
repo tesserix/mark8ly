@@ -299,7 +299,10 @@ export default async function RootLayout({ children }: RootLayoutProps) {
           }
         />
         <CustomerAuthProvider value={authState}>
-          <StoreProvider name={storeName}>
+          <StoreProvider
+            name={storeName}
+            logoUrl={brandingData?.branding?.logo_url?.trim() || null}
+          >
             <CartProvider storeSlug={storeSlug}>{children}</CartProvider>
             <Footer branding={brandingData?.branding ?? null} storeName={storeName} />
             <OttoSupportChat storeName={storeName ?? undefined} />

@@ -13,9 +13,11 @@ import { createContext, useContext, type ReactNode } from "react";
 interface StoreContextValue {
   /** The merchant's display name, or null when no store resolved. */
   name: string | null;
+  /** Logo uploaded in admin → Settings → Branding, or null. */
+  logoUrl: string | null;
 }
 
-const StoreContext = createContext<StoreContextValue>({ name: null });
+const StoreContext = createContext<StoreContextValue>({ name: null, logoUrl: null });
 
 export function useStore(): StoreContextValue {
   return useContext(StoreContext);
@@ -23,12 +25,14 @@ export function useStore(): StoreContextValue {
 
 export function StoreProvider({
   name,
+  logoUrl = null,
   children,
 }: {
   name: string | null;
+  logoUrl?: string | null;
   children: ReactNode;
 }) {
   return (
-    <StoreContext.Provider value={{ name }}>{children}</StoreContext.Provider>
+    <StoreContext.Provider value={{ name, logoUrl }}>{children}</StoreContext.Provider>
   );
 }

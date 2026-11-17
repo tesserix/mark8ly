@@ -87,6 +87,16 @@ func TestIntegrationMerchantPublicationAndWithdrawal(t *testing.T) {
 	w = call(http.MethodPut, path, "review-admin", `{"position":"Store owner","author_name":"Private Person","quote":"Admin review.","rating":4,"publish":true,"consent":true}`)
 	require.Equal(t, 200, w.Code, w.Body.String())
 	require.Contains(t, readPublic(), PublicReview{StoreID: storeID, StoreName: "Review shop", Position: "Store admin", Quote: "Admin review.", Rating: 4})
+
+	// The name is opt-in: shown only when given, and cleared by a blank one.
+	w = call(http.MethodPut, path, "review-owner", `{"display_name":" Souri ","quote":"Named review.","rating":5,"publish":true,"consent":true}`)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	name := "Souri"
+	require.Contains(t, readPublic(), PublicReview{StoreID: storeID, StoreName: "Review shop", Position: "Store owner", DisplayName: &name, Quote: "Named review.", Rating: 5})
+	w = call(http.MethodPut, path, "review-owner", `{"display_name":"  ","quote":"Named review.","rating":5,"publish":true,"consent":true}`)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	require.Contains(t, readPublic(), PublicReview{StoreID: storeID, StoreName: "Review shop", Position: "Store owner", Quote: "Named review.", Rating: 5})
+	require.NotContains(t, call(http.MethodGet, "/api/v1/testimonials", "", "").Body.String(), "display_name")
 }
 
 func TestIntegrationDraftSeedsStayPrivate(t *testing.T) {

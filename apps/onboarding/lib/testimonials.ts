@@ -4,6 +4,8 @@ const publicReview = z.object({
   store_id: z.string(),
   store_name: z.string(),
   position: z.enum(["Store owner", "Store admin"]),
+  // Only present when the merchant chose to show their name.
+  display_name: z.string().min(1).max(80).optional(),
   quote: z.string(),
   rating: z.number().int().min(1).max(5),
 });

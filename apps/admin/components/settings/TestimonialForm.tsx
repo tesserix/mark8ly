@@ -15,6 +15,8 @@ export function TestimonialForm({
   const [state, action, pending] = useActionState(saveTestimonial, {});
   const [quote, setQuote] = useState(initial?.quote ?? "");
   const [rating, setRating] = useState(String(initial?.rating ?? ""));
+  const [showName, setShowName] = useState(Boolean(initial?.display_name));
+  const [displayName, setDisplayName] = useState(initial?.display_name ?? "");
   const [consent, setConsent] = useState(false);
   const published = state.published ?? initial?.published ?? false;
   return (
@@ -28,8 +30,8 @@ export function TestimonialForm({
         Status: {published ? "Published" : "Private draft"}
       </p>
       <p className="text-sm text-foreground-secondary">
-        Public attribution shows your store name and store role. Your personal
-        name is not displayed.
+        Public attribution shows your store name and store role. Your name is
+        shown only if you choose to add it below.
       </p>
       <div className="space-y-2">
         <Label htmlFor="testimonial-rating">Your rating</Label>
@@ -74,6 +76,45 @@ export function TestimonialForm({
           experience.
         </p>
       </div>
+      <div className="space-y-3">
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            name="show_name"
+            checked={showName}
+            disabled={pending}
+            className="mt-1"
+            onChange={(e) => {
+              setShowName(e.target.checked);
+              setConsent(false);
+            }}
+          />
+          <span>Show my name on the review</span>
+        </label>
+        {showName ? (
+          <div className="space-y-2">
+            <Label htmlFor="testimonial-name">Your name</Label>
+            <input
+              id="testimonial-name"
+              name="display_name"
+              value={displayName}
+              maxLength={80}
+              required
+              disabled={pending}
+              autoComplete="name"
+              className="block w-full rounded-md border border-border-subtle bg-background p-3 text-foreground"
+              onChange={(e) => {
+                setDisplayName(e.target.value);
+                setConsent(false);
+              }}
+            />
+            <p className="text-xs text-foreground-secondary">
+              Shown next to your store role, for example &ldquo;Store owner ·
+              Sam&rdquo;. Untick to hide it again.
+            </p>
+          </div>
+        ) : null}
+      </div>
       <label className="flex items-start gap-3 text-sm">
         <input
           type="checkbox"
@@ -85,7 +126,7 @@ export function TestimonialForm({
         />
         <span>
           I confirm this is my honest review and agree to publish my store name,
-          store role, rating and words on mark8ly.com.
+          store role,{showName ? " name," : ""} rating and words on mark8ly.com.
         </span>
       </label>
       {state.message ? (

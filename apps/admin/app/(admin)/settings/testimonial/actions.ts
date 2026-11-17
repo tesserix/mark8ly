@@ -18,6 +18,12 @@ const reviewSchema = z.object({
     .min(1)
     .refine((v) => Array.from(v).length <= 1000),
   rating: z.number().int().min(1).max(5),
+  // Blank or unticked means the merchant chose not to show their name.
+  display_name: z
+    .string()
+    .trim()
+    .refine((v) => Array.from(v).length <= 80)
+    .transform((v) => v || null),
 });
 
 export async function saveTestimonial(
@@ -34,12 +40,14 @@ export async function saveTestimonial(
   const parsed = reviewSchema.safeParse({
     quote: data.get("quote"),
     rating: Number(data.get("rating")),
+    display_name:
+      data.get("show_name") === "on" ? String(data.get("display_name") ?? "") : "",
   });
   if (!parsed.success)
     return {
       ok: false,
       message:
-        "Enter your review (up to 1,000 characters) and a 1–5 star rating.",
+        "Enter your review (up to 1,000 characters), a 1–5 star rating, and a name of up to 80 characters if you show one.",
     };
   const intent = data.get("intent");
   if (intent !== "publish" && intent !== "draft")

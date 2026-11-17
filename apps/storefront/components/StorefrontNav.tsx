@@ -31,7 +31,8 @@ const NAV_LINKS = [
 
 export function StorefrontNav({ storeName }: StorefrontNavProps) {
   const pathname = usePathname();
-  const brandName = resolveBrandName(storeName, useStore().name);
+  const store = useStore();
+  const brandName = resolveBrandName(storeName, store.name);
 
   // The nav owns its own max-width and gutters, so pages must NOT wrap
   // it in a second `px-6` container: on a 400px phone the two gutters
@@ -58,7 +59,21 @@ export function StorefrontNav({ storeName }: StorefrontNavProps) {
           className="basis-full break-words font-[family-name:var(--storefront-heading-font,var(--font-source-serif))] text-lg text-[color:var(--storefront-text,var(--ink-900))] empty:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--storefront-accent,var(--moss-700))] sm:min-w-0 sm:max-w-[55%] sm:basis-auto sm:truncate md:max-w-none"
           title={brandName}
         >
-          {brandName}
+          {store.logoUrl ? (
+            // Plain <img>, as in the footer's BrandHero: merchant logos are
+            // arbitrary remote URLs that Next's <Image> would need whitelisted.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={store.logoUrl}
+              alt={brandName}
+              width={200}
+              height={40}
+              decoding="async"
+              className="h-8 w-auto max-w-[200px] object-contain object-left sm:h-10"
+            />
+          ) : (
+            brandName
+          )}
         </Link>
         <ul className="flex items-center gap-4 text-sm sm:ml-auto sm:gap-6">
           {NAV_LINKS.map((link) => {

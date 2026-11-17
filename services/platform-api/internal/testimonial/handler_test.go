@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -41,6 +42,7 @@ func TestMerchantValidatesReviewBeforeWriting(t *testing.T) {
 		`{"author_name":"A","quote":"Helpful","rating":6,"publish":true}`,
 		`{"author_name":"A","quote":" ","rating":5,"publish":true}`,
 		`{"author_name":"A","quote":"Helpful","rating":5,"publish":true,"consent":false}`,
+		`{"display_name":"` + strings.Repeat("a", 81) + `","quote":"Helpful","rating":5,"publish":true,"consent":true}`,
 	} {
 		req := httptest.NewRequest(http.MethodPut, "/internal/stores/"+testStoreID+"/testimonial", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")

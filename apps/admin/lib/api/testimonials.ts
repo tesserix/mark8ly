@@ -2,6 +2,7 @@ import { platformInternalFetch } from "@/lib/api/server/platformInternal";
 
 export type MerchantTestimonial = {
   position: "Store owner" | "Store admin";
+  display_name: string | null;
   quote: string;
   rating: number;
   published: boolean;

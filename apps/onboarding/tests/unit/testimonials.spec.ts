@@ -32,6 +32,25 @@ test("loads public reviews without replacing an honest lower rating", async () =
   ]);
 });
 
+test("keeps a name the merchant chose to show", async () => {
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        data: [
+          {
+            store_id: "s1",
+            store_name: "A shop",
+            position: "Store owner",
+            display_name: "Sam",
+            quote: "Helpful.",
+            rating: 5,
+          },
+        ],
+      }),
+    );
+  expect((await loadTestimonials("http://platform.test"))[0]?.display_name).toBe("Sam");
+});
+
 test("never substitutes seed reviews when the database is empty or unavailable", async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({ data: [] }));
   expect(await loadTestimonials("http://platform.test")).toEqual([]);

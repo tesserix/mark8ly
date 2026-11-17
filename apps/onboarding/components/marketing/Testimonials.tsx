@@ -216,6 +216,7 @@ export function Testimonials() {
                   <figcaption>
                     <p className="font-medium text-foreground">
                       {review.position}
+                      {review.display_name ? ` · ${review.display_name}` : ""}
                     </p>
                     <p className="mt-1 text-sm text-foreground-secondary">
                       Online store of {review.store_name}

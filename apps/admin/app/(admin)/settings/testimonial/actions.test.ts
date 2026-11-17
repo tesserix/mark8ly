@@ -53,9 +53,23 @@ it("uses the authenticated store and identity, ignoring form identity", async ()
   expect(sent).toEqual({
     quote: "Easy to set up.",
     rating: 4,
+    display_name: null,
     publish: true,
     consent: true,
   });
+});
+
+it("sends a name only when the merchant chose to show it", async () => {
+  const data = form();
+  data.set("display_name", " Sam ");
+  await saveTestimonial({}, data);
+  expect(JSON.parse(request.mock.calls[0][1].body).display_name).toBeNull();
+  data.set("show_name", "on");
+  await saveTestimonial({}, data);
+  expect(JSON.parse(request.mock.calls[1][1].body).display_name).toBe("Sam");
+  data.set("display_name", "a".repeat(81));
+  expect(await saveTestimonial({}, data)).toMatchObject({ ok: false });
+  expect(request).toHaveBeenCalledTimes(2);
 });
 
 it("refuses staff before calling the backend", async () => {

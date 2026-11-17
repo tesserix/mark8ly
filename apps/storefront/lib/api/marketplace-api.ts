@@ -380,6 +380,10 @@ export interface StorefrontBranding {
   announcement_bg?: string;
   announcement_active: boolean;
 
+  // Identity tagline (admin → Branding → Identity). The footer falls back
+  // to it when no footer-specific tagline is set.
+  tagline?: string | null;
+
   // footer identity
   footer_tagline?: string | null;
   footer_copyright?: string | null;

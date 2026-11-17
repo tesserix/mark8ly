@@ -438,7 +438,8 @@ function IdentityTab({ form, patch, editable }: TabProps) {
             maxLength={200}
           />
           <p className="text-xs text-foreground-tertiary">
-            Shown below your store name. Max 200 characters.
+            Shown below your store name in your storefront footer (unless you
+            set a footer tagline) and on invoices. Max 200 characters.
           </p>
         </div>
       </div>

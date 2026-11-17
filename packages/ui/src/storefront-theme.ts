@@ -1009,6 +1009,10 @@ export function themeCssVariables(
     "--foreground-secondary": `${text}B3`,
     "--foreground-tertiary": `${text}80`,
     "--background": background,
+    // Inputs and form cards sit on --background-elevated with --foreground
+    // text; left at the house white, a dark store's search box drew light
+    // text on white (sugarcoat, 17 Nov).
+    "--background-elevated": surface,
     // Status chip and toast surfaces. globals.css mixes them against paper
     // white so light-mode's dark status colours read on any page. Dark mode
     // ships LIGHT status colours, and light-on-paper was unreadable (a

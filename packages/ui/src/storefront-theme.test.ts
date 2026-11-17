@@ -45,6 +45,12 @@ describe("themeCssVariables", () => {
   });
 });
 
+it("puts inputs on the store's surface, not the house white, in dark mode", () => {
+  const dark = withBackground(withMode(defaultStorefrontTheme, "dark"), "obsidian");
+  expect(themeCssVariables(dark)["--background-elevated"]).toBe(dark.colors.surface);
+  expect(themeCssVariables(defaultStorefrontTheme)["--background-elevated"]).toBe("#FFFFFF");
+});
+
 // A custom background used a fixed #1A1A1A surface, so cards drew darker
 // than any custom bg above it (sugarcoat #16171B, 17 Nov).
 describe("custom background surface", () => {

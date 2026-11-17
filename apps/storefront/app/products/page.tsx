@@ -112,7 +112,9 @@ export default async function StoreProductsPage({ searchParams }: PageProps) {
         </header>
 
         {products.length === 0 ? (
-          <EmptyCatalogue />
+          // A search with no hits is already explained in the header; the
+          // empty-shop message would wrongly say the store has no products.
+          search ? null : <EmptyCatalogue />
         ) : (
           <>
             <ProductGrid products={products} />

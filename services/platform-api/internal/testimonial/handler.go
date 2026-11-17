@@ -142,14 +142,15 @@ func (h *Handler) save(c *gin.Context) {
 	var saved Review
 	result := h.db.WithContext(ctx).Raw(`
 		INSERT INTO merchant_testimonials (store_id, position, display_name, quote, rating, published, consented_at, submitted_by)
-		SELECT s.id, CASE WHEN t.owner_user_id = ? THEN 'Store owner' ELSE 'Store admin' END,
-		?, ?, ?, ?, CASE WHEN ? THEN now() ELSE NULL END, ?
-		FROM stores s JOIN tenants t ON t.id = s.tenant_id WHERE s.id = ? AND s.status = 'active'
+		SELECT s.id, 'Store owner', ?, ?, ?, ?, CASE WHEN ? THEN now() ELSE NULL END, ?
+		FROM stores s JOIN tenants t ON t.id = s.tenant_id
+		-- Only the owner writes the review, so an admin can't overwrite theirs.
+		WHERE s.id = ? AND s.status = 'active' AND t.owner_user_id = ?
 		ON CONFLICT (store_id) DO UPDATE SET position = EXCLUDED.position,
 		display_name = EXCLUDED.display_name, quote = EXCLUDED.quote, rating = EXCLUDED.rating, published = EXCLUDED.published,
 		consented_at = EXCLUDED.consented_at, submitted_by = EXCLUDED.submitted_by, updated_at = now()
 		RETURNING position, display_name, quote, rating, published`,
-		c.GetHeader("X-User-ID"), req.DisplayName, req.Quote, req.Rating, req.Publish, req.Publish, c.GetHeader("X-User-ID"), c.Param("id")).Scan(&saved)
+		req.DisplayName, req.Quote, req.Rating, req.Publish, req.Publish, c.GetHeader("X-User-ID"), c.Param("id"), c.GetHeader("X-User-ID")).Scan(&saved)
 	if result.Error != nil {
 		fail(c, 503, "unavailable", "Could not save your testimonial.")
 		return

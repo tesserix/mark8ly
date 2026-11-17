@@ -1,14 +1,12 @@
-import { AdminPage, ReadOnlyNotice } from "@/components/layout";
+import { AdminPage } from "@/components/layout";
 import { TestimonialForm } from "@/components/settings/TestimonialForm";
-import {
-  canEditSettings,
-  getServerSessionContext,
-} from "@/lib/auth/serverSession";
+import { getServerSessionContext } from "@/lib/auth/serverSession";
 import { getTestimonial } from "@/lib/api/testimonials";
 
 export default async function TestimonialPage() {
   const { role, currentStore, userId } = await getServerSessionContext();
-  const editable = canEditSettings(role);
+  // One review per store, written in the owner's voice; admins would overwrite it.
+  const editable = role === "owner";
   let initial = null;
   let failed = false;
   if (editable && currentStore) {
@@ -24,7 +22,11 @@ export default async function TestimonialPage() {
       title="Your testimonial"
       description="Tell us about your experience with Mark8ly."
       readOnlyNotice={
-        !editable && role ? <ReadOnlyNotice role={role} /> : undefined
+        !editable ? (
+          <p className="text-sm text-warning">
+            Only the store owner can write the testimonial.
+          </p>
+        ) : undefined
       }
     >
       {!currentStore ? (

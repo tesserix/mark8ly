@@ -84,9 +84,9 @@ func TestIntegrationMerchantPublicationAndWithdrawal(t *testing.T) {
 	require.EqualValues(t, 1, count, "retries update the same review")
 	require.Equal(t, 404, call(http.MethodPut, path, "other-tenant", `{}`).Code)
 	require.NoError(t, fga.WriteRole(context.Background(), "review-admin", authz.RoleAdmin, tenantID))
-	w = call(http.MethodPut, path, "review-admin", `{"position":"Store owner","author_name":"Private Person","quote":"Admin review.","rating":4,"publish":true,"consent":true}`)
-	require.Equal(t, 200, w.Code, w.Body.String())
-	require.Contains(t, readPublic(), PublicReview{StoreID: storeID, StoreName: "Review shop", Position: "Store admin", Quote: "Admin review.", Rating: 4})
+	w = call(http.MethodPut, path, "review-admin", `{"quote":"Admin review.","rating":4,"publish":true,"consent":true}`)
+	require.Equal(t, 404, w.Code, "only the owner can write the review")
+	require.Contains(t, readPublic(), PublicReview{StoreID: storeID, StoreName: "Review shop", Position: "Store owner", Quote: "My review.", Rating: 5})
 
 	// The name is opt-in: shown only when given, and cleared by a blank one.
 	w = call(http.MethodPut, path, "review-owner", `{"display_name":" Souri ","quote":"Named review.","rating":5,"publish":true,"consent":true}`)

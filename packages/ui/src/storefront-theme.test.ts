@@ -2,8 +2,10 @@ import { describe, it, expect } from "vitest";
 
 import {
   defaultStorefrontTheme,
+  normalizeStorefrontTheme,
   themeCssVariables,
   withBackground,
+  withColorOverride,
   withMode,
 } from "./storefront-theme";
 
@@ -40,5 +42,34 @@ describe("themeCssVariables", () => {
   it("leaves light-mode status surfaces to globals.css", () => {
     expect(themeCssVariables(defaultStorefrontTheme)["--storefront-success-bg"]).toBeUndefined();
     expect(themeCssVariables(defaultStorefrontTheme)["--storefront-success-fg"]).toBeUndefined();
+  });
+});
+
+// A custom background used a fixed #1A1A1A surface, so cards drew darker
+// than any custom bg above it (sugarcoat #16171B, 17 Nov).
+describe("custom background surface", () => {
+  const darkCustom = (hex: string) =>
+    withColorOverride(withMode(defaultStorefrontTheme, "dark"), "background", hex);
+
+  it("lifts the surface from the custom bg, keeping its tint", () => {
+    expect(darkCustom("#16171B").colors.surface).toBe("#242529");
+    expect(darkCustom("#000000").colors.surface).toBe("#0F0F0F");
+  });
+
+  it("keeps white cards in light mode", () => {
+    const light = withColorOverride(defaultStorefrontTheme, "background", "#EEE8DD");
+    expect(light.colors.surface).toBe("#FFFFFF");
+  });
+
+  it("re-derives a stale stored surface on load", () => {
+    const stored = { ...darkCustom("#16171B") };
+    stored.colors = { ...stored.colors, surface: "#1A1A1A" };
+    expect(normalizeStorefrontTheme(stored).colors.surface).toBe("#242529");
+  });
+
+  it("still honours a stored surface on named backgrounds", () => {
+    const stored = { ...withBackground(withMode(defaultStorefrontTheme, "dark"), "obsidian") };
+    stored.colors = { ...stored.colors, surface: "#202020" };
+    expect(normalizeStorefrontTheme(stored).colors.surface).toBe("#202020");
   });
 });

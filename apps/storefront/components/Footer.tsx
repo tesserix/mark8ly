@@ -180,7 +180,8 @@ function BrandHero({
 }
 
 export function Footer({ branding, storeName }: FooterProps) {
-  const tagline = branding?.footer_tagline?.trim() || null;
+  const tagline =
+    branding?.footer_tagline?.trim() || branding?.tagline?.trim() || null;
   const name = storeName?.trim() || null;
   const copyright =
     branding?.footer_copyright?.trim() || defaultCopyright(name);

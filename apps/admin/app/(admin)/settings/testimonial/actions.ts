@@ -31,10 +31,10 @@ export async function saveTestimonial(
   data: FormData,
 ): Promise<TestimonialState> {
   const { role, currentStore, userId } = await getServerSessionContext();
-  if ((role !== "owner" && role !== "admin") || !currentStore || !userId) {
+  if (role !== "owner" || !currentStore || !userId) {
     return {
       ok: false,
-      message: "Only a store owner or admin can submit a testimonial.",
+      message: "Only the store owner can submit a testimonial.",
     };
   }
   const parsed = reviewSchema.safeParse({

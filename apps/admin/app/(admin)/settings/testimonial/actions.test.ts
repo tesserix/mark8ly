@@ -72,10 +72,10 @@ it("sends a name only when the merchant chose to show it", async () => {
   expect(request).toHaveBeenCalledTimes(2);
 });
 
-it("refuses staff before calling the backend", async () => {
+it.each(["admin", "staff"])("refuses %s before calling the backend", async (role) => {
   session.mockResolvedValue({
-    role: "staff",
-    userId: "staff",
+    role,
+    userId: role,
     currentStore: { id: "real-store" },
   });
   expect(await saveTestimonial({}, form())).toMatchObject({ ok: false });

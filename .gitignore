@@ -111,3 +111,6 @@ __pycache__/
 
 # Serena MCP server local project state — tool cache, not source.
 .serena/
+
+# Local design-check tool config
+.impeccable/

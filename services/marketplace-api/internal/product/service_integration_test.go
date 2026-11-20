@@ -651,6 +651,8 @@ func TestIntegration_ProductService_Duplicate_SameStore_WithPersonalisation(t *t
 		SourceTenantID:  tenantID,
 		SourceStoreID:   storeID,
 		Duplicate:       true,
+		// Zitadel user ids are numeric, not uuids; this 500'd in prod.
+		CopiedBy: ptrStr("386888878927118733"),
 	})
 	if err != nil {
 		t.Fatalf("Duplicate: %v", err)

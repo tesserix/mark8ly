@@ -53,7 +53,10 @@ export function MarkShippedPanel({
   couriers,
   initialShipment,
 }: Props) {
-  const [shipment, setShipment] = useState(initialShipment);
+  const [shipment, setShipment] = useState(
+    // A cancelled shipment no longer counts: the backend allows shipping again.
+    initialShipment?.status === "cancelled" ? null : initialShipment,
+  );
   const [courierId, setCourierId] = useState(couriers[0]?.id ?? "");
   const [tracking, setTracking] = useState("");
   const [editing, setEditing] = useState(false);
@@ -64,7 +67,8 @@ export function MarkShippedPanel({
   useEffect(() => {
     const last = readLast(storeId);
     if (last && couriers.some((c) => c.id === last)) setCourierId(last);
-  }, [storeId, couriers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per store; re-running would clobber a mid-edit choice
+  }, [storeId]);
 
   if (!shipment && !ACTIONABLE_STATUSES.has(orderStatus)) return null;
 

@@ -12,7 +12,7 @@ vi.mock("@/app/(admin)/orders/[id]/shipping-actions", () => ({
 import { MarkShippedPanel } from "./MarkShippedPanel";
 
 const couriers = [
-  { id: "c1", name: "DTDC", tracking_url_template: "https://t.example/{tracking}" },
+  { id: "c1", name: "DTDC", tracking_url_template: "https://t.example/{number}" },
   { id: "c2", name: "Local rider", tracking_url_template: null },
 ];
 const shipped = {
@@ -58,7 +58,8 @@ describe("MarkShippedPanel", () => {
     expect(markShippedAction).toHaveBeenCalledTimes(1);
     expect(markShippedAction).toHaveBeenCalledWith("st1", "o1", { courierId: "c1", trackingNumber: "AB123" });
     resolve({ ok: true, data: shipped });
-    await screen.findByRole("button", { name: "Edit tracking" }); expect(await screen.findByText("DTDC")).toBeInTheDocument();
+    await screen.findByRole("button", { name: "Edit tracking" });
+    expect(await screen.findByText("DTDC")).toBeInTheDocument();
     expect(localStorage.getItem("m8.lastCourier.st1")).toBe("c1");
     const link = screen.getByRole("link", { name: /AB123/ });
     expect(link).toHaveAttribute("href", "https://t.example/AB123");
@@ -91,6 +92,12 @@ describe("MarkShippedPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(updateTrackingAction).toHaveBeenCalledWith("st1", "o1", "s1", { trackingNumber: "ZZ9", courierId: "c1" });
     expect(await screen.findByText("ZZ9")).toBeInTheDocument();
+  });
+
+  it("treats a cancelled shipment as none and shows the form", () => {
+    render(<MarkShippedPanel {...base} initialShipment={{ ...shipped, status: "cancelled" }} />);
+    expect(screen.getByRole("button", { name: "Mark as shipped" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit tracking" })).toBeNull();
   });
 
   it("links to Settings -> Shipping when no couriers are saved", () => {

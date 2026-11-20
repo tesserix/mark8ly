@@ -15,7 +15,7 @@ import (
 // as an interface (rather than depending on *Service directly) so tests
 // can inject a fake and exercise the handler without a real DB/FGA/GIP.
 type accountDeleter interface {
-	DeleteAccount(ctx context.Context, tenantID, actorUID string) error
+	DeleteAccountWithReason(ctx context.Context, tenantID, actorUID string, exit ExitReason) error
 	PurgeTenant(ctx context.Context, tenantID string, storeSlugs []string) (*PurgeResult, error)
 }
 
@@ -40,6 +40,9 @@ func (h *Handler) Register(internal *gin.RouterGroup) {
 // deleteRequest is the body for DELETE /tenants/:id/account.
 type deleteRequest struct {
 	UID string `json:"uid"`
+	// Reason and ReasonDetail are optional; see NewExitReason.
+	Reason       string `json:"reason"`
+	ReasonDetail string `json:"reason_detail"`
 }
 
 func (h *Handler) delete(c *gin.Context) {
@@ -48,7 +51,7 @@ func (h *Handler) delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_uid", "message": "uid is required"})
 		return
 	}
-	if err := h.svc.DeleteAccount(c.Request.Context(), c.Param("id"), req.UID); err != nil {
+	if err := h.svc.DeleteAccountWithReason(c.Request.Context(), c.Param("id"), req.UID, NewExitReason(req.Reason, req.ReasonDetail)); err != nil {
 		respondError(c, err)
 		return
 	}

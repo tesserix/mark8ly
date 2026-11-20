@@ -86,8 +86,34 @@ describe("DeleteAccountSection", () => {
     );
 
     await waitFor(() => {
-      expect(mockDeleteTenantAccountAction).toHaveBeenCalledWith("DELETE");
+      expect(mockDeleteTenantAccountAction).toHaveBeenCalledWith("DELETE", undefined);
     });
+  });
+
+  it("an owner's optional exit reason and note are passed to the action", async () => {
+    const user = userEvent.setup();
+    render(<DeleteAccountSection isOwner={true} />);
+
+    await user.click(screen.getByRole("button", { name: /delete store/i }));
+    await user.click(screen.getByRole("radio", { name: "Too much setup" }));
+    await user.type(screen.getByRole("textbox", { name: /anything else/i }), "No time to add products");
+    await user.type(screen.getByPlaceholderText("DELETE"), "DELETE");
+    await user.click(screen.getByRole("button", { name: /delete store and sign out/i }));
+
+    await waitFor(() => {
+      expect(mockDeleteTenantAccountAction).toHaveBeenCalledWith("DELETE", {
+        reason: "too_much_setup",
+        detail: "No time to add products",
+      });
+    });
+  });
+
+  it("staff leaving a store are not asked why", async () => {
+    const user = userEvent.setup();
+    render(<DeleteAccountSection isOwner={false} />);
+
+    await user.click(screen.getByRole("button", { name: /remove my access/i }));
+    expect(screen.queryByRole("radio")).toBeNull();
   });
 
   it("wrong-case 'delete' keeps confirm button disabled — action NOT called", async () => {

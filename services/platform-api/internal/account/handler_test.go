@@ -20,13 +20,15 @@ type fakeSvc struct {
 	err            error
 	calledTenantID string
 	calledActorUID string
+	calledExit     ExitReason
 	called         bool
 }
 
-func (f *fakeSvc) DeleteAccount(_ context.Context, tenantID, actorUID string) error {
+func (f *fakeSvc) DeleteAccountWithReason(_ context.Context, tenantID, actorUID string, exit ExitReason) error {
 	f.called = true
 	f.calledTenantID = tenantID
 	f.calledActorUID = actorUID
+	f.calledExit = exit
 	return f.err
 }
 
@@ -65,6 +67,28 @@ func TestAccountHandler_Delete_204(t *testing.T) {
 	}
 	if svc.calledActorUID != "owner-1" {
 		t.Fatalf("actorUID=%q, want owner-1", svc.calledActorUID)
+	}
+}
+
+func TestAccountHandler_Delete_PassesSanitisedExitReason(t *testing.T) {
+	svc := &fakeSvc{}
+	r := newTestRouter(svc)
+	long := strings.Repeat("x", 600)
+
+	rec := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodDelete, "/internal/tenants/t1/account",
+		strings.NewReader(`{"uid":"owner-1","reason":"price","reason_detail":"  `+long+`  "}`))
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || svc.calledExit.Code != "price" || len(svc.calledExit.Detail) != 500 {
+		t.Fatalf("code=%d exit=%q/%d", rec.Code, svc.calledExit.Code, len(svc.calledExit.Detail))
+	}
+
+	rec = httptest.NewRecorder()
+	req, _ = http.NewRequest(http.MethodDelete, "/internal/tenants/t1/account",
+		strings.NewReader(`{"uid":"owner-1","reason":"made-up"}`))
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent || svc.calledExit.Code != "" {
+		t.Fatalf("an unknown reason must be dropped, not fail the delete: code=%d exit=%q", rec.Code, svc.calledExit.Code)
 	}
 }
 
@@ -151,7 +175,9 @@ type fakePurger struct {
 	got []string
 }
 
-func (f *fakePurger) DeleteAccount(_ context.Context, _, _ string) error { return nil }
+func (f *fakePurger) DeleteAccountWithReason(_ context.Context, _, _ string, _ ExitReason) error {
+	return nil
+}
 func (f *fakePurger) PurgeTenant(_ context.Context, _ string, slugs []string) (*PurgeResult, error) {
 	f.got = slugs
 	return f.res, f.err

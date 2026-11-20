@@ -122,6 +122,13 @@ func (s *Service) EnableDeletedNotice(counter tenantCounter) *Service {
 // removes their own membership. An actor with no role on the tenant is
 // rejected with apperrors.Forbidden.
 func (s *Service) DeleteAccount(ctx context.Context, tenantID, actorUID string) error {
+	return s.DeleteAccountWithReason(ctx, tenantID, actorUID, ExitReason{})
+}
+
+// DeleteAccountWithReason is DeleteAccount carrying the merchant's optional
+// "why are you leaving?" answer into the operator notice. The reason never
+// affects the delete itself.
+func (s *Service) DeleteAccountWithReason(ctx context.Context, tenantID, actorUID string, exit ExitReason) error {
 	role, err := s.fga.GetRole(ctx, actorUID, tenantID)
 	if err != nil {
 		return fmt.Errorf("account: get role: %w", err)
@@ -131,7 +138,7 @@ func (s *Service) DeleteAccount(ctx context.Context, tenantID, actorUID string) 
 	}
 
 	if role == authz.RoleOwner {
-		return s.deleteOwnerAccount(ctx, tenantID, actorUID)
+		return s.deleteOwnerAccount(ctx, tenantID, actorUID, exit)
 	}
 	return s.deleteStaffAccount(ctx, tenantID, actorUID, role)
 }
@@ -142,7 +149,7 @@ func (s *Service) DeleteAccount(ctx context.Context, tenantID, actorUID string) 
 // invitees with their own role tuples, and those tuples must not survive
 // pointing at a tenant object that no longer exists (#361). See the
 // package doc for why this second half is best-effort.
-func (s *Service) deleteOwnerAccount(ctx context.Context, tenantID, actorUID string) error {
+func (s *Service) deleteOwnerAccount(ctx context.Context, tenantID, actorUID string, exit ExitReason) error {
 	storeIDs, err := s.repo.ListStoreIDs(ctx, nil, tenantID)
 	if err != nil {
 		return fmt.Errorf("account: list store ids: %w", err)
@@ -159,7 +166,7 @@ func (s *Service) deleteOwnerAccount(ctx context.Context, tenantID, actorUID str
 		}
 	}
 
-	if err := s.teardownTenantTx(ctx, tenantID, storeIDs, counts); err != nil {
+	if err := s.teardownTenantTx(ctx, tenantID, storeIDs, counts, exit); err != nil {
 		return fmt.Errorf("account: teardown tenant: %w", err)
 	}
 
@@ -248,7 +255,7 @@ func (s *Service) deleteIdentityIfNoTenantsRemain(ctx context.Context, userID, j
 // outbox event (plus, when enabled, the operator notice) in one
 // transaction, so a crash between them never happens: either all land, or
 // none does.
-func (s *Service) teardownTenantTx(ctx context.Context, tenantID string, storeIDs []string, counts map[string]int64) error {
+func (s *Service) teardownTenantTx(ctx context.Context, tenantID string, storeIDs []string, counts map[string]int64, exit ExitReason) error {
 	run := func(tx *gorm.DB) error {
 		var notice *deletedNotice
 		if s.counter != nil {
@@ -258,7 +265,7 @@ func (s *Service) teardownTenantTx(ctx context.Context, tenantID string, storeID
 			if err != nil {
 				return err
 			}
-			notice = &deletedNotice{TenantID: tenantID, DeletedAt: s.now().UTC(), Counts: counts}
+			notice = &deletedNotice{TenantID: tenantID, DeletedAt: s.now().UTC(), Counts: counts, Reason: exit.Code, ReasonDetail: exit.Detail}
 			if snap != nil {
 				notice.Name, notice.OwnerEmail, notice.SignedUpAt = snap.Name, snap.OwnerEmail, snap.CreatedAt
 				for _, st := range snap.Stores {

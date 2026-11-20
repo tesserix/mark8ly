@@ -35,7 +35,7 @@ import type {
   AuditLogsQuery,
 } from "@/lib/api/settings-tier2-api";
 import { canEditSettings, resolveStoreId } from "@/lib/auth/serverSession";
-import { deleteTenantAccount, PlatformApiError } from "@/lib/api/platform-api";
+import { deleteTenantAccount, PlatformApiError, type ExitReason } from "@/lib/api/platform-api";
 import type { TenantRole } from "@/lib/api/platform-api";
 
 export type ActionResult =
@@ -174,6 +174,7 @@ export async function deleteAccountAction(
 // user is signed out immediately after, so no revalidatePath is needed.
 export async function deleteTenantAccountAction(
   confirmation: string,
+  exit?: ExitReason,
 ): Promise<ActionResult> {
   const { userId, tenantId } = await getSession();
   if (!userId || !tenantId) return noSession();
@@ -183,7 +184,7 @@ export async function deleteTenantAccountAction(
   }
 
   try {
-    await deleteTenantAccount(tenantId, userId);
+    await deleteTenantAccount(tenantId, userId, exit);
     return { ok: true };
   } catch (err: unknown) {
     if (err instanceof PlatformApiError) {

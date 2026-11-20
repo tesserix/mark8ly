@@ -117,3 +117,25 @@ func TestTenantDeletedNoticeHandler_PostsUnderStableIDAndEscapesInput(t *testing
 		t.Fatal("event without tenant_id must be rejected")
 	}
 }
+
+func TestDeleteAccountWithReason_ReasonReachesNotice(t *testing.T) {
+	_, ob, svc := ownerDeleteFixture(t)
+	svc.EnableDeletedNotice(fakeCounter{counts: map[string]int64{}})
+
+	exit := NewExitReason("too_much_setup", "Couldn't find time to add products")
+	if err := svc.DeleteAccountWithReason(context.Background(), "t1", "owner-1", exit); err != nil {
+		t.Fatal(err)
+	}
+	msg := noticeFrom(t, ob).message()
+	for _, want := range []string{"**Reason:** Too much setup", "**They said:** Couldn't find time to add products"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message missing %q:\n%s", want, msg)
+		}
+	}
+}
+
+func TestDeletedNotice_NoReasonSaysSo(t *testing.T) {
+	if msg := (deletedNotice{TenantID: "t1"}).message(); !strings.Contains(msg, "**Reason:** not given") {
+		t.Fatalf("message:\n%s", msg)
+	}
+}

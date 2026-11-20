@@ -14,6 +14,7 @@ import {
 } from "@tesserix/web";
 
 import { savePaymentConfig } from "@/app/(admin)/settings/payments/actions";
+import { trackEvent } from "@/lib/analytics";
 
 interface PaymentConfigFormProps {
   provider: string;
@@ -69,6 +70,7 @@ export function PaymentConfigForm({
         return;
       }
       setSuccess(true);
+      trackEvent("payment_provider_saved", { provider, mode });
       setSecretKey("");
       setWebhookSecret("");
       setWebhookSecretTouched(false);

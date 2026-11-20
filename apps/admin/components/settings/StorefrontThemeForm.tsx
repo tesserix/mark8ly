@@ -37,6 +37,7 @@ import {
   type StorefrontRadius,
   type StorefrontTheme,
 } from "@repo/ui/storefront-theme";
+import { trackEvent } from "@/lib/analytics";
 
 interface StorefrontThemeFormProps {
   store: Store;
@@ -89,6 +90,7 @@ export function StorefrontThemeForm({
         return;
       }
       setSuccess(true);
+      trackEvent("storefront_theme_saved");
       toast.success("Storefront theme saved", "Changes are live on your storefront.");
       setTimeout(() => setSuccess(false), 3000);
     });

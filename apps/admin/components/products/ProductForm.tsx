@@ -59,6 +59,7 @@ import { ShippingSection } from "./form/ShippingSection";
 import { ProductRail } from "./form/ProductRail";
 import { Field } from "./form/Field";
 import { ProductCategoriesPicker } from "./ProductCategoriesPicker";
+import { trackEvent } from "@/lib/analytics";
 
 // RHF-side option shape (matches zod + OptionsEditor).
 interface RhfOptionDraft {
@@ -365,8 +366,12 @@ export function ProductForm({
     setRootError(null);
     startTransition(async () => {
       if (mode === "create") {
+        // The action redirects on success, so the browser never sees it
+        // succeed: created = submitted − failed.
+        trackEvent("product_create_submitted");
         const result = await createProductAction(storeId, currencyCode, values);
         if (!result.ok && result.error) {
+          trackEvent("product_create_failed", { code: result.error.code });
           applyError(result.error);
         } else {
           accumulatedRemovedIdsRef.current = [];

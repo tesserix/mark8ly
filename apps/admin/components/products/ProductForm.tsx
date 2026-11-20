@@ -633,8 +633,6 @@ export function ProductForm({
                   </a>
                 </>
               )}
-              <span aria-hidden="true">·</span>
-              <DuplicateProductButton storeId={storeId} productId={initialProduct.id} />
             </p>
           )}
         </header>
@@ -692,7 +690,10 @@ export function ProductForm({
               Changes apply when you save.
             </span>
           </div>
-          {mode === "edit" && canDelete && initialProduct && (
+          {mode === "edit" && initialProduct && (
+          <div className="flex items-center gap-3">
+            <DuplicateProductButton storeId={storeId} productId={initialProduct.id} />
+          {canDelete && (
             <button
               type="button"
               onClick={handleDelete}
@@ -702,6 +703,8 @@ export function ProductForm({
             >
               <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete
             </button>
+          )}
+          </div>
           )}
         </div>
 

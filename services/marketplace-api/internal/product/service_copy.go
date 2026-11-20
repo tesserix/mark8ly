@@ -188,6 +188,12 @@ func (s *Service) Copy(ctx context.Context, req CopyRequest) (*Aggregate, error)
 	}
 
 	srcProductID := source.Product.ID
+	// created_by is a uuid column but session user ids are Zitadel's
+	// numeric ids; storing one fails the insert, so leave it unset.
+	copiedBy := req.CopiedBy
+	if copiedBy != nil && uuid.Validate(*copiedBy) != nil {
+		copiedBy = nil
+	}
 	newAgg := &Aggregate{
 		Product: Product{
 			ID:                  newProductID,
@@ -203,8 +209,8 @@ func (s *Service) Copy(ctx context.Context, req CopyRequest) (*Aggregate, error)
 			SEODescription:      source.Product.SEODescription,
 			CopySourceProductID: &srcProductID,
 			// PublishedAt left nil: copies start unpublished.
-			CreatedBy: req.CopiedBy,
-			UpdatedBy: req.CopiedBy,
+			CreatedBy: copiedBy,
+			UpdatedBy: copiedBy,
 		},
 		Options:  newOptions,
 		Variants: newVariants,

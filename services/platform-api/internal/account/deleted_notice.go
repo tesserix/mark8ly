@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,7 +53,7 @@ func (n deletedNotice) message() string {
 	b.WriteString("**mark8ly account deleted**\n")
 	days := ""
 	if !n.SignedUpAt.IsZero() {
-		days = fmt.Sprintf("%d", int(n.DeletedAt.Sub(n.SignedUpAt).Hours()/24))
+		days = strconv.Itoa(int(n.DeletedAt.Sub(n.SignedUpAt).Hours() / 24))
 	}
 	for _, f := range [][2]string{
 		{"Business", n.Name}, {"Email", n.OwnerEmail}, {"Store slug", strings.Join(n.StoreSlugs, ", ")},
@@ -78,9 +78,12 @@ func (n deletedNotice) message() string {
 	for _, c := range n.Counts {
 		total += c
 	}
-	fmt.Fprintf(&b, "\n\n**Products:** %d · **Orders:** %d · **Customers:** %d", n.Counts["products"], n.Counts["orders"], n.Counts["customer_profiles"])
-	fmt.Fprintf(&b, "\n**Payments connected:** %s · **Custom domain:** %s · **Branding saved:** %s", yes("payment_gateway_configs"), yes("custom_domains"), yes("store_branding"))
-	fmt.Fprintf(&b, "\n**Total rows:** %d", total)
+	b.WriteString("\n\n**Products:** " + strconv.FormatInt(n.Counts["products"], 10) +
+		" · **Orders:** " + strconv.FormatInt(n.Counts["orders"], 10) +
+		" · **Customers:** " + strconv.FormatInt(n.Counts["customer_profiles"], 10))
+	b.WriteString("\n**Payments connected:** " + yes("payment_gateway_configs") +
+		" · **Custom domain:** " + yes("custom_domains") + " · **Branding saved:** " + yes("store_branding"))
+	b.WriteString("\n**Total rows:** " + strconv.FormatInt(total, 10))
 	return b.String()
 }
 

@@ -14,6 +14,8 @@ import type {
 import type { Warehouse } from "@/lib/api/warehouses-api";
 import { ProviderCard } from "./ProviderCard";
 import { ShippingConfigForm } from "./ShippingConfigForm";
+import type { DeliverySettings } from "@/lib/api/delivery-api";
+import { ModeSwitch, OwnDeliverySettings } from "./OwnDeliverySettings";
 import { readinessFor } from "@/lib/settings/shipping-readiness";
 import { removeShippingConfig } from "@/app/(admin)/settings/shipping/actions";
 
@@ -30,6 +32,8 @@ interface ShippingSettingsClientProps {
    * context is the canonical source.
    */
   storeCountry: string;
+  /** Own-delivery setup; null when it could not be loaded (carrier-only UI). */
+  delivery?: DeliverySettings | null;
 }
 
 export function ShippingSettingsClient({
@@ -38,12 +42,22 @@ export function ShippingSettingsClient({
   warehouses,
   editable,
   storeCountry,
+  delivery = null,
 }: ShippingSettingsClientProps) {
   const router = useRouter();
 
   // Index existing configs by carrier so each supported carrier card can
   // look up its own state in O(1).
   const configByCarrier = new Map(configs.map((c) => [c.provider, c]));
+
+  if (delivery?.mode === "own") {
+    return (
+      <div className="space-y-8">
+        <ModeSwitch mode="own" editable={editable} />
+        <OwnDeliverySettings settings={delivery} editable={editable} />
+      </div>
+    );
+  }
 
   if (supported.shipping_carriers.length === 0) {
     return (
@@ -56,6 +70,11 @@ export function ShippingSettingsClient({
 
   return (
     <div className="space-y-3">
+      {delivery && (
+        <div className="pb-4">
+          <ModeSwitch mode="carrier" editable={editable} />
+        </div>
+      )}
       {supported.shipping_carriers.map((carrier) => {
         const cfg = configByCarrier.get(carrier);
         const configured = Boolean(cfg);

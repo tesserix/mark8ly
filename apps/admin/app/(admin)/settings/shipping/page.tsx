@@ -7,6 +7,7 @@ import {
   getSupportedProviders,
   listShippingConfigs,
 } from "@/lib/api/settings-api";
+import { getDeliverySettings } from "@/lib/api/delivery-api";
 import { listWarehouses } from "@/lib/api/warehouses-api";
 import { ShippingSettingsClient } from "@/components/settings/ShippingSettingsClient";
 import { WarehousesSettingsClient } from "@/components/settings/WarehousesSettingsClient";
@@ -76,10 +77,11 @@ async function ShippingSettingsContent({
   storeCountry: string;
 }) {
   const session = { userId, tenantId };
-  const [supported, configs, warehouses] = await Promise.all([
+  const [supported, configs, warehouses, delivery] = await Promise.all([
     getSupportedProviders(storeId, session),
     listShippingConfigs(storeId, session),
     listWarehouses(storeId, session),
+    getDeliverySettings(storeId, session),
   ]);
 
   if (!supported) {
@@ -122,6 +124,7 @@ async function ShippingSettingsContent({
           warehouses={warehouses}
           editable={editable}
           storeCountry={storeCountry}
+          delivery={delivery}
         />
       </section>
     </div>

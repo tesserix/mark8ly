@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
@@ -122,6 +123,8 @@ type TeardownSnapshot struct {
 	TenantID    string
 	Name        string
 	OwnerUserID string
+	OwnerEmail  string
+	CreatedAt   time.Time
 	Stores      []StoreRef
 }
 
@@ -240,9 +243,11 @@ func (r *gormRepository) SnapshotForTeardown(ctx context.Context, tx *gorm.DB, t
 		ID          string
 		Name        string
 		OwnerUserID string
+		OwnerEmail  string
+		CreatedAt   time.Time
 	}
 	res := db.WithContext(ctx).
-		Raw(`SELECT id, name, owner_user_id FROM tenants WHERE id = ? FOR UPDATE`, tenantID).
+		Raw(`SELECT id, name, owner_user_id, owner_email, created_at FROM tenants WHERE id = ? FOR UPDATE`, tenantID).
 		Scan(&row)
 	if res.Error != nil {
 		return nil, fmt.Errorf("tenant: snapshot for teardown: %w", res.Error)
@@ -263,6 +268,8 @@ func (r *gormRepository) SnapshotForTeardown(ctx context.Context, tx *gorm.DB, t
 		TenantID:    row.ID,
 		Name:        row.Name,
 		OwnerUserID: row.OwnerUserID,
+		OwnerEmail:  row.OwnerEmail,
+		CreatedAt:   row.CreatedAt,
 		Stores:      stores,
 	}, nil
 }

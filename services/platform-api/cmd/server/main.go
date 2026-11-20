@@ -351,6 +351,14 @@ func main() {
 	// that function's doc and newAccountService's doc for the trap this
 	// avoids.
 	accountSvc := newAccountService(conn, tenantRepo, fga, accountDeleter, outbox.EnqueueAfter, log)
+	if cfg.RocketChatEnabled {
+		accountSvc.EnableDeletedNotice(vendorClient)
+	}
+	deletedNotice, err := deletedNoticeHandler(cfg)
+	if err != nil {
+		log.Error("account deleted notice configuration invalid", "err", err)
+		os.Exit(1)
+	}
 	accountHandler := account.NewHandler(accountSvc)
 	merchantAccountRoutes := fga != nil && accountDeleter != nil
 	if !merchantAccountRoutes {
@@ -370,6 +378,7 @@ func main() {
 	// endpoint being off (missing FGA/GIP) doesn't mean no rows will ever
 	// need draining — e.g. rows enqueued before a config change rolls out.
 	drainer.Register(account.TenantDeletedOutboxKind, account.NewTenantDeletedHandler(vendorClient))
+	drainer.Register(account.TenantDeletedNoticeOutboxKind, deletedNotice)
 
 	// ─── HTTP routes ───────────────────────────────────────────────────
 	r := httpserver.New(cfg.Env, log)

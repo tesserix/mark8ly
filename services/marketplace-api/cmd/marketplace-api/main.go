@@ -3012,6 +3012,7 @@ func main() {
 			_, err := tenantpurge.PurgeWithReaper(ctx, conn, tenantID, storeIDs, purgeReaper)
 			return err
 		}).Register(r.Group("/internal"), cfg.InternalAuthSecret)
+		internalsvc.NewTenantCountHandler(tenantCounts(conn)).Register(r.Group("/internal"), cfg.InternalAuthSecret)
 		if stripeBillingWebhookHandler != nil {
 			r.POST("/webhooks/stripe-billing", stripeBillingWebhookHandler)
 		}
@@ -3193,6 +3194,7 @@ func main() {
 				_, err := tenantpurge.PurgeWithReaper(ctx, conn, tenantID, storeIDs, purgeReaper)
 				return err
 			}).Register(engine.Group("/internal"), cfg.InternalAuthSecret)
+			internalsvc.NewTenantCountHandler(tenantCounts(conn)).Register(engine.Group("/internal"), cfg.InternalAuthSecret)
 			// Reverse custom-domain lookup (domain → slug). The admin
 			// middleware uses this to verify a custom-admin host
 			// (admin.<merchant>) before rendering. Originally only the
@@ -3406,4 +3408,20 @@ func breakGlassWindowResetOrNil(w *breakglass.CompositeWindow) platformadmin.Bre
 		return nil
 	}
 	return w
+}
+
+// tenantCounts binds tenantpurge.Count for the internal purge-preview endpoint,
+// flattened to table → rows.
+func tenantCounts(conn *gorm.DB) func(ctx context.Context, tenantID string, storeIDs []string) (map[string]int64, error) {
+	return func(ctx context.Context, tenantID string, storeIDs []string) (map[string]int64, error) {
+		rep, err := tenantpurge.Count(ctx, conn, tenantID, storeIDs)
+		if err != nil {
+			return nil, err
+		}
+		tables := make(map[string]int64, len(rep.Tables))
+		for _, t := range rep.Tables {
+			tables[t.Table] += t.RowsDeleted
+		}
+		return tables, nil
+	}
 }

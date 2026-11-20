@@ -10,6 +10,8 @@ import { headers } from "next/headers";
 
 import {
   createShipment,
+  createManualShipment,
+  updateShipmentTracking,
   updateShipmentStatus,
   getOrderShipment,
   emailShipmentLabel,
@@ -318,4 +320,57 @@ export async function deleteShipmentAction(
   }
   revalidatePath(`/orders/${orderId}`);
   return { ok: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Own-courier shipments
+// ─────────────────────────────────────────────────────────────────────────
+
+export async function markShippedAction(
+  storeId: string,
+  orderId: string,
+  input: { courierId: string; trackingNumber: string },
+): Promise<ShippingActionResult> {
+  const ctx = await readContext(storeId);
+  if (!ctx) return noSession();
+  const result = await createManualShipment(
+    ctx.storeId,
+    orderId,
+    { courier_id: input.courierId, tracking_number: input.trackingNumber.trim() },
+    { userId: ctx.userId, tenantId: ctx.tenantId },
+  );
+  if (!result.ok) {
+    return { ok: false, error: { code: result.error.code, message: result.error.message } };
+  }
+  revalidatePath(`/orders/${orderId}`);
+  return { ok: true, data: result.data };
+}
+
+export async function updateTrackingAction(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  input: { trackingNumber: string; courierId?: string },
+): Promise<ShippingActionResult> {
+  const ctx = await readContext(storeId);
+  if (!ctx) return noSession();
+  const trackingNumber = input.trackingNumber.trim();
+  if (!trackingNumber) {
+    return {
+      ok: false,
+      error: { code: "validation_failed", message: "Tracking number can't be blank.", field: "tracking_number" },
+    };
+  }
+  const result = await updateShipmentTracking(
+    ctx.storeId,
+    orderId,
+    shipmentId,
+    { tracking_number: trackingNumber, courier_id: input.courierId },
+    { userId: ctx.userId, tenantId: ctx.tenantId },
+  );
+  if (!result.ok) {
+    return { ok: false, error: { code: result.error.code, message: result.error.message } };
+  }
+  revalidatePath(`/orders/${orderId}`);
+  return { ok: true, data: result.data };
 }

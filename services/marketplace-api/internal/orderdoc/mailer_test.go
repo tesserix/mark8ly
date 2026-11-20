@@ -254,3 +254,39 @@ func TestRender_InStoreReceipt_OwnTemplateKey(t *testing.T) {
 		t.Error("in-store receipt template not registered, so it would not be seeded")
 	}
 }
+
+func TestRender_ShipmentDispatched_TrackingLink(t *testing.T) {
+	cases := []struct {
+		name, url string
+		want      bool
+	}{
+		{"https link", "https://c.in/t?awb=AB1&x=<y>", true},
+		{"empty", "", false},
+		{"non-https dropped", "javascript:alert(1)", false},
+		{"http dropped", "http://c.in/t", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := sampleInput("M-9")
+			in.Carrier, in.TrackingNumber, in.TrackingURL = "Blue Dart", "AB1", tc.url
+			_, html, text, err := render(context.Background(), nil, KindShipmentDispatched, in, false)
+			if err != nil {
+				t.Fatalf("render: %v", err)
+			}
+			if got := strings.Contains(html, "Track your parcel"); got != tc.want {
+				t.Errorf("html link present=%v want %v", got, tc.want)
+			}
+			if got := strings.Contains(text, "Track your parcel: "); got != tc.want {
+				t.Errorf("text link present=%v want %v", got, tc.want)
+			}
+			if tc.want {
+				if !strings.Contains(html, `href="https://c.in/t?awb=AB1&amp;x=%3cy%3e"`) {
+					t.Errorf("href not escaped as expected: %s", html)
+				}
+				if !strings.Contains(text, "https://c.in/t?awb=AB1&x=<y>") {
+					t.Errorf("text missing url")
+				}
+			}
+		})
+	}
+}

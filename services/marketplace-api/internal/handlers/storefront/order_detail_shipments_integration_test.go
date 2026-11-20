@@ -137,3 +137,31 @@ func TestOrderDetailResponse_EmptyShipmentsMarshalsAsArrayNotNull(t *testing.T) 
 	require.Contains(t, string(body), `"shipments":[]`,
 		"an unshipped order must serialise an empty array, not null")
 }
+
+func TestLoadShipments_OwnCourierExposesNameAndHTTPSLinkOnly(t *testing.T) {
+	db := testdb.NewTx(t)
+	storeID, orderID := seedShipmentsOrder(t, db)
+	base := time.Now().Add(-time.Hour)
+	seedShipment(t, db, storeID, orderID, "own", "AB1", base)
+	// A second own shipment would trip shipments_one_active_own_per_order,
+	// so the http:// case is carried by a carrier-typed row.
+	seedShipment(t, db, storeID, orderID, "delhivery", "AB2", base.Add(time.Minute))
+	seedShipment(t, db, storeID, orderID, "delhivery", "AWB-3", base.Add(2*time.Minute))
+	require.NoError(t, db.Exec(`UPDATE shipments SET courier_name = 'Local Rider', tracking_url = 'https://c.in/t?awb=AB1' WHERE tracking_number = 'AB1'`).Error)
+	require.NoError(t, db.Exec(`UPDATE shipments SET courier_name = 'Local Rider', tracking_url = 'http://c.in/t' WHERE tracking_number = 'AB2'`).Error)
+
+	h := &OrderDetailHandler{db: db}
+	got := h.loadShipments(context.Background(), uuid.MustParse(orderID))
+
+	require.Len(t, got, 3)
+	require.Equal(t, "Local Rider", got[0].Carrier)
+	require.Equal(t, "https://c.in/t?awb=AB1", got[0].TrackingURL)
+	require.Equal(t, "Local Rider", got[1].Carrier)
+	require.Empty(t, got[1].TrackingURL, "non-https link must not reach the buyer")
+	require.Equal(t, "delhivery", got[2].Carrier)
+	require.Empty(t, got[2].TrackingURL)
+
+	b, err := json.Marshal(got[2])
+	require.NoError(t, err)
+	require.NotContains(t, string(b), "tracking_url")
+}

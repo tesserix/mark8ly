@@ -196,6 +196,7 @@ type storefrontShipmentResponse struct {
 	Carrier           string `json:"carrier"`
 	Service           string `json:"service,omitempty"`
 	TrackingNumber    string `json:"tracking_number,omitempty"`
+	TrackingURL       string `json:"tracking_url,omitempty"`
 	Status            string `json:"status"`
 	EstimatedDelivery string `json:"estimated_delivery,omitempty"`
 	DeliveredAt       string `json:"delivered_at,omitempty"`
@@ -419,6 +420,8 @@ type shipmentRow struct {
 	// than falling back to order.updated_at as a proxy.
 	Carrier           string  `gorm:"column:carrier"`
 	TrackingNumber    string  `gorm:"column:tracking_number"`
+	CourierName       *string `gorm:"column:courier_name"`
+	TrackingURL       *string `gorm:"column:tracking_url"`
 	Status            string  `gorm:"column:status"`
 	EstimatedDelivery *string `gorm:"column:estimated_delivery"`
 	ShippedAt         *string `gorm:"column:shipped_at"`
@@ -431,7 +434,7 @@ func (h *OrderDetailHandler) loadShipment(ctx context.Context, orderID uuid.UUID
 	var row shipmentRow
 	err := h.db.WithContext(ctx).
 		Table("shipments").
-		Select("carrier", "tracking_number", "status", "estimated_delivery", "shipped_at", "delivered_at").
+		Select("carrier", "courier_name", "tracking_url", "tracking_number", "status", "estimated_delivery", "shipped_at", "delivered_at").
 		Where("order_id = ?", orderID).
 		Order("created_at DESC").
 		Limit(1).
@@ -454,6 +457,12 @@ func shipmentResponseFrom(row shipmentRow) storefrontShipmentResponse {
 		// from the order's chosen shipping_service.
 		TrackingNumber: row.TrackingNumber,
 		Status:         row.Status,
+	}
+	if row.CourierName != nil && *row.CourierName != "" {
+		resp.Carrier = *row.CourierName // own courier: show its name, not "own"
+	}
+	if row.TrackingURL != nil && strings.HasPrefix(*row.TrackingURL, "https://") {
+		resp.TrackingURL = *row.TrackingURL
 	}
 	if row.EstimatedDelivery != nil {
 		resp.EstimatedDelivery = *row.EstimatedDelivery
@@ -482,7 +491,7 @@ func (h *OrderDetailHandler) loadShipments(ctx context.Context, orderID uuid.UUI
 	var rows []shipmentRow
 	err := h.db.WithContext(ctx).
 		Table("shipments").
-		Select("carrier", "tracking_number", "status", "estimated_delivery", "shipped_at", "delivered_at").
+		Select("carrier", "courier_name", "tracking_url", "tracking_number", "status", "estimated_delivery", "shipped_at", "delivered_at").
 		Where("order_id = ?", orderID).
 		Order("created_at ASC, id ASC").
 		Scan(&rows).Error

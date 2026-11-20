@@ -61,6 +61,9 @@
                     {{if .Carrier}}
                     <p style="margin:6px 0 0 0;font-size:13px;color:{{.MutedCopy}};">via {{.Carrier}}</p>
                     {{end}}
+                    {{if .TrackingURL}}
+                    <p style="margin:10px 0 0 0;font-size:14px;"><a href="{{.TrackingURL}}" style="color:{{.Theme.ColorAccent}};font-weight:600;">Track your parcel</a></p>
+                    {{end}}
                   </td>
                 </tr>
                 {{if .EstimatedDelivery}}

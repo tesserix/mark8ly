@@ -429,6 +429,12 @@ func (h *ShipmentsHandler) dispatchShipmentDispatchedEmail(orderID uuid.UUID, re
 		Carrier:        rec.Carrier,
 		TrackingNumber: rec.TrackingNumber,
 	}
+	if rec.CourierName != nil && *rec.CourierName != "" {
+		info.Carrier = *rec.CourierName // own courier: show its name, not "own"
+	}
+	if rec.TrackingURL != nil {
+		info.TrackingURL = *rec.TrackingURL
+	}
 	if rec.EstimatedDelivery != nil {
 		info.EstimatedDelivery = rec.EstimatedDelivery.Format("January 2, 2006")
 	}

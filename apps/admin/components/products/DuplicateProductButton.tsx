@@ -6,6 +6,7 @@
 
 import * as React from "react";
 import { useTransition } from "react";
+import { Copy } from "lucide-react";
 
 import { duplicateProductAction } from "@/app/(admin)/products/actions";
 import { useToast } from "@/components/feedback/Toaster";
@@ -33,8 +34,11 @@ export function DuplicateProductButton({
           }
         })
       }
-      className="text-[color:var(--moss-700)] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-wait disabled:opacity-50"
+      // The copy is made from the saved product, not unsaved edits on screen.
+      title="Make a draft copy of the saved product"
+      className="inline-flex items-center gap-1.5 rounded-md border border-[color:var(--ink-200)] px-4 py-2 text-sm font-medium text-[color:var(--ink-900)] transition-colors hover:border-[color:var(--moss-700)] hover:text-[color:var(--moss-700)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--moss-700)] disabled:cursor-wait disabled:opacity-50"
     >
+      <Copy className="h-4 w-4" aria-hidden="true" />
       {pending ? "Duplicating…" : "Duplicate"}
     </button>
   );

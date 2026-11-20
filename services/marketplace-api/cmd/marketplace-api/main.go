@@ -1942,12 +1942,14 @@ func main() {
 			WithStockHolds(stockhold.NewRepository()).
 			WithAudit(auditEmitter).
 			WithSecretStore(carrierSecretStore).
-			WithNotifier(notificationSvc)
+			WithNotifier(notificationSvc).
+			WithDelivery(delivery.NewService(conn))
 		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
 		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, apiKeyEncryptor, log).
 			WithSecretStore(carrierSecretStore)
 		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, apiKeyEncryptor, log).
-			WithSecretStore(carrierSecretStore)
+			WithSecretStore(carrierSecretStore).
+			WithDelivery(delivery.NewService(conn))
 		shippingOptionsHandler := storefront.NewShippingOptionsHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log).
 			WithEncryptor(apiKeyEncryptor).

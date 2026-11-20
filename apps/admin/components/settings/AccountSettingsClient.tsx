@@ -639,15 +639,30 @@ function DangerZone({ editable }: { editable: boolean }) {
 
 // ─── Delete Account (tenant-account deletion) ────────────────────────
 
+// Optional exit answers. The codes are platform-api's contract
+// (internal/account exitReasonLabels); an unknown one is dropped there.
+const EXIT_REASONS = [
+  { code: "no_orders", label: "Not getting orders" },
+  { code: "too_much_setup", label: "Too much setup" },
+  { code: "price", label: "Price" },
+  { code: "other_platform", label: "Using another platform" },
+  { code: "just_testing", label: "Just testing" },
+  { code: "other", label: "Other" },
+] as const;
+
 export function DeleteAccountSection({ isOwner }: { isOwner: boolean }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmation, setConfirmation] = useState("");
+  const [reason, setReason] = useState("");
+  const [detail, setDetail] = useState("");
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
   function handleDelete() {
+    const exit =
+      reason || detail.trim() ? { reason: reason || undefined, detail: detail.trim() || undefined } : undefined;
     startTransition(async () => {
-      const result = await deleteTenantAccountAction(confirmation);
+      const result = await deleteTenantAccountAction(confirmation, exit);
       if (!result.ok) {
         toast.error("Couldn't delete account", result.message);
       } else {
@@ -687,6 +702,40 @@ export function DeleteAccountSection({ isOwner }: { isOwner: boolean }) {
           </button>
         ) : (
           <div className="space-y-3">
+            {isOwner && (
+              <fieldset className="space-y-2" disabled={isPending}>
+                <legend className="text-sm text-foreground">
+                  Why are you leaving? <span className="text-foreground-tertiary">(optional)</span>
+                </legend>
+                <div className="flex flex-wrap gap-2">
+                  {EXIT_REASONS.map((r) => (
+                    <label
+                      key={r.code}
+                      className="flex h-9 cursor-pointer items-center gap-2 rounded-md border border-border px-3 text-sm text-foreground has-[:checked]:border-[color:var(--ink-900)] has-[:checked]:bg-[color:var(--paper-200)]"
+                    >
+                      <input
+                        type="radio"
+                        name="exit-reason"
+                        value={r.code}
+                        checked={reason === r.code}
+                        onChange={() => setReason(r.code)}
+                        className="accent-[color:var(--ink-900)]"
+                      />
+                      {r.label}
+                    </label>
+                  ))}
+                </div>
+                <textarea
+                  value={detail}
+                  onChange={(e) => setDetail(e.target.value)}
+                  maxLength={500}
+                  rows={2}
+                  aria-label="Anything else you'd like to tell us? (optional)"
+                  placeholder="Anything else you'd like to tell us? (optional)"
+                  className="w-full max-w-md rounded-md border border-border bg-[color:var(--background-elevated)] px-3 py-2 text-sm text-foreground placeholder:text-foreground-tertiary focus:outline-none focus:ring-1 focus:ring-[color:var(--ink-900)] disabled:opacity-50"
+                />
+              </fieldset>
+            )}
             <p id="delete-account-confirm-label" className="text-sm text-foreground">
               Type <strong>DELETE</strong> to confirm:
             </p>
@@ -714,6 +763,8 @@ export function DeleteAccountSection({ isOwner }: { isOwner: boolean }) {
                 onClick={() => {
                   setShowConfirm(false);
                   setConfirmation("");
+                  setReason("");
+                  setDetail("");
                 }}
                 disabled={isPending}
                 className="h-10 rounded-md border border-border bg-[color:var(--background-elevated)] px-5 text-sm font-medium text-foreground transition-colors hover:bg-[color:var(--paper-200)] disabled:opacity-50"

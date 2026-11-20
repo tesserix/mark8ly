@@ -456,16 +456,24 @@ export async function revokeInvitation(
  * flow. Requires the requesting user's uid for the server-side authz
  * guard (owner only).
  */
+/** The merchant's optional answer to "why are you leaving?" on the delete step.
+ *  `reason` is one of platform-api's exit codes; unknown codes are dropped there. */
+export interface ExitReason {
+  reason?: string;
+  detail?: string;
+}
+
 export async function deleteTenantAccount(
   tenantId: string,
   uid: string,
+  exit?: ExitReason,
 ): Promise<void> {
   const res = await fetch(
     `${PLATFORM_API_URL}/internal/tenants/${tenantId}/account`,
     internalInit({
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uid }),
+      body: JSON.stringify({ uid, reason: exit?.reason, reason_detail: exit?.detail }),
     }),
   );
   if (!res.ok) {

@@ -50,7 +50,15 @@ describe("deleteTenantAccountAction", () => {
 
     expect(result).toEqual({ ok: true });
     expect(mockedDelete).toHaveBeenCalledTimes(1);
-    expect(mockedDelete).toHaveBeenCalledWith("t1", "u1");
+    expect(mockedDelete).toHaveBeenCalledWith("t1", "u1", undefined);
+  });
+
+  it("passes the optional exit reason through to platform-api", async () => {
+    mockedDelete.mockResolvedValue(undefined);
+
+    await deleteTenantAccountAction("DELETE", { reason: "price", detail: "Too dear for now" });
+
+    expect(mockedDelete).toHaveBeenCalledWith("t1", "u1", { reason: "price", detail: "Too dear for now" });
   });
 
   it("returns validation error and does not call the client on wrong confirmation", async () => {

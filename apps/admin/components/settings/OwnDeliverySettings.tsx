@@ -394,7 +394,12 @@ export function OwnDeliverySettings({
           Buyers can&apos;t check out until at least one option is on.
         </div>
       )}
-      <OptionsEditor settings={settings} editable={editable} />
+      {/* key remounts after router.refresh() so rows pick up server-assigned ids */}
+      <OptionsEditor
+        key={JSON.stringify([settings.options, settings.free_shipping_min])}
+        settings={settings}
+        editable={editable}
+      />
       <CouriersEditor couriers={settings.couriers} editable={editable} />
     </div>
   );

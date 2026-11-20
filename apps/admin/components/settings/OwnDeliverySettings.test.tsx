@@ -74,6 +74,24 @@ describe("OwnDeliverySettings", () => {
     expect(saveDeliveryOptions.mock.calls[0][1]).toBeNull();
   });
 
+  it("second save sends the ids the server assigned after the first", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<OwnDeliverySettings settings={settings()} editable />);
+    await user.type(screen.getByLabelText("Option 1 price"), "4");
+    await user.click(screen.getByRole("button", { name: "Save options" }));
+    await waitFor(() => expect(saveDeliveryOptions).toHaveBeenCalledTimes(1));
+    expect(saveDeliveryOptions.mock.calls[0][0][0].id).toBeUndefined();
+    rerender(
+      <OwnDeliverySettings
+        settings={settings({ options: [{ ...opt(1), name: "Standard", price: "4.00" }] })}
+        editable
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Save options" }));
+    await waitFor(() => expect(saveDeliveryOptions).toHaveBeenCalledTimes(2));
+    expect(saveDeliveryOptions.mock.calls[1][0][0].id).toBe("o1");
+  });
+
   it("rejects a courier template without {number} and does not save", async () => {
     const user = userEvent.setup();
     render(<OwnDeliverySettings settings={settings({ options: [opt(1)] })} editable />);

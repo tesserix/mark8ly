@@ -103,13 +103,17 @@ export async function getDeliverySettings(
   storeId: string,
   session: SessionHeaders,
 ): Promise<DeliverySettings | null> {
-  const res = await fetch(url(storeId), {
-    cache: "no-store",
-    headers: headers(session),
-  });
-  if (!res.ok) return null;
-  const s = (await res.json()) as DeliverySettings;
-  return { ...s, options: s.options ?? [], couriers: s.couriers ?? [] };
+  try {
+    const res = await fetch(url(storeId), {
+      cache: "no-store",
+      headers: headers(session),
+    });
+    if (!res.ok) return null;
+    const s = (await res.json()) as DeliverySettings;
+    return { ...s, options: s.options ?? [], couriers: s.couriers ?? [] };
+  } catch {
+    return null; // never take down the shipping page over the optional own-delivery load
+  }
 }
 
 export const setShippingMode = (

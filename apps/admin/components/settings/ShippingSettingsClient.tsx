@@ -59,22 +59,27 @@ export function ShippingSettingsClient({
     );
   }
 
+  const modeSwitch = delivery && (
+    <div className="pb-4">
+      <ModeSwitch mode="carrier" editable={editable} />
+    </div>
+  );
+
   if (supported.shipping_carriers.length === 0) {
     return (
-      <p className="border-t border-border-subtle py-10 text-sm text-foreground-tertiary">
-        No shipping carriers are currently available for{" "}
-        {supported.country_name} ({supported.country_code}).
-      </p>
+      <div>
+        {modeSwitch}
+        <p className="border-t border-border-subtle py-10 text-sm text-foreground-tertiary">
+          No shipping carriers are currently available for{" "}
+          {supported.country_name} ({supported.country_code}).
+        </p>
+      </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      {delivery && (
-        <div className="pb-4">
-          <ModeSwitch mode="carrier" editable={editable} />
-        </div>
-      )}
+      {modeSwitch}
       {supported.shipping_carriers.map((carrier) => {
         const cfg = configByCarrier.get(carrier);
         const configured = Boolean(cfg);

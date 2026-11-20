@@ -15,29 +15,31 @@ import (
 //   - RefundedAmount is written atomically via UPDATE ... WHERE in M2.
 //   - IdempotencyKey is required on every row and UNIQUE per (store_id, key).
 type Order struct {
-	ID                uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
-	TenantID          uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null"`
-	StoreID           uuid.UUID       `gorm:"column:store_id;type:uuid;not null"`
-	OrderNumber       string          `gorm:"column:order_number;type:varchar(40);not null"`
-	IdempotencyKey    string          `gorm:"column:idempotency_key;type:varchar(100);not null"`
-	CustomerID        *uuid.UUID      `gorm:"column:customer_id;type:uuid"`
-	CustomerEmail     string          `gorm:"column:customer_email;type:varchar(320);not null"`
-	CustomerName      *string         `gorm:"column:customer_name;type:varchar(200)"`
-	Status            string          `gorm:"column:status;type:varchar(20);not null;default:pending"`
-	PaymentStatus     string          `gorm:"column:payment_status;type:varchar(20);not null;default:pending"`
-	FulfillmentStatus string          `gorm:"column:fulfillment_status;type:varchar(20);not null;default:unfulfilled"`
-	Subtotal          decimal.Decimal `gorm:"column:subtotal;type:numeric(12,2);not null"`
-	ShippingTotal     decimal.Decimal `gorm:"column:shipping_total;type:numeric(12,2);not null;default:0"`
-	TaxTotal          decimal.Decimal `gorm:"column:tax_total;type:numeric(12,2);not null;default:0"`
-	DiscountTotal     decimal.Decimal `gorm:"column:discount_total;type:numeric(12,2);not null;default:0"`
-	GrandTotal        decimal.Decimal `gorm:"column:grand_total;type:numeric(12,2);not null"`
-	RefundedAmount    decimal.Decimal `gorm:"column:refunded_amount;type:numeric(12,2);not null;default:0"`
-	CurrencyCode      string          `gorm:"column:currency_code;type:char(3);not null"`
-	PaymentProvider   *string         `gorm:"column:payment_provider;type:varchar(40)"`
-	PaymentIntentID   *string         `gorm:"column:payment_intent_id;type:varchar(200)"`
-	ShippingService   *string         `gorm:"column:shipping_service;type:varchar(40)"`
-	ShippingCarrier   *string         `gorm:"column:shipping_carrier;type:varchar(40)"`
-	Notes             *string         `gorm:"column:notes;type:text"`
+	ID                     uuid.UUID       `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()"`
+	TenantID               uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null"`
+	StoreID                uuid.UUID       `gorm:"column:store_id;type:uuid;not null"`
+	OrderNumber            string          `gorm:"column:order_number;type:varchar(40);not null"`
+	IdempotencyKey         string          `gorm:"column:idempotency_key;type:varchar(100);not null"`
+	CustomerID             *uuid.UUID      `gorm:"column:customer_id;type:uuid"`
+	CustomerEmail          string          `gorm:"column:customer_email;type:varchar(320);not null"`
+	CustomerName           *string         `gorm:"column:customer_name;type:varchar(200)"`
+	Status                 string          `gorm:"column:status;type:varchar(20);not null;default:pending"`
+	PaymentStatus          string          `gorm:"column:payment_status;type:varchar(20);not null;default:pending"`
+	FulfillmentStatus      string          `gorm:"column:fulfillment_status;type:varchar(20);not null;default:unfulfilled"`
+	Subtotal               decimal.Decimal `gorm:"column:subtotal;type:numeric(12,2);not null"`
+	ShippingTotal          decimal.Decimal `gorm:"column:shipping_total;type:numeric(12,2);not null;default:0"`
+	TaxTotal               decimal.Decimal `gorm:"column:tax_total;type:numeric(12,2);not null;default:0"`
+	DiscountTotal          decimal.Decimal `gorm:"column:discount_total;type:numeric(12,2);not null;default:0"`
+	GrandTotal             decimal.Decimal `gorm:"column:grand_total;type:numeric(12,2);not null"`
+	RefundedAmount         decimal.Decimal `gorm:"column:refunded_amount;type:numeric(12,2);not null;default:0"`
+	CurrencyCode           string          `gorm:"column:currency_code;type:char(3);not null"`
+	PaymentProvider        *string         `gorm:"column:payment_provider;type:varchar(40)"`
+	PaymentIntentID        *string         `gorm:"column:payment_intent_id;type:varchar(200)"`
+	ShippingService        *string         `gorm:"column:shipping_service;type:varchar(40)"`
+	ShippingCarrier        *string         `gorm:"column:shipping_carrier;type:varchar(40)"`
+	ShippingOptionName     *string         `gorm:"column:shipping_option_name;type:varchar(40)"`
+	ShippingOptionEstimate *string         `gorm:"column:shipping_option_estimate;type:varchar(40)"`
+	Notes                  *string         `gorm:"column:notes;type:text"`
 	// In-store sales (#1102). Channel is "online" for every checkout order;
 	// the rest are set only for in-store sales, paid outside mark8ly.
 	Channel            string           `gorm:"column:channel;type:varchar(20);not null;default:online"`

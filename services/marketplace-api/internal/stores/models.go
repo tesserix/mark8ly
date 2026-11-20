@@ -3,7 +3,11 @@
 // StoreMiddleware (see spec §14.7). Never written outside of middleware.
 package stores
 
-import "time"
+import (
+	"time"
+
+	"github.com/shopspring/decimal"
+)
 
 // Store is the marketplace-api view of a tenant's storefront.
 // The canonical source is platform-api's stores table. This projection
@@ -56,6 +60,11 @@ type Store struct {
 	// ABN is the store's Australian Business Number, 11 digits or empty,
 	// printed on receipts (#1108). Owned here like the flags above.
 	ABN string `gorm:"column:abn;type:varchar(11);not null;default:''" json:"abn"`
+	// ShippingMode is "carrier" (live rates) or "own" (flat-rate options and
+	// own couriers). Owned here like the flags above.
+	ShippingMode string `gorm:"column:shipping_mode;type:varchar(10);not null;default:carrier" json:"shipping_mode"`
+	// OwnFreeShippingMin is the subtotal above which own delivery is free; nil = never.
+	OwnFreeShippingMin *decimal.Decimal `gorm:"column:own_free_shipping_min;type:numeric(12,2)" json:"own_free_shipping_min"`
 }
 
 func (Store) TableName() string { return "stores" }

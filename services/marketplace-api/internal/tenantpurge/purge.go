@@ -481,6 +481,8 @@ func purgePlan(tenantID string, storeIDs []string) []deleteStep {
 		tenantScoped("email_sends", tenantID),                 // 000108: tenant_id (nullable), store_id — holds the customer's address in `recipient`
 		storeScoped("promo_redemptions", storeIDs),            // 000061: store_id only, no tenant_id
 		storeScoped("campaign_email_budget", storeIDs),        // 000047ish: store_id only, no tenant_id
+		storeScoped("store_delivery_options", storeIDs),       // 000150: tenant_id + store_id
+		storeScoped("store_couriers", storeIDs),               // 000150: tenant_id + store_id
 		storeScoped("store_transactional_counter", storeIDs),  // 000064: store_id only, no tenant_id
 		tenantScoped("notifications", tenantID),               // 000016: tenant_id, store_id — NOT cascade-linked to stores
 		tenantScoped("pages", tenantID),                       // 000028ish: tenant_id, store_id — NOT cascade-linked to stores

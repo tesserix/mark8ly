@@ -36,6 +36,7 @@ type Deps struct {
 	CSVImportsHandler       *CSVImportsHandler
 	PaymentSettingsHandler  *PaymentSettingsHandler
 	ShippingSettingsHandler *ShippingSettingsHandler
+	DeliverySettingsHandler *DeliverySettingsHandler
 	WarehousesHandler       *WarehousesHandler
 	TaxSettingsHandler      *TaxSettingsHandler
 	SettingsMetaHandler     *SettingsMetaHandler
@@ -532,6 +533,17 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				ss.DELETE("/:provider",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
 					deps.ShippingSettingsHandler.Delete)
+			}
+		}
+		if deps.DeliverySettingsHandler != nil {
+			ds := storeRoute.Group("/settings/delivery", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin))
+			{
+				ds.GET("", deps.DeliverySettingsHandler.Get)
+				ds.PUT("/mode", deps.DeliverySettingsHandler.SetMode)
+				ds.PUT("/options", deps.DeliverySettingsHandler.PutOptions)
+				ds.POST("/couriers", deps.DeliverySettingsHandler.CreateCourier)
+				ds.PATCH("/couriers/:courierId", deps.DeliverySettingsHandler.UpdateCourier)
+				ds.DELETE("/couriers/:courierId", deps.DeliverySettingsHandler.DeleteCourier)
 			}
 		}
 		// Warehouses — #177 PR 5b. Mounted OUTSIDE /settings/shipping on

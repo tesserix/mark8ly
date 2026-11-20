@@ -145,6 +145,7 @@ test-int: ## Run integration tests against the running `make dev` stack
 	    ./internal/emailtemplates/... \
 	    ./internal/emaillog/... \
 	    ./internal/giftcard/... \
+	    ./internal/delivery/... \
 	    ./internal/handlers/admin/... \
 	    ./internal/handlers/internalsvc/... \
 	    ./internal/handlers/platformadmin/... \

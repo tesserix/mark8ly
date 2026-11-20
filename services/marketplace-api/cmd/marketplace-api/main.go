@@ -66,6 +66,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/customerportal"
+	"github.com/mark8ly/marketplace-api/internal/delivery"
 	"github.com/mark8ly/marketplace-api/internal/displayname"
 	"github.com/mark8ly/marketplace-api/internal/domain"
 	"github.com/mark8ly/marketplace-api/internal/email"
@@ -1682,6 +1683,7 @@ func main() {
 			CSVImportsHandler:           csvImportsHandler,
 			PaymentSettingsHandler:      paymentSettingsHandler,
 			ShippingSettingsHandler:     shippingSettingsHandler,
+			DeliverySettingsHandler:     admin.NewDeliverySettingsHandler(delivery.NewService(conn), log),
 			WarehousesHandler:           admin.NewWarehousesHandler(conn, log),
 			ShipmentsHandler:            shipmentsHandler,
 			OrderPersonalisationHandler: orderPersonalisationHandler,

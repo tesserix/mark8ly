@@ -25,6 +25,7 @@ import {
   validateDomainAction,
 } from "@/app/(admin)/settings/actions";
 import { useToast } from "@/components/feedback/Toaster";
+import { trackEvent } from "@/lib/analytics";
 
 interface DomainsSettingsClientProps {
   domains: CustomDomain[];
@@ -119,6 +120,7 @@ function AddDomainForm() {
         setError(result.message);
         toast.error("Couldn't add domain", result.message);
       } else {
+        trackEvent("domain_added", { dns_method: method });
         toast.success(
           "Domain added",
           method === "manual"

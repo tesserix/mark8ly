@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { UnsavedChangesProvider } from "./UnsavedChangesGuard";
+import { useAnalyticsTenant } from "@/lib/analytics";
 import {
   Sidebar,
   SidebarContent,
@@ -228,6 +229,7 @@ function AdminShellFrame({
     activeSectionKey,
   );
   const isCollapsed = state === "collapsed";
+  useAnalyticsTenant(tenantId, currentStoreId);
 
   useEffect(() => {
     if (activeSectionKey) {

@@ -41,19 +41,25 @@ async function run(
   return { ok: true };
 }
 
-export const setShippingMode = (mode: ShippingMode) =>
-  run((s, session) => api.setShippingMode(s, mode, session));
+export async function setShippingMode(mode: ShippingMode): Promise<ActionResult> {
+  return run((s, session) => api.setShippingMode(s, mode, session));
+}
 
-export const saveDeliveryOptions = (
+export async function saveDeliveryOptions(
   options: DeliveryOptionInput[],
   freeShippingMin: string | null,
-) => run((s, session) => api.saveDeliveryOptions(s, options, freeShippingMin, session));
+): Promise<ActionResult> {
+  return run((s, session) => api.saveDeliveryOptions(s, options, freeShippingMin, session));
+}
 
-export const createCourier = (input: CourierInput) =>
-  run((s, session) => api.createCourier(s, input, session));
+export async function createCourier(input: CourierInput): Promise<ActionResult> {
+  return run((s, session) => api.createCourier(s, input, session));
+}
 
-export const updateCourier = (courierId: string, input: CourierInput) =>
-  run((s, session) => api.updateCourier(s, courierId, input, session));
+export async function updateCourier(courierId: string, input: CourierInput): Promise<ActionResult> {
+  return run((s, session) => api.updateCourier(s, courierId, input, session));
+}
 
-export const deleteCourier = (courierId: string) =>
-  run((s, session) => api.deleteCourier(s, courierId, session));
+export async function deleteCourier(courierId: string): Promise<ActionResult> {
+  return run((s, session) => api.deleteCourier(s, courierId, session));
+}

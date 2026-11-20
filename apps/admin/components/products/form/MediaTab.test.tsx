@@ -255,6 +255,40 @@ describe("MediaTab", () => {
     );
   });
 
+  it("re-cropping a PNG keeps it a PNG even though the current file is recrop.jpg", async () => {
+    // A first crop names the new file recrop.jpg; the original is still a
+    // transparent PNG, and re-encoding it as JPEG paints the background black.
+    const initial = [makeMedia("a", 0)]; // url ends in .jpg
+    const recropMedia = vi.fn(async () => ({
+      ok: true as const,
+      data: {
+        source_original_url: "https://storage.test/tenants/t/products/media/h/skin.png?X-Goog-Signature=abc",
+        upload_url: "https://upload.test/put",
+        new_storage_key: "products/new_key",
+        expires_at: "2099-01-01T00:00:00Z",
+      },
+    }));
+
+    render(
+      <Harness
+        initialMedia={initial}
+        uploadMediaFile={vi.fn()}
+        recropMedia={recropMedia}
+        updateMedia={vi.fn(async () => ({ ok: true as const, data: true as const }))}
+        deleteMedia={vi.fn()}
+        putBlob={vi.fn(async () => ({ ok: true, status: 200 }))}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /image actions/i })[0]!);
+    fireEvent.click(screen.getByRole("menuitem", { name: /^crop$/i }));
+
+    await waitFor(() => expect(recropMedia).toHaveBeenCalledTimes(2));
+    const retry = recropMedia.mock.calls[1]?.[3] as { content_type?: string; filename?: string };
+    expect(retry.content_type).toBe("image/png");
+    expect(retry.filename).toBe("recrop.png");
+  });
+
   it("shows the cropped image once the crop is saved", async () => {
     const createObjectURL = vi.fn(() => "blob:cropped");
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() }));

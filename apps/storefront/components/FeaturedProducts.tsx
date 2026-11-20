@@ -74,7 +74,7 @@ function ProductCard({ product, priority }: { product: StorefrontProduct; priori
               fill
               sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
               priority={priority}
-              className="object-cover transition-opacity duration-300 group-hover:opacity-90"
+              className="object-contain transition-opacity duration-300 group-hover:opacity-90"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-[10px] uppercase tracking-widest text-[color:var(--storefront-text,var(--ink-900))] opacity-30">

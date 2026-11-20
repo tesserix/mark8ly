@@ -134,7 +134,7 @@ function ProductCard({ product }: { product: StorefrontProduct }) {
               alt={cover.alt ?? product.title}
               fill
               sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-              className="object-cover transition-opacity duration-300 group-hover:opacity-90"
+              className="object-contain transition-opacity duration-300 group-hover:opacity-90"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs uppercase tracking-widest text-[color:var(--storefront-text,var(--ink-900))] opacity-30">

@@ -256,14 +256,31 @@ export function MediaTab({
       }
       if (action === "crop") {
         void (async () => {
-          const sourceMimeType = inferMimeFromUrl(media.url);
-          const res = await recropMedia(
-            storeId,
-            productId,
-            media.id,
-            { crop_box: { x: 0, y: 0, width: 0, height: 0 }, content_type: sourceMimeType },
-            session,
-          );
+          const start = (contentType: "image/png" | "image/jpeg" | "image/webp") =>
+            recropMedia(
+              storeId,
+              productId,
+              media.id,
+              {
+                crop_box: { x: 0, y: 0, width: 0, height: 0 },
+                content_type: contentType,
+                filename: `recrop.${contentType.split("/")[1]}`,
+              },
+              session,
+            );
+          // The crop is cut from the pristine original, so its type decides
+          // the output — not media.url, which after any earlier crop is
+          // "recrop.jpg" even for a PNG. Re-encoding a transparent PNG as
+          // JPEG turned its background black.
+          let sourceMimeType = inferMimeFromUrl(media.url);
+          let res = await start(sourceMimeType);
+          if (res.ok) {
+            const originalMime = inferMimeFromUrl(res.data.source_original_url);
+            if (originalMime !== sourceMimeType) {
+              sourceMimeType = originalMime;
+              res = await start(sourceMimeType);
+            }
+          }
           if (!res.ok) {
             toast.error(res.error.message || "Couldn't start cropping this image.");
             return;

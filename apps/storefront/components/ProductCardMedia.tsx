@@ -57,7 +57,7 @@ function ProductCardMediaImpl({ media, alt }: Props) {
           sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
           priority={i === 0}
           className={[
-            "object-cover transition-opacity duration-700 ease-in-out",
+            "object-contain transition-opacity duration-700 ease-in-out",
             i === index ? "opacity-100" : "opacity-0",
           ].join(" ")}
         />

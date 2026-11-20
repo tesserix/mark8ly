@@ -26,6 +26,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/coupon"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
 	"github.com/mark8ly/marketplace-api/internal/customer"
+	"github.com/mark8ly/marketplace-api/internal/delivery"
 	"github.com/mark8ly/marketplace-api/internal/discount"
 	"github.com/mark8ly/marketplace-api/internal/giftcard"
 	"github.com/mark8ly/marketplace-api/internal/loyalty"
@@ -71,6 +72,9 @@ type CheckoutExtHandler struct {
 	// (*ShipmentsHandler).WithCarrierFactory in internal/handlers/admin.
 	// Production code never sets this.
 	carrierFactory func(provider string) (shipping.Carrier, bool)
+	// delivery prices own delivery options; nil means a store in own mode
+	// has no options to offer.
+	delivery *delivery.Service
 }
 
 // NewCheckoutExtHandler constructs a CheckoutExtHandler.
@@ -105,6 +109,12 @@ func (h *CheckoutExtHandler) WithSecretStore(s carriersecrets.Store) *CheckoutEx
 // checkouts fire in-app notifications to the merchant. Nil-safe.
 func (h *CheckoutExtHandler) WithNotifier(n *notification.Service) *CheckoutExtHandler {
 	h.notify = n
+	return h
+}
+
+// WithDelivery wires the own-delivery options service. Chainable.
+func (h *CheckoutExtHandler) WithDelivery(svc *delivery.Service) *CheckoutExtHandler {
+	h.delivery = svc
 	return h
 }
 
@@ -581,7 +591,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	}
 
 	// ── Step 2: Calculate shipping ──────────────────────────────────────
-	shippingTotal, shippingCarrier, err := h.calculateShipping(ctx, store, &sc, req)
+	shippingTotal, shippingPick, err := h.calculateShipping(ctx, store, &sc, req)
 	if err != nil {
 		// M8 fix: return error instead of silently falling back to zero.
 		h.respondErr(c, fmt.Errorf("shipping calculation failed: %w", err))
@@ -671,7 +681,7 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	if s := strings.TrimSpace(req.ShippingService); s != "" {
 		shippingServicePtr = &s
 	}
-	if s := strings.TrimSpace(shippingCarrier); s != "" {
+	if s := strings.TrimSpace(shippingPick.Carrier); s != "" {
 		shippingCarrierPtr = &s
 	}
 
@@ -758,26 +768,28 @@ func (h *CheckoutExtHandler) Checkout(c *gin.Context) {
 	// Sequence allocation happens inside Service.Create's transaction
 	// (C6 fix: atomic with order insert to prevent burned numbers).
 	in := order.CreateInput{
-		TenantID:        tenantID,
-		StoreID:         storeID,
-		StorePrefix:     prefix,
-		OrderNumberSeq:  0, // allocated inside Create tx
-		IdempotencyKey:  req.IdempotencyKey,
-		CustomerID:      customerID,
-		CustomerEmail:   req.CustomerEmail,
-		CustomerName:    req.CustomerName,
-		Items:           serviceItems,
-		Shipping:        checkoutToServiceAddress(req.ShippingAddress),
-		Billing:         checkoutToServiceAddress(billing),
-		Subtotal:        req.Subtotal,
-		ShippingTotal:   shippingTotal,
-		TaxTotal:        taxBreakdown.TaxTotal,
-		DiscountTotal:   effectiveDiscount,
-		GrandTotal:      grandTotal,
-		CurrencyCode:    store.CurrencyCode,
-		ShippingService: shippingServicePtr,
-		ShippingCarrier: shippingCarrierPtr,
-		WithinTx:        consumeDiscounts,
+		TenantID:               tenantID,
+		StoreID:                storeID,
+		StorePrefix:            prefix,
+		OrderNumberSeq:         0, // allocated inside Create tx
+		IdempotencyKey:         req.IdempotencyKey,
+		CustomerID:             customerID,
+		CustomerEmail:          req.CustomerEmail,
+		CustomerName:           req.CustomerName,
+		Items:                  serviceItems,
+		Shipping:               checkoutToServiceAddress(req.ShippingAddress),
+		Billing:                checkoutToServiceAddress(billing),
+		Subtotal:               req.Subtotal,
+		ShippingTotal:          shippingTotal,
+		TaxTotal:               taxBreakdown.TaxTotal,
+		DiscountTotal:          effectiveDiscount,
+		GrandTotal:             grandTotal,
+		CurrencyCode:           store.CurrencyCode,
+		ShippingService:        shippingServicePtr,
+		ShippingCarrier:        shippingCarrierPtr,
+		ShippingOptionName:     shippingPick.OptionName,
+		ShippingOptionEstimate: shippingPick.OptionEstimate,
+		WithinTx:               consumeDiscounts,
 	}
 
 	result, err := h.orderSvc.Create(ctx, in)
@@ -988,11 +1000,59 @@ func checkoutItemsToOriginLines(
 	return lines, nil
 }
 
-// calculateShipping resolves the carrier config and gets the rate for the
+// shippingChoice is what the order records about the buyer's shipping pick.
+type shippingChoice struct {
+	Carrier                    string
+	OptionName, OptionEstimate *string
+}
+
+// calculateShipping prices the buyer's shipping_service by the store's
+// shipping mode. Own mode: only an enabled "own:<id>" option of this store,
+// at the seller's price, re-read here. Carrier mode: an "own:" value is
+// refused, anything else takes the carrier path unchanged.
+func (h *CheckoutExtHandler) calculateShipping(
+	ctx context.Context,
+	store *stores.Store,
+	sc *country.SupportedCountry,
+	req CheckoutExtRequest,
+) (decimal.Decimal, shippingChoice, error) {
+	settings, err := deliverySettings(ctx, h.delivery, store)
+	if err != nil {
+		return decimal.Zero, shippingChoice{}, err
+	}
+	optionID, isOwn := cutOwnService(req.ShippingService)
+	unavailable := apperrors.ValidationFailed("shipping_service", "this delivery option is not available")
+	if settings.Mode != ownMode {
+		if isOwn {
+			return decimal.Zero, shippingChoice{}, unavailable
+		}
+		price, carrier, err := h.calculateCarrierShipping(ctx, store, sc, req)
+		return price, shippingChoice{Carrier: carrier}, err
+	}
+	if !isOwn || h.delivery == nil {
+		return decimal.Zero, shippingChoice{}, unavailable
+	}
+	opt, err := h.delivery.EnabledOption(ctx, store.ID, optionID)
+	var ae *apperrors.Error
+	if errors.As(err, &ae) && ae.Code == apperrors.CodeNotFound {
+		return decimal.Zero, shippingChoice{}, unavailable
+	}
+	if err != nil {
+		return decimal.Zero, shippingChoice{}, err
+	}
+	price := opt.Price
+	// Same rule as the carrier free_shipping_min: subtotal at or over it, zero = off.
+	if m := settings.FreeShippingMin; m != nil && !m.IsZero() && req.Subtotal.GreaterThanOrEqual(*m) {
+		price = decimal.Zero
+	}
+	return price, shippingChoice{Carrier: ownCarrier, OptionName: &opt.Name, OptionEstimate: opt.Estimate}, nil
+}
+
+// calculateCarrierShipping resolves the carrier config and gets the rate for the
 // selected service. Returns the final price including handling fee plus
 // the resolved carrier provider name so the order can persist what the
 // customer actually picked (e.g. "shipengine" for an AU store).
-func (h *CheckoutExtHandler) calculateShipping(
+func (h *CheckoutExtHandler) calculateCarrierShipping(
 	ctx context.Context,
 	store *stores.Store,
 	sc *country.SupportedCountry,

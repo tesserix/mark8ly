@@ -36,6 +36,7 @@ type Deps struct {
 	CSVImportsHandler       *CSVImportsHandler
 	PaymentSettingsHandler  *PaymentSettingsHandler
 	ShippingSettingsHandler *ShippingSettingsHandler
+	DeliverySettingsHandler *DeliverySettingsHandler
 	WarehousesHandler       *WarehousesHandler
 	TaxSettingsHandler      *TaxSettingsHandler
 	SettingsMetaHandler     *SettingsMetaHandler
@@ -392,6 +393,14 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					orders.POST("/:id/shipments",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
 						deps.ShipmentsHandler.Create)
+					// Own delivery: mark shipped with a saved courier, and
+					// fix the courier/number afterwards (no second email).
+					orders.POST("/:id/shipments/manual",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.CreateManual)
+					orders.PATCH("/:id/shipments/:shipmentId/tracking",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.UpdateTracking)
 					orders.GET("/:id/shipments",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
 						deps.ShipmentsHandler.GetByOrder)
@@ -532,6 +541,17 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 				ss.DELETE("/:provider",
 					deps.AuthzMiddleware.RequireTenantRelation(authz.RoleOwner),
 					deps.ShippingSettingsHandler.Delete)
+			}
+		}
+		if deps.DeliverySettingsHandler != nil {
+			ds := storeRoute.Group("/settings/delivery", deps.AuthzMiddleware.RequireTenantRelation(authz.RoleAdmin))
+			{
+				ds.GET("", deps.DeliverySettingsHandler.Get)
+				ds.PUT("/mode", deps.DeliverySettingsHandler.SetMode)
+				ds.PUT("/options", deps.DeliverySettingsHandler.PutOptions)
+				ds.POST("/couriers", deps.DeliverySettingsHandler.CreateCourier)
+				ds.PATCH("/couriers/:courierId", deps.DeliverySettingsHandler.UpdateCourier)
+				ds.DELETE("/couriers/:courierId", deps.DeliverySettingsHandler.DeleteCourier)
 			}
 		}
 		// Warehouses — #177 PR 5b. Mounted OUTSIDE /settings/shipping on

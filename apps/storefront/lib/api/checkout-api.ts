@@ -86,6 +86,9 @@ export interface ShippingRate {
   price: string;
   currency_code: string;
   estimated_days: number;
+  /** Own-delivery rows only: the seller's option name and free-text estimate. */
+  name?: string;
+  estimate?: string;
 }
 
 export interface CheckoutItemBody {
@@ -229,6 +232,7 @@ export interface OrderShipment {
   carrier: string;
   service?: string;
   tracking_number?: string;
+  tracking_url?: string;
   status: string;
   estimated_delivery?: string;
   // delivered_at / shipped_at are stamped server-side when the merchant

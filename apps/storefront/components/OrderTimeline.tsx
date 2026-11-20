@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "@/lib/toast";
+import { trackingHref } from "@/lib/shipping-display";
 import type { OrderShipment, OrderTimelineEntry } from "@/lib/api/checkout-api";
 
 interface Props {
@@ -273,7 +274,18 @@ export function OrderTimeline({ orderId, initialShipment, initialTimeline }: Pro
             <span>
               Tracking:{" "}
               <span className="font-mono tracking-tight text-[color:var(--storefront-text,var(--ink-900))]">
-                {shipment.tracking_number}
+                {trackingHref(shipment) ? (
+                  <a
+                    href={trackingHref(shipment)!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-2"
+                  >
+                    {shipment.tracking_number}
+                  </a>
+                ) : (
+                  shipment.tracking_number
+                )}
               </span>
             </span>
           )}

@@ -307,6 +307,12 @@ func RegisterAdminMobile(router *gin.RouterGroup, deps MobileDeps) {
 					orders.POST("/:id/shipments",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
 						deps.ShipmentsHandler.Create)
+					orders.POST("/:id/shipments/manual",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.CreateManual)
+					orders.PATCH("/:id/shipments/:shipmentId/tracking",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.UpdateTracking)
 					orders.GET("/:id/shipments",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
 						deps.ShipmentsHandler.GetByOrder)

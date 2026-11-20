@@ -466,3 +466,23 @@ func TestExecutor_ReleaseFailure_StillReportsSucceeded(t *testing.T) {
 		t.Fatalf("outcomes = %+v, want one succeeded despite release failure", out)
 	}
 }
+
+func TestExecutor_OwnCarrier_NoopNoCarrierCall(t *testing.T) {
+	oid, sid := uuid.New(), uuid.New()
+	store := &fakeStore{byOrder: map[uuid.UUID][]shipping.ShipmentRecord{
+		oid: {{ID: sid, Carrier: "own", TrackingNumber: "T1", Status: "in_transit"}, {ID: uuid.New(), Carrier: "own", TrackingNumber: "T2", Status: "pending"}},
+	}}
+	car := &fakeCarrier{}
+	e := NewExecutor(store, func(context.Context, uuid.UUID, string) (shipping.Carrier, error) {
+		return nil, errors.New("no carrier config for own")
+	}, nil)
+
+	for _, o := range e.CancelForOrder(context.Background(), oid) {
+		if o.Status != statusNone || o.Action != ActionNoop {
+			t.Fatalf("outcome = %+v, want noop/none", o)
+		}
+	}
+	if len(store.sets) != 0 || car.calls != 0 {
+		t.Errorf("recorded %+v, want nothing recorded for own", store.sets)
+	}
+}

@@ -9,6 +9,7 @@ import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/layout";
 import { OrderActionsBar } from "@/components/orders/OrderActionsBar";
 import { OrderArtworkPanel } from "@/components/orders/OrderArtworkPanel";
+import { MarkShippedPanel } from "@/components/orders/MarkShippedPanel";
 import { ShippingLabelPanel } from "@/components/orders/ShippingLabelPanel";
 import { OrderAddressCard } from "@/components/orders/OrderAddressCard";
 import { OrderDetailHeader } from "@/components/orders/OrderDetailHeader";
@@ -20,6 +21,7 @@ import { OutsideRefundForm } from "@/components/orders/OutsideRefundForm";
 import { InStoreSaleCard, showsShipping } from "@/components/orders/InStoreSaleCard";
 import { InStoreReceiptCard } from "@/components/orders/InStoreReceiptCard";
 import { getOrder } from "@/lib/api/marketplace-api";
+import { getDeliverySettings } from "@/lib/api/delivery-api";
 import { getOrderShipment } from "@/lib/api/shipping-api";
 import { getServerSessionContext } from "@/lib/auth/serverSession";
 
@@ -47,6 +49,11 @@ export default async function OrderDetailPage({ params }: PageProps) {
     userId,
     tenantId,
   }).catch(() => null);
+
+  const ownDelivery = order.shipping_carrier === "own";
+  const couriers = ownDelivery
+    ? ((await getDeliverySettings(currentStore.id, { userId, tenantId }))?.couriers ?? [])
+    : [];
 
   return (
     <main className="flex flex-col gap-8" aria-labelledby="order-heading">
@@ -102,13 +109,25 @@ export default async function OrderDetailPage({ params }: PageProps) {
           <OrderActionsBar order={order} shipmentStatus={shipment?.status ?? null} />
           {showsShipping(order) ? (
             <div className="border-t border-border-subtle pt-8">
-              <ShippingLabelPanel
-                storeId={currentStore.id}
-                orderId={order.id}
-                orderStatus={order.status}
-                customerCarrier={order.shipping_carrier}
-                customerService={order.shipping_service}
-              />
+              {ownDelivery ? (
+                <MarkShippedPanel
+                  storeId={currentStore.id}
+                  orderId={order.id}
+                  orderStatus={order.status}
+                  couriers={couriers}
+                  initialShipment={shipment}
+                  optionName={order.shipping_option_name}
+                  optionEstimate={order.shipping_option_estimate}
+                />
+              ) : (
+                <ShippingLabelPanel
+                  storeId={currentStore.id}
+                  orderId={order.id}
+                  orderStatus={order.status}
+                  customerCarrier={order.shipping_carrier}
+                  customerService={order.shipping_service}
+                />
+              )}
             </div>
           ) : null}
           <InStoreReceiptCard storeId={currentStore.id} orderId={order.id} channel={order.channel} />

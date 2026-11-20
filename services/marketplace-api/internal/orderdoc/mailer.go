@@ -20,6 +20,7 @@ import (
 	"embed"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -107,6 +108,7 @@ type DocumentInput struct {
 	// it on the in_transit transition).
 	Carrier           string
 	TrackingNumber    string
+	TrackingURL       string // own-courier link; rendered only when https://
 	EstimatedDelivery string // human-readable, e.g. "Apr 18, 2026"
 
 	// AdminNote, when set, renders a "Note from {store}" block in the
@@ -278,6 +280,7 @@ type renderData struct {
 	// Carrier presence and surface them prominently.
 	Carrier           string
 	TrackingNumber    string
+	TrackingURL       string
 	EstimatedDelivery string
 
 	Theme          Theme
@@ -444,6 +447,7 @@ func buildRenderData(kind Kind, in DocumentInput, hasAttachment bool) renderData
 		IsFullRefund:       in.IsFullRefund,
 		Carrier:            in.Carrier,
 		TrackingNumber:     in.TrackingNumber,
+		TrackingURL:        httpsOnly(in.TrackingURL),
 		EstimatedDelivery:  in.EstimatedDelivery,
 		Theme:              theme,
 		HairlineColor:      emailHairline,
@@ -629,4 +633,13 @@ func (m *DocumentMailer) send(ctx context.Context, kind Kind, in DocumentInput) 
 		return fmt.Errorf("orderdoc: send %s email: %w", string(kind), err)
 	}
 	return nil
+}
+
+// httpsOnly drops any link that is not https:// (defence in depth; the URL is
+// validated at write time too).
+func httpsOnly(u string) string {
+	if strings.HasPrefix(u, "https://") {
+		return u
+	}
+	return ""
 }

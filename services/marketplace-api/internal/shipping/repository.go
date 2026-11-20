@@ -31,7 +31,10 @@ type ShipmentRecord struct {
 	TenantID          uuid.UUID       `gorm:"column:tenant_id;type:uuid;not null;index"`
 	StoreID           uuid.UUID       `gorm:"column:store_id;type:uuid;not null;index"`
 	OrderID           uuid.UUID       `gorm:"column:order_id;type:uuid;not null;index"`
-	Carrier           string          `gorm:"column:carrier;type:varchar(20);not null"`
+	Carrier           string          `gorm:"column:carrier;type:varchar(40);not null"`
+	CourierID         *uuid.UUID      `gorm:"column:courier_id;type:uuid"`
+	CourierName       *string         `gorm:"column:courier_name;type:varchar(40)"`
+	TrackingURL       *string         `gorm:"column:tracking_url;type:text"`
 	TrackingNumber    string          `gorm:"column:tracking_number;type:varchar(100)"`
 	LabelURL          string          `gorm:"column:label_url;type:text"`
 	Status            string          `gorm:"column:status;type:varchar(20);not null;default:pending"`

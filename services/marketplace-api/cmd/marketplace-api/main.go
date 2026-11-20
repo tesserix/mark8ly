@@ -66,6 +66,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/csvjob"
 	"github.com/mark8ly/marketplace-api/internal/customer"
 	"github.com/mark8ly/marketplace-api/internal/customerportal"
+	"github.com/mark8ly/marketplace-api/internal/delivery"
 	"github.com/mark8ly/marketplace-api/internal/displayname"
 	"github.com/mark8ly/marketplace-api/internal/domain"
 	"github.com/mark8ly/marketplace-api/internal/email"
@@ -1073,7 +1074,8 @@ func main() {
 			WithEncryptor(apiKeyEncryptor).
 			WithSecretStore(carrierSecretStore).
 			WithLabelMailer(labelMailer).
-			WithOrderService(orderSvc)
+			WithOrderService(orderSvc).
+			WithDelivery(delivery.NewService(conn))
 
 		// Shipment-cancel executor — resolves + executes the carrier action
 		// when an order is fully refunded or cancelled. Reuses the shipments
@@ -1682,6 +1684,7 @@ func main() {
 			CSVImportsHandler:           csvImportsHandler,
 			PaymentSettingsHandler:      paymentSettingsHandler,
 			ShippingSettingsHandler:     shippingSettingsHandler,
+			DeliverySettingsHandler:     admin.NewDeliverySettingsHandler(delivery.NewService(conn), log),
 			WarehousesHandler:           admin.NewWarehousesHandler(conn, log),
 			ShipmentsHandler:            shipmentsHandler,
 			OrderPersonalisationHandler: orderPersonalisationHandler,
@@ -1940,12 +1943,14 @@ func main() {
 			WithStockHolds(stockhold.NewRepository()).
 			WithAudit(auditEmitter).
 			WithSecretStore(carrierSecretStore).
-			WithNotifier(notificationSvc)
+			WithNotifier(notificationSvc).
+			WithDelivery(delivery.NewService(conn))
 		checkoutExtHandler.SetLoyaltyService(loyaltySvcSF)
 		paymentMethodsHandler := storefront.NewPaymentMethodsHandler(conn, apiKeyEncryptor, log).
 			WithSecretStore(carrierSecretStore)
 		shippingRatesHandler := storefront.NewShippingRatesHandler(conn, apiKeyEncryptor, log).
-			WithSecretStore(carrierSecretStore)
+			WithSecretStore(carrierSecretStore).
+			WithDelivery(delivery.NewService(conn))
 		shippingOptionsHandler := storefront.NewShippingOptionsHandler(conn, log)
 		webhookHandler := storefront.NewWebhookHandler(conn, orderSvcSF, log).
 			WithEncryptor(apiKeyEncryptor).

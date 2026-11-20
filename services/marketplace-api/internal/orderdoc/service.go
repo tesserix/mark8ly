@@ -170,6 +170,7 @@ func (s *Service) SendRefund(ctx context.Context, orderID uuid.UUID, refundAmoun
 type ShipmentInfo struct {
 	Carrier           string
 	TrackingNumber    string
+	TrackingURL       string
 	EstimatedDelivery string // human-readable, optional
 }
 
@@ -184,6 +185,7 @@ func (s *Service) SendShipmentDispatched(ctx context.Context, orderID uuid.UUID,
 	in.DocumentNumber = ""
 	in.Carrier = info.Carrier
 	in.TrackingNumber = info.TrackingNumber
+	in.TrackingURL = info.TrackingURL
 	in.EstimatedDelivery = info.EstimatedDelivery
 	return s.mailer.SendShipmentDispatched(ctx, in)
 }

@@ -14,6 +14,8 @@ import type {
 import type { Warehouse } from "@/lib/api/warehouses-api";
 import { ProviderCard } from "./ProviderCard";
 import { ShippingConfigForm } from "./ShippingConfigForm";
+import type { DeliverySettings } from "@/lib/api/delivery-api";
+import { ModeSwitch, OwnDeliverySettings } from "./OwnDeliverySettings";
 import { readinessFor } from "@/lib/settings/shipping-readiness";
 import { removeShippingConfig } from "@/app/(admin)/settings/shipping/actions";
 
@@ -30,6 +32,8 @@ interface ShippingSettingsClientProps {
    * context is the canonical source.
    */
   storeCountry: string;
+  /** Own-delivery setup; null when it could not be loaded (carrier-only UI). */
+  delivery?: DeliverySettings | null;
 }
 
 export function ShippingSettingsClient({
@@ -38,6 +42,7 @@ export function ShippingSettingsClient({
   warehouses,
   editable,
   storeCountry,
+  delivery = null,
 }: ShippingSettingsClientProps) {
   const router = useRouter();
 
@@ -45,17 +50,36 @@ export function ShippingSettingsClient({
   // look up its own state in O(1).
   const configByCarrier = new Map(configs.map((c) => [c.provider, c]));
 
+  if (delivery?.mode === "own") {
+    return (
+      <div className="space-y-8">
+        <ModeSwitch mode="own" editable={editable} />
+        <OwnDeliverySettings settings={delivery} editable={editable} />
+      </div>
+    );
+  }
+
+  const modeSwitch = delivery && (
+    <div className="pb-4">
+      <ModeSwitch mode="carrier" editable={editable} />
+    </div>
+  );
+
   if (supported.shipping_carriers.length === 0) {
     return (
-      <p className="border-t border-border-subtle py-10 text-sm text-foreground-tertiary">
-        No shipping carriers are currently available for{" "}
-        {supported.country_name} ({supported.country_code}).
-      </p>
+      <div>
+        {modeSwitch}
+        <p className="border-t border-border-subtle py-10 text-sm text-foreground-tertiary">
+          No shipping carriers are currently available for{" "}
+          {supported.country_name} ({supported.country_code}).
+        </p>
+      </div>
     );
   }
 
   return (
     <div className="space-y-3">
+      {modeSwitch}
       {supported.shipping_carriers.map((carrier) => {
         const cfg = configByCarrier.get(carrier);
         const configured = Boolean(cfg);

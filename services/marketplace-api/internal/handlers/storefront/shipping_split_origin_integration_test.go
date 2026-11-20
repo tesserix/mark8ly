@@ -456,9 +456,9 @@ func TestCalculateShipping_MatchesGetRatesQuoteForSameSplitCart(t *testing.T) {
 	}
 	sc := &country.SupportedCountry{ShippingCarriers: pq.StringArray{"delhivery"}}
 
-	price, provider, err := ceh.calculateShipping(context.Background(), rig.store, sc, req)
+	price, pick, err := ceh.calculateShipping(context.Background(), rig.store, sc, req)
 	require.NoError(t, err)
-	require.Equal(t, "delhivery", provider)
+	require.Equal(t, "delhivery", pick.Carrier)
 	require.Equal(t, quotedPrice, price.StringFixed(2),
 		"checkout must charge exactly what GetRates quoted for the same split cart")
 }

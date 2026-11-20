@@ -124,6 +124,11 @@ func (e *Executor) resolveAndExecute(ctx context.Context, sh *shipping.ShipmentR
 		return Outcome{ShipmentID: sh.ID, Action: Action(sh.CancelAction), Status: statusSucceeded}
 	}
 
+	// Own-courier parcels have no carrier API: nothing to cancel remotely.
+	if sh.Carrier == "own" {
+		return Outcome{ShipmentID: sh.ID, Action: ActionNoop, Status: statusNone}
+	}
+
 	switch action {
 	case ActionNoop:
 		return Outcome{ShipmentID: sh.ID, Action: ActionNoop, Status: statusNone}

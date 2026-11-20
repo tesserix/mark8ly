@@ -63,6 +63,10 @@ export interface ShipmentResponse {
   /** Carrier or backend detail explaining a failed/unsupported outcome. */
   cancel_reason?: string;
   created_at: string;
+  /** Own-courier shipments only. */
+  courier_id?: string;
+  courier_name?: string;
+  tracking_url?: string;
 }
 
 /**
@@ -380,4 +384,45 @@ export async function deleteShipment(
     return { ok: false, error: await parseMutationError(res) };
   }
   return { ok: true, data: { ok: true } };
+}
+
+/** Mark an own-delivery order shipped with a saved courier (no carrier call). */
+export async function createManualShipment(
+  storeId: string,
+  orderId: string,
+  input: { courier_id: string; tracking_number?: string },
+  session: SessionHeaders,
+): Promise<MutationResult<ShipmentResponse>> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/shipments/manual`;
+  const res = await fetch(url, {
+    method: "POST",
+    cache: "no-store",
+    headers: commonHeaders(session),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as ShipmentResponse };
+}
+
+/** Fix the courier or number on an own shipment. Never re-sends the email. */
+export async function updateShipmentTracking(
+  storeId: string,
+  orderId: string,
+  shipmentId: string,
+  input: { tracking_number: string; courier_id?: string },
+  session: SessionHeaders,
+): Promise<MutationResult<ShipmentResponse>> {
+  const url = `${MARKETPLACE_API_URL}/api/v1/admin/stores/${storeId}/orders/${orderId}/shipments/${shipmentId}/tracking`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    cache: "no-store",
+    headers: commonHeaders(session),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    return { ok: false, error: await parseMutationError(res) };
+  }
+  return { ok: true, data: (await res.json()) as ShipmentResponse };
 }

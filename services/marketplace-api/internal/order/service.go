@@ -82,8 +82,11 @@ type CreateInput struct {
 	// of a hardcoded fallback.
 	ShippingService *string
 	ShippingCarrier *string
-	Notes           *string
-	PlacedAt        time.Time
+	// ShippingOptionName/Estimate snapshot an own delivery option (nil otherwise).
+	ShippingOptionName     *string
+	ShippingOptionEstimate *string
+	Notes                  *string
+	PlacedAt               time.Time
 
 	// WithinTx, when set, runs inside the SAME transaction that inserts the
 	// order, after the order aggregate and its outbox row are written. It
@@ -171,28 +174,30 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*CreateResult, er
 	}
 
 	o := &Order{
-		TenantID:          in.TenantID,
-		StoreID:           in.StoreID,
-		OrderNumber:       number,
-		IdempotencyKey:    in.IdempotencyKey,
-		CustomerID:        in.CustomerID,
-		CustomerEmail:     in.CustomerEmail,
-		CustomerName:      in.CustomerName,
-		Status:            string(OrderStatusPending),
-		PaymentStatus:     string(PaymentStatusPending),
-		FulfillmentStatus: string(FulfillmentStatusUnfulfilled),
-		Subtotal:          in.Subtotal,
-		ShippingTotal:     in.ShippingTotal,
-		TaxTotal:          in.TaxTotal,
-		DiscountTotal:     in.DiscountTotal,
-		GrandTotal:        in.GrandTotal,
-		RefundedAmount:    decimal.Zero,
-		CurrencyCode:      in.CurrencyCode,
-		ShippingService:   in.ShippingService,
-		ShippingCarrier:   in.ShippingCarrier,
-		Notes:             in.Notes,
-		PlacedAt:          in.PlacedAt,
-		Channel:           ChannelOnline,
+		TenantID:               in.TenantID,
+		StoreID:                in.StoreID,
+		OrderNumber:            number,
+		IdempotencyKey:         in.IdempotencyKey,
+		CustomerID:             in.CustomerID,
+		CustomerEmail:          in.CustomerEmail,
+		CustomerName:           in.CustomerName,
+		Status:                 string(OrderStatusPending),
+		PaymentStatus:          string(PaymentStatusPending),
+		FulfillmentStatus:      string(FulfillmentStatusUnfulfilled),
+		Subtotal:               in.Subtotal,
+		ShippingTotal:          in.ShippingTotal,
+		TaxTotal:               in.TaxTotal,
+		DiscountTotal:          in.DiscountTotal,
+		GrandTotal:             in.GrandTotal,
+		RefundedAmount:         decimal.Zero,
+		CurrencyCode:           in.CurrencyCode,
+		ShippingService:        in.ShippingService,
+		ShippingCarrier:        in.ShippingCarrier,
+		ShippingOptionName:     in.ShippingOptionName,
+		ShippingOptionEstimate: in.ShippingOptionEstimate,
+		Notes:                  in.Notes,
+		PlacedAt:               in.PlacedAt,
+		Channel:                ChannelOnline,
 	}
 	if in.InStore != nil {
 		o.Channel = ChannelInStore

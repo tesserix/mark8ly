@@ -8,6 +8,7 @@ SHIPPED
 {{.Lede}}
 
 {{if .TrackingNumber}}Tracking:     {{.TrackingNumber}}{{if .Carrier}} (via {{.Carrier}}){{end}}
+{{end}}{{if .TrackingURL}}Track your parcel: {{.TrackingURL}}
 {{end}}{{if .EstimatedDelivery}}Estimated:    {{.EstimatedDelivery}}
 {{end}}Order:        {{.OrderNumber}}
 Items:        {{.ItemCount}}

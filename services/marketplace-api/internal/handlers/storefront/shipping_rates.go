@@ -8,6 +8,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -16,6 +17,7 @@ import (
 	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/country"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
+	"github.com/mark8ly/marketplace-api/internal/delivery"
 	"github.com/mark8ly/marketplace-api/internal/shipping"
 	"github.com/mark8ly/marketplace-api/internal/stores"
 	"github.com/mark8ly/marketplace-api/internal/warehouse"
@@ -36,6 +38,9 @@ type ShippingRatesHandler struct {
 	// (*ShipmentsHandler).WithCarrierFactory in internal/handlers/admin.
 	// Production code never sets this.
 	carrierFactory func(provider string) (shipping.Carrier, bool)
+	// delivery prices own delivery options; nil means a store in own mode
+	// has no options to offer.
+	delivery *delivery.Service
 }
 
 // NewShippingRatesHandler constructs a ShippingRatesHandler.
@@ -48,6 +53,12 @@ func NewShippingRatesHandler(db *gorm.DB, enc crypto.Encryptor, logger *slog.Log
 // rows on read. Chainable.
 func (h *ShippingRatesHandler) WithSecretStore(s carriersecrets.Store) *ShippingRatesHandler {
 	h.secretStore = s
+	return h
+}
+
+// WithDelivery wires the own-delivery options service. Chainable.
+func (h *ShippingRatesHandler) WithDelivery(svc *delivery.Service) *ShippingRatesHandler {
+	h.delivery = svc
 	return h
 }
 
@@ -109,6 +120,36 @@ type shippingRateResponse struct {
 	// path, which is unchanged from before #541 — existing storefront
 	// clients that ignore this field keep working.
 	ShipmentCount int `json:"shipment_count,omitempty"`
+	// Name and Estimate are set on own delivery options only.
+	Name     string `json:"name,omitempty"`
+	Estimate string `json:"estimate,omitempty"`
+}
+
+// stores.shipping_mode value for own delivery, the carrier name its rates and
+// orders carry, and the shipping_service prefix of an option id.
+const (
+	ownMode          = "own"
+	ownCarrier       = "own"
+	ownServicePrefix = "own:"
+)
+
+// cutOwnService splits "own:<option id>" (prefix case-insensitive).
+func cutOwnService(service string) (string, bool) {
+	s := strings.TrimSpace(service)
+	if len(s) < len(ownServicePrefix) || !strings.EqualFold(s[:len(ownServicePrefix)], ownServicePrefix) {
+		return "", false
+	}
+	return s[len(ownServicePrefix):], true
+}
+
+// deliverySettings reads the delivery mode, free-shipping minimum and options
+// fresh: the store in the request context comes from the slug cache and can
+// be minutes stale after a mode switch. Unwired: cached mode, no options.
+func deliverySettings(ctx context.Context, svc *delivery.Service, store *stores.Store) (delivery.Settings, error) {
+	if svc == nil {
+		return delivery.Settings{Mode: store.ShippingMode}, nil
+	}
+	return svc.Get(ctx, store.ID)
 }
 
 // carrierConfigRow mirrors the shipping_carrier_configs table for direct
@@ -216,6 +257,32 @@ func (h *ShippingRatesHandler) GetRates(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+
+	// Own delivery: the seller's enabled options, never a carrier quote.
+	settings, err := deliverySettings(ctx, h.delivery, store)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("shipping_rates: delivery settings lookup failed", "store_id", store.ID, "err", err)
+		}
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal", "message": "internal server error"})
+		return
+	}
+	if settings.Mode == ownMode {
+		result := []shippingRateResponse{}
+		for _, o := range settings.Options {
+			if !o.Enabled {
+				continue
+			}
+			row := shippingRateResponse{Service: ownServicePrefix + o.ID, Carrier: ownCarrier, Name: o.Name,
+				Price: o.Price.StringFixed(2), CurrencyCode: store.CurrencyCode}
+			if o.Estimate != nil {
+				row.Estimate = *o.Estimate
+			}
+			result = append(result, row)
+		}
+		c.JSON(http.StatusOK, gin.H{"data": result})
+		return
+	}
 
 	// Look up country to get the list of shipping carriers for the store's country.
 	var sc country.SupportedCountry

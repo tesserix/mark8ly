@@ -81,7 +81,7 @@ export async function FeaturedProductsSection({
                 loading={i === 0 ? "eager" : "lazy"}
                 decoding="async"
                 fetchPriority={i === 0 ? "high" : "auto"}
-                className="aspect-square w-full rounded-md object-cover"
+                className="aspect-square w-full rounded-md object-contain"
               />
             ) : (
               <div className="aspect-square w-full rounded-md bg-muted" />

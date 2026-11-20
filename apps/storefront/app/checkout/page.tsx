@@ -7,6 +7,7 @@
 // the order via the extended checkout endpoint. On success redirects
 // to /orders/[id].
 
+import { rateEstimate, rateLabel } from "@/lib/shipping-display";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -1090,12 +1091,10 @@ export default function CheckoutPage() {
                       />
                       <div>
                         <p className="text-sm font-medium text-[color:var(--storefront-text,var(--ink-900))]">
-                          {humanizeService(rate.service)}
+                          {rateLabel(rate)}
                         </p>
                         <p className="text-xs text-[color:var(--storefront-text,var(--ink-900))] opacity-50">
-                          {rate.estimated_days > 0
-                            ? `Est. ${rate.estimated_days} business day${rate.estimated_days !== 1 ? "s" : ""}`
-                            : "Delivery estimate unavailable"}
+                          {rateEstimate(rate) ?? "Delivery estimate unavailable"}
                         </p>
                       </div>
                     </div>
@@ -1788,24 +1787,6 @@ function providerBrand(provider: string): string {
     case "paypal": return "PayPal";
     default: return provider.charAt(0).toUpperCase() + provider.slice(1);
   }
-}
-
-// ---------------------------------------------------------------------------
-// Human-friendly shipping service name
-// ---------------------------------------------------------------------------
-
-function humanizeService(service: string): string {
-  const map: Record<string, string> = {
-    ground: "Standard Ground",
-    express: "Express",
-    priority: "Priority",
-    economy: "Economy",
-    overnight: "Overnight",
-    two_day: "2-Day Shipping",
-    standard: "Standard Shipping",
-  };
-  const key = service.toLowerCase().replace(/[\s-]+/g, "_");
-  return map[key] ?? service.charAt(0).toUpperCase() + service.slice(1).replace(/_/g, " ");
 }
 
 // ---------------------------------------------------------------------------

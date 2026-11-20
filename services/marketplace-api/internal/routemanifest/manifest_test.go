@@ -353,6 +353,7 @@ var mountsOutsideManifest = map[string]string{
 	"internalsvc.NewStorefrontStatusHandler.Register":                         "/internal storefront status — read at the edge by the storefront-gate Cloudflare Worker",
 	"internalsvc.NewActiveDomainsHandler.Register":                            "/internal active domains list — read by the OpenPanel CORS reconciler",
 	"internalsvc.NewTenantPurgeHandler.Register":                              "/internal tenant hard-delete — posted by platform-api's outbox drainer",
+	"internalsvc.NewTenantCountHandler.Register":                              "/internal tenant purge-preview counts — called by platform-api before a self-serve delete",
 }
 
 // directRoutesOutsideManifest are routes registered STRAIGHT onto a router

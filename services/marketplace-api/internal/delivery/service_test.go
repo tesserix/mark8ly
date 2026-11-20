@@ -27,7 +27,8 @@ func seed(t *testing.T) (*delivery.Service, string, string) {
 }
 
 func opt(name, price string) delivery.OptionInput {
-	return delivery.OptionInput{Name: name, Price: decimal.RequireFromString(price), Enabled: true}
+	p := decimal.RequireFromString(price)
+	return delivery.OptionInput{Name: name, Price: &p, Enabled: true}
 }
 
 func TestReplaceOptionsValidation(t *testing.T) {
@@ -35,9 +36,9 @@ func TestReplaceOptionsValidation(t *testing.T) {
 	ctx := t.Context()
 	six := []delivery.OptionInput{opt("a", "1"), opt("b", "1"), opt("c", "1"), opt("d", "1"), opt("e", "1"), opt("f", "1")}
 	for name, in := range map[string][]delivery.OptionInput{
-		"six": six, "long name": {opt(strings.Repeat("x", 41), "1")}, "negative": {opt("a", "-1")},
+		"six": six, "long name": {opt(strings.Repeat("x", 41), "1")}, "negative": {opt("a", "-1")}, "100000": {opt("a", "100000")}, "huge exp": {opt("a", "1e999999999")}, "no price": {{Name: "a", Enabled: true}},
 	} {
-		if _, err := svc.ReplaceOptions(ctx, tid, sid, in); !isCode(err, apperrors.CodeValidationFailed) {
+		if _, err := svc.ReplaceOptions(ctx, tid, sid, in, nil); !isCode(err, apperrors.CodeValidationFailed) {
 			t.Errorf("%s: want validation_failed, got %v", name, err)
 		}
 	}
@@ -46,13 +47,14 @@ func TestReplaceOptionsValidation(t *testing.T) {
 func TestReplaceOptionsOrderAndDelete(t *testing.T) {
 	svc, tid, sid := seed(t)
 	ctx := t.Context()
-	got, err := svc.ReplaceOptions(ctx, tid, sid, []delivery.OptionInput{opt("Std", "5"), opt("Fast", "9.50")})
+	got, err := svc.ReplaceOptions(ctx, tid, sid, []delivery.OptionInput{opt("Std", "5"), opt("Fast", "9.50")}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	ten := decimal.NewFromInt(10)
 	// Reorder, rename one in place, drop the other, add a new one.
 	got, err = svc.ReplaceOptions(ctx, tid, sid, []delivery.OptionInput{opt("New", "1"),
-		{ID: got[1].ID, Name: "Fast2", Price: decimal.NewFromInt(10), Enabled: true}})
+		{ID: got[1].ID, Name: "Fast2", Price: &ten, Enabled: true}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +74,7 @@ func TestEnabledOption(t *testing.T) {
 	ctx := t.Context()
 	off := opt("Off", "1")
 	off.Enabled = false
-	got, err := svc.ReplaceOptions(ctx, tid, sid, []delivery.OptionInput{opt("On", "1"), off})
+	got, err := svc.ReplaceOptions(ctx, tid, sid, []delivery.OptionInput{opt("On", "1"), off}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,5 +117,33 @@ func TestSetModeAndCouriers(t *testing.T) {
 	}
 	if _, err := svc.GetCourier(ctx, sid, c.ID); !isCode(err, apperrors.CodeNotFound) {
 		t.Fatalf("deleted: %v", err)
+	}
+}
+
+func TestReplaceOptionsMaxPriceAndFreeMin(t *testing.T) {
+	svc, tid, sid := seed(t)
+	ctx := t.Context()
+	big := decimal.RequireFromString("1e20")
+	if _, err := svc.ReplaceOptions(ctx, tid, sid, nil, &big); !isCode(err, apperrors.CodeValidationFailed) {
+		t.Fatalf("1e20: %v", err)
+	}
+	if err := svc.SetOwnFreeShippingMin(ctx, sid, &big); !isCode(err, apperrors.CodeValidationFailed) {
+		t.Fatalf("1e20 direct: %v", err)
+	}
+	ok := decimal.RequireFromString("99999.99")
+	if _, err := svc.ReplaceOptions(ctx, tid, sid, []delivery.OptionInput{opt("a", "99999.99")}, &ok); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := svc.Get(ctx, sid)
+	if s.FreeShippingMin == nil || !s.FreeShippingMin.Equal(ok) {
+		t.Fatalf("%v", s.FreeShippingMin)
+	}
+	// Invalid options leave the minimum untouched (single transaction).
+	if _, err := svc.ReplaceOptions(ctx, tid, sid, []delivery.OptionInput{opt("a", "-1")}, nil); err == nil {
+		t.Fatal("want error")
+	}
+	s, _ = svc.Get(ctx, sid)
+	if s.FreeShippingMin == nil {
+		t.Fatal("minimum cleared despite failed replace")
 	}
 }

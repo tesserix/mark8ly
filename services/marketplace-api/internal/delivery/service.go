@@ -29,11 +29,11 @@ type Settings struct {
 
 // OptionInput is one option as submitted by the admin; ID set means update.
 type OptionInput struct {
-	ID       string          `json:"id"`
-	Name     string          `json:"name"`
-	Price    decimal.Decimal `json:"price"`
-	Estimate *string         `json:"estimate"`
-	Enabled  bool            `json:"enabled"`
+	ID       string           `json:"id"`
+	Name     string           `json:"name"`
+	Price    *decimal.Decimal `json:"price"` // required
+	Estimate *string          `json:"estimate"`
+	Enabled  bool             `json:"enabled"`
 }
 
 // CourierInput is a courier as submitted by the admin.
@@ -45,6 +45,12 @@ type CourierInput struct {
 type Service struct{ db *gorm.DB }
 
 func NewService(db *gorm.DB) *Service { return &Service{db: db} }
+
+// validMoney: 0 to 99,999.99, at most 2 decimals. The exponent check runs first
+// so a hostile 1e999999999 is rejected before any arithmetic.
+func validMoney(d decimal.Decimal) bool {
+	return d.Exponent() >= -2 && d.Exponent() <= 5 && !d.IsNegative() && d.LessThan(decimal.New(1, 5))
+}
 
 func invalid(field, msg string) error { return apperrors.ValidationFailed(field, msg) }
 
@@ -79,10 +85,17 @@ func (s *Service) SetMode(ctx context.Context, storeID, mode string) error {
 }
 
 func (s *Service) SetOwnFreeShippingMin(ctx context.Context, storeID string, v *decimal.Decimal) error {
-	if v != nil && (v.IsNegative() || v.Exponent() < -2) {
-		return invalid("free_shipping_min", "must be zero or more with at most 2 decimals")
+	if err := checkFreeMin(v); err != nil {
+		return err
 	}
 	return s.updateStore(ctx, storeID, map[string]any{"own_free_shipping_min": v})
+}
+
+func checkFreeMin(v *decimal.Decimal) error {
+	if v != nil && !validMoney(*v) {
+		return invalid("free_shipping_min", "must be between 0 and 99999.99 with at most 2 decimals")
+	}
+	return nil
 }
 
 func (s *Service) updateStore(ctx context.Context, storeID string, vals map[string]any) error {
@@ -102,8 +115,8 @@ func validateOption(i int, o *OptionInput) error {
 	if o.Name == "" || utf8.RuneCountInString(o.Name) > maxName {
 		return invalid(f+".name", "required, at most 40 characters")
 	}
-	if o.Price.IsNegative() || o.Price.Exponent() < -2 || o.Price.GreaterThanOrEqual(decimal.New(1, 10)) {
-		return invalid(f+".price", "must be zero or more with at most 2 decimals")
+	if o.Price == nil || !validMoney(*o.Price) {
+		return invalid(f+".price", "required, between 0 and 99999.99 with at most 2 decimals")
 	}
 	if o.Estimate != nil {
 		e := strings.TrimSpace(*o.Estimate)
@@ -120,8 +133,12 @@ func validateOption(i int, o *OptionInput) error {
 }
 
 // ReplaceOptions makes the store's options exactly opts, in array order.
-// Options with an id update in place; ids not in opts are deleted.
-func (s *Service) ReplaceOptions(ctx context.Context, tenantID, storeID string, opts []OptionInput) ([]Option, error) {
+// Options with an id update in place; ids not in opts are deleted. freeMin
+// (nil clears it) is written in the same transaction.
+func (s *Service) ReplaceOptions(ctx context.Context, tenantID, storeID string, opts []OptionInput, freeMin *decimal.Decimal) ([]Option, error) {
+	if err := checkFreeMin(freeMin); err != nil {
+		return nil, err
+	}
 	if len(opts) > maxOptions {
 		return nil, invalid("options", "at most 5 delivery options")
 	}
@@ -132,6 +149,12 @@ func (s *Service) ReplaceOptions(ctx context.Context, tenantID, storeID string, 
 	}
 	var out []Option
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if r := tx.Table("stores").Where("id = ?", storeID).Update("own_free_shipping_min", freeMin); r.Error != nil || r.RowsAffected == 0 {
+			if r.Error != nil {
+				return r.Error
+			}
+			return notFound("store")
+		}
 		var existing []Option
 		if err := tx.Where("store_id = ?", storeID).Find(&existing).Error; err != nil {
 			return err
@@ -143,7 +166,7 @@ func (s *Service) ReplaceOptions(ctx context.Context, tenantID, storeID string, 
 		keep := map[string]bool{}
 		out = make([]Option, 0, len(opts))
 		for i, in := range opts {
-			o := Option{TenantID: tenantID, StoreID: storeID, Name: in.Name, Price: in.Price,
+			o := Option{TenantID: tenantID, StoreID: storeID, Name: in.Name, Price: *in.Price,
 				Estimate: in.Estimate, Enabled: in.Enabled, Position: i}
 			if in.ID != "" {
 				if !have[in.ID] || keep[in.ID] {

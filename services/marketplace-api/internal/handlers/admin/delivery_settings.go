@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -53,8 +54,9 @@ func (h *DeliverySettingsHandler) SetMode(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"mode": body.Mode})
 }
 
-// PutOptions replaces the option list; free_shipping_min is always applied
-// (omitted or null clears it).
+// PutOptions replaces the option list and free-shipping minimum atomically.
+// Both keys are required so a client cannot wipe either by omission: options
+// may be an empty array, free_shipping_min may be an explicit null (clears it).
 func (h *DeliverySettingsHandler) PutOptions(c *gin.Context) {
 	s := storeFromCtx(c)
 	if s == nil {
@@ -62,22 +64,30 @@ func (h *DeliverySettingsHandler) PutOptions(c *gin.Context) {
 	}
 	var body struct {
 		Options         []delivery.OptionInput `json:"options"`
-		FreeShippingMin *decimal.Decimal       `json:"free_shipping_min"`
+		FreeShippingMin json.RawMessage        `json:"free_shipping_min"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		RespondErr(c, apperrors.ValidationFailed("body", "invalid JSON"), h.logger)
 		return
 	}
-	ctx := c.Request.Context()
-	if body.FreeShippingMin != nil && (body.FreeShippingMin.IsNegative() || body.FreeShippingMin.Exponent() < -2) {
-		RespondErr(c, apperrors.ValidationFailed("free_shipping_min", "must be zero or more with at most 2 decimals"), h.logger)
+	if body.Options == nil {
+		RespondErr(c, apperrors.ValidationFailed("options", "required (use [] for none)"), h.logger)
 		return
 	}
-	if _, err := h.svc.ReplaceOptions(ctx, s.TenantID, s.ID, body.Options); err != nil {
-		RespondErr(c, err, h.logger)
+	if body.FreeShippingMin == nil {
+		RespondErr(c, apperrors.ValidationFailed("free_shipping_min", "required (use null for none)"), h.logger)
 		return
 	}
-	if err := h.svc.SetOwnFreeShippingMin(ctx, s.ID, body.FreeShippingMin); err != nil {
+	var freeMin *decimal.Decimal
+	if string(body.FreeShippingMin) != "null" {
+		var d decimal.Decimal
+		if err := d.UnmarshalJSON(body.FreeShippingMin); err != nil {
+			RespondErr(c, apperrors.ValidationFailed("free_shipping_min", "must be a number"), h.logger)
+			return
+		}
+		freeMin = &d
+	}
+	if _, err := h.svc.ReplaceOptions(c.Request.Context(), s.TenantID, s.ID, body.Options, freeMin); err != nil {
 		RespondErr(c, err, h.logger)
 		return
 	}

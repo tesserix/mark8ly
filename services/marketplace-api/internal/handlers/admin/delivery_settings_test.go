@@ -50,6 +50,25 @@ func TestIntegration_DeliverySettings(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"name":"Std"`) || !strings.Contains(w.Body.String(), `"free_shipping_min":"100"`) {
 		t.Fatalf("PUT: %d %s", w.Code, w.Body)
 	}
+	for name, body := range map[string]string{
+		"no options":    `{"free_shipping_min":null}`,
+		"null options":  `{"options":null,"free_shipping_min":null}`,
+		"no price":      `{"options":[{"name":"A","enabled":true}],"free_shipping_min":null}`,
+		"no free min":   `{"options":[]}`,
+		"free min huge": `{"options":[],"free_shipping_min":"1e20"}`,
+		"price 100000":  `{"options":[{"name":"A","price":"100000","enabled":true}],"free_shipping_min":null}`,
+	} {
+		if w := do("PUT", "/s/options", body); w.Code != 400 || !strings.Contains(w.Body.String(), "validation_failed") {
+			t.Errorf("%s: %d %s", name, w.Code, w.Body)
+		}
+	}
+	// Rejected requests did not wipe the earlier save; explicit empty/null does.
+	if w := do("GET", "/s", ""); !strings.Contains(w.Body.String(), `"name":"Std"`) {
+		t.Fatalf("wiped: %s", w.Body)
+	}
+	if w := do("PUT", "/s/options", `{"options":[],"free_shipping_min":null}`); w.Code != 200 || !strings.Contains(w.Body.String(), `"free_shipping_min":null`) {
+		t.Fatalf("clear: %d %s", w.Code, w.Body)
+	}
 	w = do("POST", "/s/couriers", `{"name":"C","tracking_url_template":"http://x/{number}"}`)
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "validation_failed") {
 		t.Fatalf("courier: %d %s", w.Code, w.Body)

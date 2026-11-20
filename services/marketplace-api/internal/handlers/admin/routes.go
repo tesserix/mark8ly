@@ -393,6 +393,14 @@ func RegisterAdmin(router *gin.RouterGroup, deps Deps) {
 					orders.POST("/:id/shipments",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
 						deps.ShipmentsHandler.Create)
+					// Own delivery: mark shipped with a saved courier, and
+					// fix the courier/number afterwards (no second email).
+					orders.POST("/:id/shipments/manual",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.CreateManual)
+					orders.PATCH("/:id/shipments/:shipmentId/tracking",
+						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersEditRole),
+						deps.ShipmentsHandler.UpdateTracking)
 					orders.GET("/:id/shipments",
 						deps.AuthzMiddleware.RequireTenantRelation(authz.OrdersViewRole),
 						deps.ShipmentsHandler.GetByOrder)

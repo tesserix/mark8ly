@@ -1074,7 +1074,8 @@ func main() {
 			WithEncryptor(apiKeyEncryptor).
 			WithSecretStore(carrierSecretStore).
 			WithLabelMailer(labelMailer).
-			WithOrderService(orderSvc)
+			WithOrderService(orderSvc).
+			WithDelivery(delivery.NewService(conn))
 
 		// Shipment-cancel executor — resolves + executes the carrier action
 		// when an order is fully refunded or cancelled. Reuses the shipments

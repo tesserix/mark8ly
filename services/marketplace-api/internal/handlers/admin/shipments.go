@@ -21,6 +21,7 @@ import (
 
 	"github.com/mark8ly/marketplace-api/internal/carriersecrets"
 	"github.com/mark8ly/marketplace-api/internal/crypto"
+	"github.com/mark8ly/marketplace-api/internal/delivery"
 	"github.com/mark8ly/marketplace-api/internal/notification"
 	"github.com/mark8ly/marketplace-api/internal/order"
 	"github.com/mark8ly/marketplace-api/internal/orderdoc"
@@ -86,6 +87,8 @@ type ShipmentsHandler struct {
 	// still owes a parcel. Nil-safe (skipped) so tests that don't wire an
 	// order service keep working — see WithOrderService.
 	orderSvc *order.Service
+	// delivery resolves own couriers for manual shipments (shipments_manual.go).
+	delivery *delivery.Service
 }
 
 // NewShipmentsHandler constructs a ShipmentsHandler. docMailer is
@@ -500,10 +503,14 @@ type ShipmentResponse struct {
 	// for list/get reads. The admin surfaces it so a silently-skipped
 	// pickup no longer looks like a fully-completed shipment.
 	PickupWarning string `json:"pickup_warning,omitempty"`
+	// Own-courier shipments only; empty for carrier shipments.
+	CourierID   string `json:"courier_id,omitempty"`
+	CourierName string `json:"courier_name,omitempty"`
+	TrackingURL string `json:"tracking_url,omitempty"`
 }
 
 func toShipmentResponse(rec *shipping.ShipmentRecord) ShipmentResponse {
-	return ShipmentResponse{
+	resp := ShipmentResponse{
 		ID:                 rec.ID.String(),
 		OrderID:            rec.OrderID.String(),
 		Provider:           rec.Provider,
@@ -522,7 +529,13 @@ func toShipmentResponse(rec *shipping.ShipmentRecord) ShipmentResponse {
 		CancelStatus:       omitNone(rec.CancelStatus),
 		CancelReason:       rec.CancelReason,
 		CreatedAt:          rec.CreatedAt,
+		CourierName:        derefStringPtr(rec.CourierName),
+		TrackingURL:        derefStringPtr(rec.TrackingURL),
 	}
+	if rec.CourierID != nil {
+		resp.CourierID = rec.CourierID.String()
+	}
+	return resp
 }
 
 // omitNone returns "" for the sentinel "none" so the cancel_* fields drop out

@@ -288,3 +288,30 @@ func TestTrackingPatch_FixesNumberWithoutEmail(t *testing.T) {
 	require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
 	require.Equal(t, "not_own_delivery", errCode(t, w))
 }
+
+func TestManualShipment_RefusedForCancelledOrRefunded(t *testing.T) {
+	for name, set := range map[string]string{
+		"cancelled": `status = 'cancelled', cancelled_at = now()`,
+		"refunded":  `payment_status = 'refunded'`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := setupManualEnv(t, "own")
+			cid := e.courier(t, e.storeID, "Anjani", nil)
+			require.NoError(t, e.db.Exec(`UPDATE orders SET `+set+` WHERE id = ?`, e.orderID).Error)
+			w := e.ship(t, gin.H{"courier_id": cid, "tracking_number": "X1"})
+			require.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+			require.Equal(t, "order_not_shippable", errCode(t, w))
+			require.Empty(t, e.shipments(t))
+			require.Equal(t, 0, e.mailer.emailsAfter())
+		})
+	}
+}
+
+func TestTrackingPatch_RejectsBlankNumber(t *testing.T) {
+	e := setupManualEnv(t, "own")
+	cid := e.courier(t, e.storeID, "Anjani", nil)
+	require.Equal(t, http.StatusCreated, e.ship(t, gin.H{"courier_id": cid, "tracking_number": "A1"}).Code)
+	w := e.patchTracking(t, e.shipments(t)[0].ID, gin.H{"tracking_number": "   "})
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	require.Equal(t, "A1", e.shipments(t)[0].TrackingNumber)
+}

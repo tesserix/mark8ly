@@ -38,6 +38,15 @@ beforeEach(() => {
 });
 
 describe("MarkShippedPanel", () => {
+  it("shows the buyer's delivery choice, estimate only when set", () => {
+    const { rerender } = render(
+      <MarkShippedPanel {...base} optionName="Express" optionEstimate="2-3 days" />,
+    );
+    expect(screen.getByText("Buyer chose: Express (2-3 days)")).toBeInTheDocument();
+    rerender(<MarkShippedPanel {...base} optionName="Express" />);
+    expect(screen.getByText("Buyer chose: Express")).toBeInTheDocument();
+  });
+
   it("shows courier select, tracking input and button; defaults to last used courier", async () => {
     localStorage.setItem("m8.lastCourier.st1", "c2");
     render(<MarkShippedPanel {...base} />);

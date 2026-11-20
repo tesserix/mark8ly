@@ -261,6 +261,8 @@ func (h *ShipmentsHandler) listOpenShipments(ctx context.Context) ([]openShipmen
 		Select("id, tenant_id, store_id, order_id, carrier, tracking_number, status, currency_code").
 		Where("status NOT IN ?", terminalShipmentStatuses).
 		Where("tracking_number <> ''").
+		// Own-courier parcels have no carrier API to poll.
+		Where("carrier <> ?", ownCarrier).
 		// Ignore synthetic stubs from the pre-fix era — those will
 		// never resolve at Delhivery and would burn the per-minute
 		// API budget for no good reason.

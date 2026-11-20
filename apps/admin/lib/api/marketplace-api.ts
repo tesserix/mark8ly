@@ -1146,6 +1146,9 @@ export interface AdminOrder {
    */
   shipping_service?: string;
   shipping_carrier?: string;
+  /** The seller's own delivery option the buyer picked (own orders only). */
+  shipping_option_name?: string;
+  shipping_option_estimate?: string;
   notes?: string;
   /** In-store sales (#1109): set on every order; the rest only in-store. */
   channel: OrderChannel;

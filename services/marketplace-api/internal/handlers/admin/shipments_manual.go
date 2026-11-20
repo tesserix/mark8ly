@@ -48,10 +48,14 @@ type TrackingUpdateRequest struct {
 var (
 	errNotOwnDelivery = errors.New("not_own_delivery")
 	errAlreadyShipped = errors.New("already_shipped")
+	errNotShippable   = errors.New("order_not_shippable")
 )
 
 func respondConflict(c *gin.Context, err error) {
 	msg := "This order already has an active shipment. Edit its tracking instead."
+	if errors.Is(err, errNotShippable) {
+		msg = "A cancelled or refunded order cannot be marked as shipped."
+	}
 	if errors.Is(err, errNotOwnDelivery) {
 		msg = "This order was paid with a carrier rate; create a shipping label instead."
 	}
@@ -121,6 +125,9 @@ func (h *ShipmentsHandler) CreateManual(c *gin.Context) {
 		}
 		if o.ShippingCarrier == nil || *o.ShippingCarrier != ownCarrier {
 			return errNotOwnDelivery
+		}
+		if o.Status == string(order.OrderStatusCancelled) || o.PaymentStatus == string(order.PaymentStatusRefunded) {
+			return errNotShippable
 		}
 		var active int64
 		if err := tx.Table("shipments").Where("order_id = ? AND status <> 'cancelled'", orderID).Count(&active).Error; err != nil {
@@ -203,7 +210,7 @@ func (h *ShipmentsHandler) CreateManual(c *gin.Context) {
 		}
 		return nil
 	})
-	if errors.Is(err, errNotOwnDelivery) || errors.Is(err, errAlreadyShipped) {
+	if errors.Is(err, errNotOwnDelivery) || errors.Is(err, errAlreadyShipped) || errors.Is(err, errNotShippable) {
 		respondConflict(c, err)
 		return
 	}
@@ -259,6 +266,10 @@ func (h *ShipmentsHandler) UpdateTracking(c *gin.Context) {
 	courier, err := h.delivery.GetCourier(ctx, storeID, courierID)
 	if err != nil {
 		RespondErr(c, err, h.logger)
+		return
+	}
+	if strings.TrimSpace(req.TrackingNumber) == "" {
+		RespondErr(c, apperrors.ValidationFailed("tracking_number", "is required"), h.logger)
 		return
 	}
 	number, trackingURL, err := resolveTracking(courier, req.TrackingNumber)

@@ -181,7 +181,10 @@ type AdminOrderResponse struct {
 	// to what the buyer paid for. Empty for orders pre-dating migration 82.
 	ShippingService *string `json:"shipping_service,omitempty"`
 	ShippingCarrier *string `json:"shipping_carrier,omitempty"`
-	Notes           *string `json:"notes,omitempty"`
+	// The seller's own delivery option the buyer picked (own orders only).
+	ShippingOptionName     *string `json:"shipping_option_name,omitempty"`
+	ShippingOptionEstimate *string `json:"shipping_option_estimate,omitempty"`
+	Notes                  *string `json:"notes,omitempty"`
 	// In-store sales (#1109). Channel is always set; the rest only for
 	// in-store orders.
 	Channel            string                   `json:"channel"`
@@ -239,38 +242,41 @@ func AttachPersonalisation(resp *AdminOrderResponse, rows []order.ItemPersonalis
 
 func ToAdminOrderResponse(o *order.Order, items []order.OrderItem, addrs []order.OrderAddress) AdminOrderResponse {
 	out := AdminOrderResponse{
-		ID:                 o.ID.String(),
-		TenantID:           o.TenantID.String(),
-		StoreID:            o.StoreID.String(),
-		OrderNumber:        o.OrderNumber,
-		IdempotencyKey:     o.IdempotencyKey,
-		CustomerEmail:      o.CustomerEmail,
-		CustomerName:       o.CustomerName,
-		Status:             o.Status,
-		PaymentStatus:      o.PaymentStatus,
-		FulfillmentStatus:  o.FulfillmentStatus,
-		Subtotal:           o.Subtotal,
-		ShippingTotal:      o.ShippingTotal,
-		TaxTotal:           o.TaxTotal,
-		DiscountTotal:      o.DiscountTotal,
-		GrandTotal:         o.GrandTotal,
-		RefundedAmount:     o.RefundedAmount,
-		CurrencyCode:       o.CurrencyCode,
-		ShippingService:    o.ShippingService,
-		ShippingCarrier:    o.ShippingCarrier,
-		Notes:              o.Notes,
-		Channel:            o.Channel,
-		PaymentMethod:      o.PaymentMethod,
-		PaymentMethodLabel: o.PaymentMethodLabel,
-		SoldByEmail:        o.SoldByEmail,
-		CashTendered:       o.CashTendered,
-		Items:              make([]AdminOrderItemResponse, 0, len(items)),
-		Addresses:          make([]AdminAddressResponse, 0, len(addrs)),
-		PlacedAt:           o.PlacedAt,
-		CancelledAt:        o.CancelledAt,
-		FulfilledAt:        o.FulfilledAt,
-		CreatedAt:          o.CreatedAt,
-		UpdatedAt:          o.UpdatedAt,
+		ID:                o.ID.String(),
+		TenantID:          o.TenantID.String(),
+		StoreID:           o.StoreID.String(),
+		OrderNumber:       o.OrderNumber,
+		IdempotencyKey:    o.IdempotencyKey,
+		CustomerEmail:     o.CustomerEmail,
+		CustomerName:      o.CustomerName,
+		Status:            o.Status,
+		PaymentStatus:     o.PaymentStatus,
+		FulfillmentStatus: o.FulfillmentStatus,
+		Subtotal:          o.Subtotal,
+		ShippingTotal:     o.ShippingTotal,
+		TaxTotal:          o.TaxTotal,
+		DiscountTotal:     o.DiscountTotal,
+		GrandTotal:        o.GrandTotal,
+		RefundedAmount:    o.RefundedAmount,
+		CurrencyCode:      o.CurrencyCode,
+		ShippingService:   o.ShippingService,
+		ShippingCarrier:   o.ShippingCarrier,
+
+		ShippingOptionName:     o.ShippingOptionName,
+		ShippingOptionEstimate: o.ShippingOptionEstimate,
+		Notes:                  o.Notes,
+		Channel:                o.Channel,
+		PaymentMethod:          o.PaymentMethod,
+		PaymentMethodLabel:     o.PaymentMethodLabel,
+		SoldByEmail:            o.SoldByEmail,
+		CashTendered:           o.CashTendered,
+		Items:                  make([]AdminOrderItemResponse, 0, len(items)),
+		Addresses:              make([]AdminAddressResponse, 0, len(addrs)),
+		PlacedAt:               o.PlacedAt,
+		CancelledAt:            o.CancelledAt,
+		FulfilledAt:            o.FulfilledAt,
+		CreatedAt:              o.CreatedAt,
+		UpdatedAt:              o.UpdatedAt,
 	}
 	for _, it := range items {
 		var pid, vid *string

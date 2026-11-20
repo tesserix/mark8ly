@@ -20,6 +20,9 @@ interface Props {
   orderStatus: string;
   couriers: Courier[];
   initialShipment: ShipmentResponse | null;
+  /** The delivery option the buyer chose at checkout. */
+  optionName?: string;
+  optionEstimate?: string;
 }
 
 const ACTIONABLE_STATUSES = new Set(["pending", "confirmed", "fulfilled"]);
@@ -52,6 +55,8 @@ export function MarkShippedPanel({
   orderStatus,
   couriers,
   initialShipment,
+  optionName,
+  optionEstimate,
 }: Props) {
   const [shipment, setShipment] = useState(
     // A cancelled shipment no longer counts: the backend allows shipping again.
@@ -211,6 +216,12 @@ export function MarkShippedPanel({
       >
         Shipping
       </h2>
+      {optionName ? (
+        <p className="text-sm">
+          Buyer chose: {optionName}
+          {optionEstimate ? ` (${optionEstimate})` : ""}
+        </p>
+      ) : null}
       {body}
     </section>
   );

@@ -348,3 +348,23 @@ func requireEventCount(t *testing.T, db *gorm.DB, orderID uuid.UUID, kind string
 			kind, orderID, n, want)
 	}
 }
+
+func TestShipmentsSync_SkipsOwnShipments(t *testing.T) {
+	db := testdb.NewDB(t, trackingSyncTables...)
+	tenantID, storeID, orderID, shipID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	seedStoreRowForSync(t, db, tenantID, storeID)
+	seedOrderRowForSync(t, db, orderID, storeID, tenantID)
+	if err := db.Create(&shipping.ShipmentRecord{ID: shipID, TenantID: tenantID, StoreID: storeID, OrderID: orderID,
+		Carrier: "own", TrackingNumber: "OWN-1", Status: "in_transit",
+		ShipFrom: datatypes.JSON([]byte(`{}`)), ShipTo: datatypes.JSON([]byte(`{}`)), CurrencyCode: "INR"}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	shippingRepo := shipping.NewRepository(db)
+	h := admin.NewShipmentsHandler(db, shipping.NewShippingService(shippingRepo), shippingRepo, nil, nil).
+		WithEncryptor(crypto.NewNoopEncryptor())
+	got := runSyncOnce(t, h)
+	if got.Examined != 0 || got.Errors != 0 {
+		t.Fatalf("own shipment was polled: %+v", got)
+	}
+	requireShipmentStatus(t, db, shipID, "in_transit")
+}

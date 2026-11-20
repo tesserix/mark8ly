@@ -116,6 +116,8 @@ export default async function OrderDetailPage({ params }: PageProps) {
                   orderStatus={order.status}
                   couriers={couriers}
                   initialShipment={shipment}
+                  optionName={order.shipping_option_name}
+                  optionEstimate={order.shipping_option_estimate}
                 />
               ) : (
                 <ShippingLabelPanel

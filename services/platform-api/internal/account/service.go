@@ -91,6 +91,10 @@ type Service struct {
 	gip    gipDeleter
 	outbox outboxEnqueuer
 	log    *slog.Logger
+	// counter is non-nil only when the "account deleted" operator notice is
+	// enabled (Rocket.Chat configured); see EnableDeletedNotice.
+	counter tenantCounter
+	now     func() time.Time
 }
 
 // NewService constructs a Service. db may be nil in unit tests: the
@@ -101,7 +105,16 @@ type Service struct {
 // production wiring (a non-nil db) needs the real gorm.DB.Transaction
 // guarantee.
 func NewService(db *gorm.DB, repo TenantRepo, fga authz.Client, gip gipDeleter, outbox outboxEnqueuer, log *slog.Logger) *Service {
-	return &Service{db: db, repo: repo, fga: fga, gip: gip, outbox: outbox, log: log}
+	return &Service{db: db, repo: repo, fga: fga, gip: gip, outbox: outbox, log: log, now: time.Now}
+}
+
+// EnableDeletedNotice makes merchant self-serve deletes enqueue a
+// rocketchat.tenant_deleted notice alongside tenant.deleted. Left off when
+// Rocket.Chat isn't configured, mirroring the onboarding notice, so no event
+// is enqueued that no replica could deliver.
+func (s *Service) EnableDeletedNotice(counter tenantCounter) *Service {
+	s.counter = counter
+	return s
 }
 
 // DeleteAccount deletes the calling actor's account in the context of the
@@ -135,7 +148,18 @@ func (s *Service) deleteOwnerAccount(ctx context.Context, tenantID, actorUID str
 		return fmt.Errorf("account: list store ids: %w", err)
 	}
 
-	if err := s.teardownTenantTx(ctx, tenantID, storeIDs); err != nil {
+	var counts map[string]int64
+	if s.counter != nil {
+		// Best effort and before the transaction: an HTTP call has no place
+		// inside it, and the delete must not fail because a notice can't
+		// say what was built.
+		if counts, err = s.counter.CountTenant(ctx, tenantID, storeIDs); err != nil {
+			s.warn("account: pre-delete activity count failed", "tenant_id", tenantID, "err", err)
+			counts = nil
+		}
+	}
+
+	if err := s.teardownTenantTx(ctx, tenantID, storeIDs, counts); err != nil {
 		return fmt.Errorf("account: teardown tenant: %w", err)
 	}
 
@@ -221,12 +245,34 @@ func (s *Service) deleteIdentityIfNoTenantsRemain(ctx context.Context, userID, j
 }
 
 // teardownTenantTx deletes the tenant row and enqueues the tenant.deleted
-// outbox event in one transaction, so a crash between the two never
-// happens: either both land, or neither does.
-func (s *Service) teardownTenantTx(ctx context.Context, tenantID string, storeIDs []string) error {
+// outbox event (plus, when enabled, the operator notice) in one
+// transaction, so a crash between them never happens: either all land, or
+// none does.
+func (s *Service) teardownTenantTx(ctx context.Context, tenantID string, storeIDs []string, counts map[string]int64) error {
 	run := func(tx *gorm.DB) error {
+		var notice *deletedNotice
+		if s.counter != nil {
+			// Read under the row lock in the same transaction, just before
+			// the delete, so the notice describes exactly what was deleted.
+			snap, err := s.repo.SnapshotForTeardown(ctx, tx, tenantID)
+			if err != nil {
+				return err
+			}
+			notice = &deletedNotice{TenantID: tenantID, DeletedAt: s.now().UTC(), Counts: counts}
+			if snap != nil {
+				notice.Name, notice.OwnerEmail, notice.SignedUpAt = snap.Name, snap.OwnerEmail, snap.CreatedAt
+				for _, st := range snap.Stores {
+					notice.StoreSlugs = append(notice.StoreSlugs, st.Slug)
+				}
+			}
+		}
 		if err := s.repo.DeleteInTx(ctx, tx, tenantID); err != nil {
 			return err
+		}
+		if notice != nil {
+			if err := s.outbox(tx, TenantDeletedNoticeOutboxKind, notice, 0); err != nil {
+				return err
+			}
 		}
 		payload := tenantDeletedPayload{TenantID: tenantID, StoreIDs: storeIDs}
 		// 0: the merchant path runs NO inline purge, so this event is the

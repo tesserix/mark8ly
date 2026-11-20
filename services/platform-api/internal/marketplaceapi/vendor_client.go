@@ -306,6 +306,40 @@ func (c *VendorClient) EnsureSelfStore(ctx context.Context, s Store) (*Store, er
 	return &resp.Data, nil
 }
 
+// CountTenant asks marketplace-api what a purge of the tenant's stores WOULD
+// delete, per table, without deleting anything. Called just before a
+// merchant self-serve delete so the operator notice can say what the
+// merchant had built; the purge leaves nothing behind to ask afterwards.
+func (c *VendorClient) CountTenant(ctx context.Context, tenantID string, storeIDs []string) (map[string]int64, error) {
+	body, err := json.Marshal(map[string][]string{"store_ids": storeIDs})
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/internal/tenants/%s/purge-preview", c.baseURL, tenantID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.addInternalAuth(req)
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace-api count-tenant: %w", err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode >= 300 {
+		return nil, fmt.Errorf("marketplace-api count-tenant %d", res.StatusCode)
+	}
+	var out struct {
+		Tables map[string]int64 `json:"tables"`
+	}
+	if err := json.NewDecoder(io.LimitReader(res.Body, 64<<10)).Decode(&out); err != nil {
+		return nil, fmt.Errorf("marketplace-api count-tenant: decode: %w", err)
+	}
+	return out.Tables, nil
+}
+
 // PurgeTenant asks marketplace-api to hard-delete all data owned by the
 // given tenant's stores. Called from the platform-api outbox drainer as
 // part of tenant deletion; a non-2xx response is returned as an error so

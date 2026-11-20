@@ -283,6 +283,8 @@ func TestSnapshotForTeardown_ReturnsNameOwnerAndStoreSlugs(t *testing.T) {
 	require.Equal(t, tenantID, snap.TenantID)
 	require.Equal(t, "The Bondi Store", snap.Name)
 	require.Equal(t, "owner-uid-1", snap.OwnerUserID)
+	require.Equal(t, "owner-uid-1@example.com", snap.OwnerEmail)
+	require.False(t, snap.CreatedAt.IsZero(), "created_at feeds the deleted notice's days-active")
 
 	slugs := make([]string, 0, len(snap.Stores))
 	for _, s := range snap.Stores {

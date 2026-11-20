@@ -30,6 +30,7 @@ type fakeTenantRepo struct {
 	deleted     map[string]bool
 	listErr     error
 	teardownErr error
+	snap        *tenant.TeardownSnapshot
 }
 
 func (f *fakeTenantRepo) ListStoreIDs(ctx context.Context, tx *gorm.DB, tenantID string) ([]string, error) {
@@ -54,7 +55,7 @@ func (f *fakeTenantRepo) DeleteInTx(ctx context.Context, tx *gorm.DB, tenantID s
 // DeleteAccount, not PurgeTenant); it exists only so fakeTenantRepo keeps
 // satisfying TenantRepo. See purge_test.go for the tests that use it.
 func (f *fakeTenantRepo) SnapshotForTeardown(ctx context.Context, tx *gorm.DB, tenantID string) (*tenant.TeardownSnapshot, error) {
-	return nil, nil
+	return f.snap, nil
 }
 
 // fakeGIP is an in-memory double for gipDeleter.
@@ -77,13 +78,15 @@ func (f *fakeGIP) DeleteAccount(ctx context.Context, uid string) error {
 // fakeOutbox is an in-memory double satisfying the outboxEnqueuer func
 // type via its Enqueue method value.
 type fakeOutbox struct {
-	kinds  []string
-	delays []time.Duration
+	kinds    []string
+	delays   []time.Duration
+	payloads []any
 }
 
 func (f *fakeOutbox) Enqueue(tx *gorm.DB, kind string, payload any, delay time.Duration) error {
 	f.kinds = append(f.kinds, kind)
 	f.delays = append(f.delays, delay)
+	f.payloads = append(f.payloads, payload)
 	return nil
 }
 
